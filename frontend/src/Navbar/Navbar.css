@@ -1,0 +1,175 @@
+/* ====== Navbar — Paleta CLARO + HITSS ====== */
+:root{
+  --navc-bg:#0c1424;
+  --navc-bg-soft:#0f1b31;
+  --navc-text:#e6e8ec;
+  --navc-text-dim:#9aa6b2;
+  --navc-red:#E30613;     /* Claro */
+  --navc-blue:#0055B8;    /* Hitss */
+  --navc-hover:#15223a;
+  --navc-shadow:0 8px 24px rgba(2,6,23,.35);
+  --navc-radius:14px;
+  --navc-gap:12px;
+  --navc-ring: color-mix(in oklab, var(--navc-red) 55%, var(--navc-blue) 45%);
+  --navc-border: rgba(148,163,184,.18);
+
+  /* Tamaño del logo y cálculo de alto del header */
+  --navc-logo-h: 56px;       /* << antes 40px — ajústalo si quieres (60–64px también va) */
+  --navc-header-py: 10px;    /* padding vertical del header */
+  --navc-header-h: calc(var(--navc-logo-h) + (var(--navc-header-py) * 2));
+}
+
+/* Fallback si el navegador no soporta color-mix/oklab */
+@supports not (color: color-mix(in oklab, red 50%, blue)) {
+  :root{ --navc-ring:#8a2a62; }
+}
+
+@media (prefers-color-scheme: light){
+  :root{
+    --navc-bg:#ffffff; --navc-bg-soft:#ffffff; --navc-text:#0f172a;
+    --navc-text-dim:#334155; --navc-hover:#f3f4f6; --navc-shadow:0 8px 24px rgba(2,6,23,.08);
+    --navc-border: rgba(2,6,23,.08);
+  }
+}
+
+/* ====== Contenedor ====== */
+.navc-header{
+  position:sticky; top:0; z-index:50;
+  display:flex; align-items:center; gap:var(--navc-gap);
+  padding: var(--navc-header-py) 14px;                    /* usa variable */
+  background:var(--navc-bg); color:var(--navc-text);
+  box-shadow:var(--navc-shadow);
+  min-height: var(--navc-header-h);                       /* asegura altura acorde al logo */
+}
+
+/* ====== Hamburguesa ====== */
+.navc-hamburger{
+  appearance:none; border:0; background:transparent; color:var(--navc-text);
+  font-size:26px; line-height:1; padding:8px 10px; border-radius:10px; cursor:pointer;
+  transition:transform .2s ease, box-shadow .15s ease;
+}
+.navc-hamburger:hover{ transform:scale(1.05); box-shadow:0 0 0 3px color-mix(in oklab, var(--navc-ring) 25%, transparent); }
+.navc-hamburger:active{ transform:scale(.98); }
+@media (min-width:860px){ .navc-hamburger{ display:none; } }
+
+/* ====== Menú ====== */
+.navc-navbar{
+  position:fixed;
+  inset: var(--navc-header-h) 0 auto 0;  /* << antes 64px: se coloca justo bajo el header real */
+  left:0; width:100%;
+  background:var(--navc-bg-soft);
+  border-bottom-left-radius:var(--navc-radius); border-bottom-right-radius:var(--navc-radius);
+  box-shadow:var(--navc-shadow);
+  display:grid; gap:6px; padding:8px; max-height:0; overflow:hidden;
+  transition:max-height .28s ease, padding .28s ease;
+}
+.navc-navbar.open{ max-height:60vh; padding:10px; overflow-y:auto; }
+
+.navc-navbar a{
+  display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:10px;
+  color:var(--navc-text); text-decoration:none; font-size:15px; font-weight:600; letter-spacing:.2px;
+  transition:background .18s ease, transform .12s ease, box-shadow .18s ease;
+  outline:none;
+}
+.navc-navbar a:hover{
+  background:linear-gradient(90deg,
+    color-mix(in oklab, var(--navc-red) 18%, transparent) 0%,
+    color-mix(in oklab, var(--navc-blue) 12%, transparent) 100%);
+}
+.navc-navbar a:focus-visible{ box-shadow:0 0 0 4px color-mix(in oklab, var(--navc-ring) 35%, transparent); }
+.navc-navbar a:active{ transform:scale(.99); }
+
+.navc-navbar a[aria-current="page"]{
+  background:linear-gradient(90deg,
+    color-mix(in oklab, var(--navc-red) 22%, transparent) 0%,
+    color-mix(in oklab, var(--navc-blue) 14%, transparent) 100%);
+  position:relative;
+}
+.navc-navbar a[aria-current="page"]::before{
+  content:""; position:absolute; left:0; top:8px; bottom:8px; width:3px; border-radius:3px;
+  background:linear-gradient(180deg, var(--navc-red), var(--navc-blue));
+}
+
+/* ====== Logo separado del enlace Inicio ====== */
+.navc-logo{
+  display:inline-flex;
+  align-items:center;
+  padding:0;                 /* sin padding de los otros <a> */
+  margin-right:14px;         /* separación respecto a "Inicio" */
+  border-radius:0;
+}
+.navc-logo img{
+  display:block;
+  height: var(--navc-logo-h);
+  width: auto;
+  object-fit: contain;
+}
+/* Evitar efectos de hover/active del resto en el logo */
+.navc-navbar .navc-logo:hover,
+.navc-navbar .navc-logo:active{
+  background: transparent;
+  transform: none;
+  box-shadow: none;
+}
+.navc-navbar .navc-logo:focus-visible{
+  outline: 2px solid color-mix(in oklab, var(--navc-ring) 40%, transparent);
+  outline-offset: 2px;
+}
+
+/* ====== User chip + Logout ====== */
+.navc-spacer{ display:none; }
+
+.navc-user{
+  display:inline-flex; align-items:center; gap:10px;
+  padding:8px 12px; border-radius:999px; white-space:nowrap;
+  background: linear-gradient(90deg,
+    color-mix(in oklab, var(--navc-red) 12%, transparent) 0%,
+    color-mix(in oklab, var(--navc-blue) 10%, transparent) 100%);
+  border:1px solid var(--navc-border);
+  color:var(--navc-text); font-size:14px;
+}
+.navc-user::before{
+  content:""; width:22px; height:22px; border-radius:999px; flex:0 0 22px;
+  background: linear-gradient(180deg, var(--navc-red), var(--navc-blue));
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.15);
+}
+.navc-user em{
+  font-style:normal; font-weight:700; letter-spacing:.2px;
+  color:#fff; background:linear-gradient(90deg, var(--navc-red), var(--navc-blue));
+  padding:2px 8px; border-radius:999px; font-size:12px;
+  box-shadow:0 1px 0 rgba(0,0,0,.18);
+}
+
+.navc-logout{
+  appearance:none; border:0;
+  background:linear-gradient(90deg, var(--navc-red), var(--navc-blue));
+  color:#fff; padding:8px 12px; border-radius:999px; font-size:14px; cursor:pointer;
+  transition:filter .15s ease, transform .12s ease;
+}
+.navc-logout:hover{ filter:brightness(1.06); }
+.navc-logout:active{ transform:translateY(1px); }
+.navc-logout:focus-visible{ outline:3px solid color-mix(in oklab, var(--navc-ring) 40%, transparent); outline-offset:2px; }
+
+/* ====== Desktop layout ====== */
+@media (min-width:860px){
+  .navc-navbar{
+    position:static; display:flex; align-items:center; gap:10px;
+    background:transparent; box-shadow:none; padding:0; max-height:none; overflow:visible; border-radius:0;
+  }
+  .navc-navbar a{ padding:10px 14px; }
+  .navc-navbar a[aria-current="page"]{
+    background:linear-gradient(90deg,
+      color-mix(in oklab, var(--navc-red) 16%, transparent) 0%,
+      color-mix(in oklab, var(--navc-blue) 10%, transparent) 100%);
+  }
+  .navc-spacer{ display:block; flex:1; }
+}
+
+/* Logo un poco menor en móviles (pero sigue grande) */
+@media (max-width:480px){
+  :root{ --navc-logo-h: 44px; } /* antes 34px */
+}
+
+@media (prefers-reduced-motion: reduce){
+  .navc-hamburger, .navc-navbar, .navc-navbar a, .navc-logout{ transition:none !important; }
+}

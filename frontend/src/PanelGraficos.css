@@ -1,0 +1,161 @@
+/* ===== Brand (Claro + Hitss) ===== */
+:root{
+  --brand-red:#E30613;         /* Claro */
+  --brand-red-700:#b00510;
+  --brand-blue:#0055B8;        /* Global Hitss */
+  --brand-blue-700:#024aa2;
+
+  /* Base */
+  --pg-bg:#f6f8fb;
+  --pg-card:#fff;
+  --pg-text:#0b1220;
+  --pg-muted:#6b7280;
+  --pg-border:#e6ebf2;
+  --pg-shadow:0 10px 24px rgba(2,6,23,.08);
+  --pg-radius:14px;
+
+  /* Accents */
+  --pg-primary:var(--brand-red);
+  --pg-primary-700:var(--brand-red-700);
+  --pg-accent:var(--brand-blue);
+  --pg-accent-700:var(--brand-blue-700);
+  --pg-ring:rgba(227,6,19,.22); /* foco rojo sutil */
+}
+
+/* ===== Contenedor principal ===== */
+.panel-graficos-container{
+  display:flex; flex-direction:column; align-items:center;
+  gap:28px; padding:24px 16px;
+  background:var(--pg-bg); min-height:100vh;
+  color:var(--pg-text);
+}
+
+/* ===== Filtros ===== */
+.filtros-globales{
+  display:flex; flex-wrap:wrap; gap:10px; justify-content:center;
+  padding:10px; background:#fbfcfe;
+  border:1px solid var(--pg-border); border-radius:12px;
+  box-shadow: inset 0 1px 0 rgba(2,6,23,.02);
+  width:100%; max-width:1100px;
+}
+
+.filtros-globales select,
+.filtros-globales input[type="month"]{
+  height:40px; min-width:200px;
+  padding:8px 12px; font-size:14px; color:var(--pg-text);
+  background:#fff; border:1px solid var(--pg-border); border-radius:10px;
+  transition:border-color .2s, box-shadow .2s, background .2s;
+}
+.filtros-globales select:hover,
+.filtros-globales input[type="month"]:hover{ background:#fff; }
+.filtros-globales select:focus,
+.filtros-globales input[type="month"]:focus{
+  border-color:var(--pg-primary);
+  box-shadow:0 0 0 4px var(--pg-ring);
+  outline:0;
+}
+
+/* Botón “Limpiar” que usas en la barra */
+.filtros-globales .btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  height:40px; padding:0 14px; border-radius:10px; border:1px solid transparent;
+  font-weight:700; cursor:pointer; user-select:none; white-space:nowrap;
+  transition:transform .05s, background-color .2s, border-color .2s, color .2s, box-shadow .2s, filter .2s;
+}
+.filtros-globales .btn:active{ transform: translateY(1px); }
+.filtros-globales .btn.btn-outline{
+  background:#fff; color:var(--pg-accent); border-color:var(--pg-accent);
+}
+.filtros-globales .btn.btn-outline:hover{
+  background:var(--pg-accent); color:#fff;
+}
+
+/* ===== Grid de tarjetas de gráficos ===== */
+.pg-grid{
+  display:grid; gap:20px; width:100%;
+  grid-template-columns: 1fr;        /* mobile */
+}
+@media (min-width: 1080px){
+  .pg-grid{ grid-template-columns: 1fr 1fr; } /* 2 columnas en desktop */
+}
+
+/* ===== Tarjeta del gráfico ===== */
+.grafico-box{
+  position:relative;
+  background:var(--pg-card); color:var(--pg-text);
+  border:1px solid var(--pg-border);
+  border-radius:var(--pg-radius);
+  box-shadow:var(--pg-shadow);
+  padding:18px; width:100%; max-width:unset;
+  min-height: 420px;
+  display:flex; flex-direction:column; gap:12px;
+}
+
+/* franja superior con el blend rojo→azul */
+.grafico-box::before{
+  content:"";
+  position:absolute; left:0; top:0; right:0; height:4px;
+  border-top-left-radius:var(--pg-radius);
+  border-top-right-radius:var(--pg-radius);
+  background: linear-gradient(90deg, var(--pg-primary), var(--pg-accent));
+}
+
+.grafico-box h3{
+  margin:0; text-align:left; font-size:18px; font-weight:800; letter-spacing:.2px;
+  color:var(--pg-text);
+  padding-bottom:8px; border-bottom:1px solid var(--pg-border);
+}
+
+.grafico-box .recharts-responsive-container{ flex:1; }
+
+/* ===== estados ===== */
+.empty{
+  display:flex; align-items:center; justify-content:center;
+  border:1px dashed var(--pg-border); border-radius:12px;
+  color:var(--pg-muted); background:#fafcff; height:260px;
+}
+
+/* ===== Afinando Recharts (tooltip, ejes, leyenda, grid) ===== */
+.recharts-default-tooltip{
+  background:#fff !important;
+  border:1px solid var(--pg-border) !important;
+  border-radius:10px !important;
+  box-shadow: 0 10px 24px rgba(2,6,23,.12) !important;
+}
+.recharts-tooltip-label{ color:var(--pg-text) !important; font-weight:700; }
+.recharts-tooltip-item{ color:var(--pg-muted) !important; }
+
+/* Ejes y ticks */
+.recharts-cartesian-axis .recharts-text tspan{
+  fill: var(--pg-muted) !important;
+  font-size: 12px;
+}
+
+/* Grid */
+.recharts-cartesian-grid line{
+  stroke:#e9eef9 !important;
+}
+
+/* Leyenda */
+.recharts-legend-item text{
+  fill: var(--pg-muted) !important;
+}
+
+/* ReferenceLine label (la “Meta”) */
+.recharts-reference-line .recharts-label tspan{
+  fill: var(--brand-red) !important;
+  font-weight: 800;
+}
+
+/* ===== Dark mode opcional ===== */
+.pg-dark{
+  --pg-bg:#0b1220; --pg-card:#0f172a; --pg-text:#e5e7eb; --pg-muted:#9ca3af;
+  --pg-border:#1f2937; --pg-shadow:0 12px 28px rgba(0,0,0,.35);
+}
+.pg-dark .filtros-globales{ background:#0f172a; }
+.pg-dark .grafico-box h3{ border-color:#1f2a44; }
+.pg-dark .recharts-default-tooltip{
+  background:#0f172a !important; border-color:#1f2937 !important; color:var(--pg-text) !important;
+}
+.pg-dark .recharts-cartesian-grid line{ stroke:#1f2a44 !important; }
+

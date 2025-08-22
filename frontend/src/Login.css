@@ -1,0 +1,251 @@
+/* ================== BRAND (Claro + Hitss) ================== */
+:root{
+  /* Marcas */
+  --authc-blue:#0055B8;        /* Hitss */
+  --authc-blue-700:#034b9f;
+  --authc-red:#E30613;         /* Claro */
+  --authc-red-700:#c10510;
+
+  /* Base UI */
+  --authc-bg:#f6f8fb;
+  --authc-card:#ffffff;
+  --authc-text:#0b1220;
+  --authc-muted:#6b7280;
+  --authc-border:#e6ebf2;
+  --authc-shadow:0 18px 36px rgba(2,6,23,.10);
+  --authc-radius:16px;
+
+  /* Interacciones (oklab) */
+  --authc-ring: color-mix(in oklab, var(--authc-blue) 60%, var(--authc-red) 40%);
+  --authc-ring-weak: color-mix(in oklab, var(--authc-ring) 24%, transparent);
+
+  /* Botones */
+  --authc-primary:var(--authc-blue);
+  --authc-primary-700:var(--authc-blue-700);
+  --authc-accent:var(--authc-red);
+  --authc-accent-700:var(--authc-red-700);
+}
+
+/* Fallback si el navegador no soporta color-mix/oklab */
+@supports not (color: color-mix(in oklab, red 50%, blue)) {
+  :root{
+    /* 60% #0055B8 + 40% #E30613 mezclado en sRGB ≈ #5B3576 */
+    --authc-ring:#5B3576;
+    --authc-ring-weak: rgba(91,53,118,.24);
+  }
+}
+
+/* Reset mínimo */
+*,*::before,*::after{ box-sizing:border-box }
+
+/* ================== LIENZO ================== */
+.authc-shell{
+  min-height:100vh;
+  display:grid; place-items:center;
+  padding:28px;
+  background:
+    radial-gradient(1200px 600px at 8% -10%, color-mix(in oklab, #e8f0ff 68%, white), transparent 40%),
+    radial-gradient(900px 500px at 110% 110%, color-mix(in oklab, #fff1f2 70%, white), transparent 45%),
+    var(--authc-bg);
+}
+
+/* ================== CARD ================== */
+.authc-card{
+  width:min(520px,94vw);
+  position:relative;
+  background:var(--authc-card);
+  color:var(--authc-text);
+  border:1px solid var(--authc-border);
+  border-radius:var(--authc-radius);
+  box-shadow:var(--authc-shadow);
+  padding:22px 22px 20px;
+  /* Fallback para overflow: clip */
+  overflow:hidden;
+  overflow:clip;
+  animation:authc-in .18s ease-out;
+}
+
+/* Barra superior bicolor */
+.authc-card::before{
+  content:"";
+  position:absolute; inset:0 0 auto 0; height:6px;
+  background:linear-gradient(90deg, var(--authc-blue), var(--authc-red));
+  filter:drop-shadow(0 6px 12px rgba(0,0,0,.15));
+}
+
+/* Luz suave animada (respeta reduced-motion) */
+@media (prefers-reduced-motion: no-preference){
+  .authc-card::after{
+    content:"";
+    position:absolute; inset:-40% -20% auto -20%; height:110px;
+    background:
+      radial-gradient(250px 80px at 25% 50%, color-mix(in oklab, var(--authc-blue) 25%, transparent), transparent 55%),
+      radial-gradient(250px 80px at 75% 50%, color-mix(in oklab, var(--authc-red) 25%, transparent), transparent 55%);
+    opacity:.35;
+    filter:blur(18px);
+    animation:authc-glow 7s linear infinite;
+    pointer-events:none;
+  }
+  @keyframes authc-in{ from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:translateY(0)} }
+  @keyframes authc-glow{
+    0%{ transform:translateX(0); opacity:.28 }
+    50%{ transform:translateX(10px); opacity:.38 }
+    100%{ transform:translateX(0); opacity:.28 }
+  }
+}
+
+/* ================== HEADER (solo logo, centrado) ================== */
+.authc-head{
+  display:flex; align-items:center; justify-content:center;
+  gap:0; margin:6px 0 14px;
+}
+
+/* Contenedor del logo */
+.authc-logo{ line-height:0 }
+
+/* Imagen del logo: tamaño compacto y fluido */
+.authc-logo img{
+  display:block;
+  width:clamp(180px, 40vw, 280px);
+  max-width:100%;
+  height:auto;
+  margin:0 auto;
+  filter:drop-shadow(0 2px 10px rgba(0,0,0,.12));
+}
+
+/* Badge opcional si alguna vez no usas imagen */
+.authc-logo--badge{
+  width:46px; height:46px; border-radius:14px; color:#fff;
+  display:grid; place-items:center; font-weight:900; letter-spacing:.3px;
+  background:conic-gradient(from 200deg, var(--authc-blue) 0 50%, var(--authc-red) 50% 100%);
+  box-shadow:0 8px 18px rgba(0,0,0,.25);
+}
+
+/* Responsive header */
+@media (max-width:420px){
+  .authc-logo img{ width:clamp(160px, 60vw, 240px) }
+}
+
+/* ================== FORM ================== */
+.authc-form{ display:grid; gap:12px; margin-top:8px }
+.authc-field{ display:grid; gap:6px }
+.authc-label{ font-size:13px; color:var(--authc-muted); font-weight:700; letter-spacing:.2px }
+
+.authc-input, .authc-select{
+  height:46px; width:100%;
+  padding:10px 12px;
+  background:#fbfcfe;
+  color:var(--authc-text);
+  border:1px solid var(--authc-border);
+  border-radius:12px;
+  transition:border-color .18s, box-shadow .18s, background .18s;
+  box-shadow:inset 0 1px 0 rgba(2,6,23,.02);
+}
+.authc-input:hover, .authc-select:hover{ background:#fff }
+.authc-input:focus, .authc-select:focus{
+  border-color:var(--authc-ring);
+  box-shadow:0 0 0 4px var(--authc-ring-weak);
+  outline:0;
+}
+
+/* Campo con botón derecho (toggle password, etc.) */
+.authc-input-wrap{ position:relative }
+.authc-rightbtn{
+  position:absolute; right:6px; top:50%; transform:translateY(-50%);
+  height:36px; min-width:36px; padding:0 10px;
+  display:inline-flex; align-items:center; justify-content:center;
+  border-radius:10px; border:1px solid var(--authc-border);
+  background:#fff; cursor:pointer;
+  transition:background .18s, border-color .18s, transform .06s, box-shadow .18s;
+}
+.authc-rightbtn:hover{ background:#f5f7fb; box-shadow:0 0 0 3px var(--authc-ring-weak) }
+.authc-rightbtn:active{ transform:translateY(1px) }
+
+.authc-hint{ font-size:12px; color:var(--authc-muted) }
+
+/* ================== BOTONES ================== */
+.authc-actions{ display:grid; gap:10px; margin-top:6px }
+.authc-btn{
+  height:46px; border-radius:12px; border:1px solid transparent;
+  font-weight:900; cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  transition:transform .05s, filter .2s, background-color .2s, border-color .2s, box-shadow .2s;
+}
+.authc-btn:active{ transform:translateY(1px) }
+
+.authc-btn--primary{
+  color:#fff;
+  background:linear-gradient(180deg, var(--authc-primary), var(--authc-primary-700));
+  border-color:color-mix(in oklab, var(--authc-primary-700) 70%, black);
+  box-shadow:0 12px 26px color-mix(in oklab, var(--authc-primary) 28%, black);
+}
+@supports not (color: color-mix(in oklab, red 50%, blue)) {
+  .authc-btn--primary{ border-color:rgba(0,0,0,.25); box-shadow:0 12px 26px rgba(0,85,184,.28) }
+}
+.authc-btn--primary:hover{ filter:brightness(1.05) }
+
+.authc-btn--accent{
+  color:#fff;
+  background:linear-gradient(180deg, var(--authc-accent), var(--authc-accent-700));
+  border-color:color-mix(in oklab, var(--authc-accent-700) 70%, black);
+  box-shadow:0 12px 26px color-mix(in oklab, var(--authc-accent) 30%, black);
+}
+@supports not (color: color-mix(in oklab, red 50%, blue)) {
+  .authc-btn--accent{ border-color:rgba(0,0,0,.25); box-shadow:0 12px 26px rgba(227,6,19,.30) }
+}
+.authc-btn--accent:hover{ filter:brightness(1.05) }
+
+.authc-btn--ghost{
+  background:#fff; color:var(--authc-text);
+  border:1px solid var(--authc-border);
+}
+.authc-btn--ghost:hover{
+  background:#f6f7fb;
+  box-shadow:0 0 0 3px var(--authc-ring-weak);
+}
+
+/* Botón loading */
+.authc-btn.is-loading{ position:relative; pointer-events:none; filter:saturate(.9) }
+.authc-btn.is-loading::after{
+  content:""; position:absolute; width:18px; height:18px; border-radius:50%;
+  border:3px solid rgba(255,255,255,.55); border-top-color: rgba(255,255,255,1);
+  inset:0; margin:auto;                  /* centrado */
+  animation:authc-spin .8s linear infinite;
+}
+@keyframes authc-spin{ to{ transform:rotate(360deg) } }
+
+/* ================== ESTADOS / MENSAJES ================== */
+.authc-help{ text-align:center; color:var(--authc-muted); font-size:12px }
+
+.authc-error{
+  padding:10px 12px; border-radius:12px; font-size:13px;
+  color:#b91c1c; background:rgba(220,38,38,.06);
+  border:1px solid rgba(220,38,38,.28);
+}
+.authc-success{
+  padding:10px 12px; border-radius:12px; font-size:13px;
+  color:#065f46; background:rgba(16,185,129,.08);
+  border:1px solid rgba(16,185,129,.28);
+}
+
+.authc-row{
+  display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:2px;
+}
+.authc-link{ color:var(--authc-primary); text-decoration:none; font-weight:700 }
+.authc-link:hover{ text-decoration:underline }
+
+/* ================== DARK ================== */
+.authc-dark{
+  --authc-bg:#0b1220; --authc-card:#0f172a; --authc-text:#e5e7eb; --authc-muted:#9ca3af;
+  --authc-border:#1f2937; --authc-shadow:0 18px 36px rgba(0,0,0,.35);
+  --authc-primary:#5fa4ff; --authc-primary-700:#3b78d6;
+  --authc-accent:#ff5460;  --authc-accent-700:#e63b47;
+  --authc-ring: color-mix(in oklab, var(--authc-primary) 55%, var(--authc-accent) 45%);
+  --authc-ring-weak: color-mix(in oklab, var(--authc-ring) 26%, transparent);
+}
+
+/* Utilidad accesible opcional */
+.sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+}

@@ -1,0 +1,215 @@
+/* =========================================================
+   GraficoBase – Tema oscuro cuidado, accesible y agradable
+   (Drop-in replacement)
+   ========================================================= */
+.grafico-base{
+  /* Paleta */
+  --bg:#0b1220;
+  --card:#0e1525;
+  --text:#e6eef8;
+  --muted:#a5b4c7;
+  --accent:#22c55e;
+  --accent-600:#16a34a;
+  --border:rgba(255,255,255,.10);
+  --ring:rgba(34,197,94,.28);
+
+  /* Diseño */
+  --radius:14px;
+  --radius-lg:18px;
+  --space-1:8px;
+  --space-2:12px;
+  --space-3:16px;
+  --space-4:20px;
+
+  /* Sombras */
+  --shadow-1:0 4px 14px rgba(0,0,0,.25);
+  --shadow-2:0 10px 28px rgba(0,0,0,.30);
+
+  /* Tipografía y suavizado */
+  padding:var(--space-3);
+  background:var(--bg);
+  color:var(--text);
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+
+/* ====== Contenedores y tarjetas ====== */
+.grafico-base .br-grid{
+  display:block; /* pila vertical por defecto */
+}
+
+.grafico-base .br-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:var(--space-3);
+  margin-bottom:var(--space-3);
+  box-shadow:var(--shadow-1);
+  transition:box-shadow .2s ease, transform .08s ease, border-color .2s ease;
+}
+.grafico-base .br-card:hover{
+  box-shadow:var(--shadow-2);
+  border-color:rgba(255,255,255,.14);
+}
+.grafico-base .br-card:active{
+  transform:translateY(1px);
+}
+
+.grafico-base .br-card-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:var(--space-2);
+  margin-bottom:var(--space-2);
+  border-bottom:1px solid var(--border);
+  padding-bottom:calc(var(--space-2) - 2px);
+}
+.grafico-base .br-card-head h1,
+.grafico-base .br-card-head h2,
+.grafico-base .br-card-head h3{
+  margin:0;
+  font-weight:700;
+  letter-spacing:.2px;
+}
+
+/* ====== Toolbar / filtros ====== */
+.grafico-base .br-toolbar{
+  display:grid;
+  gap:var(--space-2);
+  margin-bottom:var(--space-3);
+}
+
+/* Auto-ajuste de columnas cómodas */
+.grafico-base .br-toolbar.gb-cols{
+  grid-template-columns:repeat(6, minmax(180px,1fr));
+}
+@media (max-width:1200px){
+  .grafico-base .br-toolbar.gb-cols{
+    grid-template-columns:repeat(3, minmax(180px,1fr));
+  }
+}
+@media (max-width:768px){
+  .grafico-base .br-toolbar.gb-cols{ grid-template-columns:1fr; }
+}
+
+/* Inputs y selects */
+.grafico-base .br-input,
+.grafico-base .br-select{
+  width:100%;
+  min-height:42px;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:#0a1220;
+  color:var(--text);
+  outline:none;
+  transition:border-color .2s ease, box-shadow .2s ease, background .2s ease;
+}
+.grafico-base .br-input::placeholder{ color:var(--muted); }
+
+/* Foco accesible (solo cuando es visible) */
+.grafico-base .br-input:focus-visible,
+.grafico-base .br-select:focus-visible{
+  border-color:var(--accent);
+  box-shadow:0 0 0 4px var(--ring);
+}
+
+/* Botones */
+.grafico-base .br-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-height:42px;
+  padding:10px 14px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:#0a1220;
+  color:var(--text);
+  cursor:pointer;
+  font-weight:700;
+  letter-spacing:.2px;
+  transition:filter .15s ease, transform .05s ease, background .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.grafico-base .br-btn:hover{ filter:brightness(1.06); }
+.grafico-base .br-btn:active{ transform:translateY(1px); }
+.grafico-base .br-btn:disabled{ opacity:.6; cursor:not-allowed; }
+
+.grafico-base .br-btn.primary{
+  background:var(--accent);
+  border-color:transparent;
+  color:#0b0f10;
+}
+.grafico-base .br-btn.primary:hover{ background:var(--accent-600); }
+.grafico-base .br-btn.primary:focus-visible{
+  box-shadow:0 0 0 4px var(--ring);
+}
+
+/* Variante sutil */
+.grafico-base .br-btn.ghost{
+  background:transparent;
+  border-color:var(--border);
+}
+.grafico-base .br-btn.ghost:hover{
+  background:rgba(255,255,255,.03);
+}
+
+/* ====== Recharts – tema oscuro + fixes SVG ====== */
+
+/* Grid, ejes y leyenda */
+.grafico-base .recharts-cartesian-grid line{ stroke:rgba(255,255,255,.12); }
+.grafico-base .recharts-cartesian-axis-tick text{ fill:var(--muted) !important; }
+.grafico-base .recharts-legend-item-text{ color:var(--muted) !important; }
+.grafico-base .recharts-legend-item{ cursor:pointer; }
+.grafico-base .recharts-legend-item:hover .recharts-legend-item-text{ color:#fff !important; }
+
+/* Tooltip con blur suave */
+.grafico-base .recharts-default-tooltip{
+  background:rgba(16,26,51,.9) !important;
+  border:1px solid var(--border) !important;
+  color:#fff !important;
+  border-radius:10px !important;
+  box-shadow:0 10px 24px rgba(0,0,0,.35) !important;
+  backdrop-filter:blur(6px);
+}
+.grafico-base .recharts-tooltip-wrapper *{ color:#fff !important; }
+.grafico-base .recharts-tooltip-label{ color:#e5e7eb !important; }
+.grafico-base .recharts-tooltip-item{ color:#fff !important; }
+
+/* Textos SVG: usar fill (no color) como fallback general */
+.grafico-base .recharts-text tspan{ fill:currentColor; } /* hereda del contenedor */
+.grafico-base .recharts-wrapper text{ fill:var(--muted); } /* FIX: antes usaba color, no aplica en SVG */
+.grafico-base .recharts-pie .recharts-pie-label-text{ fill:#e5e7eb !important; }
+
+/* Cursor / crosshair con contraste leve */
+.grafico-base .recharts-tooltip-cursor{ fill:rgba(255,255,255,.06) !important; }
+
+/* ====== Utilidades ====== */
+.grafico-base .muted{ color:var(--muted); }
+.grafico-base .br-divider{
+  height:1px; background:var(--border); border:0; margin:var(--space-3) 0;
+}
+
+/* Scrollbar sutil (WebKit) */
+.grafico-base ::-webkit-scrollbar{ height:10px; width:10px; }
+.grafico-base ::-webkit-scrollbar-thumb{
+  background:rgba(255,255,255,.14);
+  border-radius:20px;
+  border:2px solid transparent;
+  background-clip:padding-box;
+}
+.grafico-base ::-webkit-scrollbar-thumb:hover{ background:rgba(255,255,255,.20); }
+.grafico-base ::-webkit-scrollbar-track{ background:transparent; }
+
+/* ====== Preferencias de movimiento ====== */
+@media (prefers-reduced-motion: reduce){
+  .grafico-base *,
+  .grafico-base *::before,
+  .grafico-base *::after{
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+    scroll-behavior:auto !important;
+  }
+}
