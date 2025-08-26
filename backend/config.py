@@ -6,7 +6,7 @@ class Config:
     
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "DATABASE_URL",
-        "mysql+pymysql://root:root@localhost:3307/auto_sap?charset=utf8mb4",
+        "mysql+pymysql://andres:afH+hUTs2byhra5aGeyKKEAULsYPq+Tk@localhost:3306/auto_sap?charset=utf8mb4",
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True, "pool_recycle": 280}

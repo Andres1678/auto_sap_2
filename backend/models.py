@@ -26,18 +26,18 @@ class Modulo(db.Model):
     __tablename__ = 'modulo'
 
     id = db.Column(db.Integer, primary_key=True)
-    # Único recomendado para evitar duplicados de nombres
+
     nombre = db.Column(db.String(100), nullable=False, unique=True)
 
     # Relación 1-N "antigua" (modulo_id en Consultor) -> la dejamos por compatibilidad
     consultores_default = relationship('Consultor', backref='modulo', lazy=True)
 
-    # Relación M2M "nueva": consultores con este módulo
+    
     consultores_multi = relationship(
         'Consultor',
         secondary=consultor_modulo,
         lazy='dynamic',
-        backref=backref('modulos', lazy='joined')  # <- Consultor.modulos (lista de Modulo)
+        backref=backref('modulos', lazy='joined')  
     )
 
     def __repr__(self):
