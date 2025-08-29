@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Modal from "react-modal";
 import * as XLSX from "xlsx";
+import { jfetch } from "./lib/api";          
 import "./BaseRegistros.css";
 
 Modal.setAppElement("#root");
-
-const API = "http://localhost:5000";
 
 const COLUMNS = [
   { key: "fecha",              label: "Fecha",               w: 11 },
@@ -30,7 +29,6 @@ const COLUMNS = [
   { key: "equipo",             label: "Equipo",              w: 14 },
 ];
 
-// Sanitiza saltos de línea y espacios raros al pintar
 function formatCell(key, value) {
   if (value == null) return "";
   let text = String(value);
@@ -40,7 +38,7 @@ function formatCell(key, value) {
   return text;
 }
 
-// Normaliza una fecha v a 'YYYY-MM-DD' (acepta Date o string)
+
 function ensureISO(v) {
   if (!v && v !== 0) return "";
   if (v instanceof Date) {
@@ -50,9 +48,7 @@ function ensureISO(v) {
     return `${y}-${m}-${d}`;
   }
   const s = String(v).trim();
-  // si ya viene ISO yyyy-mm-dd
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  // d/m/Y o d-m-Y
   const m = s.match(/^\s*(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\s*$/);
   if (m) {
     const d = String(Math.max(1, Math.min(31, parseInt(m[1], 10)))).padStart(2, "0");
@@ -97,25 +93,25 @@ export default function BaseRegistros() {
   const rol = (user?.rol || user?.user?.rol || "").toUpperCase();
   const isAdmin = rol === "ADMIN";
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const url = new URL(`${API}/api/base-registros`);
-      url.searchParams.set("page", String(page));
-      url.searchParams.set("page_size", String(pageSize));
-      if (q) url.searchParams.set("q", q);
-      if (modulo) url.searchParams.set("modulo", modulo);
-      if (cliente) url.searchParams.set("cliente", cliente);
-      if (consultor) url.searchParams.set("consultor", consultor);
-      if (fdesde) url.searchParams.set("fecha_desde", fdesde);
-      if (fhasta) url.searchParams.set("fecha_hasta", fhasta);
+      const qs = new URLSearchParams();
+      qs.set("page", String(page));
+      qs.set("page_size", String(pageSize));
+      if (q) qs.set("q", q);
+      if (modulo) qs.set("modulo", modulo);
+      if (cliente) qs.set("cliente", cliente);
+      if (consultor) qs.set("consultor", consultor);
+      if (fdesde) qs.set("fecha_desde", fdesde);
+      if (fhasta) qs.set("fecha_hasta", fhasta);
 
-      const res = await fetch(url, { headers: { "X-User-Rol": rol } });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.mensaje || `HTTP ${res.status}`);
-      }
-      const data = await res.json();
+      const res = await jfetch(`/base-registros?${qs.toString()}`, {
+        headers: { "X-User-Rol": rol },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
       setRows(Array.isArray(data?.data) ? data.data : []);
       setTotal(Number(data?.total || 0));
     } catch (e) {
@@ -125,12 +121,11 @@ export default function BaseRegistros() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, q, modulo, cliente, consultor, fdesde, fhasta, rol]);
 
   useEffect(() => {
     if (isAdmin) fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, page, pageSize]);
+  }, [isAdmin, fetchData]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const canPrev = page > 1;
@@ -154,12 +149,10 @@ export default function BaseRegistros() {
     if (!file) return;
     try {
       const buf = await file.arrayBuffer();
-      // cellDates:true + dateNF -> XLSX normaliza a Date y lo exporta en 'yyyy-mm-dd'
       const wb = XLSX.read(buf, { type: "array", cellDates: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw = XLSX.utils.sheet_to_json(ws, { defval: null, raw: false, dateNF: "yyyy-mm-dd" });
 
-      // Limpia filas vacías y fuerza FECHA a ISO (por si quedó texto)
       const nonEmpty = raw
         .map((row) => {
           const r = { ...row };
@@ -175,7 +168,7 @@ export default function BaseRegistros() {
       setUploadCols(nonEmpty.length ? Object.keys(nonEmpty[0]) : []);
       setUploadProgress({ done: 0, total: nonEmpty.length });
       setUploadOpen(true);
-      fileInputRef.current.__lastRows = nonEmpty;   // guardo las filas ya normalizadas
+      fileInputRef.current.__lastRows = nonEmpty;
     } catch (err) {
       console.error("Error leyendo Excel:", err);
       alert("No se pudo leer el archivo. Asegúrate de que sea .xlsx o .xls");
@@ -196,16 +189,13 @@ export default function BaseRegistros() {
     try {
       for (let i = 0; i < allRows.length; i += BATCH) {
         const slice = allRows.slice(i, i + BATCH);
-        const url = i === 0
-          ? `${API}/api/cargar-registros-excel?replace=1`
-          : `${API}/api/cargar-registros-excel`;
+        const path = i === 0
+          ? "/cargar-registros-excel?replace=1"
+          : "/cargar-registros-excel";
 
-        const res = await fetch(url, {
+        const res = await jfetch(path, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-User-Rol": rol,
-          },
+          headers: { "X-User-Rol": rol },
           body: JSON.stringify({ registros: slice }),
         });
 
@@ -365,4 +355,3 @@ export default function BaseRegistros() {
     </div>
   );
 }
-

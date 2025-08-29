@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import Modal from 'react-modal';
 import Swal from 'sweetalert2';
 import './Registro.css';
+import { jfetch } from './lib/api'; 
 
 Modal.setAppElement('#root');
 
@@ -28,7 +29,6 @@ function initRegistro() {
   };
 }
 
-/* ===== Helpers ===== */
 const parseHHMM = (s) => {
   if (!s || typeof s !== 'string' || !/^\d{2}:\d{2}$/.test(s)) return null;
   const [h, m] = s.split(':').map(Number);
@@ -80,12 +80,17 @@ function buildLocalResumen(registros, nombre) {
     estado: total >= 9 ? 'Al día' : 'Incompleto'
   }));
 }
-/* módulos desde userData */
+
+const normalizeModulos = (arr) => (
+  Array.isArray(arr)
+    ? arr.map(m => (typeof m === 'string' ? m : (m?.nombre ?? String(m))))
+    : []
+);
 const getModulosLocal = (u) => {
-  const arr = u?.modulos ?? u?.user?.modulos;
-  if (Array.isArray(arr) && arr.length) return arr;
+  const arr = normalizeModulos(u?.modulos ?? u?.user?.modulos);
+  if (arr.length) return arr;
   const single = u?.modulo ?? u?.user?.modulo;
-  return single ? [single] : [];
+  return single ? normalizeModulos([single]) : [];
 };
 
 const Registro = ({ userData }) => {
@@ -102,7 +107,6 @@ const Registro = ({ userData }) => {
   const [filtroTarea, setFiltroTarea] = useState('');
   const [filtroConsultor, setFiltroConsultor] = useState('');
 
-  // Usuario
   const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
   const rol = (userData?.rol ?? userData?.user?.rol);
   const nombreUser = (userData?.nombre ?? userData?.user?.nombre) || '';
@@ -110,11 +114,9 @@ const Registro = ({ userData }) => {
   const equipoUser = (userData?.equipo ?? userData?.user?.equipo) || '';
   const usuarioLogin = (userData?.usuario ?? userData?.user?.usuario) || '';
 
-  // ====== Reglas de equipo (tabla vs formulario) ======
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
 
-  // El ADMIN puede cambiar la vista de la TABLA siempre.
   const initialVista = () => {
     const persisted = localStorage.getItem('equipoView');
     if (persisted === 'BASIS' || persisted === 'FUNCIONAL') return persisted;
@@ -123,23 +125,15 @@ const Registro = ({ userData }) => {
   const [vistaEquipo, setVistaEquipo] = useState(initialVista);
   useEffect(() => { localStorage.setItem('equipoView', vistaEquipo); }, [vistaEquipo]);
 
-  // Tabla: usa toggle si ADMIN, si no, el del usuario
   const isBASISTable = isAdmin ? (vistaEquipo === 'BASIS') : (userEquipoUpper === 'BASIS');
   const isFUNCIONALTable = !isBASISTable;
 
-  // Formulario:
-  // - Si ADMIN con equipo BASIS o FUNCIONAL asignado -> el form se bloquea a ese equipo.
-  // - Si ADMIN TRANSVERSAL (o cualquier otro) -> el form sigue el toggle.
   const adminBloqueadoPorEquipo =
     isAdmin && (userEquipoUpper === 'BASIS' || userEquipoUpper === 'FUNCIONAL');
   const equipoFormulario = adminBloqueadoPorEquipo
     ? userEquipoUpper
     : (isAdmin ? vistaEquipo : (userEquipoUpper === 'BASIS' ? 'BASIS' : 'FUNCIONAL'));
 
-  const isBASISForm = (equipoFormulario === 'BASIS');
-  const isFUNCIONALForm = (equipoFormulario === 'FUNCIONAL');
-
-  // Módulos
   const [modulos, setModulos] = useState(getModulosLocal(userData));
   const [moduloElegido, setModuloElegido] = useState('');
   useEffect(() => {
@@ -148,23 +142,23 @@ const Registro = ({ userData }) => {
     setModuloElegido(locals.length === 1 ? locals[0] : '');
   }, [userData]);
 
-  // Si no llegaron módulos, intenta obtenerlos al abrir el modal
+  
   useEffect(() => {
     const needFetch = modalIsOpen && usuarioLogin && modulos.length <= 1;
     if (!needFetch) return;
     (async () => {
       try {
-        const r = await fetch(`http://localhost:5000/api/consultores/modulos?usuario=${encodeURIComponent(usuarioLogin)}`);
+        const r = await jfetch(`/consultores/modulos?usuario=${encodeURIComponent(usuarioLogin)}`);
         const j = await r.json().catch(()=>({}));
         if (r.ok && Array.isArray(j?.modulos) && j.modulos.length) {
-          setModulos(j.modulos);
-          if (j.modulos.length === 1) setModuloElegido(j.modulos[0]);
+          const normalized = normalizeModulos(j.modulos);
+          setModulos(normalized);
+          if (normalized.length === 1) setModuloElegido(normalized[0]);
         }
       } catch {}
     })();
   }, [modalIsOpen, usuarioLogin, modulos.length]);
 
-  // Catálogos
   const clientes = [
     'AIRE - Air-e','ALUMINA','ANTILLANA','AVIANCA','ANABA','CAMARA DE COMERCIO','CEET-EL TIEMPO',
     'CERAMICA ITALIA','CERESCOS','CLARO ANDINA','CLARO COLOMBIA','COLSUBSIDIO','COMFENALCO CARTAGENA',
@@ -187,18 +181,23 @@ const Registro = ({ userData }) => {
   const oncall = ['SI','NO','N/A'];
   const desborde = ['SI','NO','N/A'];
 
-  // Fetch de datos
-  const fetchRegistros = async () => {
+  
+  const fetchRegistros = useCallback(async () => {
     setError('');
     try {
-      const res = await fetch('http://localhost:5000/api/registros', {
-        method: isAdmin ? 'GET' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(isAdmin ? { 'X-User-Rol': 'ADMIN' } : {})
-        },
-        ...(isAdmin ? {} : { body: JSON.stringify({ rol, nombre: nombreUser }) })
-      });
+      let res;
+      if (isAdmin) {
+        res = await jfetch('/registros', {
+          method: 'GET',
+          headers: { 'X-User-Rol': 'ADMIN' }
+        });
+      } else {
+        res = await jfetch('/registros', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rol, nombre: nombreUser })
+        });
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
       setRegistros(asArray(data));
@@ -206,12 +205,14 @@ const Registro = ({ userData }) => {
       setRegistros([]);
       setError(String(e.message || e));
     }
-  };
-  const fetchResumen = async () => {
+  }, [isAdmin, rol, nombreUser]);
+
+  
+  const fetchResumen = useCallback(async () => {
     if (!isAdmin) { setResumen([]); return; }
     setError('');
     try {
-      const res = await fetch('http://localhost:5000/api/resumen-horas', {
+      const res = await jfetch('/resumen-horas', {
         headers: { 'X-User-Rol': 'ADMIN' }
       });
       const data = await res.json().catch(() => ({}));
@@ -221,22 +222,22 @@ const Registro = ({ userData }) => {
       setResumen([]);
       setError(String(e.message || e));
     }
-  };
+  }, [isAdmin]);
+
   useEffect(() => {
     const hasId = (userData && (userData.id || userData?.user?.id));
     if (hasId) {
       fetchRegistros();
       fetchResumen();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userData]);
+  }, [userData, fetchRegistros, fetchResumen]);
 
-  // Filtros/Resumen memo
   const consultoresUnicos = useMemo(() =>
     Array.isArray(registros)
       ? [...new Set(registros.map(r => r?.consultor).filter(Boolean))]
       : []
   , [registros]);
+
   const registrosFiltrados = useMemo(() => (
     Array.isArray(registros)
       ? registros.filter((r) => (
@@ -247,11 +248,12 @@ const Registro = ({ userData }) => {
         ))
       : []
   ), [registros, filtroFecha, filtroCliente, filtroTarea, filtroConsultor]);
+
   const resumenVisible = useMemo(() => (
     isAdmin ? resumen : buildLocalResumen(registros, nombreUser)
   ), [isAdmin, resumen, registros, nombreUser]);
 
-  // Submit
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!registro.horaInicio || !registro.horaFin) {
@@ -266,6 +268,7 @@ const Registro = ({ userData }) => {
       registro.horaFin,
       /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
     );
+
     const moduloFinal = (moduloElegido || modulos[0] || moduloUser || '').trim();
 
     const base = {
@@ -278,9 +281,8 @@ const Registro = ({ userData }) => {
       rol
     };
 
-    // Limpia campos de BASIS si el formulario es FUNCIONAL
     const payload = { ...base };
-    if (!isBASISForm) {
+    if (equipoFormulario !== 'BASIS') {
       delete payload.nroCasoEscaladoSap;
       delete payload.actividadMalla;
       delete payload.oncall;
@@ -288,11 +290,9 @@ const Registro = ({ userData }) => {
     }
 
     try {
-      const url = modoEdicion
-        ? `http://localhost:5000/api/editar-registro/${registro.id}`
-        : 'http://localhost:5000/api/registrar-hora';
+      const path = modoEdicion ? `/editar-registro/${registro.id}` : '/registrar-hora';
       const method = modoEdicion ? 'PUT' : 'POST';
-      const resp = await fetch(url, {
+      const resp = await jfetch(path, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -335,7 +335,7 @@ const Registro = ({ userData }) => {
       cancelButtonText: 'Cancelar',
     });
     if (res.isConfirmed) {
-      const resp = await fetch(`http://localhost:5000/api/eliminar-registro/${id}`, {
+      const resp = await jfetch(`/eliminar-registro/${id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rol, nombre: nombreUser })
@@ -361,7 +361,7 @@ const Registro = ({ userData }) => {
 
   const toggleBloqueado = async (id) => {
     try {
-      const resp = await fetch(`http://localhost:5000/api/toggle-bloqueado/${id}`, {
+      const resp = await jfetch(`/toggle-bloqueado/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rol })
@@ -387,7 +387,7 @@ const Registro = ({ userData }) => {
                 type="button"
                 className={`team-btn ${isBASISTable ? 'is-active' : ''}`}
                 onClick={() => setVistaEquipo('BASIS')}
-                aria-selected={isBASISTable}
+                aria-pressed={isBASISTable}
               >
                 BASIS
               </button>
@@ -395,7 +395,7 @@ const Registro = ({ userData }) => {
                 type="button"
                 className={`team-btn ${isFUNCIONALTable ? 'is-active' : ''}`}
                 onClick={() => setVistaEquipo('FUNCIONAL')}
-                aria-selected={isFUNCIONALTable}
+                aria-pressed={isFUNCIONALTable}
               >
                 FUNCIONAL
               </button>
@@ -550,8 +550,8 @@ const Registro = ({ userData }) => {
                   onChange={(e) => setRegistro({ ...registro, tiempoFacturable: e.target.value })}
                 />
 
-                {/* === SOLO BASIS (en FORM segun equipoFormulario) === */}
-                {isBASISForm && (
+                {/* SOLO BASIS */}
+                {equipoFormulario === 'BASIS' && (
                   <>
                     <input
                       type="text"
@@ -582,9 +582,6 @@ const Registro = ({ userData }) => {
                     </select>
                   </>
                 )}
-
-                {/* === SOLO FUNCIONAL: añade aquí si hay campos exclusivos === */}
-                {isFUNCIONALForm && <></>}
 
                 <textarea
                   placeholder="Descripción"

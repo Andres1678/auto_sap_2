@@ -2,22 +2,17 @@ import React, { useState } from 'react';
 import Swal from 'sweetalert2';
 import './Login.css';
 import coraLogo from './assets/cora-logo.png';
-
-const API_BASE = 'http://localhost:5000';
+import { jpost, jsonOrThrow } from './lib/api'; // 👈 helpers
 
 const Login = ({ onLoginSuccess }) => {
-  const [usuario, setUsuario] = useState('');
+  const [usuario, setUsuario]   = useState('');
   const [password, setPassword] = useState('');
-  const [horario, setHorario] = useState('');
+  const [horario, setHorario]   = useState('');
+  const [loading, setLoading]   = useState(false);
 
   const opcionesHorario = [
-    '07:00-17:00',
-    '08:00-18:00',
-    '07:00-16:00',
-    '08:00-12:00',
-    '06:00-14:00',
-    '14:00-22:00',
-    '22:00-06:00'
+    '07:00-17:00','08:00-18:00','07:00-16:00','08:00-12:00',
+    '06:00-14:00','14:00-22:00','22:00-06:00'
   ];
 
   const handleLogin = async (e) => {
@@ -26,34 +21,31 @@ const Login = ({ onLoginSuccess }) => {
       Swal.fire({ icon: 'warning', title: 'Seleccione un horario' });
       return;
     }
-
+    setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usuario, password, horario }),
+      // 👇 OJO: solo '/login' (el helper añade el prefijo correcto)
+      const res   = await jpost('/login', { usuario, password, horario });
+      const data  = await jsonOrThrow(res);
+
+      if (data.token) localStorage.setItem('token', data.token);
+
+      const user = data.user || data;
+      try {
+        localStorage.setItem('user', JSON.stringify(user));
+        const h = user?.horarioSesion || horario || user?.horario;
+        if (h) localStorage.setItem('horarioSesion', h);
+      } catch {}
+
+      Swal.fire({ icon: 'success', title: 'Login exitoso', timer: 1000, showConfirmButton: false });
+      onLoginSuccess?.(user);
+    } catch (err) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: err?.message || 'No se pudo conectar con el servidor'
       });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        if (data.token) localStorage.setItem('token', data.token);
-
-        // Guardar user completo y horario de la sesión
-        const user = data.user || data;
-        try {
-          localStorage.setItem('user', JSON.stringify(user));
-          const h = user?.horarioSesion || horario;
-          if (h) localStorage.setItem('horarioSesion', h);
-        } catch {}
-
-        Swal.fire({ icon: 'success', title: 'Login exitoso', timer: 1000, showConfirmButton: false });
-        onLoginSuccess(user);
-      } else {
-        Swal.fire({ icon: 'error', title: 'Error', text: data.mensaje });
-      }
-    } catch {
-      Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo conectar con el servidor' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -114,8 +106,8 @@ const Login = ({ onLoginSuccess }) => {
           </div>
 
           <div className="authc-actions">
-            <button className="authc-btn authc-btn--primary" type="submit">
-              Ingresar
+            <button className="authc-btn authc-btn--primary" type="submit" disabled={loading}>
+              {loading ? 'Ingresando…' : 'Ingresar'}
             </button>
           </div>
 
@@ -127,3 +119,4 @@ const Login = ({ onLoginSuccess }) => {
 };
 
 export default Login;
+

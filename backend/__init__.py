@@ -1,3 +1,4 @@
+import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_migrate import Migrate
@@ -5,7 +6,6 @@ from flask_migrate import Migrate
 from backend.config import Config
 from backend.models import db, Modulo, Consultor
 
-# Lista de módulos “semilla”
 DEFAULT_MODULES = [
     "ABAP","BASIS","BI","BO","BCP","BW","CO","ECP","FI","MM",
     "PI","PO","PP","PS","QM","ROLES Y PERFILES","SD","SSFF",
@@ -17,37 +17,38 @@ def create_app(config_object=Config):
     app = Flask(__name__)
     app.config.from_object(config_object)
 
-    # ---- Ajustes MariaDB/MySQL recomendados ----
-    app.config.setdefault("SQLALCHEMY_ENGINE_OPTIONS", {
-        "pool_pre_ping": True,
-        "pool_recycle": 280,
-    })
+   
+    app.config.setdefault("SQLALCHEMY_ENGINE_OPTIONS", {"pool_pre_ping": True, "pool_recycle": 280})
     app.config.setdefault("JSON_SORT_KEYS", False)
 
-    # ---- DB + Migrations ----
+    
     db.init_app(app)
     Migrate(app, db, compare_type=True)
 
-    # ---- CORS ----
-    CORS(
-        app,
-        resources={r"/api/*": {"origins": [
-            "http://localhost:3000", "http://127.0.0.1:3000",
-            "http://localhost:5173", "http://127.0.0.1:5173"
-        ]}},
-        supports_credentials=True,
-    )
+    
+    allowed = {
+        os.getenv("FRONTEND_ORIGIN"),                
+        "http://localhost:3000", "http://127.0.0.1:3000",
+        "http://localhost:5173", "http://127.0.0.1:5173",
+    }
+    allowed = [o for o in allowed if o]  # quita None
+    
+    CORS(app, resources={r"/api/*": {"origins": allowed}}, supports_credentials=False)
 
-    # ---- Blueprints ----
-    from .routes import bp
-    app.register_blueprint(bp)
+    
+    from backend.routes import bp as routes_bp
+    app.register_blueprint(routes_bp)
 
-    # ---- Salud ----
-    @app.route("/")
+    
+    @app.get("/_healthz")
+    def _healthz():
+        return "ok", 200
+
+    
+    @app.get("/")
     def home():
         return "API Consultores corriendo 🟢"
 
-    # ---- Error handlers ----
     @app.errorhandler(404)
     def not_found(_e):
         return jsonify({"mensaje": "Ruta no encontrada"}), 404
@@ -56,7 +57,7 @@ def create_app(config_object=Config):
     def server_error(_e):
         return jsonify({"mensaje": "Error interno del servidor"}), 500
 
-    # ---- Init/seed y backfill multi-módulo ----
+    
     with app.app_context():
         db.create_all()
 
@@ -64,14 +65,13 @@ def create_app(config_object=Config):
             db.session.bulk_save_objects([Modulo(nombre=n) for n in DEFAULT_MODULES])
             db.session.commit()
 
-        # Backfill: si un consultor tiene modulo (FK) y no está en su lista M2M, añadirlo
+        
         try:
             changed = False
-            consultores = Consultor.query.all()
-            for c in consultores:
+            for c in Consultor.query.all():
                 if getattr(c, "modulo", None) and hasattr(c, "modulos"):
                     nombres = {m.nombre for m in (c.modulos or []) if m}
-                    if c.modulo.nombre and c.modulo.nombre not in nombres:
+                    if c.modulo and c.modulo.nombre and c.modulo.nombre not in nombres:
                         c.modulos.append(c.modulo)
                         changed = True
             if changed:
@@ -79,10 +79,10 @@ def create_app(config_object=Config):
         except Exception:
             db.session.rollback()
 
+    
     @app.cli.command("seed")
     def seed():
         created = 0
-
         if not Modulo.query.first():
             db.session.bulk_save_objects([Modulo(nombre=n) for n in DEFAULT_MODULES])
             created += len(DEFAULT_MODULES)

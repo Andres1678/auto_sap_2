@@ -3,6 +3,7 @@ from backend.models import db, Modulo, Consultor, Registro, BaseRegistro, Login
 from datetime import datetime, timedelta, time
 from functools import wraps
 from sqlalchemy import or_, text, func
+from sqlalchemy.exc import IntegrityError
 import unicodedata, re
 from collections import defaultdict
 
@@ -172,6 +173,25 @@ def horario_consultor():
     ]
     return jsonify({'horario': consultor.horario, 'opciones': opciones})
 
+# ========= Helpers anti-NULL para registrar/editar =========
+def _norm_default(v, default):
+    """Devuelve un string seguro: si v es None/''/'null'/'n/d' -> default."""
+    if v is None:
+        return default
+    s = str(v).strip()
+    if s == "" or s.lower() in ("null", "none", "n/d"):
+        return default
+    return s
+
+def _basis_defaults_from_payload(data: dict):
+    """Lee posibles claves camelCase/snake_case y garantiza valores NO nulos."""
+    return {
+        "actividad_malla": _norm_default(data.get("actividadMalla") or data.get("actividad_malla"), "N/APLICA"),
+        "oncall":          _norm_default(data.get("oncall"), "N/A"),
+        "desborde":        _norm_default(data.get("desborde"), "N/A"),
+        "nro_escalado":    _norm_default(data.get("nroCasoEscaladoSap") or data.get("nro_caso_escalado"), ""),
+    }
+
 # ========= Registrar hora =========
 @bp.route('/api/registrar-hora', methods=['POST'])
 def registrar_hora():
@@ -180,29 +200,60 @@ def registrar_hora():
     if not consultor:
         return jsonify({'mensaje': 'Consultor no encontrado'}), 404
 
-    nuevo = Registro(
-        fecha=data['fecha'],
-        cliente=data['cliente'],
-        nro_caso_cliente=data['nroCasoCliente'],
-        nro_caso_interno=data['nroCasoInterno'],
-        nro_caso_escalado=data.get('nroCasoEscaladoSap'),
-        tipo_tarea=data['tipoTarea'],
-        hora_inicio=data['horaInicio'],
-        hora_fin=data['horaFin'],
-        tiempo_invertido=data['tiempoInvertido'],
-        actividad_malla=data.get('actividadMalla'),
-        oncall=data.get('oncall'),
-        desborde=data.get('desborde'),
-        tiempo_facturable=float(data['tiempoFacturable']) if str(data.get('tiempoFacturable', '')).strip() != '' else 0.0,
-        horas_adicionales=data.get('horasAdicionales'),
-        descripcion=data['descripcion'],
-        total_horas=data['totalHoras'],
-        modulo=data.get('modulo') or (consultor.modulo.nombre if consultor.modulo else None),
-        consultor_id=consultor.id
-    )
-    db.session.add(nuevo)
-    db.session.commit()
-    return jsonify({'mensaje': 'Registro guardado correctamente'}), 201
+    # Defaults anti-NULL para campos BASIS
+    bd = _basis_defaults_from_payload(data)
+    modulo_final = (data.get('modulo')
+                    or (consultor.modulo.nombre if consultor.modulo else 'SIN MODULO'))
+
+    try:
+        nuevo = Registro(
+            fecha=data['fecha'],
+            cliente=data['cliente'],
+            nro_caso_cliente=_norm_default(data.get('nroCasoCliente'), ''),
+            nro_caso_interno=_norm_default(data.get('nroCasoInterno'), ''),
+            nro_caso_escalado=bd["nro_escalado"],
+            tipo_tarea=data['tipoTarea'],
+            hora_inicio=data['horaInicio'],
+            hora_fin=data['horaFin'],
+            tiempo_invertido=data['tiempoInvertido'],
+            actividad_malla=bd["actividad_malla"],  # <- nunca None
+            oncall=bd["oncall"],                    # <- nunca None
+            desborde=bd["desborde"],                # <- nunca None
+            tiempo_facturable=(
+                float(data['tiempoFacturable'])
+                if str(data.get('tiempoFacturable', '')).strip() != '' else 0.0
+            ),
+            horas_adicionales=_norm_default(data.get('horasAdicionales'), 'No'),
+            descripcion=_norm_default(data.get('descripcion'), ''),
+            total_horas=data['totalHoras'],
+            modulo=modulo_final,
+            horario_trabajo=(getattr(consultor, 'horario', None)
+                             or data.get('horario_trabajo')
+                             or data.get('horarioTrabajo')),
+            consultor_id=consultor.id
+        )
+
+        # Cinturón y tirantes: revalidar antes de commit
+        if not nuevo.actividad_malla: nuevo.actividad_malla = "N/APLICA"
+        if not nuevo.oncall:          nuevo.oncall          = "N/A"
+        if not nuevo.desborde:        nuevo.desborde        = "N/A"
+
+        db.session.add(nuevo)
+        db.session.commit()
+        return jsonify({'mensaje': 'Registro guardado correctamente'}), 201
+
+    except IntegrityError as e:
+        db.session.rollback()
+        app.logger.exception("IntegrityError insertando registro. Payload saneado=%r", {
+            "actividad_malla": bd["actividad_malla"],
+            "oncall": bd["oncall"],
+            "desborde": bd["desborde"],
+        })
+        return jsonify({'mensaje': f'No se pudo guardar el registro (integridad): {e}'}), 400
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error insertando registro")
+        return jsonify({'mensaje': f'No se pudo guardar el registro: {e}'}), 500
 
 # ========= Registros (ADMIN ve todo; USER ve los suyos) =========
 @bp.route('/api/registros', methods=['GET', 'POST'])
@@ -282,26 +333,49 @@ def editar_registro(id):
     if rol != 'ADMIN' and (not registro.consultor or registro.consultor.nombre != (nombre or "")):
         return jsonify({'mensaje': 'No autorizado'}), 403
 
-    registro.fecha = data.get('fecha', registro.fecha)
-    registro.cliente = data.get('cliente', registro.cliente)
-    registro.nro_caso_cliente = data.get('nroCasoCliente', registro.nro_caso_cliente)
-    registro.nro_caso_interno = data.get('nroCasoInterno', registro.nro_caso_interno)
-    registro.nro_caso_escalado = data.get('nroCasoEscaladoSap', registro.nro_caso_escalado)
-    registro.tipo_tarea = data.get('tipoTarea', registro.tipo_tarea)
-    registro.hora_inicio = data.get('horaInicio', registro.hora_inicio)
-    registro.hora_fin = data.get('horaFin', registro.hora_fin)
-    registro.tiempo_invertido = data.get('tiempoInvertido', registro.tiempo_invertido)
-    registro.actividad_malla = data.get('actividadMalla', registro.actividad_malla)
-    registro.oncall = data.get('oncall', registro.oncall)
-    registro.desborde = data.get('desborde', registro.desborde)
-    registro.tiempo_facturable = data.get('tiempoFacturable', registro.tiempo_facturable)
-    registro.horas_adicionales = data.get('horasAdicionales', registro.horas_adicionales)
-    registro.descripcion = data.get('descripcion', registro.descripcion)
-    registro.total_horas = data.get('totalHoras', registro.total_horas)
-    registro.modulo = data.get('modulo', registro.modulo)
+    try:
+        bd = _basis_defaults_from_payload(data)
 
-    db.session.commit()
-    return jsonify({'mensaje': 'Registro actualizado'}), 200
+        registro.fecha = data.get('fecha', registro.fecha)
+        registro.cliente = data.get('cliente', registro.cliente)
+        registro.nro_caso_cliente = data.get('nroCasoCliente', registro.nro_caso_cliente)
+        registro.nro_caso_interno = data.get('nroCasoInterno', registro.nro_caso_interno)
+        if 'nroCasoEscaladoSap' in data or 'nro_caso_escalado' in data:
+            registro.nro_caso_escalado = bd["nro_escalado"]
+        registro.tipo_tarea = data.get('tipoTarea', registro.tipo_tarea)
+        registro.hora_inicio = data.get('horaInicio', registro.hora_inicio)
+        registro.hora_fin = data.get('horaFin', registro.hora_fin)
+        registro.tiempo_invertido = data.get('tiempoInvertido', registro.tiempo_invertido)
+
+        # Evitar NULLs siempre
+        if 'actividadMalla' in data or 'actividad_malla' in data:
+            registro.actividad_malla = bd["actividad_malla"]
+        if 'oncall' in data:
+            registro.oncall = bd["oncall"]
+        if 'desborde' in data:
+            registro.desborde = bd["desborde"]
+
+        registro.tiempo_facturable = data.get('tiempoFacturable', registro.tiempo_facturable)
+        registro.horas_adicionales = _norm_default(data.get('horasAdicionales', registro.horas_adicionales), 'No')
+        registro.descripcion = data.get('descripcion', registro.descripcion)
+        registro.total_horas = data.get('totalHoras', registro.total_horas)
+        registro.modulo = data.get('modulo', registro.modulo)
+
+        # Reforzar
+        if not registro.actividad_malla: registro.actividad_malla = "N/APLICA"
+        if not registro.oncall:          registro.oncall          = "N/A"
+        if not registro.desborde:        registro.desborde        = "N/A"
+
+        db.session.commit()
+        return jsonify({'mensaje': 'Registro actualizado'}), 200
+    except IntegrityError as e:
+        db.session.rollback()
+        app.logger.exception("IntegrityError actualizando registro id=%s", id)
+        return jsonify({'mensaje': f'No se pudo actualizar el registro (integridad): {e}'}), 400
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error actualizando registro id=%s", id)
+        return jsonify({'mensaje': f'No se pudo actualizar el registro: {e}'}), 500
 
 # ========= Toggle bloqueado =========
 @bp.route('/api/toggle-bloqueado/<int:id>', methods=['PUT'])
@@ -734,5 +808,3 @@ def listar_base_registros():
         'page': page,
         'page_size': page_size,
     })
-
-
