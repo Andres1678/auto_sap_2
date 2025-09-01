@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import Modal from 'react-modal';
 import Swal from 'sweetalert2';
 import './Registro.css';
-import { jfetch } from './lib/api'; 
+import { jfetch } from './lib/api';
 
 Modal.setAppElement('#root');
 
@@ -64,6 +64,7 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   return (start < inWorkStart || end > inWorkEnd) ? 'Sí' : 'No';
 };
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
+
 function buildLocalResumen(registros, nombre) {
   if (!Array.isArray(registros)) return [];
   const byFecha = new Map();
@@ -92,6 +93,45 @@ const getModulosLocal = (u) => {
   const single = u?.modulo ?? u?.user?.modulo;
   return single ? normalizeModulos([single]) : [];
 };
+
+
+const toSiNo = (v, def = 'No') => {
+  if (v === true) return 'Sí';
+  if (v === false) return 'No';
+  const s = String(v ?? '').toLowerCase();
+  if (s.startsWith('s')) return 'Sí';
+  if (s.startsWith('n')) return 'No';
+  return def;
+};
+
+const toBackendPayload = (p, { equipoFormulario, horarioUsuario, moduloFinal, rol }) => {
+  const actividadMallaFinal = (equipoFormulario === 'BASIS')
+    ? (p.actividadMalla || 'N/APLICA')   // nunca null
+    : 'N/APLICA';
+
+  return {
+    fecha: p.fecha,
+    cliente: p.cliente,
+    nro_caso_cliente: String(p.nroCasoCliente || '0'),
+    nro_caso_interno: String(p.nroCasoInterno || '0'),
+    nro_caso_escalado: p.nroCasoEscaladoSap || null,
+    tipo_tarea: p.tipoTarea,
+    hora_inicio: p.horaInicio,
+    hora_fin: p.horaFin,
+    tiempo_invertido: Number(p.tiempoInvertido || 0),
+    actividad_malla: actividadMallaFinal,
+    oncall: (equipoFormulario === 'BASIS') ? (p.oncall || null) : null,
+    desborde: (equipoFormulario === 'BASIS') ? (p.desborde || null) : null,
+    tiempo_facturable: Number(p.tiempoFacturable || 0),
+    horas_adicionales: toSiNo(p.horasAdicionales, 'No'),
+    descripcion: p.descripcion || '',
+    total_horas: Number(p.totalHoras || 0),
+    modulo: (p.modulo || moduloFinal || '').trim(),
+    horario_trabajo: /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null,
+    rol
+  };
+};
+/* ======================================================= */
 
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
@@ -143,21 +183,6 @@ const Registro = ({ userData }) => {
   }, [userData]);
 
   
-  useEffect(() => {
-    const needFetch = modalIsOpen && usuarioLogin && modulos.length <= 1;
-    if (!needFetch) return;
-    (async () => {
-      try {
-        const r = await jfetch(`/consultores/modulos?usuario=${encodeURIComponent(usuarioLogin)}`);
-        const j = await r.json().catch(()=>({}));
-        if (r.ok && Array.isArray(j?.modulos) && j.modulos.length) {
-          const normalized = normalizeModulos(j.modulos);
-          setModulos(normalized);
-          if (normalized.length === 1) setModuloElegido(normalized[0]);
-        }
-      } catch {}
-    })();
-  }, [modalIsOpen, usuarioLogin, modulos.length]);
 
   const clientes = [
     'AIRE - Air-e','ALUMINA','ANTILLANA','AVIANCA','ANABA','CAMARA DE COMERCIO','CEET-EL TIEMPO',
@@ -181,7 +206,6 @@ const Registro = ({ userData }) => {
   const oncall = ['SI','NO','N/A'];
   const desborde = ['SI','NO','N/A'];
 
-  
   const fetchRegistros = useCallback(async () => {
     setError('');
     try {
@@ -207,7 +231,6 @@ const Registro = ({ userData }) => {
     }
   }, [isAdmin, rol, nombreUser]);
 
-  
   const fetchResumen = useCallback(async () => {
     if (!isAdmin) { setResumen([]); return; }
     setError('');
@@ -253,7 +276,6 @@ const Registro = ({ userData }) => {
     isAdmin ? resumen : buildLocalResumen(registros, nombreUser)
   ), [isAdmin, resumen, registros, nombreUser]);
 
-  
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!registro.horaInicio || !registro.horaFin) {
@@ -281,13 +303,8 @@ const Registro = ({ userData }) => {
       rol
     };
 
-    const payload = { ...base };
-    if (equipoFormulario !== 'BASIS') {
-      delete payload.nroCasoEscaladoSap;
-      delete payload.actividadMalla;
-      delete payload.oncall;
-      delete payload.desborde;
-    }
+    
+    const payload = toBackendPayload(base, { equipoFormulario, horarioUsuario, moduloFinal, rol });
 
     try {
       const path = modoEdicion ? `/editar-registro/${registro.id}` : '/registrar-hora';

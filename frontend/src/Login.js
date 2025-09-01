@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Swal from 'sweetalert2';
 import './Login.css';
 import coraLogo from './assets/cora-logo.png';
-import { jpost, jsonOrThrow } from './lib/api'; // 👈 helpers
+import { jpost, jsonOrThrow } from './lib/api'; 
 
 const Login = ({ onLoginSuccess }) => {
   const [usuario, setUsuario]   = useState('');
@@ -23,7 +23,7 @@ const Login = ({ onLoginSuccess }) => {
     }
     setLoading(true);
     try {
-      // 👇 OJO: solo '/login' (el helper añade el prefijo correcto)
+      
       const res   = await jpost('/login', { usuario, password, horario });
       const data  = await jsonOrThrow(res);
 

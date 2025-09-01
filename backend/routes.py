@@ -92,6 +92,14 @@ def admin_required(fn):
         return fn(*args, **kwargs)
     return wrapper
 
+# ========= Helper para leer múltiples alias =========
+def pick(d: dict, *keys, default=None):
+    """Devuelve el primer valor no vacío encontrado entre varios alias."""
+    for k in keys:
+        if k in d and d[k] not in (None, "", "null", "None"):
+            return d[k]
+    return default
+
 # ========= LOGIN =========
 def _listar_modulos_para_consultor(consultor_id: int):
     mods = []
@@ -192,48 +200,73 @@ def _basis_defaults_from_payload(data: dict):
         "nro_escalado":    _norm_default(data.get("nroCasoEscaladoSap") or data.get("nro_caso_escalado"), ""),
     }
 
-# ========= Registrar hora =========
+# ========= Registrar hora (tolerante a alias y robusto) =========
 @bp.route('/api/registrar-hora', methods=['POST'])
 def registrar_hora():
-    data = request.json or {}
-    consultor = Consultor.query.filter_by(nombre=data.get('consultor')).first()
+    data = request.get_json(silent=True) or {}
+
+    # Resolver consultor por id, usuario o nombre (en ese orden)
+    consultor = None
+    cid = pick(data, 'consultor_id', 'consultorId', 'id')
+    if cid:
+        try:
+            consultor = Consultor.query.get(int(cid))
+        except Exception:
+            consultor = None
+    if not consultor:
+        uname = pick(data, 'usuario', 'username', 'user')
+        if uname:
+            consultor = Consultor.query.filter_by(usuario=str(uname)).first()
+    if not consultor:
+        cname = pick(data, 'consultor', 'nombre')
+        if cname:
+            consultor = Consultor.query.filter_by(nombre=str(cname)).first()
     if not consultor:
         return jsonify({'mensaje': 'Consultor no encontrado'}), 404
 
     # Defaults anti-NULL para campos BASIS
     bd = _basis_defaults_from_payload(data)
-    modulo_final = (data.get('modulo')
-                    or (consultor.modulo.nombre if consultor.modulo else 'SIN MODULO'))
+
+    # Leer campos aceptando camelCase y snake_case
+    fecha              = pick(data, 'fecha')
+    cliente            = pick(data, 'cliente')
+    nro_caso_cliente   = _norm_default(pick(data, 'nroCasoCliente', 'nro_caso_cliente'), '0')
+    nro_caso_interno   = _norm_default(pick(data, 'nroCasoInterno', 'nro_caso_interno'), '0')
+    tipo_tarea         = pick(data, 'tipoTarea', 'tipo_tarea')
+    hora_inicio        = pick(data, 'horaInicio', 'hora_inicio')
+    hora_fin           = pick(data, 'horaFin', 'hora_fin')
+    tiempo_invertido   = float(pick(data, 'tiempoInvertido', 'tiempo_invertido', default=0) or 0)
+    tiempo_facturable  = float(pick(data, 'tiempoFacturable', 'tiempo_facturable', default=0) or 0)
+    total_horas        = float(pick(data, 'totalHoras', 'total_horas', default=tiempo_invertido) or 0)
+    modulo_final       = (pick(data, 'modulo')
+                          or (consultor.modulo.nombre if consultor.modulo else 'SIN MODULO')).strip()
+    horario_trabajo    = (pick(data, 'horario_trabajo', 'horarioTrabajo')
+                          or getattr(consultor, 'horario', None))
 
     try:
         nuevo = Registro(
-            fecha=data['fecha'],
-            cliente=data['cliente'],
-            nro_caso_cliente=_norm_default(data.get('nroCasoCliente'), ''),
-            nro_caso_interno=_norm_default(data.get('nroCasoInterno'), ''),
+            fecha=fecha,
+            cliente=cliente,
+            nro_caso_cliente=nro_caso_cliente,
+            nro_caso_interno=nro_caso_interno,
             nro_caso_escalado=bd["nro_escalado"],
-            tipo_tarea=data['tipoTarea'],
-            hora_inicio=data['horaInicio'],
-            hora_fin=data['horaFin'],
-            tiempo_invertido=data['tiempoInvertido'],
-            actividad_malla=bd["actividad_malla"],  # <- nunca None
-            oncall=bd["oncall"],                    # <- nunca None
-            desborde=bd["desborde"],                # <- nunca None
-            tiempo_facturable=(
-                float(data['tiempoFacturable'])
-                if str(data.get('tiempoFacturable', '')).strip() != '' else 0.0
-            ),
-            horas_adicionales=_norm_default(data.get('horasAdicionales'), 'No'),
-            descripcion=_norm_default(data.get('descripcion'), ''),
-            total_horas=data['totalHoras'],
+            tipo_tarea=tipo_tarea,
+            hora_inicio=hora_inicio,
+            hora_fin=hora_fin,
+            tiempo_invertido=tiempo_invertido,
+            actividad_malla=bd["actividad_malla"],  # nunca None
+            oncall=bd["oncall"],                    # nunca None
+            desborde=bd["desborde"],                # nunca None
+            tiempo_facturable=tiempo_facturable,
+            horas_adicionales=_norm_default(pick(data, 'horasAdicionales', 'horas_adicionales'), 'No'),
+            descripcion=_norm_default(pick(data, 'descripcion'), ''),
+            total_horas=total_horas,
             modulo=modulo_final,
-            horario_trabajo=(getattr(consultor, 'horario', None)
-                             or data.get('horario_trabajo')
-                             or data.get('horarioTrabajo')),
+            horario_trabajo=horario_trabajo,
             consultor_id=consultor.id
         )
 
-        # Cinturón y tirantes: revalidar antes de commit
+        # Cinturón y tirantes
         if not nuevo.actividad_malla: nuevo.actividad_malla = "N/APLICA"
         if not nuevo.oncall:          nuevo.oncall          = "N/A"
         if not nuevo.desborde:        nuevo.desborde        = "N/A"
@@ -244,11 +277,7 @@ def registrar_hora():
 
     except IntegrityError as e:
         db.session.rollback()
-        app.logger.exception("IntegrityError insertando registro. Payload saneado=%r", {
-            "actividad_malla": bd["actividad_malla"],
-            "oncall": bd["oncall"],
-            "desborde": bd["desborde"],
-        })
+        app.logger.exception("IntegrityError insertando registro")
         return jsonify({'mensaje': f'No se pudo guardar el registro (integridad): {e}'}), 400
     except Exception as e:
         db.session.rollback()
@@ -319,12 +348,12 @@ def eliminar_registro(id):
     db.session.commit()
     return jsonify({'mensaje': 'Registro eliminado'}), 200
 
-# ========= Editar registro =========
+# ========= Editar registro (tolerante a alias y sin NULL en BASIS) =========
 @bp.route('/api/editar-registro/<int:id>', methods=['PUT'])
 def editar_registro(id):
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     rol = (data.get('rol') or '').strip().upper()
-    nombre = data.get('consultor')
+    nombre = pick(data, 'consultor', 'nombre')
 
     registro = Registro.query.get(id)
     if not registro:
@@ -336,18 +365,18 @@ def editar_registro(id):
     try:
         bd = _basis_defaults_from_payload(data)
 
-        registro.fecha = data.get('fecha', registro.fecha)
-        registro.cliente = data.get('cliente', registro.cliente)
-        registro.nro_caso_cliente = data.get('nroCasoCliente', registro.nro_caso_cliente)
-        registro.nro_caso_interno = data.get('nroCasoInterno', registro.nro_caso_interno)
+        registro.fecha              = pick(data, 'fecha', default=registro.fecha)
+        registro.cliente            = pick(data, 'cliente', default=registro.cliente)
+        registro.nro_caso_cliente   = pick(data, 'nroCasoCliente', 'nro_caso_cliente', default=registro.nro_caso_cliente)
+        registro.nro_caso_interno   = pick(data, 'nroCasoInterno', 'nro_caso_interno', default=registro.nro_caso_interno)
         if 'nroCasoEscaladoSap' in data or 'nro_caso_escalado' in data:
             registro.nro_caso_escalado = bd["nro_escalado"]
-        registro.tipo_tarea = data.get('tipoTarea', registro.tipo_tarea)
-        registro.hora_inicio = data.get('horaInicio', registro.hora_inicio)
-        registro.hora_fin = data.get('horaFin', registro.hora_fin)
-        registro.tiempo_invertido = data.get('tiempoInvertido', registro.tiempo_invertido)
 
-        # Evitar NULLs siempre
+        registro.tipo_tarea         = pick(data, 'tipoTarea', 'tipo_tarea', default=registro.tipo_tarea)
+        registro.hora_inicio        = pick(data, 'horaInicio', 'hora_inicio', default=registro.hora_inicio)
+        registro.hora_fin           = pick(data, 'horaFin', 'hora_fin', default=registro.hora_fin)
+        registro.tiempo_invertido   = pick(data, 'tiempoInvertido', 'tiempo_invertido', default=registro.tiempo_invertido)
+
         if 'actividadMalla' in data or 'actividad_malla' in data:
             registro.actividad_malla = bd["actividad_malla"]
         if 'oncall' in data:
@@ -355,13 +384,13 @@ def editar_registro(id):
         if 'desborde' in data:
             registro.desborde = bd["desborde"]
 
-        registro.tiempo_facturable = data.get('tiempoFacturable', registro.tiempo_facturable)
-        registro.horas_adicionales = _norm_default(data.get('horasAdicionales', registro.horas_adicionales), 'No')
-        registro.descripcion = data.get('descripcion', registro.descripcion)
-        registro.total_horas = data.get('totalHoras', registro.total_horas)
-        registro.modulo = data.get('modulo', registro.modulo)
+        registro.tiempo_facturable  = pick(data, 'tiempoFacturable', 'tiempo_facturable', default=registro.tiempo_facturable)
+        registro.horas_adicionales  = _norm_default(pick(data, 'horasAdicionales', 'horas_adicionales', default=registro.horas_adicionales), 'No')
+        registro.descripcion        = pick(data, 'descripcion', default=registro.descripcion)
+        registro.total_horas        = pick(data, 'totalHoras', 'total_horas', default=registro.total_horas)
+        registro.modulo             = pick(data, 'modulo', default=registro.modulo)
 
-        # Reforzar
+        # Reforzar no-NULL en BASIS
         if not registro.actividad_malla: registro.actividad_malla = "N/APLICA"
         if not registro.oncall:          registro.oncall          = "N/A"
         if not registro.desborde:        registro.desborde        = "N/A"
