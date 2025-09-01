@@ -1,4 +1,3 @@
-// src/GraficoBase.js
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./GraficoBase.css";
 import {
@@ -6,7 +5,7 @@ import {
   CartesianGrid, Tooltip, ReferenceLine, Legend,
   PieChart, Pie, Cell,
 } from "recharts";
-import { jfetch } from "./lib/api";  
+import { jfetch } from "./lib/api";
 
 const TARGET_HOURS = 180;
 const BAR_BLUE = "#3b82f6";
@@ -32,8 +31,8 @@ export default function GraficoBase() {
     try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch { return {}; }
   }, []);
   const rol = (user?.rol || user?.user?.rol || "").toUpperCase();
+  const isAdmin = rol === "ADMIN";
 
-  
   const [q, setQ] = useState("");
   const [modulo, setModulo] = useState("");
   const [cliente, setCliente] = useState("");
@@ -43,7 +42,6 @@ export default function GraficoBase() {
   const [mesSel, setMesSel] = useState("");
   const [campoCategoria, setCampoCategoria] = useState("tipo_tarea");
 
-  
   const [ordenMes, setOrdenMes] = useState("asc");
   const [ordenTareas, setOrdenTareas] = useState("desc");
   const [ordenClientes, setOrdenClientes] = useState("desc");
@@ -55,7 +53,6 @@ export default function GraficoBase() {
   const [topNClientes, setTopNClientes] = useState(10);
   const [agrupaOtrosClientes, setAgrupaOtrosClientes] = useState(true);
 
-  
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState([]);
   const [consultoresOpt, setConsultoresOpt] = useState([]);
@@ -66,7 +63,6 @@ export default function GraficoBase() {
   const [dataBarTareas, setDataBarTareas] = useState([]);
   const [dataBarClientes, setDataBarClientes] = useState([]);
 
- 
   const norm = (s) => (s || "").trim().toLowerCase();
   const yyyymm = (fecha) => (fecha || "").slice(0, 7);
   const isYYYYMM = (s) => /^\d{4}-\d{2}$/.test(s);
@@ -93,12 +89,12 @@ export default function GraficoBase() {
     return 0;
   };
 
-  
   const fetchingRef = useRef(false);
   const lastResultRef = useRef([]);
   const didInitRef = useRef(false);
 
   const fetchAllFiltered = useCallback(async () => {
+    if (!isAdmin) return [];
     if (fetchingRef.current) return lastResultRef.current;
     fetchingRef.current = true;
     try {
@@ -116,7 +112,6 @@ export default function GraficoBase() {
         if (fdesde) params.set("fecha_desde", fdesde);
         if (fhasta) params.set("fecha_hasta", fhasta);
 
-        
         const res = await jfetch(`/base-registros?${params.toString()}`, {
           headers: { "X-User-Rol": rol },
         });
@@ -135,7 +130,7 @@ export default function GraficoBase() {
         if (all.length >= total || list.length < pageSizeLocal) break;
 
         page += 1;
-        if (page > 5000) break; 
+        if (page > 5000) break;
       }
 
       lastResultRef.current = all;
@@ -143,9 +138,8 @@ export default function GraficoBase() {
     } finally {
       fetchingRef.current = false;
     }
-  }, [q, modulo, cliente, fdesde, fhasta, rol]);
+  }, [isAdmin, q, modulo, cliente, fdesde, fhasta, rol]);
 
-  
   const buildConsultorIndex = useCallback((recs) => {
     const idx = new Map();
     for (const r of recs) {
@@ -282,8 +276,8 @@ export default function GraficoBase() {
     return a;
   };
 
-  
   const refreshData = useCallback(async () => {
+    if (!isAdmin) return;
     try {
       setLoading(true);
       const all = await fetchAllFiltered();
@@ -310,7 +304,7 @@ export default function GraficoBase() {
     } finally {
       setLoading(false);
     }
-  }, [fetchAllFiltered, buildConsultorIndex, consultorSel, mesSel]);
+  }, [isAdmin, fetchAllFiltered, buildConsultorIndex, consultorSel, mesSel]);
 
   useEffect(() => {
     if (didInitRef.current) return;
@@ -355,8 +349,6 @@ export default function GraficoBase() {
 
   const tareasHeight = calcBarHeight(dataBarTareas.length);
   const clientesHeight = calcBarHeight(dataBarClientes.length);
-  const tareasYAxisW = calcYAxisWidth(dataBarTareas);
-  const clientesYAxisW = calcYAxisWidth(dataBarClientes);
 
   const renderPieLabel = (p) => {
     const pct = p?.payload?.pct || 0;
@@ -364,6 +356,17 @@ export default function GraficoBase() {
     const nm = p?.name || p?.payload?.name || "";
     return `${nm} ${pct.toFixed(0)}%`;
   };
+
+  if (!isAdmin) {
+    return (
+      <div className="br">
+        <div className="br-card">
+          <h3>Acceso restringido</h3>
+          <p>Este módulo es solo para <strong>ADMIN</strong>.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grafico-base">
@@ -442,15 +445,19 @@ export default function GraficoBase() {
           </div>
           <div>
             <label className="muted" style={{ display: "block", marginBottom: 4 }}>Máx sectores (pie)</label>
-            <input type="number" min={4} max={20} step={1} className="br-input"
-                   value={maxSlicesPie}
-                   onChange={(e) => setMaxSlicesPie(Math.max(4, Math.min(20, Number(e.target.value) || 12)))} />
+            <input
+              type="number" min={4} max={20} step={1} className="br-input"
+              value={maxSlicesPie}
+              onChange={(e) => setMaxSlicesPie(Math.max(4, Math.min(20, Number(e.target.value) || 12)))}
+            />
           </div>
           <div>
             <label className="muted" style={{ display: "block", marginBottom: 4 }}>Ocultar etiquetas &lt; %</label>
-            <input type="number" min={0} max={20} step={1} className="br-input"
-                   value={labelMinPct}
-                   onChange={(e) => setLabelMinPct(Math.max(0, Math.min(20, Number(e.target.value) || 4)))} />
+            <input
+              type="number" min={0} max={20} step={1} className="br-input"
+              value={labelMinPct}
+              onChange={(e) => setLabelMinPct(Math.max(0, Math.min(20, Number(e.target.value) || 4)))}
+            />
           </div>
         </div>
 
@@ -458,15 +465,19 @@ export default function GraficoBase() {
         <div className="br-toolbar gb-cols" style={{ marginTop: 10 }}>
           <div>
             <label className="muted" style={{ display: "block", marginBottom: 4 }}>Top N (tareas)</label>
-            <input type="number" min={1} max={50} step={1} className="br-input"
-                   value={topNTareas}
-                   onChange={(e) => setTopNTareas(Math.max(1, Math.min(50, Number(e.target.value) || 12)))} />
+            <input
+              type="number" min={1} max={50} step={1} className="br-input"
+              value={topNTareas}
+              onChange={(e) => setTopNTareas(Math.max(1, Math.min(50, Number(e.target.value) || 12)))}
+            />
           </div>
           <div>
             <label className="muted" style={{ display: "block", marginBottom: 4 }}>Top N (clientes)</label>
-            <input type="number" min={1} max={50} step={1} className="br-input"
-                   value={topNClientes}
-                   onChange={(e) => setTopNClientes(Math.max(1, Math.min(50, Number(e.target.value) || 10)))} />
+            <input
+              type="number" min={1} max={50} step={1} className="br-input"
+              value={topNClientes}
+              onChange={(e) => setTopNClientes(Math.max(1, Math.min(50, Number(e.target.value) || 10)))}
+            />
           </div>
           <div style={{ display: "flex", alignItems: "end", gap: 16, flexWrap: "wrap" }}>
             <label className="muted" style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -481,9 +492,11 @@ export default function GraficoBase() {
             </label>
             <label className="muted" style={{ display: "flex", alignItems: "center", gap: 6 }}>
               Umbral Pie %
-              <input type="number" min={0} max={20} step={1} className="br-input" style={{ width: 70, marginLeft: 6 }}
-                     value={umbralOtrosPie}
-                     onChange={(e) => setUmbralOtrosPie(Math.max(0, Math.min(20, Number(e.target.value) || 2)))} />
+              <input
+                type="number" min={0} max={20} step={1} className="br-input" style={{ width: 70, marginLeft: 6 }}
+                value={umbralOtrosPie}
+                onChange={(e) => setUmbralOtrosPie(Math.max(0, Math.min(20, Number(e.target.value) || 2)))}
+              />
             </label>
           </div>
         </div>

@@ -64,7 +64,6 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   return (start < inWorkStart || end > inWorkEnd) ? 'Sí' : 'No';
 };
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
-
 function buildLocalResumen(registros, nombre) {
   if (!Array.isArray(registros)) return [];
   const byFecha = new Map();
@@ -93,45 +92,6 @@ const getModulosLocal = (u) => {
   const single = u?.modulo ?? u?.user?.modulo;
   return single ? normalizeModulos([single]) : [];
 };
-
-
-const toSiNo = (v, def = 'No') => {
-  if (v === true) return 'Sí';
-  if (v === false) return 'No';
-  const s = String(v ?? '').toLowerCase();
-  if (s.startsWith('s')) return 'Sí';
-  if (s.startsWith('n')) return 'No';
-  return def;
-};
-
-const toBackendPayload = (p, { equipoFormulario, horarioUsuario, moduloFinal, rol }) => {
-  const actividadMallaFinal = (equipoFormulario === 'BASIS')
-    ? (p.actividadMalla || 'N/APLICA')   // nunca null
-    : 'N/APLICA';
-
-  return {
-    fecha: p.fecha,
-    cliente: p.cliente,
-    nro_caso_cliente: String(p.nroCasoCliente || '0'),
-    nro_caso_interno: String(p.nroCasoInterno || '0'),
-    nro_caso_escalado: p.nroCasoEscaladoSap || null,
-    tipo_tarea: p.tipoTarea,
-    hora_inicio: p.horaInicio,
-    hora_fin: p.horaFin,
-    tiempo_invertido: Number(p.tiempoInvertido || 0),
-    actividad_malla: actividadMallaFinal,
-    oncall: (equipoFormulario === 'BASIS') ? (p.oncall || null) : null,
-    desborde: (equipoFormulario === 'BASIS') ? (p.desborde || null) : null,
-    tiempo_facturable: Number(p.tiempoFacturable || 0),
-    horas_adicionales: toSiNo(p.horasAdicionales, 'No'),
-    descripcion: p.descripcion || '',
-    total_horas: Number(p.totalHoras || 0),
-    modulo: (p.modulo || moduloFinal || '').trim(),
-    horario_trabajo: /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null,
-    rol
-  };
-};
-/* ======================================================= */
 
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
@@ -182,30 +142,7 @@ const Registro = ({ userData }) => {
     setModuloElegido(locals.length === 1 ? locals[0] : '');
   }, [userData]);
 
-  
-
-  const clientes = [
-    'AIRE - Air-e','ALUMINA','ANTILLANA','AVIANCA','ANABA','CAMARA DE COMERCIO','CEET-EL TIEMPO',
-    'CERAMICA ITALIA','CERESCOS','CLARO ANDINA','CLARO COLOMBIA','COLSUBSIDIO','COMFENALCO CARTAGENA',
-    'COOLECHERA','CRYSTAL S.A.S','DON POLLO','EMI','ETERNA','EVOAGRO','FABRICATO',
-    'FUNDACION GRUPO SANTANDER','HACEB','HITSS/CLARO','ILUMNO','JGB','LACTALIS',
-    'PRND-PROINDESA','PROCAPS','SATENA','STOP JEANS','TINTATEX','UNIBAN','GREELAND',
-    'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA'
-  ];
-  const tiposTarea = [
-    '01 - Atencion Casos','02 - Atencion de Casos VAR','03 - Atencion de Proyectos','04- Apoyo Preventa','05 - Generacion Informes',
-    '06 - Seguimiento y Supervision Equipo','07 - Reuniones Internas','08 - Seguimiento de Casos internos','09 - Capacitaciones',
-    '10 - Reporte Hots','11 - Reporte Azure','12 - Reporte Tiempo consumido (Lista-Sharepoint)','13 - Pausas Activas',
-    '14 -  Permisos por horas / Dia Familia / Cumpleaños','15 - Vacaciones / Incapacidades','16 - DIA NO LABORAL','17 - Proyectos Internos',
-    '18 - DISPONIBLE','19 - Hora de traslado Triara a Casa','20 - Cambios','21 - Monitoreo','22 - Reunión Cliente','23 - Atención SOX',
-    '24 - Outlook - Teams','25 - NO DILIGENCIO','26 - Reuniones Externas','27 - Daily','28 - KickOff','29 - Handover','30 - Seguimiento Proyecto',
-    '31 - Gestión Documental Operación','32 - Gestión Documental Proyectos','33 - Elaboración de Oferta','34 - Actualización Tableros',
-    '35 - Gestion Documental','36 - Levantamiento de Información'
-  ];
-  const actividadMalla = ['AC','CRU1','CRU2','CRU3','DC','DE','DF','IN','ON','T1E','T1I','T1X','T2E','T2I','T2X','T3','VC','N/APLICA'];
-  const oncall = ['SI','NO','N/A'];
-  const desborde = ['SI','NO','N/A'];
-
+  // Cargar registros / resumen según rol
   const fetchRegistros = useCallback(async () => {
     setError('');
     try {
@@ -218,7 +155,6 @@ const Registro = ({ userData }) => {
       } else {
         res = await jfetch('/registros', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ rol, nombre: nombreUser })
         });
       }
@@ -303,15 +239,19 @@ const Registro = ({ userData }) => {
       rol
     };
 
-    
-    const payload = toBackendPayload(base, { equipoFormulario, horarioUsuario, moduloFinal, rol });
+    const payload = { ...base };
+    if (equipoFormulario !== 'BASIS') {
+      delete payload.nroCasoEscaladoSap;
+      delete payload.actividadMalla;
+      delete payload.oncall;
+      delete payload.desborde;
+    }
 
     try {
       const path = modoEdicion ? `/editar-registro/${registro.id}` : '/registrar-hora';
       const method = modoEdicion ? 'PUT' : 'POST';
       const resp = await jfetch(path, {
         method,
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const j = await resp.json().catch(()=> ({}));
@@ -354,7 +294,6 @@ const Registro = ({ userData }) => {
     if (res.isConfirmed) {
       const resp = await jfetch(`/eliminar-registro/${id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rol, nombre: nombreUser })
       });
       if (!resp.ok) {
@@ -380,8 +319,7 @@ const Registro = ({ userData }) => {
     try {
       const resp = await jfetch(`/toggle-bloqueado/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rol })
+        body: JSON.stringify({ rol: isAdmin ? 'ADMIN' : (rol || '') })
       });
       if (!resp.ok) throw new Error((await resp.json().catch(()=>({})))?.mensaje || `HTTP ${resp.status}`);
       fetchRegistros();
@@ -389,6 +327,28 @@ const Registro = ({ userData }) => {
       console.error('Error al actualizar estado de bloqueo', e);
     }
   };
+
+  const clientes = [
+    'AIRE - Air-e','ALUMINA','ANTILLANA','AVIANCA','ANABA','CAMARA DE COMERCIO','CEET-EL TIEMPO',
+    'CERAMICA ITALIA','CERESCOS','CLARO ANDINA','CLARO COLOMBIA','COLSUBSIDIO','COMFENALCO CARTAGENA',
+    'COOLECHERA','CRYSTAL S.A.S','DON POLLO','EMI','ETERNA','EVOAGRO','FABRICATO',
+    'FUNDACION GRUPO SANTANDER','HACEB','HITSS/CLARO','ILUMNO','JGB','LACTALIS',
+    'PRND-PROINDESA','PROCAPS','SATENA','STOP JEANS','TINTATEX','UNIBAN','GREELAND',
+    'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA'
+  ];
+  const tiposTarea = [
+    '01 - Atencion Casos','02 - Atencion de Casos VAR','03 - Atencion de Proyectos','04- Apoyo Preventa','05 - Generacion Informes',
+    '06 - Seguimiento y Supervision Equipo','07 - Reuniones Internas','08 - Seguimiento de Casos internos','09 - Capacitaciones',
+    '10 - Reporte Hots','11 - Reporte Azure','12 - Reporte Tiempo consumido (Lista-Sharepoint)','13 - Pausas Activas',
+    '14 -  Permisos por horas / Dia Familia / Cumpleaños','15 - Vacaciones / Incapacidades','16 - DIA NO LABORAL','17 - Proyectos Internos',
+    '18 - DISPONIBLE','19 - Hora de traslado Triara a Casa','20 - Cambios','21 - Monitoreo','22 - Reunión Cliente','23 - Atención SOX',
+    '24 - Outlook - Teams','25 - NO DILIGENCIO','26 - Reuniones Externas','27 - Daily','28 - KickOff','29 - Handover','30 - Seguimiento Proyecto',
+    '31 - Gestión Documental Operación','32 - Gestión Documental Proyectos','33 - Elaboración de Oferta','34 - Actualización Tableros',
+    '35 - Gestion Documental','36 - Levantamiento de Información'
+  ];
+  const actividadMalla = ['AC','CRU1','CRU2','CRU3','DC','DE','DF','IN','ON','T1E','T1I','T1X','T2E','T2I','T2X','T3','VC','N/APLICA'];
+  const oncall = ['SI','NO','N/A'];
+  const desborde = ['SI','NO','N/A'];
 
   return (
     <div className="container">
@@ -452,8 +412,9 @@ const Registro = ({ userData }) => {
           <select
             value={filtroConsultor}
             onChange={(e) => setFiltroConsultor(e.target.value)}
+            disabled={!isAdmin} // el consultor no puede ver otros
           >
-            <option value="">Todos los consultores</option>
+            <option value="">{isAdmin ? 'Todos los consultores' : nombreUser || 'Consultor'}</option>
             {consultoresUnicos.map((c, idx) => (
               <option key={idx} value={c}>{c}</option>
             ))}
@@ -466,7 +427,7 @@ const Registro = ({ userData }) => {
               setFiltroFecha('');
               setFiltroCliente('');
               setFiltroTarea('');
-              setFiltroConsultor('');
+              setFiltroConsultor(isAdmin ? '' : (nombreUser || ''));
             }}
           >
             Limpiar

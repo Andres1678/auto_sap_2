@@ -837,3 +837,15 @@ def listar_base_registros():
         'page': page,
         'page_size': page_size,
     })
+
+@bp.route('/api/consultores/modulos', methods=['GET'])
+def consultor_modulos():
+    usuario = request.args.get('usuario')
+    if not usuario:
+        return jsonify({'mensaje': 'Falta usuario'}), 400
+    c = Consultor.query.filter_by(usuario=usuario).first()
+    if not c:
+        return jsonify({'mensaje': 'Usuario no encontrado'}), 404
+    mods = _listar_modulos_para_consultor(c.id)  
+    
+    return jsonify({'modulos': [m['nombre'] for m in mods]})

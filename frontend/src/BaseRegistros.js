@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Modal from "react-modal";
 import * as XLSX from "xlsx";
-import { jfetch } from "./lib/api";          
+import { jfetch } from "./lib/api";
 import "./BaseRegistros.css";
 
 Modal.setAppElement("#root");
@@ -37,7 +37,6 @@ function formatCell(key, value) {
   }
   return text;
 }
-
 
 function ensureISO(v) {
   if (!v && v !== 0) return "";
@@ -94,6 +93,7 @@ export default function BaseRegistros() {
   const isAdmin = rol === "ADMIN";
 
   const fetchData = useCallback(async () => {
+    if (!isAdmin) return;
     setLoading(true);
     try {
       const qs = new URLSearchParams();
@@ -121,11 +121,11 @@ export default function BaseRegistros() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, q, modulo, cliente, consultor, fdesde, fhasta, rol]);
+  }, [isAdmin, page, pageSize, q, modulo, cliente, consultor, fdesde, fhasta, rol]);
 
   useEffect(() => {
-    if (isAdmin) fetchData();
-  }, [isAdmin, fetchData]);
+    fetchData();
+  }, [fetchData]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const canPrev = page > 1;
@@ -133,13 +133,13 @@ export default function BaseRegistros() {
 
   const handleBuscar = () => {
     setPage(1);
-    fetchData();
+    setTimeout(fetchData, 0);
   };
 
   const limpiarFiltros = () => {
     setQ(""); setModulo(""); setCliente(""); setConsultor(""); setFdesde(""); setFhasta("");
     setPage(1);
-    fetchData();
+    setTimeout(fetchData, 0);
   };
 
   const triggerFile = () => fileInputRef.current?.click();
@@ -195,7 +195,10 @@ export default function BaseRegistros() {
 
         const res = await jfetch(path, {
           method: "POST",
-          headers: { "X-User-Rol": rol },
+          headers: {
+            "X-User-Rol": rol,
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({ registros: slice }),
         });
 

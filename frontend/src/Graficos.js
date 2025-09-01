@@ -3,6 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer
 } from 'recharts';
 import './PanelGraficos.css';
+import { jfetch } from './lib/api'; // ← usar base /api y headers correctos
 
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
 
@@ -48,29 +49,38 @@ const Graficos = () => {
 
   const brand = useBrandColors();
 
+  // Datos de sesión
+  const user = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('user') || 'null') || {}; } catch { return {}; }
+  }, []);
+  const rol = (user?.rol || user?.user?.rol || '').toUpperCase();
+  const nombreUser = (user?.nombre || user?.user?.nombre || '').trim();
+  const isAdmin = rol === 'ADMIN';
+
   useEffect(() => {
     const fetchRegistros = async () => {
       setError('');
       try {
-        let u = null;
-        try { u = JSON.parse(localStorage.getItem('user') || 'null'); } catch {}
-        const rol = (u?.rol || u?.user?.rol || '').toUpperCase();
-        const nombre = u?.nombre || u?.user?.nombre;
-        const isAdmin = rol === 'ADMIN';
-
-        const res = await fetch('http://localhost:5000/api/registros', {
+        // ADMIN: GET con cabecera X-User-Rol
+        // USER : POST con { rol, nombre } para que el backend filtre por su nombre
+        const res = await jfetch('/registros', {
           method: isAdmin ? 'GET' : 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            ...(isAdmin ? { 'X-User-Rol': 'ADMIN' } : {})
+            ...(isAdmin ? { 'X-User-Rol': 'ADMIN' } : {}),
           },
-          ...(isAdmin ? {} : { body: JSON.stringify({ rol, nombre }) })
+          ...(isAdmin ? {} : { body: JSON.stringify({ rol, nombre: nombreUser }) })
         });
 
         const json = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
 
-        setRegistros(asArray(json));
+        const arr = asArray(json);
+        setRegistros(arr);
+
+        // Para no-admin, fija el filtro al propio consultor y deshabilita el combo
+        if (!isAdmin && nombreUser) {
+          setFiltroConsultor(nombreUser);
+        }
       } catch (err) {
         setRegistros([]);
         setError(String(err.message || err));
@@ -78,7 +88,7 @@ const Graficos = () => {
       }
     };
     fetchRegistros();
-  }, []);
+  }, [isAdmin, nombreUser, rol]);
 
   // Helpers
   const coincideMes = (fechaISO, mesFiltro) => {
@@ -106,8 +116,10 @@ const Graficos = () => {
     const set = new Set((registros ?? [])
       .filter(r => coincideMes(r.fecha, filtroMes))
       .map(r => r.consultor));
-    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+    const arr = Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    // Para no-admin, fuerza a su propio nombre (seguridad visual extra; el backend ya filtra)
+    return isAdmin ? arr : (nombreUser ? [nombreUser] : arr);
+  }, [registros, filtroMes, isAdmin, nombreUser]);
 
   const tareasUnicas = useMemo(() => {
     const set = new Set((registros ?? [])
@@ -170,11 +182,6 @@ const Graficos = () => {
 
   // Devuelve { fill, stroke } según filtros y el tipo de gráfico
   const getBarStyle = (section) => {
-    // Priority rules:
-    // - Solo consultor -> azul
-    // - Solo tarea -> rojo
-    // - Ambos -> consultor=azul, tarea=rojo, otros=gradiente
-    // - Ninguno -> gradiente
     if (hasConsultor && !hasTarea) {
       return { fill: brand.blue, stroke: brand.blue700, useGradient: false };
     }
@@ -195,36 +202,23 @@ const Graficos = () => {
   const styleCliente = getBarStyle('cliente');
   const styleModulo = getBarStyle('modulo');
 
-  // ¿no admin? (por si alguien entra sin AdminRoute)
-  const user = (() => {
-    try { return JSON.parse(localStorage.getItem('user') || 'null') || {}; } catch { return {}; }
-  })();
-  const rol = (user?.rol || user?.user?.rol || '').toUpperCase();
-  const isAdmin = rol === 'ADMIN';
-
   return (
     <div className="panel-graficos-container">
-      {(!isAdmin) && (
-        <div className="pg-error">
-          Acceso restringido. Este panel es solo para <strong>ADMIN</strong>.
-        </div>
-      )}
-
       {error && (
         <div className="pg-error">
           Error al cargar datos: {error}
-          {String(error).includes('403') && (
-            <div className="pg-hint">
-              Asegúrate de estar logueado como ADMIN y que el fetch envíe <code>X-User-Rol: ADMIN</code>.
-            </div>
-          )}
         </div>
       )}
 
       {/* Filtros */}
       <div className="filtros-globales">
-        <select value={filtroConsultor} onChange={(e) => setFiltroConsultor(e.target.value)}>
-          <option value="">Todos los consultores</option>
+        <select
+          value={filtroConsultor}
+          onChange={(e) => setFiltroConsultor(e.target.value)}
+          disabled={!isAdmin} // consultor no puede cambiar a otro
+        >
+          {/* Para ADMIN dejo "Todos"; para consultor, solo su nombre */}
+          {isAdmin && <option value="">Todos los consultores</option>}
           {consultoresUnicos.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
 
@@ -237,7 +231,12 @@ const Graficos = () => {
 
         <button
           className="btn btn-outline"
-          onClick={() => { setFiltroConsultor(''); setFiltroTarea(''); setFiltroMes(''); }}
+          onClick={() => {
+            // en consultor, mantenemos su nombre fijo
+            setFiltroTarea('');
+            setFiltroMes('');
+            setFiltroConsultor(isAdmin ? '' : nombreUser || '');
+          }}
           title="Limpiar filtros"
         >
           Limpiar
@@ -248,7 +247,10 @@ const Graficos = () => {
       <div className="pg-grid">
         {/* Horas por Consultor */}
         <div className="grafico-box">
-          <h3>Horas por Consultor {filtroMes && `(${filtroMes})`}</h3>
+          <h3>
+            {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
+            {filtroMes && ` (${filtroMes})`}
+          </h3>
           {horasPorConsultor.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
@@ -269,7 +271,10 @@ const Graficos = () => {
 
         {/* Horas por Tipo de Tarea */}
         <div className="grafico-box">
-          <h3>Horas por Tipo de Tarea {filtroConsultor && `— ${filtroConsultor}`}</h3>
+          <h3>
+            {isAdmin ? 'Horas por Tipo de Tarea' : 'Tus horas por Tipo de Tarea'}
+            {filtroConsultor && ` — ${filtroConsultor}`}
+          </h3>
           {horasPorTarea.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
@@ -289,7 +294,10 @@ const Graficos = () => {
 
         {/* Horas por Cliente (full width) */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
-          <h3>Horas por Cliente {filtroMes && `(${filtroMes})`} {filtroConsultor && `— ${filtroConsultor}`}</h3>
+          <h3>
+            {isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}
+            {filtroMes && ` (${filtroMes})`} {filtroConsultor && ` — ${filtroConsultor}`}
+          </h3>
           {horasPorCliente.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
@@ -309,7 +317,10 @@ const Graficos = () => {
 
         {/* Horas por Módulo */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
-          <h3>Horas por Módulo {filtroMes && `(${filtroMes})`}</h3>
+          <h3>
+            {isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}
+            {filtroMes && ` (${filtroMes})`}
+          </h3>
           {horasPorModulo.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
@@ -332,5 +343,3 @@ const Graficos = () => {
 };
 
 export default Graficos;
-
-
