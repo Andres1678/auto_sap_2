@@ -111,7 +111,7 @@ const Login = ({ onLoginSuccess }) => {
             </button>
           </div>
 
-          <p className="authc-help">Soporte: gonzalezanf@hitss.com</p>
+          <p className="authc-help">Soporte: gonzalezanf@hitss.com/andres.gonzalezp@claro.com.co</p>
         </form>
       </div>
     </div>
