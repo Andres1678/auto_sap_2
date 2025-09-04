@@ -17,13 +17,13 @@ function useBrandColors() {
   useEffect(() => {
     try {
       const root = getComputedStyle(document.documentElement);
-      const red = root.getPropertyValue('--brand-red')?.trim() || colors.red;
-      const red700 = root.getPropertyValue('--brand-red-700')?.trim() || colors.red700;
-      const blue = root.getPropertyValue('--brand-blue')?.trim() || colors.blue;
-      const blue700 = root.getPropertyValue('--brand-blue-700')?.trim() || colors.blue700;
+      const red     = root.getPropertyValue('--brand-red')?.trim()       || colors.red;
+      const red700  = root.getPropertyValue('--brand-red-700')?.trim()   || colors.red700;
+      const blue    = root.getPropertyValue('--brand-blue')?.trim()      || colors.blue;
+      const blue700 = root.getPropertyValue('--brand-blue-700')?.trim()  || colors.blue700;
       setColors({ red, red700, blue, blue700 });
     } catch {}
-  }, []); 
+  }, []);
   return colors;
 }
 
@@ -52,33 +52,28 @@ const Graficos = () => {
   const user = useMemo(() => {
     try {
       return (
-        JSON.parse(localStorage.getItem('userData') || 'null') ??
-        JSON.parse(localStorage.getItem('user') || 'null') ??
+        JSON.parse(localStorage.getItem('userData') || 'null') ||
+        JSON.parse(localStorage.getItem('user') || 'null') ||
         {}
       );
-    } catch {
-      return {};
-    }
+    } catch { return {}; }
   }, []);
-
-  
-  const raw = user?.user ?? user;
-  const rol = String(raw?.rol || '').toUpperCase();
-  const nombreUser = String(raw?.nombre || '').trim();
+  const rol = String(user?.rol || user?.user?.rol || '').toUpperCase();
+  const nombreUser = String(user?.nombre || user?.user?.nombre || '').trim();
   const isAdmin = rol === 'ADMIN';
 
   useEffect(() => {
     const fetchRegistros = async () => {
       setError('');
       try {
-        const isGET = isAdmin; 
+        const isUser = !isAdmin;
         const res = await jfetch('/registros', {
-          method: isGET ? 'GET' : 'POST',
+          method: isUser ? 'POST' : 'GET',
           headers: {
-            ...(isGET ? { 'X-User-Rol': 'ADMIN' } : {}),
-            ...(nombreUser ? { 'X-User-Name': nombreUser } : {}),
+            ...(isAdmin ? { 'X-User-Rol': 'ADMIN' } : {}),
+            ...(isUser ? { 'Content-Type': 'application/json' } : {}),
           },
-          ...(isGET ? {} : { body: JSON.stringify({ rol, nombre: nombreUser }) })
+          ...(isUser ? { body: JSON.stringify({ rol, nombre: nombreUser }) } : {})
         });
 
         const json = await res.json().catch(() => ({}));
@@ -88,9 +83,7 @@ const Graficos = () => {
         setRegistros(arr);
 
         
-        if (!isAdmin && nombreUser) {
-          setFiltroConsultor(nombreUser);
-        }
+        if (!isAdmin && nombreUser) setFiltroConsultor(nombreUser);
       } catch (err) {
         setRegistros([]);
         setError(String(err?.message || err));
@@ -100,6 +93,7 @@ const Graficos = () => {
     fetchRegistros();
   }, [isAdmin, nombreUser, rol]);
 
+  
   const coincideMes = (fechaISO, mesFiltro) => {
     if (!mesFiltro) return true;
     const [y, m] = mesFiltro.split('-');
@@ -110,6 +104,7 @@ const Graficos = () => {
     return Number.isFinite(n) ? n : 0;
   };
 
+  
   const datosFiltrados = useMemo(() => {
     return (registros ?? []).filter(r => {
       if (!coincideMes(r.fecha, filtroMes)) return false;
@@ -119,6 +114,7 @@ const Graficos = () => {
     });
   }, [registros, filtroMes, filtroConsultor, filtroTarea]);
 
+  
   const consultoresUnicos = useMemo(() => {
     const set = new Set((registros ?? [])
       .filter(r => coincideMes(r.fecha, filtroMes))
@@ -134,6 +130,7 @@ const Graficos = () => {
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
+  
   const horasPorConsultor = useMemo(() => {
     const acc = new Map();
     (datosFiltrados ?? []).forEach(r => {
@@ -178,22 +175,22 @@ const Graficos = () => {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
+  
   const hasConsultor = !!filtroConsultor;
   const hasTarea = !!filtroTarea;
-
   const getBarStyle = (section) => {
     if (hasConsultor && !hasTarea) {
-      return { fill: brand.blue, stroke: brand.blue700, useGradient: false };
+      return { fill: brand.blue, stroke: brand.blue700 };
     }
     if (!hasConsultor && hasTarea) {
-      return { fill: brand.red, stroke: brand.red700, useGradient: false };
+      return { fill: brand.red, stroke: brand.red700 };
     }
     if (hasConsultor && hasTarea) {
-      if (section === 'consultor') return { fill: brand.blue, stroke: brand.blue700, useGradient: false };
-      if (section === 'tarea') return { fill: brand.red, stroke: brand.red700, useGradient: false };
-      return { fill: 'url(#brandGradient)', stroke: brand.blue700, useGradient: true };
+      if (section === 'consultor') return { fill: brand.blue, stroke: brand.blue700 };
+      if (section === 'tarea') return { fill: brand.red, stroke: brand.red700 };
+      return { fill: 'url(#brandGradient)', stroke: brand.blue700 };
     }
-    return { fill: 'url(#brandGradient)', stroke: brand.blue700, useGradient: true };
+    return { fill: 'url(#brandGradient)', stroke: brand.blue700 };
   };
 
   const styleConsultor = getBarStyle('consultor');
@@ -203,11 +200,7 @@ const Graficos = () => {
 
   return (
     <div className="panel-graficos-container">
-      {error && (
-        <div className="pg-error">
-          Error al cargar datos: {error}
-        </div>
-      )}
+      {error && <div className="pg-error">Error al cargar datos: {error}</div>}
 
       {/* Filtros */}
       <div className="filtros-globales">
@@ -232,7 +225,7 @@ const Graficos = () => {
           onClick={() => {
             setFiltroTarea('');
             setFiltroMes('');
-            setFiltroConsultor(isAdmin ? '' : nombreUser || '');
+            setFiltroConsultor(isAdmin ? '' : (nombreUser || ''));
           }}
           title="Limpiar filtros"
         >
@@ -240,8 +233,9 @@ const Graficos = () => {
         </button>
       </div>
 
-      {/* Grid de tarjetas */}
+      
       <div className="pg-grid">
+        
         <div className="grafico-box">
           <h3>
             {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
@@ -265,6 +259,7 @@ const Graficos = () => {
           )}
         </div>
 
+        {/* Horas por Tipo de Tarea */}
         <div className="grafico-box">
           <h3>
             {isAdmin ? 'Horas por Tipo de Tarea' : 'Tus horas por Tipo de Tarea'}
@@ -287,6 +282,7 @@ const Graficos = () => {
           )}
         </div>
 
+        {/* Horas por Cliente */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}
@@ -309,6 +305,7 @@ const Graficos = () => {
           )}
         </div>
 
+        {/* Horas por Módulo */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}
