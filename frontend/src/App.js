@@ -17,7 +17,7 @@ function App() {
     try {
       const rawUser = localStorage.getItem('userData');
       if (rawUser) setUserData(JSON.parse(rawUser));
-    } catch { /* noop */ }
+    } catch {/* noop */}
   }, []);
 
   
@@ -32,7 +32,6 @@ function App() {
   const handleLoginSuccess = (payload) => {
     const token = payload?.token || null;
     const user  = payload?.user  || payload || null;
-
     if (token) localStorage.setItem('token', token);
     if (user) {
       localStorage.setItem('userData', JSON.stringify(user));
@@ -46,10 +45,9 @@ function App() {
     setUserData(null);
   };
 
-  
-  const rol    = userData?.rol || '';
-  const nombre = userData?.nombre || '';
-  const equipo = userData?.equipo || '';
+  const rol     = userData?.rol || '';
+  const nombre  = userData?.nombre || '';
+  const equipo  = userData?.equipo || '';
   const isAdmin = rol === 'ADMIN';
 
   return (
@@ -60,6 +58,7 @@ function App() {
         </Routes>
       ) : (
         <>
+          
           <Navbar
             isAdmin={isAdmin}
             rol={rol}
@@ -68,43 +67,40 @@ function App() {
             onLogout={handleLogout}
           />
 
-          <Routes>
-            {/* Principal */}
-            <Route path="/" element={<Registro userData={userData} />} />
-
-            {/* Panel de gráficos (solo ADMIN) */}
-            <Route
-              path="/grafico"
-              element={
-                <AdminRoute>
-                  <PanelGraficos />
-                </AdminRoute>
-              }
-            />
-
-            {/* Base de registros (solo ADMIN) */}
-            <Route
-              path="/BaseRegistros"
-              element={
-                <AdminRoute>
-                  <BaseRegistros />
-                </AdminRoute>
-              }
-            />
-
-            {/* Nueva vista de gráficos (solo ADMIN) */}
-            <Route
-              path="/GraficoBase"
-              element={
-                <AdminRoute>
-                  <GraficoBase />
-                </AdminRoute>
-              }
-            />
-
-            {/* Fallback */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          {isAdmin ? (
+            
+            <Routes>
+              <Route path="/" element={<Registro userData={userData} />} />
+              <Route path="/grafico" element={<PanelGraficos userData={userData} isAdmin />} />
+              <Route
+                path="/BaseRegistros"
+                element={
+                  <AdminRoute>
+                    <BaseRegistros />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/GraficoBase"
+                element={
+                  <AdminRoute>
+                    <GraficoBase />
+                  </AdminRoute>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          ) : (
+            
+            <Routes>
+              <Route
+                path="/grafico"
+                element={<PanelGraficos userData={userData} isAdmin={false} />}
+              />
+              
+              <Route path="*" element={<Navigate to="/grafico" replace />} />
+            </Routes>
+          )}
         </>
       )}
     </Router>
