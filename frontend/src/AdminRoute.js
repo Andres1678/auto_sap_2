@@ -1,20 +1,28 @@
-import React from "react"; 
+import React from "react";
 import { Navigate } from "react-router-dom";
 
-export default function AdminRoute({ children }) {
+
+
+export default function AdminRoute({ children, allow = ['ADMIN'] }) {
+  
   let raw = null;
-  try { 
-    raw = JSON.parse(localStorage.getItem("user") || "null"); 
+  try {
+    raw = JSON.parse(
+      localStorage.getItem('userData') ||
+      localStorage.getItem('user') ||
+      'null'
+    );
   } catch {}
 
-  
-  const rol = (raw?.rol ?? raw?.user?.rol ?? "").toUpperCase();
+  const rol0 = raw?.rol ?? raw?.user?.rol ?? '';
+  const rol  = String(rol0).trim().toUpperCase();
 
   
-  if (rol !== "ADMIN" && rol !== "CONSULTOR") {
-    return <Navigate to="/" replace />;
-  }
+  const allowed = Array.isArray(allow)
+    ? allow.map(r => String(r).trim().toUpperCase())
+    : [String(allow).trim().toUpperCase()];
 
+  if (!allowed.includes(rol)) return <Navigate to="/" replace />;
   return children;
 }
 

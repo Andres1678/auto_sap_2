@@ -12,6 +12,7 @@ import AdminRoute from './AdminRoute';
 function App() {
   const [userData, setUserData] = useState(null);
 
+  
   useEffect(() => {
     try {
       const rawUser = localStorage.getItem('userData');
@@ -19,6 +20,7 @@ function App() {
     } catch { /* noop */ }
   }, []);
 
+  
   useEffect(() => {
     const onStorage = (e) => {
       if (e.key === 'userData' && !e.newValue) setUserData(null);
@@ -44,7 +46,7 @@ function App() {
     setUserData(null);
   };
 
-  const rol     = userData?.rol || '';
+  const rol     = (userData?.rol || '').toString().toUpperCase();
   const nombre  = userData?.nombre || '';
   const equipo  = userData?.equipo || '';
   const isAdmin = rol === 'ADMIN';
@@ -70,7 +72,14 @@ function App() {
             <Route path="/" element={<Registro userData={userData} />} />
 
             
-            <Route path="/dashboard" element={<GraficoBase userData={userData} />} />
+            <Route
+              path="/dashboard"
+              element={
+                <AdminRoute>
+                  <GraficoBase userData={userData} />
+                </AdminRoute>
+              }
+            />
 
             
             <Route
@@ -81,10 +90,12 @@ function App() {
                 </AdminRoute>
               }
             />
+
+            
             <Route
               path="/grafico"
               element={
-                <AdminRoute>
+                <AdminRoute allow={['ADMIN', 'CONSULTOR']}>
                   <PanelGraficos />
                 </AdminRoute>
               }
