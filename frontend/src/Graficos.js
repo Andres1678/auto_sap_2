@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer
 } from 'recharts';
 import './PanelGraficos.css';
-import { jfetch } from './lib/api'; // ← usar base /api y headers correctos
+import { jfetch } from './lib/api';
 
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
 
@@ -23,11 +23,10 @@ function useBrandColors() {
       const blue700 = root.getPropertyValue('--brand-blue-700')?.trim() || colors.blue700;
       setColors({ red, red700, blue, blue700 });
     } catch {}
-  }, []);
+  }, []); 
   return colors;
 }
 
-// Defs para degradado rojo/azul (puede usarse en cualquier BarChart)
 function BrandDefs({ red, blue }) {
   return (
     <defs>
@@ -45,30 +44,41 @@ const Graficos = () => {
 
   const [filtroConsultor, setFiltroConsultor] = useState('');
   const [filtroTarea, setFiltroTarea] = useState('');
-  const [filtroMes, setFiltroMes] = useState(''); // YYYY-MM
+  const [filtroMes, setFiltroMes] = useState(''); 
 
   const brand = useBrandColors();
 
-  // Datos de sesión
+  
   const user = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem('user') || 'null') || {}; } catch { return {}; }
+    try {
+      return (
+        JSON.parse(localStorage.getItem('userData') || 'null') ??
+        JSON.parse(localStorage.getItem('user') || 'null') ??
+        {}
+      );
+    } catch {
+      return {};
+    }
   }, []);
-  const rol = (user?.rol || user?.user?.rol || '').toUpperCase();
-  const nombreUser = (user?.nombre || user?.user?.nombre || '').trim();
+
+  
+  const raw = user?.user ?? user;
+  const rol = String(raw?.rol || '').toUpperCase();
+  const nombreUser = String(raw?.nombre || '').trim();
   const isAdmin = rol === 'ADMIN';
 
   useEffect(() => {
     const fetchRegistros = async () => {
       setError('');
       try {
-        // ADMIN: GET con cabecera X-User-Rol
-        // USER : POST con { rol, nombre } para que el backend filtre por su nombre
+        const isGET = isAdmin; 
         const res = await jfetch('/registros', {
-          method: isAdmin ? 'GET' : 'POST',
+          method: isGET ? 'GET' : 'POST',
           headers: {
-            ...(isAdmin ? { 'X-User-Rol': 'ADMIN' } : {}),
+            ...(isGET ? { 'X-User-Rol': 'ADMIN' } : {}),
+            ...(nombreUser ? { 'X-User-Name': nombreUser } : {}),
           },
-          ...(isAdmin ? {} : { body: JSON.stringify({ rol, nombre: nombreUser }) })
+          ...(isGET ? {} : { body: JSON.stringify({ rol, nombre: nombreUser }) })
         });
 
         const json = await res.json().catch(() => ({}));
@@ -77,20 +87,19 @@ const Graficos = () => {
         const arr = asArray(json);
         setRegistros(arr);
 
-        // Para no-admin, fija el filtro al propio consultor y deshabilita el combo
+        
         if (!isAdmin && nombreUser) {
           setFiltroConsultor(nombreUser);
         }
       } catch (err) {
         setRegistros([]);
-        setError(String(err.message || err));
+        setError(String(err?.message || err));
         console.error('Error al cargar registros:', err);
       }
     };
     fetchRegistros();
   }, [isAdmin, nombreUser, rol]);
 
-  // Helpers
   const coincideMes = (fechaISO, mesFiltro) => {
     if (!mesFiltro) return true;
     const [y, m] = mesFiltro.split('-');
@@ -101,7 +110,6 @@ const Graficos = () => {
     return Number.isFinite(n) ? n : 0;
   };
 
-  // Fuente única con filtros aplicados
   const datosFiltrados = useMemo(() => {
     return (registros ?? []).filter(r => {
       if (!coincideMes(r.fecha, filtroMes)) return false;
@@ -111,13 +119,11 @@ const Graficos = () => {
     });
   }, [registros, filtroMes, filtroConsultor, filtroTarea]);
 
-  // Opciones de selects según mes
   const consultoresUnicos = useMemo(() => {
     const set = new Set((registros ?? [])
       .filter(r => coincideMes(r.fecha, filtroMes))
       .map(r => r.consultor));
     const arr = Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-    // Para no-admin, fuerza a su propio nombre (seguridad visual extra; el backend ya filtra)
     return isAdmin ? arr : (nombreUser ? [nombreUser] : arr);
   }, [registros, filtroMes, isAdmin, nombreUser]);
 
@@ -128,7 +134,6 @@ const Graficos = () => {
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
-  // Dataset: horas por consultor
   const horasPorConsultor = useMemo(() => {
     const acc = new Map();
     (datosFiltrados ?? []).forEach(r => {
@@ -140,7 +145,6 @@ const Graficos = () => {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
-  // Dataset: horas por tipo de tarea
   const horasPorTarea = useMemo(() => {
     const acc = new Map();
     (datosFiltrados ?? []).forEach(r => {
@@ -152,7 +156,6 @@ const Graficos = () => {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
-  // Dataset: horas por cliente
   const horasPorCliente = useMemo(() => {
     const acc = new Map();
     (datosFiltrados ?? []).forEach(r => {
@@ -164,7 +167,6 @@ const Graficos = () => {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
-  // Dataset: horas por módulo
   const horasPorModulo = useMemo(() => {
     const acc = new Map();
     (datosFiltrados ?? []).forEach(r => {
@@ -176,11 +178,9 @@ const Graficos = () => {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
-  // ===== Lógica de colores dinámicos =====
   const hasConsultor = !!filtroConsultor;
   const hasTarea = !!filtroTarea;
 
-  // Devuelve { fill, stroke } según filtros y el tipo de gráfico
   const getBarStyle = (section) => {
     if (hasConsultor && !hasTarea) {
       return { fill: brand.blue, stroke: brand.blue700, useGradient: false };
@@ -193,7 +193,6 @@ const Graficos = () => {
       if (section === 'tarea') return { fill: brand.red, stroke: brand.red700, useGradient: false };
       return { fill: 'url(#brandGradient)', stroke: brand.blue700, useGradient: true };
     }
-    // sin filtros
     return { fill: 'url(#brandGradient)', stroke: brand.blue700, useGradient: true };
   };
 
@@ -215,9 +214,8 @@ const Graficos = () => {
         <select
           value={filtroConsultor}
           onChange={(e) => setFiltroConsultor(e.target.value)}
-          disabled={!isAdmin} // consultor no puede cambiar a otro
+          disabled={!isAdmin}
         >
-          {/* Para ADMIN dejo "Todos"; para consultor, solo su nombre */}
           {isAdmin && <option value="">Todos los consultores</option>}
           {consultoresUnicos.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -232,7 +230,6 @@ const Graficos = () => {
         <button
           className="btn btn-outline"
           onClick={() => {
-            // en consultor, mantenemos su nombre fijo
             setFiltroTarea('');
             setFiltroMes('');
             setFiltroConsultor(isAdmin ? '' : nombreUser || '');
@@ -245,7 +242,6 @@ const Graficos = () => {
 
       {/* Grid de tarjetas */}
       <div className="pg-grid">
-        {/* Horas por Consultor */}
         <div className="grafico-box">
           <h3>
             {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
@@ -269,7 +265,6 @@ const Graficos = () => {
           )}
         </div>
 
-        {/* Horas por Tipo de Tarea */}
         <div className="grafico-box">
           <h3>
             {isAdmin ? 'Horas por Tipo de Tarea' : 'Tus horas por Tipo de Tarea'}
@@ -292,7 +287,6 @@ const Graficos = () => {
           )}
         </div>
 
-        {/* Horas por Cliente (full width) */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}
@@ -315,7 +309,6 @@ const Graficos = () => {
           )}
         </div>
 
-        {/* Horas por Módulo */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}
