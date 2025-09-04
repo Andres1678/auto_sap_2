@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import './Navbar.css';
 import logoNav from '../assets/logo_navbar.png';
 
-
 const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogout }) => {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
@@ -12,7 +11,11 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
     
     if (isAdminProp != null || rolProp || nombreProp) {
       const rolUpper = String(rolProp || '').toUpperCase();
-      return { isAdmin: !!isAdminProp || rolUpper === 'ADMIN', nombre: nombreProp || '', rol: rolUpper };
+      return {
+        isAdmin: !!isAdminProp || rolUpper === 'ADMIN',
+        nombre : nombreProp || '',
+        rol    : rolUpper
+      };
     }
 
     
@@ -25,10 +28,9 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
       );
     } catch { /* noop */ }
 
-    const _rol = raw?.rol ?? raw?.user?.rol ?? '';
-    const _nombre = raw?.nombre ?? raw?.user?.nombre ?? '';
+    const _rol     = raw?.rol ?? raw?.user?.rol ?? '';
+    const _nombre  = raw?.nombre ?? raw?.user?.nombre ?? '';
     const rolUpper = String(_rol || '').toUpperCase();
-
     return { isAdmin: rolUpper === 'ADMIN', nombre: _nombre, rol: rolUpper };
   }, [isAdminProp, rolProp, nombreProp]);
 
@@ -36,10 +38,9 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
 
   const handleLogout = () => {
     if (typeof onLogout === 'function') {
-      onLogout(); 
+      onLogout();
       return;
     }
-    
     localStorage.removeItem('token');
     localStorage.removeItem('userData');
     localStorage.removeItem('user');
@@ -52,19 +53,18 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
       <button className="navc-hamburger" onClick={toggleMenu} aria-label="Abrir menú">☰</button>
 
       <nav className={`navc-navbar ${open ? 'open' : ''}`} onClick={() => setOpen(false)}>
-
+        
         <Link to="/" className="navc-logo" aria-label="Ir al inicio">
           <img src={logoNav} alt="CORA" />
         </Link>
 
+        
         <Link to="/">Inicio</Link>
+        <Link to="/grafico">Panel Gráfico</Link>
 
-        {/* Solo ADMIN */}
-        {isAdmin && <Link to="/grafico">Panel Gráficos</Link>}
+       
         {isAdmin && <Link to="/BaseRegistros">Base Registros</Link>}
         {isAdmin && <Link to="/GraficoBase">Gráfico Base</Link>}
-        {isAdmin && <Link to="/">Tableros de Control</Link>}
-        {isAdmin && <Link to="/">Informes</Link>}
 
         <span className="navc-spacer" />
 
@@ -81,3 +81,4 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
 };
 
 export default Navbar;
+

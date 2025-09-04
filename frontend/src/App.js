@@ -12,15 +12,13 @@ import AdminRoute from './AdminRoute';
 function App() {
   const [userData, setUserData] = useState(null);
 
-  
   useEffect(() => {
     try {
       const rawUser = localStorage.getItem('userData');
       if (rawUser) setUserData(JSON.parse(rawUser));
-    } catch {/* noop */}
+    } catch { /* noop */ }
   }, []);
 
-  
   useEffect(() => {
     const onStorage = (e) => {
       if (e.key === 'userData' && !e.newValue) setUserData(null);
@@ -32,6 +30,7 @@ function App() {
   const handleLoginSuccess = (payload) => {
     const token = payload?.token || null;
     const user  = payload?.user  || payload || null;
+
     if (token) localStorage.setItem('token', token);
     if (user) {
       localStorage.setItem('userData', JSON.stringify(user));
@@ -58,7 +57,6 @@ function App() {
         </Routes>
       ) : (
         <>
-          
           <Navbar
             isAdmin={isAdmin}
             rol={rol}
@@ -67,40 +65,34 @@ function App() {
             onLogout={handleLogout}
           />
 
-          {isAdmin ? (
+          <Routes>
             
-            <Routes>
-              <Route path="/" element={<Registro userData={userData} />} />
-              <Route path="/grafico" element={<PanelGraficos userData={userData} isAdmin />} />
-              <Route
-                path="/BaseRegistros"
-                element={
-                  <AdminRoute>
-                    <BaseRegistros />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="/GraficoBase"
-                element={
-                  <AdminRoute>
-                    <GraficoBase />
-                  </AdminRoute>
-                }
-              />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          ) : (
+            <Route path="/" element={<Registro userData={userData} />} />
+
             
-            <Routes>
-              <Route
-                path="/grafico"
-                element={<PanelGraficos userData={userData} isAdmin={false} />}
-              />
-              
-              <Route path="*" element={<Navigate to="/grafico" replace />} />
-            </Routes>
-          )}
+            <Route path="/dashboard" element={<GraficoBase userData={userData} />} />
+
+            
+            <Route
+              path="/BaseRegistros"
+              element={
+                <AdminRoute>
+                  <BaseRegistros />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/grafico"
+              element={
+                <AdminRoute>
+                  <PanelGraficos />
+                </AdminRoute>
+              }
+            />
+
+            
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </>
       )}
     </Router>
