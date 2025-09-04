@@ -287,28 +287,44 @@ def registrar_hora():
 # ========= Registros (ADMIN ve todo; USER ve los suyos) =========
 @bp.route('/api/registros', methods=['GET', 'POST'])
 def get_registros():
-    if request.method == 'GET':
-        rol = (request.headers.get('X-User-Rol') or request.args.get('rol') or '').strip().upper()
-        nombre = (request.headers.get('X-User-Nombre') or request.args.get('nombre') or '').strip()
-    else:
-        data = request.json or {}
-        rol = (request.headers.get('X-User-Rol') or request.args.get('rol') or data.get('rol') or '').strip().upper()
-        nombre = (request.headers.get('X-User-Nombre') or request.args.get('nombre') or data.get('nombre') or '').strip()
+    """ADMIN ve todo. No-admin ve solo sus registros.
+    Identificación por `usuario` o `nombre` (headers, query o body)."""
+    body = request.get_json(silent=True) or {}
 
+    
+    rol = (request.headers.get('X-User-Rol')
+           or request.args.get('rol')
+           or body.get('rol') or '').strip().upper()
+
+    
+    usuario = (request.headers.get('X-User-Usuario')
+               or request.args.get('usuario')
+               or body.get('usuario') or '').strip()
+
+    nombre = (request.headers.get('X-User-Nombre')
+              or request.args.get('nombre')
+              or body.get('nombre') or '').strip()
+
+    
     if rol == 'ADMIN':
         registros = Registro.query.all()
         return jsonify([registro_to_dict(r) for r in registros])
 
-    if not nombre:
-        app.logger.info("get_registros 403: falta nombre (rol=%s)", rol)
-        return jsonify({'mensaje': 'No autorizado o falta nombre de consultor'}), 403
+    
+    consultor = None
+    if usuario:
+        consultor = Consultor.query.filter_by(usuario=usuario).first()
+    if not consultor and nombre:
+        consultor = Consultor.query.filter_by(nombre=nombre).first()
 
-    consultor = Consultor.query.filter_by(nombre=nombre).first()
     if not consultor:
-        return jsonify({'mensaje': 'Consultor no encontrado'}), 404
+        app.logger.info("get_registros: consultor no encontrado (rol=%s, usuario=%r, nombre=%r)",
+                        rol, usuario, nombre)
+        return jsonify({'mensaje': 'No autorizado o consultor no encontrado'}), 403
 
     registros = Registro.query.filter_by(consultor_id=consultor.id).all()
     return jsonify([registro_to_dict(r) for r in registros])
+
 
 # ========= Resumen horas (SOLO ADMIN) =========
 @bp.route('/api/resumen-horas', methods=['GET'])
