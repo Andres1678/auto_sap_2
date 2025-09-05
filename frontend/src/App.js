@@ -73,7 +73,7 @@ function App() {
 
             
             <Route
-              path="/dashboard"
+              path="/GraficoBase"
               element={
                 <AdminRoute>
                   <GraficoBase userData={userData} />

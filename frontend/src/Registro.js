@@ -142,7 +142,6 @@ const Registro = ({ userData }) => {
     setModuloElegido(locals.length === 1 ? locals[0] : '');
   }, [userData]);
 
-  // Cargar registros / resumen según rol
   const fetchRegistros = useCallback(async () => {
     setError('');
     try {
@@ -208,9 +207,15 @@ const Registro = ({ userData }) => {
       : []
   ), [registros, filtroFecha, filtroCliente, filtroTarea, filtroConsultor]);
 
-  const resumenVisible = useMemo(() => (
-    isAdmin ? resumen : buildLocalResumen(registros, nombreUser)
-  ), [isAdmin, resumen, registros, nombreUser]);
+  const resumenVisible = useMemo(() => {
+    if (!isAdmin) {
+      return buildLocalResumen(registros, nombreUser);
+    }
+    if (filtroConsultor) {
+      return buildLocalResumen(registrosFiltrados, filtroConsultor);
+    }
+    return resumen;
+  }, [isAdmin, resumen, registros, nombreUser, filtroConsultor, registrosFiltrados]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -334,7 +339,8 @@ const Registro = ({ userData }) => {
     'COOLECHERA','CRYSTAL S.A.S','DON POLLO','EMI','ETERNA','EVOAGRO','FABRICATO',
     'FUNDACION GRUPO SANTANDER','HACEB','HITSS/CLARO','ILUMNO','JGB','LACTALIS',
     'PRND-PROINDESA','PROCAPS','SATENA','STOP JEANS','TINTATEX','UNIBAN','GREELAND',
-    'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA'
+    'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA', 'RCN', 'ECOPETROL-ODL',
+    'AGORA', 'D1', 'CASA LUKER', 'CIAMSA'  
   ];
   const tiposTarea = [
     '01 - Atencion Casos','02 - Atencion de Casos VAR','03 - Atencion de Proyectos','04- Apoyo Preventa','05 - Generacion Informes',
@@ -387,7 +393,6 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
-      {/* Filtros */}
       <div className="filters-card">
         <div className="filter-grid">
           <input
@@ -412,7 +417,7 @@ const Registro = ({ userData }) => {
           <select
             value={filtroConsultor}
             onChange={(e) => setFiltroConsultor(e.target.value)}
-            disabled={!isAdmin} // el consultor no puede ver otros
+            disabled={!isAdmin}
           >
             <option value="">{isAdmin ? 'Todos los consultores' : nombreUser || 'Consultor'}</option>
             {consultoresUnicos.map((c, idx) => (
@@ -435,7 +440,6 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
-      {/* Modal */}
       <Modal
         isOpen={modalIsOpen}
         onRequestClose={() => setModalIsOpen(false)}
@@ -452,7 +456,6 @@ const Registro = ({ userData }) => {
           <div className="modal-body">
             <form onSubmit={handleSubmit}>
               <div className="form-grid">
-                {/* Módulo: select si 2+; readOnly si 1 */}
                 {modulos.length > 1 ? (
                   <select
                     value={moduloElegido}
@@ -471,7 +474,6 @@ const Registro = ({ userData }) => {
                   />
                 )}
 
-                {/* Comunes */}
                 <input
                   type="date"
                   value={registro.fecha}
@@ -528,7 +530,6 @@ const Registro = ({ userData }) => {
                   onChange={(e) => setRegistro({ ...registro, tiempoFacturable: e.target.value })}
                 />
 
-                {/* SOLO BASIS */}
                 {equipoFormulario === 'BASIS' && (
                   <>
                     <input
@@ -578,7 +579,6 @@ const Registro = ({ userData }) => {
         </div>
       </Modal>
 
-      {/* Tabla principal */}
       <div className="table-wrap">
         <div className="table-scroll sticky-actions">
           <table>
@@ -648,10 +648,8 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
-      {/* Mensaje de error global */}
       {error && <div style={{color:'crimson', marginTop:10}}>Error: {error}</div>}
 
-      {/* Resumen */}
       <h3>Resumen de Horas</h3>
       <div className="table-wrap">
         <div className="table-scroll">
