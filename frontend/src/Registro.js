@@ -25,7 +25,7 @@ function initRegistro() {
     desborde: '',
     descripcion: '',
     totalHoras: 0,
-    modulo: ''
+    modulo: '' 
   };
 }
 
@@ -64,8 +64,62 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   return (start < inWorkStart || end > inWorkEnd) ? 'Sí' : 'No';
 };
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
-function buildLocalResumen(registros, nombre) {
+
+
+const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+
+const CONSULT_8H_USERS = new Set([
+  'serranoel',
+  'chaburg',
+  'torresfaa',
+  'jose.raigosa',
+  'camargoje',
+  'duqueb',
+  'diazstef',
+  'castronay',
+  'sierrag',
+  'tarquinojm',
+  'celyfl'
+].map(norm));
+
+
+const CONSULT_8H_NAMES = new Set([
+  'Edward Serrano',
+  'Giovanni Chabur',
+  'Fanor Arbey Torres',
+  'José Alejandro Raigosa',
+  'Juan Esteban Camargo',
+  'Brayan Stiiven Duque',
+  'Steven Diaz',
+  'Nayeli Castro',
+  'Geraldine Sierra',
+  'Juan Manuel Tarquino',
+  'Fredy Cely'
+].map(norm));
+
+
+const getUsuario = (obj) => String(obj?.usuario ?? obj?.user?.usuario ?? '').trim();
+
+
+const isConsultor8H = (name, usuario) =>
+  CONSULT_8H_USERS.has(norm(usuario)) || CONSULT_8H_NAMES.has(norm(name));
+
+
+const sortByFechaAsc = (a, b) => String(a?.fecha || '').localeCompare(String(b?.fecha || ''));
+
+
+const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+
+
+const getEquipoUpper = (r) => String(r?.equipo ?? r?.Equipo ?? '').trim().toUpperCase();
+
+function buildLocalResumen(registros, nombre, opts = {}) {
+  const horarioSesion = String(opts.horarioSesion || '').toUpperCase();
+  const usuarioClave  = String(opts.usuario || '').trim();
+
   if (!Array.isArray(registros)) return [];
+
   const byFecha = new Map();
   registros.forEach(r => {
     const fecha = r?.fecha;
@@ -73,12 +127,28 @@ function buildLocalResumen(registros, nombre) {
     if (!fecha) return;
     byFecha.set(fecha, (byFecha.get(fecha) || 0) + (isNaN(horas) ? 0 : horas));
   });
-  return Array.from(byFecha.entries()).map(([fecha, total]) => ({
-    consultor: nombre || (registros[0]?.consultor ?? ''),
-    fecha,
-    total_horas: Math.round(total * 100) / 100,
-    estado: total >= 9 ? 'Al día' : 'Incompleto'
-  }));
+
+  const es8h = isConsultor8H(nombre, usuarioClave);
+  const umbral = es8h ? 8 : 9;
+
+  const rows = Array.from(byFecha.entries()).map(([fecha, total]) => {
+    let estado;
+    if (horarioSesion === 'DISPONIBLE') {
+     
+      estado = total > 0 ? 'Al día' : 'Incompleto';
+    } else {
+      estado = total >= umbral ? 'Al día' : 'Incompleto';
+    }
+    return {
+      consultor: nombre || (registros[0]?.consultor ?? ''),
+      fecha,
+      total_horas: round2(total),
+      estado
+    };
+  });
+
+
+  return rows.sort((a, b) => a.fecha.localeCompare(b.fecha));
 }
 
 const normalizeModulos = (arr) => (
@@ -107,7 +177,16 @@ const Registro = ({ userData }) => {
   const [filtroTarea, setFiltroTarea] = useState('');
   const [filtroConsultor, setFiltroConsultor] = useState('');
 
-  const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
+  
+  const horarioSesionLS = (typeof window !== 'undefined' && localStorage.getItem('horarioSesion')) || '';
+  const horarioUsuario = (
+    userData?.horario ??
+    userData?.user?.horario ??
+    userData?.user?.horarioSesion ??
+    horarioSesionLS ??
+    ''
+  );
+
   const rol = (userData?.rol ?? userData?.user?.rol);
   const nombreUser = (userData?.nombre ?? userData?.user?.nombre) || '';
   const moduloUser = (userData?.modulo ?? userData?.user?.modulo) || '';
@@ -135,11 +214,11 @@ const Registro = ({ userData }) => {
     : (isAdmin ? vistaEquipo : (userEquipoUpper === 'BASIS' ? 'BASIS' : 'FUNCIONAL'));
 
   const [modulos, setModulos] = useState(getModulosLocal(userData));
-  const [moduloElegido, setModuloElegido] = useState('');
   useEffect(() => {
     const locals = getModulosLocal(userData);
     setModulos(locals);
-    setModuloElegido(locals.length === 1 ? locals[0] : '');
+    // si solo hay un módulo, preseleccionarlo; si hay varios, forzar selección del usuario
+    setRegistro(r => ({ ...r, modulo: locals.length === 1 ? locals[0] : '' }));
   }, [userData]);
 
   const fetchRegistros = useCallback(async () => {
@@ -159,7 +238,9 @@ const Registro = ({ userData }) => {
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
-      setRegistros(asArray(data));
+      // Ordenar por fecha asc
+      const arr = asArray(data).slice().sort(sortByFechaAsc);
+      setRegistros(arr);
     } catch (e) {
       setRegistros([]);
       setError(String(e.message || e));
@@ -190,32 +271,72 @@ const Registro = ({ userData }) => {
     }
   }, [userData, fetchRegistros, fetchResumen]);
 
-  const consultoresUnicos = useMemo(() =>
-    Array.isArray(registros)
-      ? [...new Set(registros.map(r => r?.consultor).filter(Boolean))]
-      : []
-  , [registros]);
+  // --- aplicar filtro por equipo a la fuente de datos base ---
+  const teamFilterUpper = isAdmin ? vistaEquipo : userEquipoUpper;
 
-  const registrosFiltrados = useMemo(() => (
-    Array.isArray(registros)
-      ? registros.filter((r) => (
+  const registrosTeamScoped = useMemo(() => {
+    if (!Array.isArray(registros)) return [];
+    if (!teamFilterUpper) return registros;
+    // Coincidencia estricta de equipo
+    return registros.filter(r => getEquipoUpper(r) === teamFilterUpper);
+  }, [registros, teamFilterUpper]);
+
+  const consultoresUnicos = useMemo(() =>
+    Array.isArray(registrosTeamScoped)
+      ? [...new Set(registrosTeamScoped.map(r => r?.consultor).filter(Boolean))]
+      : []
+  , [registrosTeamScoped]);
+
+  const registrosFiltrados = useMemo(() => {
+    const base = Array.isArray(registrosTeamScoped)
+      ? registrosTeamScoped.filter((r) => (
           (!filtroFecha || r.fecha === filtroFecha) &&
           (!filtroCliente || r.cliente === filtroCliente) &&
           (!filtroTarea || r.tipoTarea === filtroTarea) &&
           (!filtroConsultor || r.consultor === filtroConsultor)
         ))
-      : []
-  ), [registros, filtroFecha, filtroCliente, filtroTarea, filtroConsultor]);
+      : [];
+    
+    return base.slice().sort(sortByFechaAsc);
+  }, [registrosTeamScoped, filtroFecha, filtroCliente, filtroTarea, filtroConsultor]);
+
+  
+  const teamConsultoresSet = useMemo(() => {
+    return new Set(registrosTeamScoped.map(r => r?.consultor).filter(Boolean));
+  }, [registrosTeamScoped]);
 
   const resumenVisible = useMemo(() => {
     if (!isAdmin) {
-      return buildLocalResumen(registros, nombreUser);
+      
+      return buildLocalResumen(registrosTeamScoped, nombreUser, {
+        horarioSesion: horarioUsuario,
+        usuario: getUsuario(userData)
+      });
     }
     if (filtroConsultor) {
-      return buildLocalResumen(registrosFiltrados, filtroConsultor);
+      
+      const usuarioFiltrado =
+        (registrosFiltrados.find(r => r.consultor === filtroConsultor)?.usuario) || '';
+      return buildLocalResumen(registrosFiltrados, filtroConsultor, {
+        horarioSesion: horarioSesionLS,
+        usuario: usuarioFiltrado
+      });
     }
-    return resumen;
-  }, [isAdmin, resumen, registros, nombreUser, filtroConsultor, registrosFiltrados]);
+    
+    const base = Array.isArray(resumen)
+      ? resumen
+          .filter(r => teamConsultoresSet.size ? teamConsultoresSet.has(r.consultor) : true)
+          .map(r => {
+            const row = { ...r };
+            
+            if (isConsultor8H(row.consultor, row.usuario) && Number(row.total_horas) >= 8) {
+              row.estado = 'Al día';
+            }
+            return row;
+          })
+      : [];
+    return base;
+  }, [isAdmin, resumen, registrosTeamScoped, nombreUser, filtroConsultor, registrosFiltrados, horarioUsuario, horarioSesionLS, teamConsultoresSet, userData]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -226,20 +347,27 @@ const Registro = ({ userData }) => {
     if (tiempo <= 0) {
       return Swal.fire({ icon: 'error', title: 'Hora fin debe ser mayor a inicio' });
     }
+
+    
+    if (modulos.length > 1 && !registro.modulo) {
+      return Swal.fire({ icon: 'warning', title: 'Selecciona un módulo' });
+    }
+
     const horasAdic = calcularHorasAdicionales(
       registro.horaInicio,
       registro.horaFin,
       /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
     );
 
-    const moduloFinal = (moduloElegido || modulos[0] || moduloUser || '').trim();
+    const moduloFinal = (registro.modulo || modulos[0] || moduloUser || '').trim();
 
     const base = {
       ...registro,
+      modulo: moduloFinal,          
       tiempoInvertido: tiempo,
       horasAdicionales: horasAdic,
-      modulo: moduloFinal,
       consultor: nombreUser,
+      usuario: usuarioLogin,        
       totalHoras: tiempo,
       rol
     };
@@ -265,8 +393,7 @@ const Registro = ({ userData }) => {
       Swal.fire({ icon: 'success', title: modoEdicion ? 'Registro actualizado' : 'Registro guardado' });
       fetchRegistros();
       if (isAdmin) fetchResumen();
-      setRegistro(initRegistro());
-      setModuloElegido(modulos.length === 1 ? modulos[0] : '');
+      setRegistro(r => ({ ...initRegistro(), modulo: modulos.length === 1 ? modulos[0] : '' }));
       setModoEdicion(false);
       setModalIsOpen(false);
     } catch (e) {
@@ -275,14 +402,11 @@ const Registro = ({ userData }) => {
   };
 
   const handleEditar = (reg) => {
-    setRegistro({ ...initRegistro(), ...reg });
-    if (reg?.modulo) {
-      setModuloElegido(reg.modulo);
-    } else if (modulos.length === 1) {
-      setModuloElegido(modulos[0]);
-    } else {
-      setModuloElegido('');
-    }
+    setRegistro({
+      ...initRegistro(),
+      ...reg,
+      modulo: reg?.modulo ?? (modulos.length === 1 ? modulos[0] : '')
+    });
     setModoEdicion(true);
     setModalIsOpen(true);
   };
@@ -314,8 +438,11 @@ const Registro = ({ userData }) => {
   const handleCopiar = (reg) => {
     const copia = { ...reg };
     delete copia.id;
-    setRegistro({ ...initRegistro(), ...copia });
-    setModuloElegido(reg?.modulo || (modulos.length === 1 ? modulos[0] : ''));
+    setRegistro({
+      ...initRegistro(),
+      ...copia,
+      modulo: reg?.modulo || (modulos.length === 1 ? modulos[0] : '')
+    });
     setModoEdicion(false);
     setModalIsOpen(true);
   };
@@ -386,7 +513,11 @@ const Registro = ({ userData }) => {
           )}
           <button
             className="btn btn-primary"
-            onClick={() => { setModalIsOpen(true); setModoEdicion(false); setRegistro(initRegistro()); setModuloElegido(modulos.length === 1 ? modulos[0] : ''); }}
+            onClick={() => {
+              setModalIsOpen(true);
+              setModoEdicion(false);
+              setRegistro(r => ({ ...initRegistro(), modulo: modulos.length === 1 ? modulos[0] : '' }));
+            }}
           >
             Agregar Registro
           </button>
@@ -458,8 +589,8 @@ const Registro = ({ userData }) => {
               <div className="form-grid">
                 {modulos.length > 1 ? (
                   <select
-                    value={moduloElegido}
-                    onChange={(e) => { setModuloElegido(e.target.value); setRegistro(r => ({ ...r, modulo: e.target.value })); }}
+                    value={registro.modulo}
+                    onChange={(e) => setRegistro(r => ({ ...r, modulo: e.target.value }))}
                     required
                   >
                     <option value="">Seleccionar Módulo</option>
@@ -608,7 +739,7 @@ const Registro = ({ userData }) => {
               {registrosFiltrados.map((r) => (
                 <tr key={r.id}>
                   <td>{r.fecha}</td>
-                  <td>{r.modulo ?? moduloUser}</td>
+                  <td>{r.modulo || moduloUser}</td>
                   <td>{r.cliente}</td>
                   <td>{r.nroCasoCliente}</td>
                   <td>{r.nroCasoInterno}</td>
@@ -691,3 +822,4 @@ const Registro = ({ userData }) => {
 };
 
 export default Registro;
+

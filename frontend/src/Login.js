@@ -12,7 +12,7 @@ const Login = ({ onLoginSuccess }) => {
 
   const opcionesHorario = [
     '07:00-17:00','08:00-18:00','07:00-16:00','08:00-12:00',
-    '06:00-14:00','14:00-22:00','22:00-06:00'
+    '06:00-14:00','14:00-22:00','22:00-06:00', 'DISPONIBLE'
   ];
 
   const handleLogin = async (e) => {
