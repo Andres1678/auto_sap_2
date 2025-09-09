@@ -25,7 +25,7 @@ function initRegistro() {
     desborde: '',
     descripcion: '',
     totalHoras: 0,
-    modulo: '' 
+    modulo: ''
   };
 }
 
@@ -65,10 +65,7 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
 };
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
 
-
 const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-
-
 const CONSULT_8H_USERS = new Set([
   'serranoel',
   'chaburg',
@@ -82,8 +79,6 @@ const CONSULT_8H_USERS = new Set([
   'tarquinojm',
   'celyfl'
 ].map(norm));
-
-
 const CONSULT_8H_NAMES = new Set([
   'Edward Serrano',
   'Giovanni Chabur',
@@ -97,29 +92,16 @@ const CONSULT_8H_NAMES = new Set([
   'Juan Manuel Tarquino',
   'Fredy Cely'
 ].map(norm));
-
-
 const getUsuario = (obj) => String(obj?.usuario ?? obj?.user?.usuario ?? '').trim();
-
-
-const isConsultor8H = (name, usuario) =>
-  CONSULT_8H_USERS.has(norm(usuario)) || CONSULT_8H_NAMES.has(norm(name));
-
-
+const isConsultor8H = (name, usuario) => CONSULT_8H_USERS.has(norm(usuario)) || CONSULT_8H_NAMES.has(norm(name));
 const sortByFechaAsc = (a, b) => String(a?.fecha || '').localeCompare(String(b?.fecha || ''));
-
-
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
-
-
 const getEquipoUpper = (r) => String(r?.equipo ?? r?.Equipo ?? '').trim().toUpperCase();
 
 function buildLocalResumen(registros, nombre, opts = {}) {
   const horarioSesion = String(opts.horarioSesion || '').toUpperCase();
-  const usuarioClave  = String(opts.usuario || '').trim();
-
+  const usuarioClave = String(opts.usuario || '').trim();
   if (!Array.isArray(registros)) return [];
-
   const byFecha = new Map();
   registros.forEach(r => {
     const fecha = r?.fecha;
@@ -127,14 +109,11 @@ function buildLocalResumen(registros, nombre, opts = {}) {
     if (!fecha) return;
     byFecha.set(fecha, (byFecha.get(fecha) || 0) + (isNaN(horas) ? 0 : horas));
   });
-
   const es8h = isConsultor8H(nombre, usuarioClave);
   const umbral = es8h ? 8 : 9;
-
   const rows = Array.from(byFecha.entries()).map(([fecha, total]) => {
     let estado;
     if (horarioSesion === 'DISPONIBLE') {
-     
       estado = total > 0 ? 'Al día' : 'Incompleto';
     } else {
       estado = total >= umbral ? 'Al día' : 'Incompleto';
@@ -146,8 +125,6 @@ function buildLocalResumen(registros, nombre, opts = {}) {
       estado
     };
   });
-
-
   return rows.sort((a, b) => a.fecha.localeCompare(b.fecha));
 }
 
@@ -165,19 +142,15 @@ const getModulosLocal = (u) => {
 
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
-  const [registros, setRegistros]   = useState([]);
-  const [resumen, setResumen]       = useState([]);
-  const [error, setError]           = useState('');
-
+  const [registros, setRegistros] = useState([]);
+  const [resumen, setResumen] = useState([]);
+  const [error, setError] = useState('');
   const [registro, setRegistro] = useState(initRegistro());
   const [modoEdicion, setModoEdicion] = useState(false);
-
   const [filtroFecha, setFiltroFecha] = useState('');
   const [filtroCliente, setFiltroCliente] = useState('');
   const [filtroTarea, setFiltroTarea] = useState('');
   const [filtroConsultor, setFiltroConsultor] = useState('');
-
-  
   const horarioSesionLS = (typeof window !== 'undefined' && localStorage.getItem('horarioSesion')) || '';
   const horarioUsuario = (
     userData?.horario ??
@@ -186,13 +159,11 @@ const Registro = ({ userData }) => {
     horarioSesionLS ??
     ''
   );
-
   const rol = (userData?.rol ?? userData?.user?.rol);
   const nombreUser = (userData?.nombre ?? userData?.user?.nombre) || '';
   const moduloUser = (userData?.modulo ?? userData?.user?.modulo) || '';
   const equipoUser = (userData?.equipo ?? userData?.user?.equipo) || '';
   const usuarioLogin = (userData?.usuario ?? userData?.user?.usuario) || '';
-
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
 
@@ -217,7 +188,6 @@ const Registro = ({ userData }) => {
   useEffect(() => {
     const locals = getModulosLocal(userData);
     setModulos(locals);
-    // si solo hay un módulo, preseleccionarlo; si hay varios, forzar selección del usuario
     setRegistro(r => ({ ...r, modulo: locals.length === 1 ? locals[0] : '' }));
   }, [userData]);
 
@@ -226,19 +196,12 @@ const Registro = ({ userData }) => {
     try {
       let res;
       if (isAdmin) {
-        res = await jfetch('/registros', {
-          method: 'GET',
-          headers: { 'X-User-Rol': 'ADMIN' }
-        });
+        res = await jfetch('/registros', { method: 'GET', headers: { 'X-User-Rol': 'ADMIN' } });
       } else {
-        res = await jfetch('/registros', {
-          method: 'POST',
-          body: JSON.stringify({ rol, nombre: nombreUser })
-        });
+        res = await jfetch('/registros', { method: 'POST', body: JSON.stringify({ rol, nombre: nombreUser }) });
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
-      // Ordenar por fecha asc
       const arr = asArray(data).slice().sort(sortByFechaAsc);
       setRegistros(arr);
     } catch (e) {
@@ -251,9 +214,7 @@ const Registro = ({ userData }) => {
     if (!isAdmin) { setResumen([]); return; }
     setError('');
     try {
-      const res = await jfetch('/resumen-horas', {
-        headers: { 'X-User-Rol': 'ADMIN' }
-      });
+      const res = await jfetch('/resumen-horas', { headers: { 'X-User-Rol': 'ADMIN' } });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
       setResumen(asArray(data));
@@ -271,14 +232,15 @@ const Registro = ({ userData }) => {
     }
   }, [userData, fetchRegistros, fetchResumen]);
 
-  // --- aplicar filtro por equipo a la fuente de datos base ---
   const teamFilterUpper = isAdmin ? vistaEquipo : userEquipoUpper;
 
   const registrosTeamScoped = useMemo(() => {
     if (!Array.isArray(registros)) return [];
     if (!teamFilterUpper) return registros;
-    // Coincidencia estricta de equipo
-    return registros.filter(r => getEquipoUpper(r) === teamFilterUpper);
+    return registros.filter(r => {
+      const eq = getEquipoUpper(r);
+      return !eq || eq === teamFilterUpper;
+    });
   }, [registros, teamFilterUpper]);
 
   const consultoresUnicos = useMemo(() =>
@@ -296,25 +258,21 @@ const Registro = ({ userData }) => {
           (!filtroConsultor || r.consultor === filtroConsultor)
         ))
       : [];
-    
     return base.slice().sort(sortByFechaAsc);
   }, [registrosTeamScoped, filtroFecha, filtroCliente, filtroTarea, filtroConsultor]);
 
-  
   const teamConsultoresSet = useMemo(() => {
     return new Set(registrosTeamScoped.map(r => r?.consultor).filter(Boolean));
   }, [registrosTeamScoped]);
 
   const resumenVisible = useMemo(() => {
     if (!isAdmin) {
-      
       return buildLocalResumen(registrosTeamScoped, nombreUser, {
         horarioSesion: horarioUsuario,
         usuario: getUsuario(userData)
       });
     }
     if (filtroConsultor) {
-      
       const usuarioFiltrado =
         (registrosFiltrados.find(r => r.consultor === filtroConsultor)?.usuario) || '';
       return buildLocalResumen(registrosFiltrados, filtroConsultor, {
@@ -322,13 +280,11 @@ const Registro = ({ userData }) => {
         usuario: usuarioFiltrado
       });
     }
-    
     const base = Array.isArray(resumen)
       ? resumen
           .filter(r => teamConsultoresSet.size ? teamConsultoresSet.has(r.consultor) : true)
           .map(r => {
             const row = { ...r };
-            
             if (isConsultor8H(row.consultor, row.usuario) && Number(row.total_horas) >= 8) {
               row.estado = 'Al día';
             }
@@ -347,31 +303,25 @@ const Registro = ({ userData }) => {
     if (tiempo <= 0) {
       return Swal.fire({ icon: 'error', title: 'Hora fin debe ser mayor a inicio' });
     }
-
-    
     if (modulos.length > 1 && !registro.modulo) {
       return Swal.fire({ icon: 'warning', title: 'Selecciona un módulo' });
     }
-
     const horasAdic = calcularHorasAdicionales(
       registro.horaInicio,
       registro.horaFin,
       /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
     );
-
     const moduloFinal = (registro.modulo || modulos[0] || moduloUser || '').trim();
-
     const base = {
       ...registro,
-      modulo: moduloFinal,          
+      modulo: moduloFinal,
       tiempoInvertido: tiempo,
       horasAdicionales: horasAdic,
       consultor: nombreUser,
-      usuario: usuarioLogin,        
+      usuario: usuarioLogin,
       totalHoras: tiempo,
       rol
     };
-
     const payload = { ...base };
     if (equipoFormulario !== 'BASIS') {
       delete payload.nroCasoEscaladoSap;
@@ -379,17 +329,12 @@ const Registro = ({ userData }) => {
       delete payload.oncall;
       delete payload.desborde;
     }
-
     try {
       const path = modoEdicion ? `/editar-registro/${registro.id}` : '/registrar-hora';
       const method = modoEdicion ? 'PUT' : 'POST';
-      const resp = await jfetch(path, {
-        method,
-        body: JSON.stringify(payload),
-      });
+      const resp = await jfetch(path, { method, body: JSON.stringify(payload) });
       const j = await resp.json().catch(()=> ({}));
       if (!resp.ok) throw new Error(j?.mensaje || `HTTP ${resp.status}`);
-
       Swal.fire({ icon: 'success', title: modoEdicion ? 'Registro actualizado' : 'Registro guardado' });
       fetchRegistros();
       if (isAdmin) fetchResumen();
@@ -455,9 +400,7 @@ const Registro = ({ userData }) => {
       });
       if (!resp.ok) throw new Error((await resp.json().catch(()=>({})))?.mensaje || `HTTP ${resp.status}`);
       fetchRegistros();
-    } catch (e) {
-      console.error('Error al actualizar estado de bloqueo', e);
-    }
+    } catch (e) {}
   };
 
   const clientes = [
@@ -466,8 +409,8 @@ const Registro = ({ userData }) => {
     'COOLECHERA','CRYSTAL S.A.S','DON POLLO','EMI','ETERNA','EVOAGRO','FABRICATO',
     'FUNDACION GRUPO SANTANDER','HACEB','HITSS/CLARO','ILUMNO','JGB','LACTALIS',
     'PRND-PROINDESA','PROCAPS','SATENA','STOP JEANS','TINTATEX','UNIBAN','GREELAND',
-    'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA', 'RCN', 'ECOPETROL-ODL',
-    'AGORA', 'D1', 'CASA LUKER', 'CIAMSA'
+    'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA','RCN','ECOPETROL-ODL',
+    'AGORA','D1','CASA LUKER','CIAMSA'
   ];
   const tiposTarea = [
     '01 - Atencion Casos','02 - Atencion de Casos VAR','03 - Atencion de Proyectos','04- Apoyo Preventa','05 - Generacion Informes',
@@ -822,4 +765,3 @@ const Registro = ({ userData }) => {
 };
 
 export default Registro;
-
