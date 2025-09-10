@@ -159,3 +159,8 @@
 }
 .pg-dark .recharts-cartesian-grid line{ stroke:#1f2a44 !important; }
 
+/* fuerza 1 sola columna siempre, aun en desktop */
+.pg-grid--stack { 
+  grid-template-columns: 1fr !important;
+  gap: 28px !important;
+}

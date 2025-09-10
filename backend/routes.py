@@ -9,7 +9,6 @@ from collections import defaultdict
 
 bp = Blueprint('routes', __name__)
 
-# ========= Helpers comunes =========
 _HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$")
 
 def validar_horario_str(horario: str):
@@ -72,11 +71,10 @@ def registro_to_dict(r: Registro):
         'descripcion': r.descripcion,
         'totalHoras': r.total_horas,
         'consultor': r.consultor.nombre if r.consultor else None,
-        'modulo': r.consultor.modulo.nombre if r.consultor and r.consultor.modulo else None,
+        'modulo': (r.modulo or (r.consultor.modulo.nombre if r.consultor and r.consultor.modulo else None)),
         'bloqueado': r.bloqueado
     }
 
-# ========= Seguridad: solo ADMIN =========
 def _rol_from_request():
     data = request.get_json(silent=True) or {}
     return (request.headers.get('X-User-Rol')
@@ -92,15 +90,12 @@ def admin_required(fn):
         return fn(*args, **kwargs)
     return wrapper
 
-# ========= Helper para leer múltiples alias =========
 def pick(d: dict, *keys, default=None):
-    """Devuelve el primer valor no vacío encontrado entre varios alias."""
     for k in keys:
         if k in d and d[k] not in (None, "", "null", "None"):
             return d[k]
     return default
 
-# ========= LOGIN =========
 def _listar_modulos_para_consultor(consultor_id: int):
     mods = []
     try:
@@ -166,7 +161,6 @@ def login():
         }
     }), 200
 
-# ========= Obtener horario (precarga) =========
 @bp.route('/api/consultores/horario', methods=['GET'])
 def horario_consultor():
     usuario = request.args.get('usuario')
@@ -181,9 +175,7 @@ def horario_consultor():
     ]
     return jsonify({'horario': consultor.horario, 'opciones': opciones})
 
-# ========= Helpers anti-NULL para registrar/editar =========
 def _norm_default(v, default):
-    """Devuelve un string seguro: si v es None/''/'null'/'n/d' -> default."""
     if v is None:
         return default
     s = str(v).strip()
@@ -192,7 +184,6 @@ def _norm_default(v, default):
     return s
 
 def _basis_defaults_from_payload(data: dict):
-    """Lee posibles claves camelCase/snake_case y garantiza valores NO nulos."""
     return {
         "actividad_malla": _norm_default(data.get("actividadMalla") or data.get("actividad_malla"), "N/APLICA"),
         "oncall":          _norm_default(data.get("oncall"), "N/A"),
@@ -200,12 +191,10 @@ def _basis_defaults_from_payload(data: dict):
         "nro_escalado":    _norm_default(data.get("nroCasoEscaladoSap") or data.get("nro_caso_escalado"), ""),
     }
 
-# ========= Registrar hora (tolerante a alias y robusto) =========
 @bp.route('/api/registrar-hora', methods=['POST'])
 def registrar_hora():
     data = request.get_json(silent=True) or {}
 
-    # Resolver consultor por id, usuario o nombre (en ese orden)
     consultor = None
     cid = pick(data, 'consultor_id', 'consultorId', 'id')
     if cid:
@@ -224,10 +213,8 @@ def registrar_hora():
     if not consultor:
         return jsonify({'mensaje': 'Consultor no encontrado'}), 404
 
-    # Defaults anti-NULL para campos BASIS
     bd = _basis_defaults_from_payload(data)
 
-    # Leer campos aceptando camelCase y snake_case
     fecha              = pick(data, 'fecha')
     cliente            = pick(data, 'cliente')
     nro_caso_cliente   = _norm_default(pick(data, 'nroCasoCliente', 'nro_caso_cliente'), '0')
@@ -238,10 +225,8 @@ def registrar_hora():
     tiempo_invertido   = float(pick(data, 'tiempoInvertido', 'tiempo_invertido', default=0) or 0)
     tiempo_facturable  = float(pick(data, 'tiempoFacturable', 'tiempo_facturable', default=0) or 0)
     total_horas        = float(pick(data, 'totalHoras', 'total_horas', default=tiempo_invertido) or 0)
-    modulo_final       = (pick(data, 'modulo')
-                          or (consultor.modulo.nombre if consultor.modulo else 'SIN MODULO')).strip()
-    horario_trabajo    = (pick(data, 'horario_trabajo', 'horarioTrabajo')
-                          or getattr(consultor, 'horario', None))
+    modulo_final       = (pick(data, 'modulo') or (consultor.modulo.nombre if consultor.modulo else 'SIN MODULO')).strip()
+    horario_trabajo    = (pick(data, 'horario_trabajo', 'horarioTrabajo') or getattr(consultor, 'horario', None))
 
     try:
         nuevo = Registro(
@@ -254,9 +239,9 @@ def registrar_hora():
             hora_inicio=hora_inicio,
             hora_fin=hora_fin,
             tiempo_invertido=tiempo_invertido,
-            actividad_malla=bd["actividad_malla"],  # nunca None
-            oncall=bd["oncall"],                    # nunca None
-            desborde=bd["desborde"],                # nunca None
+            actividad_malla=bd["actividad_malla"],
+            oncall=bd["oncall"],
+            desborde=bd["desborde"],
             tiempo_facturable=tiempo_facturable,
             horas_adicionales=_norm_default(pick(data, 'horasAdicionales', 'horas_adicionales'), 'No'),
             descripcion=_norm_default(pick(data, 'descripcion'), ''),
@@ -266,7 +251,6 @@ def registrar_hora():
             consultor_id=consultor.id
         )
 
-        # Cinturón y tirantes
         if not nuevo.actividad_malla: nuevo.actividad_malla = "N/APLICA"
         if not nuevo.oncall:          nuevo.oncall          = "N/A"
         if not nuevo.desborde:        nuevo.desborde        = "N/A"
@@ -284,19 +268,14 @@ def registrar_hora():
         app.logger.exception("Error insertando registro")
         return jsonify({'mensaje': f'No se pudo guardar el registro: {e}'}), 500
 
-# ========= Registros (ADMIN ve todo; USER ve los suyos) =========
 @bp.route('/api/registros', methods=['GET', 'POST'])
 def get_registros():
-    """ADMIN ve todo. No-admin ve solo sus registros.
-    Identificación por `usuario` o `nombre` (headers, query o body)."""
     body = request.get_json(silent=True) or {}
 
-    
     rol = (request.headers.get('X-User-Rol')
            or request.args.get('rol')
            or body.get('rol') or '').strip().upper()
 
-    
     usuario = (request.headers.get('X-User-Usuario')
                or request.args.get('usuario')
                or body.get('usuario') or '').strip()
@@ -305,12 +284,10 @@ def get_registros():
               or request.args.get('nombre')
               or body.get('nombre') or '').strip()
 
-    
     if rol == 'ADMIN':
         registros = Registro.query.all()
         return jsonify([registro_to_dict(r) for r in registros])
 
-    
     consultor = None
     if usuario:
         consultor = Consultor.query.filter_by(usuario=usuario).first()
@@ -325,8 +302,6 @@ def get_registros():
     registros = Registro.query.filter_by(consultor_id=consultor.id).all()
     return jsonify([registro_to_dict(r) for r in registros])
 
-
-# ========= Resumen horas (SOLO ADMIN) =========
 @bp.route('/api/resumen-horas', methods=['GET'])
 @admin_required
 def resumen_horas():
@@ -346,7 +321,6 @@ def resumen_horas():
             })
     return jsonify(resumen)
 
-# ========= Eliminar registro =========
 @bp.route('/api/eliminar-registro/<int:id>', methods=['DELETE'])
 def eliminar_registro(id):
     data = request.json or {}
@@ -364,7 +338,6 @@ def eliminar_registro(id):
     db.session.commit()
     return jsonify({'mensaje': 'Registro eliminado'}), 200
 
-# ========= Editar registro (tolerante a alias y sin NULL en BASIS) =========
 @bp.route('/api/editar-registro/<int:id>', methods=['PUT'])
 def editar_registro(id):
     data = request.get_json(silent=True) or {}
@@ -406,7 +379,6 @@ def editar_registro(id):
         registro.total_horas        = pick(data, 'totalHoras', 'total_horas', default=registro.total_horas)
         registro.modulo             = pick(data, 'modulo', default=registro.modulo)
 
-        # Reforzar no-NULL en BASIS
         if not registro.actividad_malla: registro.actividad_malla = "N/APLICA"
         if not registro.oncall:          registro.oncall          = "N/A"
         if not registro.desborde:        registro.desborde        = "N/A"
@@ -422,7 +394,6 @@ def editar_registro(id):
         app.logger.exception("Error actualizando registro id=%s", id)
         return jsonify({'mensaje': f'No se pudo actualizar el registro: {e}'}), 500
 
-# ========= Toggle bloqueado =========
 @bp.route('/api/toggle-bloqueado/<int:id>', methods=['PUT'])
 def toggle_bloqueado(id):
     data = request.json or {}
@@ -437,7 +408,6 @@ def toggle_bloqueado(id):
     db.session.commit()
     return jsonify({'bloqueado': registro.bloqueado}), 200
 
-# ========= Normalización de claves =========
 def _norm_key(s: str) -> str:
     s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
     s = s.lower().strip()
@@ -483,7 +453,6 @@ def get_val(reg: dict, *keys):
                     return norm[alt_n]
     return None
 
-# ======= FECHAS: función robusta (forzando dd/mm si viene con / o -) =======
 def excel_date_to_iso(v):
     if v is None or v == "":
         return ""
@@ -610,7 +579,6 @@ def partir_fecha_mas_campos(fecha_val, dia_val=None, mes_val=None, anio_val=None
     except Exception:
         return 0, 0, 0
 
-# ========== RUTA: Cargar registros desde Excel ==========
 @bp.route('/api/cargar-registros-excel', methods=['POST'])
 def cargar_registros_excel():
     data = request.get_json() or {}
@@ -647,7 +615,6 @@ def cargar_registros_excel():
         'ocupacion_azure','tarea_azure',
         'extemporaneo','equipo'
     }
-    # Si la tabla tiene fecha_date (DATE), también la insertamos:
     if hasattr(BaseRegistro, 'fecha_date'):
         ALLOWED_INSERT.add('fecha_date')
 
@@ -699,14 +666,6 @@ def cargar_registros_excel():
         }
         if 'fecha_date' in ALLOWED_INSERT:
             mapp['fecha_date'] = fecha_iso
-        # log de muestra para auditar (5 primeras filas)
-        seen = getattr(preparar_mapping, "_seen", 0)
-        if seen < 5:
-            try:
-                app.logger.info("FECHA raw=%r -> %s (d/m/a=%r/%r/%r)", fecha_raw, fecha_iso, d, m, y)
-            finally:
-                setattr(preparar_mapping, "_seen", seen + 1)
-
         return {k: v for k, v in mapp.items() if k in ALLOWED_INSERT}
 
     def flush_batch(batch_maps):
@@ -760,7 +719,6 @@ def cargar_registros_excel():
         app.logger.exception("Error cargando registros desde Excel")
         return jsonify({'error': str(e)}), 500
 
-# ========== Serializador ==========
 def base_registro_to_dict(r):
     return {
         'id': r.id,
@@ -789,7 +747,6 @@ def base_registro_to_dict(r):
         'equipo': r.equipo,
     }
 
-# ========== Listado / filtro / paginado ==========
 @bp.route('/api/base-registros', methods=['GET'])
 @admin_required
 def listar_base_registros():
@@ -804,11 +761,9 @@ def listar_base_registros():
 
     qry = BaseRegistro.query
 
-    # Columna de fecha efectiva: si existe fecha_date úsala; si no, parsea desde string
     if hasattr(BaseRegistro, 'fecha_date'):
         fecha_eff = getattr(BaseRegistro, 'fecha_date')
     else:
-        # COALESCE(STR_TO_DATE(LEFT(fecha,10), ...))
         f10 = func.left(BaseRegistro.fecha, 10)
         fecha_eff = func.coalesce(
             func.str_to_date(f10, '%Y-%m-%d'),
@@ -862,6 +817,5 @@ def consultor_modulos():
     c = Consultor.query.filter_by(usuario=usuario).first()
     if not c:
         return jsonify({'mensaje': 'Usuario no encontrado'}), 404
-    mods = _listar_modulos_para_consultor(c.id)  
-    
-    return jsonify({'modulos': [m['nombre'] for m in mods]})
+    mods = _listar_modulos_para_consultor(c.id)
+    return jsonify({'modulos': mods}), 200

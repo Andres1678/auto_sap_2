@@ -7,6 +7,7 @@ import { jfetch } from './lib/api';
 
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
 
+// useBrandColors sin warnings
 function useBrandColors() {
   const [colors, setColors] = useState({
     red: '#E30613',
@@ -14,16 +15,25 @@ function useBrandColors() {
     blue: '#0055B8',
     blue700: '#024aa2'
   });
+
   useEffect(() => {
     try {
       const root = getComputedStyle(document.documentElement);
-      const red     = root.getPropertyValue('--brand-red')?.trim()       || colors.red;
-      const red700  = root.getPropertyValue('--brand-red-700')?.trim()   || colors.red700;
-      const blue    = root.getPropertyValue('--brand-blue')?.trim()      || colors.blue;
-      const blue700 = root.getPropertyValue('--brand-blue-700')?.trim()  || colors.blue700;
-      setColors({ red, red700, blue, blue700 });
+      const next = {
+        red:     root.getPropertyValue('--brand-red')?.trim()       || '#E30613',
+        red700:  root.getPropertyValue('--brand-red-700')?.trim()   || '#b00510',
+        blue:    root.getPropertyValue('--brand-blue')?.trim()      || '#0055B8',
+        blue700: root.getPropertyValue('--brand-blue-700')?.trim()  || '#024aa2'
+      };
+      setColors(prev =>
+        prev.red === next.red &&
+        prev.red700 === next.red700 &&
+        prev.blue === next.blue &&
+        prev.blue700 === next.blue700 ? prev : next
+      );
     } catch {}
   }, []);
+
   return colors;
 }
 
@@ -38,17 +48,49 @@ function BrandDefs({ red, blue }) {
   );
 }
 
+// ===== Ticks multilínea =====
+const splitByLength = (s, n) => {
+  const out = [];
+  let rest = String(s || '').trim();
+  while (rest.length > n) {
+    let cut = rest.lastIndexOf(' ', n);
+    if (cut <= 0) cut = n;
+    out.push(rest.slice(0, cut));
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) out.push(rest);
+  return out;
+};
+
+const MultiLineTick = ({ x, y, payload, maxLines = 2, lineLength = 16, breakAfterCode = false }) => {
+  const raw = String(payload?.value ?? '');
+  const hinted = breakAfterCode ? raw.replace(/^(\d+\s*-\s*)/, '$1\n') : raw;
+  const lines = hinted
+    .split('\n')
+    .flatMap(piece => splitByLength(piece, lineLength))
+    .slice(0, maxLines);
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text textAnchor="middle" fill="#6b7280" fontSize={12}>
+        {lines.map((ln, i) => (
+          <tspan key={i} x={0} dy={12}>{ln}</tspan>
+        ))}
+      </text>
+    </g>
+  );
+};
+
+const NameTick = (p) => <MultiLineTick {...p} lineLength={18} maxLines={2} />;
+const TaskTick = (p) => <MultiLineTick {...p} lineLength={20} maxLines={2} breakAfterCode />;
+
 const Graficos = () => {
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState('');
-
   const [filtroConsultor, setFiltroConsultor] = useState('');
   const [filtroTarea, setFiltroTarea] = useState('');
-  const [filtroMes, setFiltroMes] = useState(''); 
-
+  const [filtroMes, setFiltroMes] = useState('');
   const brand = useBrandColors();
 
-  
   const user = useMemo(() => {
     try {
       return (
@@ -75,25 +117,19 @@ const Graficos = () => {
           },
           ...(isUser ? { body: JSON.stringify({ rol, nombre: nombreUser }) } : {})
         });
-
         const json = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
-
         const arr = asArray(json);
         setRegistros(arr);
-
-        
         if (!isAdmin && nombreUser) setFiltroConsultor(nombreUser);
       } catch (err) {
         setRegistros([]);
         setError(String(err?.message || err));
-        console.error('Error al cargar registros:', err);
       }
     };
     fetchRegistros();
   }, [isAdmin, nombreUser, rol]);
 
-  
   const coincideMes = (fechaISO, mesFiltro) => {
     if (!mesFiltro) return true;
     const [y, m] = mesFiltro.split('-');
@@ -104,7 +140,6 @@ const Graficos = () => {
     return Number.isFinite(n) ? n : 0;
   };
 
-  
   const datosFiltrados = useMemo(() => {
     return (registros ?? []).filter(r => {
       if (!coincideMes(r.fecha, filtroMes)) return false;
@@ -114,7 +149,6 @@ const Graficos = () => {
     });
   }, [registros, filtroMes, filtroConsultor, filtroTarea]);
 
-  
   const consultoresUnicos = useMemo(() => {
     const set = new Set((registros ?? [])
       .filter(r => coincideMes(r.fecha, filtroMes))
@@ -130,7 +164,6 @@ const Graficos = () => {
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
-  
   const horasPorConsultor = useMemo(() => {
     const acc = new Map();
     (datosFiltrados ?? []).forEach(r => {
@@ -175,7 +208,6 @@ const Graficos = () => {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
-  
   const hasConsultor = !!filtroConsultor;
   const hasTarea = !!filtroTarea;
   const getBarStyle = (section) => {
@@ -202,7 +234,6 @@ const Graficos = () => {
     <div className="panel-graficos-container">
       {error && <div className="pg-error">Error al cargar datos: {error}</div>}
 
-      {/* Filtros */}
       <div className="filtros-globales">
         <select
           value={filtroConsultor}
@@ -233,10 +264,9 @@ const Graficos = () => {
         </button>
       </div>
 
-      
       <div className="pg-grid">
-        
-        <div className="grafico-box">
+        {/* 1) Consultor — ocupa toda la fila */}
+        <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
             {filtroMes && ` (${filtroMes})`}
@@ -245,10 +275,10 @@ const Graficos = () => {
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
             <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={horasPorConsultor} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={18}>
+              <BarChart data={horasPorConsultor} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={22}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="consultor" />
+                <XAxis dataKey="consultor" interval={0} tickMargin={10} height={48} tick={<NameTick />} />
                 <YAxis />
                 <Tooltip />
                 <Legend />
@@ -259,8 +289,8 @@ const Graficos = () => {
           )}
         </div>
 
-        {/* Horas por Tipo de Tarea */}
-        <div className="grafico-box">
+        {/* 2) Tipo de tarea — ocupa toda la fila */}
+        <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Tipo de Tarea' : 'Tus horas por Tipo de Tarea'}
             {filtroConsultor && ` — ${filtroConsultor}`}
@@ -269,10 +299,10 @@ const Graficos = () => {
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
             <ResponsiveContainer width="100%" height={420}>
-              <BarChart data={horasPorTarea} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={18}>
+              <BarChart data={horasPorTarea} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={22}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="tipoTarea" interval={0} angle={-45} textAnchor="end" height={100} />
+                <XAxis dataKey="tipoTarea" interval={0} tickMargin={10} height={58} tick={<TaskTick />} />
                 <YAxis />
                 <Tooltip />
                 <Legend />
@@ -282,7 +312,7 @@ const Graficos = () => {
           )}
         </div>
 
-        {/* Horas por Cliente */}
+        {/* 3) Cliente — ocupa toda la fila */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}
@@ -292,7 +322,7 @@ const Graficos = () => {
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
             <ResponsiveContainer width="100%" height={460}>
-              <BarChart data={horasPorCliente} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={16}>
+              <BarChart data={horasPorCliente} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={18}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="cliente" interval={0} angle={-45} textAnchor="end" height={110} />
@@ -305,7 +335,7 @@ const Graficos = () => {
           )}
         </div>
 
-        {/* Horas por Módulo */}
+        {/* 4) Módulo — ocupa toda la fila */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}
