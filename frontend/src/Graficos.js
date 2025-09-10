@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ReferenceLine, ResponsiveContainer, Brush
 } from 'recharts';
 import './PanelGraficos.css';
 import { jfetch } from './lib/api';
 
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
 
-// useBrandColors sin warnings
+
 function useBrandColors() {
   const [colors, setColors] = useState({
     red: '#E30613',
@@ -15,7 +16,6 @@ function useBrandColors() {
     blue: '#0055B8',
     blue700: '#024aa2'
   });
-
   useEffect(() => {
     try {
       const root = getComputedStyle(document.documentElement);
@@ -33,7 +33,6 @@ function useBrandColors() {
       );
     } catch {}
   }, []);
-
   return colors;
 }
 
@@ -80,8 +79,19 @@ const MultiLineTick = ({ x, y, payload, maxLines = 2, lineLength = 16, breakAfte
   );
 };
 
-const NameTick = (p) => <MultiLineTick {...p} lineLength={18} maxLines={2} />;
-const TaskTick = (p) => <MultiLineTick {...p} lineLength={20} maxLines={2} breakAfterCode />;
+// ===== Contenedor con scroll horizontal automático =====
+const ScrollChart = ({ dataLength, barWidth = 40, height = 420, children }) => {
+  const innerWidth = Math.max(dataLength * barWidth, 900);
+  return (
+    <div style={{ width: '100%', overflowX: 'auto' }}>
+      <div style={{ width: innerWidth }}>
+        <ResponsiveContainer width="100%" height={height}>
+          {children}
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
 
 const Graficos = () => {
   const [registros, setRegistros] = useState([]);
@@ -208,32 +218,41 @@ const Graficos = () => {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
+  // ==== Estilo de barras dinámico
   const hasConsultor = !!filtroConsultor;
   const hasTarea = !!filtroTarea;
   const getBarStyle = (section) => {
-    if (hasConsultor && !hasTarea) {
-      return { fill: brand.blue, stroke: brand.blue700 };
-    }
-    if (!hasConsultor && hasTarea) {
-      return { fill: brand.red, stroke: brand.red700 };
-    }
+    if (hasConsultor && !hasTarea) return { fill: brand.blue, stroke: brand.blue700 };
+    if (!hasConsultor && hasTarea) return { fill: brand.red,  stroke: brand.red700  };
     if (hasConsultor && hasTarea) {
       if (section === 'consultor') return { fill: brand.blue, stroke: brand.blue700 };
-      if (section === 'tarea') return { fill: brand.red, stroke: brand.red700 };
+      if (section === 'tarea')     return { fill: brand.red,  stroke: brand.red700  };
       return { fill: 'url(#brandGradient)', stroke: brand.blue700 };
     }
     return { fill: 'url(#brandGradient)', stroke: brand.blue700 };
   };
-
   const styleConsultor = getBarStyle('consultor');
-  const styleTarea = getBarStyle('tarea');
-  const styleCliente = getBarStyle('cliente');
-  const styleModulo = getBarStyle('modulo');
+  const styleTarea     = getBarStyle('tarea');
+  const styleCliente   = getBarStyle('cliente');
+  const styleModulo    = getBarStyle('modulo');
+
+  // ==== Dinámica para labels y anchos cuando hay muchos ítems
+  const nCons   = horasPorConsultor.length;
+  const nTareas = horasPorTarea.length;
+  const consTick = (p) => (
+    <MultiLineTick {...p} lineLength={nCons > 30 ? 12 : 18} maxLines={2} />
+  );
+  const tareaTick = (p) => (
+    <MultiLineTick {...p} lineLength={nTareas > 28 ? 16 : 20} maxLines={2} breakAfterCode />
+  );
+  const consTickHeight  = nCons > 30 ? 60 : 48;
+  const tareaTickHeight = nTareas > 28 ? 64 : 58;
 
   return (
     <div className="panel-graficos-container">
       {error && <div className="pg-error">Error al cargar datos: {error}</div>}
 
+      {/* Filtros */}
       <div className="filtros-globales">
         <select
           value={filtroConsultor}
@@ -265,7 +284,7 @@ const Graficos = () => {
       </div>
 
       <div className="pg-grid">
-        {/* 1) Consultor — ocupa toda la fila */}
+        {/* 1) Consultor */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
@@ -274,22 +293,23 @@ const Graficos = () => {
           {horasPorConsultor.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
-            <ResponsiveContainer width="100%" height={400}>
+            <ScrollChart dataLength={nCons} barWidth={42} height={400}>
               <BarChart data={horasPorConsultor} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={22}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="consultor" interval={0} tickMargin={10} height={48} tick={<NameTick />} />
-                <YAxis />
+                <XAxis dataKey="consultor" interval={0} tickMargin={10} height={consTickHeight} tick={consTick} />
+                <YAxis allowDecimals={false} />
                 <Tooltip />
                 <Legend />
                 <ReferenceLine y={180} label="Meta" stroke={brand.red} strokeDasharray="3 3" />
                 <Bar dataKey="horas" name="Horas" fill={styleConsultor.fill} stroke={styleConsultor.stroke} radius={[6,6,0,0]} />
+                <Brush dataKey="consultor" height={24} travellerWidth={10} stroke={brand.blue} />
               </BarChart>
-            </ResponsiveContainer>
+            </ScrollChart>
           )}
         </div>
 
-        {/* 2) Tipo de tarea — ocupa toda la fila */}
+        {/* 2) Tipo de Tarea */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Tipo de Tarea' : 'Tus horas por Tipo de Tarea'}
@@ -298,21 +318,22 @@ const Graficos = () => {
           {horasPorTarea.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
-            <ResponsiveContainer width="100%" height={420}>
+            <ScrollChart dataLength={nTareas} barWidth={46} height={440}>
               <BarChart data={horasPorTarea} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={22}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="tipoTarea" interval={0} tickMargin={10} height={58} tick={<TaskTick />} />
-                <YAxis />
+                <XAxis dataKey="tipoTarea" interval={0} tickMargin={10} height={tareaTickHeight} tick={tareaTick} />
+                <YAxis allowDecimals={false} />
                 <Tooltip />
                 <Legend />
                 <Bar dataKey="horas" name="Horas" fill={styleTarea.fill} stroke={styleTarea.stroke} radius={[6,6,0,0]} />
+                <Brush dataKey="tipoTarea" height={24} travellerWidth={10} stroke={brand.blue} />
               </BarChart>
-            </ResponsiveContainer>
+            </ScrollChart>
           )}
         </div>
 
-        {/* 3) Cliente — ocupa toda la fila */}
+        {/* 3) Cliente */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}
@@ -321,21 +342,23 @@ const Graficos = () => {
           {horasPorCliente.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
-            <ResponsiveContainer width="100%" height={460}>
-              <BarChart data={horasPorCliente} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={18}>
+            <ScrollChart dataLength={horasPorCliente.length} barWidth={44} height={460}>
+              <BarChart data={horasPorCliente} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={20}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="cliente" interval={0} angle={-45} textAnchor="end" height={110} />
-                <YAxis />
+                <XAxis dataKey="cliente" interval={0} tickMargin={10} height={70}
+                  tick={(p) => <MultiLineTick {...p} lineLength={18} maxLines={2} />} />
+                <YAxis allowDecimals={false} />
                 <Tooltip />
                 <Legend />
                 <Bar dataKey="horas" name="Horas" fill={styleCliente.fill} stroke={styleCliente.stroke} radius={[6,6,0,0]} />
+                <Brush dataKey="cliente" height={24} travellerWidth={10} stroke={brand.blue} />
               </BarChart>
-            </ResponsiveContainer>
+            </ScrollChart>
           )}
         </div>
 
-        {/* 4) Módulo — ocupa toda la fila */}
+        {/* 4) Módulo */}
         <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
           <h3>
             {isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}
@@ -344,17 +367,19 @@ const Graficos = () => {
           {horasPorModulo.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
-            <ResponsiveContainer width="100%" height={420}>
-              <BarChart data={horasPorModulo} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={18}>
+            <ScrollChart dataLength={horasPorModulo.length} barWidth={46} height={430}>
+              <BarChart data={horasPorModulo} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={20}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="modulo" interval={0} angle={-20} textAnchor="end" height={60} />
-                <YAxis />
+                <XAxis dataKey="modulo" interval={0} tickMargin={10} height={64}
+                  tick={(p) => <MultiLineTick {...p} lineLength={20} maxLines={2} />} />
+                <YAxis allowDecimals={false} />
                 <Tooltip />
                 <Legend />
                 <Bar dataKey="horas" name="Horas" fill={styleModulo.fill} stroke={styleModulo.stroke} radius={[6,6,0,0]} />
+                <Brush dataKey="modulo" height={24} travellerWidth={10} stroke={brand.blue} />
               </BarChart>
-            </ResponsiveContainer>
+            </ScrollChart>
           )}
         </div>
       </div>
@@ -363,3 +388,4 @@ const Graficos = () => {
 };
 
 export default Graficos;
+
