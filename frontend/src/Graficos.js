@@ -47,7 +47,7 @@ function BrandDefs({ red, blue }) {
   );
 }
 
-// ===== Ticks multilínea =====
+
 const splitByLength = (s, n) => {
   const out = [];
   let rest = String(s || '').trim();
@@ -60,7 +60,6 @@ const splitByLength = (s, n) => {
   if (rest) out.push(rest);
   return out;
 };
-
 const MultiLineTick = ({ x, y, payload, maxLines = 2, lineLength = 16, breakAfterCode = false }) => {
   const raw = String(payload?.value ?? '');
   const hinted = breakAfterCode ? raw.replace(/^(\d+\s*-\s*)/, '$1\n') : raw;
@@ -78,8 +77,10 @@ const MultiLineTick = ({ x, y, payload, maxLines = 2, lineLength = 16, breakAfte
     </g>
   );
 };
+const NameTick = (p) => <MultiLineTick {...p} lineLength={18} maxLines={2} />;
+const TaskTick = (p) => <MultiLineTick {...p} lineLength={20} maxLines={2} breakAfterCode />;
 
-// ===== Contenedor con scroll horizontal automático =====
+
 const ScrollChart = ({ dataLength, barWidth = 40, height = 420, children }) => {
   const innerWidth = Math.max(dataLength * barWidth, 900);
   return (
@@ -218,7 +219,7 @@ const Graficos = () => {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
-  // ==== Estilo de barras dinámico
+  
   const hasConsultor = !!filtroConsultor;
   const hasTarea = !!filtroTarea;
   const getBarStyle = (section) => {
@@ -236,17 +237,8 @@ const Graficos = () => {
   const styleCliente   = getBarStyle('cliente');
   const styleModulo    = getBarStyle('modulo');
 
-  // ==== Dinámica para labels y anchos cuando hay muchos ítems
-  const nCons   = horasPorConsultor.length;
-  const nTareas = horasPorTarea.length;
-  const consTick = (p) => (
-    <MultiLineTick {...p} lineLength={nCons > 30 ? 12 : 18} maxLines={2} />
-  );
-  const tareaTick = (p) => (
-    <MultiLineTick {...p} lineLength={nTareas > 28 ? 16 : 20} maxLines={2} breakAfterCode />
-  );
-  const consTickHeight  = nCons > 30 ? 60 : 48;
-  const tareaTickHeight = nTareas > 28 ? 64 : 58;
+  
+  const TOO_MANY = 22;
 
   return (
     <div className="panel-graficos-container">
@@ -290,14 +282,29 @@ const Graficos = () => {
             {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
             {filtroMes && ` (${filtroMes})`}
           </h3>
+
           {horasPorConsultor.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
+          ) : horasPorConsultor.length > TOO_MANY ? (
+            
+            <ResponsiveContainer width="100%" height={Math.min(1200, Math.max(420, horasPorConsultor.length * 28))}>
+              <BarChart data={horasPorConsultor} layout="vertical" margin={{ top: 10, right: 30, left: 8, bottom: 10 }} barCategoryGap={6}>
+                <BrandDefs red={brand.red} blue={brand.blue} />
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" allowDecimals={false} />
+                <YAxis type="category" dataKey="consultor" width={220} tick={{ fontSize: 12, fill: '#6b7280' }} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="horas" name="Horas" fill={styleConsultor.fill} stroke={styleConsultor.stroke} radius={[0,6,6,0]} />
+              </BarChart>
+            </ResponsiveContainer>
           ) : (
-            <ScrollChart dataLength={nCons} barWidth={42} height={400}>
+            
+            <ScrollChart dataLength={horasPorConsultor.length} barWidth={42} height={400}>
               <BarChart data={horasPorConsultor} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={22}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="consultor" interval={0} tickMargin={10} height={consTickHeight} tick={consTick} />
+                <XAxis dataKey="consultor" interval={0} tickMargin={10} height={48} tick={<NameTick />} />
                 <YAxis allowDecimals={false} />
                 <Tooltip />
                 <Legend />
@@ -315,14 +322,27 @@ const Graficos = () => {
             {isAdmin ? 'Horas por Tipo de Tarea' : 'Tus horas por Tipo de Tarea'}
             {filtroConsultor && ` — ${filtroConsultor}`}
           </h3>
+
           {horasPorTarea.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
+          ) : horasPorTarea.length > TOO_MANY ? (
+            <ResponsiveContainer width="100%" height={Math.min(1200, Math.max(440, horasPorTarea.length * 28))}>
+              <BarChart data={horasPorTarea} layout="vertical" margin={{ top: 10, right: 30, left: 8, bottom: 10 }} barCategoryGap={6}>
+                <BrandDefs red={brand.red} blue={brand.blue} />
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" allowDecimals={false} />
+                <YAxis type="category" dataKey="tipoTarea" width={260} tick={{ fontSize: 12, fill: '#6b7280' }} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="horas" name="Horas" fill={styleTarea.fill} stroke={styleTarea.stroke} radius={[0,6,6,0]} />
+              </BarChart>
+            </ResponsiveContainer>
           ) : (
-            <ScrollChart dataLength={nTareas} barWidth={46} height={440}>
+            <ScrollChart dataLength={horasPorTarea.length} barWidth={46} height={440}>
               <BarChart data={horasPorTarea} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={22}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="tipoTarea" interval={0} tickMargin={10} height={tareaTickHeight} tick={tareaTick} />
+                <XAxis dataKey="tipoTarea" interval={0} tickMargin={10} height={58} tick={<TaskTick />} />
                 <YAxis allowDecimals={false} />
                 <Tooltip />
                 <Legend />
@@ -388,4 +408,3 @@ const Graficos = () => {
 };
 
 export default Graficos;
-
