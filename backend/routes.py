@@ -719,32 +719,29 @@ def cargar_registros_excel():
         app.logger.exception("Error cargando registros desde Excel")
         return jsonify({'error': str(e)}), 500
 
-def base_registro_to_dict(r):
+def base_registro_to_dict(r : Registro):
     return {
         'id': r.id,
         'fecha': r.fecha,
-        'modulo': r.modulo,
         'cliente': r.cliente,
-        'nro_caso_cliente': r.nro_caso_cliente,
-        'nro_caso_interno': r.nro_caso_interno,
-        'tipo_tarea': r.tipo_tarea,
-        'consultor': r.consultor,
-        'hora_inicio': str(r.hora_inicio) if r.hora_inicio else None,
-        'hora_fin': str(r.hora_fin) if r.hora_fin else None,
-        'tiempo_invertido': str(r.tiempo_invertido) if r.tiempo_invertido else None,
-        'tiempo_facturable': r.tiempo_facturable,
-        'horas_adicionales': r.horas_adicionales,
+        'nroCasoCliente': r.nro_caso_cliente,
+        'nroCasoInterno': r.nro_caso_interno,
+        'nroCasoEscaladoSap': r.nro_caso_escalado,
+        'tipoTarea': r.tipo_tarea,
+        'horaInicio': r.hora_inicio,
+        'horaFin': r.hora_fin,
+        'tiempoInvertido': r.tiempo_invertido,
+        'actividadMalla': r.actividad_malla,
+        'oncall': r.oncall,
+        'desborde': r.desborde,
+        'tiempoFacturable': r.tiempo_facturable,
+        'horasAdicionales': r.horas_adicionales,
         'descripcion': r.descripcion,
-        'consolidado_cliente': r.consolidado_cliente,
-        'dia': getattr(r, 'dia', None),
-        'mes': getattr(r, 'mes', None),
-        'anio': getattr(r, 'anio', None),
-        'ocupacion_azure': r.ocupacion_azure,
-        'tarea_azure': r.tarea_azure,
-        'horas_convertidas': r.horas_convertidas,
-        'promedio': r.promedio,
-        'extemporaneo': r.extemporaneo,
-        'equipo': r.equipo,
+        'totalHoras': r.total_horas,
+        'modulo': (r.modulo or
+                   (r.consultor.modulo.nombre if r.consultor and r.consultor.modulo else None)),
+        'consultor': r.consultor.nombre if r.consultor else None,
+        'bloqueado': r.bloqueado,
     }
 
 @bp.route('/api/base-registros', methods=['GET'])
