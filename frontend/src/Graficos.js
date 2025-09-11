@@ -1,70 +1,109 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
-  ResponsiveContainer
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import './PanelGraficos.css';
 import { jfetch } from './lib/api';
 
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
 
-const useBrandColors = () => {
-  return useMemo(() => {
+
+function useBrandColors() {
+  const [colors, setColors] = useState({
+    red: '#E30613',
+    red700: '#b00510',
+    blue: '#0055B8',
+    blue700: '#024aa2'
+  });
+  useEffect(() => {
     try {
       const root = getComputedStyle(document.documentElement);
-      const pick = (name, fallback) => (root.getPropertyValue(name) || '').trim() || fallback;
-      return {
-        red:     pick('--brand-red', '#E30613'),
-        red700:  pick('--brand-red-700', '#b00510'),
-        blue:    pick('--brand-blue', '#0055B8'),
-        blue700: pick('--brand-blue-700', '#024aa2'),
-      };
-    } catch {
-      return { red: '#E30613', red700: '#b00510', blue: '#0055B8', blue700: '#024aa2' };
-    }
+      const red     = root.getPropertyValue('--brand-red')?.trim()       || colors.red;
+      const red700  = root.getPropertyValue('--brand-red-700')?.trim()   || colors.red700;
+      const blue    = root.getPropertyValue('--brand-blue')?.trim()      || colors.blue;
+      const blue700 = root.getPropertyValue('--brand-blue-700')?.trim()  || colors.blue700;
+      setColors({ red, red700, blue, blue700 });
+    } catch {}
   }, []);
-};
-
-function BrandDefs({ red, blue }) {
-  return (
-    <defs>
-      <linearGradient id="brandGradient" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor={blue} />
-        <stop offset="100%" stopColor={red} />
-      </linearGradient>
-    </defs>
-  );
+  return colors;
 }
 
 
-const shouldHorizontal = (arr, threshold = 18) => (Array.isArray(arr) ? arr.length : 0) > threshold;
-const calcAutoHeight = (n, base = 360, perRow = 28, max = 900) => {
-  if (!n) return base;
-  const h = base + (n * perRow);
-  return Math.max(base, Math.min(h, max));
-};
-const labelWidth = (arr, key, min = 90, max = 260) => {
-  const m = (arr || []).reduce((acc, it) => Math.max(acc, String(it?.[key] || '').length), 0);
-  return Math.max(min, Math.min(m * 8.5, max));
-};
-const toNum = (v) => {
-  const n = parseFloat(v);
-  return Number.isFinite(n) ? n : 0;
+const autoHeight = (rows, { base = 220, row = 28, min = 260, max = 900 } = {}) => {
+  const h = base + Math.max(0, rows - 6) * row;
+  return Math.min(Math.max(h, min), max);
 };
 
+
+const ellipsize = (s, n = 42) => {
+  const t = String(s ?? '');
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+};
+
+
+const toNum = (v) => (Number.isFinite(+v) ? +v : 0);
+
+
+function HorizontalBars({ title, data, labelKey, valueKey = 'horas', fill, stroke, minHeight = 260 }) {
+  const height = autoHeight(data.length, { min: minHeight });
+  return (
+    <div className="grafico-box pg-no-scroll">
+      <h3>{title}</h3>
+      {data.length === 0 ? (
+        <div className="empty">Sin datos para los filtros seleccionados.</div>
+      ) : (
+        <ResponsiveContainer width="100%" height={height}>
+          <BarChart
+            layout="vertical"
+            data={data}
+            margin={{ top: 16, right: 24, left: 12, bottom: 12 }}
+            barCategoryGap={10}
+          >
+            <CartesianGrid strokeDasharray="3 3" />
+            {/* Eje de categorías a la izquierda (etiqueta) */}
+            <YAxis
+              dataKey={labelKey}
+              type="category"
+              width={220}
+              tickFormatter={ellipsize}
+              tickLine={false}
+              axisLine={false}
+            />
+            {/* Eje de valores abajo */}
+            <XAxis type="number" tickCount={6} />
+            <Tooltip
+              formatter={(v) => [`${(+v).toFixed(2)} h`, 'Horas']}
+              labelFormatter={(lbl) => String(lbl)}
+            />
+            <Legend />
+            <Bar
+              dataKey={valueKey}
+              name="Horas"
+              fill={fill}
+              stroke={stroke}
+              radius={[0, 6, 6, 0]}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  );
+}
+
 const Graficos = () => {
+  const colors = useBrandColors();
+
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState('');
 
   
   const [filtroConsultor, setFiltroConsultor] = useState('');
   const [filtroTarea, setFiltroTarea] = useState('');
-  const [filtroMes, setFiltroMes] = useState('');
   const [filtroCliente, setFiltroCliente] = useState('');
   const [filtroModulo, setFiltroModulo] = useState('');
+  const [filtroMes, setFiltroMes] = useState(''); // YYYY-MM
 
-  const brand = useBrandColors();
-
+  
   const user = useMemo(() => {
     try {
       return (
@@ -78,8 +117,9 @@ const Graficos = () => {
   const nombreUser = String(user?.nombre || user?.user?.nombre || '').trim();
   const isAdmin = rol === 'ADMIN';
 
+  
   useEffect(() => {
-    const fetchRegistros = async () => {
+    (async () => {
       setError('');
       try {
         const isUser = !isAdmin;
@@ -96,50 +136,43 @@ const Graficos = () => {
         const arr = asArray(json);
         setRegistros(arr);
         if (!isAdmin && nombreUser) setFiltroConsultor(nombreUser);
-      } catch (err) {
+      } catch (e) {
         setRegistros([]);
-        setError(String(err?.message || err));
-        console.error('Error al cargar registros:', err);
+        setError(String(e?.message || e));
+        
+        console.error('Error al cargar registros:', e);
       }
-    };
-    fetchRegistros();
+    })();
   }, [isAdmin, nombreUser, rol]);
-
-  const coincideMes = (fechaISO, mesFiltro) => {
-    if (!mesFiltro) return true;
-    const [y, m] = mesFiltro.split('-');
-    return typeof fechaISO === 'string' && fechaISO.startsWith(`${y}-${m}`);
-  };
 
   
   const consultoresUnicos = useMemo(() => {
-    const set = new Set((registros ?? [])
-      .filter(r => coincideMes(r.fecha, filtroMes))
-      .map(r => r.consultor));
-    const arr = Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    const set = new Set(registros.map(r => r.consultor).filter(Boolean));
+    const arr = Array.from(set).sort((a, b) => a.localeCompare(b));
     return isAdmin ? arr : (nombreUser ? [nombreUser] : arr);
-  }, [registros, filtroMes, isAdmin, nombreUser]);
+  }, [registros, isAdmin, nombreUser]);
 
   const tareasUnicas = useMemo(() => {
-    const set = new Set((registros ?? [])
-      .filter(r => coincideMes(r.fecha, filtroMes))
-      .map(r => r.tipoTarea));
-    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+    const set = new Set(registros.map(r => r.tipoTarea).filter(Boolean));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [registros]);
 
   const clientesUnicos = useMemo(() => {
-    const set = new Set((registros ?? [])
-      .filter(r => coincideMes(r.fecha, filtroMes))
-      .map(r => r.cliente));
-    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+    const set = new Set(registros.map(r => r.cliente).filter(Boolean));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [registros]);
 
   const modulosUnicos = useMemo(() => {
-    const set = new Set((registros ?? [])
-      .filter(r => coincideMes(r.fecha, filtroMes))
-      .map(r => r.modulo));
-    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+    const set = new Set(registros.map(r => r.modulo).filter(Boolean));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [registros]);
+
+  
+  const coincideMes = (fechaISO, mes) => {
+    if (!mes) return true;
+    const [y, m] = mes.split('-');
+    return typeof fechaISO === 'string' && fechaISO.startsWith(`${y}-${m}`);
+  };
 
   
   const datosFiltrados = useMemo(() => {
@@ -156,256 +189,137 @@ const Graficos = () => {
   
   const horasPorConsultor = useMemo(() => {
     const acc = new Map();
-    (datosFiltrados ?? []).forEach(r => {
+    datosFiltrados.forEach(r => {
       const k = r.consultor || '—';
       acc.set(k, (acc.get(k) || 0) + toNum(r.tiempoInvertido));
     });
-    return Array.from(acc, ([consultor, horas]) => ({ consultor, horas:+horas.toFixed(2) }))
-      .sort((a, b) => b.horas - a.horas);
+    return Array.from(acc, ([consultor, horas]) => ({
+      consultor, horas: +horas.toFixed(2),
+    })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
   const horasPorTarea = useMemo(() => {
     const acc = new Map();
-    (datosFiltrados ?? []).forEach(r => {
+    datosFiltrados.forEach(r => {
       const k = r.tipoTarea || '—';
       acc.set(k, (acc.get(k) || 0) + toNum(r.tiempoInvertido));
     });
-    return Array.from(acc, ([tipoTarea, horas]) => ({ tipoTarea, horas:+horas.toFixed(2) }))
-      .sort((a, b) => b.horas - a.horas);
+    return Array.from(acc, ([tipoTarea, horas]) => ({
+      tipoTarea, horas: +horas.toFixed(2),
+    })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
   const horasPorCliente = useMemo(() => {
     const acc = new Map();
-    (datosFiltrados ?? []).forEach(r => {
+    datosFiltrados.forEach(r => {
       const k = r.cliente || '—';
       acc.set(k, (acc.get(k) || 0) + toNum(r.tiempoInvertido));
     });
-    return Array.from(acc, ([cliente, horas]) => ({ cliente, horas:+horas.toFixed(2) }))
-      .sort((a, b) => b.horas - a.horas);
+    return Array.from(acc, ([cliente, horas]) => ({
+      cliente, horas: +horas.toFixed(2),
+    })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
   const horasPorModulo = useMemo(() => {
     const acc = new Map();
-    (datosFiltrados ?? []).forEach(r => {
+    datosFiltrados.forEach(r => {
       const k = r.modulo || '—';
       acc.set(k, (acc.get(k) || 0) + toNum(r.tiempoInvertido));
     });
-    return Array.from(acc, ([modulo, horas]) => ({ modulo, horas:+horas.toFixed(2) }))
-      .sort((a, b) => b.horas - a.horas);
+    return Array.from(acc, ([modulo, horas]) => ({
+      modulo, horas: +horas.toFixed(2),
+    })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
-
-  
-  const hasConsultor = !!filtroConsultor;
-  const hasTarea = !!filtroTarea;
-  const getBarStyle = (section) => {
-    if (hasConsultor && !hasTarea) return { fill: brand.blue, stroke: brand.blue700 };
-    if (!hasConsultor && hasTarea) return { fill: brand.red, stroke: brand.red700 };
-    if (hasConsultor && hasTarea) {
-      if (section === 'consultor') return { fill: brand.blue, stroke: brand.blue700 };
-      if (section === 'tarea') return { fill: brand.red, stroke: brand.red700 };
-      return { fill: 'url(#brandGradient)', stroke: brand.blue700 };
-    }
-    return { fill: 'url(#brandGradient)', stroke: brand.blue700 };
-  };
-  const styleConsultor = getBarStyle('consultor');
-  const styleTarea = getBarStyle('tarea');
-  const styleCliente = getBarStyle('cliente');
-  const styleModulo = getBarStyle('modulo');
-
-  
-  const clientesHoriz = shouldHorizontal(horasPorCliente);
-  const modulosHoriz  = shouldHorizontal(horasPorModulo);
-  const hClientes = clientesHoriz ? calcAutoHeight(horasPorCliente.length) : 460;
-  const hModulos  = modulosHoriz  ? calcAutoHeight(horasPorModulo.length)  : 420;
 
   return (
     <div className="panel-graficos-container">
       {error && <div className="pg-error">Error al cargar datos: {error}</div>}
 
       
-      <div className="filtros-globales filtros-sticky">
+      <div className="filtros-globales pg-sticky">
         <select
           value={filtroConsultor}
           onChange={(e) => setFiltroConsultor(e.target.value)}
           disabled={!isAdmin}
-          className="filtro-select"
-          title="Consultor"
+          aria-label="Consultor"
         >
           {isAdmin && <option value="">Todos los consultores</option>}
           {consultoresUnicos.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
 
-        <select
-          value={filtroTarea}
-          onChange={(e) => setFiltroTarea(e.target.value)}
-          className="filtro-select"
-          title="Tipo de Tarea"
-        >
+        <select value={filtroTarea} onChange={(e) => setFiltroTarea(e.target.value)} aria-label="Tarea">
           <option value="">Todas las tareas</option>
           {tareasUnicas.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
 
-        <select
-          value={filtroCliente}
-          onChange={(e) => setFiltroCliente(e.target.value)}
-          className="filtro-select"
-          title="Cliente"
-        >
+        <select value={filtroCliente} onChange={(e) => setFiltroCliente(e.target.value)} aria-label="Cliente">
           <option value="">Todos los clientes</option>
-          {clientesUnicos.map(t => <option key={t} value={t}>{t}</option>)}
+          {clientesUnicos.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
 
-        <select
-          value={filtroModulo}
-          onChange={(e) => setFiltroModulo(e.target.value)}
-          className="filtro-select"
-          title="Módulo"
-        >
+        <select value={filtroModulo} onChange={(e) => setFiltroModulo(e.target.value)} aria-label="Módulo">
           <option value="">Todos los módulos</option>
-          {modulosUnicos.map(t => <option key={t} value={t}>{t}</option>)}
+          {modulosUnicos.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
 
-        <input
-          type="month"
-          value={filtroMes}
-          onChange={(e) => setFiltroMes(e.target.value)}
-          className="filtro-month"
-          title="Mes"
-        />
+        <input type="month" value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)} />
 
         <button
           className="btn btn-outline"
           onClick={() => {
             setFiltroTarea('');
-            setFiltroMes('');
             setFiltroCliente('');
             setFiltroModulo('');
+            setFiltroMes('');
             setFiltroConsultor(isAdmin ? '' : (nombreUser || ''));
           }}
-          title="Limpiar filtros"
         >
           Limpiar
         </button>
       </div>
 
+      
       <div className="pg-grid pg-grid--stack">
-        
-        <div className="grafico-box">
-          <h3>
-            {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
-            {filtroMes && ` (${filtroMes})`}
-          </h3>
-          {horasPorConsultor.length === 0 ? (
-            <div className="empty">Sin datos para los filtros seleccionados.</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={horasPorConsultor} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={18}>
-                <BrandDefs red={brand.red} blue={brand.blue} />
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="consultor" interval={0} angle={-45} textAnchor="end" height={95} />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <ReferenceLine y={180} label="Meta" stroke={brand.red} strokeDasharray="3 3" />
-                <Bar dataKey="horas" name="Horas" fill={styleConsultor.fill} stroke={styleConsultor.stroke} radius={[6,6,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
+        <HorizontalBars
+          title={isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
+          data={horasPorConsultor}
+          labelKey="consultor"
+          fill="url(#brandGradient)" stroke={colors.blue700}
+        />
 
-        
-        <div className="grafico-box">
-          <h3>
-            {isAdmin ? 'Horas por Tipo de Tarea' : 'Tus horas por Tipo de Tarea'}
-            {filtroConsultor && ` — ${filtroConsultor}`}
-          </h3>
-          {horasPorTarea.length === 0 ? (
-            <div className="empty">Sin datos para los filtros seleccionados.</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={420}>
-              <BarChart data={horasPorTarea} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={18}>
-                <BrandDefs red={brand.red} blue={brand.blue} />
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="tipoTarea" interval={0} angle={-45} textAnchor="end" height={110} />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="horas" name="Horas" fill={styleTarea.fill} stroke={styleTarea.stroke} radius={[6,6,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
+        <HorizontalBars
+          title={isAdmin ? 'Horas por Tipo de Tarea' : 'Tus horas por Tipo de Tarea'}
+          data={horasPorTarea}
+          labelKey="tipoTarea"
+          fill={colors.red} stroke={colors.red700}
+        />
 
-        
-        <div className="grafico-box">
-          <h3>
-            {isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}
-            {filtroMes && ` (${filtroMes})`} {filtroConsultor && ` — ${filtroConsultor}`}
-          </h3>
-          {horasPorCliente.length === 0 ? (
-            <div className="empty">Sin datos para los filtros seleccionados.</div>
-          ) : shouldHorizontal(horasPorCliente) ? (
-            <ResponsiveContainer width="100%" height={calcAutoHeight(horasPorCliente.length)}>
-              <BarChart layout="vertical" data={horasPorCliente} margin={{ top: 18, right: 24, left: 8, bottom: 8 }} barCategoryGap={10}>
-                <BrandDefs red={brand.red} blue={brand.blue} />
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <YAxis type="category" dataKey="cliente" width={labelWidth(horasPorCliente, 'cliente')} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="horas" name="Horas" fill={styleCliente.fill} stroke={styleCliente.stroke} radius={[0,6,6,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <ResponsiveContainer width="100%" height={460}>
-              <BarChart data={horasPorCliente} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={16}>
-                <BrandDefs red={brand.red} blue={brand.blue} />
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="cliente" interval={0} angle={-45} textAnchor="end" height={110} />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="horas" name="Horas" fill={styleCliente.fill} stroke={styleCliente.stroke} radius={[6,6,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
+        <HorizontalBars
+          title={isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}
+          data={horasPorCliente}
+          labelKey="cliente"
+          fill="url(#brandGradient)" stroke={colors.blue700}
+          minHeight={300}
+        />
 
-        
-        <div className="grafico-box">
-          <h3>
-            {isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}
-            {filtroMes && ` (${filtroMes})`}
-          </h3>
-          {horasPorModulo.length === 0 ? (
-            <div className="empty">Sin datos para los filtros seleccionados.</div>
-          ) : shouldHorizontal(horasPorModulo) ? (
-            <ResponsiveContainer width="100%" height={calcAutoHeight(horasPorModulo.length)}>
-              <BarChart layout="vertical" data={horasPorModulo} margin={{ top: 18, right: 24, left: 8, bottom: 8 }} barCategoryGap={10}>
-                <BrandDefs red={brand.red} blue={brand.blue} />
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <YAxis type="category" dataKey="modulo" width={labelWidth(horasPorModulo, 'modulo')} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="horas" name="Horas" fill={styleModulo.fill} stroke={styleModulo.stroke} radius={[0,6,6,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <ResponsiveContainer width="100%" height={420}>
-              <BarChart data={horasPorModulo} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={18}>
-                <BrandDefs red={brand.red} blue={brand.blue} />
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="modulo" interval={0} angle={-20} textAnchor="end" height={60} />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="horas" name="Horas" fill={styleModulo.fill} stroke={styleModulo.stroke} radius={[6,6,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
+        <HorizontalBars
+          title={isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}
+          data={horasPorModulo}
+          labelKey="modulo"
+          fill="url(#brandGradient)" stroke={colors.blue700}
+          minHeight={300}
+        />
       </div>
+
+      
+      <svg width="0" height="0" style={{ position: 'absolute' }}>
+        <defs>
+          <linearGradient id="brandGradient" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={colors.red} />
+            <stop offset="100%" stopColor={colors.blue} />
+          </linearGradient>
+        </defs>
+      </svg>
     </div>
   );
 };
