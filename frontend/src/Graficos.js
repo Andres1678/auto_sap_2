@@ -1,40 +1,29 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ReferenceLine, ResponsiveContainer, Brush
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
+  ResponsiveContainer
 } from 'recharts';
 import './PanelGraficos.css';
 import { jfetch } from './lib/api';
 
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
 
-
-function useBrandColors() {
-  const [colors, setColors] = useState({
-    red: '#E30613',
-    red700: '#b00510',
-    blue: '#0055B8',
-    blue700: '#024aa2'
-  });
-  useEffect(() => {
+const useBrandColors = () => {
+  return useMemo(() => {
     try {
       const root = getComputedStyle(document.documentElement);
-      const next = {
-        red:     root.getPropertyValue('--brand-red')?.trim()       || '#E30613',
-        red700:  root.getPropertyValue('--brand-red-700')?.trim()   || '#b00510',
-        blue:    root.getPropertyValue('--brand-blue')?.trim()      || '#0055B8',
-        blue700: root.getPropertyValue('--brand-blue-700')?.trim()  || '#024aa2'
+      const pick = (name, fallback) => (root.getPropertyValue(name) || '').trim() || fallback;
+      return {
+        red:     pick('--brand-red', '#E30613'),
+        red700:  pick('--brand-red-700', '#b00510'),
+        blue:    pick('--brand-blue', '#0055B8'),
+        blue700: pick('--brand-blue-700', '#024aa2'),
       };
-      setColors(prev =>
-        prev.red === next.red &&
-        prev.red700 === next.red700 &&
-        prev.blue === next.blue &&
-        prev.blue700 === next.blue700 ? prev : next
-      );
-    } catch {}
+    } catch {
+      return { red: '#E30613', red700: '#b00510', blue: '#0055B8', blue700: '#024aa2' };
+    }
   }, []);
-  return colors;
-}
+};
 
 function BrandDefs({ red, blue }) {
   return (
@@ -48,58 +37,32 @@ function BrandDefs({ red, blue }) {
 }
 
 
-const splitByLength = (s, n) => {
-  const out = [];
-  let rest = String(s || '').trim();
-  while (rest.length > n) {
-    let cut = rest.lastIndexOf(' ', n);
-    if (cut <= 0) cut = n;
-    out.push(rest.slice(0, cut));
-    rest = rest.slice(cut).trim();
-  }
-  if (rest) out.push(rest);
-  return out;
+const shouldHorizontal = (arr, threshold = 18) => (Array.isArray(arr) ? arr.length : 0) > threshold;
+const calcAutoHeight = (n, base = 360, perRow = 28, max = 900) => {
+  if (!n) return base;
+  const h = base + (n * perRow);
+  return Math.max(base, Math.min(h, max));
 };
-const MultiLineTick = ({ x, y, payload, maxLines = 2, lineLength = 16, breakAfterCode = false }) => {
-  const raw = String(payload?.value ?? '');
-  const hinted = breakAfterCode ? raw.replace(/^(\d+\s*-\s*)/, '$1\n') : raw;
-  const lines = hinted
-    .split('\n')
-    .flatMap(piece => splitByLength(piece, lineLength))
-    .slice(0, maxLines);
-  return (
-    <g transform={`translate(${x},${y})`}>
-      <text textAnchor="middle" fill="#6b7280" fontSize={12}>
-        {lines.map((ln, i) => (
-          <tspan key={i} x={0} dy={12}>{ln}</tspan>
-        ))}
-      </text>
-    </g>
-  );
+const labelWidth = (arr, key, min = 90, max = 260) => {
+  const m = (arr || []).reduce((acc, it) => Math.max(acc, String(it?.[key] || '').length), 0);
+  return Math.max(min, Math.min(m * 8.5, max));
 };
-const NameTick = (p) => <MultiLineTick {...p} lineLength={18} maxLines={2} />;
-const TaskTick = (p) => <MultiLineTick {...p} lineLength={20} maxLines={2} breakAfterCode />;
-
-
-const ScrollChart = ({ dataLength, barWidth = 40, height = 420, children }) => {
-  const innerWidth = Math.max(dataLength * barWidth, 900);
-  return (
-    <div style={{ width: '100%', overflowX: 'auto' }}>
-      <div style={{ width: innerWidth }}>
-        <ResponsiveContainer width="100%" height={height}>
-          {children}
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
+const toNum = (v) => {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
 };
 
 const Graficos = () => {
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState('');
+
+  
   const [filtroConsultor, setFiltroConsultor] = useState('');
   const [filtroTarea, setFiltroTarea] = useState('');
   const [filtroMes, setFiltroMes] = useState('');
+  const [filtroCliente, setFiltroCliente] = useState('');
+  const [filtroModulo, setFiltroModulo] = useState('');
+
   const brand = useBrandColors();
 
   const user = useMemo(() => {
@@ -136,6 +99,7 @@ const Graficos = () => {
       } catch (err) {
         setRegistros([]);
         setError(String(err?.message || err));
+        console.error('Error al cargar registros:', err);
       }
     };
     fetchRegistros();
@@ -146,20 +110,8 @@ const Graficos = () => {
     const [y, m] = mesFiltro.split('-');
     return typeof fechaISO === 'string' && fechaISO.startsWith(`${y}-${m}`);
   };
-  const toNum = (v) => {
-    const n = parseFloat(v);
-    return Number.isFinite(n) ? n : 0;
-  };
 
-  const datosFiltrados = useMemo(() => {
-    return (registros ?? []).filter(r => {
-      if (!coincideMes(r.fecha, filtroMes)) return false;
-      if (filtroConsultor && r.consultor !== filtroConsultor) return false;
-      if (filtroTarea && r.tipoTarea !== filtroTarea) return false;
-      return true;
-    });
-  }, [registros, filtroMes, filtroConsultor, filtroTarea]);
-
+  
   const consultoresUnicos = useMemo(() => {
     const set = new Set((registros ?? [])
       .filter(r => coincideMes(r.fecha, filtroMes))
@@ -175,15 +127,41 @@ const Graficos = () => {
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
+  const clientesUnicos = useMemo(() => {
+    const set = new Set((registros ?? [])
+      .filter(r => coincideMes(r.fecha, filtroMes))
+      .map(r => r.cliente));
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [registros, filtroMes]);
+
+  const modulosUnicos = useMemo(() => {
+    const set = new Set((registros ?? [])
+      .filter(r => coincideMes(r.fecha, filtroMes))
+      .map(r => r.modulo));
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [registros, filtroMes]);
+
+  
+  const datosFiltrados = useMemo(() => {
+    return (registros ?? []).filter(r => {
+      if (!coincideMes(r.fecha, filtroMes)) return false;
+      if (filtroConsultor && r.consultor !== filtroConsultor) return false;
+      if (filtroTarea && r.tipoTarea !== filtroTarea) return false;
+      if (filtroCliente && r.cliente !== filtroCliente) return false;
+      if (filtroModulo && r.modulo !== filtroModulo) return false;
+      return true;
+    });
+  }, [registros, filtroMes, filtroConsultor, filtroTarea, filtroCliente, filtroModulo]);
+
+  
   const horasPorConsultor = useMemo(() => {
     const acc = new Map();
     (datosFiltrados ?? []).forEach(r => {
       const k = r.consultor || '—';
       acc.set(k, (acc.get(k) || 0) + toNum(r.tiempoInvertido));
     });
-    return Array.from(acc, ([consultor, horas]) => ({
-      consultor, horas: +horas.toFixed(2),
-    })).sort((a, b) => b.horas - a.horas);
+    return Array.from(acc, ([consultor, horas]) => ({ consultor, horas:+horas.toFixed(2) }))
+      .sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
   const horasPorTarea = useMemo(() => {
@@ -192,9 +170,8 @@ const Graficos = () => {
       const k = r.tipoTarea || '—';
       acc.set(k, (acc.get(k) || 0) + toNum(r.tiempoInvertido));
     });
-    return Array.from(acc, ([tipoTarea, horas]) => ({
-      tipoTarea, horas: +horas.toFixed(2),
-    })).sort((a, b) => b.horas - a.horas);
+    return Array.from(acc, ([tipoTarea, horas]) => ({ tipoTarea, horas:+horas.toFixed(2) }))
+      .sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
   const horasPorCliente = useMemo(() => {
@@ -203,9 +180,8 @@ const Graficos = () => {
       const k = r.cliente || '—';
       acc.set(k, (acc.get(k) || 0) + toNum(r.tiempoInvertido));
     });
-    return Array.from(acc, ([cliente, horas]) => ({
-      cliente, horas: +horas.toFixed(2),
-    })).sort((a, b) => b.horas - a.horas);
+    return Array.from(acc, ([cliente, horas]) => ({ cliente, horas:+horas.toFixed(2) }))
+      .sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
   const horasPorModulo = useMemo(() => {
@@ -214,9 +190,8 @@ const Graficos = () => {
       const k = r.modulo || '—';
       acc.set(k, (acc.get(k) || 0) + toNum(r.tiempoInvertido));
     });
-    return Array.from(acc, ([modulo, horas]) => ({
-      modulo, horas: +horas.toFixed(2),
-    })).sort((a, b) => b.horas - a.horas);
+    return Array.from(acc, ([modulo, horas]) => ({ modulo, horas:+horas.toFixed(2) }))
+      .sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
   
@@ -224,49 +199,87 @@ const Graficos = () => {
   const hasTarea = !!filtroTarea;
   const getBarStyle = (section) => {
     if (hasConsultor && !hasTarea) return { fill: brand.blue, stroke: brand.blue700 };
-    if (!hasConsultor && hasTarea) return { fill: brand.red,  stroke: brand.red700  };
+    if (!hasConsultor && hasTarea) return { fill: brand.red, stroke: brand.red700 };
     if (hasConsultor && hasTarea) {
       if (section === 'consultor') return { fill: brand.blue, stroke: brand.blue700 };
-      if (section === 'tarea')     return { fill: brand.red,  stroke: brand.red700  };
+      if (section === 'tarea') return { fill: brand.red, stroke: brand.red700 };
       return { fill: 'url(#brandGradient)', stroke: brand.blue700 };
     }
     return { fill: 'url(#brandGradient)', stroke: brand.blue700 };
   };
   const styleConsultor = getBarStyle('consultor');
-  const styleTarea     = getBarStyle('tarea');
-  const styleCliente   = getBarStyle('cliente');
-  const styleModulo    = getBarStyle('modulo');
+  const styleTarea = getBarStyle('tarea');
+  const styleCliente = getBarStyle('cliente');
+  const styleModulo = getBarStyle('modulo');
 
   
-  const TOO_MANY = 22;
+  const clientesHoriz = shouldHorizontal(horasPorCliente);
+  const modulosHoriz  = shouldHorizontal(horasPorModulo);
+  const hClientes = clientesHoriz ? calcAutoHeight(horasPorCliente.length) : 460;
+  const hModulos  = modulosHoriz  ? calcAutoHeight(horasPorModulo.length)  : 420;
 
   return (
     <div className="panel-graficos-container">
       {error && <div className="pg-error">Error al cargar datos: {error}</div>}
 
-      {/* Filtros */}
-      <div className="filtros-globales">
+      
+      <div className="filtros-globales filtros-sticky">
         <select
           value={filtroConsultor}
           onChange={(e) => setFiltroConsultor(e.target.value)}
           disabled={!isAdmin}
+          className="filtro-select"
+          title="Consultor"
         >
           {isAdmin && <option value="">Todos los consultores</option>}
           {consultoresUnicos.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
 
-        <select value={filtroTarea} onChange={(e) => setFiltroTarea(e.target.value)}>
+        <select
+          value={filtroTarea}
+          onChange={(e) => setFiltroTarea(e.target.value)}
+          className="filtro-select"
+          title="Tipo de Tarea"
+        >
           <option value="">Todas las tareas</option>
           {tareasUnicas.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
 
-        <input type="month" value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)} />
+        <select
+          value={filtroCliente}
+          onChange={(e) => setFiltroCliente(e.target.value)}
+          className="filtro-select"
+          title="Cliente"
+        >
+          <option value="">Todos los clientes</option>
+          {clientesUnicos.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+
+        <select
+          value={filtroModulo}
+          onChange={(e) => setFiltroModulo(e.target.value)}
+          className="filtro-select"
+          title="Módulo"
+        >
+          <option value="">Todos los módulos</option>
+          {modulosUnicos.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+
+        <input
+          type="month"
+          value={filtroMes}
+          onChange={(e) => setFiltroMes(e.target.value)}
+          className="filtro-month"
+          title="Mes"
+        />
 
         <button
           className="btn btn-outline"
           onClick={() => {
             setFiltroTarea('');
             setFiltroMes('');
+            setFiltroCliente('');
+            setFiltroModulo('');
             setFiltroConsultor(isAdmin ? '' : (nombreUser || ''));
           }}
           title="Limpiar filtros"
@@ -275,131 +288,121 @@ const Graficos = () => {
         </button>
       </div>
 
-      <div className="pg-grid">
-        {/* 1) Consultor */}
-        <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
+      <div className="pg-grid pg-grid--stack">
+        
+        <div className="grafico-box">
           <h3>
             {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
             {filtroMes && ` (${filtroMes})`}
           </h3>
-
           {horasPorConsultor.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
-          ) : horasPorConsultor.length > TOO_MANY ? (
-            
-            <ResponsiveContainer width="100%" height={Math.min(1200, Math.max(420, horasPorConsultor.length * 28))}>
-              <BarChart data={horasPorConsultor} layout="vertical" margin={{ top: 10, right: 30, left: 8, bottom: 10 }} barCategoryGap={6}>
-                <BrandDefs red={brand.red} blue={brand.blue} />
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" allowDecimals={false} />
-                <YAxis type="category" dataKey="consultor" width={220} tick={{ fontSize: 12, fill: '#6b7280' }} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="horas" name="Horas" fill={styleConsultor.fill} stroke={styleConsultor.stroke} radius={[0,6,6,0]} />
-              </BarChart>
-            </ResponsiveContainer>
           ) : (
-            
-            <ScrollChart dataLength={horasPorConsultor.length} barWidth={42} height={400}>
-              <BarChart data={horasPorConsultor} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={22}>
+            <ResponsiveContainer width="100%" height={400}>
+              <BarChart data={horasPorConsultor} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={18}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="consultor" interval={0} tickMargin={10} height={48} tick={<NameTick />} />
-                <YAxis allowDecimals={false} />
+                <XAxis dataKey="consultor" interval={0} angle={-45} textAnchor="end" height={95} />
+                <YAxis />
                 <Tooltip />
                 <Legend />
                 <ReferenceLine y={180} label="Meta" stroke={brand.red} strokeDasharray="3 3" />
                 <Bar dataKey="horas" name="Horas" fill={styleConsultor.fill} stroke={styleConsultor.stroke} radius={[6,6,0,0]} />
-                <Brush dataKey="consultor" height={24} travellerWidth={10} stroke={brand.blue} />
               </BarChart>
-            </ScrollChart>
+            </ResponsiveContainer>
           )}
         </div>
 
-        {/* 2) Tipo de Tarea */}
-        <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
+        
+        <div className="grafico-box">
           <h3>
             {isAdmin ? 'Horas por Tipo de Tarea' : 'Tus horas por Tipo de Tarea'}
             {filtroConsultor && ` — ${filtroConsultor}`}
           </h3>
-
           {horasPorTarea.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
-          ) : horasPorTarea.length > TOO_MANY ? (
-            <ResponsiveContainer width="100%" height={Math.min(1200, Math.max(440, horasPorTarea.length * 28))}>
-              <BarChart data={horasPorTarea} layout="vertical" margin={{ top: 10, right: 30, left: 8, bottom: 10 }} barCategoryGap={6}>
-                <BrandDefs red={brand.red} blue={brand.blue} />
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" allowDecimals={false} />
-                <YAxis type="category" dataKey="tipoTarea" width={260} tick={{ fontSize: 12, fill: '#6b7280' }} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="horas" name="Horas" fill={styleTarea.fill} stroke={styleTarea.stroke} radius={[0,6,6,0]} />
-              </BarChart>
-            </ResponsiveContainer>
           ) : (
-            <ScrollChart dataLength={horasPorTarea.length} barWidth={46} height={440}>
-              <BarChart data={horasPorTarea} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={22}>
+            <ResponsiveContainer width="100%" height={420}>
+              <BarChart data={horasPorTarea} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={18}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="tipoTarea" interval={0} tickMargin={10} height={58} tick={<TaskTick />} />
-                <YAxis allowDecimals={false} />
+                <XAxis dataKey="tipoTarea" interval={0} angle={-45} textAnchor="end" height={110} />
+                <YAxis />
                 <Tooltip />
                 <Legend />
                 <Bar dataKey="horas" name="Horas" fill={styleTarea.fill} stroke={styleTarea.stroke} radius={[6,6,0,0]} />
-                <Brush dataKey="tipoTarea" height={24} travellerWidth={10} stroke={brand.blue} />
               </BarChart>
-            </ScrollChart>
+            </ResponsiveContainer>
           )}
         </div>
 
-        {/* 3) Cliente */}
-        <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
+        
+        <div className="grafico-box">
           <h3>
             {isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}
             {filtroMes && ` (${filtroMes})`} {filtroConsultor && ` — ${filtroConsultor}`}
           </h3>
           {horasPorCliente.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
-          ) : (
-            <ScrollChart dataLength={horasPorCliente.length} barWidth={44} height={460}>
-              <BarChart data={horasPorCliente} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={20}>
+          ) : shouldHorizontal(horasPorCliente) ? (
+            <ResponsiveContainer width="100%" height={calcAutoHeight(horasPorCliente.length)}>
+              <BarChart layout="vertical" data={horasPorCliente} margin={{ top: 18, right: 24, left: 8, bottom: 8 }} barCategoryGap={10}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="cliente" interval={0} tickMargin={10} height={70}
-                  tick={(p) => <MultiLineTick {...p} lineLength={18} maxLines={2} />} />
-                <YAxis allowDecimals={false} />
+                <XAxis type="number" />
+                <YAxis type="category" dataKey="cliente" width={labelWidth(horasPorCliente, 'cliente')} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="horas" name="Horas" fill={styleCliente.fill} stroke={styleCliente.stroke} radius={[0,6,6,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <ResponsiveContainer width="100%" height={460}>
+              <BarChart data={horasPorCliente} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={16}>
+                <BrandDefs red={brand.red} blue={brand.blue} />
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="cliente" interval={0} angle={-45} textAnchor="end" height={110} />
+                <YAxis />
                 <Tooltip />
                 <Legend />
                 <Bar dataKey="horas" name="Horas" fill={styleCliente.fill} stroke={styleCliente.stroke} radius={[6,6,0,0]} />
-                <Brush dataKey="cliente" height={24} travellerWidth={10} stroke={brand.blue} />
               </BarChart>
-            </ScrollChart>
+            </ResponsiveContainer>
           )}
         </div>
 
-        {/* 4) Módulo */}
-        <div className="grafico-box" style={{ gridColumn: '1 / -1' }}>
+        
+        <div className="grafico-box">
           <h3>
             {isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}
             {filtroMes && ` (${filtroMes})`}
           </h3>
           {horasPorModulo.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
-          ) : (
-            <ScrollChart dataLength={horasPorModulo.length} barWidth={46} height={430}>
-              <BarChart data={horasPorModulo} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={20}>
+          ) : shouldHorizontal(horasPorModulo) ? (
+            <ResponsiveContainer width="100%" height={calcAutoHeight(horasPorModulo.length)}>
+              <BarChart layout="vertical" data={horasPorModulo} margin={{ top: 18, right: 24, left: 8, bottom: 8 }} barCategoryGap={10}>
                 <BrandDefs red={brand.red} blue={brand.blue} />
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="modulo" interval={0} tickMargin={10} height={64}
-                  tick={(p) => <MultiLineTick {...p} lineLength={20} maxLines={2} />} />
-                <YAxis allowDecimals={false} />
+                <XAxis type="number" />
+                <YAxis type="category" dataKey="modulo" width={labelWidth(horasPorModulo, 'modulo')} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="horas" name="Horas" fill={styleModulo.fill} stroke={styleModulo.stroke} radius={[0,6,6,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <ResponsiveContainer width="100%" height={420}>
+              <BarChart data={horasPorModulo} margin={{ top: 20, right: 30, left: 0, bottom: 5 }} barCategoryGap={18}>
+                <BrandDefs red={brand.red} blue={brand.blue} />
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="modulo" interval={0} angle={-20} textAnchor="end" height={60} />
+                <YAxis />
                 <Tooltip />
                 <Legend />
                 <Bar dataKey="horas" name="Horas" fill={styleModulo.fill} stroke={styleModulo.stroke} radius={[6,6,0,0]} />
-                <Brush dataKey="modulo" height={24} travellerWidth={10} stroke={brand.blue} />
               </BarChart>
-            </ScrollChart>
+            </ResponsiveContainer>
           )}
         </div>
       </div>

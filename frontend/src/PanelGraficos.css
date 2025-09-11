@@ -17,119 +17,75 @@
   --pg-accent:var(--brand-blue);
   --pg-accent-700:var(--brand-blue-700);
   --pg-ring:rgba(227,6,19,.22);
-
-  /* Altura aproximada del navbar para que el sticky no lo tape */
-  --nav-height: 64px;
 }
 
-/* Contenedor general */
+/* Contenedor principal */
 .panel-graficos-container{
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:28px;
-  padding:24px 16px 40px;
-  background:var(--pg-bg);
-  min-height:100vh;
+  display:flex; flex-direction:column; align-items:center;
+  gap:28px; padding:24px 16px;
+  background:var(--pg-bg); min-height:100vh;
   color:var(--pg-text);
 }
 
-/* Filtros STICKY (queda fijo al hacer scroll) */
+/* Filtros + sticky */
 .filtros-globales{
-  position:sticky;
-  top: calc(var(--nav-height) + 8px);
-  z-index:30;
-
-  display:flex;
-  flex-wrap:wrap;
-  gap:10px;
-  justify-content:center;
-
-  padding:12px;
-  background:#fbfcfe;
-  border:1px solid var(--pg-border);
-  border-radius:12px;
-  box-shadow: inset 0 1px 0 rgba(2,6,23,.02), 0 6px 16px rgba(2,6,23,.06);
-
-  width:100%;
-  max-width:1200px;
-  backdrop-filter:saturate(1.05) blur(2px);
+  display:flex; flex-wrap:wrap; gap:10px; justify-content:center;
+  padding:10px; background:#fbfcfe;
+  border:1px solid var(--pg-border); border-radius:12px;
+  box-shadow: inset 0 1px 0 rgba(2,6,23,.02);
+  width:100%; max-width:1100px;
+}
+.filtros-sticky{
+  position: sticky;
+  top: 64px;    /* ajusta según tu header */
+  z-index: 10;
+  backdrop-filter: blur(2px);
 }
 
-.filtros-globales select,
-.filtros-globales input[type="month"]{
-  height:40px;
-  min-width:210px;
-  max-width:280px;
-  padding:8px 12px;
-  font-size:14px;
-  color:var(--pg-text);
-  background:#fff;
-  border:1px solid var(--pg-border);
-  border-radius:10px;
+.filtro-select, .filtro-month{
+  height:40px; min-width:210px;
+  padding:8px 12px; font-size:14px; color:var(--pg-text);
+  background:#fff; border:1px solid var(--pg-border); border-radius:10px;
   transition:border-color .2s, box-shadow .2s, background .2s;
 }
-.filtros-globales select:hover,
-.filtros-globales input[type="month"]{ background:#fff; }
-.filtros-globales select:focus,
-.filtros-globales input[type="month"]:focus{
+.filtro-select:hover, .filtro-month:hover{ background:#fff; }
+.filtro-select:focus, .filtro-month:focus{
   border-color:var(--pg-primary);
   box-shadow:0 0 0 4px var(--pg-ring);
   outline:0;
 }
 
+/* Botón */
 .filtros-globales .btn{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  gap:8px;
-  height:40px;
-  padding:0 14px;
-  border-radius:10px;
-  border:1px solid transparent;
-  font-weight:700;
-  cursor:pointer;
-  user-select:none;
-  white-space:nowrap;
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  height:40px; padding:0 14px; border-radius:10px; border:1px solid transparent;
+  font-weight:700; cursor:pointer; user-select:none; white-space:nowrap;
   transition:transform .05s, background-color .2s, border-color .2s, color .2s, box-shadow .2s, filter .2s;
 }
 .filtros-globales .btn:active{ transform: translateY(1px); }
 .filtros-globales .btn.btn-outline{
-  background:#fff;
-  color:var(--pg-accent);
-  border-color:var(--pg-accent);
+  background:#fff; color:var(--pg-accent); border-color:var(--pg-accent);
 }
 .filtros-globales .btn.btn-outline:hover{
-  background:var(--pg-accent);
-  color:#fff;
+  background:var(--pg-accent); color:#fff;
 }
 
-/* Grid: una tarjeta por fila (mejor legibilidad) */
-.pg-grid{
-  display:grid;
-  gap:24px;
-  width:100%;
-  max-width:1350px;
-  margin:0 auto;
-  grid-template-columns:1fr;
-}
+/* Grid */
+.pg-grid{ display:grid; gap:20px; width:100%; grid-template-columns:1fr; }
+@media (min-width:1080px){ .pg-grid{ grid-template-columns:1fr 1fr; } }
+.pg-grid--stack{ grid-template-columns:1fr !important; gap:28px !important; }
 
-/* Tarjeta del gráfico: se acopla a la altura del gráfico y no recorta */
+/* Tarjeta */
 .grafico-box{
   position:relative;
-  background:var(--pg-card);
-  color:var(--pg-text);
+  background:var(--pg-card); color:var(--pg-text);
   border:1px solid var(--pg-border);
   border-radius:var(--pg-radius);
   box-shadow:var(--pg-shadow);
-  padding:18px 18px 12px;
-  width:100%;
-  max-width:unset;
-  min-height:0;                 /* no forzamos altura mínima grande */
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-  overflow:visible;             /* evita recorte de ticks/labels */
+  padding:18px; width:100%; max-width:unset;
+  min-height: 420px;
+  display:flex; flex-direction:column; gap:12px;
+  overflow: visible; /* evita barras internas por defecto */
 }
 .grafico-box::before{
   content:"";
@@ -139,34 +95,20 @@
   background: linear-gradient(90deg, var(--pg-primary), var(--pg-accent));
 }
 .grafico-box h3{
-  margin:0;
-  text-align:left;
-  font-size:18px;
-  font-weight:800;
-  letter-spacing:.2px;
+  margin:0; text-align:left; font-size:18px; font-weight:800; letter-spacing:.2px;
   color:var(--pg-text);
-  padding-bottom:8px;
-  border-bottom:1px solid var(--pg-border);
+  padding-bottom:8px; border-bottom:1px solid var(--pg-border);
 }
-
-/* Asegura que el SVG no recorte etiquetas */
-.grafico-box .recharts-responsive-container{ width:100%; }
-.grafico-box .recharts-wrapper{ overflow:visible !important; }
-.grafico-box svg{ overflow:visible; }
+.grafico-box .recharts-responsive-container{ flex:1; }
 
 /* Estado vacío */
 .empty{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border:1px dashed var(--pg-border);
-  border-radius:12px;
-  color:var(--pg-muted);
-  background:#fafcff;
-  height:260px;
+  display:flex; align-items:center; justify-content:center;
+  border:1px dashed var(--pg-border); border-radius:12px;
+  color:var(--pg-muted); background:#fafcff; height:260px;
 }
 
-/* Tooltip / ejes / leyenda / grid */
+/* Recharts: estilo general */
 .recharts-default-tooltip{
   background:#fff !important;
   border:1px solid var(--pg-border) !important;
@@ -175,59 +117,24 @@
 }
 .recharts-tooltip-label{ color:var(--pg-text) !important; font-weight:700; }
 .recharts-tooltip-item{ color:var(--pg-muted) !important; }
+
 .recharts-cartesian-axis .recharts-text tspan{
   fill: var(--pg-muted) !important;
   font-size: 12px;
 }
-.recharts-cartesian-grid line{
-  stroke:#e9eef9 !important;
-}
-.recharts-legend-item text{
-  fill: var(--pg-muted) !important;
-}
-.recharts-legend-wrapper{ margin-top:6px; }
-
-/* ReferenceLine (Meta) */
+.recharts-cartesian-grid line{ stroke:#e9eef9 !important; }
+.recharts-legend-item text{ fill: var(--pg-muted) !important; }
 .recharts-reference-line .recharts-label tspan{
-  fill: var(--brand-red) !important;
-  font-weight:800;
+  fill: var(--brand-red) !important; font-weight:800;
 }
 
-/* Brush */
-.recharts-brush .recharts-brush-background rect{
-  fill:#f3f6ff !important;
-  stroke:var(--pg-border) !important;
-}
-.recharts-brush .recharts-brush-slide{
-  fill:rgba(0,85,184,.08) !important;
-  stroke:var(--brand-blue) !important;
-}
-.recharts-brush-traveller > rect{
-  fill:#fff !important;
-  stroke:var(--brand-blue) !important;
-  rx:4; ry:4;
-}
+/* Ocultar cualquier Brush/mini-scroll si alguna lib lo agrega */
+.recharts-brush { display: none !important; }
 
-/* Scrollbar horizontal suave en wrappers con overflow-x */
-.grafico-box *::-webkit-scrollbar{ height:10px; }
-.grafico-box *::-webkit-scrollbar-track{ background:#f2f4fa; border-radius:8px; }
-.grafico-box *::-webkit-scrollbar-thumb{
-  background:linear-gradient(180deg, var(--brand-blue), var(--brand-red));
-  border-radius:8px;
-}
-.grafico-box *{
-  scrollbar-width:thin;
-  scrollbar-color:var(--brand-blue) #f2f4fa;
-}
-
-/* Dark mode opcional */
+/* Dark opcional */
 .pg-dark{
-  --pg-bg:#0b1220;
-  --pg-card:#0f172a;
-  --pg-text:#e5e7eb;
-  --pg-muted:#9ca3af;
-  --pg-border:#1f2937;
-  --pg-shadow:0 12px 28px rgba(0,0,0,.35);
+  --pg-bg:#0b1220; --pg-card:#0f172a; --pg-text:#e5e7eb; --pg-muted:#9ca3af;
+  --pg-border:#1f2937; --pg-shadow:0 12px 28px rgba(0,0,0,.35);
 }
 .pg-dark .filtros-globales{ background:#0f172a; }
 .pg-dark .grafico-box h3{ border-color:#1f2a44; }
