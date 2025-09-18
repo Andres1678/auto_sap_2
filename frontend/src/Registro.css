@@ -27,9 +27,20 @@ html,body{background:var(--bg); color:var(--text);}
 
 /* =============== Contenedor =============== */
 .container{
-  max-width:1280px; margin:32px auto; background:var(--card);
-  padding:clamp(16px,2.5vw,var(--pad)); border-radius:calc(var(--radius) + 2px);
-  border:1px solid var(--border); box-shadow:var(--shadow);
+  /* ANCHO MÁS AMPLIO */
+  max-width: min(100vw - 32px, 1800px);
+  margin:32px auto;
+  background:var(--card);
+  padding:clamp(16px,2.5vw,var(--pad));
+  border-radius:calc(var(--radius) + 2px);
+  border:1px solid var(--border);
+  box-shadow:var(--shadow);
+}
+
+/* Opción “full width” si la necesitas en el JSX: className="container container--fluid" */
+.container.container--fluid{
+  max-width: none;
+  width: calc(100vw - 32px);
 }
 
 /* ================== Head y acciones ================== */
@@ -153,16 +164,36 @@ input[type="date"]{ color-scheme: light; }
   margin-top:16px; background:var(--card); border:1px solid var(--border);
   border-radius:16px; overflow:hidden; box-shadow:var(--shadow);
 }
+
+/* IMPORTANTES:
+   - overflow: auto y altura máxima => barras propias (no hay que bajar al final de la página).
+   - encabezado sticky ya definido abajo.
+*/
 .table-scroll{
-  overflow-x:auto; overflow-y:hidden; padding-bottom:8px; width:100%;
-  -webkit-mask-image:linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
-          mask-image:linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+  overflow: auto;                 /* ← H y V */
+  max-height: 72vh;               /* ← visible en viewport */
+  padding-bottom: 6px;            /* espacio pequeño para scrollbar */
+  width:100%;
+  scrollbar-gutter: stable both-edges;
+  -webkit-overflow-scrolling: touch;
+  /* Suaviza bordes de máscara si la usabas antes */
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
 }
-.table-scroll::-webkit-scrollbar{ height:10px; }
+.table-scroll::-webkit-scrollbar{ height:10px; width:10px; }
 .table-scroll::-webkit-scrollbar-thumb{ background:#d6deef; border-radius:999px; }
 .table-scroll::-webkit-scrollbar-thumb:hover{ background:#c6d3ed; }
 
-table{ width:100%; border-collapse:separate; border-spacing:0; table-layout:auto; min-width:1500px; font-size:14px; }
+/* Para tener margen de maniobra con muchas columnas */
+table{
+  width:100%;
+  border-collapse:separate; border-spacing:0;
+  table-layout:auto;
+  min-width: 1800px;              /* ← ajusta según columnas */
+  font-size:14px;
+}
+
+/* Encabezado sticky */
 thead th{
   position:sticky; top:0; z-index:2;
   background: linear-gradient(180deg, #fff6f7 0%, #f6f9ff 100%); /* mezcla sutil rojo/azul */
@@ -171,19 +202,25 @@ thead th{
   border-bottom:1px solid #dfe6f7;
   box-shadow: inset 0 2px 0 rgba(0,85,184,.05), inset 0 -2px 0 rgba(227,6,19,.08);
 }
-tbody td{ padding:14px 14px; border-bottom:1px solid var(--border); vertical-align:middle; }
+
+tbody td{
+  padding:14px 14px; border-bottom:1px solid var(--border); vertical-align:middle;
+}
 tbody tr:nth-child(even){ background:#fbfdff; }
 tbody tr:hover{ background:#f8fbff; box-shadow:inset 0 1px 0 rgba(15,23,42,.06), inset 0 -1px 0 rgba(15,23,42,.06); }
+
 /* utilidades */
 td.nowrap, th.nowrap{ white-space:nowrap; }
 td.num, th.num{ text-align:right; font-variant-numeric:tabular-nums; }
 td.truncate{ max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-/* acciones sticky */
+
+/* acciones sticky al lado derecho */
 .table-scroll.sticky-actions td.actions,
 .table-scroll.sticky-actions th.actions{ position:sticky; right:0; z-index:3; }
 .table-scroll.sticky-actions th.actions{ background: linear-gradient(180deg, #fff6f7, #f6f9ff); }
 .table-scroll.sticky-actions td.actions{ background:linear-gradient(90deg, rgba(255,255,255,0), #fff 14px); }
 th.actions, td.actions{ width:132px; }
+
 /* icon buttons */
 .icon-btn{
   width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center;
@@ -229,7 +266,6 @@ label{ display:block; margin-bottom:6px; color:var(--muted); font-size:13px; fon
   padding: 16px 18px;
   background: linear-gradient(90deg, var(--accent) 0%, var(--primary) 100%);
   color:#fff; border-bottom: 1px solid rgba(255,255,255,.06);
-  /* ya no es draggable: */
   cursor: default;
 }
 .modal-title{ margin:0; font-size: 20px; font-weight: 800; letter-spacing:.2px; }
@@ -239,7 +275,6 @@ label{ display:block; margin-bottom:6px; color:var(--muted); font-size:13px; fon
 }
 .close-button:hover{ background: rgba(255,255,255,.12); }
 
-/* cuerpo */
 .modal-body{ padding: 16px; max-height: calc(90vh - 64px); overflow: auto; }
 
 /* grilla de campos */
@@ -264,7 +299,7 @@ label{ display:block; margin-bottom:6px; color:var(--muted); font-size:13px; fon
 .inline-2{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .inline-2 input[type="time"]{ width:100%; }
 
-/* footer con acento azul/rojo sutil */
+/* footer */
 .modal-footer{
   position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 10px;
   background: linear-gradient(180deg, transparent, rgba(0,85,184,.06) 34%, #fff 64%);

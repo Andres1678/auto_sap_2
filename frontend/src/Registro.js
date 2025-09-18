@@ -29,6 +29,7 @@ function initRegistro() {
   };
 }
 
+
 const parseHHMM = (s) => {
   if (!s || typeof s !== 'string' || !/^\d{2}:\d{2}$/.test(s)) return null;
   const [h, m] = s.split(':').map(Number);
@@ -63,6 +64,7 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   const inWorkEnd = toMinutes(rango.fin);
   return (start < inWorkStart || end > inWorkEnd) ? 'Sí' : 'No';
 };
+
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
 function buildLocalResumen(registros, nombre) {
   if (!Array.isArray(registros)) return [];
@@ -81,6 +83,7 @@ function buildLocalResumen(registros, nombre) {
   }));
 }
 
+
 const normalizeModulos = (arr) => (
   Array.isArray(arr)
     ? arr.map(m => (typeof m === 'string' ? m : (m?.nombre ?? String(m))))
@@ -93,7 +96,75 @@ const getModulosLocal = (u) => {
   return single ? normalizeModulos([single]) : [];
 };
 
+
+const normSiNo = (val) => {
+  if (val === null || val === undefined) return 'N/D';
+  const s = String(val).trim().toLowerCase()
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  if (['si','sí','s','true','1'].includes(s)) return 'SI';
+  if (['no','n','false','0'].includes(s)) return 'NO';
+  return 'N/D';
+};
+
+
+function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
+  const sep = ',';
+  const q = (v) => {
+    if (v === null || v === undefined) return '';
+    const s = String(v).replace(/"/g, '""');
+    return `"${s}"`;
+  };
+
+  const headers = [
+    'Fecha','Módulo','Cliente','Nro Caso Cliente','Nro Caso Interno','Nro Caso Escalado SAP',
+    'Tipo Tarea Azure','Consultor','Hora Inicio','Hora Fin','Tiempo Invertido','Tiempo Facturable',
+    'ONCALL','Desborde','Horas Adicionales','Descripción'
+  ];
+
+  const lines = [];
+
+  const metaKeys = Object.keys(meta || {});
+  if (metaKeys.length) {
+    metaKeys.forEach(k => lines.push(`# ${k}: ${meta[k]}`));
+    lines.push('# ----------------------------------------');
+  }
+
+  lines.push(headers.map(q).join(sep));
+
+  (rows || []).forEach(r => {
+    lines.push([
+      r.fecha ?? '',
+      r.modulo ?? '',
+      r.cliente ?? '',
+      r.nroCasoCliente ?? '',
+      r.nroCasoInterno ?? '',
+      r.nroCasoEscaladoSap ?? '',
+      r.tipoTarea ?? '',
+      r.consultor ?? '',
+      r.horaInicio ?? '',
+      r.horaFin ?? '',
+      r.tiempoInvertido ?? '',
+      r.tiempoFacturable ?? '',
+      r.oncall ?? '',
+      r.desborde ?? '',
+      r.horasAdicionales ?? '',
+      r.descripcion ?? '',
+    ].map(q).join(sep));
+  });
+
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.endsWith('.csv') ? filename : `${filename}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 const Registro = ({ userData }) => {
+  
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros]   = useState([]);
   const [resumen, setResumen]       = useState([]);
@@ -102,21 +173,28 @@ const Registro = ({ userData }) => {
   const [registro, setRegistro] = useState(initRegistro());
   const [modoEdicion, setModoEdicion] = useState(false);
 
+  
   const [filtroFecha, setFiltroFecha] = useState('');
   const [filtroCliente, setFiltroCliente] = useState('');
   const [filtroTarea, setFiltroTarea] = useState('');
   const [filtroConsultor, setFiltroConsultor] = useState('');
+  const [filtroNroCasoCli, setFiltroNroCasoCli] = useState('');   
+  const [filtroHorasAdic, setFiltroHorasAdic] = useState('');     
 
+  
   const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
   const rol = (userData?.rol ?? userData?.user?.rol);
   const nombreUser = (userData?.nombre ?? userData?.user?.nombre) || '';
   const moduloUser = (userData?.modulo ?? userData?.user?.modulo) || '';
   const equipoUser = (userData?.equipo ?? userData?.user?.equipo) || '';
   const usuarioLogin = (userData?.usuario ?? userData?.user?.usuario) || '';
-
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
 
+  
+  const canDownload = ['rodriguezso','valdezjl'].includes(String(usuarioLogin || '').toLowerCase());
+
+  
   const initialVista = () => {
     const persisted = localStorage.getItem('equipoView');
     if (persisted === 'BASIS' || persisted === 'FUNCIONAL') return persisted;
@@ -134,6 +212,7 @@ const Registro = ({ userData }) => {
     ? userEquipoUpper
     : (isAdmin ? vistaEquipo : (userEquipoUpper === 'BASIS' ? 'BASIS' : 'FUNCIONAL'));
 
+  
   const [modulos, setModulos] = useState(getModulosLocal(userData));
   const [moduloElegido, setModuloElegido] = useState('');
   useEffect(() => {
@@ -155,6 +234,7 @@ const Registro = ({ userData }) => {
     } catch {}
   }, [usuarioLogin]);
 
+  
   const fetchRegistros = useCallback(async () => {
     setError('');
     try {
@@ -204,29 +284,34 @@ const Registro = ({ userData }) => {
     }
   }, [userData, fetchRegistros, fetchResumen, refreshModulos]);
 
+  
   const consultoresUnicos = useMemo(() =>
     Array.isArray(registros)
       ? [...new Set(registros.map(r => r?.consultor).filter(Boolean))]
       : []
   , [registros]);
 
+  
   const registrosFiltrados = useMemo(() => {
     const rows = Array.isArray(registros)
       ? registros.filter((r) => (
           (!filtroFecha || r.fecha === filtroFecha) &&
           (!filtroCliente || r.cliente === filtroCliente) &&
           (!filtroTarea || r.tipoTarea === filtroTarea) &&
-          (!filtroConsultor || r.consultor === filtroConsultor)
+          (!filtroConsultor || r.consultor === filtroConsultor) &&
+          (!filtroNroCasoCli || String(r.nroCasoCliente || '').toLowerCase().includes(filtroNroCasoCli.toLowerCase())) &&
+          (!filtroHorasAdic || normSiNo(r.horasAdicionales) === filtroHorasAdic)
         ))
       : [];
     return rows.slice().sort((a,b) => {
       const da = new Date(a.fecha || '1970-01-01');
       const db = new Date(b.fecha || '1970-01-01');
-      if (da.getTime() !== db.getTime()) return da - db; // menor a mayor por fecha
+      if (da.getTime() !== db.getTime()) return da - db;
       return String(a.id||0) - String(b.id||0);
     });
-  }, [registros, filtroFecha, filtroCliente, filtroTarea, filtroConsultor]);
+  }, [registros, filtroFecha, filtroCliente, filtroTarea, filtroConsultor, filtroNroCasoCli, filtroHorasAdic]);
 
+  
   const resumenVisible = useMemo(() => {
     if (!isAdmin) {
       return buildLocalResumen(registros, nombreUser);
@@ -237,6 +322,7 @@ const Registro = ({ userData }) => {
     return resumen;
   }, [isAdmin, resumen, registros, nombreUser, filtroConsultor, registrosFiltrados]);
 
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!registro.horaInicio || !registro.horaFin) {
@@ -355,6 +441,7 @@ const Registro = ({ userData }) => {
     } catch (e) {}
   };
 
+  
   const clientes = [
     'AIRE - Air-e','ALUMINA','ANTILLANA','AVIANCA','ANABA','CAMARA DE COMERCIO','CEET-EL TIEMPO',
     'CERAMICA ITALIA','CERESCOS','CLARO ANDINA','CLARO COLOMBIA','COLSUBSIDIO','COMFENALCO CARTAGENA',
@@ -367,7 +454,7 @@ const Registro = ({ userData }) => {
   const tiposTarea = [
     '01 - Atencion Casos','02 - Atencion de Casos VAR','03 - Atencion de Proyectos','04- Apoyo Preventa','05 - Generacion Informes',
     '06 - Seguimiento y Supervision Equipo','07 - Reuniones Internas','08 - Seguimiento de Casos internos','09 - Capacitaciones',
-    '10 - Reporte Hots','11 - Reporte Azure','12 - Reporte Tiempo consumido (Lista-Sharepoint)','13 - Pausas Activas',
+    '10 - Reporte Host','11 - Reporte Azure','12 - Reporte Tiempo consumido (CORA)','13 - Pausas Activas',
     '14 -  Permisos por horas / Dia Familia / Cumpleaños','15 - Vacaciones / Incapacidades','16 - DIA NO LABORAL','17 - Proyectos Internos',
     '18 - DISPONIBLE','19 - Hora de traslado Triara a Casa','20 - Cambios','21 - Monitoreo','22 - Reunión Cliente','23 - Atención SOX',
     '24 - Outlook - Teams','25 - NO DILIGENCIO','26 - Reuniones Externas','27 - Daily','28 - KickOff','29 - Handover','30 - Seguimiento Proyecto',
@@ -378,12 +465,31 @@ const Registro = ({ userData }) => {
   const oncall = ['SI','NO','N/A'];
   const desborde = ['SI','NO','N/A'];
 
+  
+  const handleExport = () => {
+    const visible = registrosFiltrados ?? registros ?? [];
+    exportRegistrosExcel(
+      visible,
+      `registros_${new Date().toISOString().slice(0,10)}.csv`,
+      {
+        "Consultor filtro": filtroConsultor || "Todos",
+        "Tarea filtro": filtroTarea || "Todas",
+        "Cliente filtro": filtroCliente || "Todos",
+        "Nro Caso Cliente filtro": filtroNroCasoCli || "Todos",
+        "Horas Adicionales filtro": filtroHorasAdic || "Todas",
+        "Fecha filtro": filtroFecha || "Todas",
+        "Generado": new Date().toLocaleString()
+      }
+    );
+  };
+
   return (
     <div className="container">
+      {/* Head */}
       <div className="page-head">
         <div className="page-title">
           <h2>Registro de Horas</h2>
-          <p className="subtitle">Filtra por fecha, cliente, tarea o consultor</p>
+          <p className="subtitle">Filtra por fecha, cliente, tarea, consultor, Nro. de caso y horas adicionales</p>
         </div>
         <div className="page-actions" style={{display:'flex', gap:12, alignItems:'center'}}>
           {isAdmin && (
@@ -392,7 +498,7 @@ const Registro = ({ userData }) => {
                 type="button"
                 className={`team-btn ${isBASISTable ? 'is-active' : ''}`}
                 onClick={() => setVistaEquipo('BASIS')}
-                aria-pressed={isBASISTable}
+                aria-selected={isBASISTable}
               >
                 BASIS
               </button>
@@ -400,12 +506,19 @@ const Registro = ({ userData }) => {
                 type="button"
                 className={`team-btn ${isFUNCIONALTable ? 'is-active' : ''}`}
                 onClick={() => setVistaEquipo('FUNCIONAL')}
-                aria-pressed={isFUNCIONALTable}
+                aria-selected={isFUNCIONALTable}
               >
                 FUNCIONAL
               </button>
             </div>
           )}
+
+          {canDownload && (
+            <button className="btn btn-accent" onClick={handleExport} title="Descargar Excel">
+              Descargar Excel
+            </button>
+          )}
+
           <button
             className="btn btn-primary"
             onClick={async () => {
@@ -421,6 +534,7 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
+      {/* Filtros */}
       <div className="filters-card">
         <div className="filter-grid">
           <input
@@ -447,12 +561,31 @@ const Registro = ({ userData }) => {
             onChange={(e) => setFiltroConsultor(e.target.value)}
             disabled={!isAdmin}
           >
-            <option value="">{isAdmin ? 'Todos los consultores' : nombreUser || 'Consultor'}</option>
+            <option value="">{isAdmin ? 'Todos los consultores' : (nombreUser || 'Consultor')}</option>
             {consultoresUnicos.map((c, idx) => (
               <option key={idx} value={c}>{c}</option>
             ))}
           </select>
+
+          
+          <input
+            type="text"
+            placeholder="Nro. Caso Cliente..."
+            value={filtroNroCasoCli}
+            onChange={(e) => setFiltroNroCasoCli(e.target.value)}
+          />
+
+          
+          <select
+            value={filtroHorasAdic}
+            onChange={(e) => setFiltroHorasAdic(e.target.value)}
+          >
+            <option value="">Horas Adicionales (todas)</option>
+            <option value="SI">Sí</option>
+            <option value="NO">No</option>
+          </select>
         </div>
+
         <div className="filter-actions">
           <button
             className="btn btn-outline"
@@ -461,6 +594,8 @@ const Registro = ({ userData }) => {
               setFiltroCliente('');
               setFiltroTarea('');
               setFiltroConsultor(isAdmin ? '' : (nombreUser || ''));
+              setFiltroNroCasoCli('');
+              setFiltroHorasAdic('');
             }}
           >
             Limpiar
@@ -468,6 +603,7 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
+      
       <Modal
         isOpen={modalIsOpen}
         onRequestClose={() => setModalIsOpen(false)}
@@ -528,6 +664,14 @@ const Registro = ({ userData }) => {
                   value={registro.nroCasoInterno}
                   onChange={(e) => setRegistro({ ...registro, nroCasoInterno: e.target.value })}
                 />
+
+                <input
+                  type="text"
+                  placeholder="Nro Caso Escalado SAP"
+                  value={registro.nroCasoEscaladoSap}
+                  onChange={(e) => setRegistro({ ...registro, nroCasoEscaladoSap: e.target.value })}
+                />
+
                 <select
                   value={registro.tipoTarea}
                   onChange={(e) => setRegistro({ ...registro, tipoTarea: e.target.value })}
@@ -560,12 +704,6 @@ const Registro = ({ userData }) => {
 
                 {equipoFormulario === 'BASIS' && (
                   <>
-                    <input
-                      type="text"
-                      placeholder="Nro Caso Escalado SAP"
-                      value={registro.nroCasoEscaladoSap}
-                      onChange={(e) => setRegistro({ ...registro, nroCasoEscaladoSap: e.target.value })}
-                    />
                     <select
                       value={registro.actividadMalla}
                       onChange={(e) => setRegistro({ ...registro, actividadMalla: e.target.value })}
@@ -607,6 +745,7 @@ const Registro = ({ userData }) => {
         </div>
       </Modal>
 
+      {/* Tabla principal */}
       <div className="table-wrap">
         <div className="table-scroll sticky-actions">
           <table>
@@ -617,7 +756,7 @@ const Registro = ({ userData }) => {
                 <th>Cliente</th>
                 <th>Nro. Caso Cliente</th>
                 <th>Nro. Caso Interno</th>
-                {isBASISTable && <th>Nro. Caso Escalado SAP</th>}
+                <th>Nro. Caso Escalado SAP</th>
                 <th>Tipo Tarea Azure</th>
                 <th>Consultor</th>
                 <th>Hora Inicio</th>
@@ -640,7 +779,7 @@ const Registro = ({ userData }) => {
                   <td>{r.cliente}</td>
                   <td>{r.nroCasoCliente}</td>
                   <td>{r.nroCasoInterno}</td>
-                  {isBASISTable && <td>{r.nroCasoEscaladoSap}</td>}
+                  <td>{r.nroCasoEscaladoSap}</td>
                   <td>{r.tipoTarea}</td>
                   <td>{r.consultor ?? nombreUser}</td>
                   <td>{r.horaInicio}</td>
@@ -678,6 +817,7 @@ const Registro = ({ userData }) => {
 
       {error && <div style={{color:'crimson', marginTop:10}}>Error: {error}</div>}
 
+      {/* Resumen */}
       <h3>Resumen de Horas</h3>
       <div className="table-wrap">
         <div className="table-scroll">
@@ -719,3 +859,4 @@ const Registro = ({ userData }) => {
 };
 
 export default Registro;
+
