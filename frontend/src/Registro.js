@@ -449,13 +449,13 @@ const Registro = ({ userData }) => {
     'FUNDACION GRUPO SANTANDER','HACEB','HITSS/CLARO','ILUMNO','JGB','LACTALIS',
     'PRND-PROINDESA','PROCAPS','SATENA','STOP JEANS','TINTATEX','UNIBAN','GREELAND',
     'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA', 'RCN', 'ECOPETROL-ODL',
-    'AGORA', 'D1', 'CASA LUKER', 'CIAMSA', 'SPRBUN'
+    'AGORA', 'D1', 'CASA LUKER', 'CIAMSA', 'SPRBUN', 'CLARO CARIBE'
   ];
   const tiposTarea = [
     '01 - Atencion Casos','02 - Atencion de Casos VAR','03 - Atencion de Proyectos','04- Apoyo Preventa','05 - Generacion Informes',
     '06 - Seguimiento y Supervision Equipo','07 - Reuniones Internas','08 - Seguimiento de Casos internos','09 - Capacitaciones',
     '10 - Reporte Host','11 - Reporte Azure','12 - Reporte Tiempo consumido (CORA)','13 - Pausas Activas',
-    '14 -  Permisos por horas / Dia Familia / Cumpleaños','15 - Vacaciones / Incapacidades','16 - DIA NO LABORAL','17 - Proyectos Internos',
+    '14 -  Permisos por horas / Dia Familia / Cumpleaños','15 - Vacaciones / Incapacidades','16 - Plan de Accion','17 - Proyectos Internos',
     '18 - DISPONIBLE','19 - Hora de traslado Triara a Casa','20 - Cambios','21 - Monitoreo','22 - Reunión Cliente','23 - Atención SOX',
     '24 - Outlook - Teams','25 - NO DILIGENCIO','26 - Reuniones Externas','27 - Daily','28 - KickOff','29 - Handover','30 - Seguimiento Proyecto',
     '31 - Gestión Documental Operación','32 - Gestión Documental Proyectos','33 - Elaboración de Oferta','34 - Actualización Tableros',
