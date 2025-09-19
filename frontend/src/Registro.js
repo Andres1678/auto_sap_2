@@ -6,27 +6,10 @@ import { jfetch } from './lib/api';
 
 Modal.setAppElement('#root');
 
-
-const norm = (s) =>
-  String(s || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '');
-
-
 const EXCEPCION_8H_USERS = new Set([
-  'serranoel', 'chaburg', 'torresfaa', 'jose.raigosa', 'camargoje',
-  'duqueb', 'diazstef', 'castronay', 'sierrag', 'tarquinojm', 'celyfl'
+  'serranoel','chaburg','torresfaa','jose.raigosa','camargoje',
+  'duqueb','diazstef','castronay','sierrag','tarquinojm','celyfl'
 ]);
-
-
-function dailyGoalFor(consultorNombre, usuarioLogin) {
-  const u = norm(usuarioLogin);
-  if (EXCEPCION_8H_USERS.has(u)) return 8;
-  return 9;
-}
-
 
 function initRegistro() {
   return {
@@ -50,6 +33,11 @@ function initRegistro() {
     modulo: ''
   };
 }
+
+const norm = (s='') =>
+  String(s).toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+
+const esDisponible = (tipo='') => norm(tipo).includes('disponible');
 
 const parseHHMM = (s) => {
   if (!s || typeof s !== 'string' || !/^\d{2}:\d{2}$/.test(s)) return null;
@@ -86,9 +74,27 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   return (start < inWorkStart || end > inWorkEnd) ? 'Sí' : 'No';
 };
 
-
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
+const normalizeModulos = (arr) => (
+  Array.isArray(arr)
+    ? arr.map(m => (typeof m === 'string' ? m : (m?.nombre ?? String(m))))
+    : []
+);
+const getModulosLocal = (u) => {
+  const arr = normalizeModulos(u?.modulos ?? u?.user?.modulos);
+  if (arr.length) return arr;
+  const single = u?.modulo ?? u?.user?.modulo;
+  return single ? normalizeModulos([single]) : [];
+};
 
+const normSiNo = (val) => {
+  if (val === null || val === undefined) return 'N/D';
+  const s = String(val).trim().toLowerCase()
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  if (['si','sí','s','true','1'].includes(s)) return 'SI';
+  if (['no','n','false','0'].includes(s)) return 'NO';
+  return 'N/D';
+};
 
 function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
   const sep = ',';
@@ -97,23 +103,18 @@ function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
     const s = String(v).replace(/"/g, '""');
     return `"${s}"`;
   };
-
   const headers = [
     'Fecha','Módulo','Cliente','Nro Caso Cliente','Nro Caso Interno','Nro Caso Escalado SAP',
     'Tipo Tarea Azure','Consultor','Hora Inicio','Hora Fin','Tiempo Invertido','Tiempo Facturable',
     'ONCALL','Desborde','Horas Adicionales','Descripción'
   ];
-
   const lines = [];
-
   const metaKeys = Object.keys(meta || {});
   if (metaKeys.length) {
     metaKeys.forEach(k => lines.push(`# ${k}: ${meta[k]}`));
     lines.push('# ----------------------------------------');
   }
-
   lines.push(headers.map(q).join(sep));
-
   (rows || []).forEach(r => {
     lines.push([
       r.fecha ?? '',
@@ -134,7 +135,6 @@ function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
       r.descripcion ?? '',
     ].map(q).join(sep));
   });
-
   const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -146,61 +146,25 @@ function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
   URL.revokeObjectURL(url);
 }
 
-
-const normSiNo = (val) => {
-  if (val === null || val === undefined) return 'N/D';
-  const s = norm(val);
-  if (['si','sí','s','true','1'].includes(s)) return 'SI';
-  if (['no','n','false','0'].includes(s)) return 'NO';
-  return 'N/D';
-};
-
-
-const normalizeModulos = (arr) => (
-  Array.isArray(arr)
-    ? arr.map(m => (typeof m === 'string' ? m : (m?.nombre ?? String(m))))
-    : []
-);
-const getModulosLocal = (u) => {
-  const arr = normalizeModulos(u?.modulos ?? u?.user?.modulos);
-  if (arr.length) return arr;
-  const single = u?.modulo ?? u?.user?.modulo;
-  return single ? normalizeModulos([single]) : [];
-};
-
-
-function buildLocalResumen(registros, nombre, usuarioLogin) {
-  if (!Array.isArray(registros)) return [];
-  const byFecha = new Map();
-  const disponiblePorFecha = new Map();
-
-  registros.forEach(r => {
-    const fecha = r?.fecha;
-    if (!fecha) return;
-    const horas = Number(r?.tiempoInvertido ?? 0);
-    const prev = byFecha.get(fecha) || 0;
-    byFecha.set(fecha, prev + (isNaN(horas) ? 0 : horas));
-
-    const t = String(r?.tipoTarea || '');
-    if (t.toUpperCase().includes('DISPONIBLE')) {
-      disponiblePorFecha.set(fecha, true);
-    }
+function buildResumenConReglas(rows, etiquetaConsultor, metaHoras, fechasDispSet) {
+  if (!Array.isArray(rows)) return [];
+  const sumaPorFecha = new Map();
+  rows.forEach(r => {
+    const f = r?.fecha;
+    if (!f) return;
+    const inc = Number(r?.tiempoInvertido ?? 0) || 0;
+    sumaPorFecha.set(f, (sumaPorFecha.get(f) || 0) + inc);
   });
-
-  const goal = dailyGoalFor(nombre || (registros[0]?.consultor ?? ''), usuarioLogin);
-
-  return Array.from(byFecha.entries()).map(([fecha, total]) => {
-    const forcedAlDia = disponiblePorFecha.get(fecha) === true; 
-    const estado = forcedAlDia ? 'Al día' : (total >= goal ? 'Al día' : 'Incompleto');
-    return {
-      consultor: nombre || (registros[0]?.consultor ?? ''),
+  const out = Array.from(sumaPorFecha.entries())
+    .sort((a,b) => new Date(a[0]) - new Date(b[0]))
+    .map(([fecha, total]) => ({
+      consultor: etiquetaConsultor || (rows[0]?.consultor ?? ''),
       fecha,
       total_horas: Math.round(total * 100) / 100,
-      estado
-    };
-  });
+      estado: (fechasDispSet?.has(fecha) || total >= metaHoras) ? 'Al día' : 'Incompleto'
+    }));
+  return out;
 }
-
 
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
@@ -211,7 +175,6 @@ const Registro = ({ userData }) => {
   const [registro, setRegistro] = useState(initRegistro());
   const [modoEdicion, setModoEdicion] = useState(false);
 
-
   const [filtroFecha, setFiltroFecha] = useState('');
   const [filtroCliente, setFiltroCliente] = useState('');
   const [filtroTarea, setFiltroTarea] = useState('');
@@ -219,21 +182,19 @@ const Registro = ({ userData }) => {
   const [filtroNroCasoCli, setFiltroNroCasoCli] = useState('');
   const [filtroHorasAdic, setFiltroHorasAdic] = useState('');
 
-  
   const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
   const rol = (userData?.rol ?? userData?.user?.rol);
   const nombreUser = (userData?.nombre ?? userData?.user?.nombre) || '';
   const moduloUser = (userData?.modulo ?? userData?.user?.modulo) || '';
   const equipoUser = (userData?.equipo ?? userData?.user?.equipo) || '';
   const usuarioLogin = (userData?.usuario ?? userData?.user?.usuario) || '';
-
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
 
-  
-  const canDownload = ['rodriguezso','valdezjl'].includes(norm(usuarioLogin));
+  const canDownload = ['rodriguezso','valdezjl'].includes(String(usuarioLogin || '').toLowerCase());
 
-  
+  const metaHorasViewer = EXCEPCION_8H_USERS.has(String(usuarioLogin||'').toLowerCase()) ? 8 : 9;
+
   const initialVista = () => {
     const persisted = localStorage.getItem('equipoView');
     if (persisted === 'BASIS' || persisted === 'FUNCIONAL') return persisted;
@@ -251,7 +212,6 @@ const Registro = ({ userData }) => {
     ? userEquipoUpper
     : (isAdmin ? vistaEquipo : (userEquipoUpper === 'BASIS' ? 'BASIS' : 'FUNCIONAL'));
 
-  
   const [modulos, setModulos] = useState(getModulosLocal(userData));
   const [moduloElegido, setModuloElegido] = useState('');
   useEffect(() => {
@@ -265,15 +225,14 @@ const Registro = ({ userData }) => {
       const res = await jfetch(`/consultores/modulos?usuario=${encodeURIComponent(usuarioLogin)}`);
       const data = await res.json().catch(() => ({}));
       const lista = Array.isArray(data?.modulos) ? data.modulos : [];
-      const normed = normalizeModulos(lista);
-      if (normed.length) {
-        setModulos(normed);
-        setModuloElegido(normed.length === 1 ? normed[0] : '');
+      const norm = normalizeModulos(lista);
+      if (norm.length) {
+        setModulos(norm);
+        setModuloElegido(norm.length === 1 ? norm[0] : '');
       }
     } catch {}
   }, [usuarioLogin]);
 
-  
   const fetchRegistros = useCallback(async () => {
     setError('');
     try {
@@ -323,14 +282,12 @@ const Registro = ({ userData }) => {
     }
   }, [userData, fetchRegistros, fetchResumen, refreshModulos]);
 
-  
   const consultoresUnicos = useMemo(() =>
     Array.isArray(registros)
       ? [...new Set(registros.map(r => r?.consultor).filter(Boolean))]
       : []
   , [registros]);
 
-  
   const registrosFiltrados = useMemo(() => {
     const rows = Array.isArray(registros)
       ? registros.filter((r) => (
@@ -350,18 +307,29 @@ const Registro = ({ userData }) => {
     });
   }, [registros, filtroFecha, filtroCliente, filtroTarea, filtroConsultor, filtroNroCasoCli, filtroHorasAdic]);
 
- 
-  const resumenVisible = useMemo(() => {
-    if (!isAdmin) {
-      return buildLocalResumen(registros, nombreUser, usuarioLogin);
-    }
-    if (filtroConsultor) {
-      return buildLocalResumen(registrosFiltrados, filtroConsultor, '');
-    }
-    return resumen;
-  }, [isAdmin, resumen, registros, nombreUser, usuarioLogin, filtroConsultor, registrosFiltrados]);
+  const fechasConDisponible = useMemo(() => {
+    const set = new Set();
+    (registros || []).forEach(r => {
+      if (r?.fecha && esDisponible(r?.tipoTarea)) set.add(r.fecha);
+    });
+    return set;
+  }, [registros]);
 
-  
+  const resumenVisible = useMemo(() => {
+    const baseRows = filtroConsultor ? registrosFiltrados : registros;
+    const etiqueta = filtroConsultor || nombreUser;
+    return buildResumenConReglas(
+      baseRows,
+      etiqueta,
+      metaHorasViewer,
+      fechasConDisponible
+    );
+  }, [
+    registros, registrosFiltrados,
+    filtroConsultor, nombreUser,
+    metaHorasViewer, fechasConDisponible
+  ]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!registro.horaInicio || !registro.horaFin) {
@@ -374,15 +342,12 @@ const Registro = ({ userData }) => {
     if (modulos.length > 1 && !moduloElegido) {
       return Swal.fire({ icon: 'warning', title: 'Selecciona un módulo' });
     }
-
     const horasAdic = calcularHorasAdicionales(
       registro.horaInicio,
       registro.horaFin,
       /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
     );
-
     const moduloFinal = (moduloElegido || modulos[0] || moduloUser || '').trim();
-
     const base = {
       ...registro,
       tiempoInvertido: tiempo,
@@ -392,7 +357,6 @@ const Registro = ({ userData }) => {
       totalHoras: tiempo,
       rol
     };
-
     const payload = { ...base };
     if (equipoFormulario !== 'BASIS') {
       delete payload.nroCasoEscaladoSap;
@@ -400,7 +364,6 @@ const Registro = ({ userData }) => {
       delete payload.oncall;
       delete payload.desborde;
     }
-
     try {
       const path = modoEdicion ? `/editar-registro/${registro.id}` : '/registrar-hora';
       const method = modoEdicion ? 'PUT' : 'POST';
@@ -410,7 +373,6 @@ const Registro = ({ userData }) => {
       });
       const j = await resp.json().catch(()=> ({}));
       if (!resp.ok) throw new Error(j?.mensaje || `HTTP ${resp.status}`);
-
       Swal.fire({ icon: 'success', title: modoEdicion ? 'Registro actualizado' : 'Registro guardado' });
       fetchRegistros();
       if (isAdmin) fetchResumen();
@@ -480,15 +442,14 @@ const Registro = ({ userData }) => {
     } catch (e) {}
   };
 
- 
   const clientes = [
     'AIRE - Air-e','ALUMINA','ANTILLANA','AVIANCA','ANABA','CAMARA DE COMERCIO','CEET-EL TIEMPO',
     'CERAMICA ITALIA','CERESCOS','CLARO ANDINA','CLARO COLOMBIA','COLSUBSIDIO','COMFENALCO CARTAGENA',
     'COOLECHERA','CRYSTAL S.A.S','DON POLLO','EMI','ETERNA','EVOAGRO','FABRICATO',
     'FUNDACION GRUPO SANTANDER','HACEB','HITSS/CLARO','ILUMNO','JGB','LACTALIS',
     'PRND-PROINDESA','PROCAPS','SATENA','STOP JEANS','TINTATEX','UNIBAN','GREELAND',
-    'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA', 'RCN', 'ECOPETROL-ODL',
-    'AGORA', 'D1', 'CASA LUKER', 'CIAMSA', 'SPRBUN', 'CLARO CARIBE'
+    'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA','RCN','ECOPETROL-ODL',
+    'AGORA','D1','CASA LUKER','CIAMSA','SPRBUN','CLARO CARIBE'
   ];
   const tiposTarea = [
     '01 - Atencion Casos','02 - Atencion de Casos VAR','03 - Atencion de Proyectos','04- Apoyo Preventa','05 - Generacion Informes',
@@ -504,28 +465,25 @@ const Registro = ({ userData }) => {
   const oncall = ['SI','NO','N/A'];
   const desborde = ['SI','NO','N/A'];
 
- 
   const handleExport = () => {
     const visible = registrosFiltrados ?? registros ?? [];
     exportRegistrosExcel(
       visible,
       `registros_${new Date().toISOString().slice(0,10)}.csv`,
       {
-        "Consultor filtro": filtroConsultor || "Todos",
-        "Tarea filtro": filtroTarea || "Todas",
-        "Cliente filtro": filtroCliente || "Todos",
-        "Nro Caso Cliente filtro": filtroNroCasoCli || "Todos",
-        "Horas Adicionales filtro": filtroHorasAdic || "Todas",
-        "Fecha filtro": filtroFecha || "Todas",
-        "Generado": new Date().toLocaleString()
+        'Consultor filtro': filtroConsultor || 'Todos',
+        'Tarea filtro': filtroTarea || 'Todas',
+        'Cliente filtro': filtroCliente || 'Todos',
+        'Nro Caso Cliente filtro': filtroNroCasoCli || 'Todos',
+        'Horas Adicionales filtro': filtroHorasAdic || 'Todas',
+        'Fecha filtro': filtroFecha || 'Todas',
+        'Generado': new Date().toLocaleString()
       }
     );
   };
 
-  
   return (
     <div className="container">
-      {/* Head */}
       <div className="page-head">
         <div className="page-title">
           <h2>Registro de Horas</h2>
@@ -552,13 +510,11 @@ const Registro = ({ userData }) => {
               </button>
             </div>
           )}
-
           {canDownload && (
             <button className="btn btn-accent" onClick={handleExport} title="Descargar Excel">
               Descargar Excel
             </button>
           )}
-
           <button
             className="btn btn-primary"
             onClick={async () => {
@@ -574,7 +530,6 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
-      {/* Filtros */}
       <div className="filters-card">
         <div className="filter-grid">
           <input
@@ -606,16 +561,12 @@ const Registro = ({ userData }) => {
               <option key={idx} value={c}>{c}</option>
             ))}
           </select>
-
-          
           <input
             type="text"
             placeholder="Nro. Caso Cliente..."
             value={filtroNroCasoCli}
             onChange={(e) => setFiltroNroCasoCli(e.target.value)}
           />
-
-          
           <select
             value={filtroHorasAdic}
             onChange={(e) => setFiltroHorasAdic(e.target.value)}
@@ -625,7 +576,6 @@ const Registro = ({ userData }) => {
             <option value="NO">No</option>
           </select>
         </div>
-
         <div className="filter-actions">
           <button
             className="btn btn-outline"
@@ -643,7 +593,6 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
-      {/* Modal */}
       <Modal
         isOpen={modalIsOpen}
         onRequestClose={() => setModalIsOpen(false)}
@@ -656,7 +605,6 @@ const Registro = ({ userData }) => {
             <h3 className="modal-title">{modoEdicion ? 'Editar Registro' : 'Nuevo Registro'}</h3>
             <button className="close-button" onClick={() => setModalIsOpen(false)} aria-label="Cerrar">✖</button>
           </div>
-
           <div className="modal-body">
             <form onSubmit={handleSubmit}>
               <div className="form-grid">
@@ -677,7 +625,6 @@ const Registro = ({ userData }) => {
                     placeholder="Módulo"
                   />
                 )}
-
                 <input
                   type="date"
                   value={registro.fecha}
@@ -704,14 +651,12 @@ const Registro = ({ userData }) => {
                   value={registro.nroCasoInterno}
                   onChange={(e) => setRegistro({ ...registro, nroCasoInterno: e.target.value })}
                 />
-
                 <input
                   type="text"
                   placeholder="Nro Caso Escalado SAP"
                   value={registro.nroCasoEscaladoSap}
                   onChange={(e) => setRegistro({ ...registro, nroCasoEscaladoSap: e.target.value })}
                 />
-
                 <select
                   value={registro.tipoTarea}
                   onChange={(e) => setRegistro({ ...registro, tipoTarea: e.target.value })}
@@ -741,7 +686,6 @@ const Registro = ({ userData }) => {
                   value={registro.tiempoFacturable}
                   onChange={(e) => setRegistro({ ...registro, tiempoFacturable: e.target.value })}
                 />
-
                 {equipoFormulario === 'BASIS' && (
                   <>
                     <select
@@ -767,7 +711,6 @@ const Registro = ({ userData }) => {
                     </select>
                   </>
                 )}
-
                 <textarea
                   placeholder="Descripción"
                   value={registro.descripcion}
@@ -775,7 +718,6 @@ const Registro = ({ userData }) => {
                   required
                 />
               </div>
-
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setModalIsOpen(false)}>Cancelar</button>
                 <button type="submit" className="btn btn-primary">{modoEdicion ? 'Actualizar' : 'Guardar'}</button>
@@ -785,7 +727,6 @@ const Registro = ({ userData }) => {
         </div>
       </Modal>
 
-      {/* Tabla principal */}
       <div className="table-wrap">
         <div className="table-scroll sticky-actions">
           <table>
@@ -857,7 +798,6 @@ const Registro = ({ userData }) => {
 
       {error && <div style={{color:'crimson', marginTop:10}}>Error: {error}</div>}
 
-      {/* Resumen */}
       <h3>Resumen de Horas</h3>
       <div className="table-wrap">
         <div className="table-scroll">
