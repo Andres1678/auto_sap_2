@@ -6,6 +6,28 @@ import { jfetch } from './lib/api';
 
 Modal.setAppElement('#root');
 
+
+const norm = (s) =>
+  String(s || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '');
+
+
+const EXCEPCION_8H_USERS = new Set([
+  'serranoel', 'chaburg', 'torresfaa', 'jose.raigosa', 'camargoje',
+  'duqueb', 'diazstef', 'castronay', 'sierrag', 'tarquinojm', 'celyfl'
+]);
+
+
+function dailyGoalFor(consultorNombre, usuarioLogin) {
+  const u = norm(usuarioLogin);
+  if (EXCEPCION_8H_USERS.has(u)) return 8;
+  return 9;
+}
+
+
 function initRegistro() {
   return {
     id: null,
@@ -28,7 +50,6 @@ function initRegistro() {
     modulo: ''
   };
 }
-
 
 const parseHHMM = (s) => {
   if (!s || typeof s !== 'string' || !/^\d{2}:\d{2}$/.test(s)) return null;
@@ -65,46 +86,8 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   return (start < inWorkStart || end > inWorkEnd) ? 'Sí' : 'No';
 };
 
+
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
-function buildLocalResumen(registros, nombre) {
-  if (!Array.isArray(registros)) return [];
-  const byFecha = new Map();
-  registros.forEach(r => {
-    const fecha = r?.fecha;
-    const horas = Number(r?.tiempoInvertido ?? 0);
-    if (!fecha) return;
-    byFecha.set(fecha, (byFecha.get(fecha) || 0) + (isNaN(horas) ? 0 : horas));
-  });
-  return Array.from(byFecha.entries()).map(([fecha, total]) => ({
-    consultor: nombre || (registros[0]?.consultor ?? ''),
-    fecha,
-    total_horas: Math.round(total * 100) / 100,
-    estado: total >= 9 ? 'Al día' : 'Incompleto'
-  }));
-}
-
-
-const normalizeModulos = (arr) => (
-  Array.isArray(arr)
-    ? arr.map(m => (typeof m === 'string' ? m : (m?.nombre ?? String(m))))
-    : []
-);
-const getModulosLocal = (u) => {
-  const arr = normalizeModulos(u?.modulos ?? u?.user?.modulos);
-  if (arr.length) return arr;
-  const single = u?.modulo ?? u?.user?.modulo;
-  return single ? normalizeModulos([single]) : [];
-};
-
-
-const normSiNo = (val) => {
-  if (val === null || val === undefined) return 'N/D';
-  const s = String(val).trim().toLowerCase()
-    .normalize('NFD').replace(/\p{Diacritic}/gu, '');
-  if (['si','sí','s','true','1'].includes(s)) return 'SI';
-  if (['no','n','false','0'].includes(s)) return 'NO';
-  return 'N/D';
-};
 
 
 function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
@@ -163,8 +146,63 @@ function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
   URL.revokeObjectURL(url);
 }
 
+
+const normSiNo = (val) => {
+  if (val === null || val === undefined) return 'N/D';
+  const s = norm(val);
+  if (['si','sí','s','true','1'].includes(s)) return 'SI';
+  if (['no','n','false','0'].includes(s)) return 'NO';
+  return 'N/D';
+};
+
+
+const normalizeModulos = (arr) => (
+  Array.isArray(arr)
+    ? arr.map(m => (typeof m === 'string' ? m : (m?.nombre ?? String(m))))
+    : []
+);
+const getModulosLocal = (u) => {
+  const arr = normalizeModulos(u?.modulos ?? u?.user?.modulos);
+  if (arr.length) return arr;
+  const single = u?.modulo ?? u?.user?.modulo;
+  return single ? normalizeModulos([single]) : [];
+};
+
+
+function buildLocalResumen(registros, nombre, usuarioLogin) {
+  if (!Array.isArray(registros)) return [];
+  const byFecha = new Map();
+  const disponiblePorFecha = new Map();
+
+  registros.forEach(r => {
+    const fecha = r?.fecha;
+    if (!fecha) return;
+    const horas = Number(r?.tiempoInvertido ?? 0);
+    const prev = byFecha.get(fecha) || 0;
+    byFecha.set(fecha, prev + (isNaN(horas) ? 0 : horas));
+
+    const t = String(r?.tipoTarea || '');
+    if (t.toUpperCase().includes('DISPONIBLE')) {
+      disponiblePorFecha.set(fecha, true);
+    }
+  });
+
+  const goal = dailyGoalFor(nombre || (registros[0]?.consultor ?? ''), usuarioLogin);
+
+  return Array.from(byFecha.entries()).map(([fecha, total]) => {
+    const forcedAlDia = disponiblePorFecha.get(fecha) === true; 
+    const estado = forcedAlDia ? 'Al día' : (total >= goal ? 'Al día' : 'Incompleto');
+    return {
+      consultor: nombre || (registros[0]?.consultor ?? ''),
+      fecha,
+      total_horas: Math.round(total * 100) / 100,
+      estado
+    };
+  });
+}
+
+
 const Registro = ({ userData }) => {
-  
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros]   = useState([]);
   const [resumen, setResumen]       = useState([]);
@@ -173,13 +211,13 @@ const Registro = ({ userData }) => {
   const [registro, setRegistro] = useState(initRegistro());
   const [modoEdicion, setModoEdicion] = useState(false);
 
-  
+
   const [filtroFecha, setFiltroFecha] = useState('');
   const [filtroCliente, setFiltroCliente] = useState('');
   const [filtroTarea, setFiltroTarea] = useState('');
   const [filtroConsultor, setFiltroConsultor] = useState('');
-  const [filtroNroCasoCli, setFiltroNroCasoCli] = useState('');   
-  const [filtroHorasAdic, setFiltroHorasAdic] = useState('');     
+  const [filtroNroCasoCli, setFiltroNroCasoCli] = useState('');
+  const [filtroHorasAdic, setFiltroHorasAdic] = useState('');
 
   
   const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
@@ -188,11 +226,12 @@ const Registro = ({ userData }) => {
   const moduloUser = (userData?.modulo ?? userData?.user?.modulo) || '';
   const equipoUser = (userData?.equipo ?? userData?.user?.equipo) || '';
   const usuarioLogin = (userData?.usuario ?? userData?.user?.usuario) || '';
+
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
 
   
-  const canDownload = ['rodriguezso','valdezjl'].includes(String(usuarioLogin || '').toLowerCase());
+  const canDownload = ['rodriguezso','valdezjl'].includes(norm(usuarioLogin));
 
   
   const initialVista = () => {
@@ -226,10 +265,10 @@ const Registro = ({ userData }) => {
       const res = await jfetch(`/consultores/modulos?usuario=${encodeURIComponent(usuarioLogin)}`);
       const data = await res.json().catch(() => ({}));
       const lista = Array.isArray(data?.modulos) ? data.modulos : [];
-      const norm = normalizeModulos(lista);
-      if (norm.length) {
-        setModulos(norm);
-        setModuloElegido(norm.length === 1 ? norm[0] : '');
+      const normed = normalizeModulos(lista);
+      if (normed.length) {
+        setModulos(normed);
+        setModuloElegido(normed.length === 1 ? normed[0] : '');
       }
     } catch {}
   }, [usuarioLogin]);
@@ -311,16 +350,16 @@ const Registro = ({ userData }) => {
     });
   }, [registros, filtroFecha, filtroCliente, filtroTarea, filtroConsultor, filtroNroCasoCli, filtroHorasAdic]);
 
-  
+ 
   const resumenVisible = useMemo(() => {
     if (!isAdmin) {
-      return buildLocalResumen(registros, nombreUser);
+      return buildLocalResumen(registros, nombreUser, usuarioLogin);
     }
     if (filtroConsultor) {
-      return buildLocalResumen(registrosFiltrados, filtroConsultor);
+      return buildLocalResumen(registrosFiltrados, filtroConsultor, '');
     }
     return resumen;
-  }, [isAdmin, resumen, registros, nombreUser, filtroConsultor, registrosFiltrados]);
+  }, [isAdmin, resumen, registros, nombreUser, usuarioLogin, filtroConsultor, registrosFiltrados]);
 
   
   const handleSubmit = async (e) => {
@@ -441,7 +480,7 @@ const Registro = ({ userData }) => {
     } catch (e) {}
   };
 
-  
+ 
   const clientes = [
     'AIRE - Air-e','ALUMINA','ANTILLANA','AVIANCA','ANABA','CAMARA DE COMERCIO','CEET-EL TIEMPO',
     'CERAMICA ITALIA','CERESCOS','CLARO ANDINA','CLARO COLOMBIA','COLSUBSIDIO','COMFENALCO CARTAGENA',
@@ -465,7 +504,7 @@ const Registro = ({ userData }) => {
   const oncall = ['SI','NO','N/A'];
   const desborde = ['SI','NO','N/A'];
 
-  
+ 
   const handleExport = () => {
     const visible = registrosFiltrados ?? registros ?? [];
     exportRegistrosExcel(
@@ -483,6 +522,7 @@ const Registro = ({ userData }) => {
     );
   };
 
+  
   return (
     <div className="container">
       {/* Head */}
@@ -603,7 +643,7 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
-      
+      {/* Modal */}
       <Modal
         isOpen={modalIsOpen}
         onRequestClose={() => setModalIsOpen(false)}
@@ -859,4 +899,3 @@ const Registro = ({ userData }) => {
 };
 
 export default Registro;
-
