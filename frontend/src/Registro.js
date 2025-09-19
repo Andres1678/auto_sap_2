@@ -6,11 +6,6 @@ import { jfetch } from './lib/api';
 
 Modal.setAppElement('#root');
 
-const EXCEPCION_8H_USERS = new Set([
-  'serranoel','chaburg','torresfaa','jose.raigosa','camargoje',
-  'duqueb','diazstef','castronay','sierrag','tarquinojm','celyfl'
-]);
-
 function initRegistro() {
   return {
     id: null,
@@ -34,10 +29,10 @@ function initRegistro() {
   };
 }
 
-const norm = (s='') =>
-  String(s).toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
-
-const esDisponible = (tipo='') => norm(tipo).includes('disponible');
+const EXCEPCION_8H_USERS = new Set([
+  'serranoel','chaburg','torresfaa','jose.raigosa','camargoje',
+  'duqueb','diazstef','castronay','sierrag','tarquinojm','celyfl'
+]);
 
 const parseHHMM = (s) => {
   if (!s || typeof s !== 'string' || !/^\d{2}:\d{2}$/.test(s)) return null;
@@ -73,8 +68,27 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   const inWorkEnd = toMinutes(rango.fin);
   return (start < inWorkStart || end > inWorkEnd) ? 'Sí' : 'No';
 };
-
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
+function buildLocalResumen(registros, nombre, usuarioLogin) {
+  if (!Array.isArray(registros)) return [];
+  const login = String(usuarioLogin || '').toLowerCase();
+  const metaHoras = EXCEPCION_8H_USERS.has(login) ? 8 : 9;
+  const byFecha = new Map();
+  registros.forEach(r => {
+    const fecha = r?.fecha;
+    const horas = Number(r?.tiempoInvertido ?? 0);
+    if (!fecha) return;
+    if (!Number.isFinite(horas)) return;
+    byFecha.set(fecha, (byFecha.get(fecha) || 0) + horas);
+  });
+  return Array.from(byFecha.entries()).map(([fecha, total]) => ({
+    consultor: nombre || (registros[0]?.consultor ?? ''),
+    fecha,
+    total_horas: Math.round(total * 100) / 100,
+    estado: total >= metaHoras ? 'Al día' : 'Incompleto'
+  }));
+}
+
 const normalizeModulos = (arr) => (
   Array.isArray(arr)
     ? arr.map(m => (typeof m === 'string' ? m : (m?.nombre ?? String(m))))
@@ -146,26 +160,6 @@ function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
   URL.revokeObjectURL(url);
 }
 
-function buildResumenConReglas(rows, etiquetaConsultor, metaHoras, fechasDispSet) {
-  if (!Array.isArray(rows)) return [];
-  const sumaPorFecha = new Map();
-  rows.forEach(r => {
-    const f = r?.fecha;
-    if (!f) return;
-    const inc = Number(r?.tiempoInvertido ?? 0) || 0;
-    sumaPorFecha.set(f, (sumaPorFecha.get(f) || 0) + inc);
-  });
-  const out = Array.from(sumaPorFecha.entries())
-    .sort((a,b) => new Date(a[0]) - new Date(b[0]))
-    .map(([fecha, total]) => ({
-      consultor: etiquetaConsultor || (rows[0]?.consultor ?? ''),
-      fecha,
-      total_horas: Math.round(total * 100) / 100,
-      estado: (fechasDispSet?.has(fecha) || total >= metaHoras) ? 'Al día' : 'Incompleto'
-    }));
-  return out;
-}
-
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros]   = useState([]);
@@ -192,8 +186,6 @@ const Registro = ({ userData }) => {
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
 
   const canDownload = ['rodriguezso','valdezjl'].includes(String(usuarioLogin || '').toLowerCase());
-
-  const metaHorasViewer = EXCEPCION_8H_USERS.has(String(usuarioLogin||'').toLowerCase()) ? 8 : 9;
 
   const initialVista = () => {
     const persisted = localStorage.getItem('equipoView');
@@ -307,28 +299,16 @@ const Registro = ({ userData }) => {
     });
   }, [registros, filtroFecha, filtroCliente, filtroTarea, filtroConsultor, filtroNroCasoCli, filtroHorasAdic]);
 
-  const fechasConDisponible = useMemo(() => {
-    const set = new Set();
-    (registros || []).forEach(r => {
-      if (r?.fecha && esDisponible(r?.tipoTarea)) set.add(r.fecha);
-    });
-    return set;
-  }, [registros]);
-
   const resumenVisible = useMemo(() => {
-    const baseRows = filtroConsultor ? registrosFiltrados : registros;
-    const etiqueta = filtroConsultor || nombreUser;
-    return buildResumenConReglas(
-      baseRows,
-      etiqueta,
-      metaHorasViewer,
-      fechasConDisponible
-    );
-  }, [
-    registros, registrosFiltrados,
-    filtroConsultor, nombreUser,
-    metaHorasViewer, fechasConDisponible
-  ]);
+    if (!isAdmin) {
+      return buildLocalResumen(registros, nombreUser, usuarioLogin);
+    }
+    let base = Array.isArray(resumen) ? resumen : [];
+    if (filtroConsultor) {
+      base = base.filter(r => r.consultor === filtroConsultor);
+    }
+    return base;
+  }, [isAdmin, registros, resumen, nombreUser, usuarioLogin, filtroConsultor]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -367,10 +347,7 @@ const Registro = ({ userData }) => {
     try {
       const path = modoEdicion ? `/editar-registro/${registro.id}` : '/registrar-hora';
       const method = modoEdicion ? 'PUT' : 'POST';
-      const resp = await jfetch(path, {
-        method,
-        body: JSON.stringify(payload),
-      });
+      const resp = await jfetch(path, { method, body: JSON.stringify(payload) });
       const j = await resp.json().catch(()=> ({}));
       if (!resp.ok) throw new Error(j?.mensaje || `HTTP ${resp.status}`);
       Swal.fire({ icon: 'success', title: modoEdicion ? 'Registro actualizado' : 'Registro guardado' });
@@ -448,8 +425,8 @@ const Registro = ({ userData }) => {
     'COOLECHERA','CRYSTAL S.A.S','DON POLLO','EMI','ETERNA','EVOAGRO','FABRICATO',
     'FUNDACION GRUPO SANTANDER','HACEB','HITSS/CLARO','ILUMNO','JGB','LACTALIS',
     'PRND-PROINDESA','PROCAPS','SATENA','STOP JEANS','TINTATEX','UNIBAN','GREELAND',
-    'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA','RCN','ECOPETROL-ODL',
-    'AGORA','D1','CASA LUKER','CIAMSA','SPRBUN','CLARO CARIBE'
+    'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA', 'RCN', 'ECOPETROL-ODL',
+    'AGORA', 'D1', 'CASA LUKER', 'CIAMSA', 'SPRBUN', 'CLARO CARIBE'
   ];
   const tiposTarea = [
     '01 - Atencion Casos','02 - Atencion de Casos VAR','03 - Atencion de Proyectos','04- Apoyo Preventa','05 - Generacion Informes',
@@ -815,7 +792,7 @@ const Registro = ({ userData }) => {
                 <tr key={idx}>
                   <td>{r.consultor}</td>
                   <td>{r.fecha}</td>
-                  <td className="num">{r.total_horas}</td>
+                  <td className="num">{Number(r.total_horas ?? 0)}</td>
                   <td>
                     <span className={`badge ${
                       r.estado === 'Al día' ? 'badge-success'
