@@ -24,6 +24,7 @@ function App() {
   useEffect(() => {
     const onStorage = (e) => {
       if (e.key === 'userData' && !e.newValue) setUserData(null);
+      if (e.key === 'token' && !e.newValue) setUserData(null);
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -40,9 +41,15 @@ function App() {
     }
   };
 
+  
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('userData');
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('userData');
+      localStorage.removeItem('user');
+      localStorage.removeItem('horarioSesion');
+      sessionStorage.clear();
+    } catch {}
     setUserData(null);
   };
 
@@ -55,6 +62,7 @@ function App() {
     <Router>
       {!userData ? (
         <Routes>
+          
           <Route path="*" element={<Login onLoginSuccess={handleLoginSuccess} />} />
         </Routes>
       ) : (
@@ -64,7 +72,7 @@ function App() {
             rol={rol}
             equipo={equipo}
             nombre={nombre}
-            onLogout={handleLogout}
+            onLogout={handleLogout}   
           />
 
           <Routes>
@@ -80,8 +88,6 @@ function App() {
                 </AdminRoute>
               }
             />
-
-            
             <Route
               path="/BaseRegistros"
               element={

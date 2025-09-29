@@ -1,14 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import './Navbar.css';
 import logoNav from '../assets/logo_navbar.png';
+import { jfetch } from '../lib/api';
 
 const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogout }) => {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
   const { isAdmin, nombre, rol } = useMemo(() => {
-    
     if (isAdminProp != null || rolProp || nombreProp) {
       const rolUpper = String(rolProp || '').toUpperCase();
       return {
@@ -18,7 +18,6 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
       };
     }
 
-    
     let raw = null;
     try {
       raw = JSON.parse(
@@ -36,33 +35,50 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
 
   const toggleMenu = () => setOpen(v => !v);
 
-  const handleLogout = () => {
-    if (typeof onLogout === 'function') {
-      onLogout();
+  const hardClean = () => {
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('userData');
+      localStorage.removeItem('user');
+      localStorage.removeItem('horarioSesion');
+      sessionStorage.clear();
+    } catch {}
+  };
+
+  const handleLogout = useCallback(async () => {
+    try { await jfetch('/logout', { method: 'POST' }); } catch {}
+
+    
+    hardClean();
+
+    
+    try { typeof onLogout === 'function' && onLogout(); } catch {}
+
+   
+    try {
+      navigate('/login', { replace: true });
+    } catch {
+      window.location.assign('/login');
       return;
     }
-    localStorage.removeItem('token');
-    localStorage.removeItem('userData');
-    localStorage.removeItem('user');
-    navigate('/', { replace: true });
-    window.location.reload();
-  };
+
+    
+    setTimeout(() => window.location.reload(), 50);
+  }, [navigate, onLogout]);
 
   return (
     <header className="navc-header">
       <button className="navc-hamburger" onClick={toggleMenu} aria-label="Abrir menú">☰</button>
 
       <nav className={`navc-navbar ${open ? 'open' : ''}`} onClick={() => setOpen(false)}>
-        
+        {/* Logo */}
         <Link to="/" className="navc-logo" aria-label="Ir al inicio">
           <img src={logoNav} alt="CORA" />
         </Link>
 
-        
+        {/* Rutas */}
         <Link to="/">Inicio</Link>
         <Link to="/grafico">Panel Gráfico</Link>
-
-       
         {isAdmin && <Link to="/BaseRegistros">Base Registros</Link>}
         {isAdmin && <Link to="/GraficoBase">Gráfico Base</Link>}
 
@@ -81,4 +97,3 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
 };
 
 export default Navbar;
-

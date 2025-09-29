@@ -9,6 +9,7 @@ from collections import defaultdict
 
 bp = Blueprint('routes', __name__)
 
+
 _HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$")
 
 def validar_horario_str(horario: str):
@@ -18,11 +19,13 @@ def validar_horario_str(horario: str):
         ini_str, fin_str = [p.strip() for p in horario.split("-")]
         h1 = datetime.strptime(ini_str, "%H:%M")
         h2 = datetime.strptime(fin_str, "%H:%M")
-        if h2 <= h1:
-            return False, "La hora fin debe ser mayor a la hora inicio."
+        if h1 == h2:
+            return False, "El horario no puede tener la misma hora de inicio y fin."
+        
         return True, None
     except Exception:
         return False, "Horario inválido."
+
 
 def _client_ip():
     fwd = request.headers.get("X-Forwarded-For")
@@ -184,11 +187,12 @@ def _norm_default(v, default):
     return s
 
 def _basis_defaults_from_payload(data: dict):
+    
     return {
         "actividad_malla": _norm_default(data.get("actividadMalla") or data.get("actividad_malla"), "N/APLICA"),
         "oncall":          _norm_default(data.get("oncall"), "N/A"),
         "desborde":        _norm_default(data.get("desborde"), "N/A"),
-        "nro_escalado":    _norm_default(data.get("nroCasoEscaladoSap") or data.get("nro_caso_escalado"), ""),
+        "nro_escalado":    _norm_default(data.get("nroCasoEscaladoSap") or data.get("nro_caso_escalado"), None),
     }
 
 @bp.route('/api/registrar-hora', methods=['POST'])
@@ -234,7 +238,7 @@ def registrar_hora():
             cliente=cliente,
             nro_caso_cliente=nro_caso_cliente,
             nro_caso_interno=nro_caso_interno,
-            nro_caso_escalado=bd["nro_escalado"],
+            nro_caso_escalado=bd["nro_escalado"], 
             tipo_tarea=tipo_tarea,
             hora_inicio=hora_inicio,
             hora_fin=hora_fin,
@@ -358,8 +362,10 @@ def editar_registro(id):
         registro.cliente            = pick(data, 'cliente', default=registro.cliente)
         registro.nro_caso_cliente   = pick(data, 'nroCasoCliente', 'nro_caso_cliente', default=registro.nro_caso_cliente)
         registro.nro_caso_interno   = pick(data, 'nroCasoInterno', 'nro_caso_interno', default=registro.nro_caso_interno)
+
+        
         if 'nroCasoEscaladoSap' in data or 'nro_caso_escalado' in data:
-            registro.nro_caso_escalado = bd["nro_escalado"]
+            registro.nro_caso_escalado = bd["nro_escalado"]  
 
         registro.tipo_tarea         = pick(data, 'tipoTarea', 'tipo_tarea', default=registro.tipo_tarea)
         registro.hora_inicio        = pick(data, 'horaInicio', 'hora_inicio', default=registro.hora_inicio)

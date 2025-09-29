@@ -34,6 +34,7 @@ const EXCEPCION_8H_USERS = new Set([
   'duqueb','diazstef','castronay','sierrag','tarquinojm','celyfl'
 ]);
 
+/* ================== helpers de tiempo ================== */
 const parseHHMM = (s) => {
   if (!s || typeof s !== 'string' || !/^\d{2}:\d{2}$/.test(s)) return null;
   const [h, m] = s.split(':').map(Number);
@@ -46,49 +47,84 @@ const parseRange = (range) => {
   const a = parseHHMM(ini);
   const b = parseHHMM(fin);
   if (!a || !b) return null;
-  if (b.h < a.h || (b.h === a.h && b.m <= a.m)) return null;
   return { ini: a, fin: b };
 };
 const toMinutes = ({ h, m }) => h * 60 + m;
+
+/* Soporta cruces de medianoche (23:00–00:30, etc.) */
 const calcularTiempo = (inicio, fin) => {
   const a = parseHHMM(inicio);
   const b = parseHHMM(fin);
   if (!a || !b) return 0;
-  const mins = (b.h * 60 + b.m) - (a.h * 60 + a.m);
+  let start = toMinutes(a);
+  let end   = toMinutes(b);
+  if (end <= start) end += 24 * 60;        // cruza medianoche
+  const mins = end - start;
   return mins > 0 ? parseFloat((mins / 60).toFixed(2)) : 0;
 };
+
 const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   const ini = parseHHMM(horaInicio);
   const fin = parseHHMM(horaFin);
   const rango = parseRange(horarioUsuario);
   if (!ini || !fin || !rango) return 'N/D';
-  const start = toMinutes(ini);
-  const end = toMinutes(fin);
-  const inWorkStart = toMinutes(rango.ini);
-  const inWorkEnd = toMinutes(rango.fin);
-  return (start < inWorkStart || end > inWorkEnd) ? 'Sí' : 'No';
+
+  let start = toMinutes(ini);
+  let end   = toMinutes(fin);
+  if (end <= start) end += 24 * 60; // cruce
+
+  let inWorkStart = toMinutes(rango.ini);
+  let inWorkEnd   = toMinutes(rango.fin);
+  if (inWorkEnd <= inWorkStart) inWorkEnd += 24 * 60; // rangos que pasan 00:00
+
+  const fueraInicio = start < inWorkStart;
+  const fueraFin    = end   > inWorkEnd;
+  return (fueraInicio || fueraFin) ? 'Sí' : 'No';
 };
+
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
+
+/* ================== resumen por día ================== */
+/* NUEVO: si hay al menos un registro "DISPONIBLE" en el día,
+   ese día se considera "Al día" (meta = 0). */
 function buildLocalResumen(registros, nombre, usuarioLogin) {
   if (!Array.isArray(registros)) return [];
+
   const login = String(usuarioLogin || '').toLowerCase();
-  const metaHoras = EXCEPCION_8H_USERS.has(login) ? 8 : 9;
+  const metaBase = EXCEPCION_8H_USERS.has(login) ? 8 : 9;
+
+  // Agrupa por fecha y detecta "DISPONIBLE"
   const byFecha = new Map();
-  registros.forEach(r => {
+  for (const r of registros) {
     const fecha = r?.fecha;
+    if (!fecha) continue;
+
     const horas = Number(r?.tiempoInvertido ?? 0);
-    if (!fecha) return;
-    if (!Number.isFinite(horas)) return;
-    byFecha.set(fecha, (byFecha.get(fecha) || 0) + horas);
+    if (!Number.isFinite(horas)) continue;
+
+    const tipo = String(r?.tipoTarea || '').toUpperCase();
+    const esDisponible = tipo.includes('DISPONIBLE');
+
+    if (!byFecha.has(fecha)) {
+      byFecha.set(fecha, { total: 0, disponible: false });
+    }
+    const bucket = byFecha.get(fecha);
+    bucket.total += horas;
+    bucket.disponible = bucket.disponible || esDisponible;
+  }
+
+  return Array.from(byFecha.entries()).map(([fecha, { total, disponible }]) => {
+    const metaDelDia = disponible ? 0 : metaBase;
+    return {
+      consultor: nombre || (registros[0]?.consultor ?? ''),
+      fecha,
+      total_horas: Math.round(total * 100) / 100,
+      estado: total >= metaDelDia ? 'Al día' : 'Incompleto'
+    };
   });
-  return Array.from(byFecha.entries()).map(([fecha, total]) => ({
-    consultor: nombre || (registros[0]?.consultor ?? ''),
-    fecha,
-    total_horas: Math.round(total * 100) / 100,
-    estado: total >= metaHoras ? 'Al día' : 'Incompleto'
-  }));
 }
 
+/* ================== helpers UI ================== */
 const normalizeModulos = (arr) => (
   Array.isArray(arr)
     ? arr.map(m => (typeof m === 'string' ? m : (m?.nombre ?? String(m))))
@@ -160,6 +196,7 @@ function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
   URL.revokeObjectURL(url);
 }
 
+/* ================== componente ================== */
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros]   = useState([]);
@@ -310,6 +347,7 @@ const Registro = ({ userData }) => {
     return base;
   }, [isAdmin, registros, resumen, nombreUser, usuarioLogin, filtroConsultor]);
 
+  /* ============== acciones CRUD ============== */
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!registro.horaInicio || !registro.horaFin) {
@@ -338,8 +376,9 @@ const Registro = ({ userData }) => {
       rol
     };
     const payload = { ...base };
+
+    // En formularios no BASIS, ocultamos estos campos
     if (equipoFormulario !== 'BASIS') {
-      delete payload.nroCasoEscaladoSap;
       delete payload.actividadMalla;
       delete payload.oncall;
       delete payload.desborde;
@@ -419,6 +458,7 @@ const Registro = ({ userData }) => {
     } catch (e) {}
   };
 
+  /* catálogos */
   const clientes = [
     'AIRE - Air-e','ALUMINA','ANTILLANA','AVIANCA','ANABA','CAMARA DE COMERCIO','CEET-EL TIEMPO',
     'CERAMICA ITALIA','CERESCOS','CLARO ANDINA','CLARO COLOMBIA','COLSUBSIDIO','COMFENALCO CARTAGENA',
@@ -442,6 +482,7 @@ const Registro = ({ userData }) => {
   const oncall = ['SI','NO','N/A'];
   const desborde = ['SI','NO','N/A'];
 
+  /* exportar */
   const handleExport = () => {
     const visible = registrosFiltrados ?? registros ?? [];
     exportRegistrosExcel(
@@ -459,6 +500,7 @@ const Registro = ({ userData }) => {
     );
   };
 
+  /* ================== render ================== */
   return (
     <div className="container">
       <div className="page-head">
@@ -507,6 +549,7 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
+      {/* filtros */}
       <div className="filters-card">
         <div className="filter-grid">
           <input
@@ -570,6 +613,7 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
+      {/* modal alta / edición */}
       <Modal
         isOpen={modalIsOpen}
         onRequestClose={() => setModalIsOpen(false)}
@@ -704,6 +748,7 @@ const Registro = ({ userData }) => {
         </div>
       </Modal>
 
+      {/* tabla principal */}
       <div className="table-wrap">
         <div className="table-scroll sticky-actions">
           <table>
@@ -775,6 +820,7 @@ const Registro = ({ userData }) => {
 
       {error && <div style={{color:'crimson', marginTop:10}}>Error: {error}</div>}
 
+      {/* resumen por día */}
       <h3>Resumen de Horas</h3>
       <div className="table-wrap">
         <div className="table-scroll">
