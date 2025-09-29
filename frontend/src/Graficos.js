@@ -8,11 +8,16 @@ import Modal from 'react-modal';
 import './PanelGraficos.css';
 import { jfetch } from './lib/api';
 
-/* ========= config ========= */
+/* ======== config ======== */
 const OPEN_ON_HOVER = false;
 Modal.setAppElement('#root');
 
-/* =============== Helpers básicos =============== */
+/* ======== Festivos opcionales (YYYY-MM-DD) ======== */
+const HOLIDAYS = [
+  // '2025-01-01', ...
+];
+
+/* ======== Helpers ======== */
 const asArray = (v) => (Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []));
 const toNum = (v) => {
   const n = parseFloat(v);
@@ -24,23 +29,24 @@ const coincideMes = (fechaISO, mesYYYYMM) => {
   return typeof fechaISO === 'string' && fechaISO.startsWith(`${y}-${m}`);
 };
 
-/* ====== días hábiles del mes (sin fines de semana) ====== */
-function businessDaysInMonth(year, month /* 1-12 */, holidays = []) {
-  const festivos = new Set(holidays || []);
-  const first = new Date(year, month - 1, 1);
-  const last  = new Date(year, month, 0);
-  let habiles = 0;
-  for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
-    const dow = d.getDay();               // 0 dom .. 6 sáb
-    const iso = d.toISOString().slice(0,10);
-    if (dow === 0 || dow === 6) continue; // fin de semana
-    if (festivos.has(iso)) continue;      // festivo
-    habiles++;
+function workdaysInMonth(year, month, holidays = []) {
+  const y = Number(year);
+  const m = Number(month);
+  if (!y || !m) return 0;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  let count = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dt = new Date(y, m - 1, d);
+    const dow = dt.getDay(); // 0=Dom, 6=Sab
+    if (dow === 0 || dow === 6) continue;
+    const iso = dt.toISOString().slice(0, 10);
+    if (holidays.includes(iso)) continue;
+    count++;
   }
-  return habiles;
+  return count;
 }
 
-/* =============== Medición de texto + tick con wrap =============== */
+/* ======== Medición texto + wrap ======== */
 const _canvas = document.createElement('canvas');
 const _ctx = _canvas.getContext('2d');
 
@@ -55,10 +61,7 @@ function textWidthPx(text, opts) {
   _setFont(opts);
   return _ctx.measureText(String(text ?? '')).width;
 }
-
-function yWidthFromPx(labels, {
-  min = 120, max = 360, pad = 28, fontSize = 12, fontWeight = 400,
-} = {}) {
+function yWidthFromPx(labels, { min = 120, max = 360, pad = 28, fontSize = 12, fontWeight = 400 } = {}) {
   _setFont({ fontSize, fontWeight });
   const w = Math.max(0, ...labels.map(t => textWidthPx(t, { fontSize, fontWeight })));
   return Math.max(min, Math.min(max, Math.ceil(w + pad)));
@@ -93,7 +96,6 @@ function wrapByPx(text, maxWidth, { lineHeight = 13, fontSize = 12, fontWeight =
   if (line) lines.push(line);
   return { lines, lineHeight };
 }
-
 function WrapTickPx({ x, y, payload, maxWidth = 160, dy = 3, fontSize = 12, color = '#6b7280' }) {
   const full = String(payload?.value ?? '');
   const { lines, lineHeight } = wrapByPx(full, maxWidth, { lineHeight: 13, fontSize });
@@ -109,7 +111,7 @@ function WrapTickPx({ x, y, payload, maxWidth = 160, dy = 3, fontSize = 12, colo
   );
 }
 
-/* Gradiente de marca para las barras */
+/* Gradiente marca */
 const BrandDefs = ({ id }) => (
   <defs>
     <linearGradient id={id} x1="0" y1="0" x2="1" y2="0">
@@ -119,7 +121,7 @@ const BrandDefs = ({ id }) => (
   </defs>
 );
 
-/* Paleta para pie (torta) */
+/* Colores pie */
 const PIE_COLORS = [
   '#2563eb', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
   '#06b6d4', '#dc2626', '#059669', '#d97706', '#7c3aed',
@@ -131,18 +133,23 @@ export default function Graficos() {
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState('');
 
+  // Filtros existentes
   const [filtroConsultor, setFiltroConsultor] = useState('');
   const [filtroTarea, setFiltroTarea] = useState('');
   const [filtroCliente, setFiltroCliente] = useState('');
   const [filtroModulo, setFiltroModulo] = useState('');
   const [filtroMes, setFiltroMes] = useState('');
 
+  // Filtros nuevos
+  const [filtroNroCliente, setFiltroNroCliente] = useState('');
+  const [filtroNroEscalado, setFiltroNroEscalado] = useState('');
+
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRows, setModalRows] = useState([]);
   const [modalTitle, setModalTitle] = useState('');
 
-  // Usuario / rol
+  /* Usuario / rol */
   const user = useMemo(() => {
     try {
       return (
@@ -158,7 +165,7 @@ export default function Graficos() {
   const nombreUser = String(user?.nombre || user?.user?.nombre || '').trim();
   const isAdmin = rol === 'ADMIN';
 
-  // Carga de datos
+  /* Carga */
   useEffect(() => {
     const fetchRegistros = async () => {
       setError('');
@@ -186,7 +193,7 @@ export default function Graficos() {
     fetchRegistros();
   }, [isAdmin, nombreUser, rol]);
 
-  // Opciones de filtros
+  /* Opciones filtros */
   const consultoresUnicos = useMemo(() => {
     const set = new Set((registros ?? [])
       .filter(r => coincideMes(r.fecha, filtroMes))
@@ -216,7 +223,25 @@ export default function Graficos() {
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
-  // Datos filtrados
+  const nroClienteUnicos = useMemo(() => {
+    const set = new Set((registros ?? [])
+      .filter(r => coincideMes(r.fecha, filtroMes))
+      .map(r => r.nroCasoCliente)
+    );
+    return Array.from(set).filter(v => (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '0'))
+      .sort((a, b) => String(a).localeCompare(String(b)));
+  }, [registros, filtroMes]);
+
+  const nroEscaladoUnicos = useMemo(() => {
+    const set = new Set((registros ?? [])
+      .filter(r => coincideMes(r.fecha, filtroMes))
+      .map(r => r.nroCasoEscaladoSap)
+    );
+    return Array.from(set).filter(v => (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '0'))
+      .sort((a, b) => String(a).localeCompare(String(b)));
+  }, [registros, filtroMes]);
+
+  /* Datos filtrados */
   const datosFiltrados = useMemo(() => {
     return (registros ?? []).filter(r => {
       if (!coincideMes(r.fecha, filtroMes)) return false;
@@ -224,11 +249,16 @@ export default function Graficos() {
       if (filtroTarea && r.tipoTarea !== filtroTarea) return false;
       if (filtroCliente && r.cliente !== filtroCliente) return false;
       if (filtroModulo && r.modulo !== filtroModulo) return false;
+      if (filtroNroCliente && String(r.nroCasoCliente || '') !== filtroNroCliente) return false;
+      if (filtroNroEscalado && String(r.nroCasoEscaladoSap || '') !== filtroNroEscalado) return false;
       return true;
     });
-  }, [registros, filtroMes, filtroConsultor, filtroTarea, filtroCliente, filtroModulo]);
+  }, [
+    registros, filtroMes, filtroConsultor, filtroTarea, filtroCliente,
+    filtroModulo, filtroNroCliente, filtroNroEscalado
+  ]);
 
-  // Agrupaciones
+  /* Agrupaciones */
   const horasPorConsultor = useMemo(() => {
     const acc = new Map();
     (datosFiltrados ?? []).forEach(r => {
@@ -273,7 +303,22 @@ export default function Graficos() {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
-  // Pie (% por tarea)
+  // Horas por día del mes — ORDENADO de menor a mayor (día 1 → 31)
+  const horasPorDia = useMemo(() => {
+    const acc = new Map();
+    (datosFiltrados ?? []).forEach(r => {
+      const fecha = r.fecha || '—';
+      acc.set(fecha, (acc.get(fecha) || 0) + toNum(r.tiempoInvertido));
+    });
+    const arr = Array.from(acc, ([fecha, horas]) => {
+      // extraemos el número de día para ordenar correctamente
+      const day = /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? Number(fecha.slice(8, 10)) : 0;
+      return { fecha, day, horas: +horas.toFixed(2) };
+    });
+    return arr.sort((a, b) => a.day - b.day);
+  }, [datosFiltrados]);
+
+  /* Pie (porcentaje por tarea) */
   const pieTareas = useMemo(() => {
     const total = horasPorTarea.reduce((s, r) => s + r.horas, 0);
     if (total <= 0) return [];
@@ -284,44 +329,31 @@ export default function Graficos() {
     }));
   }, [horasPorTarea]);
 
-  // Alturas (se usan en ResponsiveContainer → elimina warnings)
+  /* Alturas y anchos */
   const hConsultores = Math.max(320, horasPorConsultor.length * 30);
   const hTareas      = Math.max(320, horasPorTarea.length * 30);
   const hClientes    = Math.max(320, horasPorCliente.length * 30);
   const hModulos     = Math.max(320, horasPorModulo.length * 30);
+  const hDias        = 380;
 
-  // Anchos de Y
   const yWidthConsultor = yWidthFromPx(horasPorConsultor.map(d => d.consultor), { min: 140, max: 360, pad: 32 });
   const yWidthTarea     = yWidthFromPx(horasPorTarea.map(d => d.tipoTarea),     { min: 160, max: 380, pad: 32 });
   const yWidthCliente   = yWidthFromPx(horasPorCliente.map(d => d.cliente),     { min: 160, max: 380, pad: 32 });
   const yWidthModulo    = yWidthFromPx(horasPorModulo.map(d => d.modulo),       { min: 140, max: 360, pad: 32 });
 
-  // ====== META mensual (días hábiles × 9h) ======
-  const metaHorasMes = useMemo(() => {
-    if (!filtroMes) return null; // sin mes seleccionado no mostramos meta
-    const [yStr, mStr] = filtroMes.split('-');
-    const y = parseInt(yStr, 10);
-    const m = parseInt(mStr, 10);
-    const habiles = businessDaysInMonth(y, m /*, festivos=[] si tienes lista */);
-    return habiles * 9; // 9h por día
-  }, [filtroMes]);
-
-  // Eje X asegurando que la meta quepa
-  const maxDatoConsultor = horasPorConsultor.reduce((m, r) => Math.max(m, r.horas), 0);
-  const xMaxConsultor = useMemo(
-    () => Math.max(maxDatoConsultor, metaHorasMes || 0) * 1.05,
-    [maxDatoConsultor, metaHorasMes]
-  );
-
-  // Modal helpers
+  /* Modal helpers */
   const openDetail = (kind, value, pretty) => {
     let rows = [];
     if (kind === 'consultor') rows = datosFiltrados.filter(r => r.consultor === value);
     if (kind === 'tipoTarea') rows = datosFiltrados.filter(r => r.tipoTarea === value);
     if (kind === 'cliente')   rows = datosFiltrados.filter(r => r.cliente === value);
     if (kind === 'modulo')    rows = datosFiltrados.filter(r => r.modulo === value);
+    if (kind === 'fecha')     rows = datosFiltrados.filter(r => r.fecha === value);
 
-    rows = rows.slice().sort((a,b) => String(b.fecha).localeCompare(String(a.fecha)));
+    rows = rows
+      .slice()
+      .sort((a,b) => String(b.fecha).localeCompare(String(a.fecha)));
+
     const total = rows.reduce((sum, r) => sum + toNum(r.tiempoInvertido), 0);
 
     setModalRows(rows);
@@ -330,7 +362,7 @@ export default function Graficos() {
   };
   const closeModal = () => setModalOpen(false);
 
-  // Subtotales por día (modal)
+  /* Subtotales por día dentro de modal */
   const modalSubtotales = useMemo(() => {
     const byDay = new Map();
     (modalRows ?? []).forEach(r => {
@@ -344,6 +376,17 @@ export default function Graficos() {
       .sort((a,b) => String(b[0]).localeCompare(String(a[0])))
       .map(([fecha, v]) => ({ fecha, rows: v.rows, total: +v.total.toFixed(2) }));
   }, [modalRows]);
+
+  /* Meta mensual (línea) para “Horas por Consultor” */
+  const metaMensual = useMemo(() => {
+    if (!filtroMes) return null;
+    const [y, m] = filtroMes.split('-').map(Number);
+    const wd = workdaysInMonth(y, m, HOLIDAYS);
+    return {
+      diasHabiles: wd,
+      limite: wd * 9 // 9 horas por día laboral
+    };
+  }, [filtroMes]);
 
   return (
     <div className="panel-graficos-container">
@@ -384,6 +427,27 @@ export default function Graficos() {
           {modulosUnicos.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
 
+        {/* Nuevos filtros */}
+        <select
+          className="filtro-select"
+          value={filtroNroCliente}
+          onChange={(e) => setFiltroNroCliente(e.target.value)}
+          title="Nro. Caso Cliente"
+        >
+          <option value="">Nro. Caso Cliente (todos)</option>
+          {nroClienteUnicos.map(v => <option key={v} value={String(v)}>{String(v)}</option>)}
+        </select>
+
+        <select
+          className="filtro-select"
+          value={filtroNroEscalado}
+          onChange={(e) => setFiltroNroEscalado(e.target.value)}
+          title="Nro. Escalado SAP"
+        >
+          <option value="">Nro. Escalado SAP (todos)</option>
+          {nroEscaladoUnicos.map(v => <option key={v} value={String(v)}>{String(v)}</option>)}
+        </select>
+
         <input className="filtro-month" type="month" value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)} title="Mes (YYYY-MM)" />
 
         <button
@@ -391,6 +455,7 @@ export default function Graficos() {
           onClick={() => {
             setFiltroTarea(''); setFiltroCliente(''); setFiltroModulo(''); setFiltroMes('');
             setFiltroConsultor(isAdmin ? '' : (nombreUser || ''));
+            setFiltroNroCliente(''); setFiltroNroEscalado('');
           }}
         >
           Limpiar
@@ -400,23 +465,16 @@ export default function Graficos() {
       <div className="pg-grid pg-grid--stack">
         {/* Horas por Consultor */}
         <div className="grafico-box">
-          <h3>Horas por Consultor</h3>
-          {!!metaHorasMes && (
-            <div style={{ margin: '0 0 6px 6px', color: 'var(--pg-muted)', fontSize: 13 }}>
-              Meta mes: <b>{metaHorasMes} h</b> ({/* texto amigable */}
-              {(() => {
-                const [y,m] = (filtroMes || '').split('-');
-                const habiles = businessDaysInMonth(parseInt(y||'0',10), parseInt(m||'0',10));
-                return `${habiles} días hábiles × 9h`;
-              })()})
-            </div>
-          )}
+          <h3>
+            {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
+            {filtroMes && ` (${filtroMes})`}
+          </h3>
 
           {horasPorConsultor.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
             <div className="chart-scroll">
-              <ResponsiveContainer width="100%" height={hConsultores}>
+              <ResponsiveContainer width="100%" height={Math.max(320, horasPorConsultor.length * 30)}>
                 <BarChart
                   data={horasPorConsultor}
                   layout="vertical"
@@ -426,26 +484,28 @@ export default function Graficos() {
                 >
                   <BrandDefs id="gradConsultor" />
                   <CartesianGrid strokeDasharray="3 3" />
-
-                  {/* Asegura que la meta sea visible sin romper el diseño */}
-                  <XAxis type="number" domain={[0, xMaxConsultor]} tickLine={false} axisLine={false} />
-
+                  <XAxis type="number" tickLine={false} axisLine={false} />
                   <YAxis
                     type="category"
                     dataKey="consultor"
                     width={yWidthConsultor}
                     tick={<WrapTickPx maxWidth={yWidthConsultor - 18} fontSize={12} />}
                   />
-
                   <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
 
-                  {/* Línea de meta (sin fondo gris) */}
-                  {metaHorasMes != null && (
+                  {/* Línea meta mensual (no altera los colores de barras) */}
+                  {metaMensual && (
                     <ReferenceLine
-                      x={metaHorasMes}
-                      stroke="#E30613"
-                      strokeDasharray="5 5"
-                      label={{ value: 'Meta', position: 'top', fill: '#E30613', fontWeight: 700 }}
+                      x={metaMensual.limite}
+                      stroke="#ef4444"
+                      strokeDasharray="6 6"
+                      label={{
+                        value: `Meta: ${metaMensual.limite.toFixed(0)} h (${metaMensual.diasHabiles} días)`,
+                        position: 'top',
+                        fill: '#ef4444',
+                        fontSize: 12,
+                        fontWeight: 700
+                      }}
                     />
                   )}
 
@@ -468,13 +528,13 @@ export default function Graficos() {
 
         {/* Horas por Tipo de Tarea */}
         <div className="grafico-box">
-          <h3>Horas por Tipo de Tarea</h3>
+          <h3>{isAdmin ? 'Horas por Tipo de Tarea' : 'Tus horas por Tipo de Tarea'}</h3>
 
           {horasPorTarea.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
             <div className="chart-scroll">
-              <ResponsiveContainer width="100%" height={hTareas}>
+              <ResponsiveContainer width="100%" height={Math.max(320, horasPorTarea.length * 30)}>
                 <BarChart
                   data={horasPorTarea}
                   layout="vertical"
@@ -511,13 +571,13 @@ export default function Graficos() {
 
         {/* Horas por Cliente */}
         <div className="grafico-box">
-          <h3>Horas por Cliente</h3>
+          <h3>{isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}{filtroMes && ` (${filtroMes})`}</h3>
 
           {horasPorCliente.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
             <div className="chart-scroll">
-              <ResponsiveContainer width="100%" height={hClientes}>
+              <ResponsiveContainer width="100%" height={Math.max(320, horasPorCliente.length * 30)}>
                 <BarChart
                   data={horasPorCliente}
                   layout="vertical"
@@ -554,13 +614,13 @@ export default function Graficos() {
 
         {/* Horas por Módulo */}
         <div className="grafico-box">
-          <h3>Horas por Módulo</h3>
+          <h3>{isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}{filtroMes && ` (${filtroMes})`}</h3>
 
           {horasPorModulo.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
             <div className="chart-scroll">
-              <ResponsiveContainer width="100%" height={hModulos}>
+              <ResponsiveContainer width="100%" height={Math.max(320, horasPorModulo.length * 30)}>
                 <BarChart
                   data={horasPorModulo}
                   layout="vertical"
@@ -595,7 +655,51 @@ export default function Graficos() {
           )}
         </div>
 
-        {/* Torta por tipo de tarea */}
+        {/* Horas por Día (ORDENADO 1 → 31) */}
+        <div className="grafico-box">
+          <h3>Horas por Día (mes){filtroMes && ` (${filtroMes})`}</h3>
+
+          {horasPorDia.length === 0 ? (
+            <div className="empty">Sin datos para los filtros seleccionados.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={hDias}>
+              <BarChart
+                data={horasPorDia}
+                margin={{ top: 8, right: 24, left: 8, bottom: 16 }}
+                barCategoryGap={6}
+              >
+                <BrandDefs id="gradDia" />
+                <CartesianGrid strokeDasharray="3 3" />
+                {/* Mostramos el día (1..31) para que se lea mejor, pero mantenemos 'fecha' para el modal */}
+                <XAxis dataKey="day" tickLine={false} />
+                <YAxis />
+                <Tooltip
+                  formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']}
+                  labelFormatter={(label, payload) => {
+                    // Buscamos la fecha ISO para tooltip a partir del día
+                    if (payload && payload[0] && payload[0].payload?.fecha) {
+                      return payload[0].payload.fecha;
+                    }
+                    return String(label);
+                  }}
+                />
+                <Bar dataKey="horas" name="Horas" radius={[4,4,0,0]}>
+                  {horasPorDia.map((entry, idx) => (
+                    <Cell
+                      key={`d-${entry.fecha}-${idx}`}
+                      fill="url(#gradDia)"
+                      onClick={() => openDetail('fecha', entry.fecha, 'Fecha')}
+                      onMouseEnter={() => { if (OPEN_ON_HOVER) openDetail('fecha', entry.fecha, 'Fecha'); }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* Torta: distribución por tipo de tarea (%) */}
         <div className="grafico-box">
           <h3>Distribución por Tipo de Tarea (%) {filtroMes && `(${filtroMes})`}</h3>
           {pieTareas.length === 0 ? (
@@ -631,7 +735,7 @@ export default function Graficos() {
         </div>
       </div>
 
-      {/* ===== Modal con subtotales por día ===== */}
+      {/* ===== Modal ===== */}
       <Modal
         isOpen={modalOpen}
         onRequestClose={closeModal}
@@ -672,6 +776,8 @@ export default function Graficos() {
                         <th>Inicio</th>
                         <th>Fin</th>
                         <th className="num">Horas</th>
+                        <th>Nro. Caso Cliente</th>
+                        <th>Nro. Escalado SAP</th>
                         <th>Descripción</th>
                       </tr>
                     </thead>
@@ -685,6 +791,8 @@ export default function Graficos() {
                           <td>{r.horaInicio}</td>
                           <td>{r.horaFin}</td>
                           <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
+                          <td className="truncate" title={r.nroCasoCliente || ''}>{r.nroCasoCliente}</td>
+                          <td className="truncate" title={r.nroCasoEscaladoSap || ''}>{r.nroCasoEscaladoSap}</td>
                           <td className="truncate" title={r.descripcion || ''}>{r.descripcion}</td>
                         </tr>
                       ))}
@@ -699,8 +807,7 @@ export default function Graficos() {
         <div className="modal-footer-total">
           <span className="chip chip--ghost">Filas: {modalRows.length}</span>
           <span className="spacer" />
-          <strong>
-            Total general:&nbsp;
+          <strong>Total general:&nbsp;
             {modalRows.reduce((s,r)=>s+toNum(r.tiempoInvertido),0).toFixed(2)} h
           </strong>
         </div>
