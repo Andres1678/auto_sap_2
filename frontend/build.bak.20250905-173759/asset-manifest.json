@@ -1,0 +1,17 @@
+{
+  "files": {
+    "main.css": "/static/css/main.6442d95b.css",
+    "main.js": "/static/js/main.17f7dd93.js",
+    "static/js/453.54292a4b.chunk.js": "/static/js/453.54292a4b.chunk.js",
+    "static/media/cora-logo.png": "/static/media/cora-logo.8338a419671be904a24d.png",
+    "static/media/logo_navbar.png": "/static/media/logo_navbar.029e2c9793cf459fa25d.png",
+    "index.html": "/index.html",
+    "main.6442d95b.css.map": "/static/css/main.6442d95b.css.map",
+    "main.17f7dd93.js.map": "/static/js/main.17f7dd93.js.map",
+    "453.54292a4b.chunk.js.map": "/static/js/453.54292a4b.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.6442d95b.css",
+    "static/js/main.17f7dd93.js"
+  ]
+}
