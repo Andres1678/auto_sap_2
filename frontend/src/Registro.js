@@ -476,7 +476,7 @@ const Registro = ({ userData }) => {
     '18 - DISPONIBLE','19 - Hora de traslado Triara a Casa','20 - Cambios','21 - Monitoreo','22 - Reunión Cliente','23 - Atención SOX',
     '24 - Outlook - Teams','25 - NO DILIGENCIO','26 - Reuniones Externas','27 - Daily','28 - KickOff','29 - Handover','30 - Seguimiento Proyecto',
     '31 - Gestión Documental Operación','32 - Gestión Documental Proyectos','33 - Elaboración de Oferta','34 - Actualización Tableros',
-    '35 - Gestion Documental','36 - Levantamiento de Información'
+    '35 - Gestion Documental','36 - Levantamiento de Información', '37 - Entrega de Turno / Empalme'
   ];
   const actividadMalla = ['AC','CRU1','CRU2','CRU3','DC','DE','DF','IN','ON','T1E','T1I','T1X','T2E','T2I','T2X','T3','VC','N/APLICA'];
   const oncall = ['SI','NO','N/A'];
