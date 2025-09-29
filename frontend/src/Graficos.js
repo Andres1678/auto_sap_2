@@ -735,7 +735,7 @@ export default function Graficos() {
         </div>
       </div>
 
-      {/* ===== Modal ===== */}
+      {/* ===== Modal =====. */}
       <Modal
         isOpen={modalOpen}
         onRequestClose={closeModal}
