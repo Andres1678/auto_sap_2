@@ -777,7 +777,7 @@ export default function Graficos() {
                         <th>Fin</th>
                         <th className="num">Horas</th>
                         <th>Nro. Caso Cliente</th>
-                        <th>Nro. Escalado SAP</th>
+                        <th>Horas adicionales</th>
                         <th>Descripción</th>
                       </tr>
                     </thead>
@@ -792,7 +792,9 @@ export default function Graficos() {
                           <td>{r.horaFin}</td>
                           <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
                           <td className="truncate" title={r.nroCasoCliente || ''}>{r.nroCasoCliente}</td>
-                          <td className="truncate" title={r.nroCasoEscaladoSap || ''}>{r.nroCasoEscaladoSap}</td>
+                          <td className="truncate" title={r.horasAdicionales || 'N/D'}>
+                            {r.horasAdicionales ?? 'N/D'}
+                          </td>
                           <td className="truncate" title={r.descripcion || ''}>{r.descripcion}</td>
                         </tr>
                       ))}
