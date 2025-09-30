@@ -655,6 +655,7 @@ const Registro = ({ userData }) => {
             <h3 className="modal-title">{modoEdicion ? 'Editar Registro' : 'Nuevo Registro'}</h3>
             <button className="close-button" onClick={() => setModalIsOpen(false)} aria-label="Cerrar">✖</button>
           </div>
+
           <div className="modal-body">
             <form onSubmit={handleSubmit}>
               <div className="form-grid">
@@ -668,19 +669,16 @@ const Registro = ({ userData }) => {
                     {modulos.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
                   </select>
                 ) : (
-                  <input
-                    type="text"
-                    value={modulos[0] || ''}
-                    readOnly
-                    placeholder="Módulo"
-                  />
+                  <input type="text" value={modulos[0] || ''} readOnly placeholder="Módulo" />
                 )}
+
                 <input
                   type="date"
                   value={registro.fecha}
                   onChange={(e) => setRegistro({ ...registro, fecha: e.target.value })}
                   required
                 />
+
                 <select
                   value={registro.cliente}
                   onChange={(e) => setRegistro({ ...registro, cliente: e.target.value })}
@@ -689,24 +687,21 @@ const Registro = ({ userData }) => {
                   <option value="">Seleccionar Cliente</option>
                   {clientes.map((c, idx) => <option key={idx} value={c}>{c}</option>)}
                 </select>
+
                 <input
                   type="text"
                   placeholder="Nro Caso Cliente"
                   value={registro.nroCasoCliente}
                   onChange={(e) => setRegistro({ ...registro, nroCasoCliente: e.target.value })}
                 />
+
                 <input
                   type="text"
                   placeholder="Nro Caso Interno"
                   value={registro.nroCasoInterno}
                   onChange={(e) => setRegistro({ ...registro, nroCasoInterno: e.target.value })}
                 />
-                <input
-                  type="text"
-                  placeholder="Nro Caso Escalado SAP"
-                  value={registro.nroCasoEscaladoSap}
-                  onChange={(e) => setRegistro({ ...registro, nroCasoEscaladoSap: e.target.value })}
-                />
+
                 <select
                   value={registro.tipoTarea}
                   onChange={(e) => setRegistro({ ...registro, tipoTarea: e.target.value })}
@@ -715,20 +710,44 @@ const Registro = ({ userData }) => {
                   <option value="">Seleccionar Tarea Azure</option>
                   {tiposTarea.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
                 </select>
+
                 <div className="inline-2">
                   <input
                     type="time"
                     value={registro.horaInicio}
-                    onChange={(e) => setRegistro({ ...registro, horaInicio: e.target.value })}
+                    onChange={(e) => {
+                      const horaInicio = e.target.value;
+                      const horasAdicionales = calcularHorasAdicionales(
+                        horaInicio,
+                        registro.horaFin,
+                        /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
+                      );
+                      setRegistro({ ...registro, horaInicio, horasAdicionales });
+                    }}
                     required
                   />
                   <input
                     type="time"
                     value={registro.horaFin}
-                    onChange={(e) => setRegistro({ ...registro, horaFin: e.target.value })}
+                    onChange={(e) => {
+                      const horaFin = e.target.value;
+                      const horasAdicionales = calcularHorasAdicionales(
+                        registro.horaInicio,
+                        horaFin,
+                        /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
+                      );
+                      setRegistro({ ...registro, horaFin, horasAdicionales });
+                    }}
                     required
                   />
                 </div>
+
+                <input
+                  type="text"
+                  value={`Horas extras: ${registro.horasAdicionales || 'N/D'}`}
+                  readOnly
+                />
+
                 <input
                   type="number"
                   step="0.01"
@@ -736,6 +755,7 @@ const Registro = ({ userData }) => {
                   value={registro.tiempoFacturable}
                   onChange={(e) => setRegistro({ ...registro, tiempoFacturable: e.target.value })}
                 />
+
                 {equipoFormulario === 'BASIS' && (
                   <>
                     <select
@@ -761,6 +781,7 @@ const Registro = ({ userData }) => {
                     </select>
                   </>
                 )}
+
                 <textarea
                   placeholder="Descripción"
                   value={registro.descripcion}
@@ -768,6 +789,7 @@ const Registro = ({ userData }) => {
                   required
                 />
               </div>
+
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setModalIsOpen(false)}>Cancelar</button>
                 <button type="submit" className="btn btn-primary">{modoEdicion ? 'Actualizar' : 'Guardar'}</button>
@@ -776,6 +798,7 @@ const Registro = ({ userData }) => {
           </div>
         </div>
       </Modal>
+
 
       <div className="table-wrap">
         <div className="table-scroll sticky-actions">
