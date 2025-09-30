@@ -34,7 +34,11 @@ const EXCEPCION_8H_USERS = new Set([
   'duqueb','diazstef','castronay','sierrag','tarquinojm','celyfl'
 ]);
 
-/* ================== helpers de tiempo ================== */
+const CLIENTE_RESTRINGIDO = 'HITSS/CLARO';
+const CODES_NEED_CASE = new Set(['01','02','03']);
+const CODES_RESTRICTED_CLIENT_9H = new Set(['09','13','14','15']);
+const CODE_SUPERVISION_EQUIPO = '06';
+
 const parseHHMM = (s) => {
   if (!s || typeof s !== 'string' || !/^\d{2}:\d{2}$/.test(s)) return null;
   const [h, m] = s.split(':').map(Number);
@@ -51,14 +55,13 @@ const parseRange = (range) => {
 };
 const toMinutes = ({ h, m }) => h * 60 + m;
 
-/* Soporta cruces de medianoche (23:00–00:30, etc.) */
 const calcularTiempo = (inicio, fin) => {
   const a = parseHHMM(inicio);
   const b = parseHHMM(fin);
   if (!a || !b) return 0;
   let start = toMinutes(a);
   let end   = toMinutes(b);
-  if (end <= start) end += 24 * 60;        // cruza medianoche
+  if (end <= start) end += 24 * 60;
   const mins = end - start;
   return mins > 0 ? parseFloat((mins / 60).toFixed(2)) : 0;
 };
@@ -68,15 +71,12 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   const fin = parseHHMM(horaFin);
   const rango = parseRange(horarioUsuario);
   if (!ini || !fin || !rango) return 'N/D';
-
   let start = toMinutes(ini);
   let end   = toMinutes(fin);
-  if (end <= start) end += 24 * 60; // cruce
-
+  if (end <= start) end += 24 * 60;
   let inWorkStart = toMinutes(rango.ini);
   let inWorkEnd   = toMinutes(rango.fin);
-  if (inWorkEnd <= inWorkStart) inWorkEnd += 24 * 60; // rangos que pasan 00:00
-
+  if (inWorkEnd <= inWorkStart) inWorkEnd += 24 * 60;
   const fueraInicio = start < inWorkStart;
   const fueraFin    = end   > inWorkEnd;
   return (fueraInicio || fueraFin) ? 'Sí' : 'No';
@@ -84,27 +84,18 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
 
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
 
-/* ================== resumen por día ================== */
-/* NUEVO: si hay al menos un registro "DISPONIBLE" en el día,
-   ese día se considera "Al día" (meta = 0). */
 function buildLocalResumen(registros, nombre, usuarioLogin) {
   if (!Array.isArray(registros)) return [];
-
   const login = String(usuarioLogin || '').toLowerCase();
   const metaBase = EXCEPCION_8H_USERS.has(login) ? 8 : 9;
-
-  // Agrupa por fecha y detecta "DISPONIBLE"
   const byFecha = new Map();
   for (const r of registros) {
     const fecha = r?.fecha;
     if (!fecha) continue;
-
     const horas = Number(r?.tiempoInvertido ?? 0);
     if (!Number.isFinite(horas)) continue;
-
     const tipo = String(r?.tipoTarea || '').toUpperCase();
     const esDisponible = tipo.includes('DISPONIBLE');
-
     if (!byFecha.has(fecha)) {
       byFecha.set(fecha, { total: 0, disponible: false });
     }
@@ -112,7 +103,6 @@ function buildLocalResumen(registros, nombre, usuarioLogin) {
     bucket.total += horas;
     bucket.disponible = bucket.disponible || esDisponible;
   }
-
   return Array.from(byFecha.entries()).map(([fecha, { total, disponible }]) => {
     const metaDelDia = disponible ? 0 : metaBase;
     return {
@@ -124,7 +114,6 @@ function buildLocalResumen(registros, nombre, usuarioLogin) {
   });
 }
 
-/* ================== helpers UI ================== */
 const normalizeModulos = (arr) => (
   Array.isArray(arr)
     ? arr.map(m => (typeof m === 'string' ? m : (m?.nombre ?? String(m))))
@@ -196,7 +185,14 @@ function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
   URL.revokeObjectURL(url);
 }
 
-/* ================== componente ================== */
+function taskCode(value){
+  return (String(value || '').match(/^\d+/)?.[0] ?? '');
+}
+function isInvalidCaseNumber(nro){
+  const s = String(nro ?? '').trim().toUpperCase();
+  return !s || s === '0' || s === 'NA' || s === 'N/A' || s.length > 10;
+}
+
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros]   = useState([]);
@@ -347,7 +343,6 @@ const Registro = ({ userData }) => {
     return base;
   }, [isAdmin, registros, resumen, nombreUser, usuarioLogin, filtroConsultor]);
 
-  /* ============== acciones CRUD ============== */
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!registro.horaInicio || !registro.horaFin) {
@@ -357,6 +352,47 @@ const Registro = ({ userData }) => {
     if (tiempo <= 0) {
       return Swal.fire({ icon: 'error', title: 'Hora fin debe ser mayor a inicio' });
     }
+
+    const code = taskCode(registro.tipoTarea);
+
+    if (CODES_NEED_CASE.has(code) && isInvalidCaseNumber(registro.nroCasoCliente)) {
+      return Swal.fire({
+        icon: 'warning',
+        title: 'Número de caso inválido',
+        text: 'Para las tareas 01, 02 o 03, el Nro. Caso Cliente no puede ser "0", "NA", estar vacío ni superar los 10 caracteres.'
+      });
+    }
+
+    if (CODES_RESTRICTED_CLIENT_9H.has(code)) {
+      if ((registro.cliente || '').trim().toUpperCase() !== CLIENTE_RESTRINGIDO) {
+        return Swal.fire({
+          icon: 'warning',
+          title: 'Cliente no permitido',
+          text: 'Esta tarea solo puede registrarse al cliente HITSS/CLARO.'
+        });
+      }
+      if (tiempo > 9) {
+        return Swal.fire({
+          icon: 'warning',
+          title: 'Límite de horas excedido',
+          text: 'Estas tareas no pueden superar 9 horas en un registro.'
+        });
+      }
+    }
+
+    if (code === CODE_SUPERVISION_EQUIPO) {
+      const poolModulos = [moduloElegido, moduloUser, ...(modulos || [])]
+        .map(v => String(v || '').trim().toUpperCase());
+      const canUseLider = poolModulos.includes('LIDER');
+      if (!canUseLider) {
+        return Swal.fire({
+          icon: 'warning',
+          title: 'Módulo no autorizado',
+          text: 'La tarea "Seguimiento y Supervisión Equipo" solo puede ser usada por quienes pueden diligenciar el módulo LIDER.'
+        });
+      }
+    }
+
     if (modulos.length > 1 && !moduloElegido) {
       return Swal.fire({ icon: 'warning', title: 'Selecciona un módulo' });
     }
@@ -376,8 +412,6 @@ const Registro = ({ userData }) => {
       rol
     };
     const payload = { ...base };
-
-    // En formularios no BASIS, ocultamos estos campos
     if (equipoFormulario !== 'BASIS') {
       delete payload.actividadMalla;
       delete payload.oncall;
@@ -458,7 +492,6 @@ const Registro = ({ userData }) => {
     } catch (e) {}
   };
 
-  /* catálogos */
   const clientes = [
     'AIRE - Air-e','ALUMINA','ANTILLANA','AVIANCA','ANABA','CAMARA DE COMERCIO','CEET-EL TIEMPO',
     'CERAMICA ITALIA','CERESCOS','CLARO ANDINA','CLARO COLOMBIA','COLSUBSIDIO','COMFENALCO CARTAGENA',
@@ -482,7 +515,6 @@ const Registro = ({ userData }) => {
   const oncall = ['SI','NO','N/A'];
   const desborde = ['SI','NO','N/A'];
 
-  /* exportar */
   const handleExport = () => {
     const visible = registrosFiltrados ?? registros ?? [];
     exportRegistrosExcel(
@@ -500,7 +532,6 @@ const Registro = ({ userData }) => {
     );
   };
 
-  /* ================== render ================== */
   return (
     <div className="container">
       <div className="page-head">
@@ -549,7 +580,6 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
-      {/* filtros */}
       <div className="filters-card">
         <div className="filter-grid">
           <input
@@ -613,7 +643,6 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
-      {/* modal alta / edición */}
       <Modal
         isOpen={modalIsOpen}
         onRequestClose={() => setModalIsOpen(false)}
@@ -748,7 +777,6 @@ const Registro = ({ userData }) => {
         </div>
       </Modal>
 
-      {/* tabla principal */}
       <div className="table-wrap">
         <div className="table-scroll sticky-actions">
           <table>
@@ -820,7 +848,6 @@ const Registro = ({ userData }) => {
 
       {error && <div style={{color:'crimson', marginTop:10}}>Error: {error}</div>}
 
-      {/* resumen por día */}
       <h3>Resumen de Horas</h3>
       <div className="table-wrap">
         <div className="table-scroll">
