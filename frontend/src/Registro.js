@@ -861,22 +861,26 @@ const Registro = ({ userData }) => {
               </tr>
             </thead>
             <tbody>
-              {(Array.isArray(resumenVisible) ? resumenVisible : []).map((r, idx) => (
-                <tr key={idx}>
-                  <td>{r.consultor}</td>
-                  <td>{r.fecha}</td>
-                  <td className="num">{Number(r.total_horas ?? 0)}</td>
-                  <td>
-                    <span className={`badge ${
-                      r.estado === 'Al día' ? 'badge-success'
-                      : r.estado === 'Incompleto' ? 'badge-warning'
-                      : 'badge-danger'
-                    }`}>
-                      {r.estado}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {(() => {
+                const rows = Array.isArray(resumenVisible) ? resumenVisible.slice() : [];
+                rows.sort((a, b) => new Date(a.fecha || '1970-01-01') - new Date(b.fecha || '1970-01-01'));
+                return rows.map((r, idx) => (
+                  <tr key={idx}>
+                    <td>{r.consultor}</td>
+                    <td>{r.fecha}</td>
+                    <td className="num">{Number(r.total_horas ?? 0)}</td>
+                    <td>
+                      <span className={`badge ${
+                        r.estado === 'Al día' ? 'badge-success'
+                        : r.estado === 'Incompleto' ? 'badge-warning'
+                        : 'badge-danger'
+                      }`}>
+                        {r.estado}
+                      </span>
+                    </td>
+                  </tr>
+                ));
+              })()}
               {!resumenVisible?.length && (
                 <tr><td colSpan={4} className="muted">Sin datos de resumen</td></tr>
               )}
