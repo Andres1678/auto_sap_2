@@ -29,7 +29,7 @@ class Modulo(db.Model):
 
     nombre = db.Column(db.String(100), nullable=False, unique=True)
 
-    # Relación 1-N "antigua" (modulo_id en Consultor) -> la dejamos por compatibilidad
+    
     consultores_default = relationship('Consultor', backref='modulo', lazy=True)
 
     
@@ -57,10 +57,10 @@ class Consultor(db.Model):
     rol = db.Column(db.String(20))
     equipo = db.Column(db.String(50))
 
-    # "Módulo por defecto" (compatibilidad con esquema anterior 1-N)
+    
     modulo_id = db.Column(db.Integer, db.ForeignKey('modulo.id'))
 
-    # Registros de horas (1-N)
+    
     registros = relationship('Registro', backref='consultor', lazy=True)
 
     def __repr__(self):
@@ -89,16 +89,17 @@ class Registro(db.Model):
     horas_adicionales = db.Column(db.String(10), nullable=False)
     descripcion = db.Column(db.Text, nullable=True)
     total_horas = db.Column(db.Float, nullable=True)
+    equipo = db.Column(db.String(50), nullable=True) 
 
-    # Guardamos el NOMBRE del módulo elegido para el registro
+    
     modulo = db.Column(db.String(100))
 
-    # NUEVO: horario con el que se calculó este registro (p. ej. "08:00-18:00")
+    
     horario_trabajo = db.Column(db.String(20))
 
     bloqueado = db.Column(db.Boolean, default=False)
 
-    # FK al consultor
+    
     consultor_id = db.Column(db.Integer, db.ForeignKey('consultor.id'))
 
     def __repr__(self):
@@ -127,12 +128,12 @@ class BaseRegistro(db.Model):
     descripcion = Column(Text)
     consolidado_cliente = Column(String(200))
 
-    # (Compat) desnormalizados de fecha si vienen en Excel
+    
     dia  = Column(Integer)
     mes  = Column(Integer)
     anio = Column(Integer)
 
-    # Campos adicionales de reportes
+    
     ocupacion_azure   = Column(String(600))
     tarea_azure       = Column(String(600))
     horas_convertidas = Column(Float)

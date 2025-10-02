@@ -25,7 +25,8 @@ function initRegistro() {
     desborde: '',
     descripcion: '',
     totalHoras: 0,
-    modulo: ''
+    modulo: '',
+    equipo: ''
   };
 }
 
@@ -83,6 +84,10 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
 };
 
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
+
+
+const equipoOf = (r, fallback = 'SIN EQUIPO') =>
+  (String((r?.equipo ?? r?.EQUIPO) || '').trim().toUpperCase() || fallback);
 
 function buildLocalResumen(registros, nombre, usuarioLogin) {
   if (!Array.isArray(registros)) return [];
@@ -143,7 +148,7 @@ function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
     return `"${s}"`;
   };
   const headers = [
-    'Fecha','Módulo','Cliente','Nro Caso Cliente','Nro Caso Interno','Nro Caso Escalado SAP',
+    'Fecha','Módulo','Equipo','Cliente','Nro Caso Cliente','Nro Caso Interno','Nro Caso Escalado SAP',
     'Tipo Tarea Azure','Consultor','Hora Inicio','Hora Fin','Tiempo Invertido','Tiempo Facturable',
     'ONCALL','Desborde','Horas Adicionales','Descripción'
   ];
@@ -158,6 +163,7 @@ function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
     lines.push([
       r.fecha ?? '',
       r.modulo ?? '',
+      equipoOf(r),
       r.cliente ?? '',
       r.nroCasoCliente ?? '',
       r.nroCasoInterno ?? '',
@@ -209,6 +215,11 @@ const Registro = ({ userData }) => {
   const [filtroNroCasoCli, setFiltroNroCasoCli] = useState('');
   const [filtroHorasAdic, setFiltroHorasAdic] = useState('');
 
+  
+  const initialEquipo = () => (localStorage.getItem('filtroEquipo') || '');
+  const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
+  useEffect(() => { localStorage.setItem('filtroEquipo', filtroEquipo); }, [filtroEquipo]);
+
   const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
   const rol = (userData?.rol ?? userData?.user?.rol);
   const nombreUser = (userData?.nombre ?? userData?.user?.nombre) || '';
@@ -220,16 +231,17 @@ const Registro = ({ userData }) => {
 
   const canDownload = ['rodriguezso','valdezjl'].includes(String(usuarioLogin || '').toLowerCase());
 
+  
   const initialVista = () => {
     const persisted = localStorage.getItem('equipoView');
     if (persisted === 'BASIS' || persisted === 'FUNCIONAL') return persisted;
     return (userEquipoUpper === 'BASIS') ? 'BASIS' : 'FUNCIONAL';
   };
-  const [vistaEquipo, setVistaEquipo] = useState(initialVista);
+  const [vistaEquipo] = useState(initialVista);
   useEffect(() => { localStorage.setItem('equipoView', vistaEquipo); }, [vistaEquipo]);
 
   const isBASISTable = isAdmin ? (vistaEquipo === 'BASIS') : (userEquipoUpper === 'BASIS');
-  const isFUNCIONALTable = !isBASISTable;
+  
 
   const adminBloqueadoPorEquipo =
     isAdmin && (userEquipoUpper === 'BASIS' || userEquipoUpper === 'FUNCIONAL');
@@ -313,9 +325,22 @@ const Registro = ({ userData }) => {
       : []
   , [registros]);
 
+  
+  const equiposConConteo = useMemo(() => {
+    const map = new Map();
+    (registros || []).forEach(r => {
+      const k = equipoOf(r);
+      map.set(k, (map.get(k) || 0) + 1);
+    });
+    const total = (registros || []).length;
+    const arr = Array.from(map.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
+    return [{ key:'', label:'Todos', count: total }, ...arr.map(([k,c])=>({ key:k, label:k, count:c }))];
+  }, [registros]);
+
   const registrosFiltrados = useMemo(() => {
     const rows = Array.isArray(registros)
       ? registros.filter((r) => (
+          (!filtroEquipo || equipoOf(r) === filtroEquipo) && // <— filtro por equipo
           (!filtroFecha || r.fecha === filtroFecha) &&
           (!filtroCliente || r.cliente === filtroCliente) &&
           (!filtroTarea || r.tipoTarea === filtroTarea) &&
@@ -330,7 +355,7 @@ const Registro = ({ userData }) => {
       if (da.getTime() !== db.getTime()) return da - db;
       return String(a.id||0) - String(b.id||0);
     });
-  }, [registros, filtroFecha, filtroCliente, filtroTarea, filtroConsultor, filtroNroCasoCli, filtroHorasAdic]);
+  }, [registros, filtroEquipo, filtroFecha, filtroCliente, filtroTarea, filtroConsultor, filtroNroCasoCli, filtroHorasAdic]);
 
   const resumenVisible = useMemo(() => {
     if (!isAdmin) {
@@ -402,6 +427,7 @@ const Registro = ({ userData }) => {
       /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
     );
     const moduloFinal = (moduloElegido || modulos[0] || moduloUser || '').trim();
+
     const base = {
       ...registro,
       tiempoInvertido: tiempo,
@@ -409,7 +435,8 @@ const Registro = ({ userData }) => {
       modulo: moduloFinal,
       consultor: nombreUser,
       totalHoras: tiempo,
-      rol
+      rol,
+      equipo: equipoFormulario
     };
     const payload = { ...base };
     if (equipoFormulario !== 'BASIS') {
@@ -436,7 +463,7 @@ const Registro = ({ userData }) => {
   };
 
   const handleEditar = (reg) => {
-    setRegistro({ ...initRegistro(), ...reg });
+    setRegistro({ ...initRegistro(), ...reg, equipo: equipoOf(reg) });
     if (reg?.modulo) {
       setModuloElegido(reg.modulo);
     } else if (modulos.length === 1) {
@@ -475,7 +502,7 @@ const Registro = ({ userData }) => {
   const handleCopiar = (reg) => {
     const copia = { ...reg };
     delete copia.id;
-    setRegistro({ ...initRegistro(), ...copia });
+    setRegistro({ ...initRegistro(), ...copia, equipo: equipoOf(copia, userEquipoUpper) });
     setModuloElegido(reg?.modulo || (modulos.length === 1 ? modulos[0] : ''));
     setModoEdicion(false);
     setModalIsOpen(true);
@@ -524,6 +551,7 @@ const Registro = ({ userData }) => {
         'Consultor filtro': filtroConsultor || 'Todos',
         'Tarea filtro': filtroTarea || 'Todas',
         'Cliente filtro': filtroCliente || 'Todos',
+        'Equipo filtro': filtroEquipo || 'Todos',
         'Nro Caso Cliente filtro': filtroNroCasoCli || 'Todos',
         'Horas Adicionales filtro': filtroHorasAdic || 'Todas',
         'Fecha filtro': filtroFecha || 'Todas',
@@ -537,29 +565,29 @@ const Registro = ({ userData }) => {
       <div className="page-head">
         <div className="page-title">
           <h2>Registro de Horas</h2>
-          <p className="subtitle">Filtra por fecha, cliente, tarea, consultor, Nro. de caso y horas adicionales</p>
+          <p className="subtitle">Filtra por fecha, cliente, tarea, consultor, equipo, Nro. de caso y horas adicionales</p>
         </div>
-        <div className="page-actions" style={{display:'flex', gap:12, alignItems:'center'}}>
+
+        <div className="page-actions" style={{display:'flex', gap:12, alignItems:'center', flexWrap:'wrap'}}>
+          {/* Vista por equipo (BASIS/FUNCIONAL) */}
           {isAdmin && (
-            <div className="team-toggle" role="tablist" aria-label="Vista por equipo">
+            <div className="team-toggle" role="tablist" aria-label="Filtrar por equipo" style={{gap:8}}>
+            {equiposConConteo.map(opt => (
               <button
+                key={opt.key || 'ALL'}
+                role='tab'
                 type="button"
-                className={`team-btn ${isBASISTable ? 'is-active' : ''}`}
-                onClick={() => setVistaEquipo('BASIS')}
-                aria-selected={isBASISTable}
+                className={`team-btn ${filtroEquipo === opt.key ? 'is-active' : ''}`}
+                onClick={() => setFiltroEquipo(opt.key)}
+                aria-selected={filtroEquipo === opt.key}
+                title={opt.key ? `Equipo ${opt.label}` : 'Todos los equipos'}
               >
-                BASIS
+                {opt.label} <span className="chip">{opt.count}</span>
               </button>
-              <button
-                type="button"
-                className={`team-btn ${isFUNCIONALTable ? 'is-active' : ''}`}
-                onClick={() => setVistaEquipo('FUNCIONAL')}
-                aria-selected={isFUNCIONALTable}
-              >
-                FUNCIONAL
-              </button>
-            </div>
+            ))}
+          </div>
           )}
+
           {canDownload && (
             <button className="btn btn-accent" onClick={handleExport} title="Descargar Excel">
               Descargar Excel
@@ -571,7 +599,7 @@ const Registro = ({ userData }) => {
               await refreshModulos();
               setModalIsOpen(true);
               setModoEdicion(false);
-              setRegistro(initRegistro());
+              setRegistro({ ...initRegistro(), equipo: userEquipoUpper });
               setModuloElegido(modulos.length === 1 ? modulos[0] : '');
             }}
           >
@@ -636,6 +664,7 @@ const Registro = ({ userData }) => {
               setFiltroConsultor(isAdmin ? '' : (nombreUser || ''));
               setFiltroNroCasoCli('');
               setFiltroHorasAdic('');
+              setFiltroEquipo(''); 
             }}
           >
             Limpiar
@@ -658,6 +687,7 @@ const Registro = ({ userData }) => {
           <div className="modal-body">
             <form onSubmit={handleSubmit}>
               <div className="form-grid">
+                {/* Módulo */}
                 {modulos.length > 1 ? (
                   <select
                     value={moduloElegido}
@@ -675,6 +705,16 @@ const Registro = ({ userData }) => {
                     placeholder="Módulo"
                   />
                 )}
+
+                
+                <input
+                  type="text"
+                  value={equipoOf(registro, userEquipoUpper)}
+                  readOnly
+                  placeholder="Equipo"
+                  title="Equipo asignado automáticamente"
+                />
+
                 <input
                   type="date"
                   value={registro.fecha}
@@ -784,6 +824,7 @@ const Registro = ({ userData }) => {
               <tr>
                 <th>Fecha</th>
                 <th>Módulo</th>
+                <th>Equipo</th>
                 <th>Cliente</th>
                 <th>Nro. Caso Cliente</th>
                 <th>Nro. Caso Interno</th>
@@ -807,6 +848,7 @@ const Registro = ({ userData }) => {
                 <tr key={r.id}>
                   <td>{r.fecha}</td>
                   <td>{r.modulo ?? moduloUser}</td>
+                  <td>{equipoOf(r)}</td>
                   <td>{r.cliente}</td>
                   <td>{r.nroCasoCliente}</td>
                   <td>{r.nroCasoInterno}</td>
@@ -839,7 +881,7 @@ const Registro = ({ userData }) => {
                 </tr>
               ))}
               {!registrosFiltrados.length && (
-                <tr><td colSpan={isAdmin ? 17 : 16} className="muted">Sin registros</td></tr>
+                <tr><td colSpan={isAdmin ? 18 : 17} className="muted">Sin registros</td></tr>
               )}
             </tbody>
           </table>

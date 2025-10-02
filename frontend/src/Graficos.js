@@ -12,7 +12,7 @@ import { jfetch } from './lib/api';
 const OPEN_ON_HOVER = false;
 Modal.setAppElement('#root');
 
-/* ======== Festivos opcionales (YYYY-MM-DD) ======== */
+
 const HOLIDAYS = [
   // '2025-01-01', ...
 ];
@@ -29,6 +29,10 @@ const coincideMes = (fechaISO, mesYYYYMM) => {
   return typeof fechaISO === 'string' && fechaISO.startsWith(`${y}-${m}`);
 };
 
+
+const equipoOf = (r, fallback = 'SIN EQUIPO') =>
+  (String(r?.equipo || '').trim().toUpperCase() || fallback);
+
 function workdaysInMonth(year, month, holidays = []) {
   const y = Number(year);
   const m = Number(month);
@@ -37,7 +41,7 @@ function workdaysInMonth(year, month, holidays = []) {
   let count = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const dt = new Date(y, m - 1, d);
-    const dow = dt.getDay(); // 0=Dom, 6=Sab
+    const dow = dt.getDay(); 
     if (dow === 0 || dow === 6) continue;
     const iso = dt.toISOString().slice(0, 10);
     if (holidays.includes(iso)) continue;
@@ -139,10 +143,9 @@ export default function Graficos() {
   const [filtroCliente, setFiltroCliente] = useState('');
   const [filtroModulo, setFiltroModulo] = useState('');
   const [filtroMes, setFiltroMes] = useState('');
-
-  // Filtros nuevos
   const [filtroNroCliente, setFiltroNroCliente] = useState('');
   const [filtroNroEscalado, setFiltroNroEscalado] = useState('');
+  const [filtroEquipo, setFiltroEquipo] = useState('');
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -163,6 +166,7 @@ export default function Graficos() {
   }, []);
   const rol = String(user?.rol || user?.user?.rol || '').toUpperCase();
   const nombreUser = String(user?.nombre || user?.user?.nombre || '').trim();
+  const equipoUser = String(user?.equipo || user?.user?.equipo || '').toUpperCase();
   const isAdmin = rol === 'ADMIN';
 
   /* Carga */
@@ -183,7 +187,10 @@ export default function Graficos() {
         if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
         const arr = asArray(json);
         setRegistros(arr);
+
+        
         if (!isAdmin && nombreUser) setFiltroConsultor(nombreUser);
+        if (!isAdmin && equipoUser) setFiltroEquipo(equipoUser);
       } catch (err) {
         setRegistros([]);
         setError(String(err?.message || err));
@@ -191,7 +198,7 @@ export default function Graficos() {
       }
     };
     fetchRegistros();
-  }, [isAdmin, nombreUser, rol]);
+  }, [isAdmin, nombreUser, rol, equipoUser]);
 
   /* Opciones filtros */
   const consultoresUnicos = useMemo(() => {
@@ -223,6 +230,14 @@ export default function Graficos() {
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
+  
+  const equiposUnicos = useMemo(() => {
+    const set = new Set((registros ?? [])
+      .filter(r => coincideMes(r.fecha, filtroMes))
+      .map(r => equipoOf(r)));
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [registros, filtroMes]);
+
   const nroClienteUnicos = useMemo(() => {
     const set = new Set((registros ?? [])
       .filter(r => coincideMes(r.fecha, filtroMes))
@@ -249,13 +264,21 @@ export default function Graficos() {
       if (filtroTarea && r.tipoTarea !== filtroTarea) return false;
       if (filtroCliente && r.cliente !== filtroCliente) return false;
       if (filtroModulo && r.modulo !== filtroModulo) return false;
+
+      
+      if (filtroEquipo) {
+        const eq = equipoOf(r);
+        const wanted = String(filtroEquipo).toUpperCase();
+        if (eq !== wanted && eq !== 'SIN EQUIPO') return false;
+      }
+
       if (filtroNroCliente && String(r.nroCasoCliente || '') !== filtroNroCliente) return false;
       if (filtroNroEscalado && String(r.nroCasoEscaladoSap || '') !== filtroNroEscalado) return false;
       return true;
     });
   }, [
     registros, filtroMes, filtroConsultor, filtroTarea, filtroCliente,
-    filtroModulo, filtroNroCliente, filtroNroEscalado
+    filtroModulo, filtroEquipo, filtroNroCliente, filtroNroEscalado
   ]);
 
   /* Agrupaciones */
@@ -311,7 +334,6 @@ export default function Graficos() {
       acc.set(fecha, (acc.get(fecha) || 0) + toNum(r.tiempoInvertido));
     });
     const arr = Array.from(acc, ([fecha, horas]) => {
-      // extraemos el número de día para ordenar correctamente
       const day = /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? Number(fecha.slice(8, 10)) : 0;
       return { fecha, day, horas: +horas.toFixed(2) };
     });
@@ -377,14 +399,13 @@ export default function Graficos() {
       .map(([fecha, v]) => ({ fecha, rows: v.rows, total: +v.total.toFixed(2) }));
   }, [modalRows]);
 
-  /* Meta mensual (línea) para “Horas por Consultor” */
   const metaMensual = useMemo(() => {
     if (!filtroMes) return null;
     const [y, m] = filtroMes.split('-').map(Number);
     const wd = workdaysInMonth(y, m, HOLIDAYS);
     return {
       diasHabiles: wd,
-      limite: wd * 9 // 9 horas por día laboral
+      limite: wd * 9
     };
   }, [filtroMes]);
 
@@ -427,7 +448,18 @@ export default function Graficos() {
           {modulosUnicos.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
 
-        {/* Nuevos filtros */}
+        
+        <select
+          className="filtro-select"
+          value={filtroEquipo}
+          onChange={(e) => setFiltroEquipo(e.target.value)}
+          title="Equipo"
+        >
+          <option value="">{isAdmin ? 'Todos los equipos' : 'Tu equipo'}</option>
+          {equiposUnicos.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+        </select>
+
+        {/* Extras */}
         <select
           className="filtro-select"
           value={filtroNroCliente}
@@ -454,6 +486,7 @@ export default function Graficos() {
           className="btn btn-outline"
           onClick={() => {
             setFiltroTarea(''); setFiltroCliente(''); setFiltroModulo(''); setFiltroMes('');
+            setFiltroEquipo(isAdmin ? '' : (equipoUser || ''));
             setFiltroConsultor(isAdmin ? '' : (nombreUser || ''));
             setFiltroNroCliente(''); setFiltroNroEscalado('');
           }}
@@ -468,6 +501,7 @@ export default function Graficos() {
           <h3>
             {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
             {filtroMes && ` (${filtroMes})`}
+            {filtroEquipo && ` — Equipo: ${filtroEquipo}`}
           </h3>
 
           {horasPorConsultor.length === 0 ? (
@@ -493,7 +527,6 @@ export default function Graficos() {
                   />
                   <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
 
-                  {/* Línea meta mensual (no altera los colores de barras) */}
                   {metaMensual && (
                     <ReferenceLine
                       x={metaMensual.limite}
@@ -571,7 +604,7 @@ export default function Graficos() {
 
         {/* Horas por Cliente */}
         <div className="grafico-box">
-          <h3>{isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}{filtroMes && ` (${filtroMes})`}</h3>
+          <h3>{isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}{filtroMes && ` (${filtroMes})`}{filtroEquipo && ` — Equipo: ${filtroEquipo}`}</h3>
 
           {horasPorCliente.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
@@ -614,7 +647,7 @@ export default function Graficos() {
 
         {/* Horas por Módulo */}
         <div className="grafico-box">
-          <h3>{isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}{filtroMes && ` (${filtroMes})`}</h3>
+          <h3>{isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}{filtroMes && ` (${filtroMes})`}{filtroEquipo && ` — Equipo: ${filtroEquipo}`}</h3>
 
           {horasPorModulo.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
@@ -657,7 +690,7 @@ export default function Graficos() {
 
         {/* Horas por Día (ORDENADO 1 → 31) */}
         <div className="grafico-box">
-          <h3>Horas por Día (mes){filtroMes && ` (${filtroMes})`}</h3>
+          <h3>Horas por Día (mes){filtroMes && ` (${filtroMes})`}{filtroEquipo && ` — Equipo: ${filtroEquipo}`}</h3>
 
           {horasPorDia.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
@@ -670,13 +703,11 @@ export default function Graficos() {
               >
                 <BrandDefs id="gradDia" />
                 <CartesianGrid strokeDasharray="3 3" />
-                {/* Mostramos el día (1..31) para que se lea mejor, pero mantenemos 'fecha' para el modal */}
                 <XAxis dataKey="day" tickLine={false} />
                 <YAxis />
                 <Tooltip
                   formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']}
                   labelFormatter={(label, payload) => {
-                    // Buscamos la fecha ISO para tooltip a partir del día
                     if (payload && payload[0] && payload[0].payload?.fecha) {
                       return payload[0].payload.fecha;
                     }
@@ -701,7 +732,7 @@ export default function Graficos() {
 
         {/* Torta: distribución por tipo de tarea (%) */}
         <div className="grafico-box">
-          <h3>Distribución por Tipo de Tarea (%) {filtroMes && `(${filtroMes})`}</h3>
+          <h3>Distribución por Tipo de Tarea (%) {filtroMes && `(${filtroMes})`}{filtroEquipo && ` — Equipo: ${filtroEquipo}`}</h3>
           {pieTareas.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
@@ -735,7 +766,7 @@ export default function Graficos() {
         </div>
       </div>
 
-      {/* ===== Modal =====. */}
+      {/* ===== Modal ===== */}
       <Modal
         isOpen={modalOpen}
         onRequestClose={closeModal}
@@ -773,6 +804,7 @@ export default function Graficos() {
                         <th>Cliente</th>
                         <th>Tarea</th>
                         <th>Módulo</th>
+                        <th>Equipo</th>
                         <th>Inicio</th>
                         <th>Fin</th>
                         <th className="num">Horas</th>
@@ -788,6 +820,7 @@ export default function Graficos() {
                           <td className="truncate" title={r.cliente}>{r.cliente}</td>
                           <td className="truncate" title={r.tipoTarea}>{r.tipoTarea}</td>
                           <td className="truncate" title={r.modulo}>{r.modulo}</td>
+                          <td className="truncate" title={equipoOf(r)}>{equipoOf(r)}</td>
                           <td>{r.horaInicio}</td>
                           <td>{r.horaFin}</td>
                           <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>

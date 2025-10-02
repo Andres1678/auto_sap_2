@@ -75,6 +75,7 @@ def registro_to_dict(r: Registro):
         'totalHoras': r.total_horas,
         'consultor': r.consultor.nombre if r.consultor else None,
         'modulo': (r.modulo or (r.consultor.modulo.nombre if r.consultor and r.consultor.modulo else None)),
+        'equipo': (r.equipo or (r.consultor.equipo if r.consultor else None)),  # 👈 NUEVO
         'bloqueado': r.bloqueado
     }
 
@@ -199,6 +200,7 @@ def _basis_defaults_from_payload(data: dict):
 def registrar_hora():
     data = request.get_json(silent=True) or {}
 
+   
     consultor = None
     cid = pick(data, 'consultor_id', 'consultorId', 'id')
     if cid:
@@ -219,6 +221,7 @@ def registrar_hora():
 
     bd = _basis_defaults_from_payload(data)
 
+    
     fecha              = pick(data, 'fecha')
     cliente            = pick(data, 'cliente')
     nro_caso_cliente   = _norm_default(pick(data, 'nroCasoCliente', 'nro_caso_cliente'), '0')
@@ -232,13 +235,18 @@ def registrar_hora():
     modulo_final       = (pick(data, 'modulo') or (consultor.modulo.nombre if consultor.modulo else 'SIN MODULO')).strip()
     horario_trabajo    = (pick(data, 'horario_trabajo', 'horarioTrabajo') or getattr(consultor, 'horario', None))
 
+    
+    equipo_final = pick(data, 'equipo') or (consultor.equipo if consultor else None)
+    if isinstance(equipo_final, str):
+        equipo_final = equipo_final.strip().upper() or None
+
     try:
         nuevo = Registro(
             fecha=fecha,
             cliente=cliente,
             nro_caso_cliente=nro_caso_cliente,
             nro_caso_interno=nro_caso_interno,
-            nro_caso_escalado=bd["nro_escalado"], 
+            nro_caso_escalado=bd["nro_escalado"],
             tipo_tarea=tipo_tarea,
             hora_inicio=hora_inicio,
             hora_fin=hora_fin,
@@ -252,9 +260,11 @@ def registrar_hora():
             total_horas=total_horas,
             modulo=modulo_final,
             horario_trabajo=horario_trabajo,
-            consultor_id=consultor.id
+            consultor_id=consultor.id,
+            equipo=equipo_final,
         )
 
+       
         if not nuevo.actividad_malla: nuevo.actividad_malla = "N/APLICA"
         if not nuevo.oncall:          nuevo.oncall          = "N/A"
         if not nuevo.desborde:        nuevo.desborde        = "N/A"
@@ -271,6 +281,7 @@ def registrar_hora():
         db.session.rollback()
         app.logger.exception("Error insertando registro")
         return jsonify({'mensaje': f'No se pudo guardar el registro: {e}'}), 500
+
 
 @bp.route('/api/registros', methods=['GET', 'POST'])
 def get_registros():
@@ -744,9 +755,9 @@ def base_registro_to_dict(r : Registro):
         'horasAdicionales': r.horas_adicionales,
         'descripcion': r.descripcion,
         'totalHoras': r.total_horas,
-        'modulo': (r.modulo or
-                   (r.consultor.modulo.nombre if r.consultor and r.consultor.modulo else None)),
+        'modulo': (r.modulo or (r.consultor.modulo.nombre if r.consultor and r.consultor.modulo else None)),
         'consultor': r.consultor.nombre if r.consultor else None,
+        'equipo': (getattr(r, 'equipo', None) or (r.consultor.equipo if r.consultor else None)),  
         'bloqueado': r.bloqueado,
     }
 
