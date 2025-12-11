@@ -8,16 +8,7 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
-  const { isAdmin, nombre, rol } = useMemo(() => {
-    if (isAdminProp != null || rolProp || nombreProp) {
-      const rolUpper = String(rolProp || '').toUpperCase();
-      return {
-        isAdmin: !!isAdminProp || rolUpper === 'ADMIN',
-        nombre : nombreProp || '',
-        rol    : rolUpper
-      };
-    }
-
+  const { isAdmin, nombre, rol, permisos } = useMemo(() => {
     let raw = null;
     try {
       raw = JSON.parse(
@@ -25,13 +16,22 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
         localStorage.getItem('user') ||
         'null'
       );
-    } catch { /* noop */ }
+    } catch {}
 
-    const _rol     = raw?.rol ?? raw?.user?.rol ?? '';
-    const _nombre  = raw?.nombre ?? raw?.user?.nombre ?? '';
+    const _rol = rolProp || raw?.rol || raw?.user?.rol || '';
+    const _nombre = nombreProp || raw?.nombre || raw?.user?.nombre || '';
     const rolUpper = String(_rol || '').toUpperCase();
-    return { isAdmin: rolUpper === 'ADMIN', nombre: _nombre, rol: rolUpper };
+    const perms = raw?.permisos ? raw.permisos.map(p => p.codigo) : [];
+
+    return {
+      isAdmin: rolUpper === 'ADMIN',
+      nombre: _nombre,
+      rol: rolUpper,
+      permisos: perms
+    };
   }, [isAdminProp, rolProp, nombreProp]);
+
+  const can = (perm) => isAdmin || permisos.includes(perm);
 
   const toggleMenu = () => setOpen(v => !v);
 
@@ -47,22 +47,9 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
 
   const handleLogout = useCallback(async () => {
     try { await jfetch('/logout', { method: 'POST' }); } catch {}
-
-    
     hardClean();
-
-    
     try { typeof onLogout === 'function' && onLogout(); } catch {}
-
-   
-    try {
-      navigate('/login', { replace: true });
-    } catch {
-      window.location.assign('/login');
-      return;
-    }
-
-    
+    navigate('/login', { replace: true });
     setTimeout(() => window.location.reload(), 50);
   }, [navigate, onLogout]);
 
@@ -71,16 +58,25 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
       <button className="navc-hamburger" onClick={toggleMenu} aria-label="Abrir menú">☰</button>
 
       <nav className={`navc-navbar ${open ? 'open' : ''}`} onClick={() => setOpen(false)}>
-        {/* Logo */}
+
         <Link to="/" className="navc-logo" aria-label="Ir al inicio">
           <img src={logoNav} alt="CORA" />
         </Link>
 
-        {/* Rutas */}
         <Link to="/">Inicio</Link>
         <Link to="/grafico">Panel Gráfico</Link>
-        {isAdmin && <Link to="/BaseRegistros">Base Registros</Link>}
-        {isAdmin && <Link to="/GraficoBase">Gráfico Base</Link>}
+
+        {can("BASE_REGISTROS_VER") && <Link to="/BaseRegistros">Base Registros</Link>}
+        {can("GRAFICO_BASE_VER") && <Link to="/GraficoBase">Gráfico Base</Link>}
+        {can("OPORTUNIDADES_VER") && <Link to="/Oportunidades">Oportunidades</Link>}
+        {can("DASHBOARD_VER") && (
+          <Link to="/OportunidadesDashboard">Dashboard</Link>
+        )}
+
+
+        {can("CONFIGURACION_VER") && (
+          <Link to="/configuracion" className="navc-settings">⚙️</Link>
+        )}
 
         <span className="navc-spacer" />
 

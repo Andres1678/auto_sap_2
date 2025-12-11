@@ -1,0 +1,185 @@
+/************************************************************
+  ⚙️ PANEL DE CONFIGURACIÓN — UI PREMIUM
+  Incluye modo oscuro, modo claro y grid responsivo de 3 cards
+************************************************************/
+
+.config-wrapper {
+  padding: 40px;
+  font-family: "Inter", sans-serif;
+  min-height: 100vh;
+  animation: fadeIn 0.4s ease;
+
+  /* ★ DARK MODE DEFAULT */
+  background: radial-gradient(circle at 20% 20%, rgba(0, 122, 255, 0.08), transparent 42%),
+              radial-gradient(circle at 80% 80%, rgba(227, 6, 19, 0.08), transparent 42%),
+              #0c1320;
+  color: #e2e8f0;
+}
+
+/* --- LIGHT MODE AUTOMÁTICO --- */
+@media (prefers-color-scheme: light) {
+  .config-wrapper {
+    background: #f5f7fa;
+    color: #1f2937;
+  }
+}
+
+/************************************************************
+  🏷️ TITULOS
+************************************************************/
+.config-title h1 {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 800;
+
+  background: linear-gradient(90deg, #3b82f6, #10b981);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.config-sub {
+  margin-top: 8px;
+  color: #94a3b8;
+  font-size: 16px;
+}
+
+@media (prefers-color-scheme: light) {
+  .config-sub {
+    color: #475569;
+  }
+}
+
+/************************************************************
+  🧩 GRID DE CARDS — SIEMPRE 3 POR FILA
+************************************************************/
+.config-grid {
+  margin-top: 40px;
+  display: grid;
+
+  /* EXACTAMENTE 3 POR FILA EN PANTALLAS GRANDES */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+
+  gap: 32px;
+  padding: 10px;
+}
+
+/* 2 por fila en tablets */
+@media (max-width: 1180px) {
+  .config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 1 por fila en móviles */
+@media (max-width: 720px) {
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/************************************************************
+  🪪 CARDS — Estilo Premium Unificado
+************************************************************/
+.config-card {
+  text-decoration: none;
+  padding: 32px 28px;
+  border-radius: 20px;
+  height: 240px;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 18px;
+
+  transition: all 0.28s ease;
+  cursor: pointer;
+
+  /* DARK MODE */
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  color: #f1f5f9;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* LIGHT MODE CARD */
+@media (prefers-color-scheme: light) {
+  .config-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+    color: #1e293b;
+  }
+}
+
+/* ★ EFECTO HOVER PREMIUM */
+.config-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55);
+  border-color: rgba(59, 130, 246, 0.45);
+
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.14),
+    rgba(16, 185, 129, 0.14)
+  );
+}
+
+@media (prefers-color-scheme: light) {
+  .config-card:hover {
+    background: #f0f9ff;
+    border-color: #3b82f6;
+    transform: translateY(-6px);
+  }
+}
+
+/************************************************************
+  🔵 ICONOS
+************************************************************/
+.config-icon {
+  font-size: 48px;
+  opacity: 0.85;
+  text-shadow: 0 0 12px rgba(59, 130, 246, 0.45);
+  transition: 0.25s ease;
+}
+
+.config-card:hover .config-icon {
+  transform: scale(1.12);
+  opacity: 1;
+}
+
+/************************************************************
+  📝 TEXTOS DE CARDS
+************************************************************/
+.config-card h3 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.config-card p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: #cbd5e1;
+}
+
+@media (prefers-color-scheme: light) {
+  .config-card p {
+    color: #475569;
+  }
+}
+
+/************************************************************
+  🌫️ ANIMACIONES
+************************************************************/
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

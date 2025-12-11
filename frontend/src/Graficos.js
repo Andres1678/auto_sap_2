@@ -1,5 +1,4 @@
-// src/Graficos.js
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie, Legend, ReferenceLine
@@ -12,23 +11,21 @@ import { jfetch } from './lib/api';
 const OPEN_ON_HOVER = false;
 Modal.setAppElement('#root');
 
-
 const HOLIDAYS = [
   // '2025-01-01', ...
 ];
 
 /* ======== Helpers ======== */
-const asArray = (v) => (Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []));
 const toNum = (v) => {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
 };
+
 const coincideMes = (fechaISO, mesYYYYMM) => {
   if (!mesYYYYMM) return true;
   const [y, m] = mesYYYYMM.split('-');
   return typeof fechaISO === 'string' && fechaISO.startsWith(`${y}-${m}`);
 };
-
 
 const equipoOf = (r, fallback = 'SIN EQUIPO') =>
   (String(r?.equipo || '').trim().toUpperCase() || fallback);
@@ -41,7 +38,7 @@ function workdaysInMonth(year, month, holidays = []) {
   let count = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const dt = new Date(y, m - 1, d);
-    const dow = dt.getDay(); 
+    const dow = dt.getDay();
     if (dow === 0 || dow === 6) continue;
     const iso = dt.toISOString().slice(0, 10);
     if (holidays.includes(iso)) continue;
@@ -132,20 +129,145 @@ const PIE_COLORS = [
   '#0ea5e9', '#e11d48', '#16a34a', '#ca8a04', '#6d28d9'
 ];
 
-/* ========= Componente ========= */
+/* =========================================
+   COMPONENTE MultiFiltro (chips tipo Gmail)
+========================================= */
+function MultiFiltro({
+  titulo,
+  opciones,
+  seleccion,
+  onChange,
+  placeholder = 'Todas',
+  disabled = false,
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef(null);
+
+  // Cerrar al hacer click fuera
+  useEffect(() => {
+    if (!open) return;
+
+    const handler = (e) => {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const toggleValue = (val) => {
+    if (disabled) return;
+    const exists = seleccion.includes(val);
+    const next = exists
+      ? seleccion.filter(v => v !== val)
+      : [...seleccion, val];
+    onChange(next);
+  };
+
+  const removeChip = (val) => {
+    if (disabled) return;
+    onChange(seleccion.filter(v => v !== val));
+  };
+
+  const lower = search.toLowerCase();
+  const filtered = (opciones || []).filter(o =>
+    o && String(o).toLowerCase().includes(lower)
+  );
+
+  const showPlaceholder = seleccion.length === 0;
+
+  return (
+    <div className="multi-filter" ref={containerRef}>
+      {titulo && <span className="mf-label">{titulo}</span>}
+
+      <button
+        type="button"
+        className={
+          'mf-control' +
+          (open ? ' is-open' : '') +
+          (disabled ? ' is-disabled' : '')
+        }
+        onClick={() => { if (!disabled) setOpen(o => !o); }}
+      >
+        {showPlaceholder ? (
+          <span className="mf-placeholder">{placeholder}</span>
+        ) : (
+          <div className="mf-chips">
+            {seleccion.map(val => (
+              <span key={val} className="mf-chip">
+                <span>{val}</span>
+                {!disabled && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); removeChip(val); }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+        <span className="mf-arrow">▾</span>
+      </button>
+
+      {open && !disabled && (
+        <div
+          className="mf-dropdown"
+          onClick={(e) => e.stopPropagation()} // evita que burbujee al botón
+        >
+          <div className="mf-search">
+            <input
+              type="text"
+              placeholder="Buscar..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="mf-options">
+            {filtered.length === 0 && (
+              <div className="mf-option" style={{ fontStyle: 'italic', color: '#9ca3af' }}>
+                Sin resultados
+              </div>
+            )}
+            {filtered.map(val => (
+              <label
+                key={val}
+                className="mf-option"
+              >
+                <input
+                  type="checkbox"
+                  checked={seleccion.includes(val)}
+                  onChange={() => toggleValue(val)}
+                />
+                <span>{val}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ========= Componente principal ========= */
 export default function Graficos() {
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState('');
 
-  // Filtros existentes
-  const [filtroConsultor, setFiltroConsultor] = useState('');
-  const [filtroTarea, setFiltroTarea] = useState('');
-  const [filtroCliente, setFiltroCliente] = useState('');
-  const [filtroModulo, setFiltroModulo] = useState('');
+  // Filtros (multi valor)
+  const [filtroConsultor, setFiltroConsultor] = useState([]);
+  const [filtroTarea, setFiltroTarea] = useState([]);
+  const [filtroCliente, setFiltroCliente] = useState([]);
+  const [filtroModulo, setFiltroModulo] = useState([]);
   const [filtroMes, setFiltroMes] = useState('');
-  const [filtroNroCliente, setFiltroNroCliente] = useState('');
-  const [filtroNroEscalado, setFiltroNroEscalado] = useState('');
-  const [filtroEquipo, setFiltroEquipo] = useState('');
+  const [filtroNroCliente, setFiltroNroCliente] = useState([]);
+  const [filtroNroEscalado, setFiltroNroEscalado] = useState([]);
+  const [filtroEquipo, setFiltroEquipo] = useState([]);
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -164,116 +286,213 @@ export default function Graficos() {
       return {};
     }
   }, []);
+
   const rol = String(user?.rol || user?.user?.rol || '').toUpperCase();
   const nombreUser = String(user?.nombre || user?.user?.nombre || '').trim();
   const equipoUser = String(user?.equipo || user?.user?.equipo || '').toUpperCase();
-  const isAdmin = rol === 'ADMIN';
+  const usuario = String(user?.usuario || user?.user?.usuario || '').trim();
+  const isAdmin = ['ADMIN', 'ADMIN_BASIS', 'ADMIN_FUNCIONAL'].includes(rol);
 
-  /* Carga */
+  /* Carga registros */
   useEffect(() => {
     const fetchRegistros = async () => {
       setError('');
       try {
-        const isUser = !isAdmin;
         const res = await jfetch('/registros', {
-          method: isUser ? 'POST' : 'GET',
+          method: 'GET',
           headers: {
-            ...(isAdmin ? { 'X-User-Rol': 'ADMIN' } : {}),
-            ...(isUser ? { 'Content-Type': 'application/json' } : {}),
-          },
-          ...(isUser ? { body: JSON.stringify({ rol, nombre: nombreUser }) } : {})
+            'X-User-Rol': rol,
+            'X-User-Usuario': usuario,
+          }
         });
-        const json = await res.json().catch(() => ({}));
+
+        const json = await res.json().catch(() => []);
         if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
-        const arr = asArray(json);
+
+        const arr = Array.isArray(json) ? json : [];
         setRegistros(arr);
 
-        
-        if (!isAdmin && nombreUser) setFiltroConsultor(nombreUser);
-        if (!isAdmin && equipoUser) setFiltroEquipo(equipoUser);
+        // Inicializar filtros según rol
+        if (!isAdmin) {
+          if (nombreUser) setFiltroConsultor([nombreUser]);
+          if (equipoUser) setFiltroEquipo([equipoUser]);
+        } else {
+          setFiltroConsultor([]);
+          setFiltroEquipo([]);
+        }
       } catch (err) {
         setRegistros([]);
         setError(String(err?.message || err));
         console.error('Error al cargar registros:', err);
       }
     };
+
     fetchRegistros();
-  }, [isAdmin, nombreUser, rol, equipoUser]);
+  }, [rol, usuario, nombreUser, equipoUser, isAdmin]);
+
+  useEffect(() => {
+    const fetchOcupaciones = async () => {
+      try {
+        const res = await jfetch('/horarios', { method: 'GET' });
+        const json = await res.json();
+
+        console.log("📌 Datos crudos de /horarios:", json);
+
+        if (!Array.isArray(json)) {
+          console.error("❌ /horarios no devolvió un array");
+          setHorariosBackend([]);
+          return;
+        }
+
+        // Transformación universal y segura
+        const normalizados = json.map((o, idx) => ({
+          codigo:
+            o.codigo ??
+            o.code ??
+            o.cod ??
+            o.id ??
+            `COD-${idx}`,
+
+          nombre:
+            o.nombre ??
+            o.name ??
+            o.descripcion ??
+            o.title ??
+            "SIN NOMBRE",
+
+          value: Number(
+            o.value ??
+            o.porcentaje ??
+            o.pct ??
+            o.percent ??
+            0
+          ),
+
+          horas: Number(
+            o.horas ??
+            o.total_horas ??
+            o.time ??
+            o.hours ??
+            0
+          ),
+
+          ocupacion_id:
+            o.ocupacion_id ??
+            o.id ??
+            o.codigo ??
+            idx
+        }));
+
+        console.log("📌 Normalizado para gráficas:", normalizados);
+
+        setHorariosBackend(normalizados);
+      } catch (err) {
+        console.error("❌ Error cargando /horarios:", err);
+        setHorariosBackend([]);
+      }
+    };
+
+    fetchOcupaciones();
+  }, []);
+
+
 
   /* Opciones filtros */
   const consultoresUnicos = useMemo(() => {
-    const set = new Set((registros ?? [])
-      .filter(r => coincideMes(r.fecha, filtroMes))
-      .map(r => r.consultor));
+    const set = new Set(
+      (registros ?? [])
+        .filter(r => coincideMes(r.fecha, filtroMes))
+        .map(r => r.consultor)
+    );
     const arr = Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-    return isAdmin ? arr : (nombreUser ? [nombreUser] : arr);
-  }, [registros, filtroMes, isAdmin, nombreUser]);
+    return arr;
+  }, [registros, filtroMes]);
 
-  const tareasUnicas = useMemo(() => {
-    const set = new Set((registros ?? [])
-      .filter(r => coincideMes(r.fecha, filtroMes))
-      .map(r => r.tipoTarea));
+  const tareasUnicos = useMemo(() => {
+    const set = new Set(
+      (registros ?? [])
+        .filter(r => coincideMes(r.fecha, filtroMes))
+        .map(r => r.tipoTarea)
+    );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
   const clientesUnicos = useMemo(() => {
-    const set = new Set((registros ?? [])
-      .filter(r => coincideMes(r.fecha, filtroMes))
-      .map(r => r.cliente));
+    const set = new Set(
+      (registros ?? [])
+        .filter(r => coincideMes(r.fecha, filtroMes))
+        .map(r => r.cliente)
+    );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
   const modulosUnicos = useMemo(() => {
-    const set = new Set((registros ?? [])
-      .filter(r => coincideMes(r.fecha, filtroMes))
-      .map(r => r.modulo));
+    const set = new Set(
+      (registros ?? [])
+        .filter(r => coincideMes(r.fecha, filtroMes))
+        .map(r => r.modulo)
+    );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
-  
   const equiposUnicos = useMemo(() => {
-    const set = new Set((registros ?? [])
-      .filter(r => coincideMes(r.fecha, filtroMes))
-      .map(r => equipoOf(r)));
+    const set = new Set(
+      (registros ?? [])
+        .filter(r => coincideMes(r.fecha, filtroMes))
+        .map(r => equipoOf(r))
+    );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
   const nroClienteUnicos = useMemo(() => {
-    const set = new Set((registros ?? [])
-      .filter(r => coincideMes(r.fecha, filtroMes))
-      .map(r => r.nroCasoCliente)
+    const set = new Set(
+      (registros ?? [])
+        .filter(r => coincideMes(r.fecha, filtroMes))
+        .map(r => r.nroCasoCliente)
     );
-    return Array.from(set).filter(v => (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '0'))
-      .sort((a, b) => String(a).localeCompare(String(b)));
+    return Array.from(set)
+      .filter(v => (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '0'))
+      .map(v => String(v))
+      .sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
   const nroEscaladoUnicos = useMemo(() => {
-    const set = new Set((registros ?? [])
-      .filter(r => coincideMes(r.fecha, filtroMes))
-      .map(r => r.nroCasoEscaladoSap)
+    const set = new Set(
+      (registros ?? [])
+        .filter(r => coincideMes(r.fecha, filtroMes))
+        .map(r => r.nroCasoEscaladoSap)
     );
-    return Array.from(set).filter(v => (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '0'))
-      .sort((a, b) => String(a).localeCompare(String(b)));
+    return Array.from(set)
+      .filter(v => (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '0'))
+      .map(v => String(v))
+      .sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
 
   /* Datos filtrados */
   const datosFiltrados = useMemo(() => {
     return (registros ?? []).filter(r => {
       if (!coincideMes(r.fecha, filtroMes)) return false;
-      if (filtroConsultor && r.consultor !== filtroConsultor) return false;
-      if (filtroTarea && r.tipoTarea !== filtroTarea) return false;
-      if (filtroCliente && r.cliente !== filtroCliente) return false;
-      if (filtroModulo && r.modulo !== filtroModulo) return false;
 
-      
-      if (filtroEquipo) {
+      if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultor)) return false;
+      if (filtroTarea.length > 0 && !filtroTarea.includes(r.tipoTarea)) return false;
+      if (filtroCliente.length > 0 && !filtroCliente.includes(r.cliente)) return false;
+      if (filtroModulo.length > 0 && !filtroModulo.includes(r.modulo)) return false;
+
+      if (filtroEquipo.length > 0) {
         const eq = equipoOf(r);
-        const wanted = String(filtroEquipo).toUpperCase();
-        if (eq !== wanted && eq !== 'SIN EQUIPO') return false;
+        if (!filtroEquipo.includes(eq)) return false;
       }
 
-      if (filtroNroCliente && String(r.nroCasoCliente || '') !== filtroNroCliente) return false;
-      if (filtroNroEscalado && String(r.nroCasoEscaladoSap || '') !== filtroNroEscalado) return false;
+      if (filtroNroCliente.length > 0) {
+        const val = String(r.nroCasoCliente || '');
+        if (!filtroNroCliente.includes(val)) return false;
+      }
+
+      if (filtroNroEscalado.length > 0) {
+        const val = String(r.nroCasoEscaladoSap || '');
+        if (!filtroNroEscalado.includes(val)) return false;
+      }
+
       return true;
     });
   }, [
@@ -326,7 +545,6 @@ export default function Graficos() {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
-  // Horas por día del mes — ORDENADO de menor a mayor (día 1 → 31)
   const horasPorDia = useMemo(() => {
     const acc = new Map();
     (datosFiltrados ?? []).forEach(r => {
@@ -351,7 +569,6 @@ export default function Graficos() {
     }));
   }, [horasPorTarea]);
 
-  /* Alturas y anchos */
   const hConsultores = Math.max(320, horasPorConsultor.length * 30);
   const hTareas      = Math.max(320, horasPorTarea.length * 30);
   const hClientes    = Math.max(320, horasPorCliente.length * 30);
@@ -362,6 +579,9 @@ export default function Graficos() {
   const yWidthTarea     = yWidthFromPx(horasPorTarea.map(d => d.tipoTarea),     { min: 160, max: 380, pad: 32 });
   const yWidthCliente   = yWidthFromPx(horasPorCliente.map(d => d.cliente),     { min: 160, max: 380, pad: 32 });
   const yWidthModulo    = yWidthFromPx(horasPorModulo.map(d => d.modulo),       { min: 140, max: 360, pad: 32 });
+
+  
+
 
   /* Modal helpers */
   const openDetail = (kind, value, pretty) => {
@@ -384,7 +604,6 @@ export default function Graficos() {
   };
   const closeModal = () => setModalOpen(false);
 
-  /* Subtotales por día dentro de modal */
   const modalSubtotales = useMemo(() => {
     const byDay = new Map();
     (modalRows ?? []).forEach(r => {
@@ -409,86 +628,164 @@ export default function Graficos() {
     };
   }, [filtroMes]);
 
+  const [horariosBackend, setHorariosBackend] = useState([]);
+
+  /* Horas por Ocupación */
+  const horasPorOcupacion = useMemo(() => {
+    const acc = new Map();
+
+    (datosFiltrados ?? []).forEach(r => {
+      const ocup = 
+        r.ocupacion_nombre || 
+        "SIN OCUPACIÓN";
+
+      const horas = Number(r.tiempoInvertido) || 0;
+
+      acc.set(ocup, (acc.get(ocup) || 0) + horas);
+    });
+
+    return Array.from(acc, ([ocupacion, horas]) => ({
+      ocupacion,
+      horas: +horas.toFixed(2),
+    })).sort((a, b) => b.horas - a.horas);
+  }, [datosFiltrados]);
+
+
+
+
+
+  // Porcentaje
+  const pieOcupacion = useMemo(() => {
+    const total = horasPorOcupacion.reduce((sum, r) => sum + r.horas, 0);
+
+    if (total === 0) return [];
+
+    return horasPorOcupacion.map(o => ({
+      name: o.ocupacion,
+      value: +(o.horas * 100 / total).toFixed(2),
+      horas: o.horas
+    }));
+  }, [horasPorOcupacion]);
+
+
+  /* ============================
+     RENDER
+  ============================ */
+
+  const consultoresParaFiltro = isAdmin
+    ? consultoresUnicos
+    : (nombreUser ? [nombreUser] : []);
+
+  const equiposParaFiltro = isAdmin
+    ? equiposUnicos
+    : (equipoUser ? [equipoUser] : equiposUnicos);
+
   return (
     <div className="panel-graficos-container">
       {error && (
-        <div className="pg-error" style={{
-          color: '#b00510', background: '#ffe6e8', border: '1px solid #f5c2c7',
-          padding: '10px 12px', borderRadius: 10, maxWidth: 1100, width: '100%'
-        }}>
+        <div
+          className="pg-error"
+          style={{
+            color: '#b00510',
+            background: '#ffe6e8',
+            border: '1px solid #f5c2c7',
+            padding: '10px 12px',
+            borderRadius: 10,
+            maxWidth: 1100,
+            width: '100%'
+          }}
+        >
           Error al cargar datos: {error}
         </div>
       )}
 
       {/* Filtros */}
       <div className="filtros-globales pg-sticky">
-        <select
-          className="filtro-select"
-          value={filtroConsultor}
-          onChange={(e) => setFiltroConsultor(e.target.value)}
+        <MultiFiltro
+          titulo="CONSULTORES"
+          opciones={consultoresParaFiltro}
+          seleccion={filtroConsultor}
+          onChange={isAdmin ? setFiltroConsultor : () => {}}
+          placeholder={isAdmin ? 'Todos los consultores' : (nombreUser || 'Tu usuario')}
           disabled={!isAdmin}
-          title="Consultor"
-        >
-          {isAdmin && <option value="">Todos los consultores</option>}
-          {consultoresUnicos.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+        />
 
-        <select className="filtro-select" value={filtroTarea} onChange={(e) => setFiltroTarea(e.target.value)} title="Tipo de tarea">
-          <option value="">Todas las tareas</option>
-          {tareasUnicas.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
+        <MultiFiltro
+          titulo="TAREAS"
+          opciones={tareasUnicos}
+          seleccion={filtroTarea}
+          onChange={setFiltroTarea}
+          placeholder="Todas las tareas"
+        />
 
-        <select className="filtro-select" value={filtroCliente} onChange={(e) => setFiltroCliente(e.target.value)} title="Cliente">
-          <option value="">Todos los clientes</option>
-          {clientesUnicos.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <MultiFiltro
+          titulo="MÓDULOS"
+          opciones={modulosUnicos}
+          seleccion={filtroModulo}
+          onChange={setFiltroModulo}
+          placeholder="Todos los módulos"
+        />
 
-        <select className="filtro-select" value={filtroModulo} onChange={(e) => setFiltroModulo(e.target.value)} title="Módulo">
-          <option value="">Todos los módulos</option>
-          {modulosUnicos.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
+        <MultiFiltro
+          titulo="CLIENTES"
+          opciones={clientesUnicos}
+          seleccion={filtroCliente}
+          onChange={setFiltroCliente}
+          placeholder="Todos los clientes"
+        />
 
-        
-        <select
-          className="filtro-select"
-          value={filtroEquipo}
-          onChange={(e) => setFiltroEquipo(e.target.value)}
-          title="Equipo"
-        >
-          <option value="">{isAdmin ? 'Todos los equipos' : 'Tu equipo'}</option>
-          {equiposUnicos.map(eq => <option key={eq} value={eq}>{eq}</option>)}
-        </select>
+        <MultiFiltro
+          titulo="Nro. CASO CLIENTE"
+          opciones={nroClienteUnicos}
+          seleccion={filtroNroCliente}
+          onChange={setFiltroNroCliente}
+          placeholder="Nro. Caso Cliente (todos)"
+        />
 
-        {/* Extras */}
-        <select
-          className="filtro-select"
-          value={filtroNroCliente}
-          onChange={(e) => setFiltroNroCliente(e.target.value)}
-          title="Nro. Caso Cliente"
-        >
-          <option value="">Nro. Caso Cliente (todos)</option>
-          {nroClienteUnicos.map(v => <option key={v} value={String(v)}>{String(v)}</option>)}
-        </select>
+        <MultiFiltro
+          titulo="Nro. ESCALADO SAP"
+          opciones={nroEscaladoUnicos}
+          seleccion={filtroNroEscalado}
+          onChange={setFiltroNroEscalado}
+          placeholder="Nro. Escalado SAP (todos)"
+        />
 
-        <select
-          className="filtro-select"
-          value={filtroNroEscalado}
-          onChange={(e) => setFiltroNroEscalado(e.target.value)}
-          title="Nro. Escalado SAP"
-        >
-          <option value="">Nro. Escalado SAP (todos)</option>
-          {nroEscaladoUnicos.map(v => <option key={v} value={String(v)}>{String(v)}</option>)}
-        </select>
+        <MultiFiltro
+          titulo="EQUIPOS"
+          opciones={equiposParaFiltro}
+          seleccion={filtroEquipo}
+          onChange={setFiltroEquipo}
+          placeholder={isAdmin ? 'Todos los equipos' : 'Tu equipo'}
+        />
 
-        <input className="filtro-month" type="month" value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)} title="Mes (YYYY-MM)" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span className="mf-label">MES</span>
+          <input
+            className="filtro-month"
+            type="month"
+            value={filtroMes}
+            onChange={(e) => setFiltroMes(e.target.value)}
+            title="Mes (YYYY-MM)"
+          />
+        </div>
 
         <button
           className="btn btn-outline"
           onClick={() => {
-            setFiltroTarea(''); setFiltroCliente(''); setFiltroModulo(''); setFiltroMes('');
-            setFiltroEquipo(isAdmin ? '' : (equipoUser || ''));
-            setFiltroConsultor(isAdmin ? '' : (nombreUser || ''));
-            setFiltroNroCliente(''); setFiltroNroEscalado('');
+            setFiltroTarea([]);
+            setFiltroCliente([]);
+            setFiltroModulo([]);
+            setFiltroMes('');
+            setFiltroNroCliente([]);
+            setFiltroNroEscalado([]);
+
+            if (isAdmin) {
+              setFiltroEquipo([]);
+              setFiltroConsultor([]);
+            } else {
+              setFiltroEquipo(equipoUser ? [equipoUser] : []);
+              setFiltroConsultor(nombreUser ? [nombreUser] : []);
+            }
           }}
         >
           Limpiar
@@ -501,14 +798,14 @@ export default function Graficos() {
           <h3>
             {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
             {filtroMes && ` (${filtroMes})`}
-            {filtroEquipo && ` — Equipo: ${filtroEquipo}`}
+            {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
           </h3>
 
           {horasPorConsultor.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
             <div className="chart-scroll">
-              <ResponsiveContainer width="100%" height={Math.max(320, horasPorConsultor.length * 30)}>
+              <ResponsiveContainer width="100%" height={hConsultores}>
                 <BarChart
                   data={horasPorConsultor}
                   layout="vertical"
@@ -567,7 +864,7 @@ export default function Graficos() {
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
             <div className="chart-scroll">
-              <ResponsiveContainer width="100%" height={Math.max(320, horasPorTarea.length * 30)}>
+              <ResponsiveContainer width="100%" height={hTareas}>
                 <BarChart
                   data={horasPorTarea}
                   layout="vertical"
@@ -604,13 +901,17 @@ export default function Graficos() {
 
         {/* Horas por Cliente */}
         <div className="grafico-box">
-          <h3>{isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}{filtroMes && ` (${filtroMes})`}{filtroEquipo && ` — Equipo: ${filtroEquipo}`}</h3>
+          <h3>
+            {isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}
+            {filtroMes && ` (${filtroMes})`}
+            {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
+          </h3>
 
           {horasPorCliente.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
             <div className="chart-scroll">
-              <ResponsiveContainer width="100%" height={Math.max(320, horasPorCliente.length * 30)}>
+              <ResponsiveContainer width="100%" height={hClientes}>
                 <BarChart
                   data={horasPorCliente}
                   layout="vertical"
@@ -647,13 +948,17 @@ export default function Graficos() {
 
         {/* Horas por Módulo */}
         <div className="grafico-box">
-          <h3>{isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}{filtroMes && ` (${filtroMes})`}{filtroEquipo && ` — Equipo: ${filtroEquipo}`}</h3>
+          <h3>
+            {isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}
+            {filtroMes && ` (${filtroMes})`}
+            {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
+          </h3>
 
           {horasPorModulo.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
             <div className="chart-scroll">
-              <ResponsiveContainer width="100%" height={Math.max(320, horasPorModulo.length * 30)}>
+              <ResponsiveContainer width="100%" height={hModulos}>
                 <BarChart
                   data={horasPorModulo}
                   layout="vertical"
@@ -688,9 +993,13 @@ export default function Graficos() {
           )}
         </div>
 
-        {/* Horas por Día (ORDENADO 1 → 31) */}
+        {/* Horas por Día */}
         <div className="grafico-box">
-          <h3>Horas por Día (mes){filtroMes && ` (${filtroMes})`}{filtroEquipo && ` — Equipo: ${filtroEquipo}`}</h3>
+          <h3>
+            Horas por Día (mes)
+            {filtroMes && ` (${filtroMes})`}
+            {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
+          </h3>
 
           {horasPorDia.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
@@ -730,9 +1039,13 @@ export default function Graficos() {
           )}
         </div>
 
-        {/* Torta: distribución por tipo de tarea (%) */}
+        {/* Torta por Tipo de Tarea */}
         <div className="grafico-box">
-          <h3>Distribución por Tipo de Tarea (%) {filtroMes && `(${filtroMes})`}{filtroEquipo && ` — Equipo: ${filtroEquipo}`}</h3>
+          <h3>
+            Distribución por Tipo de Tarea (%)
+            {filtroMes && ` (${filtroMes})`}
+            {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
+          </h3>
           {pieTareas.length === 0 ? (
             <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
@@ -764,89 +1077,139 @@ export default function Graficos() {
             </ResponsiveContainer>
           )}
         </div>
-      </div>
 
-      {/* ===== Modal ===== */}
-      <Modal
-        isOpen={modalOpen}
-        onRequestClose={closeModal}
-        className="modal-content"
-        overlayClassName="modal-overlay"
-        contentLabel="Detalle de barra"
-        shouldCloseOnOverlayClick
-      >
-        <div className="modal-header modal-header--gradient">
-          <h3 className="modal-title">{modalTitle || 'Detalle'}</h3>
-          <button className="close-button" onClick={closeModal} aria-label="Cerrar">✖</button>
-        </div>
+        {/* Torta por Ocupación */}
+        <div className="grafico-box">
+          <h3>
+            Distribución por Ocupación (%)
+            {filtroMes && ` (${filtroMes})`}
+            {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
+          </h3>
 
-        <div className="modal-body modal-body--scroll">
-          {modalSubtotales.length === 0 ? (
-            <div className="empty">Sin registros para mostrar.</div>
+          {pieOcupacion.length === 0 ? (
+            <div className="empty">Sin datos para los filtros seleccionados.</div>
           ) : (
-            modalSubtotales.map((bucket) => (
-              <details key={bucket.fecha} className="day-accordion" open>
-                <summary className="day-accordion__summary">
-                  <div className="day-accordion__title">
-                    <span className="badge-date">{bucket.fecha}</span>
-                  </div>
-                  <div className="day-accordion__meta">
-                    <span className="chip">{bucket.rows.length} reg.</span>
-                    <span className="chip chip--accent"><b>Subtotal:</b> {bucket.total.toFixed(2)} h</span>
-                  </div>
-                </summary>
+            <ResponsiveContainer width="100%" height={420}>
+              <PieChart>
+                <Tooltip
+                  formatter={(v, n, p) => [
+                    `${v}% — ${Number(p.payload.horas).toFixed(2)} h`,
+                    p.payload.name
+                  ]}
+                />
 
-                <div className="table-responsive">
-                  <table className="detail-table">
-                    <thead>
-                      <tr>
-                        <th>Consultor</th>
-                        <th>Cliente</th>
-                        <th>Tarea</th>
-                        <th>Módulo</th>
-                        <th>Equipo</th>
-                        <th>Inicio</th>
-                        <th>Fin</th>
-                        <th className="num">Horas</th>
-                        <th>Nro. Caso Cliente</th>
-                        <th>Horas adicionales</th>
-                        <th>Descripción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bucket.rows.map((r, i) => (
-                        <tr key={i}>
-                          <td className="truncate" title={r.consultor}>{r.consultor}</td>
-                          <td className="truncate" title={r.cliente}>{r.cliente}</td>
-                          <td className="truncate" title={r.tipoTarea}>{r.tipoTarea}</td>
-                          <td className="truncate" title={r.modulo}>{r.modulo}</td>
-                          <td className="truncate" title={equipoOf(r)}>{equipoOf(r)}</td>
-                          <td>{r.horaInicio}</td>
-                          <td>{r.horaFin}</td>
-                          <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
-                          <td className="truncate" title={r.nroCasoCliente || ''}>{r.nroCasoCliente}</td>
-                          <td className="truncate" title={r.horasAdicionales || 'N/D'}>
-                            {r.horasAdicionales ?? 'N/D'}
-                          </td>
-                          <td className="truncate" title={r.descripcion || ''}>{r.descripcion}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            ))
+                <Legend
+                  formatter={(value, entry) =>
+                    `${entry.payload.name} (${Number(entry.payload.horas).toFixed(2)} h)`
+                  }
+                />
+
+                <Pie
+                  data={pieOcupacion}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={70}
+                  outerRadius={120}
+                  paddingAngle={2}
+                >
+                  {pieOcupacion.map((entry, i) => (
+                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
           )}
         </div>
+      </div>
 
-        <div className="modal-footer-total">
-          <span className="chip chip--ghost">Filas: {modalRows.length}</span>
-          <span className="spacer" />
-          <strong>Total general:&nbsp;
-            {modalRows.reduce((s,r)=>s+toNum(r.tiempoInvertido),0).toFixed(2)} h
-          </strong>
-        </div>
-      </Modal>
+      {/* Modal */}
+      {modalOpen && (
+        <Modal
+          isOpen={modalOpen}
+          onRequestClose={closeModal}
+          className="modal-content"
+          overlayClassName="modal-overlay"
+          contentLabel="Detalle de barra"
+          shouldCloseOnOverlayClick
+        >
+          <div className="modal-header modal-header--gradient">
+            <h3 className="modal-title">{modalTitle || 'Detalle'}</h3>
+            <button className="close-button" onClick={closeModal} aria-label="Cerrar">✖</button>
+          </div>
+
+          <div className="modal-body modal-body--scroll">
+            {modalSubtotales.length === 0 ? (
+              <div className="empty">Sin registros para mostrar.</div>
+            ) : (
+              modalSubtotales.map((bucket) => (
+                <details key={bucket.fecha} className="day-accordion" open>
+                  <summary className="day-accordion__summary">
+                    <div className="day-accordion__title">
+                      <span className="badge-date">{bucket.fecha}</span>
+                    </div>
+                    <div className="day-accordion__meta">
+                      <span className="chip">{bucket.rows.length} reg.</span>
+                      <span className="chip chip--accent">
+                        <b>Subtotal:</b> {bucket.total.toFixed(2)} h
+                      </span>
+                    </div>
+                  </summary>
+
+                  <div className="table-responsive">
+                    <table className="detail-table">
+                      <thead>
+                        <tr>
+                          <th>Consultor</th>
+                          <th>Cliente</th>
+                          <th>Tarea</th>
+                          <th>Módulo</th>
+                          <th>Equipo</th>
+                          <th>Inicio</th>
+                          <th>Fin</th>
+                          <th className="num">Horas</th>
+                          <th>Nro. Caso Cliente</th>
+                          <th>Horas adicionales</th>
+                          <th>Descripción</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bucket.rows.map((r, i) => (
+                          <tr key={i}>
+                            <td className="truncate" title={r.consultor}>{r.consultor}</td>
+                            <td className="truncate" title={r.cliente}>{r.cliente}</td>
+                            <td className="truncate" title={r.tipoTarea}>{r.tipoTarea}</td>
+                            <td className="truncate" title={r.modulo}>{r.modulo}</td>
+                            <td className="truncate" title={equipoOf(r)}>{equipoOf(r)}</td>
+                            <td>{r.horaInicio}</td>
+                            <td>{r.horaFin}</td>
+                            <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
+                            <td className="truncate" title={r.nroCasoCliente || ''}>{r.nroCasoCliente}</td>
+                            <td className="truncate" title={r.horasAdicionales || 'N/D'}>
+                              {r.horasAdicionales ?? 'N/D'}
+                            </td>
+                            <td className="truncate" title={r.descripcion || ''}>{r.descripcion}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              ))
+            )}
+          </div>
+
+          <div className="modal-footer-total">
+            <span className="chip chip--ghost">Filas: {modalRows.length}</span>
+            <span className="spacer" />
+            <strong>
+              Total general:&nbsp;
+              {modalRows.reduce((s,r)=>s+toNum(r.tiempoInvertido),0).toFixed(2)} h
+            </strong>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

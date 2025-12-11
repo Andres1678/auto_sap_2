@@ -1,0 +1,390 @@
+/* ===========================================================
+   VARIABLES Y BASE
+=========================================================== */
+
+:root {
+  --oport-bg: #f1f5f9;
+  --oport-card-bg: #ffffff;
+  --oport-primary: #0f172a;
+  --oport-heading: #1e293b;
+  --oport-muted: #64748b;
+  --oport-border: #e2e8f0;
+  --oport-border-soft: #cbd5e1;
+}
+
+/* ===========================================================
+   ESTILOS GENERALES DEL DASHBOARD
+=========================================================== */
+
+.oport-dash-wrapper {
+  min-height: 100vh;
+  padding: 24px 28px 40px;
+  background: radial-gradient(circle at top left, #e2e8f0 0, var(--oport-bg) 45%, #eff6ff 100%);
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--oport-primary);
+}
+
+/* Ancho máximo para que no quede “de pared a pared” en pantallas grandes */
+@media (min-width: 1200px) {
+  .oport-dash-wrapper {
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+}
+
+.oport-dash-title {
+  font-size: 2rem;
+  font-weight: 800;
+  text-align: center;
+  color: var(--oport-heading);
+  letter-spacing: 0.02em;
+  margin-bottom: 26px;
+}
+
+.oport-dash-title::after {
+  content: "";
+  display: block;
+  width: 80px;
+  height: 3px;
+  margin: 10px auto 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #1d4ed8, #0ea5e9);
+}
+
+.oport-dash-loading {
+  text-align: center;
+  font-size: 0.95rem;
+  color: var(--oport-muted);
+  margin-bottom: 16px;
+}
+
+/* ===========================================================
+   KPI CARDS
+=========================================================== */
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 18px;
+  margin-bottom: 32px;
+}
+
+.kpi-card {
+  background: var(--oport-card-bg);
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  border-color: rgba(59, 130, 246, 0.6);
+}
+
+.kpi-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--oport-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.kpi-value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+/* Colores de KPI */
+.kpi-total .kpi-value {
+  color: #1d4ed8;
+}
+.kpi-activas .kpi-value {
+  color: #16a34a;
+}
+.kpi-cerradas .kpi-value {
+  color: #dc2626;
+}
+.kpi-ganadas .kpi-value {
+  color: #f97316;
+}
+
+.kpi-sub {
+  font-size: 0.78rem;
+  color: var(--oport-muted);
+  margin-top: 2px;
+}
+
+/* Responsive ajustes finos */
+@media (max-width: 600px) {
+  .kpi-card {
+    padding: 16px;
+  }
+  .kpi-value {
+    font-size: 1.9rem;
+  }
+}
+
+/* ===========================================================
+   TARJETAS CONTENEDORAS DE TABLAS
+=========================================================== */
+
+.estado-oferta-card {
+  background: var(--oport-card-bg);
+  padding: 20px 20px 16px;
+  border-radius: 16px;
+  margin-bottom: 26px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--oport-border-soft);
+  overflow-x: auto; /* para tablas largas */
+}
+
+.estado-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--oport-heading);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.estado-title::before {
+  content: "";
+  width: 4px;
+  height: 20px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #1d4ed8, #0ea5e9);
+}
+
+/* Scrollbar horizontal suave para las tarjetas de tablas */
+.estado-oferta-card::-webkit-scrollbar {
+  height: 7px;
+}
+.estado-oferta-card::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+.estado-oferta-card::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ===========================================================
+   TABLAS RESUMEN (ESTADO / RESULTADO)
+=========================================================== */
+
+.estado-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  min-width: 420px;
+}
+
+.estado-table thead th {
+  background: #0f172a;
+  color: white;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 0.83rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  white-space: nowrap;
+}
+
+/* Primera columna más clara y legible */
+.estado-table td:first-child,
+.estado-table th:first-child {
+  padding-left: 14px;
+}
+
+.estado-table tbody td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--oport-border);
+  background: white;
+}
+
+/* Zebra + hover para lectura cómoda */
+.estado-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+.estado-table tbody tr:hover td {
+  background: #e0f2fe;
+}
+
+.estado-total td {
+  background: #e5edf7;
+  font-weight: 700;
+  border-top: 1px solid #cbd5e1;
+}
+
+/* Apariencia corporativa extra */
+.estado-table td:first-child {
+  font-weight: 600;
+  color: #334155;
+}
+
+.estado-table th:first-child {
+  border-top-left-radius: 6px;
+}
+.estado-table th:last-child {
+  border-top-right-radius: 6px;
+}
+
+/* Borde del bloque tabla */
+.estado-oferta-card table {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--oport-border-soft);
+}
+
+/* ===========================================================
+   TARJETA DETALLE
+=========================================================== */
+
+.detalle-card {
+  background: var(--oport-card-bg);
+  border-radius: 16px;
+  padding: 20px 20px 18px;
+  margin-top: 28px;
+  margin-bottom: 10px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.09);
+  border: 1px solid var(--oport-border-soft);
+}
+
+.detalle-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--oport-heading);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detalle-title::before {
+  content: "";
+  width: 3px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #1d4ed8, #22c55e);
+}
+
+/* ===========================================================
+   CONTENEDOR SCROLL DETALLE
+=========================================================== */
+
+.detalle-scroll {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 380px;
+  padding-bottom: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--oport-border-soft);
+  background: #ffffff;
+}
+
+/* Scrollbars */
+.detalle-scroll::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.detalle-scroll::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 999px;
+}
+.detalle-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* ===========================================================
+   TABLA DETALLE
+=========================================================== */
+
+.detalle-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1400px; /* Scroll horizontal cómodo */
+  font-size: 0.85rem;
+}
+
+.detalle-table thead th {
+  background: #0f172a;
+  color: white;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border-right: 1px solid #1f2933;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.detalle-table thead th:last-child {
+  border-right: none;
+}
+
+.detalle-table tbody td {
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--oport-border);
+  white-space: nowrap;
+}
+
+/* Fila alternada + hover suave */
+.detalle-table tbody tr:nth-child(even) td {
+  background: #f9fafb;
+}
+
+.detalle-table tbody tr:hover td {
+  background: #e0f2fe;
+}
+
+/* Columna nombre cliente un poco más destacada */
+.detalle-table tbody td:first-child {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* ===========================================================
+   RESPONSIVE GENERAL
+=========================================================== */
+
+@media (max-width: 768px) {
+  .oport-dash-wrapper {
+    padding: 18px 14px 30px;
+  }
+
+  .estado-oferta-card,
+  .detalle-card {
+    padding: 16px 12px 12px;
+  }
+
+  .estado-title,
+  .detalle-title {
+    font-size: 1rem;
+  }
+}
+
+.grafico-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 18px;
+  margin-top: 25px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.grafico-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: #1e293b;
+}

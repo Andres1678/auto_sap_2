@@ -1,0 +1,346 @@
+/* ===========================================================
+   CONSULTOR TABLE — DISEÑO PROFESIONAL VERSION FINAL
+   =========================================================== */
+
+.cst-wrapper {
+  --blue: #2563eb;
+  --blue-dark: #1e40af;
+  --red: #dc2626;
+  --red-dark: #b91c1c;
+  --gray-50: #f8fafc;
+  --gray-100: #f1f5f9;
+  --gray-200: #e2e8f0;
+  --gray-300: #cbd5e1;
+  --gray-700: #334155;
+  --text-main: #0f172a;
+  --radius: 14px;
+  --shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+  --shadow-strong: 0 10px 25px rgba(15, 23, 42, 0.15);
+  --gradient: linear-gradient(90deg,#2563eb,#dc2626);
+
+  padding: 26px;
+  background: var(--gray-50);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  font-family: "Inter", sans-serif;
+  animation: fadeIn 0.32s ease-out;
+}
+
+/* ===========================================================
+   TITULO
+   =========================================================== */
+.cst-title {
+  font-size: 2rem;
+  text-align: center;
+  font-weight: 800;
+  margin-bottom: 26px;
+  background: var(--gradient);
+  -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text;
+}
+
+/* ===========================================================
+   FILTROS
+   =========================================================== */
+.cst-filtros {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+.cst-filtros input {
+  flex: 1;
+  padding: 12px 16px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid var(--gray-200);
+  font-size: 1rem;
+  transition: 0.25s;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.cst-filtros input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.25);
+}
+
+/* ===========================================================
+   BOTÓN AGREGAR
+   =========================================================== */
+.cst-btn {
+  padding: 10px 18px;
+  font-weight: 700;
+  border-radius: 12px;
+  cursor: pointer;
+  border: none;
+  transition: 0.25s ease;
+}
+
+.cst-btn-add {
+  background: var(--gradient);
+  color: white;
+  box-shadow: var(--shadow-strong);
+}
+
+.cst-btn-add:hover {
+  transform: translateY(-2px) scale(1.03);
+}
+
+/* ===========================================================
+   TABLA
+   =========================================================== */
+.cst-table-wrapper {
+  overflow-x: auto;
+  background: white;
+  border-radius: 16px;
+  padding: 2px;
+  box-shadow: var(--shadow);
+}
+
+.cst-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+}
+
+/* Encabezados alineados a la izquierda */
+.cst-table thead th {
+  background: var(--gray-100);
+  padding: 14px;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid var(--blue);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  text-align: left !important;
+}
+
+/* Celdas alineadas a la izquierda */
+.cst-table td {
+  text-align: left !important;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.cst-table tbody tr:nth-child(odd) {
+  background: var(--gray-50);
+}
+
+.cst-table tbody tr:hover {
+  background: var(--gray-100);
+}
+
+.cst-empty {
+  text-align: center;
+  color: var(--gray-700);
+  padding: 18px;
+}
+
+/* ===========================================================
+   ACCIONES
+   =========================================================== */
+.cst-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.cst-edit {
+  background: var(--blue);
+  color: white;
+}
+.cst-edit:hover {
+  background: var(--blue-dark);
+  transform: translateY(-1px);
+}
+
+.cst-delete {
+  background: var(--red);
+  color: white;
+}
+.cst-delete:hover {
+  background: var(--red-dark);
+  transform: scale(1.05);
+}
+
+/* ===========================================================
+   MODAL — GLASS + ANIMACIÓN
+   =========================================================== */
+.cst-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.32s ease-out;
+  z-index: 9999;
+}
+
+.cst-modal {
+  width: min(550px, 95%);
+  background: white;
+  border-radius: 18px;
+  box-shadow: var(--shadow-strong);
+  overflow: hidden;
+  animation: slideUp 0.35s ease-out;
+}
+
+/* Header */
+.cst-modal-header {
+  padding: 16px 24px;
+  background: var(--gradient);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cst-modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.cst-close {
+  background: none;
+  border: none;
+  font-size: 1.7rem;
+  cursor: pointer;
+  opacity: 0.9;
+}
+.cst-close:hover {
+  opacity: 1;
+}
+
+/* Body */
+.cst-modal-body {
+  padding: 24px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--gray-50);
+}
+
+.cst-modal-body input,
+.cst-modal-body select {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--gray-200);
+  margin-bottom: 12px;
+  font-size: 0.95rem;
+  transition: 0.25s;
+}
+
+.cst-modal-body input:focus,
+.cst-modal-body select:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.25);
+}
+
+/* ===========================================================
+   SELECT MÚLTIPLE — DISEÑO PROFESIONAL
+   =========================================================== */
+.cst-modal-body select[multiple] {
+  height: auto !important;
+  min-height: 130px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 10px 14px;
+  background: white;
+  border: 1px solid var(--gray-300);
+  border-radius: 12px;
+  font-size: 0.95rem;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: 0.25s ease;
+}
+
+/* Scroll elegante */
+.cst-modal-body select[multiple]::-webkit-scrollbar {
+  width: 8px;
+}
+.cst-modal-body select[multiple]::-webkit-scrollbar-thumb {
+  background: var(--gray-300);
+  border-radius: 10px;
+}
+
+/* Opciones */
+.cst-modal-body select[multiple] option {
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin: 4px 0;
+  cursor: pointer;
+}
+
+/* Hover */
+.cst-modal-body select[multiple] option:hover {
+  background: var(--gray-100);
+}
+
+/* Seleccionado */
+.cst-modal-body select[multiple] option:checked {
+  background: var(--blue);
+  color: white;
+  font-weight: 600;
+}
+
+/* Footer */
+.cst-modal-footer {
+  padding: 18px 24px;
+  background: var(--gray-100);
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.cst-primary {
+  background: var(--blue);
+  color: white;
+}
+.cst-primary:hover {
+  background: var(--blue-dark);
+}
+
+.cst-secondary {
+  background: var(--gray-300);
+  color: black;
+}
+.cst-secondary:hover {
+  background: var(--gray-200);
+}
+
+/* ===========================================================
+   ANIMACIONES
+   =========================================================== */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(40px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ===========================================================
+   RESPONSIVE
+   =========================================================== */
+@media (max-width: 768px) {
+  .cst-filtros {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .cst-btn-add {
+    width: 100%;
+  }
+
+  .cst-actions {
+    justify-content: center;
+  }
+}

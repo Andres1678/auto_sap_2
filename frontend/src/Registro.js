@@ -3,6 +3,7 @@ import Modal from 'react-modal';
 import Swal from 'sweetalert2';
 import './Registro.css';
 import { jfetch } from './lib/api';
+import Resumen from './Resumen';
 
 Modal.setAppElement('#root');
 
@@ -14,7 +15,6 @@ function initRegistro() {
     nroCasoCliente: '',
     nroCasoInterno: '',
     nroCasoEscaladoSap: '',
-    tipoTarea: '',
     horaInicio: '',
     horaFin: '',
     tiempoInvertido: 0,
@@ -46,6 +46,7 @@ const parseHHMM = (s) => {
   if (h < 0 || h > 23 || m < 0 || m > 59) return null;
   return { h, m };
 };
+
 const parseRange = (range) => {
   if (!range || typeof range !== 'string' || !/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(range)) return null;
   const [ini, fin] = range.split('-');
@@ -54,6 +55,7 @@ const parseRange = (range) => {
   if (!a || !b) return null;
   return { ini: a, fin: b };
 };
+
 const toMinutes = ({ h, m }) => h * 60 + m;
 
 const calcularTiempo = (inicio, fin) => {
@@ -85,7 +87,6 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
 
 const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
 
-
 const equipoOf = (r, fallback = 'SIN EQUIPO') =>
   (String((r?.equipo ?? r?.EQUIPO) || '').trim().toUpperCase() || fallback);
 
@@ -93,14 +94,17 @@ function buildLocalResumen(registros, nombre, usuarioLogin) {
   if (!Array.isArray(registros)) return [];
   const login = String(usuarioLogin || '').toLowerCase();
   const metaBase = EXCEPCION_8H_USERS.has(login) ? 8 : 9;
+
   const byFecha = new Map();
   for (const r of registros) {
     const fecha = r?.fecha;
     if (!fecha) continue;
     const horas = Number(r?.tiempoInvertido ?? 0);
     if (!Number.isFinite(horas)) continue;
+
     const tipo = String(r?.tipoTarea || '').toUpperCase();
     const esDisponible = tipo.includes('DISPONIBLE');
+
     if (!byFecha.has(fecha)) {
       byFecha.set(fecha, { total: 0, disponible: false });
     }
@@ -108,6 +112,7 @@ function buildLocalResumen(registros, nombre, usuarioLogin) {
     bucket.total += horas;
     bucket.disponible = bucket.disponible || esDisponible;
   }
+
   return Array.from(byFecha.entries()).map(([fecha, { total, disponible }]) => {
     const metaDelDia = disponible ? 0 : metaBase;
     return {
@@ -124,6 +129,7 @@ const normalizeModulos = (arr) => (
     ? arr.map(m => (typeof m === 'string' ? m : (m?.nombre ?? String(m))))
     : []
 );
+
 const getModulosLocal = (u) => {
   const arr = normalizeModulos(u?.modulos ?? u?.user?.modulos);
   if (arr.length) return arr;
@@ -147,18 +153,22 @@ function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
     const s = String(v).replace(/"/g, '""');
     return `"${s}"`;
   };
+
   const headers = [
     'Fecha','Módulo','Equipo','Cliente','Nro Caso Cliente','Nro Caso Interno','Nro Caso Escalado SAP',
     'Tipo Tarea Azure','Consultor','Hora Inicio','Hora Fin','Tiempo Invertido','Tiempo Facturable',
     'ONCALL','Desborde','Horas Adicionales','Descripción'
   ];
+
   const lines = [];
   const metaKeys = Object.keys(meta || {});
   if (metaKeys.length) {
     metaKeys.forEach(k => lines.push(`# ${k}: ${meta[k]}`));
     lines.push('# ----------------------------------------');
   }
+
   lines.push(headers.map(q).join(sep));
+
   (rows || []).forEach(r => {
     lines.push([
       r.fecha ?? '',
@@ -180,6 +190,7 @@ function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
       r.descripcion ?? '',
     ].map(q).join(sep));
   });
+
   const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -210,12 +221,12 @@ const Registro = ({ userData }) => {
 
   const [filtroFecha, setFiltroFecha] = useState('');
   const [filtroCliente, setFiltroCliente] = useState('');
+  const [filtroOcupacion, setFiltroOcupacion] = useState('');
   const [filtroTarea, setFiltroTarea] = useState('');
   const [filtroConsultor, setFiltroConsultor] = useState('');
   const [filtroNroCasoCli, setFiltroNroCasoCli] = useState('');
   const [filtroHorasAdic, setFiltroHorasAdic] = useState('');
 
-  
   const initialEquipo = () => (localStorage.getItem('filtroEquipo') || '');
   const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
   useEffect(() => { localStorage.setItem('filtroEquipo', filtroEquipo); }, [filtroEquipo]);
@@ -231,7 +242,6 @@ const Registro = ({ userData }) => {
 
   const canDownload = ['rodriguezso','valdezjl'].includes(String(usuarioLogin || '').toLowerCase());
 
-  
   const initialVista = () => {
     const persisted = localStorage.getItem('equipoView');
     if (persisted === 'BASIS' || persisted === 'FUNCIONAL') return persisted;
@@ -241,7 +251,6 @@ const Registro = ({ userData }) => {
   useEffect(() => { localStorage.setItem('equipoView', vistaEquipo); }, [vistaEquipo]);
 
   const isBASISTable = isAdmin ? (vistaEquipo === 'BASIS') : (userEquipoUpper === 'BASIS');
-  
 
   const adminBloqueadoPorEquipo =
     isAdmin && (userEquipoUpper === 'BASIS' || userEquipoUpper === 'FUNCIONAL');
@@ -257,42 +266,89 @@ const Registro = ({ userData }) => {
     setModuloElegido(locals.length === 1 ? locals[0] : '');
   }, [userData]);
 
+  const [clientes, setClientes] = useState([]);
+  const [ocupaciones, setOcupaciones] = useState([]);
+  const [todasTareas, setTodasTareas] = useState([]);
+  const [ocupacionSeleccionada, setOcupacionSeleccionada] = useState('');
+  const [equiposDisponibles, setEquiposDisponibles] = useState([]);
+  const [tareasBD, setTareasBD] = useState([]);
+  const [tareaSeleccionada, setTareaSeleccionada] = useState('');
+
+
+  useEffect(() => {
+    const fetchCatalogos = async () => {
+      try {
+        const [eqRes, cliRes, ocuRes] = await Promise.all([
+          jfetch('/equipos'),
+          jfetch('/clientes'),
+          jfetch('/ocupaciones')
+        ]);
+
+        const [eqData, cliData, ocuData] = await Promise.all([
+          eqRes.json().catch(() => []),
+          cliRes.json().catch(() => []),
+          ocuRes.json().catch(() => [])
+        ]);
+
+        if (!eqRes.ok) throw new Error(eqData?.mensaje || `HTTP ${eqRes.status}`);
+        if (!cliRes.ok) throw new Error(cliData?.mensaje || `HTTP ${cliRes.status}`);
+        if (!ocuRes.ok) throw new Error(ocuData?.mensaje || `HTTP ${ocuRes.status}`);
+
+        setEquiposDisponibles(Array.isArray(eqData) ? eqData : []);
+        setClientes(Array.isArray(cliData) ? cliData : []);
+
+        const ocus = Array.isArray(ocuData) ? ocuData : [];
+        setOcupaciones(ocus);
+
+        const map = new Map();
+        ocus.forEach(o => (o.tareas || []).forEach(t => {
+          if (t && !map.has(t.id)) map.set(t.id, t);
+        }));
+        setTodasTareas(Array.from(map.values()));
+      } catch (err) {
+        console.error('Error cargando catálogos:', err);
+        setEquiposDisponibles([]);
+        setClientes([]);
+        setOcupaciones([]);
+        setTodasTareas([]);
+      }
+    };
+    fetchCatalogos();
+  }, []);
+
   const refreshModulos = useCallback(async () => {
     try {
-      const res = await jfetch(`/consultores/modulos?usuario=${encodeURIComponent(usuarioLogin)}`);
+      const res = await jfetch(`/consultores/datos?usuario=${encodeURIComponent(usuarioLogin)}`);
       const data = await res.json().catch(() => ({}));
-      const lista = Array.isArray(data?.modulos) ? data.modulos : [];
+      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
+      const lista = Array.isArray(data.modulos) ? data.modulos : [];
       const norm = normalizeModulos(lista);
-      if (norm.length) {
-        setModulos(norm);
-        setModuloElegido(norm.length === 1 ? norm[0] : '');
+      setModulos(norm);
+      setModuloElegido(norm.length === 1 ? norm[0] : '');
+
+      if (data.equipo) {
+        setRegistro(r => ({ ...r, equipo: String(data.equipo).toUpperCase() }));
       }
-    } catch {}
+    } catch (err) {
+      console.error("Error al cargar datos del consultor:", err);
+      setModulos([]);
+    }
   }, [usuarioLogin]);
 
   const fetchRegistros = useCallback(async () => {
     setError('');
     try {
-      let res;
-      if (isAdmin) {
-        res = await jfetch('/registros', {
-          method: 'GET',
-          headers: { 'X-User-Rol': 'ADMIN' }
-        });
-      } else {
-        res = await jfetch('/registros', {
-          method: 'POST',
-          body: JSON.stringify({ rol, nombre: nombreUser })
-        });
-      }
-      const data = await res.json().catch(() => ({}));
+      const res = await jfetch(`/registros?usuario=${usuarioLogin}&rol=${rol}`);
+
+      const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
-      setRegistros(asArray(data));
+      setRegistros(Array.isArray(data) ? data : []);
     } catch (e) {
       setRegistros([]);
       setError(String(e.message || e));
     }
-  }, [isAdmin, rol, nombreUser]);
+  }, [usuarioLogin, rol, nombreUser]);
 
   const fetchResumen = useCallback(async () => {
     if (!isAdmin) { setResumen([]); return; }
@@ -325,7 +381,6 @@ const Registro = ({ userData }) => {
       : []
   , [registros]);
 
-  
   const equiposConConteo = useMemo(() => {
     const map = new Map();
     (registros || []).forEach(r => {
@@ -337,36 +392,66 @@ const Registro = ({ userData }) => {
     return [{ key:'', label:'Todos', count: total }, ...arr.map(([k,c])=>({ key:k, label:k, count:c }))];
   }, [registros]);
 
+  const obtenerOcupacionDeRegistro = (registro) => {
+    if (registro?.ocupacion_codigo && registro?.ocupacion_nombre) {
+      return `${registro.ocupacion_codigo} - ${registro.ocupacion_nombre}`;
+    }
+
+    const t = todasTareas.find(
+      x => x.nombre === registro.tipoTarea ||
+          (x.codigo && registro.tipoTarea?.startsWith(x.codigo))
+    );
+    if (!t) return "—";
+
+    const occ = ocupaciones.find(o =>
+      (o.tareas || []).some(tt => tt.id === t.id)
+    );
+
+    return occ ? `${occ.codigo} - ${occ.nombre}` : "—";
+  };
+
+
   const registrosFiltrados = useMemo(() => {
-    const rows = Array.isArray(registros)
-      ? registros.filter((r) => (
-          (!filtroEquipo || equipoOf(r) === filtroEquipo) && // <— filtro por equipo
-          (!filtroFecha || r.fecha === filtroFecha) &&
-          (!filtroCliente || r.cliente === filtroCliente) &&
-          (!filtroTarea || r.tipoTarea === filtroTarea) &&
-          (!filtroConsultor || r.consultor === filtroConsultor) &&
-          (!filtroNroCasoCli || String(r.nroCasoCliente || '').toLowerCase().includes(filtroNroCasoCli.toLowerCase())) &&
-          (!filtroHorasAdic || normSiNo(r.horasAdicionales) === filtroHorasAdic)
-        ))
+    const base = Array.isArray(registros)
+      ? registros
       : [];
-    return rows.slice().sort((a,b) => {
+
+    const rows = base.filter((r) => (
+      (!filtroEquipo || equipoOf(r) === filtroEquipo) &&
+      (!filtroFecha || r.fecha === filtroFecha) &&
+      (!filtroCliente || r.cliente === filtroCliente) &&
+      (!filtroOcupacion || obtenerOcupacionDeRegistro(r) === filtroOcupacion) &&
+      (!filtroTarea || r.tipoTarea === filtroTarea) &&
+      (!filtroConsultor || r.consultor === filtroConsultor) &&
+      (!filtroNroCasoCli || String(r.nroCasoCliente || '').toLowerCase().includes(filtroNroCasoCli.toLowerCase())) &&
+      (!filtroHorasAdic || normSiNo(r.horasAdicionales) === filtroHorasAdic)
+    ));
+
+    const visibles = isAdmin
+      ? rows
+      : rows.filter(r =>
+          (r.consultor || '').trim().toLowerCase() === nombreUser.trim().toLowerCase()
+        );
+
+    return visibles.slice().sort((a, b) => {
       const da = new Date(a.fecha || '1970-01-01');
       const db = new Date(b.fecha || '1970-01-01');
       if (da.getTime() !== db.getTime()) return da - db;
-      return String(a.id||0) - String(b.id||0);
+      return String(a.id || 0) - String(b.id || 0);
     });
-  }, [registros, filtroEquipo, filtroFecha, filtroCliente, filtroTarea, filtroConsultor, filtroNroCasoCli, filtroHorasAdic]);
-
-  const resumenVisible = useMemo(() => {
-    if (!isAdmin) {
-      return buildLocalResumen(registros, nombreUser, usuarioLogin);
-    }
-    let base = Array.isArray(resumen) ? resumen : [];
-    if (filtroConsultor) {
-      base = base.filter(r => r.consultor === filtroConsultor);
-    }
-    return base;
-  }, [isAdmin, registros, resumen, nombreUser, usuarioLogin, filtroConsultor]);
+  }, [
+    registros,
+    filtroEquipo,
+    filtroFecha,
+    filtroCliente,
+    filtroOcupacion,
+    filtroTarea,
+    filtroConsultor,
+    filtroNroCasoCli,
+    filtroHorasAdic,
+    isAdmin,
+    nombreUser
+  ]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -421,6 +506,7 @@ const Registro = ({ userData }) => {
     if (modulos.length > 1 && !moduloElegido) {
       return Swal.fire({ icon: 'warning', title: 'Selecciona un módulo' });
     }
+
     const horasAdic = calcularHorasAdicionales(
       registro.horaInicio,
       registro.horaFin,
@@ -428,52 +514,165 @@ const Registro = ({ userData }) => {
     );
     const moduloFinal = (moduloElegido || modulos[0] || moduloUser || '').trim();
 
+    const consultorId =
+      registro.consultor_id ||                  
+      userData?.consultor_id ||                 
+      userData?.user?.consultor_id ||
+      localStorage.getItem("consultorId") ||
+      null;
+
+
+
+    // 🔥 Nombre EXACTO que el backend usa para validar permisos
+    const nombreConsultor =
+      userData?.nombre ||
+      userData?.user?.nombre ||
+      userData?.consultor?.nombre ||
+      "";
+
     const base = {
-      ...registro,
+      fecha: registro.fecha,
+      cliente: registro.cliente,
+      nroCasoCliente: registro.nroCasoCliente,
+      nroCasoInterno: registro.nroCasoInterno,
+      nroCasoEscaladoSap: registro.nroCasoEscaladoSap,
+
+      tarea_id: registro.tarea_id || null,
+      ocupacion_id: ocupacionSeleccionada ? parseInt(ocupacionSeleccionada) : null,
+
+      horaInicio: registro.horaInicio,
+      horaFin: registro.horaFin,
       tiempoInvertido: tiempo,
+      tiempoFacturable: registro.tiempoFacturable,
       horasAdicionales: horasAdic,
-      modulo: moduloFinal,
-      consultor: nombreUser,
+      descripcion: registro.descripcion,
       totalHoras: tiempo,
+
+      modulo: moduloFinal,
+      equipo: equipoFormulario,
+
+      usuario: usuarioLogin,
+      consultor_id: consultorId,
+
       rol,
-      equipo: equipoFormulario
     };
+
+
     const payload = { ...base };
-    if (equipoFormulario !== 'BASIS') {
+
+    payload.nombre = nombreConsultor;
+    payload.consultor = nombreConsultor;
+    payload.modulo = moduloFinal;
+
+    // si no es basis
+    if (equipoFormulario !== "BASIS") {
       delete payload.actividadMalla;
       delete payload.oncall;
       delete payload.desborde;
     }
+
+    if (!moduloFinal || moduloFinal.trim() === "") {
+      return Swal.fire({
+        icon: "warning",
+        title: "Selecciona un módulo antes de guardar"
+      });
+    }
+
+
     try {
-      const path = modoEdicion ? `/editar-registro/${registro.id}` : '/registrar-hora';
-      const method = modoEdicion ? 'PUT' : 'POST';
-      const resp = await jfetch(path, { method, body: JSON.stringify(payload) });
-      const j = await resp.json().catch(()=> ({}));
+      const path = modoEdicion
+        ? `/editar-registro/${registro.id}`
+        : "/registrar-hora";
+      const method = modoEdicion ? "PUT" : "POST";
+
+      const resp = await jfetch(path, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const j = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(j?.mensaje || `HTTP ${resp.status}`);
-      Swal.fire({ icon: 'success', title: modoEdicion ? 'Registro actualizado' : 'Registro guardado' });
+
+      Swal.fire({
+        icon: "success",
+        title: modoEdicion ? "Registro actualizado" : "Registro guardado",
+      });
+
+      
+      window.dispatchEvent(new Event("resumen-actualizar"));
+
+      
       fetchRegistros();
-      if (isAdmin) fetchResumen();
+
+      
       setRegistro(initRegistro());
-      setModuloElegido(modulos.length === 1 ? modulos[0] : '');
+      setModuloElegido(modulos.length === 1 ? modulos[0] : "");
       setModoEdicion(false);
+      setOcupacionSeleccionada("");
       setModalIsOpen(false);
+
     } catch (e) {
-      Swal.fire({ icon: 'error', title: String(e.message || e) });
+      Swal.fire({ icon: "error", title: String(e.message || e) });
     }
   };
 
+
   const handleEditar = (reg) => {
-    setRegistro({ ...initRegistro(), ...reg, equipo: equipoOf(reg) });
-    if (reg?.modulo) {
+
+  // 1️⃣ Cargar todos los campos del registro
+    setRegistro({
+        ...initRegistro(),
+
+        id: reg.id,
+        fecha: reg.fecha,
+        cliente: reg.cliente,
+
+        tarea_id: reg.tarea_id ? Number(reg.tarea_id) : "",
+        tipoTarea: reg.tipoTarea || "",       
+        ocupacion_id: reg.ocupacion_id ? Number(reg.ocupacion_id) : "",
+
+        horaInicio: reg.horaInicio,
+        horaFin: reg.horaFin,
+
+        tiempoInvertido: reg.tiempoInvertido,
+        tiempoFacturable: reg.tiempoFacturable,
+        horasAdicionales: reg.horasAdicionales,
+        descripcion: reg.descripcion,
+
+        consultor_id: reg.consultor_id,
+        equipo: reg.equipo,
+        modulo: reg.modulo
+    });
+
+    // 2️⃣ Setear la ocupación seleccionada
+    setOcupacionSeleccionada(
+      reg.ocupacion_id ? String(reg.ocupacion_id) : ""
+    );
+
+    // 3️⃣ Setear la tarea seleccionada
+    setTareaSeleccionada(
+      reg.tarea_id ? String(reg.tarea_id) : ""
+    );
+
+    // 4️⃣ Cargar módulo
+    if (reg.modulo) {
       setModuloElegido(reg.modulo);
     } else if (modulos.length === 1) {
       setModuloElegido(modulos[0]);
     } else {
       setModuloElegido('');
     }
+
+    // 5️⃣ Activar edición
     setModoEdicion(true);
     setModalIsOpen(true);
   };
+
+
+
 
   const handleEliminar = async (id) => {
     const res = await Swal.fire({
@@ -487,8 +686,14 @@ const Registro = ({ userData }) => {
     if (res.isConfirmed) {
       const resp = await jfetch(`/eliminar-registro/${id}`, {
         method: 'DELETE',
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Usuario": usuarioLogin,   
+          "X-User-Rol": rol                 
+        },
         body: JSON.stringify({ rol, nombre: nombreUser })
       });
+
       if (!resp.ok) {
         const j = await resp.json().catch(()=> ({}));
         return Swal.fire({ icon:'error', title: j?.mensaje || `HTTP ${resp.status}` });
@@ -503,7 +708,30 @@ const Registro = ({ userData }) => {
     const copia = { ...reg };
     delete copia.id;
     setRegistro({ ...initRegistro(), ...copia, equipo: equipoOf(copia, userEquipoUpper) });
-    setModuloElegido(reg?.modulo || (modulos.length === 1 ? modulos[0] : ''));
+
+    if (reg?.modulo) {
+      setModuloElegido(reg.modulo);
+    } else if (modulos.length === 1) {
+      setModuloElegido(modulos[0]);
+    } else {
+      setModuloElegido('');
+    }
+
+    let occId = '';
+    if (reg?.tipoTarea && todasTareas.length && ocupaciones.length) {
+      const tarea = todasTareas.find(
+        t => t.nombre === reg.tipoTarea ||
+             (t.codigo && reg.tipoTarea.startsWith(t.codigo))
+      );
+      if (tarea) {
+        const occ = ocupaciones.find(o =>
+          (o.tareas || []).some(tt => tt.id === tarea.id)
+        );
+        if (occ) occId = String(occ.id);
+      }
+    }
+    setOcupacionSeleccionada(occId);
+
     setModoEdicion(false);
     setModalIsOpen(true);
   };
@@ -519,25 +747,6 @@ const Registro = ({ userData }) => {
     } catch (e) {}
   };
 
-  const clientes = [
-    'AIRE - Air-e','ALUMINA','ANTILLANA','AVIANCA','ANABA','CAMARA DE COMERCIO','CEET-EL TIEMPO',
-    'CERAMICA ITALIA','CERESCOS','CLARO ANDINA','CLARO COLOMBIA','COLSUBSIDIO','COMFENALCO CARTAGENA',
-    'COOLECHERA','CRYSTAL S.A.S','DON POLLO','EMI','ETERNA','EVOAGRO','FABRICATO',
-    'FUNDACION GRUPO SANTANDER','HACEB','HITSS/CLARO','ILUMNO','JGB','LACTALIS',
-    'PRND-PROINDESA','PROCAPS','SATENA','STOP JEANS','TINTATEX','UNIBAN','GREELAND',
-    'TRIPLE AAA','ESENTIA','COLPENSIONES','VANTI','COOSALUD','FEDERACION NACIONAL DE CAFETEROS','SURA', 'RCN', 'ECOPETROL-ODL',
-    'AGORA', 'D1', 'CASA LUKER', 'CIAMSA', 'SPRBUN', 'CLARO CARIBE'
-  ];
-  const tiposTarea = [
-    '01 - Atencion Casos','02 - Atencion de Casos VAR','03 - Atencion de Proyectos','04- Apoyo Preventa','05 - Generacion Informes',
-    '06 - Seguimiento y Supervision Equipo','07 - Reuniones Internas','08 - Seguimiento de Casos internos','09 - Capacitaciones',
-    '10 - Reporte Host','11 - Reporte Azure','12 - Reporte Tiempo consumido (CORA)','13 - Pausas Activas',
-    '14 -  Permisos por horas / Dia Familia / Cumpleaños','15 - Vacaciones / Incapacidades','16 - Plan de Accion','17 - Proyectos Internos',
-    '18 - DISPONIBLE','19 - Hora de traslado Triara a Casa','20 - Cambios','21 - Monitoreo','22 - Reunión Cliente','23 - Atención SOX',
-    '24 - Outlook - Teams','25 - NO DILIGENCIO','26 - Reuniones Externas','27 - Daily','28 - KickOff','29 - Handover','30 - Seguimiento Proyecto',
-    '31 - Gestión Documental Operación','32 - Gestión Documental Proyectos','33 - Elaboración de Oferta','34 - Actualización Tableros',
-    '35 - Gestion Documental','36 - Levantamiento de Información', '37 - Entrega de Turno / Empalme'
-  ];
   const actividadMalla = ['AC','CRU1','CRU2','CRU3','DC','DE','DF','IN','ON','T1E','T1I','T1X','T2E','T2I','T2X','T3','VC','N/APLICA'];
   const oncall = ['SI','NO','N/A'];
   const desborde = ['SI','NO','N/A'];
@@ -560,6 +769,37 @@ const Registro = ({ userData }) => {
     );
   };
 
+  useEffect(() => {
+    if (!userData) return;
+    if (!isAdmin) {
+      setFiltroConsultor(nombreUser);
+      setFiltroEquipo(equipoUser);
+    } else {
+      setFiltroConsultor('');
+      setFiltroEquipo('');
+    }
+  }, [isAdmin, nombreUser, equipoUser, userData]);
+
+  useEffect(() => {
+    if (!ocupacionSeleccionada) {
+      setTareasBD([]);
+      return;
+    }
+
+    const cargarTareas = async () => {
+      try {
+        const res = await jfetch(`/ocupaciones/${ocupacionSeleccionada}/tareas`);
+        const data = await res.json();
+        setTareasBD(Array.isArray(data) ? data : []);
+      } catch (err) {
+        setTareasBD([]);
+      }
+    };
+
+    cargarTareas();
+  }, [ocupacionSeleccionada]);
+
+
   return (
     <div className="container">
       <div className="page-head">
@@ -569,23 +809,22 @@ const Registro = ({ userData }) => {
         </div>
 
         <div className="page-actions" style={{display:'flex', gap:12, alignItems:'center', flexWrap:'wrap'}}>
-          {/* Vista por equipo (BASIS/FUNCIONAL) */}
           {isAdmin && (
             <div className="team-toggle" role="tablist" aria-label="Filtrar por equipo" style={{gap:8}}>
-            {equiposConConteo.map(opt => (
-              <button
-                key={opt.key || 'ALL'}
-                role='tab'
-                type="button"
-                className={`team-btn ${filtroEquipo === opt.key ? 'is-active' : ''}`}
-                onClick={() => setFiltroEquipo(opt.key)}
-                aria-selected={filtroEquipo === opt.key}
-                title={opt.key ? `Equipo ${opt.label}` : 'Todos los equipos'}
-              >
-                {opt.label} <span className="chip">{opt.count}</span>
-              </button>
-            ))}
-          </div>
+              {equiposConConteo.map(opt => (
+                <button
+                  key={opt.key || 'ALL'}
+                  role='tab'
+                  type="button"
+                  className={`team-btn ${filtroEquipo === opt.key ? 'is-active' : ''}`}
+                  onClick={() => setFiltroEquipo(opt.key)}
+                  aria-selected={filtroEquipo === opt.key}
+                  title={opt.key ? `Equipo ${opt.label}` : 'Todos los equipos'}
+                >
+                  {opt.label} <span className="chip">{opt.count}</span>
+                </button>
+              ))}
+            </div>
           )}
 
           {canDownload && (
@@ -593,14 +832,37 @@ const Registro = ({ userData }) => {
               Descargar Excel
             </button>
           )}
+
           <button
             className="btn btn-primary"
             onClick={async () => {
-              await refreshModulos();
-              setModalIsOpen(true);
-              setModoEdicion(false);
-              setRegistro({ ...initRegistro(), equipo: userEquipoUpper });
-              setModuloElegido(modulos.length === 1 ? modulos[0] : '');
+              try {
+                const res = await jfetch(`/consultores/datos?usuario=${encodeURIComponent(usuarioLogin)}`);
+                const data = await res.json();
+                if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
+                const lista = Array.isArray(data.modulos) ? data.modulos : [];
+                const norm = normalizeModulos(lista);
+                setModulos(norm);
+                setModuloElegido(norm.length === 1 ? norm[0] : '');
+
+                setRegistro({
+                  ...initRegistro(),
+                  modulo: norm.length === 1 ? norm[0] : '',
+                  equipo: data.equipo ? String(data.equipo).toUpperCase() : userEquipoUpper
+                });
+
+                setOcupacionSeleccionada('');
+                setModalIsOpen(true);
+                setModoEdicion(false);
+              } catch (err) {
+                console.error("Error cargando datos del consultor:", err);
+                Swal.fire({
+                  icon: 'error',
+                  title: 'No se pudieron cargar los datos del consultor',
+                  text: err.message
+                });
+              }
             }}
           >
             Agregar Registro
@@ -608,6 +870,7 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
+      {/* FILTROS */}
       <div className="filters-card">
         <div className="filter-grid">
           <input
@@ -615,30 +878,80 @@ const Registro = ({ userData }) => {
             value={filtroFecha}
             onChange={(e) => setFiltroFecha(e.target.value)}
           />
+
+          {/* Clientes desde la BD */}
           <select
             value={filtroCliente}
             onChange={(e) => setFiltroCliente(e.target.value)}
           >
             <option value="">Todos los clientes</option>
-            {clientes.map((c, idx) => <option key={idx} value={c}>{c}</option>)}
+            {clientes.map((c) => (
+              <option key={c.id} value={c.nombre_cliente}>
+                {c.nombre_cliente}
+              </option>
+            ))}
           </select>
+
+          {/* Ocupación */}
+          <select
+            value={filtroOcupacion}
+            onChange={(e) => setFiltroOcupacion(e.target.value)}
+          >
+            <option value="">Todas las ocupaciones</option>
+            {ocupaciones.map((o) => (
+              <option key={o.id} value={`${o.codigo} - ${o.nombre}`}>
+                {o.codigo} - {o.nombre}
+              </option>
+            ))}
+          </select>
+
+          {/* Tarea Azure */}
           <select
             value={filtroTarea}
             onChange={(e) => setFiltroTarea(e.target.value)}
           >
             <option value="">Todas las tareas</option>
-            {tiposTarea.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
+            {todasTareas.map((t) => (
+              <option key={t.id} value={`${t.codigo} - ${t.nombre}`}>
+                {t.codigo} - {t.nombre}
+              </option>
+            ))}
           </select>
+
+          {isAdmin ? (
+            <select
+              value={filtroEquipo}
+              onChange={(e) => setFiltroEquipo(e.target.value)}
+            >
+              <option value="">Todos los equipos</option>
+              {equiposDisponibles.map((eq) => (
+                <option key={eq.id} value={eq.nombre}>
+                  {eq.nombre}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="text"
+              value={equipoUser}
+              readOnly
+              placeholder="Equipo"
+            />
+          )}
+
           <select
             value={filtroConsultor}
             onChange={(e) => setFiltroConsultor(e.target.value)}
             disabled={!isAdmin}
           >
-            <option value="">{isAdmin ? 'Todos los consultores' : (nombreUser || 'Consultor')}</option>
+            <option value="">
+              {isAdmin ? 'Todos los consultores' : (nombreUser || 'Consultor')}
+            </option>
             {consultoresUnicos.map((c, idx) => (
               <option key={idx} value={c}>{c}</option>
             ))}
           </select>
+
           <input
             type="text"
             placeholder="Nro. Caso Cliente..."
@@ -654,6 +967,7 @@ const Registro = ({ userData }) => {
             <option value="NO">No</option>
           </select>
         </div>
+
         <div className="filter-actions">
           <button
             className="btn btn-outline"
@@ -661,10 +975,16 @@ const Registro = ({ userData }) => {
               setFiltroFecha('');
               setFiltroCliente('');
               setFiltroTarea('');
-              setFiltroConsultor(isAdmin ? '' : (nombreUser || ''));
+              setFiltroOcupacion('');
               setFiltroNroCasoCli('');
               setFiltroHorasAdic('');
-              setFiltroEquipo(''); 
+              if (isAdmin) {
+                setFiltroConsultor('');
+                setFiltroEquipo('');
+              } else {
+                setFiltroConsultor(nombreUser);
+                setFiltroEquipo(equipoUser);
+              }
             }}
           >
             Limpiar
@@ -672,6 +992,7 @@ const Registro = ({ userData }) => {
         </div>
       </div>
 
+      {/* MODAL */}
       <Modal
         isOpen={modalIsOpen}
         onRequestClose={() => setModalIsOpen(false)}
@@ -691,7 +1012,10 @@ const Registro = ({ userData }) => {
                 {modulos.length > 1 ? (
                   <select
                     value={moduloElegido}
-                    onChange={(e) => { setModuloElegido(e.target.value); setRegistro(r => ({ ...r, modulo: e.target.value })); }}
+                    onChange={(e) => {
+                      setModuloElegido(e.target.value);
+                      setRegistro(r => ({ ...r, modulo: e.target.value }));
+                    }}
                     required
                   >
                     <option value="">Seleccionar Módulo</option>
@@ -706,13 +1030,11 @@ const Registro = ({ userData }) => {
                   />
                 )}
 
-                
                 <input
                   type="text"
-                  value={equipoOf(registro, userEquipoUpper)}
+                  value={registro.equipo || userEquipoUpper}
                   readOnly
                   placeholder="Equipo"
-                  title="Equipo asignado automáticamente"
                 />
 
                 <input
@@ -721,14 +1043,21 @@ const Registro = ({ userData }) => {
                   onChange={(e) => setRegistro({ ...registro, fecha: e.target.value })}
                   required
                 />
+
+                {/* Clientes desde la BD */}
                 <select
                   value={registro.cliente}
                   onChange={(e) => setRegistro({ ...registro, cliente: e.target.value })}
                   required
                 >
                   <option value="">Seleccionar Cliente</option>
-                  {clientes.map((c, idx) => <option key={idx} value={c}>{c}</option>)}
+                  {clientes.map((c) => (
+                    <option key={c.id} value={c.nombre_cliente}>
+                      {c.nombre_cliente}
+                    </option>
+                  ))}
                 </select>
+
                 <input
                   type="text"
                   placeholder="Nro Caso Cliente"
@@ -747,14 +1076,53 @@ const Registro = ({ userData }) => {
                   value={registro.nroCasoEscaladoSap}
                   onChange={(e) => setRegistro({ ...registro, nroCasoEscaladoSap: e.target.value })}
                 />
+
+                {/* Ocupación */}
                 <select
-                  value={registro.tipoTarea}
-                  onChange={(e) => setRegistro({ ...registro, tipoTarea: e.target.value })}
+                  value={ocupacionSeleccionada}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setOcupacionSeleccionada(value);
+                    setRegistro(r => ({
+                      ...r,
+                      ocupacion_id: parseInt(value),
+                      tipoTarea: ''
+                    }));
+                  }}
                   required
                 >
-                  <option value="">Seleccionar Tarea Azure</option>
-                  {tiposTarea.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
+                  <option value="">Seleccionar Ocupación</option>
+                  {ocupaciones.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.codigo} - {o.nombre}
+                    </option>
+                  ))}
                 </select>
+
+                {/* Tarea filtrada por ocupación */}
+                <select
+                  value={registro.tarea_id || ""}
+                  onChange={(e) => {
+                    const tareaId = Number(e.target.value);
+                    const tareaObj = tareasBD.find(t => t.id === tareaId);
+
+                    setRegistro({
+                      ...registro,
+                      tarea_id: tareaId,
+                      tipoTarea: tareaObj ? `${tareaObj.codigo} - ${tareaObj.nombre}` : ""
+                    });
+                  }}
+                  required
+                  disabled={!ocupacionSeleccionada || tareasBD.length === 0}
+                >
+                  <option value="">Seleccionar Tarea Azure</option>
+                  {tareasBD.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.codigo} - {t.nombre}
+                    </option>
+                  ))}
+                </select>
+
                 <div className="inline-2">
                   <input
                     type="time"
@@ -769,6 +1137,7 @@ const Registro = ({ userData }) => {
                     required
                   />
                 </div>
+
                 <input
                   type="number"
                   step="0.01"
@@ -776,6 +1145,7 @@ const Registro = ({ userData }) => {
                   value={registro.tiempoFacturable}
                   onChange={(e) => setRegistro({ ...registro, tiempoFacturable: e.target.value })}
                 />
+
                 {equipoFormulario === 'BASIS' && (
                   <>
                     <select
@@ -801,6 +1171,7 @@ const Registro = ({ userData }) => {
                     </select>
                   </>
                 )}
+
                 <textarea
                   placeholder="Descripción"
                   value={registro.descripcion}
@@ -808,15 +1179,19 @@ const Registro = ({ userData }) => {
                   required
                 />
               </div>
+
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setModalIsOpen(false)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary">{modoEdicion ? 'Actualizar' : 'Guardar'}</button>
+                <button type="submit" className="btn btn-primary">
+                  {modoEdicion ? 'Actualizar' : 'Guardar'}
+                </button>
               </div>
             </form>
           </div>
         </div>
       </Modal>
 
+      {/* TABLA PRINCIPAL */}
       <div className="table-wrap">
         <div className="table-scroll sticky-actions">
           <table>
@@ -829,6 +1204,7 @@ const Registro = ({ userData }) => {
                 <th>Nro. Caso Cliente</th>
                 <th>Nro. Caso Interno</th>
                 <th>Nro. Caso Escalado SAP</th>
+                <th>Ocupacion</th>
                 <th>Tipo Tarea Azure</th>
                 <th>Consultor</th>
                 <th>Hora Inicio</th>
@@ -853,7 +1229,8 @@ const Registro = ({ userData }) => {
                   <td>{r.nroCasoCliente}</td>
                   <td>{r.nroCasoInterno}</td>
                   <td>{r.nroCasoEscaladoSap}</td>
-                  <td>{r.tipoTarea}</td>
+                  <td>{obtenerOcupacionDeRegistro(r)}</td>
+                  <td>{r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—"}</td>
                   <td>{r.consultor ?? nombreUser}</td>
                   <td>{r.horaInicio}</td>
                   <td>{r.horaFin}</td>
@@ -889,47 +1266,7 @@ const Registro = ({ userData }) => {
       </div>
 
       {error && <div style={{color:'crimson', marginTop:10}}>Error: {error}</div>}
-
-      <h3>Resumen de Horas</h3>
-      <div className="table-wrap">
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Consultor</th>
-                <th>Fecha</th>
-                <th className="num">Total Horas</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                const rows = Array.isArray(resumenVisible) ? resumenVisible.slice() : [];
-                rows.sort((a, b) => new Date(a.fecha || '1970-01-01') - new Date(b.fecha || '1970-01-01'));
-                return rows.map((r, idx) => (
-                  <tr key={idx}>
-                    <td>{r.consultor}</td>
-                    <td>{r.fecha}</td>
-                    <td className="num">{Number(r.total_horas ?? 0)}</td>
-                    <td>
-                      <span className={`badge ${
-                        r.estado === 'Al día' ? 'badge-success'
-                        : r.estado === 'Incompleto' ? 'badge-warning'
-                        : 'badge-danger'
-                      }`}>
-                        {r.estado}
-                      </span>
-                    </td>
-                  </tr>
-                ));
-              })()}
-              {!resumenVisible?.length && (
-                <tr><td colSpan={4} className="muted">Sin datos de resumen</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <Resumen userData={userData}/>
     </div>
   );
 };

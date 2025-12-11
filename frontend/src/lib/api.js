@@ -1,41 +1,81 @@
+// ============================================================
+// Detectar hostname actual
+// ============================================================
 const hostname =
-  typeof window !== "undefined" && window.location ? window.location.hostname : "";
-const isDev = hostname === "localhost" || hostname === "127.0.0.1";
+  typeof window !== "undefined" && window.location
+    ? window.location.hostname
+    : "";
 
-export const API_BASE = isDev ? "http://localhost:5000/api" : "/api";
+// ============================================================
+// URL base de la API
+// ============================================================
+export const API_URL = "http://127.0.0.1:5000/api";
 
+// ============================================================
+// HEADERS DEL USUARIO (token, rol, consultor_id, nombre)
+// ============================================================
+function getUserHeaders() {
+  const user = JSON.parse(localStorage.getItem("userData") || "{}");
 
-function joinUrl(base, path) {
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  const b = base.endsWith("/") ? base.slice(0, -1) : base;
+  return {
+    "X-User-Usuario": user.usuario || "",
+    "X-User-Name": user.nombre || "",        // 🔥 IMPORTANTE PARA RESUMEN
+    "X-User-Rol": user.rol || "",
+    "X-Consultor-Id": user.id || "",
+    Authorization: localStorage.getItem("token") || "",
+  };
+}
+
+// ============================================================
+// Determina si la ruta es ABSOLUTA
+// ============================================================
+function isAbsoluteUrl(url) {
+  return /^https?:\/\//i.test(url);
+}
+
+// ============================================================
+// Construir URL final sin duplicaciones
+// ============================================================
+function buildUrl(path) {
+  if (!path) return API_URL;
+
+  if (isAbsoluteUrl(path)) return path;
+
+  const base = API_URL.replace(/\/$/, "");
   const p = path.startsWith("/") ? path : `/${path}`;
-  return `${b}${p}`;
+
+  return base + p;
 }
 
+// ============================================================
+// FETCH PRINCIPAL — jfetch
+// ============================================================
 export function jfetch(path, options = {}) {
-  const url = joinUrl(API_BASE, path);
+  const url = buildUrl(path);
 
-  const headers = { ...(options.headers || {}) };
+  const headers = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    ...(options.headers || {}),
+    ...getUserHeaders(),
+  };
 
-  
   let body = options.body;
-  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
-  if (body != null && !isForm && typeof body !== "string") {
+
+  if (body && typeof body !== "string") {
     body = JSON.stringify(body);
-    if (!headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  } else if (body != null && !isForm) {
-    
-    if (!headers["Content-Type"] && /^\s*[\{\[]/.test(body)) {
-      headers["Content-Type"] = "application/json";
-    }
   }
-  
 
-  const credentials = options.credentials ?? "omit"; 
-
-  return fetch(url, { ...options, headers, body, credentials });
+  return fetch(url, {
+    ...options,
+    headers,
+    body,
+  });
 }
 
+// ============================================================
+// Helpers GET y POST
+// ============================================================
 export function jget(path, options = {}) {
   return jfetch(path, { method: "GET", ...options });
 }
@@ -44,22 +84,27 @@ export function jpost(path, body, options = {}) {
   return jfetch(path, { method: "POST", body, ...options });
 }
 
+// ============================================================
+// Parser seguro de JSON — jsonOrThrow
+// ============================================================
 export async function jsonOrThrow(res) {
   let data = null;
-  try { data = await res.json(); } catch {}
+
+  try {
+    data = await res.json();
+  } catch (_) {}
+
   if (!res.ok) {
     const msg =
       (data && (data.mensaje || data.error)) ||
       res.statusText ||
       `HTTP ${res.status}`;
+
     const err = new Error(msg);
     err.status = res.status;
     err.payload = data;
     throw err;
   }
+
   return data ?? {};
 }
-
-
-
-

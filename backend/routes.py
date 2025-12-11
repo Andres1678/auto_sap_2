@@ -1,31 +1,169 @@
 from flask import request, jsonify, Blueprint, current_app as app
-from backend.models import db, Modulo, Consultor, Registro, BaseRegistro, Login
+from backend.models import (
+    db, Modulo, Consultor, Registro, BaseRegistro, Login,
+    Rol, Equipo, Horario, Oportunidad, Cliente,
+    Permiso, RolPermiso, EquipoPermiso, ConsultorPermiso, 
+    Ocupacion, Tarea, TareaAlias, Ocupacion
+)
 from datetime import datetime, timedelta, time
 from functools import wraps
 from sqlalchemy import or_, text, func
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 import unicodedata, re
 from collections import defaultdict
+import pandas as pd
+from io import BytesIO
+from sqlalchemy.exc import SQLAlchemyError
+import logging
 
-bp = Blueprint('routes', __name__)
+bp = Blueprint('routes', __name__, url_prefix="/api")
+
+_HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$", re.I)
+
+def permission_required(codigo_permiso):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+
+            
+            if request.method == "OPTIONS":
+                return fn(*args, **kwargs)
+
+            usuario = request.headers.get("X-User-Usuario")
+            if not usuario:
+                return jsonify({"mensaje": "Usuario no enviado"}), 401
+
+            consultor = Consultor.query.filter_by(usuario=usuario).first()
+            if not consultor:
+                return jsonify({"mensaje": "Usuario no encontrado"}), 404
+
+            permisos = obtener_permisos_finales(consultor)
+
+            if codigo_permiso not in permisos:
+                return jsonify({"mensaje": f"Permiso '{codigo_permiso}' requerido"}), 403
+
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
-_HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$")
+def normalizar_ocupaciones(registros):
 
-def validar_horario_str(horario: str):
-    if not horario or not isinstance(horario, str) or not _HORARIO_RE.match(horario):
-        return False, "Formato de horario inválido. Usa HH:MM-HH:MM (e.g., 08:00-18:00)."
-    try:
-        ini_str, fin_str = [p.strip() for p in horario.split("-")]
-        h1 = datetime.strptime(ini_str, "%H:%M")
-        h2 = datetime.strptime(fin_str, "%H:%M")
-        if h1 == h2:
-            return False, "El horario no puede tener la misma hora de inicio y fin."
+    cambios = False
+
+    for r in registros:
+        raw = str(r.ocupacion_azure or "").strip()
+        tarea_nombre = (r.tipo_tarea or "").strip()
         
-        return True, None
-    except Exception:
-        return False, "Horario inválido."
+        if " - " in raw:
+            continue
 
+        
+        if raw.isdigit():
+            occ = Ocupacion.query.get(int(raw))
+            if occ:
+                r.ocupacion_azure = f"{occ.codigo} - {occ.nombre}"
+                cambios = True
+                continue
+
+        
+        tarea = None
+
+       
+        if tarea_nombre:
+            tarea = Tarea.query.filter(func.lower(Tarea.nombre) == tarea_nombre.lower()).first()
+
+        
+        if not tarea:
+            alias = TareaAlias.query.filter(
+                func.lower(TareaAlias.alias) == tarea_nombre.lower()
+            ).first()
+            if alias:
+                tarea = alias.tarea
+
+        
+        if not tarea:
+            tarea = Tarea.query.filter(Tarea.nombre.ilike(f"%{tarea_nombre}%")).first()
+
+        
+        if tarea and tarea.ocupacion:
+            occ = tarea.ocupacion
+            r.ocupacion_azure = f"{occ.codigo} - {occ.nombre}"
+            cambios = True
+        else:
+            r.ocupacion_azure = "00 - SIN CLASIFICAR"
+            cambios = True
+
+    if cambios:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    return registros
+
+
+def obtener_permisos_finales(consultor):
+    permisos = set()
+
+    # -----------------------------
+    # Permisos del Rol
+    # -----------------------------
+    if consultor.rol_obj:
+        for rp in consultor.rol_obj.permisos_asignados:
+            permisos.add(rp.permiso.codigo)
+
+   
+    if consultor.equipo_obj:
+        for ep in consultor.equipo_obj.permisos_asignados:
+            permisos.add(ep.permiso.codigo)
+
+    
+    for cp in consultor.permisos_especiales:
+        permisos.add(cp.permiso.codigo)
+
+    
+    
+    for p in getattr(consultor, "permisos", []) or []:
+        if hasattr(p, "codigo"):       
+            permisos.add(p.codigo)
+        else:                          
+            permisos.add(str(p).strip().upper())
+
+    return permisos
+
+
+
+
+def _is_admin_role(rol: str) -> bool:
+    return str(rol or "").upper() in {"ADMIN", "ADMIN_BASIS", "ADMIN_FUNCIONAL"}
+
+def _is_admin_request(rol: str, consultor) -> bool:
+    if _is_admin_role(rol):
+        return True
+    if consultor and _is_admin_role(getattr(consultor, "rol", "")):
+        return True
+    return False
+
+
+def _validar_horario(horario: str):
+    if not horario or not isinstance(horario, str):
+        return False, "Horario requerido."
+    s = horario.strip().upper()
+    if s == "DISPONIBLE":
+        return True, None
+    if _HORARIO_RE.match(horario):
+        try:
+            ini_str, fin_str = [p.strip() for p in horario.split("-")]
+            h1 = datetime.strptime(ini_str, "%H:%M")
+            h2 = datetime.strptime(fin_str, "%H:%M")
+            if h1 == h2:
+                return False, "El horario no puede tener la misma hora de inicio y fin."
+            return True, None
+        except Exception:
+            return False, "Horario inválido."
+    return False, "Formato de horario inválido. Usa HH:MM-HH:MM o 'DISPONIBLE'."
 
 def _client_ip():
     fwd = request.headers.get("X-Forwarded-For")
@@ -33,28 +171,374 @@ def _client_ip():
         return fwd.split(",")[0].strip()
     return request.remote_addr
 
-def convertir_a_hora(valor):
+def pick(d: dict, *keys, default=None):
+    """Devuelve el primer valor no vacío encontrado en las claves dadas."""
+    for k in keys:
+        if k in d and d[k] not in (None, "", "null", "None"):
+            return d[k]
+    return default
+
+def _rol_from_request():
+    data = request.get_json(silent=True) or {}
+    return (request.headers.get('X-User-Rol')
+            or request.args.get('rol')
+            or data.get('rol')
+            or '').strip().upper()
+
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        rol = _rol_from_request()
+        data = request.get_json(silent=True) or {}
+        usuario = request.headers.get('X-User-Usuario') or request.args.get('usuario') or data.get('usuario')
+        c = Consultor.query.filter_by(usuario=usuario).first() if usuario else None
+
+        if not _is_admin_request(rol, c):
+            return jsonify({'mensaje': 'Solo ADMIN'}), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def _norm_default(value, default=None):
+    """Normaliza valores vacíos a un valor por defecto."""
+    if value is None:
+        return default
+    s = str(value).strip()
+    return s if s not in ("", "null", "None") else default
+
+def _ensure_rol(nombre: str):
+    if not nombre:
+        return None
+    r = Rol.query.filter(func.lower(Rol.nombre) == nombre.lower()).first()
+    if not r:
+        r = Rol(nombre=nombre)
+        db.session.add(r)
+        db.session.flush()
+    return r
+
+def _ensure_equipo(nombre: str):
+    if not nombre:
+        return None
+    e = Equipo.query.filter(func.lower(Equipo.nombre) == nombre.lower()).first()
+    if not e:
+        e = Equipo(nombre=nombre)
+        db.session.add(e)
+        db.session.flush()
+    return e
+
+def _ensure_horario(rango: str):
+    if not rango:
+        return None
+    h = Horario.query.filter(func.lower(Horario.rango) == rango.lower()).first()
+    if not h:
+        h = Horario(rango=rango)
+        db.session.add(h)
+        db.session.flush()
+    return h
+
+def get_val(d, *keys):
+    """Busca claves posibles sin error de KeyError."""
+    for k in keys:
+        if isinstance(d, dict) and k in d:
+            return d[k]
+    return None
+
+def clip(value, field=None):
+    """Limpia valores de texto para evitar errores."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return str(value)
+    s = str(value).strip()
+    return s if s else None
+
+def excel_date_to_iso(value):
+    """Convierte fechas Excel (número o string) a formato ISO."""
     try:
-        if valor in (None, "", "null"):
-            return None
-        if isinstance(valor, (int, float)):
-            total_min = round(float(valor) * 24 * 60)
-            h = total_min // 60
-            m = total_min % 60
-            return time(hour=int(h), minute=int(m))
-        if isinstance(valor, str):
-            s = valor.strip()
-            parts = s.split(":")
-            if len(parts) == 1 and parts[0].isdigit():
-                s = f"{int(parts[0]):02d}:00"
-            elif len(parts) >= 2:
-                h = int(parts[0]); m = int(parts[1])
-                s = f"{h:02d}:{m:02d}"
-            return datetime.strptime(s, "%H:%M").time()
+        if isinstance(value, (int, float)):
+            base = datetime(1899, 12, 30)
+            date_val = base + timedelta(days=int(value))
+            return date_val.strftime("%Y-%m-%d")
+        s = str(value).strip()
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+            try:
+                return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+def to_sql_time_str(val):
+    """Convierte un string tipo '8:30' a formato HH:MM:SS compatible SQL."""
+    if not val:
+        return None
+    try:
+        s = str(val).strip()
+        if len(s.split(":")) == 2:
+            s += ":00"
+        datetime.strptime(s, "%H:%M:%S")
+        return s
     except Exception:
         return None
 
+# ===============================
+# Catálogos
+# ===============================
+
+@bp.route('/roles', methods=['GET'])
+def listar_roles():
+    roles = Rol.query.order_by(Rol.nombre).all()
+    return jsonify([{"id": r.id, "nombre": r.nombre} for r in roles]), 200
+
+@bp.route('/equipos', methods=['GET'])
+def listar_equipos():
+    equipos = Equipo.query.order_by(Equipo.nombre).all()
+    return jsonify([{"id": e.id, "nombre": e.nombre} for e in equipos]), 200
+
+@bp.route('/horarios', methods=['GET'])
+def listar_horarios():
+    horarios = Horario.query.order_by(Horario.rango).all()
+    return jsonify([{"id": h.id, "rango": h.rango} for h in horarios]), 200
+
+# ===============================
+# LOGIN
+# ===============================
+
+@bp.route('/login', methods=['POST'])
+def login():
+    data = request.json or {}
+    usuario = data.get("usuario")
+    password = data.get("password")
+    horario = data.get("horario")
+
+    # ===========================
+    #   Cargar consultor + roles
+    # ===========================
+    consultor = (
+        Consultor.query.options(
+
+            # Rol + permisos del rol
+            joinedload(Consultor.rol_obj)
+                .joinedload(Rol.permisos_asignados)
+                .joinedload(RolPermiso.permiso),
+
+            # Equipo + permisos del equipo
+            joinedload(Consultor.equipo_obj)
+                .joinedload(Equipo.permisos_asignados)
+                .joinedload(EquipoPermiso.permiso),
+
+            # Permisos individuales
+            joinedload(Consultor.permisos_especiales)
+                .joinedload(ConsultorPermiso.permiso),
+
+            # Modulos
+            joinedload(Consultor.modulos)
+        )
+        .filter_by(usuario=usuario)
+        .first()
+    )
+
+    if not consultor or consultor.password != password:
+        return jsonify({"mensaje": "Credenciales incorrectas"}), 401
+
+    # ==================================================
+    #   ACTUALIZAR/CREAR HORARIO ASIGNADO AL CONSULTOR
+    # ==================================================
+    if horario:
+        ok, _ = _validar_horario(horario)
+        if ok:
+            h = Horario.query.filter_by(rango=horario.strip()).first()
+            if not h:
+                h = Horario(rango=horario.strip())
+                db.session.add(h)
+                db.session.flush()
+
+            consultor.horario_id = h.id
+            db.session.commit()
+
+    # ======================
+    #   Registrar el Login
+    # ======================
+    try:
+        login_log = Login(
+            usuario=consultor.usuario,
+            horario_asignado=(consultor.horario_obj.rango if consultor.horario_obj else "N/D"),
+            ip_address=_client_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+            fecha_login=datetime.utcnow()
+        )
+        db.session.add(login_log)
+        db.session.commit()
+    except Exception as e:
+        print("⚠️ Error guardando log de login:", e)
+        db.session.rollback()
+
+    # ============================================
+    #   🔥 RECOLECCIÓN DE PERMISOS COMPLETA 🔥
+    # ============================================
+
+    permisos_set = set()
+
+    # Permisos del rol
+    if consultor.rol_obj:
+        for rp in consultor.rol_obj.permisos_asignados:
+            permisos_set.add(rp.permiso.codigo)
+
+    # Permisos del equipo
+    if consultor.equipo_obj:
+        for ep in consultor.equipo_obj.permisos_asignados:
+            permisos_set.add(ep.permiso.codigo)
+
+    # Permisos individuales
+    for cp in consultor.permisos_especiales:
+        permisos_set.add(cp.permiso.codigo)
+
+    permisos_list = sorted(list(permisos_set))
+
+    return jsonify({
+        "token": "token-demo",
+        "user": {
+            "id": consultor.id,
+            "usuario": consultor.usuario,
+            "nombre": consultor.nombre,
+            "rol": consultor.rol_obj.nombre.upper() if consultor.rol_obj else "CONSULTOR",
+            "equipo": consultor.equipo_obj.nombre.upper() if consultor.equipo_obj else "SIN EQUIPO",
+            "horario": consultor.horario_obj.rango if consultor.horario_obj else "N/D",
+            "consultor_id": consultor.id,   # 🔥 CORREGIDO
+            "modulos": [{"id": m.id, "nombre": m.nombre} for m in consultor.modulos],
+            "permisos": permisos_list
+        }
+    }), 200
+
+
+
+
+@bp.route('/consultores', methods=['POST'])
+def crear_consultor():
+    data = request.get_json() or {}
+
+    c = Consultor(
+        usuario=data.get('usuario'),
+        nombre=data.get('nombre'),
+        password=data.get('password')
+    )
+    _apply_catalog_fields_to_consultor(c, data)
+
+    db.session.add(c)
+    db.session.flush()
+
+    modulos_ids = data.get('modulos', [])
+    if modulos_ids:
+        mods = Modulo.query.filter(Modulo.id.in_(modulos_ids)).all()
+        c.modulos = mods
+
+    try:
+        db.session.commit()
+        return jsonify({"mensaje": "Consultor creado correctamente"}), 201
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"mensaje": "Error: usuario duplicado o datos inválidos"}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"mensaje": f"Error interno: {e}"}), 500
+
+# ===============================
+# Helper: asignar catálogos y módulos
+# ===============================
+def _apply_catalog_fields_to_consultor(consultor, data):
+    """Actualiza relaciones de catálogo (Rol, Equipo, Horario, Módulos)."""
+    try:
+        # --- Rol ---
+        rol_name = data.get("rol")
+        if rol_name:
+            rol = Rol.query.filter_by(nombre=rol_name).first()
+            consultor.rol_id = rol.id if rol else None
+
+        # --- Equipo ---
+        equipo_name = data.get("equipo")
+        if equipo_name:
+            equipo = Equipo.query.filter_by(nombre=equipo_name).first()
+            consultor.equipo_id = equipo.id if equipo else None
+
+        # --- Horario ---
+        horario_name = data.get("horario")
+        if horario_name:
+            horario = Horario.query.filter_by(rango=horario_name).first()
+            consultor.horario_id = horario.id if horario else None
+
+        # --- Módulos ---
+        modulos_ids = data.get("modulos")
+        if isinstance(modulos_ids, list):
+            mods = Modulo.query.filter(Modulo.id.in_(modulos_ids)).all()
+            consultor.modulos = mods
+
+    except Exception as e:
+        logging.error(f"Error aplicando catálogos a consultor: {e}")
+        raise
+
+# ===============================
+# PUT /api/consultores/<id> — Editar consultor
+# ===============================
+@bp.route('/consultores/<int:id>', methods=['PUT'])
+def editar_consultor(id):
+    data = request.get_json() or {}
+    c = Consultor.query.get_or_404(id)
+
+    try:
+        # --- Campos básicos ---
+        c.usuario = data.get('usuario', c.usuario)
+        c.nombre = data.get('nombre', c.nombre)
+        if data.get('password'):
+            c.password = data['password']
+
+        # --- Campos relacionales ---
+        _apply_catalog_fields_to_consultor(c, data)
+
+        db.session.commit()
+        return jsonify({"mensaje": "Consultor actualizado correctamente"}), 200
+
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logging.error(f"Error SQLAlchemy al actualizar consultor {id}: {e}")
+        return jsonify({"mensaje": f"Error al actualizar consultor: {str(e)}"}), 500
+
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error general al actualizar consultor {id}: {e}")
+        return jsonify({"mensaje": f"Error interno: {str(e)}"}), 500
+
+# ===============================
+# DELETE /api/consultores/<id> — Eliminar consultor
+# ===============================
+@bp.route('/consultores/<int:id>', methods=['DELETE'])
+@permission_required("CONSULTORES_ELIMINAR")
+def eliminar_consultor(id):
+    c = Consultor.query.get_or_404(id)
+    try:
+        db.session.delete(c)
+        db.session.commit()
+        return jsonify({"mensaje": "Consultor eliminado correctamente"}), 200
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logging.error(f"Error SQLAlchemy al eliminar consultor {id}: {e}")
+        return jsonify({"mensaje": f"Error al eliminar consultor: {str(e)}"}), 500
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error general al eliminar consultor {id}: {e}")
+        return jsonify({"mensaje": f"Error interno: {str(e)}"}), 500
+
+# ===============================
+# Registros (listar / crear / editar / eliminar / resumen)
+# ===============================
+
 def registro_to_dict(r: Registro):
+    consul = r.consultor
+    modulo_name = r.modulo or (consul.modulo.nombre if (consul and consul.modulo) else None)
+    equipo_name = r.equipo
+    if not equipo_name and consul and consul.equipo_id:
+        eq = Equipo.query.get(consul.equipo_id)
+        equipo_name = eq.nombre if eq else None
     return {
         'id': r.id,
         'fecha': r.fecha,
@@ -73,99 +557,26 @@ def registro_to_dict(r: Registro):
         'horasAdicionales': r.horas_adicionales,
         'descripcion': r.descripcion,
         'totalHoras': r.total_horas,
-        'consultor': r.consultor.nombre if r.consultor else None,
-        'modulo': (r.modulo or (r.consultor.modulo.nombre if r.consultor and r.consultor.modulo else None)),
-        'equipo': (r.equipo or (r.consultor.equipo if r.consultor else None)),  # 👈 NUEVO
+        'consultor': consul.nombre if consul else None,
+        'modulo': modulo_name,
+        'equipo': equipo_name,
         'bloqueado': r.bloqueado
     }
 
-def _rol_from_request():
-    data = request.get_json(silent=True) or {}
-    return (request.headers.get('X-User-Rol')
-            or request.args.get('rol')
-            or data.get('rol')
-            or '').strip().upper()
+def _basis_defaults_from_payload(data: dict):
+    return {
+        "actividad_malla": _norm_default(data.get("actividadMalla") or data.get("actividad_malla"), "N/APLICA"),
+        "oncall":          _norm_default(data.get("oncall"), "N/A"),
+        "desborde":        _norm_default(data.get("desborde"), "N/A"),
+        "nro_escalado": (
+            data.get("nroCasoEscaladoSap")
+            if data.get("nroCasoEscaladoSap") not in (None, "", "null", "None")
+            else data.get("nro_caso_escalado")
+),
 
-def admin_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        if _rol_from_request() != 'ADMIN':
-            return jsonify({'mensaje': 'Solo ADMIN'}), 403
-        return fn(*args, **kwargs)
-    return wrapper
+    }
 
-def pick(d: dict, *keys, default=None):
-    for k in keys:
-        if k in d and d[k] not in (None, "", "null", "None"):
-            return d[k]
-    return default
-
-def _listar_modulos_para_consultor(consultor_id: int):
-    mods = []
-    try:
-        db.session.execute(text("SELECT 1 FROM consultor_modulos LIMIT 1"))
-        rs = db.session.execute(text("""
-            SELECT m.id, m.nombre
-            FROM consultor_modulos cm
-            JOIN modulo m ON m.id = cm.modulo_id
-            WHERE cm.consultor_id = :cid
-            ORDER BY m.nombre
-        """), {'cid': consultor_id})
-        mods = [{'id': rid, 'nombre': nom} for (rid, nom) in rs]
-    except Exception:
-        c = Consultor.query.get(consultor_id)
-        if c and c.modulo:
-            mods = [{'id': c.modulo.id, 'nombre': c.modulo.nombre}]
-    return mods
-
-@bp.route('/api/login', methods=['POST'])
-def login():
-    data = request.json or {}
-    usuario = data.get('usuario')
-    password = data.get('password')
-    horario  = data.get('horario')
-
-    consultor = Consultor.query.filter_by(usuario=usuario).first()
-    if not consultor or consultor.password != password:
-        return jsonify({'mensaje': 'Credenciales incorrectas'}), 401
-
-    if horario:
-        ok, _ = validar_horario_str(horario)
-        if ok and horario != (consultor.horario or ""):
-            consultor.horario = horario
-            db.session.commit()
-
-    try:
-        login_log = Login(
-            consultor_id=consultor.id,
-            usuario=consultor.usuario,
-            horario_asignado=consultor.horario or horario or 'N/D',
-            ip_address=_client_ip(),
-            user_agent=request.headers.get('User-Agent', ''),
-            fecha_login=datetime.utcnow()
-        )
-        db.session.add(login_log)
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-
-    mods = _listar_modulos_para_consultor(consultor.id)
-    token = 'token-demo'
-    return jsonify({
-        'token': token,
-        'user': {
-            'id': consultor.id,
-            'usuario': consultor.usuario,
-            'nombre': consultor.nombre,
-            'horario': consultor.horario,
-            'modulo': consultor.modulo.nombre if consultor.modulo else None,
-            'modulos': mods,
-            'equipo': consultor.equipo,
-            'rol': consultor.rol
-        }
-    }), 200
-
-@bp.route('/api/consultores/horario', methods=['GET'])
+@bp.route('/consultores/horario', methods=['GET'])
 def horario_consultor():
     usuario = request.args.get('usuario')
     if not usuario:
@@ -173,170 +584,343 @@ def horario_consultor():
     consultor = Consultor.query.filter_by(usuario=usuario).first()
     if not consultor:
         return jsonify({'mensaje': 'Usuario no encontrado'}), 404
-    opciones = [
-        '07:00-17:00','08:00-18:00','07:00-16:00','08:00-12:00',
-        '06:00-14:00','14:00-22:00','22:00-06:00'
-    ]
-    return jsonify({'horario': consultor.horario, 'opciones': opciones})
 
-def _norm_default(v, default):
-    if v is None:
-        return default
-    s = str(v).strip()
-    if s == "" or s.lower() in ("null", "none", "n/d"):
-        return default
-    return s
+    opciones = [h.rango for h in Horario.query.order_by(Horario.rango).all()]
+    h_actual = None
+    if consultor.horario_id:
+        hh = Horario.query.get(consultor.horario_id)
+        h_actual = hh.rango if hh else None
+    return jsonify({'horario': h_actual, 'opciones': opciones})
 
-def _basis_defaults_from_payload(data: dict):
-    
-    return {
-        "actividad_malla": _norm_default(data.get("actividadMalla") or data.get("actividad_malla"), "N/APLICA"),
-        "oncall":          _norm_default(data.get("oncall"), "N/A"),
-        "desborde":        _norm_default(data.get("desborde"), "N/A"),
-        "nro_escalado":    _norm_default(data.get("nroCasoEscaladoSap") or data.get("nro_caso_escalado"), None),
-    }
-
-@bp.route('/api/registrar-hora', methods=['POST'])
+@bp.route('/registrar-hora', methods=['POST'])
 def registrar_hora():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
 
-   
+    # ------------------------------------------------------------------
+    # 1) BUSCAR CONSULTOR
+    # ------------------------------------------------------------------
+    usuario = pick(data, 'usuario', 'username', 'user') or request.headers.get('X-User-Usuario')
     consultor = None
+
+    if usuario:
+        consultor = Consultor.query.filter(
+            func.lower(Consultor.usuario) == str(usuario).strip().lower()
+        ).first()
+
     cid = pick(data, 'consultor_id', 'consultorId', 'id')
-    if cid:
+    if not consultor and cid:
         try:
             consultor = Consultor.query.get(int(cid))
-        except Exception:
-            consultor = None
-    if not consultor:
-        uname = pick(data, 'usuario', 'username', 'user')
-        if uname:
-            consultor = Consultor.query.filter_by(usuario=str(uname)).first()
+        except:
+            pass
+
     if not consultor:
         cname = pick(data, 'consultor', 'nombre')
         if cname:
-            consultor = Consultor.query.filter_by(nombre=str(cname)).first()
+            consultor = Consultor.query.filter(
+                func.lower(Consultor.nombre) == str(cname).strip().lower()
+            ).first()
+
     if not consultor:
         return jsonify({'mensaje': 'Consultor no encontrado'}), 404
 
-    bd = _basis_defaults_from_payload(data)
+    # ------------------------------------------------------------------
+    # 2) CAMPOS REQUERIDOS
+    # ------------------------------------------------------------------
+    fecha = pick(data, 'fecha')
+    cliente = pick(data, 'cliente')
+    hora_inicio = pick(data, 'horaInicio')
+    hora_fin = pick(data, 'horaFin')
 
-    
-    fecha              = pick(data, 'fecha')
-    cliente            = pick(data, 'cliente')
-    nro_caso_cliente   = _norm_default(pick(data, 'nroCasoCliente', 'nro_caso_cliente'), '0')
-    nro_caso_interno   = _norm_default(pick(data, 'nroCasoInterno', 'nro_caso_interno'), '0')
-    tipo_tarea         = pick(data, 'tipoTarea', 'tipo_tarea')
-    hora_inicio        = pick(data, 'horaInicio', 'hora_inicio')
-    hora_fin           = pick(data, 'horaFin', 'hora_fin')
-    tiempo_invertido   = float(pick(data, 'tiempoInvertido', 'tiempo_invertido', default=0) or 0)
-    tiempo_facturable  = float(pick(data, 'tiempoFacturable', 'tiempo_facturable', default=0) or 0)
-    total_horas        = float(pick(data, 'totalHoras', 'total_horas', default=tiempo_invertido) or 0)
-    modulo_final       = (pick(data, 'modulo') or (consultor.modulo.nombre if consultor.modulo else 'SIN MODULO')).strip()
-    horario_trabajo    = (pick(data, 'horario_trabajo', 'horarioTrabajo') or getattr(consultor, 'horario', None))
+    if not fecha or not cliente or not hora_inicio or not hora_fin:
+        return jsonify({'mensaje': 'Campos obligatorios faltantes'}), 400
 
-    
-    equipo_final = pick(data, 'equipo') or (consultor.equipo if consultor else None)
+    # ------------------------------------------------------------------
+    # 3) DETERMINAR TAREA (CORREGIDO)
+    # ------------------------------------------------------------------
+    tarea_id = pick(data, "tarea_id")
+    tarea_obj = None
+
+    # A) Si viene tarea_id → se usa directamente
+    if tarea_id:
+        try:
+            tarea_id = int(tarea_id)
+            tarea_obj = Tarea.query.get(tarea_id)
+            if not tarea_obj:
+                return jsonify({'mensaje': 'Tarea inválida'}), 400
+        except:
+            return jsonify({'mensaje': 'Tarea inválida'}), 400
+
+    else:
+        # B) Compatibilidad → detectar desde tipoTarea si existe
+        tipoTareaRaw = pick(data, "tipoTarea")
+        if tipoTareaRaw:
+            codigo = tipoTareaRaw.split("-")[0].strip()
+            tarea_obj = Tarea.query.filter(Tarea.codigo == codigo).first()
+            if tarea_obj:
+                tarea_id = tarea_obj.id
+
+    # ------------------------------------------------------------------
+    # 4) VALORES NUMÉRICOS
+    # ------------------------------------------------------------------
+    tiempo_invertido = float(pick(data, 'tiempoInvertido', default=0) or 0)
+    tiempo_facturable = float(pick(data, 'tiempoFacturable', default=0) or 0)
+    total_horas = float(pick(data, 'totalHoras', default=tiempo_invertido) or 0)
+
+    # ------------------------------------------------------------------
+    # 5) MÓDULO
+    # ------------------------------------------------------------------
+    modulo_final = pick(data, "modulo")
+    if modulo_final:
+        modulo_final = modulo_final.strip()
+    else:
+        modulo_final = consultor.modulos[0].nombre if consultor.modulos else "SIN MODULO"
+
+    # ------------------------------------------------------------------
+    # 6) HORARIO DE TRABAJO
+    # ------------------------------------------------------------------
+    horario_trabajo = (
+        pick(data, 'horario_trabajo', 'horarioTrabajo')
+        or (Horario.query.get(consultor.horario_id).rango if consultor.horario_id else None)
+    )
+
+    # ------------------------------------------------------------------
+    # 7) EQUIPO
+    # ------------------------------------------------------------------
+    equipo_final = pick(data, 'equipo')
+    if not equipo_final and consultor.equipo_id:
+        eq = Equipo.query.get(consultor.equipo_id)
+        equipo_final = eq.nombre if eq else None
+
     if isinstance(equipo_final, str):
-        equipo_final = equipo_final.strip().upper() or None
+        equipo_final = equipo_final.strip().upper()
 
+    # ------------------------------------------------------------------
+    # 8) CAMPOS BASIS
+    # ------------------------------------------------------------------
+    es_basis = (equipo_final == "BASIS")
+
+    bd = _basis_defaults_from_payload(data) if es_basis else {
+        "actividad_malla": "N/APLICA",
+        "oncall": "N/A",
+        "desborde": "N/A",
+        "nro_escalado": pick(data, 'nroCasoEscaladoSap')
+    }
+
+    # ------------------------------------------------------------------
+    # 9) OCUPACIÓN (CORREGIDO)
+    # ------------------------------------------------------------------
+    ocupacion_id = pick(data, "ocupacion_id")
+
+    if ocupacion_id:
+        # validar que exista
+        occ = Ocupacion.query.get(ocupacion_id)
+        if not occ:
+            return jsonify({'mensaje': 'Ocupación inválida'}), 400
+    else:
+        # si no viene → inferir desde tarea
+        if tarea_id:
+            t = Tarea.query.options(db.joinedload(Tarea.ocupaciones)).get(tarea_id)
+            if t and t.ocupaciones:
+                ocupacion_id = t.ocupaciones[0].id
+            else:
+                ocupacion_id = None
+
+    # ------------------------------------------------------------------
+    # 10) CREAR REGISTRO
+    # ------------------------------------------------------------------
     try:
         nuevo = Registro(
             fecha=fecha,
             cliente=cliente,
-            nro_caso_cliente=nro_caso_cliente,
-            nro_caso_interno=nro_caso_interno,
+            nro_caso_cliente=_norm_default(pick(data, 'nroCasoCliente'), '0'),
+            nro_caso_interno=_norm_default(pick(data, 'nroCasoInterno'), '0'),
             nro_caso_escalado=bd["nro_escalado"],
-            tipo_tarea=tipo_tarea,
+
+            tarea_id=tarea_id,
+            ocupacion_id=ocupacion_id,
+
             hora_inicio=hora_inicio,
             hora_fin=hora_fin,
             tiempo_invertido=tiempo_invertido,
+            tiempo_facturable=tiempo_facturable,
+
             actividad_malla=bd["actividad_malla"],
             oncall=bd["oncall"],
             desborde=bd["desborde"],
-            tiempo_facturable=tiempo_facturable,
-            horas_adicionales=_norm_default(pick(data, 'horasAdicionales', 'horas_adicionales'), 'No'),
+
+            horas_adicionales=_norm_default(pick(data, 'horasAdicionales'), 'No'),
             descripcion=_norm_default(pick(data, 'descripcion'), ''),
+
             total_horas=total_horas,
             modulo=modulo_final,
             horario_trabajo=horario_trabajo,
-            consultor_id=consultor.id,
+            usuario_consultor=consultor.usuario,
             equipo=equipo_final,
         )
 
-       
-        if not nuevo.actividad_malla: nuevo.actividad_malla = "N/APLICA"
-        if not nuevo.oncall:          nuevo.oncall          = "N/A"
-        if not nuevo.desborde:        nuevo.desborde        = "N/A"
-
         db.session.add(nuevo)
         db.session.commit()
+
         return jsonify({'mensaje': 'Registro guardado correctamente'}), 201
 
     except IntegrityError as e:
         db.session.rollback()
-        app.logger.exception("IntegrityError insertando registro")
         return jsonify({'mensaje': f'No se pudo guardar el registro (integridad): {e}'}), 400
+
     except Exception as e:
         db.session.rollback()
-        app.logger.exception("Error insertando registro")
         return jsonify({'mensaje': f'No se pudo guardar el registro: {e}'}), 500
 
 
-@bp.route('/api/registros', methods=['GET', 'POST'])
-def get_registros():
-    body = request.get_json(silent=True) or {}
+@bp.route('/registros', methods=['GET'])
+def obtener_registros():
+    try:
+        usuario = (request.headers.get('X-User-Usuario') or "").strip().lower()
+        rol = (request.headers.get('X-User-Rol') or "").strip().upper()
 
-    rol = (request.headers.get('X-User-Rol')
-           or request.args.get('rol')
-           or body.get('rol') or '').strip().upper()
+        if not usuario:
+            return jsonify({'error': 'Usuario no enviado'}), 400
 
-    usuario = (request.headers.get('X-User-Usuario')
-               or request.args.get('usuario')
-               or body.get('usuario') or '').strip()
+        consultor = Consultor.query.filter(
+            func.lower(Consultor.usuario) == usuario
+        ).first()
 
-    nombre = (request.headers.get('X-User-Nombre')
-              or request.args.get('nombre')
-              or body.get('nombre') or '').strip()
+        if not consultor:
+            return jsonify({'error': 'Consultor no encontrado'}), 404
 
-    if rol == 'ADMIN':
-        registros = Registro.query.all()
-        return jsonify([registro_to_dict(r) for r in registros])
+        query = Registro.query.options(
+            joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
+            joinedload(Registro.tarea).joinedload(Tarea.ocupaciones),
+            joinedload(Registro.ocupacion)
+        )
 
-    consultor = None
-    if usuario:
-        consultor = Consultor.query.filter_by(usuario=usuario).first()
-    if not consultor and nombre:
-        consultor = Consultor.query.filter_by(nombre=nombre).first()
+        registros = (
+            query.all()
+            if rol == "ADMIN"
+            else query.filter(func.lower(Registro.usuario_consultor) == usuario).all()
+        )
 
-    if not consultor:
-        app.logger.info("get_registros: consultor no encontrado (rol=%s, usuario=%r, nombre=%r)",
-                        rol, usuario, nombre)
-        return jsonify({'mensaje': 'No autorizado o consultor no encontrado'}), 403
+        data = []
 
-    registros = Registro.query.filter_by(consultor_id=consultor.id).all()
-    return jsonify([registro_to_dict(r) for r in registros])
+        for r in registros:
+            tarea = r.tarea
+            ocup = r.ocupacion
 
-@bp.route('/api/resumen-horas', methods=['GET'])
-@admin_required
-def resumen_horas():
-    resumen = []
-    consultores = Consultor.query.all()
-    for consultor in consultores:
-        fechas = {r.fecha for r in consultor.registros}
-        for fecha in fechas:
-            regs = [r for r in consultor.registros if r.fecha == fecha]
-            total = sum(r.tiempo_invertido for r in regs)
-            estado = 'Al día' if total >= 9 else 'Incompleto'
-            resumen.append({
-                'consultor': consultor.nombre,
-                'fecha': fecha,
-                'total_horas': round(total, 2),
-                'estado': estado
+            if not ocup and tarea and tarea.ocupaciones:
+                ocup = tarea.ocupaciones[0]
+
+            tipoTarea_str = (
+                f"{tarea.codigo} - {tarea.nombre}"
+                if tarea else r.tipo_tarea
+            )
+
+            data.append({
+                # ---------- IDENTIFICACIÓN ----------
+                'id': r.id,
+                'consultor_id': r.consultor.id if r.consultor else None,  # ← FIX REAL
+                'consultor': r.consultor.nombre if r.consultor else None,
+
+                # ---------- CAMPOS GENERALES ----------
+                'fecha': r.fecha,
+                'cliente': r.cliente,
+                'modulo': r.modulo,
+                'equipo': (
+                    r.consultor.equipo_obj.nombre
+                    if r.consultor and r.consultor.equipo_obj
+                    else "SIN EQUIPO"
+                ),
+
+                # ---------- CASOS ----------
+                'nroCasoCliente': r.nro_caso_cliente,
+                'nroCasoInterno': r.nro_caso_interno,
+                'nroCasoEscaladoSap': r.nro_caso_escalado,
+
+                # ---------- TAREA ----------
+                'tarea_id': r.tarea_id,
+                'tipoTarea': tipoTarea_str,
+                'tarea': {
+                    'id': tarea.id if tarea else None,
+                    'codigo': tarea.codigo if tarea else None,
+                    'nombre': tarea.nombre if tarea else None,
+                },
+
+                # ---------- OCUPACIÓN ----------
+                'ocupacion_id': r.ocupacion_id,
+                'ocupacion_codigo': ocup.codigo if ocup else None,
+                'ocupacion_nombre': ocup.nombre if ocup else None,
+
+                # ---------- HORAS ----------
+                'horaInicio': r.hora_inicio,
+                'horaFin': r.hora_fin,
+                'tiempoInvertido': r.tiempo_invertido,
+                'tiempoFacturable': r.tiempo_facturable,
+                'horasAdicionales': r.horas_adicionales,
+                'descripcion': r.descripcion,
+                'totalHoras': r.total_horas,
+
+                # ---------- OTROS ----------
+                'bloqueado': bool(r.bloqueado),
+                'oncall': r.oncall,
+                'desborde': r.desborde,
+                'actividadMalla': r.actividad_malla
             })
+
+        return jsonify(data), 200
+
+    except Exception as e:
+        print(f"❌ Error en obtener_registros: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route("/resumen-horas", methods=["GET"])
+def resumen_horas():
+    from flask import request, jsonify
+
+    rol = request.headers.get("X-User-Rol", "").upper().strip()
+    usuario = request.headers.get("X-User-Usuario", "").strip()
+
+    resumen = []
+
+    # ADMIN ve todos los consultores
+    if rol == "ADMIN":
+        consultores = Consultor.query.all()
+
+    else:
+        # Consultor normal → solo su usuario
+        consultor = Consultor.query.filter_by(usuario=usuario).first()
+
+        if not consultor:
+            print(f"⚠️ No se encontró consultor con usuario={usuario}")
+            return jsonify([])
+
+        consultores = [consultor]
+
+    # Construcción del resumen
+    for consultor in consultores:
+        fechas_unicas = {r.fecha for r in consultor.registros}
+
+        for fecha in fechas_unicas:
+            registros_fecha = [
+                r for r in consultor.registros if r.fecha == fecha
+            ]
+            total_horas = sum(r.tiempo_invertido or 0 for r in registros_fecha)
+
+            estado = "Al día" if total_horas >= 8 else "Incompleto"
+
+            resumen.append({
+                "consultor": consultor.nombre,
+                "consultor_id": consultor.id,  
+                "fecha": fecha,
+                "total_horas": round(total_horas, 2),
+                "estado": estado
+            })
+
+
     return jsonify(resumen)
 
-@bp.route('/api/eliminar-registro/<int:id>', methods=['DELETE'])
+@bp.route('/eliminar-registro/<int:id>', methods=['DELETE'])
+@permission_required("REGISTROS_ELIMINAR")
 def eliminar_registro(id):
     data = request.json or {}
     rol = (data.get('rol') or '').strip().upper()
@@ -353,65 +937,110 @@ def eliminar_registro(id):
     db.session.commit()
     return jsonify({'mensaje': 'Registro eliminado'}), 200
 
-@bp.route('/api/editar-registro/<int:id>', methods=['PUT'])
+@bp.route('/editar-registro/<int:id>', methods=['PUT'])
 def editar_registro(id):
     data = request.get_json(silent=True) or {}
+
     rol = (data.get('rol') or '').strip().upper()
-    nombre = pick(data, 'consultor', 'nombre')
+    usuario_payload = (data.get("usuario") or "").strip().lower()
 
     registro = Registro.query.get(id)
     if not registro:
         return jsonify({'mensaje': 'Registro no encontrado'}), 404
 
-    if rol != 'ADMIN' and (not registro.consultor or registro.consultor.nombre != (nombre or "")):
-        return jsonify({'mensaje': 'No autorizado'}), 403
+    # =============================================================
+    # 🔐 VALIDACIÓN DE PERMISOS
+    # =============================================================
+    if rol != "ADMIN":
+        if registro.usuario_consultor and registro.usuario_consultor.lower() != usuario_payload:
+            return jsonify({'mensaje': 'No autorizado'}), 403
 
     try:
+        # =============================================================
+        # 🔥 CAMPOS BASE
+        # =============================================================
+        registro.fecha = pick(data, 'fecha', default=registro.fecha)
+        registro.cliente = pick(data, 'cliente', default=registro.cliente)
+        registro.nro_caso_cliente = pick(data, 'nroCasoCliente', default=registro.nro_caso_cliente)
+        registro.nro_caso_interno = pick(data, 'nroCasoInterno', default=registro.nro_caso_interno)
+
+        # =============================================================
+        # 🔥 TAREA (FK REAL) + TIPO_TAREA (TEXTO)
+        # =============================================================
+        tarea_id = data.get("tarea_id")
+        tipoTareaTexto = data.get("tipoTarea")  # Ejemplo "05 - Documentación"
+
+        if tarea_id:
+            tarea_obj = Tarea.query.get(tarea_id)
+            if tarea_obj:
+                registro.tarea_id = tarea_obj.id
+
+                # Si NO viene texto, lo generamos
+                registro.tipo_tarea = f"{tarea_obj.codigo} - {tarea_obj.nombre}"
+
+        # Si viene texto explícito desde React → guardarlo
+        if tipoTareaTexto:
+            registro.tipo_tarea = tipoTareaTexto.strip()
+
+        # =============================================================
+        # 🔥 OCUPACIÓN
+        # =============================================================
+        ocupacion_id = data.get("ocupacion_id")
+
+        if ocupacion_id:
+            ocup_obj = Ocupacion.query.get(ocupacion_id)
+            if not ocup_obj:
+                return jsonify({'mensaje': 'Ocupación inválida'}), 400
+
+            registro.ocupacion_id = ocupacion_id
+
+        # Si NO viene ocupación → intentar inferirla desde la tarea
+        if not ocupacion_id and registro.tarea_id:
+            tarea_db = Tarea.query.options(db.joinedload(Tarea.ocupaciones)).get(registro.tarea_id)
+            if tarea_db and tarea_db.ocupaciones:
+                registro.ocupacion_id = tarea_db.ocupaciones[0].id
+
+        # =============================================================
+        # 🔥 HORAS Y DETALLES
+        # =============================================================
+        registro.hora_inicio = pick(data, 'horaInicio', default=registro.hora_inicio)
+        registro.hora_fin = pick(data, 'horaFin', default=registro.hora_fin)
+        registro.tiempo_invertido = pick(data, 'tiempoInvertido', default=registro.tiempo_invertido)
+        registro.tiempo_facturable = pick(data, 'tiempoFacturable', default=registro.tiempo_facturable)
+        registro.horas_adicionales = pick(data, 'horasAdicionales', default=registro.horas_adicionales)
+        registro.descripcion = pick(data, 'descripcion', default=registro.descripcion)
+
+        registro.total_horas = pick(data, 'totalHoras', default=registro.total_horas)
+        registro.modulo = pick(data, 'modulo', default=registro.modulo)
+
+        # =============================================================
+        # 🔥 BASIS
+        # =============================================================
         bd = _basis_defaults_from_payload(data)
 
-        registro.fecha              = pick(data, 'fecha', default=registro.fecha)
-        registro.cliente            = pick(data, 'cliente', default=registro.cliente)
-        registro.nro_caso_cliente   = pick(data, 'nroCasoCliente', 'nro_caso_cliente', default=registro.nro_caso_cliente)
-        registro.nro_caso_interno   = pick(data, 'nroCasoInterno', 'nro_caso_interno', default=registro.nro_caso_interno)
-
-        
-        if 'nroCasoEscaladoSap' in data or 'nro_caso_escalado' in data:
-            registro.nro_caso_escalado = bd["nro_escalado"]  
-
-        registro.tipo_tarea         = pick(data, 'tipoTarea', 'tipo_tarea', default=registro.tipo_tarea)
-        registro.hora_inicio        = pick(data, 'horaInicio', 'hora_inicio', default=registro.hora_inicio)
-        registro.hora_fin           = pick(data, 'horaFin', 'hora_fin', default=registro.hora_fin)
-        registro.tiempo_invertido   = pick(data, 'tiempoInvertido', 'tiempo_invertido', default=registro.tiempo_invertido)
-
-        if 'actividadMalla' in data or 'actividad_malla' in data:
+        if 'actividadMalla' in data:
             registro.actividad_malla = bd["actividad_malla"]
         if 'oncall' in data:
             registro.oncall = bd["oncall"]
         if 'desborde' in data:
             registro.desborde = bd["desborde"]
 
-        registro.tiempo_facturable  = pick(data, 'tiempoFacturable', 'tiempo_facturable', default=registro.tiempo_facturable)
-        registro.horas_adicionales  = _norm_default(pick(data, 'horasAdicionales', 'horas_adicionales', default=registro.horas_adicionales), 'No')
-        registro.descripcion        = pick(data, 'descripcion', default=registro.descripcion)
-        registro.total_horas        = pick(data, 'totalHoras', 'total_horas', default=registro.total_horas)
-        registro.modulo             = pick(data, 'modulo', default=registro.modulo)
-
-        if not registro.actividad_malla: registro.actividad_malla = "N/APLICA"
-        if not registro.oncall:          registro.oncall          = "N/A"
-        if not registro.desborde:        registro.desborde        = "N/A"
+        if not registro.actividad_malla:
+            registro.actividad_malla = "N/APLICA"
+        if not registro.oncall:
+            registro.oncall = "N/A"
+        if not registro.desborde:
+            registro.desborde = "N/A"
 
         db.session.commit()
         return jsonify({'mensaje': 'Registro actualizado'}), 200
-    except IntegrityError as e:
-        db.session.rollback()
-        app.logger.exception("IntegrityError actualizando registro id=%s", id)
-        return jsonify({'mensaje': f'No se pudo actualizar el registro (integridad): {e}'}), 400
+
     except Exception as e:
         db.session.rollback()
-        app.logger.exception("Error actualizando registro id=%s", id)
         return jsonify({'mensaje': f'No se pudo actualizar el registro: {e}'}), 500
 
-@bp.route('/api/toggle-bloqueado/<int:id>', methods=['PUT'])
+
+@bp.route('/toggle-bloqueado/<int:id>', methods=['PUT'])
 def toggle_bloqueado(id):
     data = request.json or {}
     if (data.get('rol') or '').strip().upper() != 'ADMIN':
@@ -425,129 +1054,9 @@ def toggle_bloqueado(id):
     db.session.commit()
     return jsonify({'bloqueado': registro.bloqueado}), 200
 
-def _norm_key(s: str) -> str:
-    s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
-    s = s.lower().strip()
-    s = re.sub(r"[^a-z0-9]+", "_", s)
-    s = re.sub(r"_+", "_", s).strip("_")
-    return s
-
-def get_val(reg: dict, *keys):
-    norm = {_norm_key(k): v for k, v in reg.items()}
-    synonyms = {
-        "nro_caso_cliente": ["nro_caso_cliente", "no_caso_cliente", "num_caso_cliente", "numero_caso_cliente"],
-        "nro_caso_interno": ["nro_caso_interno", "no_caso_interno", "num_caso_interno", "numero_caso_interno", "nro_caso_cliente_interno"],
-        "tipo_tarea": ["tipo_tarea", "tipo_tarea_azure", "tarea", "tipo_de_tarea", "tipo tarea azure"],
-        "tarea_azure": ["tarea_azure", "tarea azure"],
-        "ocupacion_azure": ["ocupacion_azure", "ocupacion azure"],
-        "consolidado_cliente": ["consolidado_cliente", "consolidado cliente", "conciliado con el cliente", "consolidado"],
-        "horas_adicionales": ["horas_adicionales", "hora_adicional", "horas adicionales", "extra"],
-        "tiempo_facturable": ["tiempo_facturable", "tiempo_facturable_a_cliente", "facturable", "tiempo facturable a cliente"],
-        "hora_inicio": ["hora_inicio", "inicio", "hora inicio", "hora_inicio_"],
-        "hora_fin": ["hora_fin", "fin", "hora fin", "hora_fin_"],
-        "tiempo_invertido": ["tiempo_invertido", "tiempo invertido", "duracion", "tiempo_invertido_"],
-        "modulo": ["modulo", "módulo", "modul"],
-        "cliente": ["cliente"],
-        "consultor": ["consultor", "recurso"],
-        "descripcion": ["descripcion", "descripción", "detalle", "observaciones"],
-        "fecha": ["fecha"],
-        "equipo": ["equipo"],
-        "extemporaneo": ["extemporaneo", "extemporáneo"],
-        "horas_convertidas": ["horas_convertidas", "horas convertidas"],
-        "promedio": ["promedio"],
-        "dia": ["dia", "día"],
-        "mes1": ["mes1", "mes_1"],
-        "anio": ["anio", "ano", "año", "anio_", "año", "ANIO"],
-    }
-    for k in keys:
-        nk = _norm_key(k)
-        if nk in norm:
-            return norm[nk]
-        if nk in synonyms:
-            for alt in synonyms[nk]:
-                alt_n = _norm_key(alt)
-                if alt_n in norm:
-                    return norm[alt_n]
-    return None
-
-def excel_date_to_iso(v):
-    if v is None or v == "":
-        return ""
-    if isinstance(v, (int, float)):
-        base = datetime(1899, 12, 30)
-        d = base + timedelta(days=float(v))
-        return d.strftime("%Y-%m-%d")
-    s = str(v).strip()
-    try:
-        datetime.strptime(s, "%Y-%m-%d")
-        return s
-    except Exception:
-        pass
-    m = re.match(r"^\s*(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\s*$", s)
-    if m:
-        d = int(m.group(1))
-        mth = int(m.group(2))
-        y = int(m.group(3))
-        if y < 100:
-            y = 2000 + y if y < 50 else 1900 + y
-        d = max(1, min(d, 31))
-        mth = max(1, min(mth, 12))
-        y = max(1900, min(y, 2100))
-        try:
-            return datetime(y, mth, d).strftime("%Y-%m-%d")
-        except Exception:
-            pass
-    for fmt in ("%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%d/%m/%y", "%m/%d/%y", "%d-%m-%y"):
-        try:
-            dt = datetime.strptime(s, fmt)
-            return dt.strftime("%Y-%m-%d")
-        except Exception:
-            continue
-    return s
-
-def to_py_time(valor):
-    if valor is None or valor == "":
-        return None
-    if isinstance(valor, (int, float)):
-        total = int(round(float(valor) * 86400))
-        total = max(0, min(total, 24 * 3600 - 1))
-        hh = total // 3600
-        mm = (total % 3600) // 60
-        ss = total % 60
-        return time(hh, mm, ss)
-    s = str(valor).strip()
-    m = re.search(r'(\d{1,2}):(\d{2})(?::(\d{2}))?', s)
-    if m:
-        hh = int(m.group(1)); mm = int(m.group(2)); ss = int(m.group(3) or 0)
-        hh = max(0, min(hh, 23)); mm = max(0, min(mm, 59)); ss = max(0, min(ss, 59))
-        return time(hh, mm, ss)
-    m = re.search(r'T(\d{2}):(\d{2}):(\d{2})', s)
-    if m:
-        return time(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-    try:
-        f = float(s)
-        return to_py_time(f)
-    except Exception:
-        return None
-
-def to_sql_time_str(valor):
-    t = to_py_time(valor)
-    return t.strftime("%H:%M:%S") if t else None
-
-def clip(v, key):
-    if v is None:
-        return None
-    s = str(v).strip()
-    lims = {
-        'fecha': 20, 'modulo': 100, 'cliente': 100, 'nro_caso_cliente': 255,
-        'nro_caso_interno': 255, 'tipo_tarea': 255, 'consultor': 100,
-        'consolidado_cliente': 255, 'ocupacion_azure': 255, 'tarea_azure': 255,
-        'extemporaneo': 50, 'equipo': 50
-    }
-    lim = lims.get(key)
-    if lim and len(s) > lim:
-        return s[:lim]
-    return s
+# ===============================
+# BaseRegistro (carga masiva / listado)
+# ===============================
 
 def to_float(valor):
     try:
@@ -596,7 +1105,8 @@ def partir_fecha_mas_campos(fecha_val, dia_val=None, mes_val=None, anio_val=None
     except Exception:
         return 0, 0, 0
 
-@bp.route('/api/cargar-registros-excel', methods=['POST'])
+@bp.route('/cargar-registros-excel', methods=['POST'])
+@permission_required("BASE_REGISTRO_IMPORTAR")
 def cargar_registros_excel():
     data = request.get_json() or {}
     registros = data.get('registros', [])
@@ -632,8 +1142,6 @@ def cargar_registros_excel():
         'ocupacion_azure','tarea_azure',
         'extemporaneo','equipo'
     }
-    if hasattr(BaseRegistro, 'fecha_date'):
-        ALLOWED_INSERT.add('fecha_date')
 
     def preparar_mapping(reg):
         fecha_raw = get_val(reg, "FECHA", "fecha")
@@ -681,8 +1189,6 @@ def cargar_registros_excel():
             'extemporaneo': clip(get_val(reg, "EXTEMPORANEO", "extemporaneo"), 'extemporaneo'),
             'equipo': clip(get_val(reg, "Equipo", "equipo"), 'equipo'),
         }
-        if 'fecha_date' in ALLOWED_INSERT:
-            mapp['fecha_date'] = fecha_iso
         return {k: v for k, v in mapp.items() if k in ALLOWED_INSERT}
 
     def flush_batch(batch_maps):
@@ -728,7 +1234,6 @@ def cargar_registros_excel():
             'total_recibidos': total,
             'insertados': inserted,
             'fallidos': failed,
-            'rellenados': dict(rellenados),
         }), 200
 
     except Exception as e:
@@ -736,32 +1241,26 @@ def cargar_registros_excel():
         app.logger.exception("Error cargando registros desde Excel")
         return jsonify({'error': str(e)}), 500
 
-def base_registro_to_dict(r : Registro):
+def base_registro_to_dict(r : BaseRegistro):
     return {
         'id': r.id,
         'fecha': r.fecha,
         'cliente': r.cliente,
         'nroCasoCliente': r.nro_caso_cliente,
         'nroCasoInterno': r.nro_caso_interno,
-        'nroCasoEscaladoSap': r.nro_caso_escalado,
         'tipoTarea': r.tipo_tarea,
         'horaInicio': r.hora_inicio,
         'horaFin': r.hora_fin,
         'tiempoInvertido': r.tiempo_invertido,
-        'actividadMalla': r.actividad_malla,
-        'oncall': r.oncall,
-        'desborde': r.desborde,
         'tiempoFacturable': r.tiempo_facturable,
         'horasAdicionales': r.horas_adicionales,
         'descripcion': r.descripcion,
-        'totalHoras': r.total_horas,
-        'modulo': (r.modulo or (r.consultor.modulo.nombre if r.consultor and r.consultor.modulo else None)),
-        'consultor': r.consultor.nombre if r.consultor else None,
-        'equipo': (getattr(r, 'equipo', None) or (r.consultor.equipo if r.consultor else None)),  
-        'bloqueado': r.bloqueado,
+        'modulo': r.modulo,
+        'consultor': r.consultor,
+        'equipo': getattr(r, 'equipo', None),
     }
 
-@bp.route('/api/base-registros', methods=['GET'])
+@bp.route('/base-registros', methods=['GET'])
 @admin_required
 def listar_base_registros():
     page = int(request.args.get('page', 1))
@@ -775,15 +1274,13 @@ def listar_base_registros():
 
     qry = BaseRegistro.query
 
-    if hasattr(BaseRegistro, 'fecha_date'):
-        fecha_eff = getattr(BaseRegistro, 'fecha_date')
-    else:
-        f10 = func.left(BaseRegistro.fecha, 10)
-        fecha_eff = func.coalesce(
-            func.str_to_date(f10, '%Y-%m-%d'),
-            func.str_to_date(f10, '%d/%m/%Y'),
-            func.str_to_date(f10, '%d-%m-%Y')
-        )
+    # Intento de parse de fecha robusto (MySQL)
+    f10 = func.left(BaseRegistro.fecha, 10)
+    fecha_eff = func.coalesce(
+        func.str_to_date(f10, '%Y-%m-%d'),
+        func.str_to_date(f10, '%d/%m/%Y'),
+        func.str_to_date(f10, '%d-%m-%Y')
+    )
 
     if fdesde:
         qry = qry.filter(fecha_eff >= fdesde)
@@ -823,13 +1320,1035 @@ def listar_base_registros():
         'page_size': page_size,
     })
 
-@bp.route('/api/consultores/modulos', methods=['GET'])
-def consultor_modulos():
+@bp.route('/consultores/modulos', methods=['GET'])
+def get_consultor_modulos():
+    try:
+        usuario = request.args.get('usuario', '').strip().lower()
+        if not usuario:
+            return jsonify({'error': 'Parámetro "usuario" requerido'}), 400
+
+        
+        consultor = Consultor.query.filter(func.lower(Consultor.usuario) == usuario).first()
+        if not consultor:
+            return jsonify({'error': f'Consultor "{usuario}" no encontrado'}), 404
+
+        
+        modulos = [m.nombre for m in consultor.modulos] if consultor.modulos else []
+
+        
+        if not modulos:
+            modulos = ['SIN MODULO']
+
+        return jsonify({'modulos': modulos}), 200
+
+    except Exception as e:
+        app.logger.exception("Error en get_consultor_modulos")
+        return jsonify({'error': str(e)}), 500
+
+@bp.route('/consultores', methods=['GET'])
+@permission_required("CONSULTORES_VER")
+def listar_consultores():
+    try:
+        nombre = (request.args.get('nombre') or '').strip()
+        equipo = (request.args.get('equipo') or '').strip()
+
+        query = (
+            Consultor.query
+            .options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+                joinedload(Consultor.horario_obj),
+                joinedload(Consultor.modulos)
+            )
+            .order_by(Consultor.nombre.asc())
+        )
+
+        if nombre:
+            query = query.filter(Consultor.nombre.ilike(f"%{nombre}%"))
+        if equipo:
+            query = query.join(Equipo).filter(Equipo.nombre.ilike(f"%{equipo}%"))
+
+        consultores = query.all()
+
+        data = []
+        for c in consultores:
+            data.append({
+                'id': c.id,
+                'usuario': c.usuario,
+                'nombre': c.nombre,
+                'rol': c.rol_obj.nombre if c.rol_obj else None,
+                'equipo': c.equipo_obj.nombre if c.equipo_obj else None,
+                'horario': c.horario_obj.rango if c.horario_obj else None,
+                'modulos': [{'id': m.id, 'nombre': m.nombre} for m in c.modulos]
+            })
+
+        return jsonify(data), 200
+
+    except Exception as e:
+        app.logger.exception("Error al listar consultores")
+        return jsonify({'error': str(e)}), 500
+
+@bp.route('/modulos', methods=['GET'])
+def listar_modulos():
+    try:
+        modulos = Modulo.query.order_by(Modulo.nombre.asc()).all()
+        data = [{'id': m.id, 'nombre': m.nombre} for m in modulos]
+        return jsonify(data), 200
+    except Exception as e:
+        app.logger.exception("Error al listar módulos")
+        return jsonify({'error': str(e)}), 500
+    
+@bp.route('/consultores/datos', methods=['GET'])
+def get_datos_consultor():
     usuario = request.args.get('usuario')
     if not usuario:
-        return jsonify({'mensaje': 'Falta usuario'}), 400
-    c = Consultor.query.filter_by(usuario=usuario).first()
-    if not c:
-        return jsonify({'mensaje': 'Usuario no encontrado'}), 404
-    mods = _listar_modulos_para_consultor(c.id)
-    return jsonify({'modulos': mods}), 200
+        return jsonify({"mensaje": "Debe enviar el parámetro 'usuario'"}), 400
+
+    consultor = (
+        Consultor.query
+        .options(
+            joinedload(Consultor.rol_obj),
+            joinedload(Consultor.equipo_obj),
+            joinedload(Consultor.horario_obj),
+            joinedload(Consultor.modulos)
+        )
+        .filter_by(usuario=usuario)
+        .first()
+    )
+
+    if not consultor:
+        return jsonify({"mensaje": "Consultor no encontrado"}), 404
+
+    rol = consultor.rol_obj.nombre if consultor.rol_obj else None
+    equipo = consultor.equipo_obj.nombre if consultor.equipo_obj else None
+    horario = consultor.horario_obj.rango if consultor.horario_obj else None
+    modulos = [m.nombre for m in consultor.modulos] if consultor.modulos else []
+
+    return jsonify({
+        "usuario": consultor.usuario,
+        "nombre": consultor.nombre,
+        "rol": rol,
+        "equipo": equipo,
+        "horario": horario,
+        "modulos": modulos
+    }), 200
+
+
+# ========== OPORTUNIDADES ==========
+@bp.route('/oportunidades/import', methods=['POST'])
+def importar_oportunidades():
+    """Permite cargar un único archivo Excel inicial."""
+    file = request.files.get('file')
+    if not file:
+        return jsonify({'mensaje': 'Archivo no recibido'}), 400
+
+    
+    if Oportunidad.query.count() > 0:
+        return jsonify({'mensaje': 'La carga inicial ya fue realizada'}), 400
+
+    df = pd.read_excel(BytesIO(file.read()))
+    df.columns = [str(c).strip().upper() for c in df.columns]
+    print("Columnas detectadas:", list(df.columns))
+    
+    colmap = {
+        "NOMBRE CLIENTE": "nombre_cliente",
+        "SERVICIO": "servicio",
+        "FECHA CREACIÓN": "fecha_creacion",
+        "TIPO CLIENTE": "tipo_cliente",
+        "TIPO DE SOLICITUD": "tipo_solicitud",
+        "CASO SM": "caso_sm",
+        "FECHA CIERRE SM": "fecha_cierre_sm",
+        "SALESFORCE": "salesforce",
+        "ULTIMOS 6 MESES": "ultimos_6_meses",
+        "ULTIMO MES": "ultimo_mes",
+        "RETRASO": "retraso",
+        "ESTADO OFERTA": "estado_oferta",
+        "RESULTADO OFERTA": "resultado_oferta",
+        "CALIFICACION OPORTUNIDAD": "calificacion_oportunidad",
+        "ORIGEN DE LA OPORTUNIDAD": "origen_oportunidad",
+        "DIRECCION COMERCIAL": "direccion_comercial",
+        "GERENCIA COMERCIAL": "gerencia_comercial",
+        "COMERCIAL ASIGNADO": "comercial_asignado",
+        "CONSULTOR COMERCIAL": "consultor_comercial",
+        "COMERCIAL ASIGNADO HITSS": "comercial_asignado_hitss",
+        "OBSERVACIONES": "observaciones",
+        "CATEGORIA PERDIDA": "categoria_perdida",
+        "SUBCATEGORIA PERDIDA": "subcategoria_perdida",
+        "FECHA ENTREGA OFERTA FINAL AL CLIENTE": "fecha_entrega_oferta_final",
+        "VIGENCIA DE LA PROPUESTA": "vigencia_propuesta",
+        "FECHA ACEPTACIÓN DE LA OFERTA": "fecha_aceptacion_oferta",
+        "TIPO DE MONEDA": "tipo_moneda",
+        "OTC": "otc",
+        "MRC": "mrc",
+        "MRC NORMALIZADO": "mrc_normalizado",
+        "VALOR OFERTA CLARO": "valor_oferta_claro",
+        "DURACION": "duracion",
+        "PAIS": "pais",
+        "FECHA DE CIERRE OPORTUNIDAD": "fecha_cierre_oportunidad",
+        "CODIGO PROYECTO (PRC)": "codigo_prc",
+        "FECHA FIRMA AOS": "fecha_firma_aos",
+        "PM ASIGNADO CLARO": "pm_asignado_claro",
+        "PM ASIGNADO GLOBAL HITSS": "pm_asignado_hitss",
+        "DESCRIPCION OT": "descripcion_ot",
+        "NO. ENLACE": "num_enlace",
+        "NO. INCIDENTE": "num_incidente",
+        "NO OT": "num_ot",
+        "ESTADO OT": "estado_ot",
+        "PROYECCION DEL INGRESO PROYECTO / EVOLUTIVO": "proyeccion_ingreso",
+        "FECHA COMPROMISO": "fecha_compromiso",
+        "FECHA DE CIERRE": "fecha_cierre",
+        "ESTADO PROYECTO / EVOLUTIVO": "estado_proyecto",
+        "AÑO CREACIÓN OT": "anio_creacion_ot",
+        "FECHA ACTA DE CIERRE Y/O OT": "fecha_acta_cierre_ot",
+        "SEGUIMIENTO ORDENES DE TRABAJO": "seguimiento_ot",
+        "TIPO DE SERVICIO": "tipo_servicio",
+        "SEMESTRE DE EJECUCIÓN": "semestre_ejecucion",
+        "PUBLICACIÓN SHAREPOINT": "publicacion_sharepoint",
+    }
+
+    def parse_date(val):
+        if pd.isna(val) or val == "":
+            return None
+        try:
+            return pd.to_datetime(val).date()
+        except:
+            return None
+
+    def parse_int(val):
+        if pd.isna(val) or val == "":
+            return None
+        try:
+            return int(str(val).replace('.', '').replace(',', '').strip())
+        except:
+            return None
+
+    data_list = []
+    for _, row in df.iterrows():
+        obj = {}
+        for k, v in colmap.items():
+            if k in df.columns:
+                value = row[k]
+
+                
+                if v in ["fecha_creacion", "fecha_cierre_sm", "fecha_entrega_oferta_final",
+                         "vigencia_propuesta", "fecha_aceptacion_oferta", "fecha_cierre_oportunidad",
+                         "fecha_firma_aos", "proyeccion_ingreso", "fecha_compromiso",
+                         "fecha_cierre", "fecha_acta_cierre_ot"]:
+                    obj[v] = parse_date(value)
+                elif v in ["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"]:
+                    obj[v] = parse_int(value)
+                else:
+                    obj[v] = str(value).strip() if not pd.isna(value) else None
+
+        
+        fecha = obj.get("fecha_creacion")
+        if fecha:
+            mes = fecha.month
+            anio = fecha.year
+            obj["semestre"] = f"{'1ER' if mes <= 6 else '2DO'} SEMESTRE {anio}"
+        else:
+            obj["semestre"] = None
+
+        data_list.append(Oportunidad(**obj))
+
+    try:
+        db.session.bulk_save_objects(data_list)
+        db.session.commit()
+        return jsonify({'mensaje': f'Carga inicial exitosa ({len(data_list)} registros)'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'mensaje': f'Error al guardar: {str(e)}'}), 500
+    
+
+@bp.route('/oportunidades', methods=['GET'])
+@permission_required("OPORTUNIDADES_CREAR")
+def listar_oportunidades():
+    """Listar o filtrar oportunidades"""
+    q = (request.args.get('q') or '').strip()
+    query = Oportunidad.query
+
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(
+            Oportunidad.nombre_cliente.ilike(like),
+            Oportunidad.servicio.ilike(like),
+            Oportunidad.estado_oferta.ilike(like),
+            Oportunidad.resultado_oferta.ilike(like),
+            Oportunidad.pais.ilike(like)
+        ))
+
+    data = [o.to_dict() for o in query.limit(2000).all()]
+    return jsonify(data), 200
+
+
+@bp.route('/oportunidades', methods=['POST'])
+def crear_oportunidad():
+    data = request.get_json() or {}
+    o = Oportunidad(**data)
+    db.session.add(o)
+    db.session.commit()
+    return jsonify(o.to_dict()), 201
+
+
+@bp.route('/oportunidades/<int:id>', methods=['PUT'])
+def editar_oportunidad(id):
+    data = request.get_json() or {}
+    o = Oportunidad.query.get_or_404(id)
+    for k, v in data.items():
+        if hasattr(o, k):
+            setattr(o, k, v)
+    db.session.commit()
+    return jsonify({'mensaje': 'Actualizado correctamente'}), 200
+
+
+@bp.route('/oportunidades/<int:id>', methods=['DELETE'])
+def eliminar_oportunidad(id):
+    o = Oportunidad.query.get_or_404(id)
+    db.session.delete(o)
+    db.session.commit()
+    return jsonify({'mensaje': 'Eliminado correctamente'}), 200
+
+# ========== CLIENTES ==========
+
+@bp.route('/clientes', methods=['GET'])
+def listar_clientes():
+    q = (request.args.get('q') or "").strip()
+    query = Cliente.query
+
+    if q:
+        like = f"%{q}%"
+        query = query.filter(Cliente.nombre_cliente.ilike(like))
+
+    data = [c.to_dict() for c in query.order_by(Cliente.nombre_cliente).all()]
+    return jsonify(data), 200
+
+@bp.route('/clientes', methods=['POST'])
+def crear_cliente():
+    data = request.get_json() or {}
+
+    c = Cliente(nombre_cliente=data.get("nombre_cliente").strip())
+
+    db.session.add(c)
+    try:
+        db.session.commit()
+        return jsonify({"mensaje": "Cliente creado correctamente"}), 201
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"mensaje": "Cliente duplicado"}), 400
+
+
+@bp.route('/clientes/<int:id>', methods=['PUT'])
+def editar_cliente(id):
+    c = Cliente.query.get_or_404(id)
+    data = request.get_json() or {}
+
+    c.nombre_cliente = data.get("nombre_cliente", c.nombre_cliente).strip()
+
+    try:
+        db.session.commit()
+        return jsonify({"mensaje": "Cliente actualizado correctamente"}), 200
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"mensaje": "Cliente ya existe"}), 400
+
+
+@bp.route('/clientes/<int:id>', methods=['DELETE'])
+def eliminar_cliente(id):
+    c = Cliente.query.get_or_404(id)
+    db.session.delete(c)
+    db.session.commit()
+    return jsonify({"mensaje": "Cliente eliminado correctamente"}), 200
+
+# ========== PERMISOS ==========
+
+@bp.route('/permisos', methods=['GET'])
+def listar_permisos():
+    permisos = Permiso.query.order_by(Permiso.codigo).all()
+    return jsonify([p.to_dict() for p in permisos]), 200
+
+@bp.route('/permisos', methods=['POST'])
+def crear_permiso():
+    data = request.get_json() or {}
+    codigo = data.get("codigo", "").strip().upper()
+
+    if not codigo:
+        return jsonify({"mensaje": "El código es obligatorio"}), 400
+
+    if Permiso.query.filter_by(codigo=codigo).first():
+        return jsonify({"mensaje": "El permiso ya existe"}), 400
+
+    p = Permiso(codigo=codigo, descripcion=data.get("descripcion"))
+    db.session.add(p)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Permiso creado", "permiso": p.to_dict()}), 201
+
+@bp.route('/permisos/<int:id>', methods=['DELETE'])
+def eliminar_permiso(id):
+    p = Permiso.query.get_or_404(id)
+    db.session.delete(p)
+    db.session.commit()
+    return jsonify({"mensaje": "Permiso eliminado"}), 200
+
+@bp.route('/roles/<int:rol_id>/permisos', methods=['GET'])
+def permisos_por_rol(rol_id):
+    role = Rol.query.get_or_404(rol_id)
+    permisos = (
+        db.session.query(RolPermiso, Permiso)
+        .join(Permiso, RolPermiso.permiso_id == Permiso.id)
+        .filter(RolPermiso.rol_id == rol_id)
+        .all()
+    )
+
+    data = [{"id": p.Permiso.id, "codigo": p.Permiso.codigo} for p in permisos]
+    return jsonify(data), 200
+
+@bp.route('/roles/<int:rol_id>/permisos', methods=['POST'])
+def asignar_permiso_rol(rol_id):
+    data = request.get_json() or {}
+    permiso_id = data.get("permiso_id")
+
+    if not permiso_id:
+        return jsonify({"mensaje": "permiso_id requerido"}), 400
+
+    if RolPermiso.query.filter_by(rol_id=rol_id, permiso_id=permiso_id).first():
+        return jsonify({"mensaje": "Permiso ya asignado"}), 400
+
+    rp = RolPermiso(rol_id=rol_id, permiso_id=permiso_id)
+    db.session.add(rp)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Permiso asignado al rol"}), 201
+
+@bp.route('/roles/<int:rol_id>/permisos/<int:permiso_id>', methods=['DELETE'])
+def quitar_permiso_rol(rol_id, permiso_id):
+    rp = RolPermiso.query.filter_by(rol_id=rol_id, permiso_id=permiso_id).first()
+
+    if not rp:
+        return jsonify({"mensaje": "No estaba asignado"}), 404
+
+    db.session.delete(rp)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Permiso removido del rol"}), 200
+
+@bp.route('/equipos/<int:equipo_id>/permisos', methods=['GET'])
+def permisos_por_equipo(equipo_id):
+    permisos = (
+        db.session.query(EquipoPermiso, Permiso)
+        .join(Permiso, EquipoPermiso.permiso_id == Permiso.id)
+        .filter(EquipoPermiso.equipo_id == equipo_id)
+        .all()
+    )
+
+    return jsonify([p.Permiso.to_dict() for p in permisos]), 200
+
+@bp.route('/equipos/<int:equipo_id>/permisos', methods=['POST'])
+def asignar_permiso_equipo(equipo_id):
+    data = request.get_json() or {}
+    permiso_id = data.get("permiso_id")
+
+    if not permiso_id:
+        return jsonify({"mensaje": "permiso_id requerido"}), 400
+
+    if EquipoPermiso.query.filter_by(equipo_id=equipo_id, permiso_id=permiso_id).first():
+        return jsonify({"mensaje": "Ya asignado"}), 400
+
+    ep = EquipoPermiso(equipo_id=equipo_id, permiso_id=permiso_id)
+    db.session.add(ep)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Permiso asignado al equipo"}), 201
+
+@bp.route('/equipos/<int:equipo_id>/permisos/<int:permiso_id>', methods=['DELETE'])
+def quitar_permiso_equipo(equipo_id, permiso_id):
+    ep = EquipoPermiso.query.filter_by(equipo_id=equipo_id, permiso_id=permiso_id).first()
+
+    if not ep:
+        return jsonify({"mensaje": "No estaba asignado"}), 404
+
+    db.session.delete(ep)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Permiso removido del equipo"}), 200
+
+@bp.route('/consultores/<int:consultor_id>/permisos', methods=['GET'])
+def permisos_por_consultor(consultor_id):
+    permisos = (
+        db.session.query(ConsultorPermiso, Permiso)
+        .join(Permiso, ConsultorPermiso.permiso_id == Permiso.id)
+        .filter(ConsultorPermiso.consultor_id == consultor_id)
+        .all()
+    )
+
+    return jsonify([p.Permiso.to_dict() for p in permisos]), 200
+
+@bp.route('/consultores/<int:consultor_id>/permisos', methods=['POST'])
+def asignar_permiso_consultor(consultor_id):
+    data = request.get_json() or {}
+    permiso_id = data.get("permiso_id")
+
+    if not permiso_id:
+        return jsonify({"mensaje": "permiso_id requerido"}), 400
+
+    if ConsultorPermiso.query.filter_by(consultor_id=consultor_id, permiso_id=permiso_id).first():
+        return jsonify({"mensaje": "Permiso ya otorgado"}), 400
+
+    cp = ConsultorPermiso(consultor_id=consultor_id, permiso_id=permiso_id)
+    db.session.add(cp)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Permiso asignado al consultor"}), 201
+
+@bp.route('/consultores/<int:consultor_id>/permisos/<int:permiso_id>', methods=['DELETE'])
+def quitar_permiso_consultor(consultor_id, permiso_id):
+    cp = ConsultorPermiso.query.filter_by(consultor_id=consultor_id, permiso_id=permiso_id).first()
+
+    if not cp:
+        return jsonify({"mensaje": "No estaba asignado"}), 404
+
+    db.session.delete(cp)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Permiso removido del consultor"}), 200
+
+
+# -------------------------------
+#   OCUPACIONES
+# -------------------------------
+
+@bp.route("/ocupaciones", methods=["GET"])
+def listar_ocupaciones():
+    ocupaciones = Ocupacion.query.order_by(Ocupacion.codigo).all()
+    return jsonify([o.to_dict() for o in ocupaciones]), 200
+
+
+@bp.route("/ocupaciones", methods=["POST"])
+def crear_ocupacion():
+    data = request.get_json() or {}
+    codigo = data.get("codigo", "").strip().upper()
+    nombre = data.get("nombre")
+    descripcion = data.get("descripcion")
+
+    if not codigo or not nombre:
+        return jsonify({"mensaje": "Código y nombre son obligatorios"}), 400
+
+    if Ocupacion.query.filter_by(codigo=codigo).first():
+        return jsonify({"mensaje": "La ocupación ya existe"}), 400
+
+    o = Ocupacion(codigo=codigo, nombre=nombre, descripcion=descripcion)
+    db.session.add(o)
+    db.session.commit()
+    return jsonify({"mensaje": "Ocupación creada", "ocupacion": o.to_dict()}), 201
+
+
+@bp.route("/ocupaciones/<int:id>", methods=["PUT"])
+def editar_ocupacion(id):
+    o = Ocupacion.query.get_or_404(id)
+    data = request.get_json() or {}
+
+    o.nombre = data.get("nombre", o.nombre)
+    o.descripcion = data.get("descripcion", o.descripcion)
+
+    db.session.commit()
+    return jsonify({"mensaje": "Ocupación actualizada", "ocupacion": o.to_dict()}), 200
+
+
+@bp.route("/ocupaciones/<int:id>", methods=["DELETE"])
+def eliminar_ocupacion(id):
+    o = Ocupacion.query.get_or_404(id)
+    db.session.delete(o)
+    db.session.commit()
+    return jsonify({"mensaje": "Ocupación eliminada"}), 200
+
+
+# -------------------------------
+#   TAREAS
+# -------------------------------
+
+@bp.route("/tareas", methods=["GET"])
+def listar_tareas():
+    tareas = Tarea.query.order_by(Tarea.codigo).all()
+    return jsonify([t.to_dict() for t in tareas]), 200
+
+
+@bp.route("/tareas", methods=["POST"])
+def crear_tarea():
+    data = request.get_json() or {}
+    codigo = data.get("codigo", "").strip().upper()
+    nombre = data.get("nombre")
+    descripcion = data.get("descripcion")
+
+    if not codigo or not nombre:
+        return jsonify({"mensaje": "Código y nombre son obligatorios"}), 400
+
+    if Tarea.query.filter_by(codigo=codigo).first():
+        return jsonify({"mensaje": "La tarea ya existe"}), 400
+
+    t = Tarea(codigo=codigo, nombre=nombre, descripcion=descripcion)
+    db.session.add(t)
+    db.session.commit()
+    return jsonify({"mensaje": "Tarea creada", "tarea": t.to_dict()}), 201
+
+
+@bp.route("/tareas/<int:id>", methods=["PUT"])
+def editar_tarea(id):
+    t = Tarea.query.get_or_404(id)
+    data = request.get_json() or {}
+
+    t.nombre = data.get("nombre", t.nombre)
+    t.descripcion = data.get("descripcion", t.descripcion)
+
+    db.session.commit()
+    return jsonify({"mensaje": "Tarea actualizada", "tarea": t.to_dict()}), 200
+
+
+@bp.route("/tareas/<int:id>", methods=["DELETE"])
+def eliminar_tarea(id):
+    t = Tarea.query.get_or_404(id)
+    db.session.delete(t)
+    db.session.commit()
+    return jsonify({"mensaje": "Tarea eliminada"}), 200
+
+
+# -------------------------------
+#   ALIASES DE TAREAS
+# -------------------------------
+
+@bp.route("/tareas/<int:tarea_id>/alias", methods=["POST"])
+def crear_alias_tarea(tarea_id):
+    tarea = Tarea.query.get_or_404(tarea_id)
+
+    data = request.get_json() or {}
+    alias = data.get("alias", "").strip()
+
+    if not alias:
+        return jsonify({"mensaje": "Alias requerido"}), 400
+
+    a = TareaAlias(alias=alias, tarea=tarea)
+    db.session.add(a)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Alias creado", "alias": a.to_dict()}), 201
+
+
+@bp.route("/tareas/alias/<int:id>", methods=["DELETE"])
+def eliminar_alias(id):
+    alias = TareaAlias.query.get_or_404(id)
+    db.session.delete(alias)
+    db.session.commit()
+    return jsonify({"mensaje": "Alias eliminado"}), 200
+
+
+# -------------------------------
+#   ASIGNAR / QUITAR TAREAS A UNA OCUPACIÓN
+# -------------------------------
+
+@bp.route("/ocupaciones/<int:ocupacion_id>/tareas", methods=["GET"])
+def tareas_por_ocupacion(ocupacion_id):
+    ocupacion = Ocupacion.query.get_or_404(ocupacion_id)
+    return jsonify([t.to_dict_simple() for t in ocupacion.tareas]), 200
+
+
+@bp.route("/ocupaciones/<int:ocupacion_id>/tareas", methods=["POST"])
+def asignar_tarea_a_ocupacion(ocupacion_id):
+    ocupacion = Ocupacion.query.get_or_404(ocupacion_id)
+    data = request.get_json() or {}
+
+    tarea_id = data.get("tarea_id")
+    if not tarea_id:
+        return jsonify({"mensaje": "tarea_id requerido"}), 400
+
+    tarea = Tarea.query.get_or_404(tarea_id)
+
+    if tarea in ocupacion.tareas:
+        return jsonify({"mensaje": "La tarea ya está asignada"}), 400
+
+    ocupacion.tareas.append(tarea)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Tarea asignada", "ocupacion": ocupacion.to_dict()}), 201
+
+
+@bp.route("/ocupaciones/<int:ocupacion_id>/tareas/<int:tarea_id>", methods=["DELETE"])
+def quitar_tarea_de_ocupacion(ocupacion_id, tarea_id):
+    ocupacion = Ocupacion.query.get_or_404(ocupacion_id)
+    tarea = Tarea.query.get_or_404(tarea_id)
+
+    if tarea not in ocupacion.tareas:
+        return jsonify({"mensaje": "La tarea no estaba asignada"}), 404
+
+    ocupacion.tareas.remove(tarea)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Tarea removida", "ocupacion": ocupacion.to_dict()}), 200
+
+@bp.route("/horarios", methods=["GET"])
+def obtener_horarios():
+    try:
+        registros = Registro.query.all()
+
+        # Normalizar ocupaciones antes de procesar
+        registros = normalizar_ocupaciones(registros)
+
+        data = []
+
+        for r in registros:
+            occ_text = r.ocupacion_azure or "00 - SIN CLASIFICAR"
+            horas = float(r.horas_convertidas or 0)
+
+            data.append({
+                "ocupacion": occ_text,
+                "tarea": r.tipo_tarea,
+                "horas": horas
+            })
+
+        # Agrupación por ocupación
+        agrupado = {}
+        for d in data:
+            agrupado.setdefault(d["ocupacion"], 0)
+            agrupado[d["ocupacion"]] += d["horas"]
+
+        # Resultado ordenado:
+        resultado = [
+            {"name": k, "value": round((h / sum(agrupado.values())) * 100, 2), "horas": h}
+            for k, h in agrupado.items()
+        ]
+
+        resultado.sort(key=lambda x: x["value"], reverse=True)
+
+        return jsonify({
+            "ocupaciones": resultado
+        })
+
+    except Exception as e:
+        print("❌ Error:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/permisos-asignados/<int:consultor_id>', methods=['GET'])
+def permisos_asignados(consultor_id):
+
+    consultor = (
+        Consultor.query.options(
+            joinedload(Consultor.rol_obj)
+                .joinedload(Rol.permisos_asignados)
+                .joinedload(RolPermiso.permiso),
+
+            joinedload(Consultor.equipo_obj)
+                .joinedload(Equipo.permisos_asignados)
+                .joinedload(EquipoPermiso.permiso),
+
+            joinedload(Consultor.permisos_especiales)
+                .joinedload(ConsultorPermiso.permiso),
+
+            joinedload(Consultor.modulos)
+        )
+        .filter_by(id=consultor_id)
+        .first()
+    )
+
+    if not consultor:
+        return jsonify({"error": "Consultor no encontrado"}), 404
+
+    # ===============================
+    # Recolección final de permisos
+    # ===============================
+    permisos_set = set()
+
+    # Permisos del rol
+    if consultor.rol_obj:
+        for rp in consultor.rol_obj.permisos_asignados:
+            permisos_set.add(rp.permiso.codigo)
+
+    # Permisos del equipo
+    if consultor.equipo_obj:
+        for ep in consultor.equipo_obj.permisos_asignados:
+            permisos_set.add(ep.permiso.codigo)
+
+    # Permisos individuales
+    for cp in consultor.permisos_especiales:
+        permisos_set.add(cp.permiso.codigo)
+
+    permisos_list = sorted(list(permisos_set))
+
+    # ===============================
+    #   RESPUESTA COMPLETA
+    # ===============================
+    return jsonify({
+        "consultor": {
+            "id": consultor.id,
+            "usuario": consultor.usuario,
+            "nombre": consultor.nombre,
+            "rol": consultor.rol_obj.nombre if consultor.rol_obj else None,
+            "equipo": consultor.equipo_obj.nombre if consultor.equipo_obj else None,
+            "horario": consultor.horario_obj.rango if consultor.horario_obj else None,
+            "modulos": [{"id": m.id, "nombre": m.nombre} for m in consultor.modulos],
+        },
+        "permisos": permisos_list,
+
+        # Debug extendido (opcional)
+        "detalle": {
+            "rol_permisos": [rp.permiso.codigo for rp in consultor.rol_obj.permisos_asignados] if consultor.rol_obj else [],
+            "equipo_permisos": [ep.permiso.codigo for ep in consultor.equipo_obj.permisos_asignados] if consultor.equipo_obj else [],
+            "permisos_individuales": [cp.permiso.codigo for cp in consultor.permisos_especiales]
+        }
+    }), 200
+
+# -------------------------------
+#   HORARIOS ESTADÍSTICAS (NO CONFUNDIR CON /horarios)
+# -------------------------------
+
+@bp.route("/horas-ocupacion", methods=["GET"])
+def estadisticas_ocupaciones():
+    try:
+        registros = Registro.query.all()
+        registros = normalizar_ocupaciones(registros)
+
+        data = []
+        for r in registros:
+            occ_text = r.ocupacion_azure or "00 - SIN CLASIFICAR"
+            horas = float(r.horas_convertidas or 0)
+
+            data.append({
+                "ocupacion": occ_text,
+                "tarea": r.tipo_tarea,
+                "horas": horas
+            })
+
+        agrupado = {}
+        for d in data:
+            agrupado.setdefault(d["ocupacion"], 0)
+            agrupado[d["ocupacion"]] += d["horas"]
+
+        resultado = [
+            {"name": k, "value": round((h / sum(agrupado.values())) * 100, 2), "horas": h}
+            for k, h in agrupado.items()
+        ]
+
+        resultado.sort(key=lambda x: x["value"], reverse=True)
+
+        return jsonify({"ocupaciones": resultado})
+
+    except Exception as e:
+        print("❌ Error:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/equipos/<int:equipo_id>/permisos/codigo/<string:codigo>', methods=['DELETE'])
+def quitar_permiso_equipo_por_codigo(equipo_id, codigo):
+    p = Permiso.query.filter_by(codigo=codigo.upper()).first()
+    if not p:
+        return jsonify({"mensaje": "Permiso no encontrado"}), 404
+
+    ep = EquipoPermiso.query.filter_by(equipo_id=equipo_id, permiso_id=p.id).first()
+    if not ep:
+        return jsonify({"mensaje": "Permiso no estaba asignado"}), 404
+
+    db.session.delete(ep)
+    db.session.commit()
+    return jsonify({"mensaje": "Permiso removido"}), 200
+
+@bp.route('/consultores/<int:consultor_id>/permisos/codigo/<string:codigo>', methods=['DELETE'])
+def quitar_permiso_consultor_por_codigo(consultor_id, codigo):
+    p = Permiso.query.filter_by(codigo=codigo.upper()).first()
+    if not p:
+        return jsonify({"mensaje": "Permiso no encontrado"}), 404
+
+    cp = ConsultorPermiso.query.filter_by(consultor_id=consultor_id, permiso_id=p.id).first()
+    if not cp:
+        return jsonify({"mensaje": "Permiso no estaba asignado"}), 404
+
+    db.session.delete(cp)
+    db.session.commit()
+    return jsonify({"mensaje": "Permiso removido"}), 200
+
+# ========== ROLES ==========
+
+@bp.route('/roles', methods=['GET'])
+def listar_roles():
+    roles = Rol.query.order_by(Rol.nombre).all()
+    return jsonify([r.to_dict() for r in roles]), 200
+
+@bp.route('/roles', methods=['POST'])
+def crear_rol():
+    data = request.get_json() or {}
+    nombre = data.get("nombre", "").strip().upper()
+
+    if not nombre:
+        return jsonify({"mensaje": "Nombre requerido"}), 400
+
+    if Rol.query.filter_by(nombre=nombre).first():
+        return jsonify({"mensaje": "El rol ya existe"}), 400
+
+    rol = Rol(nombre=nombre)
+    db.session.add(rol)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Rol creado", "rol": rol.to_dict()}), 201
+
+@bp.route('/roles/<int:id>', methods=['PUT'])
+def editar_rol(id):
+    rol = Rol.query.get_or_404(id)
+    data = request.get_json() or {}
+
+    nuevo_nombre = data.get("nombre", "").strip().upper()
+
+    if Rol.query.filter(Rol.id != id, Rol.nombre == nuevo_nombre).first():
+        return jsonify({"mensaje": "Ese nombre ya lo tiene otro rol"}), 400
+
+    rol.nombre = nuevo_nombre
+    db.session.commit()
+
+    return jsonify({"mensaje": "Rol actualizado", "rol": rol.to_dict()}), 200
+
+@bp.route('/roles/<int:id>', methods=['DELETE'])
+def eliminar_rol(id):
+    rol = Rol.query.get_or_404(id)
+
+    asignados = Consultor.query.filter_by(rol_id=id).count()
+    if asignados > 0:
+        return jsonify({"mensaje": "No se puede eliminar: tiene consultores asociados"}), 400
+
+    db.session.delete(rol)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Rol eliminado"}), 200
+
+@bp.route('/roles/<int:rol_id>/permisos', methods=['GET'])
+def permisos_por_rol(rol_id):
+    permisos = (
+        db.session.query(Permiso)
+        .join(RolPermiso, RolPermiso.permiso_id == Permiso.id)
+        .filter(RolPermiso.rol_id == rol_id)
+        .all()
+    )
+    return jsonify([p.to_dict() for p in permisos]), 200
+
+@bp.route('/roles/<int:rol_id>/permisos', methods=['POST'])
+def asignar_permiso_rol(rol_id):
+    data = request.get_json() or {}
+    permiso_id = data.get("permiso_id")
+
+    if not permiso_id:
+        return jsonify({"mensaje": "permiso_id requerido"}), 400
+
+    if RolPermiso.query.filter_by(rol_id=rol_id, permiso_id=permiso_id).first():
+        return jsonify({"mensaje": "Permiso ya asignado"}), 400
+
+    rp = RolPermiso(rol_id=rol_id, permiso_id=permiso_id)
+    db.session.add(rp)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Permiso asignado"}), 201
+
+@bp.route('/roles/<int:rol_id>/permisos/<int:permiso_id>', methods=['DELETE'])
+def quitar_permiso_rol(rol_id, permiso_id):
+    rp = RolPermiso.query.filter_by(rol_id=rol_id, permiso_id=permiso_id).first()
+
+    if not rp:
+        return jsonify({"mensaje": "El permiso no estaba asignado"}), 404
+
+    db.session.delete(rp)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Permiso removido"}), 200
+
+@bp.route('/consultores/<int:id>/rol', methods=['PUT'])
+def asignar_rol_consultor(id):
+    consultor = Consultor.query.get_or_404(id)
+    data = request.get_json() or {}
+    rol_id = data.get("rol_id")
+
+    if not rol_id:
+        return jsonify({"mensaje": "rol_id requerido"}), 400
+
+    rol = Rol.query.get(rol_id)
+    if not rol:
+        return jsonify({"mensaje": "Rol no existe"}), 404
+
+    consultor.rol_id = rol_id
+    db.session.commit()
+
+    return jsonify({"mensaje": "Rol asignado correctamente"}), 200
+
+# ========== EQUIPOS ==========
+
+@bp.route('/equipos', methods=['GET'])
+def listar_equipos():
+    equipos = Equipo.query.order_by(Equipo.nombre).all()
+    return jsonify([e.to_dict() for e in equipos])
+
+@bp.route('/equipos', methods=['POST'])
+def crear_equipo():
+    data = request.get_json() or {}
+    nombre = data.get("nombre", "").strip().upper()
+
+    if not nombre:
+        return jsonify({"mensaje": "Nombre requerido"}), 400
+
+    if Equipo.query.filter_by(nombre=nombre).first():
+        return jsonify({"mensaje": "El equipo ya existe"}), 400
+
+    eq = Equipo(nombre=nombre)
+    db.session.add(eq)
+    db.session.commit()
+
+    return jsonify(eq.to_dict()), 201
+
+@bp.route('/equipos/<int:id>', methods=['PUT'])
+def editar_equipo(id):
+    equipo = Equipo.query.get_or_404(id)
+    data = request.get_json() or {}
+
+    nuevo = data.get("nombre", "").strip().upper()
+
+    if Equipo.query.filter(Equipo.id != id, Equipo.nombre == nuevo).first():
+        return jsonify({"mensaje": "Ya existe otro equipo con ese nombre"}), 400
+
+    equipo.nombre = nuevo
+    db.session.commit()
+
+    return jsonify(equipo.to_dict()), 200
+
+@bp.route('/equipos/<int:id>', methods=['DELETE'])
+def eliminar_equipo(id):
+    equipo = Equipo.query.get_or_404(id)
+
+    asignados = Consultor.query.filter_by(equipo_id=id).count()
+    if asignados > 0:
+        return jsonify({"mensaje": "No se puede eliminar: tiene consultores asignados"}), 400
+
+    db.session.delete(equipo)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Equipo eliminado"}), 200
+
+@bp.route('/equipos/<int:id>/consultores', methods=['GET'])
+def consultores_por_equipo(id):
+    consultores = Consultor.query.filter_by(equipo_id=id).all()
+    return jsonify([c.to_dict() for c in consultores])
+
+@bp.route('/consultores/<int:id>/equipo', methods=['PUT'])
+def asignar_equipo_consultor(id):
+    cons = Consultor.query.get_or_404(id)
+    data = request.get_json() or {}
+    equipo_id = data.get("equipo_id")
+
+    if not equipo_id:
+        return jsonify({"mensaje": "equipo_id requerido"}), 400
+
+    eq = Equipo.query.get(equipo_id)
+    if not eq:
+        return jsonify({"mensaje": "Equipo no existe"}), 404
+
+    cons.equipo_id = equipo_id
+    db.session.commit()
+
+    return jsonify({"mensaje": "Equipo asignado correctamente"}), 200
+
+@bp.route('/consultores/<int:id>/equipo/remove', methods=['PUT'])
+def remover_consultor_equipo(id):
+    cons = Consultor.query.get_or_404(id)
+    cons.equipo_id = None
+    db.session.commit()
+    return jsonify({"mensaje": "Consultor removido del equipo"}), 200
