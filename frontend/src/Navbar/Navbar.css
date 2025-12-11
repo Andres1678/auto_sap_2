@@ -13,13 +13,13 @@
   --navc-ring: color-mix(in oklab, var(--navc-red) 55%, var(--navc-blue) 45%);
   --navc-border: rgba(148,163,184,.18);
 
-  /* Tamaño del logo y cálculo de alto del header */
-  --navc-logo-h: 56px;       /* << antes 40px — ajústalo si quieres (60–64px también va) */
-  --navc-header-py: 10px;    /* padding vertical del header */
+  /* Tamaño del logo y header */
+  --navc-logo-h: 56px;
+  --navc-header-py: 10px;
   --navc-header-h: calc(var(--navc-logo-h) + (var(--navc-header-py) * 2));
 }
 
-/* Fallback si el navegador no soporta color-mix/oklab */
+/* Fallback si el navegador no soporta color-mix */
 @supports not (color: color-mix(in oklab, red 50%, blue)) {
   :root{ --navc-ring:#8a2a62; }
 }
@@ -36,10 +36,10 @@
 .navc-header{
   position:sticky; top:0; z-index:50;
   display:flex; align-items:center; gap:var(--navc-gap);
-  padding: var(--navc-header-py) 14px;                    /* usa variable */
+  padding: var(--navc-header-py) 14px;
   background:var(--navc-bg); color:var(--navc-text);
   box-shadow:var(--navc-shadow);
-  min-height: var(--navc-header-h);                       /* asegura altura acorde al logo */
+  min-height: var(--navc-header-h);
 }
 
 /* ====== Hamburguesa ====== */
@@ -48,26 +48,33 @@
   font-size:26px; line-height:1; padding:8px 10px; border-radius:10px; cursor:pointer;
   transition:transform .2s ease, box-shadow .15s ease;
 }
-.navc-hamburger:hover{ transform:scale(1.05); box-shadow:0 0 0 3px color-mix(in oklab, var(--navc-ring) 25%, transparent); }
+.navc-hamburger:hover{
+  transform:scale(1.05);
+  box-shadow:0 0 0 3px color-mix(in oklab, var(--navc-ring) 25%, transparent);
+}
 .navc-hamburger:active{ transform:scale(.98); }
 @media (min-width:860px){ .navc-hamburger{ display:none; } }
 
 /* ====== Menú ====== */
 .navc-navbar{
   position:fixed;
-  inset: var(--navc-header-h) 0 auto 0;  /* << antes 64px: se coloca justo bajo el header real */
+  inset: var(--navc-header-h) 0 auto 0;
   left:0; width:100%;
   background:var(--navc-bg-soft);
-  border-bottom-left-radius:var(--navc-radius); border-bottom-right-radius:var(--navc-radius);
+  border-bottom-left-radius:var(--navc-radius);
+  border-bottom-right-radius:var(--navc-radius);
   box-shadow:var(--navc-shadow);
-  display:grid; gap:6px; padding:8px; max-height:0; overflow:hidden;
+  display:grid; gap:6px; padding:8px;
+  max-height:0; overflow:hidden;
   transition:max-height .28s ease, padding .28s ease;
 }
 .navc-navbar.open{ max-height:60vh; padding:10px; overflow-y:auto; }
 
 .navc-navbar a{
-  display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:10px;
-  color:var(--navc-text); text-decoration:none; font-size:15px; font-weight:600; letter-spacing:.2px;
+  display:flex; align-items:center; gap:10px;
+  padding:12px 14px; border-radius:10px;
+  color:var(--navc-text); text-decoration:none;
+  font-size:15px; font-weight:600; letter-spacing:.2px;
   transition:background .18s ease, transform .12s ease, box-shadow .18s ease;
   outline:none;
 }
@@ -76,7 +83,9 @@
     color-mix(in oklab, var(--navc-red) 18%, transparent) 0%,
     color-mix(in oklab, var(--navc-blue) 12%, transparent) 100%);
 }
-.navc-navbar a:focus-visible{ box-shadow:0 0 0 4px color-mix(in oklab, var(--navc-ring) 35%, transparent); }
+.navc-navbar a:focus-visible{
+  box-shadow:0 0 0 4px color-mix(in oklab, var(--navc-ring) 35%, transparent);
+}
 .navc-navbar a:active{ transform:scale(.99); }
 
 .navc-navbar a[aria-current="page"]{
@@ -86,30 +95,22 @@
   position:relative;
 }
 .navc-navbar a[aria-current="page"]::before{
-  content:""; position:absolute; left:0; top:8px; bottom:8px; width:3px; border-radius:3px;
+  content:""; position:absolute; left:0; top:8px; bottom:8px;
+  width:3px; border-radius:3px;
   background:linear-gradient(180deg, var(--navc-red), var(--navc-blue));
 }
 
-/* ====== Logo separado del enlace Inicio ====== */
+/* ====== Logo ====== */
 .navc-logo{
-  display:inline-flex;
-  align-items:center;
-  padding:0;                 /* sin padding de los otros <a> */
-  margin-right:14px;         /* separación respecto a "Inicio" */
-  border-radius:0;
+  display:inline-flex; align-items:center;
+  padding:0; margin-right:14px; border-radius:0;
 }
 .navc-logo img{
-  display:block;
-  height: var(--navc-logo-h);
-  width: auto;
-  object-fit: contain;
+  display:block; height: var(--navc-logo-h); width:auto; object-fit:contain;
 }
-/* Evitar efectos de hover/active del resto en el logo */
 .navc-navbar .navc-logo:hover,
 .navc-navbar .navc-logo:active{
-  background: transparent;
-  transform: none;
-  box-shadow: none;
+  background:transparent; transform:none; box-shadow:none;
 }
 .navc-navbar .navc-logo:focus-visible{
   outline: 2px solid color-mix(in oklab, var(--navc-ring) 40%, transparent);
@@ -148,13 +149,17 @@
 }
 .navc-logout:hover{ filter:brightness(1.06); }
 .navc-logout:active{ transform:translateY(1px); }
-.navc-logout:focus-visible{ outline:3px solid color-mix(in oklab, var(--navc-ring) 40%, transparent); outline-offset:2px; }
+.navc-logout:focus-visible{
+  outline:3px solid color-mix(in oklab, var(--navc-ring) 40%, transparent);
+  outline-offset:2px;
+}
 
 /* ====== Desktop layout ====== */
 @media (min-width:860px){
   .navc-navbar{
     position:static; display:flex; align-items:center; gap:10px;
-    background:transparent; box-shadow:none; padding:0; max-height:none; overflow:visible; border-radius:0;
+    background:transparent; box-shadow:none; padding:0; max-height:none; overflow:visible;
+    border-radius:0;
   }
   .navc-navbar a{ padding:10px 14px; }
   .navc-navbar a[aria-current="page"]{
@@ -165,11 +170,53 @@
   .navc-spacer{ display:block; flex:1; }
 }
 
-/* Logo un poco menor en móviles (pero sigue grande) */
+/* Logo menor en móviles */
 @media (max-width:480px){
-  :root{ --navc-logo-h: 44px; } /* antes 34px */
+  :root{ --navc-logo-h: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce){
-  .navc-hamburger, .navc-navbar, .navc-navbar a, .navc-logout{ transition:none !important; }
+  .navc-hamburger, .navc-navbar, .navc-navbar a, .navc-logout{
+    transition:none !important;
+  }
+}
+
+/* ============================================================
+   ===== BOTÓN DE CONFIGURACIÓN ⚙️ (Nuevo agregado) ============
+   ============================================================ */
+.navc-settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--navc-text);
+  transition: background .18s ease, transform .12s ease;
+}
+
+.navc-settings:hover {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--navc-red) 18%, transparent) 0%,
+    color-mix(in oklab, var(--navc-blue) 12%, transparent) 100%
+  );
+}
+
+.navc-settings:active {
+  transform: scale(.95);
+}
+
+.navc-settings:focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--navc-ring) 40%, transparent);
+  outline-offset: 2px;
+}
+
+@media (min-width:860px) {
+  .navc-settings {
+    padding: 10px 12px;
+    font-size: 20px;
+  }
 }
