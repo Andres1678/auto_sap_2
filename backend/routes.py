@@ -2209,15 +2209,6 @@ def eliminar_rol(id):
 
     return jsonify({"mensaje": "Rol eliminado"}), 200
 
-@bp.route('/roles/<int:rol_id>/permisos', methods=['GET'])
-def permisos_por_rol(rol_id):
-    permisos = (
-        db.session.query(Permiso)
-        .join(RolPermiso, RolPermiso.permiso_id == Permiso.id)
-        .filter(RolPermiso.rol_id == rol_id)
-        .all()
-    )
-    return jsonify([p.to_dict() for p in permisos]), 200
 
 @bp.route('/roles/<int:rol_id>/permisos', methods=['POST'])
 def asignar_permiso_rol(rol_id):
