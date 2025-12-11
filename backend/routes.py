@@ -2164,11 +2164,6 @@ def quitar_permiso_consultor_por_codigo(consultor_id, codigo):
 
 # ========== ROLES ==========
 
-@bp.route('/roles', methods=['GET'])
-def listar_roles():
-    roles = Rol.query.order_by(Rol.nombre).all()
-    return jsonify([r.to_dict() for r in roles]), 200
-
 @bp.route('/roles', methods=['POST'])
 def crear_rol():
     data = request.get_json() or {}
