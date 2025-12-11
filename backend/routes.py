@@ -2209,36 +2209,6 @@ def eliminar_rol(id):
 
     return jsonify({"mensaje": "Rol eliminado"}), 200
 
-
-@bp.route('/roles/<int:rol_id>/permisos', methods=['POST'])
-def asignar_permiso_rol(rol_id):
-    data = request.get_json() or {}
-    permiso_id = data.get("permiso_id")
-
-    if not permiso_id:
-        return jsonify({"mensaje": "permiso_id requerido"}), 400
-
-    if RolPermiso.query.filter_by(rol_id=rol_id, permiso_id=permiso_id).first():
-        return jsonify({"mensaje": "Permiso ya asignado"}), 400
-
-    rp = RolPermiso(rol_id=rol_id, permiso_id=permiso_id)
-    db.session.add(rp)
-    db.session.commit()
-
-    return jsonify({"mensaje": "Permiso asignado"}), 201
-
-@bp.route('/roles/<int:rol_id>/permisos/<int:permiso_id>', methods=['DELETE'])
-def quitar_permiso_rol(rol_id, permiso_id):
-    rp = RolPermiso.query.filter_by(rol_id=rol_id, permiso_id=permiso_id).first()
-
-    if not rp:
-        return jsonify({"mensaje": "El permiso no estaba asignado"}), 404
-
-    db.session.delete(rp)
-    db.session.commit()
-
-    return jsonify({"mensaje": "Permiso removido"}), 200
-
 @bp.route('/consultores/<int:id>/rol', methods=['PUT'])
 def asignar_rol_consultor(id):
     consultor = Consultor.query.get_or_404(id)
@@ -2258,11 +2228,6 @@ def asignar_rol_consultor(id):
     return jsonify({"mensaje": "Rol asignado correctamente"}), 200
 
 # ========== EQUIPOS ==========
-
-@bp.route('/equipos', methods=['GET'])
-def listar_equipos():
-    equipos = Equipo.query.order_by(Equipo.nombre).all()
-    return jsonify([e.to_dict() for e in equipos])
 
 @bp.route('/equipos', methods=['POST'])
 def crear_equipo():
