@@ -5,7 +5,7 @@ from flask_migrate import Migrate
 
 from backend.config import Config
 from backend.models import db, Modulo
-from backend.routes import bp   
+from backend.routes import bp
 
 DEFAULT_MODULES = [
     "ABAP", "BASIS", "BI", "BO", "BCP", "BW", "CO", "ECP", "FI", "MM",
@@ -29,10 +29,12 @@ def create_app(config_object=Config):
     app.config.setdefault("JSON_SORT_KEYS", False)
 
     db.init_app(app)
+
+    # ⚠️ Importante: compare_type=True para detectar cambios en columnas
     Migrate(app, db, compare_type=True)
 
     # ----------------------
-    # 🔥 CORS CORREGIDO (VERSIÓN FINAL)
+    # 🔥 CORS CONFIGURADO
     # ----------------------
     CORS(app,
          resources={r"/api/*": {
@@ -60,12 +62,12 @@ def create_app(config_object=Config):
          }})
 
     # ----------------------
-    # BLUEPRINT
+    # BLUEPRINT PRINCIPAL
     # ----------------------
     app.register_blueprint(bp, url_prefix="/api")
 
     # ----------------------
-    # ENDPOINTS BÁSICOS
+    # ENDPOINTS DE SALUD
     # ----------------------
     @app.get("/_healthz")
     def _healthz():
@@ -87,13 +89,17 @@ def create_app(config_object=Config):
         return jsonify({"mensaje": "Error interno del servidor"}), 500
 
     # ----------------------
-    # INICIALIZACIÓN DE BD
+    # INICIALIZACIÓN SEGURA DE MÓDULOS
     # ----------------------
+    # ⚠️ NO USAR db.create_all() → rompe Alembic
+    # Solo intentamos poblar Modulo si la tabla ya existe
     with app.app_context():
-        db.create_all()
-
-        if not Modulo.query.first():
-            db.session.bulk_save_objects([Modulo(nombre=n) for n in DEFAULT_MODULES])
-            db.session.commit()
+        try:
+            if not Modulo.query.first():
+                db.session.bulk_save_objects([Modulo(nombre=n) for n in DEFAULT_MODULES])
+                db.session.commit()
+        except Exception as e:
+            # Evita que Alembic falle cuando env.py carga la app
+            print(f"[INFO] Inicialización de módulos diferida: {e}")
 
     return app

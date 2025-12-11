@@ -8,7 +8,7 @@ class Config:
     
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "DATABASE_URL",
-        "mysql+pymysql://root:root@localhost:3307/auto_sap?charset=utf8mb4",
+        "mysql+pymysql://root:root@localhost:3306/auto_sap?charset=utf8mb4",
     )
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
