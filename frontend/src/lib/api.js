@@ -1,15 +1,15 @@
 // ============================================================
-// Detectar hostname actual
+// Detectar origen actual (funciona en dev y prod)
 // ============================================================
-const hostname =
+const origin =
   typeof window !== "undefined" && window.location
-    ? window.location.hostname
+    ? window.location.origin
     : "";
 
 // ============================================================
-// URL base de la API
+// URL base de la API — automática según entorno
 // ============================================================
-export const API_URL = "http://127.0.0.1:5000/api";
+export const API_URL = `${origin}/api`;
 
 // ============================================================
 // HEADERS DEL USUARIO (token, rol, consultor_id, nombre)
@@ -19,7 +19,7 @@ function getUserHeaders() {
 
   return {
     "X-User-Usuario": user.usuario || "",
-    "X-User-Name": user.nombre || "",        // 🔥 IMPORTANTE PARA RESUMEN
+    "X-User-Name": user.nombre || "",
     "X-User-Rol": user.rol || "",
     "X-Consultor-Id": user.id || "",
     Authorization: localStorage.getItem("token") || "",
