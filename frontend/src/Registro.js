@@ -241,6 +241,9 @@ const Registro = ({ userData }) => {
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
 
   const canDownload = ['rodriguezso','valdezjl'].includes(String(usuarioLogin || '').toLowerCase());
+  const [excelFile, setExcelFile] = useState(null);
+  const [importingExcel, setImportingExcel] = useState(false);
+
 
   const initialVista = () => {
     const persisted = localStorage.getItem('equipoView');
@@ -799,6 +802,61 @@ const Registro = ({ userData }) => {
     cargarTareas();
   }, [ocupacionSeleccionada]);
 
+  const handleImportExcel = async () => {
+    if (!excelFile) {
+      return Swal.fire({ icon: "warning", title: "Selecciona un archivo Excel" });
+    }
+
+    const confirm = await Swal.fire({
+      title: "¿Importar Excel?",
+      text: "Se cargará el archivo al servidor para comparar / reconstruir registros.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Sí, importar",
+      cancelButtonText: "Cancelar",
+      reverseButtons: true
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    setImportingExcel(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", excelFile);
+
+      // OJO: no pongas Content-Type aquí. El browser lo arma con boundary.
+      const res = await jfetch("/registro/import-excel", {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
+      await Swal.fire({
+        icon: "success",
+        title: "Excel importado",
+        text: `Registros cargados: ${data?.total_registros ?? "N/D"}`
+      });
+
+      setExcelFile(null);
+
+      // refrescas tabla / resumen
+      fetchRegistros();
+      if (isAdmin) fetchResumen();
+
+    } catch (e) {
+      Swal.fire({
+        icon: "error",
+        title: "Error importando Excel",
+        text: String(e.message || e)
+      });
+    } finally {
+      setImportingExcel(false);
+    }
+  };
+
 
   return (
     <div className="container">
@@ -808,22 +866,55 @@ const Registro = ({ userData }) => {
           <p className="subtitle">Filtra por fecha, cliente, tarea, consultor, equipo, Nro. de caso y horas adicionales</p>
         </div>
 
-        <div className="page-actions" style={{display:'flex', gap:12, alignItems:'center', flexWrap:'wrap'}}>
+        <div
+          className="page-actions"
+          style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}
+        >
           {isAdmin && (
-            <div className="team-toggle" role="tablist" aria-label="Filtrar por equipo" style={{gap:8}}>
-              {equiposConConteo.map(opt => (
+            <div className="team-toggle" role="tablist" aria-label="Filtrar por equipo" style={{ gap: 8 }}>
+              {equiposConConteo.map((opt) => (
                 <button
-                  key={opt.key || 'ALL'}
-                  role='tab'
+                  key={opt.key || "ALL"}
+                  role="tab"
                   type="button"
-                  className={`team-btn ${filtroEquipo === opt.key ? 'is-active' : ''}`}
+                  className={`team-btn ${filtroEquipo === opt.key ? "is-active" : ""}`}
                   onClick={() => setFiltroEquipo(opt.key)}
                   aria-selected={filtroEquipo === opt.key}
-                  title={opt.key ? `Equipo ${opt.label}` : 'Todos los equipos'}
+                  title={opt.key ? `Equipo ${opt.label}` : "Todos los equipos"}
                 >
                   {opt.label} <span className="chip">{opt.count}</span>
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* ===== Importar Excel (solo admin) ===== */}
+          {isAdmin && (
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                paddingLeft: 12,
+                borderLeft: "1px solid #e0e0e0",
+              }}
+            >
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(e) => setExcelFile(e.target.files?.[0] || null)}
+                style={{ maxWidth: 260 }}
+              />
+
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={handleImportExcel}
+                disabled={!excelFile || importingExcel}
+                title="Importar Excel histórico"
+              >
+                {importingExcel ? "Importando…" : "Importar Excel"}
+              </button>
             </div>
           )}
 
@@ -844,23 +935,23 @@ const Registro = ({ userData }) => {
                 const lista = Array.isArray(data.modulos) ? data.modulos : [];
                 const norm = normalizeModulos(lista);
                 setModulos(norm);
-                setModuloElegido(norm.length === 1 ? norm[0] : '');
+                setModuloElegido(norm.length === 1 ? norm[0] : "");
 
                 setRegistro({
                   ...initRegistro(),
-                  modulo: norm.length === 1 ? norm[0] : '',
-                  equipo: data.equipo ? String(data.equipo).toUpperCase() : userEquipoUpper
+                  modulo: norm.length === 1 ? norm[0] : "",
+                  equipo: data.equipo ? String(data.equipo).toUpperCase() : userEquipoUpper,
                 });
 
-                setOcupacionSeleccionada('');
+                setOcupacionSeleccionada("");
                 setModalIsOpen(true);
                 setModoEdicion(false);
               } catch (err) {
                 console.error("Error cargando datos del consultor:", err);
                 Swal.fire({
-                  icon: 'error',
-                  title: 'No se pudieron cargar los datos del consultor',
-                  text: err.message
+                  icon: "error",
+                  title: "No se pudieron cargar los datos del consultor",
+                  text: err.message,
                 });
               }
             }}

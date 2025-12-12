@@ -47,6 +47,20 @@ def permission_required(codigo_permiso):
         return wrapper
     return decorator
 
+def norm_fecha(v):
+    if pd.isna(v):
+        return None
+    if hasattr(v, 'date'):
+        return v.date()
+    return v
+
+def norm_hora(v):
+    if pd.isna(v):
+        return None
+    if hasattr(v, 'strftime'):
+        return v.strftime('%H:%M')
+    return str(v)
+
 
 def normalizar_ocupaciones(registros):
 
@@ -2303,3 +2317,89 @@ def remover_consultor_equipo(id):
     cons.equipo_id = None
     db.session.commit()
     return jsonify({"mensaje": "Consultor removido del equipo"}), 200
+
+# ========== IMPORTAR REGISTROS DESDE EXCEL ==========
+@bp.route('/registro/import-excel', methods=['POST'])
+def importar_registro_excel():
+    if 'file' not in request.files:
+        return jsonify({"mensaje": "No se envió archivo"}), 400
+
+    file = request.files['file']
+
+    if file.filename == '':
+        return jsonify({"mensaje": "Archivo vacío"}), 400
+
+    try:
+        import pandas as pd
+
+        df = pd.read_excel(file)
+
+        # Normalizar columnas (encoding del Excel)
+        df.columns = [
+            c.strip()
+             .replace("MÃ³dulo", "Modulo")
+             .replace("DescripciÃ³n", "Descripcion")
+            for c in df.columns
+        ]
+
+        # Renombrar a nombres DB
+        df = df.rename(columns={
+            "Fecha": "fecha",
+            "Modulo": "modulo_nombre",
+            "Equipo": "equipo",
+            "Cliente": "cliente",
+            "Consultor": "consultor",
+            "Hora Inicio": "hora_inicio",
+            "Hora Fin": "hora_fin",
+            "Tiempo Invertido": "tiempo_invertido",
+            "Tiempo Facturable": "tiempo_facturable",
+            "Descripcion": "descripcion"
+        })
+
+        registros = []
+
+        for _, row in df.iterrows():
+            registros.append(
+                RegistroExcel(
+                    fecha=norm_fecha(row.get("fecha")),
+                    modulo_nombre=str(row.get("modulo_nombre")).strip() if row.get("modulo_nombre") else None,
+                    equipo=str(row.get("equipo")).strip().upper() if row.get("equipo") else None,
+                    cliente=str(row.get("cliente")).strip() if row.get("cliente") else None,
+                    consultor=str(row.get("consultor")).strip().lower() if row.get("consultor") else None,
+                    hora_inicio=norm_hora(row.get("hora_inicio")),
+                    hora_fin=norm_hora(row.get("hora_fin")),
+                    tiempo_invertido=row.get("tiempo_invertido") or 0,
+                    tiempo_facturable=row.get("tiempo_facturable") or 0,
+                    descripcion=str(row.get("descripcion")).strip() if row.get("descripcion") else None
+                )
+            )
+        db.session.bulk_save_objects(registros)
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Excel importado correctamente",
+            "total_registros": len(registros)
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "mensaje": "Error importando Excel",
+            "error": str(e)
+        }), 500
+
+@bp.route('/registros/importar-excel/preview', methods=['POST'])
+def preview_import_excel():
+    # procesa excel
+    # NO INSERTA
+    return jsonify({
+        "total": total,
+        "validos": validos,
+        "errores": errores[:20]
+    })
+
+@bp.route('/registros/importar-excel/commit', methods=['POST'])
+def commit_import_excel():
+    # insertar en batch
+    db.session.bulk_save_objects(registros)
+    db.session.commit()

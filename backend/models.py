@@ -540,3 +540,18 @@ class TareaAlias(db.Model):
 
     def to_dict(self):
         return {"id": self.id, "alias": self.alias, "tarea_id": self.tarea_id}
+
+class RegistroExcel(db.Model):
+    __tablename__ = 'registro_excel'
+
+    id = db.Column(db.Integer, primary_key=True)
+    fecha = db.Column(db.Date)
+    modulo_nombre = db.Column(db.String(100))
+    equipo = db.Column(db.String(20))
+    cliente = db.Column(db.String(150))
+    consultor = db.Column(db.String(100))
+    hora_inicio = db.Column(db.Time)
+    hora_fin = db.Column(db.Time)
+    tiempo_invertido = db.Column(db.Float)
+    tiempo_facturable = db.Column(db.Float)
+    descripcion = db.Column(db.Text)
