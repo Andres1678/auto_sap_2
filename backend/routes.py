@@ -16,6 +16,7 @@ import pandas as pd
 from io import BytesIO
 from sqlalchemy.exc import SQLAlchemyError
 import logging
+import traceback
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
 
@@ -2334,9 +2335,11 @@ def importar_registro_excel():
         return jsonify({"mensaje": "Archivo vacío"}), 400
 
     try:
-        import pandas as pd
+        # 👇 CLAVE: forzar engine
+        df = pd.read_excel(file, engine="openpyxl")
 
-        df = pd.read_excel(file)
+        print("COLUMNAS:", df.columns.tolist())
+        print("TOTAL FILAS:", len(df))
 
         # Normalizar columnas (encoding del Excel)
         df.columns = [
@@ -2387,10 +2390,15 @@ def importar_registro_excel():
 
     except Exception as e:
         db.session.rollback()
+
+        print("🔥 ERROR IMPORTANDO EXCEL 🔥")
+        traceback.print_exc()
+
         return jsonify({
             "mensaje": "Error importando Excel",
             "error": str(e)
         }), 500
+
 
 @bp.route('/registros/importar-excel/preview', methods=['POST'])
 def preview_import_excel():
