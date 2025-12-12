@@ -2321,6 +2321,10 @@ def remover_consultor_equipo(id):
 # ========== IMPORTAR REGISTROS DESDE EXCEL ==========
 @bp.route('/registro/import-excel', methods=['POST'])
 def importar_registro_excel():
+    print("=== IMPORT EXCEL ===")
+    print("FILES:", request.files)
+    print("FORM:", request.form)
+
     if 'file' not in request.files:
         return jsonify({"mensaje": "No se envió archivo"}), 400
 
