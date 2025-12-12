@@ -17,6 +17,7 @@ from io import BytesIO
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 import traceback
+import math
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
 
@@ -62,6 +63,17 @@ def norm_hora(v):
         return v.strftime('%H:%M')
     return str(v)
 
+def safe_float(value):
+    try:
+        if value is None:
+            return 0.0
+        if isinstance(value, float) and math.isnan(value):
+            return 0.0
+        if isinstance(value, str):
+            value = value.strip().replace(",", ".")
+        return float(value)
+    except Exception:
+        return 0.0
 
 def normalizar_ocupaciones(registros):
 
@@ -2322,10 +2334,6 @@ def remover_consultor_equipo(id):
 # ========== IMPORTAR REGISTROS DESDE EXCEL ==========
 @bp.route('/registro/import-excel', methods=['POST'])
 def importar_registro_excel():
-    import pandas as pd
-    import numpy as np
-    import traceback
-
     print("=== IMPORT EXCEL ===")
     print("FILES:", request.files)
     print("FORM:", request.form)
@@ -2335,21 +2343,17 @@ def importar_registro_excel():
 
     file = request.files['file']
 
-    if file.filename == '':
+    if not file or file.filename == '':
         return jsonify({"mensaje": "Archivo vacío"}), 400
 
     try:
-        # ---------------------------------------------------
-        # LEER EXCEL
-        # ---------------------------------------------------
+        # Leer Excel
         df = pd.read_excel(file, engine="openpyxl")
 
         print("COLUMNAS ORIGINALES:", df.columns.tolist())
         print("TOTAL FILAS:", len(df))
 
-        # ---------------------------------------------------
-        # NORMALIZAR NOMBRES DE COLUMNAS (ENCODING)
-        # ---------------------------------------------------
+        # Normalizar nombres de columnas
         df.columns = [
             c.strip()
              .replace("MÃ³dulo", "Modulo")
@@ -2357,9 +2361,7 @@ def importar_registro_excel():
             for c in df.columns
         ]
 
-        # ---------------------------------------------------
-        # RENOMBRAR A NOMBRES DB
-        # ---------------------------------------------------
+        # Renombrar columnas a DB
         df = df.rename(columns={
             "Fecha": "fecha",
             "Modulo": "modulo_nombre",
@@ -2375,27 +2377,11 @@ def importar_registro_excel():
 
         print("COLUMNAS NORMALIZADAS:", df.columns.tolist())
 
-        # ---------------------------------------------------
-        # 🔥 LIMPIEZA CRÍTICA DE NaN
-        # ---------------------------------------------------
-        # NaN reales → None
-        df = df.replace({np.nan: None})
-
-        # Strings "nan" / "NAN" → None
-        df = df.applymap(
-            lambda x: None if isinstance(x, str) and x.strip().lower() == "nan" else x
-        )
-
-        # Blindar campos numéricos
-        for col in ["tiempo_invertido", "tiempo_facturable"]:
-            if col in df.columns:
-                df[col] = df[col].fillna(0)
+        # Reemplazar NaN por None
+        df = df.where(pd.notnull(df), None)
 
         registros = []
 
-        # ---------------------------------------------------
-        # CONSTRUIR OBJETOS
-        # ---------------------------------------------------
         for _, row in df.iterrows():
             registros.append(
                 RegistroExcel(
@@ -2410,16 +2396,13 @@ def importar_registro_excel():
                         if row.get("consultor") else None,
                     hora_inicio=norm_hora(row.get("hora_inicio")),
                     hora_fin=norm_hora(row.get("hora_fin")),
-                    tiempo_invertido=float(row.get("tiempo_invertido") or 0),
-                    tiempo_facturable=float(row.get("tiempo_facturable") or 0),
+                    tiempo_invertido=safe_float(row.get("tiempo_invertido")),
+                    tiempo_facturable=safe_float(row.get("tiempo_facturable")),
                     descripcion=str(row.get("descripcion")).strip()
                         if row.get("descripcion") else None
                 )
             )
 
-        # ---------------------------------------------------
-        # INSERT MASIVO
-        # ---------------------------------------------------
         db.session.bulk_save_objects(registros)
         db.session.commit()
 
@@ -2430,7 +2413,6 @@ def importar_registro_excel():
 
     except Exception as e:
         db.session.rollback()
-
         print("🔥 ERROR IMPORTANDO EXCEL 🔥")
         traceback.print_exc()
 
@@ -2438,7 +2420,6 @@ def importar_registro_excel():
             "mensaje": "Error importando Excel",
             "error": str(e)
         }), 500
-
 
 @bp.route('/registros/importar-excel/preview', methods=['POST'])
 def preview_import_excel():
