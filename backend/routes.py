@@ -3,7 +3,7 @@ from backend.models import (
     db, Modulo, Consultor, Registro, BaseRegistro, Login,
     Rol, Equipo, Horario, Oportunidad, Cliente,
     Permiso, RolPermiso, EquipoPermiso, ConsultorPermiso, 
-    Ocupacion, Tarea, TareaAlias, Ocupacion
+    Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel
 )
 from datetime import datetime, timedelta, time
 from functools import wraps
