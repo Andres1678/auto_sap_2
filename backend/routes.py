@@ -2322,6 +2322,10 @@ def remover_consultor_equipo(id):
 # ========== IMPORTAR REGISTROS DESDE EXCEL ==========
 @bp.route('/registro/import-excel', methods=['POST'])
 def importar_registro_excel():
+    import pandas as pd
+    import numpy as np
+    import traceback
+
     print("=== IMPORT EXCEL ===")
     print("FILES:", request.files)
     print("FORM:", request.form)
@@ -2335,13 +2339,17 @@ def importar_registro_excel():
         return jsonify({"mensaje": "Archivo vacío"}), 400
 
     try:
-        # 👇 CLAVE: forzar engine
+        # ---------------------------------------------------
+        # LEER EXCEL
+        # ---------------------------------------------------
         df = pd.read_excel(file, engine="openpyxl")
 
-        print("COLUMNAS:", df.columns.tolist())
+        print("COLUMNAS ORIGINALES:", df.columns.tolist())
         print("TOTAL FILAS:", len(df))
 
-        # Normalizar columnas (encoding del Excel)
+        # ---------------------------------------------------
+        # NORMALIZAR NOMBRES DE COLUMNAS (ENCODING)
+        # ---------------------------------------------------
         df.columns = [
             c.strip()
              .replace("MÃ³dulo", "Modulo")
@@ -2349,7 +2357,9 @@ def importar_registro_excel():
             for c in df.columns
         ]
 
-        # Renombrar a nombres DB
+        # ---------------------------------------------------
+        # RENOMBRAR A NOMBRES DB
+        # ---------------------------------------------------
         df = df.rename(columns={
             "Fecha": "fecha",
             "Modulo": "modulo_nombre",
@@ -2363,23 +2373,53 @@ def importar_registro_excel():
             "Descripcion": "descripcion"
         })
 
+        print("COLUMNAS NORMALIZADAS:", df.columns.tolist())
+
+        # ---------------------------------------------------
+        # 🔥 LIMPIEZA CRÍTICA DE NaN
+        # ---------------------------------------------------
+        # NaN reales → None
+        df = df.replace({np.nan: None})
+
+        # Strings "nan" / "NAN" → None
+        df = df.applymap(
+            lambda x: None if isinstance(x, str) and x.strip().lower() == "nan" else x
+        )
+
+        # Blindar campos numéricos
+        for col in ["tiempo_invertido", "tiempo_facturable"]:
+            if col in df.columns:
+                df[col] = df[col].fillna(0)
+
         registros = []
 
+        # ---------------------------------------------------
+        # CONSTRUIR OBJETOS
+        # ---------------------------------------------------
         for _, row in df.iterrows():
             registros.append(
                 RegistroExcel(
                     fecha=norm_fecha(row.get("fecha")),
-                    modulo_nombre=str(row.get("modulo_nombre")).strip() if row.get("modulo_nombre") else None,
-                    equipo=str(row.get("equipo")).strip().upper() if row.get("equipo") else None,
-                    cliente=str(row.get("cliente")).strip() if row.get("cliente") else None,
-                    consultor=str(row.get("consultor")).strip().lower() if row.get("consultor") else None,
+                    modulo_nombre=str(row.get("modulo_nombre")).strip()
+                        if row.get("modulo_nombre") else None,
+                    equipo=str(row.get("equipo")).strip().upper()
+                        if row.get("equipo") else None,
+                    cliente=str(row.get("cliente")).strip()
+                        if row.get("cliente") else None,
+                    consultor=str(row.get("consultor")).strip().lower()
+                        if row.get("consultor") else None,
                     hora_inicio=norm_hora(row.get("hora_inicio")),
                     hora_fin=norm_hora(row.get("hora_fin")),
-                    tiempo_invertido=row.get("tiempo_invertido") or 0,
-                    tiempo_facturable=row.get("tiempo_facturable") or 0,
-                    descripcion=str(row.get("descripcion")).strip() if row.get("descripcion") else None
+                    tiempo_invertido=float(row.get("tiempo_invertido") or 0),
+                    tiempo_facturable=float(row.get("tiempo_facturable") or 0),
+                    descripcion=str(row.get("descripcion")).strip()
+                        if row.get("descripcion") else None
                 )
             )
+
+        # ---------------------------------------------------
+        # INSERT MASIVO
+        # ---------------------------------------------------
         db.session.bulk_save_objects(registros)
         db.session.commit()
 
