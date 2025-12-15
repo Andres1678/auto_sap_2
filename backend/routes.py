@@ -2353,25 +2353,33 @@ def importar_registro_excel():
         print("COLUMNAS ORIGINALES:", df.columns.tolist())
         print("TOTAL FILAS:", len(df))
 
-        # Normalizar nombres de columnas
+        # Normalizar encoding roto de Excel
         df.columns = [
             c.strip()
              .replace("MÃ³dulo", "Modulo")
              .replace("DescripciÃ³n", "Descripcion")
+             .replace("Tarea Azure", "Tipo Tarea Azure")
             for c in df.columns
         ]
 
-        # Renombrar columnas a DB
+        # Renombrar columnas EXACTAS a DB
         df = df.rename(columns={
             "Fecha": "fecha",
             "Modulo": "modulo_nombre",
             "Equipo": "equipo",
             "Cliente": "cliente",
+            "Nro Caso Cliente": "nro_caso_cliente",
+            "Nro Caso Interno": "nro_caso_interno",
+            "Nro Caso Escalado SAP": "nro_caso_escalado_sap",
+            "Tipo Tarea Azure": "tipo_tarea_azure",
             "Consultor": "consultor",
             "Hora Inicio": "hora_inicio",
             "Hora Fin": "hora_fin",
             "Tiempo Invertido": "tiempo_invertido",
             "Tiempo Facturable": "tiempo_facturable",
+            "ONCALL": "oncall",
+            "Desborde": "desborde",
+            "Horas Adicionales": "horas_adicionales",
             "Descripcion": "descripcion"
         })
 
@@ -2386,20 +2394,25 @@ def importar_registro_excel():
             registros.append(
                 RegistroExcel(
                     fecha=norm_fecha(row.get("fecha")),
-                    modulo_nombre=str(row.get("modulo_nombre")).strip()
-                        if row.get("modulo_nombre") else None,
+                    modulo_nombre=row.get("modulo_nombre"),
                     equipo=str(row.get("equipo")).strip().upper()
                         if row.get("equipo") else None,
-                    cliente=str(row.get("cliente")).strip()
-                        if row.get("cliente") else None,
+                    cliente=row.get("cliente"),
+                    nro_caso_cliente=row.get("nro_caso_cliente"),
+                    nro_caso_interno=row.get("nro_caso_interno"),
+                    nro_caso_escalado_sap=row.get("nro_caso_escalado_sap"),
+                    tipo_tarea_azure=str(row.get("tipo_tarea_azure")).strip()
+                        if row.get("tipo_tarea_azure") else None,
                     consultor=str(row.get("consultor")).strip().lower()
                         if row.get("consultor") else None,
                     hora_inicio=norm_hora(row.get("hora_inicio")),
                     hora_fin=norm_hora(row.get("hora_fin")),
                     tiempo_invertido=safe_float(row.get("tiempo_invertido")),
                     tiempo_facturable=safe_float(row.get("tiempo_facturable")),
-                    descripcion=str(row.get("descripcion")).strip()
-                        if row.get("descripcion") else None
+                    oncall=row.get("oncall"),
+                    desborde=row.get("desborde"),
+                    horas_adicionales=row.get("horas_adicionales"),
+                    descripcion=row.get("descripcion"),
                 )
             )
 
@@ -2423,16 +2436,33 @@ def importar_registro_excel():
 
 @bp.route('/registros/importar-excel/preview', methods=['POST'])
 def preview_import_excel():
-    # procesa excel
-    # NO INSERTA
+    file = request.files.get('file')
+    if not file:
+        return jsonify({"error": "No se envió archivo"}), 400
+
+    df = pd.read_excel(file, engine="openpyxl")
+    df = df.where(pd.notnull(df), None)
+
+    total = len(df)
+    validos = df[df["Tipo Tarea Azure"].notna()].shape[0]
+    errores = df[df["Tipo Tarea Azure"].isna()].to_dict(orient="records")
+
     return jsonify({
         "total": total,
         "validos": validos,
         "errores": errores[:20]
     })
 
+
 @bp.route('/registros/importar-excel/commit', methods=['POST'])
 def commit_import_excel():
-    # insertar en batch
-    db.session.bulk_save_objects(registros)
+    registros = request.json.get("registros", [])
+    objs = [RegistroExcel(**r) for r in registros]
+
+    db.session.bulk_save_objects(objs)
     db.session.commit()
+
+    return jsonify({
+        "mensaje": "Registros insertados",
+        "total": len(objs)
+    })
