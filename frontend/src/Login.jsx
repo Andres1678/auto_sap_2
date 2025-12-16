@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import Swal from 'sweetalert2';
 import './Login.css';
 import coraLogo from './assets/cora-logo.png';
+import { jfetch } from './lib/api';
+
 
 const Login = ({ onLoginSuccess }) => {
   const [usuario, setUsuario] = useState('');
@@ -16,7 +18,7 @@ const Login = ({ onLoginSuccess }) => {
   useEffect(() => {
     const cargarHorarios = async () => {
       try {
-        const res = await fetch('/horarios');
+        const res = await jfetch('/horarios');
         if (!res.ok) throw new Error('No se pudieron cargar los horarios');
 
         const data = await res.json();
