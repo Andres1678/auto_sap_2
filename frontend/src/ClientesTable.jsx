@@ -3,7 +3,7 @@ import Swal from "sweetalert2";
 import "./ClientesTable.css";
 import { jfetch } from "./lib/api";
 
-const API_URL = "http://localhost:5000/api/clientes";
+const API_URL = "/clientes";
 
 export default function ClientesTable() {
   const [clientes, setClientes] = useState([]);

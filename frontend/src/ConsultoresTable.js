@@ -4,11 +4,11 @@ import "./ConsultoresTable.css";
 import { jfetch } from "./lib/api";
 
 const API = {
-  CONSULT: "http://localhost:5000/api/consultores",
-  MODULOS: "http://localhost:5000/api/modulos",
-  EQUIPOS: "http://localhost:5000/api/equipos",
-  ROLES: "http://localhost:5000/api/roles",
-  HORARIOS: "http://localhost:5000/api/horarios",
+  CONSULT: "consultores",
+  MODULOS: "/modulos",
+  EQUIPOS: "/equipos",
+  ROLES: "/roles",
+  HORARIOS: "/horarios",
 };
 
 export default function ConsultoresTable() {

@@ -49,10 +49,10 @@ export default function PermisosPage() {
   const loadAll = async () => {
     try {
       const [pRes, rRes, eRes, cRes] = await Promise.all([
-        api("/api/permisos"),
-        api("/api/roles"),
-        api("/api/equipos"),
-        api("/api/consultores"),
+        api("/permisos"),
+        api("/roles"),
+        api("/equipos"),
+        api("/consultores"),
       ]);
 
       setPermisos(await safeJson(pRes));
@@ -75,10 +75,10 @@ export default function PermisosPage() {
     try {
       let url = null;
 
-      if (selectedRole) url = `/api/roles/${selectedRole}/permisos`;
-      else if (selectedEquipo) url = `/api/equipos/${selectedEquipo}/permisos`;
+      if (selectedRole) url = `/roles/${selectedRole}/permisos`;
+      else if (selectedEquipo) url = `/equipos/${selectedEquipo}/permisos`;
       else if (selectedConsultor)
-        url = `/api/consultores/${selectedConsultor}/permisos`;
+        url = `/consultores/${selectedConsultor}/permisos`;
 
       if (!url) {
         setPermisosDestino([]);
@@ -132,10 +132,10 @@ export default function PermisosPage() {
 
     const urlBase =
       tipo === "rol"
-        ? `/api/roles/${destino}/permisos`
+        ? `/roles/${destino}/permisos`
         : tipo === "equipo"
-        ? `/api/equipos/${destino}/permisos`
-        : `/api/consultores/${destino}/permisos`;
+        ? `/equipos/${destino}/permisos`
+        : `/consultores/${destino}/permisos`;
 
     try {
       for (let id of selectedPermisos) {
@@ -159,11 +159,11 @@ export default function PermisosPage() {
   const quitarPermiso = async (codigoPermiso) => {
     let url = null;
 
-    if (selectedRole) url = `/api/roles/${selectedRole}/permisos/${codigoPermiso}`;
+    if (selectedRole) url = `/roles/${selectedRole}/permisos/${codigoPermiso}`;
     else if (selectedEquipo)
-      url = `/api/equipos/${selectedEquipo}/permisos/${codigoPermiso}`;
+      url = `/equipos/${selectedEquipo}/permisos/${codigoPermiso}`;
     else if (selectedConsultor)
-      url = `/api/consultores/${selectedConsultor}/permisos/${codigoPermiso}`;
+      url = `/consultores/${selectedConsultor}/permisos/${codigoPermiso}`;
 
     if (!url) return;
 

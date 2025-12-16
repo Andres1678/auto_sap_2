@@ -625,56 +625,64 @@ const Registro = ({ userData }) => {
 
   const handleEditar = (reg) => {
 
-  // 1️⃣ Cargar todos los campos del registro
+    const ocupacionId = reg.ocupacion_id
+      ? String(reg.ocupacion_id)
+      : "";
+
+    const tareaId = reg.tarea?.id
+      ? String(reg.tarea.id)
+      : "";
+
     setRegistro({
-        ...initRegistro(),
+      ...initRegistro(),
 
-        id: reg.id,
-        fecha: reg.fecha,
-        cliente: reg.cliente,
+      id: reg.id,
+      fecha: reg.fecha,
+      cliente: reg.cliente,
 
-        tarea_id: reg.tarea_id ? Number(reg.tarea_id) : "",
-        tipoTarea: reg.tipoTarea || "",       
-        ocupacion_id: reg.ocupacion_id ? Number(reg.ocupacion_id) : "",
+      nroCasoCliente: reg.nroCasoCliente,
+      nroCasoInterno: reg.nroCasoInterno,
+      nroCasoEscaladoSap: reg.nroCasoEscaladoSap,
 
-        horaInicio: reg.horaInicio,
-        horaFin: reg.horaFin,
+      tarea_id: tareaId,
+      tipoTarea: reg.tarea
+        ? `${reg.tarea.codigo} - ${reg.tarea.nombre}`
+        : "",
 
-        tiempoInvertido: reg.tiempoInvertido,
-        tiempoFacturable: reg.tiempoFacturable,
-        horasAdicionales: reg.horasAdicionales,
-        descripcion: reg.descripcion,
+      ocupacion_id: ocupacionId,
 
-        consultor_id: reg.consultor_id,
-        equipo: reg.equipo,
-        modulo: reg.modulo
+      horaInicio: reg.horaInicio,
+      horaFin: reg.horaFin,
+
+      tiempoInvertido: reg.tiempoInvertido,
+      tiempoFacturable: reg.tiempoFacturable,
+      horasAdicionales: reg.horasAdicionales,
+      descripcion: reg.descripcion,
+
+      actividadMalla: reg.actividadMalla,
+      oncall: reg.oncall,
+      desborde: reg.desborde,
+
+      consultor_id: reg.consultor_id,
+      equipo: reg.equipo,
+      modulo: reg.modulo
     });
 
-    // 2️⃣ Setear la ocupación seleccionada
-    setOcupacionSeleccionada(
-      reg.ocupacion_id ? String(reg.ocupacion_id) : ""
-    );
+    // ⬇️ esto DISPARA la carga de tareas
+    setOcupacionSeleccionada(ocupacionId);
 
-    // 3️⃣ Setear la tarea seleccionada
-    setTareaSeleccionada(
-      reg.tarea_id ? String(reg.tarea_id) : ""
-    );
+    // ⬇️ se setea luego de que tareasBD cargue
+    setTimeout(() => {
+      setRegistro(r => ({
+        ...r,
+        tarea_id: tareaId
+      }));
+    }, 0);
 
-    // 4️⃣ Cargar módulo
-    if (reg.modulo) {
-      setModuloElegido(reg.modulo);
-    } else if (modulos.length === 1) {
-      setModuloElegido(modulos[0]);
-    } else {
-      setModuloElegido('');
-    }
-
-    // 5️⃣ Activar edición
+    setModuloElegido(reg.modulo || "");
     setModoEdicion(true);
     setModalIsOpen(true);
   };
-
-
 
 
   const handleEliminar = async (id) => {
@@ -750,7 +758,7 @@ const Registro = ({ userData }) => {
     } catch (e) {}
   };
 
-  const actividadMalla = ['AC','CRU1','CRU2','CRU3','DC','DE','DF','IN','ON','T1E','T1I','T1X','T2E','T2I','T2X','T3','VC','N/APLICA'];
+  const actividadMalla = ['AC','CRU1','CRU2','CRU3','DC','DE','DF','IN','ON','T1E','T1I','T1X','T2E','T2I','T2X','T3','VC', 'SAT', 'N/APLICA'];
   const oncall = ['SI','NO','N/A'];
   const desborde = ['SI','NO','N/A'];
 

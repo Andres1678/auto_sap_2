@@ -29,21 +29,21 @@ export default function RolesPage() {
   // Cargar roles y permisos
   // ==================================================
   const loadRoles = async () => {
-    const res = await api("/api/roles");
+    const res = await api("/roles");
     if (res.ok) {
       setRoles(await res.json());
     }
   };
 
   const loadPermisos = async () => {
-    const res = await api("/api/permisos");
+    const res = await api("/permisos");
     if (res.ok) {
       setPermisos(await res.json());
     }
   };
 
   const loadPermisosRol = async (rolId) => {
-    const res = await api(`/api/roles/${rolId}/permisos`);
+    const res = await api(`/roles/${rolId}/permisos`);
     if (res.ok) {
       const data = await res.json();
       setPermisosRol(data.map((p) => p.codigo));
@@ -64,7 +64,7 @@ export default function RolesPage() {
       return;
     }
 
-    const res = await api("/api/roles", {
+    const res = await api("/roles", {
       method: "POST",
       body: JSON.stringify({ nombre: nuevoRol }),
     });
@@ -87,7 +87,7 @@ export default function RolesPage() {
   const asignarPermiso = async (permisoId) => {
     if (!selectedRol) return;
 
-    const res = await api(`/api/roles/${selectedRol.id}/permisos`, {
+    const res = await api(`/roles/${selectedRol.id}/permisos`, {
       method: "POST",
       body: JSON.stringify({ permiso_id: permisoId }),
     });
@@ -109,7 +109,7 @@ export default function RolesPage() {
     if (!permiso) return;
 
     const res = await api(
-      `/api/roles/${selectedRol.id}/permisos/${permiso.id}`,
+      `/roles/${selectedRol.id}/permisos/${permiso.id}`,
       { method: "DELETE" }
     );
 

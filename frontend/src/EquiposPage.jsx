@@ -76,13 +76,13 @@ export default function EquiposPage() {
      CARGA INICIAL
   ============================================================ */
   const loadEquipos = async () => {
-    const res = await api("/api/equipos");
+    const res = await api("/equipos");
     const data = await res.json();
     setEquipos(data);
   };
 
   const loadConsultores = async () => {
-    const res = await api("/api/consultores");
+    const res = await api("/consultores");
     const data = await res.json();
     setConsultores(data);
   };
@@ -99,7 +99,7 @@ export default function EquiposPage() {
     if (!nuevoEquipo.trim())
       return Swal.fire("Error", "Ingrese un nombre para el equipo", "warning");
 
-    const res = await api("/api/equipos", {
+    const res = await api("/equipos", {
       method: "POST",
       body: JSON.stringify({ nombre: nuevoEquipo }),
     });
@@ -126,7 +126,7 @@ export default function EquiposPage() {
     if (!editNombre.trim())
       return Swal.fire("Error", "El nombre no puede estar vacío", "warning");
 
-    const res = await api(`/api/equipos/${selectedEquipo.id}`, {
+    const res = await api(`/equipos/${selectedEquipo.id}`, {
       method: "PUT",
       body: JSON.stringify({ nombre: editNombre }),
     });
@@ -153,7 +153,7 @@ export default function EquiposPage() {
 
     if (!r.isConfirmed) return;
 
-    const res = await api(`/api/equipos/${equipo.id}`, {
+    const res = await api(`/equipos/${equipo.id}`, {
       method: "DELETE",
     });
     const data = await res.json();
