@@ -50,7 +50,7 @@ const Login = ({ onLoginSuccess }) => {
     setLoading(true);
 
     try {
-      const res = await fetch('http://localhost:5000/api/login', {
+      const res = await jfetch('/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
