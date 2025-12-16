@@ -16,7 +16,7 @@ const Login = ({ onLoginSuccess }) => {
   useEffect(() => {
     const cargarHorarios = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/horarios');
+        const res = await fetch('/horarios');
         if (!res.ok) throw new Error('No se pudieron cargar los horarios');
 
         const data = await res.json();
