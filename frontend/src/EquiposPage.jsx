@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import "./EquiposPage.css";
-import { API_URL } from "../src/config.js";
+import { jfetch, jsonOrThrow } from "./lib/api";
 
 /* ============================================================
-   COMPONENTE MODAL (Unificado en este archivo)
+   MODAL REUTILIZABLE
 ============================================================== */
 function EquipoModal({
   open,
@@ -13,29 +13,28 @@ function EquipoModal({
   setValue,
   onClose,
   onConfirm,
-  confirmText = "Guardar",
+  confirmText,
 }) {
   if (!open) return null;
 
   return (
     <div className="emodal-overlay">
       <div className="emodal-content scaleFade">
-        <h2 className="emodal-title">{title}</h2>
+        <h2>{title}</h2>
 
         <input
-          type="text"
           className="emodal-input"
-          placeholder="Nombre del equipo..."
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          placeholder="Nombre del equipo"
+          autoFocus
         />
 
-        <div className="emodal-buttons">
-          <button className="emodal-btn cancel" onClick={onClose}>
+        <div className="emodal-actions">
+          <button className="btn-cancel" onClick={onClose}>
             Cancelar
           </button>
-
-          <button className="emodal-btn confirm" onClick={onConfirm}>
+          <button className="btn-confirm" onClick={onConfirm}>
             {confirmText}
           </button>
         </div>
@@ -50,6 +49,8 @@ function EquipoModal({
 export default function EquiposPage() {
   const [equipos, setEquipos] = useState([]);
   const [consultores, setConsultores] = useState([]);
+  const [consultoresEquipo, setConsultoresEquipo] = useState([]);
+
   const [selectedEquipo, setSelectedEquipo] = useState(null);
   const [selectedConsultor, setSelectedConsultor] = useState("");
 
@@ -59,32 +60,24 @@ export default function EquiposPage() {
   const [modalCrear, setModalCrear] = useState(false);
   const [modalEditar, setModalEditar] = useState(false);
 
-  const userData = JSON.parse(localStorage.getItem("userData") || "{}");
-
-  const api = (endpoint, options = {}) =>
-    fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "X-User-Usuario": userData.usuario,
-        "X-User-Rol": userData.rol,
-      },
-    });
+  const [search, setSearch] = useState("");
 
   /* ============================================================
-     CARGA INICIAL
+     CARGAS
   ============================================================ */
   const loadEquipos = async () => {
-    const res = await api("/equipos");
-    const data = await res.json();
-    setEquipos(data);
+    const res = await jfetch("/equipos");
+    setEquipos(await jsonOrThrow(res));
   };
 
   const loadConsultores = async () => {
-    const res = await api("/consultores");
-    const data = await res.json();
-    setConsultores(data);
+    const res = await jfetch("/consultores");
+    setConsultores(await jsonOrThrow(res));
+  };
+
+  const loadConsultoresEquipo = async (equipoId) => {
+    const res = await jfetch(`/equipos/${equipoId}/consultores`);
+    setConsultoresEquipo(await jsonOrThrow(res));
   };
 
   useEffect(() => {
@@ -92,96 +85,124 @@ export default function EquiposPage() {
     loadConsultores();
   }, []);
 
-  /* ============================================================
-     CREAR EQUIPO
-  ============================================================ */
-  const confirmarCrear = async () => {
-    if (!nuevoEquipo.trim())
-      return Swal.fire("Error", "Ingrese un nombre para el equipo", "warning");
+  useEffect(() => {
+    if (selectedEquipo) {
+      loadConsultoresEquipo(selectedEquipo.id);
+    } else {
+      setConsultoresEquipo([]);
+    }
+  }, [selectedEquipo]);
 
-    const res = await api("/equipos", {
+  /* ============================================================
+     FILTRO + CONTADOR
+  ============================================================ */
+  const equiposFiltrados = useMemo(() => {
+    if (!search.trim()) return equipos;
+    return equipos.filter((e) =>
+      e.nombre.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [equipos, search]);
+
+  const contadorPorEquipo = useMemo(() => {
+    const map = {};
+    consultores.forEach((c) => {
+      if (c.equipo) {
+        map[c.equipo] = (map[c.equipo] || 0) + 1;
+      }
+    });
+    return map;
+  }, [consultores]);
+
+  /* ============================================================
+     CRUD EQUIPOS
+  ============================================================ */
+  const crearEquipo = async () => {
+    if (!nuevoEquipo.trim())
+      return Swal.fire("Campo requerido", "Ingrese nombre", "warning");
+
+    const res = await jfetch("/equipos", {
       method: "POST",
-      body: JSON.stringify({ nombre: nuevoEquipo }),
+      body: { nombre: nuevoEquipo },
     });
 
-    const data = await res.json();
-    if (!res.ok) return Swal.fire("Error", data.mensaje, "error");
-
+    await jsonOrThrow(res);
     Swal.fire("✔ Equipo creado", "", "success");
     setNuevoEquipo("");
     setModalCrear(false);
     loadEquipos();
   };
 
-  /* ============================================================
-     EDITAR EQUIPO
-  ============================================================ */
-  const abrirEditar = (equipo) => {
-    setSelectedEquipo(equipo);
-    setEditNombre(equipo.nombre);
-    setModalEditar(true);
-  };
-
-  const confirmarEditar = async () => {
-    if (!editNombre.trim())
-      return Swal.fire("Error", "El nombre no puede estar vacío", "warning");
-
-    const res = await api(`/equipos/${selectedEquipo.id}`, {
+  const editarEquipo = async () => {
+    const res = await jfetch(`/equipos/${selectedEquipo.id}`, {
       method: "PUT",
-      body: JSON.stringify({ nombre: editNombre }),
+      body: { nombre: editNombre },
     });
 
-    const data = await res.json();
-    if (!res.ok) return Swal.fire("Error", data.mensaje, "error");
-
-    Swal.fire("✔ Cambios guardados", "", "success");
+    await jsonOrThrow(res);
+    Swal.fire("✔ Equipo actualizado", "", "success");
     setModalEditar(false);
     loadEquipos();
   };
 
-  /* ============================================================
-     ELIMINAR EQUIPO
-  ============================================================ */
   const eliminarEquipo = async (equipo) => {
     const r = await Swal.fire({
       title: "¿Eliminar equipo?",
-      text: `Se eliminará: ${equipo.nombre}`,
+      text: equipo.nombre,
       icon: "warning",
       showCancelButton: true,
-      confirmButtonText: "Sí, eliminar",
     });
 
     if (!r.isConfirmed) return;
 
-    const res = await api(`/equipos/${equipo.id}`, {
-      method: "DELETE",
-    });
-    const data = await res.json();
+    const res = await jfetch(`/equipos/${equipo.id}`, { method: "DELETE" });
+    await jsonOrThrow(res);
 
-    if (!res.ok) return Swal.fire("Error", data.mensaje, "error");
-
-    Swal.fire("✔ Equipo eliminado", "", "success");
+    Swal.fire("✔ Eliminado", "", "success");
+    setSelectedEquipo(null);
     loadEquipos();
   };
 
   /* ============================================================
-     ASIGNAR EQUIPO A CONSULTOR
+     ASIGNAR / REMOVER CONSULTOR
   ============================================================ */
-  const asignarEquipo = async () => {
-    if (!selectedEquipo || !selectedConsultor)
-      return Swal.fire("Seleccione equipo y consultor", "", "warning");
+  const asignarConsultor = async () => {
+    if (!selectedConsultor)
+      return Swal.fire("Seleccione consultor", "", "warning");
 
-    const res = await api(`/api/consultores/${selectedConsultor}/equipo`, {
-      method: "PUT",
-      body: JSON.stringify({ equipo_id: selectedEquipo.id }),
-    });
+    const res = await jfetch(
+      `/consultores/${selectedConsultor}/equipo`,
+      {
+        method: "PUT",
+        body: { equipo_id: selectedEquipo.id },
+      }
+    );
 
-    const data = await res.json();
-    if (!res.ok) return Swal.fire("Error", data.mensaje, "error");
-
-    Swal.fire("✔ Equipo asignado", "", "success");
+    await jsonOrThrow(res);
+    Swal.fire("✔ Asignado", "", "success");
     setSelectedConsultor("");
     loadConsultores();
+    loadConsultoresEquipo(selectedEquipo.id);
+  };
+
+  const removerConsultor = async (consultor) => {
+    const r = await Swal.fire({
+      title: "¿Remover consultor?",
+      text: consultor.nombre,
+      icon: "warning",
+      showCancelButton: true,
+    });
+
+    if (!r.isConfirmed) return;
+
+    const res = await jfetch(
+      `/consultores/${consultor.id}/equipo/remove`,
+      { method: "PUT" }
+    );
+
+    await jsonOrThrow(res);
+    Swal.fire("✔ Removido", "", "success");
+    loadConsultores();
+    loadConsultoresEquipo(selectedEquipo.id);
   };
 
   /* ============================================================
@@ -189,77 +210,86 @@ export default function EquiposPage() {
   ============================================================ */
   return (
     <div className="equipos-wrapper">
-      <h1 className="equipos-title">🧩 Administración de Equipos</h1>
+      <h1>🧩 Administración de Equipos</h1>
 
       <div className="equipos-grid">
-        {/* LISTA DE EQUIPOS */}
+        {/* EQUIPOS */}
         <div className="equipos-card">
-          <h2>Equipos Existentes</h2>
+          <div className="header">
+            <h2>Equipos</h2>
+            <button onClick={() => setModalCrear(true)}>+ Crear</button>
+          </div>
 
-          <button className="eq-btn-create" onClick={() => setModalCrear(true)}>
-            + Crear Equipo
-          </button>
+          <input
+            className="search"
+            placeholder="🔍 Buscar equipo..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
 
           <ul className="equipos-list">
-            {equipos.map((e) => (
+            {equiposFiltrados.map((e) => (
               <li
                 key={e.id}
                 className={selectedEquipo?.id === e.id ? "active" : ""}
                 onClick={() => setSelectedEquipo(e)}
               >
                 <span>{e.nombre}</span>
+                <small>{contadorPorEquipo[e.nombre] || 0} consultores</small>
 
-                <div className="eq-actions">
-                  <button
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      abrirEditar(e);
-                    }}
-                  >
-                    ✏
-                  </button>
+                <div className="actions">
+                  <button onClick={(ev) => {
+                    ev.stopPropagation();
+                    setEditNombre(e.nombre);
+                    setSelectedEquipo(e);
+                    setModalEditar(true);
+                  }}>✏</button>
 
-                  <button
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      eliminarEquipo(e);
-                    }}
-                  >
-                    🗑
-                  </button>
+                  <button onClick={(ev) => {
+                    ev.stopPropagation();
+                    eliminarEquipo(e);
+                  }}>🗑</button>
                 </div>
               </li>
             ))}
           </ul>
         </div>
 
-        {/* ASIGNAR A CONSULTOR */}
+        {/* CONSULTOR DEL EQUIPO */}
         <div className="equipos-card">
-          <h2>Asignar Equipo a Consultor</h2>
+          <h2>Consultores del equipo</h2>
 
           {!selectedEquipo ? (
-            <p className="equipos-empty">Seleccione un equipo para asignarlo</p>
+            <p className="empty">Seleccione un equipo</p>
           ) : (
             <>
-              <h3>
-                Equipo seleccionado: <b>{selectedEquipo.nombre}</b>
-              </h3>
+              <h3>{selectedEquipo.nombre}</h3>
+
+              <ul className="consultores-list">
+                {consultoresEquipo.map((c) => (
+                  <li key={c.id}>
+                    {c.nombre}
+                    <button onClick={() => removerConsultor(c)}>❌</button>
+                  </li>
+                ))}
+              </ul>
 
               <select
-                className="eq-select"
                 value={selectedConsultor}
                 onChange={(e) => setSelectedConsultor(e.target.value)}
               >
-                <option value="">Seleccionar consultor...</option>
-                {consultores.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre}
-                  </option>
-                ))}
+                <option value="">Asignar consultor…</option>
+                {consultores
+                  .filter((c) => !consultoresEquipo.some((ce) => ce.id === c.id))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre}
+                    </option>
+                  ))}
               </select>
 
-              <button className="eq-btn-assign" onClick={asignarEquipo}>
-                Asignar Equipo
+              <button onClick={asignarConsultor}>
+                Asignar consultor
               </button>
             </>
           )}
@@ -269,22 +299,22 @@ export default function EquiposPage() {
       {/* MODALES */}
       <EquipoModal
         open={modalCrear}
-        title="🆕 Crear Equipo"
+        title="Crear Equipo"
         value={nuevoEquipo}
         setValue={setNuevoEquipo}
         onClose={() => setModalCrear(false)}
-        onConfirm={confirmarCrear}
-        confirmText="Crear Equipo"
+        onConfirm={crearEquipo}
+        confirmText="Crear"
       />
 
       <EquipoModal
         open={modalEditar}
-        title="✏️ Editar Equipo"
+        title="Editar Equipo"
         value={editNombre}
         setValue={setEditNombre}
         onClose={() => setModalEditar(false)}
-        onConfirm={confirmarEditar}
-        confirmText="Guardar Cambios"
+        onConfirm={editarEquipo}
+        confirmText="Guardar"
       />
     </div>
   );

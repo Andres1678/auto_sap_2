@@ -1,9 +1,18 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import "./PermisosPage.css";
-import { API_URL } from "../src/config.js";
+import { jfetch, jsonOrThrow } from "./lib/api";
 
 export default function PermisosPage() {
+  // ===============================
+  // SEGURIDAD FRONT
+  // ===============================
+  const userData = JSON.parse(localStorage.getItem("userData") || "{}");
+  const isAdmin = userData?.rol === "ADMIN" || userData?.rol === 1;
+
+  // ===============================
+  // ESTADO
+  // ===============================
   const [permisos, setPermisos] = useState([]);
   const [roles, setRoles] = useState([]);
   const [equipos, setEquipos] = useState([]);
@@ -14,64 +23,50 @@ export default function PermisosPage() {
   const [selectedConsultor, setSelectedConsultor] = useState("");
 
   const [permisosDestino, setPermisosDestino] = useState([]);
-  const [selectedPermisos, setSelectedPermisos] = useState([]);
+  const [permisosEfectivos, setPermisosEfectivos] = useState(null);
 
+  const [selectedPermisos, setSelectedPermisos] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const userData = JSON.parse(localStorage.getItem("userData") || "{}");
-
-  // Wrapper FETCH con headers
-  const api = (endpoint, options = {}) =>
-    fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "X-User-Usuario": userData.usuario,
-        "X-User-Rol": userData.rol,
-        ...options.headers,
-      },
-    });
-
-  // ===================================================
+  // ===============================
   // CARGA INICIAL
-  // ===================================================
-  const safeJson = async (res) => {
-    if (!res.ok) return [];
-    try {
-      const data = await res.json();
-      return Array.isArray(data) ? data : [];
-    } catch {
-      return [];
-    }
-  };
-
-  const loadAll = async () => {
-    try {
-      const [pRes, rRes, eRes, cRes] = await Promise.all([
-        api("/permisos"),
-        api("/roles"),
-        api("/equipos"),
-        api("/consultores"),
-      ]);
-
-      setPermisos(await safeJson(pRes));
-      setRoles(await safeJson(rRes));
-      setEquipos(await safeJson(eRes));
-      setConsultores(await safeJson(cRes));
-    } catch (err) {
-      Swal.fire("Error", "Error cargando datos iniciales", "error");
-    }
-  };
-
+  // ===============================
   useEffect(() => {
-    loadAll();
+    cargarTodo();
   }, []);
 
-  // ===================================================
-  // PERMISOS DEL DESTINO SELECCIONADO
-  // ===================================================
-  const loadPermisosDestino = async () => {
+  const cargarTodo = async () => {
+    try {
+      const [p, r, e, c] = await Promise.all([
+        jfetch("/permisos").then(jsonOrThrow),
+        jfetch("/roles").then(jsonOrThrow),
+        jfetch("/equipos").then(jsonOrThrow),
+        jfetch("/consultores").then(jsonOrThrow),
+      ]);
+
+      setPermisos(p || []);
+      setRoles(r || []);
+      setEquipos(e || []);
+      setConsultores(c || []);
+    } catch (e) {
+      Swal.fire("Error", e.message, "error");
+    }
+  };
+
+  // ===============================
+  // PERMISOS DEL DESTINO
+  // ===============================
+  useEffect(() => {
+    cargarPermisosDestino();
+
+    if (selectedConsultor) {
+      cargarPermisosEfectivos();
+    } else {
+      setPermisosEfectivos(null);
+    }
+  }, [selectedRole, selectedEquipo, selectedConsultor]);
+
+  const cargarPermisosDestino = async () => {
     try {
       let url = null;
 
@@ -85,33 +80,63 @@ export default function PermisosPage() {
         return;
       }
 
-      const res = await api(url);
-      const data = await res.json();
-      setPermisosDestino(data.map((p) => p.codigo));
+      const data = await jfetch(url).then(jsonOrThrow);
+      setPermisosDestino((data || []).map((p) => p.codigo));
     } catch {
-      Swal.fire("Error", "No se pudieron cargar los permisos del destino", "error");
+      Swal.fire("Error", "No se pudieron cargar permisos", "error");
     }
   };
 
-  useEffect(() => {
-    loadPermisosDestino();
-  }, [selectedRole, selectedEquipo, selectedConsultor]);
+  const cargarPermisosEfectivos = async () => {
+    try {
+      const data = await jfetch(
+        `/consultores/${selectedConsultor}/permisos-asignados`
+      ).then(jsonOrThrow);
 
-  // ===================================================
-  // BOTÓN LIMPIAR FILTROS
-  // ===================================================
+      setPermisosEfectivos(data);
+    } catch {
+      setPermisosEfectivos(null);
+    }
+  };
+
+  // ===============================
+  // LIMPIAR FILTROS
+  // ===============================
   const limpiarFiltros = () => {
     setSelectedRole("");
     setSelectedEquipo("");
     setSelectedConsultor("");
-    setSearchTerm("");
-    setSelectedPermisos([]);
     setPermisosDestino([]);
+    setPermisosEfectivos(null);
+    setSelectedPermisos([]);
+    setSearchTerm("");
   };
 
-  // ===================================================
+  // ===============================
+  // PREVIEW
+  // ===============================
+  const previewPermisos = useMemo(() => {
+    return permisos
+      .filter((p) => selectedPermisos.includes(p.id))
+      .map((p) => p.codigo);
+  }, [selectedPermisos, permisos]);
+
+  // ===============================
+  // FILTRO
+  // ===============================
+  const permisosFiltrados = useMemo(() => {
+    if (!searchTerm.trim()) return permisos;
+    const t = searchTerm.toLowerCase();
+    return permisos.filter(
+      (p) =>
+        (p.codigo || "").toLowerCase().includes(t) ||
+        (p.descripcion || "").toLowerCase().includes(t)
+    );
+  }, [permisos, searchTerm]);
+
+  // ===============================
   // ASIGNAR PERMISOS
-  // ===================================================
+  // ===============================
   const asignar = async (tipo) => {
     const destino =
       tipo === "rol"
@@ -121,16 +146,16 @@ export default function PermisosPage() {
         : selectedConsultor;
 
     if (!destino) {
-      Swal.fire("Seleccione destino", "Debe elegir rol, equipo o consultor", "warning");
+      Swal.fire("Destino requerido", "Seleccione rol, equipo o consultor", "warning");
       return;
     }
 
     if (selectedPermisos.length === 0) {
-      Swal.fire("Nada seleccionado", "Seleccione uno o más permisos", "warning");
+      Swal.fire("Nada seleccionado", "Seleccione permisos", "warning");
       return;
     }
 
-    const urlBase =
+    const base =
       tipo === "rol"
         ? `/roles/${destino}/permisos`
         : tipo === "equipo"
@@ -138,38 +163,35 @@ export default function PermisosPage() {
         : `/consultores/${destino}/permisos`;
 
     try {
-      for (let id of selectedPermisos) {
-        await api(urlBase, {
+      for (const permisoId of selectedPermisos) {
+        await jfetch(base, {
           method: "POST",
-          body: JSON.stringify({ permiso_id: id }),
-        });
+          body: { permiso_id: permisoId },
+        }).then(jsonOrThrow);
       }
 
-      Swal.fire("Éxito 🎉", "Permisos asignados correctamente", "success");
+      Swal.fire("Éxito", "Permisos asignados correctamente", "success");
       setSelectedPermisos([]);
-      loadPermisosDestino();
-    } catch (err) {
-      Swal.fire("Error", err.message, "error");
+      cargarPermisosDestino();
+      if (selectedConsultor) cargarPermisosEfectivos();
+    } catch (e) {
+      Swal.fire("Error", e.message, "error");
     }
   };
 
-  // ===================================================
+  // ===============================
   // QUITAR PERMISO
-  // ===================================================
-  const quitarPermiso = async (codigoPermiso) => {
-    let url = null;
-
-    if (selectedRole) url = `/roles/${selectedRole}/permisos/${codigoPermiso}`;
-    else if (selectedEquipo)
-      url = `/equipos/${selectedEquipo}/permisos/${codigoPermiso}`;
-    else if (selectedConsultor)
-      url = `/consultores/${selectedConsultor}/permisos/${codigoPermiso}`;
-
-    if (!url) return;
+  // ===============================
+  const quitarPermiso = async (codigo) => {
+    const url = selectedRole
+      ? `/roles/${selectedRole}/permisos/codigo/${codigo}`
+      : selectedEquipo
+      ? `/equipos/${selectedEquipo}/permisos/codigo/${codigo}`
+      : `/consultores/${selectedConsultor}/permisos/codigo/${codigo}`;
 
     const r = await Swal.fire({
       title: "¿Quitar permiso?",
-      text: `Se eliminará: ${codigoPermiso}`,
+      text: codigo,
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Sí, quitar",
@@ -177,181 +199,108 @@ export default function PermisosPage() {
 
     if (!r.isConfirmed) return;
 
-    await api(url, { method: "DELETE" });
-    loadPermisosDestino();
+    try {
+      await jfetch(url, { method: "DELETE" }).then(jsonOrThrow);
+      cargarPermisosDestino();
+      if (selectedConsultor) cargarPermisosEfectivos();
+    } catch (e) {
+      Swal.fire("Error", e.message, "error");
+    }
   };
 
-  // ===================================================
-  // FILTRO
-  // ===================================================
-  const permisosFiltrados = useMemo(() => {
-    if (!searchTerm.trim()) return permisos;
-    const term = searchTerm.toLowerCase();
-    return permisos.filter(
-      (p) =>
-        (p.codigo || "").toLowerCase().includes(term) ||
-        (p.descripcion || "").toLowerCase().includes(term)
-    );
-  }, [permisos, searchTerm]);
-
-  // ===================================================
+  // ===============================
   // RENDER
-  // ===================================================
+  // ===============================
+  if (!isAdmin) {
+    return (
+      <div className="no-access">
+        <h2>⛔ Acceso restringido</h2>
+        <p>No tienes permisos para administrar permisos del sistema.</p>
+      </div>
+    );
+  }
+
   return (
     <div id="permisos-page">
-
       <h1 className="mat-title">🔐 Gestión de Permisos</h1>
 
-      {/* ======================== DESTINO ======================== */}
+      {/* DESTINO */}
       <div className="mat-card">
         <h2>🎯 Destino</h2>
 
-        <div className="actions-bar">
-          <button className="clean-btn" onClick={limpiarFiltros}>
-            ♻️ Limpiar filtros
-          </button>
-        </div>
+        <button className="clean-btn" onClick={limpiarFiltros}>
+          ♻️ Limpiar filtros
+        </button>
 
         <div className="mat-destino-grid">
-          {/* ROL */}
-          <div className="mat-field">
-            <label>👑 Rol</label>
-            <select
-              value={selectedRole}
-              onChange={(e) => {
-                setSelectedRole(e.target.value);
-                setSelectedEquipo("");
-                setSelectedConsultor("");
-              }}
-            >
-              <option value="">Seleccionar...</option>
-              {roles.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select value={selectedRole} onChange={(e) => {
+            setSelectedRole(e.target.value);
+            setSelectedEquipo("");
+            setSelectedConsultor("");
+          }}>
+            <option value="">Rol</option>
+            {roles.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+          </select>
 
-          {/* EQUIPO */}
-          <div className="mat-field">
-            <label>🧩 Equipo</label>
-            <select
-              value={selectedEquipo}
-              onChange={(e) => {
-                setSelectedEquipo(e.target.value);
-                setSelectedRole("");
-                setSelectedConsultor("");
-              }}
-            >
-              <option value="">Seleccionar...</option>
-              {equipos.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select value={selectedEquipo} onChange={(e) => {
+            setSelectedEquipo(e.target.value);
+            setSelectedRole("");
+            setSelectedConsultor("");
+          }}>
+            <option value="">Equipo</option>
+            {equipos.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+          </select>
 
-          {/* CONSULTOR */}
-          <div className="mat-field">
-            <label>👨‍💼 Consultor</label>
-            <select
-              value={selectedConsultor}
-              onChange={(e) => {
-                setSelectedConsultor(e.target.value);
-                setSelectedRole("");
-                setSelectedEquipo("");
-              }}
-            >
-              <option value="">Seleccionar...</option>
-              {consultores.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select value={selectedConsultor} onChange={(e) => {
+            setSelectedConsultor(e.target.value);
+            setSelectedRole("");
+            setSelectedEquipo("");
+          }}>
+            <option value="">Consultor</option>
+            {consultores.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
         </div>
       </div>
 
-      {/* ======================== PERMISOS ASIGNADOS ======================== */}
+      {/* PERMISOS */}
       <div className="mat-card">
-        <h2>🧩 Permisos asignados</h2>
-
-        {permisosDestino.length === 0 && (
-          <p className="empty-text">⚠️ No tiene permisos asignados.</p>
-        )}
-
-        <div className="mat-chips">
-          {permisosDestino.map((codigo) => (
-            <span className="mat-chip" key={codigo}>
-              🔑 {codigo}
-              <button className="chip-remove" onClick={() => quitarPermiso(codigo)}>
-                ❌
-              </button>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* ======================== LISTA DE PERMISOS ======================== */}
-      <div className="mat-card">
-        <h2>📋 Lista de permisos</h2>
+        <h2>📋 Permisos</h2>
 
         <input
-          type="text"
           className="mat-search"
-          placeholder="🔎 Buscar permiso..."
+          placeholder="Buscar permiso"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
 
-        <div className="table-wrapper">
-          <table className="mat-table">
-            <thead>
-              <tr>
-                <th></th>
-                <th>Código</th>
-                <th>Descripción</th>
+        <table className="mat-table">
+          <tbody>
+            {permisosFiltrados.map(p => (
+              <tr key={p.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedPermisos.includes(p.id)}
+                    onChange={() =>
+                      setSelectedPermisos(prev =>
+                        prev.includes(p.id)
+                          ? prev.filter(x => x !== p.id)
+                          : [...prev, p.id]
+                      )
+                    }
+                  />
+                </td>
+                <td>{p.codigo}</td>
+                <td>{p.descripcion}</td>
               </tr>
-            </thead>
+            ))}
+          </tbody>
+        </table>
 
-            <tbody>
-              {permisosFiltrados.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedPermisos.includes(p.id)}
-                      onChange={() =>
-                        setSelectedPermisos((prev) =>
-                          prev.includes(p.id)
-                            ? prev.filter((x) => x !== p.id)
-                            : [...prev, p.id]
-                        )
-                      }
-                    />
-                  </td>
-                  <td>{p.codigo}</td>
-                  <td>{p.descripcion}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* BOTONES */}
         <div className="button-bar">
-          <button className="mat-btn" onClick={() => asignar("rol")}>
-            👑 Asignar a Rol
-          </button>
-          <button className="mat-btn green" onClick={() => asignar("equipo")}>
-            🧩 Asignar a Equipo
-          </button>
-          <button className="mat-btn yellow" onClick={() => asignar("consultor")}>
-            👨‍💼 Asignar a Consultor
-          </button>
+          <button onClick={() => asignar("rol")}>Rol</button>
+          <button onClick={() => asignar("equipo")}>Equipo</button>
+          <button onClick={() => asignar("consultor")}>Consultor</button>
         </div>
       </div>
     </div>

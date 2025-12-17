@@ -3,8 +3,6 @@ import Swal from "sweetalert2";
 import "./OcupacionesTareasPage.css";
 import { jfetch } from "./lib/api";
 
-const API_BASE = "http://localhost:5000/api";
-
 export default function OcupacionesTareasPage() {
   const [ocupaciones, setOcupaciones] = useState([]);
   const [tareas, setTareas] = useState([]);
@@ -51,7 +49,7 @@ export default function OcupacionesTareasPage() {
   // ==========================
   const cargarOcupaciones = async () => {
     try {
-      const res = await jfetch(`${API_BASE}/ocupaciones`);
+      const res = await jfetch(`/ocupaciones`);
       const data = await res.json();
       setOcupaciones(data || []);
 
@@ -65,7 +63,7 @@ export default function OcupacionesTareasPage() {
 
   const cargarTareas = async () => {
     try {
-      const res = await jfetch(`${API_BASE}/tareas`);
+      const res = await jfetch(`/tareas`);
       const data = await res.json();
       setTareas(data || []);
     } catch (err) {
@@ -75,7 +73,7 @@ export default function OcupacionesTareasPage() {
 
   const cargarTareasPorOcupacion = async (id) => {
     try {
-      const res = await jfetch(`${API_BASE}/ocupaciones/${id}/tareas`);
+      const res = await jfetch(`/ocupaciones/${id}/tareas`);
       const data = await res.json();
       setTareasOcupacion(data || []);
     } catch (err) {
@@ -119,12 +117,11 @@ export default function OcupacionesTareasPage() {
       const payload = { codigo, nombre, descripcion };
       const method = id ? "PUT" : "POST";
       const url = id
-        ? `${API_BASE}/ocupaciones/${id}`
-        : `${API_BASE}/ocupaciones`;
+        ? `/ocupaciones/${id}`
+        : `/ocupaciones`;
 
       const res = await jfetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -153,7 +150,7 @@ export default function OcupacionesTareasPage() {
     if (!confirm.isConfirmed) return;
 
     try {
-      const res = await jfetch(`${API_BASE}/ocupaciones/${oc.id}`, {
+      const res = await jfetch(`/ocupaciones/${oc.id}`, {
         method: "DELETE",
       });
 
@@ -203,11 +200,10 @@ export default function OcupacionesTareasPage() {
     try {
       const payload = { codigo, nombre, descripcion };
       const method = id ? "PUT" : "POST";
-      const url = id ? `${API_BASE}/tareas/${id}` : `${API_BASE}/tareas`;
+      const url = id ? `/tareas/${id}` : `/tareas`;
 
       const res = await jfetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -239,7 +235,7 @@ export default function OcupacionesTareasPage() {
     if (!confirm.isConfirmed) return;
 
     try {
-      const res = await jfetch(`${API_BASE}/tareas/${t.id}`, {
+      const res = await jfetch(`/tareas/${t.id}`, {
         method: "DELETE",
       });
 
@@ -273,10 +269,9 @@ export default function OcupacionesTareasPage() {
 
     try {
       const res = await jfetch(
-        `${API_BASE}/ocupaciones/${selectedOcupacion.id}/tareas`,
+        `/ocupaciones/${selectedOcupacion.id}/tareas`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ tarea_id: Number(tareaAsignarId) }),
         }
       );
@@ -307,7 +302,7 @@ export default function OcupacionesTareasPage() {
 
     try {
       const res = await jfetch(
-        `${API_BASE}/ocupaciones/${selectedOcupacion.id}/tareas/${id}`,
+        `/ocupaciones/${selectedOcupacion.id}/tareas/${id}`,
         { method: "DELETE" }
       );
 

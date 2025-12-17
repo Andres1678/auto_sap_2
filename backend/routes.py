@@ -1694,6 +1694,7 @@ def listar_permisos():
     return jsonify([p.to_dict() for p in permisos]), 200
 
 @bp.route('/permisos', methods=['POST'])
+@permission_required("PERMISOS_CREAR")
 def crear_permiso():
     data = request.get_json() or {}
     codigo = data.get("codigo", "").strip().upper()
@@ -1711,6 +1712,7 @@ def crear_permiso():
     return jsonify({"mensaje": "Permiso creado", "permiso": p.to_dict()}), 201
 
 @bp.route('/permisos/<int:id>', methods=['DELETE'])
+@permission_required("PERMISOS_ELIMINAR")
 def eliminar_permiso(id):
     p = Permiso.query.get_or_404(id)
     db.session.delete(p)
@@ -1731,6 +1733,7 @@ def permisos_por_rol(rol_id):
     return jsonify(data), 200
 
 @bp.route('/roles/<int:rol_id>/permisos', methods=['POST'])
+@permission_required("ROLES_EDITAR")
 def asignar_permiso_rol(rol_id):
     data = request.get_json() or {}
     permiso_id = data.get("permiso_id")
@@ -1809,6 +1812,11 @@ def permisos_por_consultor(consultor_id):
     )
 
     return jsonify([p.Permiso.to_dict() for p in permisos]), 200
+
+@bp.route('/consultores/<int:consultor_id>/permisos-efectivos', methods=['GET'])
+def permisos_efectivos_consultor(consultor_id):
+    return permisos_asignados(consultor_id)
+
 
 @bp.route('/consultores/<int:consultor_id>/permisos', methods=['POST'])
 def asignar_permiso_consultor(consultor_id):
@@ -2192,6 +2200,7 @@ def quitar_permiso_consultor_por_codigo(consultor_id, codigo):
 # ========== ROLES ==========
 
 @bp.route('/roles', methods=['POST'])
+@permission_required("ROLES_CREAR")
 def crear_rol():
     data = request.get_json() or {}
     nombre = data.get("nombre", "").strip().upper()
@@ -2224,6 +2233,7 @@ def editar_rol(id):
     return jsonify({"mensaje": "Rol actualizado", "rol": rol.to_dict()}), 200
 
 @bp.route('/roles/<int:id>', methods=['DELETE'])
+@permission_required("ROLES_ELIMINAR")
 def eliminar_rol(id):
     rol = Rol.query.get_or_404(id)
 

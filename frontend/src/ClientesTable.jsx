@@ -17,47 +17,66 @@ export default function ClientesTable() {
     nombre_cliente: "",
   });
 
-  // Debounce para búsqueda
-  useEffect(() => {
-    const timeout = setTimeout(() => cargarClientes(), 200);
-    return () => clearTimeout(timeout);
-  }, [filtroNombre]);
-
-  useEffect(() => {
-    cargarClientes();
-  }, []);
-
+  /* ============================================================
+     CARGA CLIENTES (ÚNICO PUNTO)
+  ============================================================ */
   const cargarClientes = async () => {
     try {
       setCargando(true);
-      const res = await fetch(API_URL);
-      const data = await res.json();
 
-      let filtrados = data.filter((c) =>
+      const res = await jfetch(API_URL);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.mensaje || "Error cargando clientes");
+      }
+
+      const data = await res.json();
+      const lista = Array.isArray(data) ? data : [];
+
+      // Filtro
+      let filtrados = lista.filter((c) =>
         (c.nombre_cliente || "")
           .toLowerCase()
           .includes(filtroNombre.toLowerCase())
       );
 
-      // Ordenamiento asc/desc
+      // Orden
       filtrados.sort((a, b) => {
-        if (ordenAsc) return a.nombre_cliente.localeCompare(b.nombre_cliente);
-        else return b.nombre_cliente.localeCompare(a.nombre_cliente);
+        const aN = a.nombre_cliente || "";
+        const bN = b.nombre_cliente || "";
+        return ordenAsc ? aN.localeCompare(bN) : bN.localeCompare(aN);
       });
 
       setClientes(filtrados);
     } catch (err) {
-      console.error("Error al cargar clientes:", err);
+      console.error("❌ Error al cargar clientes:", err);
+      Swal.fire("Error", err.message, "error");
     } finally {
       setCargando(false);
     }
   };
 
-  const limpiarFiltro = () => {
-    setFiltroNombre("");
-    cargarClientes();
-  };
+  /* ============================================================
+     DEBOUNCE BÚSQUEDA
+  ============================================================ */
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      cargarClientes();
+    }, 300);
 
+    return () => clearTimeout(timeout);
+  }, [filtroNombre, ordenAsc]);
+
+  /* ============================================================
+     CARGA INICIAL
+  ============================================================ */
+  useEffect(() => {
+    cargarClientes();
+  }, []);
+
+  /* ============================================================
+     MODAL
+  ============================================================ */
   const abrirModal = (cliente = null) => {
     setEditando(cliente);
     setForm({
@@ -66,25 +85,37 @@ export default function ClientesTable() {
     setShowModal(true);
   };
 
-  const cerrarModal = () => setShowModal(false);
+  const cerrarModal = () => {
+    setShowModal(false);
+    setEditando(null);
+    setForm({ nombre_cliente: "" });
+  };
 
+  /* ============================================================
+     GUARDAR (CREAR / EDITAR)
+  ============================================================ */
   const guardarCliente = async () => {
     if (!form.nombre_cliente.trim()) {
-      return Swal.fire("Error", "El nombre del cliente es obligatorio", "error");
+      return Swal.fire(
+        "Campo requerido",
+        "El nombre del cliente es obligatorio",
+        "warning"
+      );
     }
 
     const method = editando ? "PUT" : "POST";
     const url = editando ? `${API_URL}/${editando.id}` : API_URL;
 
     try {
-      const res = await fetch(url, {
+      const res = await jfetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: form,
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.mensaje || "Error guardando cliente");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.mensaje || "Error guardando cliente");
+      }
 
       Swal.fire("Éxito", "Cliente guardado correctamente", "success");
       cerrarModal();
@@ -94,6 +125,9 @@ export default function ClientesTable() {
     }
   };
 
+  /* ============================================================
+     ELIMINAR
+  ============================================================ */
   const eliminarCliente = async (id) => {
     const confirm = await Swal.fire({
       title: "¿Eliminar cliente?",
@@ -106,8 +140,11 @@ export default function ClientesTable() {
 
     try {
       const res = await jfetch(`${API_URL}/${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.mensaje);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.mensaje || "Error eliminando cliente");
+      }
 
       Swal.fire("Eliminado", "Cliente eliminado correctamente", "success");
       cargarClientes();
@@ -116,6 +153,9 @@ export default function ClientesTable() {
     }
   };
 
+  /* ============================================================
+     RENDER
+  ============================================================ */
   return (
     <div className="clientes-wrapper">
       <h2>🗂️ Gestión de Clientes</h2>
@@ -133,7 +173,7 @@ export default function ClientesTable() {
         </div>
 
         {filtroNombre && (
-          <button className="clientes-btn-limpiar" onClick={limpiarFiltro}>
+          <button className="clientes-btn-limpiar" onClick={() => setFiltroNombre("")}>
             Limpiar ✖
           </button>
         )}
@@ -214,7 +254,7 @@ export default function ClientesTable() {
                 type="text"
                 value={form.nombre_cliente}
                 onChange={(e) =>
-                  setForm({ ...form, nombre_cliente: e.target.value })
+                  setForm({ nombre_cliente: e.target.value })
                 }
               />
             </div>
