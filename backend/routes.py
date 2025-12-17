@@ -2351,6 +2351,12 @@ def asignar_equipo_consultor(id):
     if not equipo_id:
         return jsonify({"mensaje": "equipo_id requerido"}), 400
 
+    # 🔒 VALIDACIÓN CRÍTICA
+    if cons.equipo_id is not None:
+        return jsonify({
+            "mensaje": "El consultor ya está asignado a un equipo"
+        }), 409
+
     eq = Equipo.query.get(equipo_id)
     if not eq:
         return jsonify({"mensaje": "Equipo no existe"}), 404
@@ -2359,6 +2365,7 @@ def asignar_equipo_consultor(id):
     db.session.commit()
 
     return jsonify({"mensaje": "Equipo asignado correctamente"}), 200
+
 
 @bp.route('/consultores/<int:id>/equipo/remove', methods=['PUT'])
 def remover_consultor_equipo(id):

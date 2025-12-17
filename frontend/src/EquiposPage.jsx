@@ -79,19 +79,45 @@ export default function EquiposPage() {
     );
   }, [equipos, search]);
 
+  /**
+   * 🔥 CONSULTOR DISPONIBLE:
+   * - NO tiene equipo asignado
+   * - NO está ya en el equipo actual
+   */
+  const consultoresDisponibles = useMemo(() => {
+    return consultores.filter(c => {
+      const yaAsignado = consultoresEquipo.some(ce => ce.id === c.id);
+      const tieneEquipo = !!c.equipo;
+      return !yaAsignado && !tieneEquipo;
+    });
+  }, [consultores, consultoresEquipo]);
+
   /* ================= CRUD ================= */
   const crearEquipo = async () => {
-    if (!nuevoEquipo.trim()) return Swal.fire("Ingrese nombre", "", "warning");
+    if (!nuevoEquipo.trim()) {
+      return Swal.fire("Ingrese nombre", "", "warning");
+    }
 
-    await jfetch("/equipos", {
-      method: "POST",
-      body: { nombre: nuevoEquipo }
-    }).then(jsonOrThrow);
+    try {
+      const res = await jfetch("/equipos", {
+        method: "POST",
+        body: { nombre: nuevoEquipo }
+      });
 
-    Swal.fire("✔ Equipo creado", "", "success");
-    setModalCrear(false);
-    setNuevoEquipo("");
-    loadEquipos();
+      const data = await jsonOrThrow(res);
+
+      Swal.fire("✔ Equipo creado", data?.nombre || "", "success");
+      setModalCrear(false);
+      setNuevoEquipo("");
+      loadEquipos();
+
+    } catch (err) {
+      if (err.message?.includes("existe")) {
+        Swal.fire("⚠ Equipo ya existe", "Use otro nombre", "warning");
+      } else {
+        Swal.fire("❌ Error", "No se pudo crear el equipo", "error");
+      }
+    }
   };
 
   const editarEquipo = async () => {
@@ -214,11 +240,9 @@ export default function EquiposPage() {
                   onChange={(e) => setSelectedConsultor(e.target.value)}
                 >
                   <option value="">Asignar consultor…</option>
-                  {consultores
-                    .filter(c => !consultoresEquipo.some(ce => ce.id === c.id))
-                    .map(c => (
-                      <option key={c.id} value={c.id}>{c.nombre}</option>
-                    ))}
+                  {consultoresDisponibles.map(c => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
                 </select>
 
                 <button onClick={asignarConsultor}>Asignar</button>
