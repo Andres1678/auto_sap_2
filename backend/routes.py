@@ -2311,10 +2311,36 @@ def eliminar_equipo(id):
 
     return jsonify({"mensaje": "Equipo eliminado"}), 200
 
-@bp.route('/equipos/<int:id>/consultores', methods=['GET'])
-def consultores_por_equipo(id):
-    consultores = Consultor.query.filter_by(equipo_id=id).all()
-    return jsonify([c.to_dict() for c in consultores])
+@bp.route('/equipos/<int:equipo_id>/consultores', methods=['GET'])
+def consultores_por_equipo(equipo_id):
+    try:
+        consultores = (
+            Consultor.query
+            .options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj)
+            )
+            .filter(Consultor.equipo_id == equipo_id)
+            .order_by(Consultor.nombre.asc())
+            .all()
+        )
+
+        data = []
+        for c in consultores:
+            data.append({
+                "id": c.id,
+                "usuario": c.usuario,
+                "nombre": c.nombre,
+                "rol": c.rol_obj.nombre if c.rol_obj else None,
+                "equipo": c.equipo_obj.nombre if c.equipo_obj else None,
+            })
+
+        return jsonify(data), 200
+
+    except Exception as e:
+        print("❌ Error consultores_por_equipo:", e)
+        return jsonify({"error": "Error interno del servidor"}), 500
+
 
 @bp.route('/consultores/<int:id>/equipo', methods=['PUT'])
 def asignar_equipo_consultor(id):
