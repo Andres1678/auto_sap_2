@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import Swal from "sweetalert2";
 import "./ConsultoresTable.css";
 import { jfetch } from "./lib/api";
 
+/* ============================
+   RUTAS API
+============================ */
 const API = {
-  CONSULT: "consultores",
+  CONSULT: "/consultores",
   MODULOS: "/modulos",
   EQUIPOS: "/equipos",
   ROLES: "/roles",
@@ -12,7 +15,11 @@ const API = {
 };
 
 export default function ConsultoresTable() {
+  /* ============================
+     ESTADO PRINCIPAL
+  ============================ */
   const [consultores, setConsultores] = useState([]);
+
   const [modulos, setModulos] = useState([]);
   const [equipos, setEquipos] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -30,64 +37,62 @@ export default function ConsultoresTable() {
     usuario: "",
     nombre: "",
     password: "",
-    rol: "",
-    equipo: "",
-    horario: "",
+    rol_id: "",
+    equipo_id: "",
+    horario_id: "",
     modulos: [],
   });
 
-  /* ======================================================
+  /* ============================
      CARGA INICIAL
-     ====================================================== */
+  ============================ */
   useEffect(() => {
-    cargarListas();
     cargarConsultores();
   }, []);
 
-  /* ======================================================
-     FILTROS (con debounce)
-     ====================================================== */
+  /* ============================
+     FILTRO (debounce)
+  ============================ */
   useEffect(() => {
-    const timeout = setTimeout(cargarConsultores, 250);
-    return () => clearTimeout(timeout);
+    const t = setTimeout(cargarConsultores, 250);
+    return () => clearTimeout(t);
   }, [filtro]);
 
+  /* ============================
+     CARGAR LISTAS
+  ============================ */
   const cargarListas = async () => {
     try {
-      const responses = await Promise.all([
-        fetch(API.MODULOS),
-        fetch(API.EQUIPOS),
-        fetch(API.ROLES),
-        fetch(API.HORARIOS),
+      const [m, e, r, h] = await Promise.all([
+        jfetch(API.MODULOS).then((r) => r.json()),
+        jfetch(API.EQUIPOS).then((r) => r.json()),
+        jfetch(API.ROLES).then((r) => r.json()),
+        jfetch(API.HORARIOS).then((r) => r.json()),
       ]);
-      setModulos(await responses[0].json());
-      setEquipos(await responses[1].json());
-      setRoles(await responses[2].json());
-      setHorarios(await responses[3].json());
+
+      setModulos(Array.isArray(m) ? m : []);
+      setEquipos(Array.isArray(e) ? e : []);
+      setRoles(Array.isArray(r) ? r : []);
+      setHorarios(Array.isArray(h) ? h : []);
     } catch (err) {
+      console.error(err);
       Swal.fire("Error", "Error cargando listas", "error");
     }
   };
 
-  const cargarConsultores = async () => {
+  /* ============================
+     CARGAR CONSULTORES
+  ============================ */
+  const cargarConsultores = useCallback(async () => {
     try {
-      const saved = localStorage.getItem("userData");
-      const user = saved ? JSON.parse(saved) : null;
-      const usuario = user?.usuario;
-
-      if (!usuario) return;
-
-      const res = await jfetch(API.CONSULT, {
-        headers: { "X-User-Usuario": usuario },
-      });
-
+      const res = await jfetch(API.CONSULT);
       const data = await res.json();
       if (!Array.isArray(data)) return;
 
       const filtrados = data.filter(
         (c) =>
           c.nombre?.toLowerCase().includes(filtro.nombre.toLowerCase()) &&
-          (c.equipo || "")
+          (c.equipo_nombre || "")
             .toLowerCase()
             .includes(filtro.equipo.toLowerCase())
       );
@@ -96,22 +101,24 @@ export default function ConsultoresTable() {
     } catch (err) {
       Swal.fire("Error", "No fue posible cargar consultores", "error");
     }
-  };
+  }, [filtro]);
 
-  /* ======================================================
-     MODAL - ABRIR
-     ====================================================== */
-  const abrirModal = (c = null) => {
+  /* ============================
+     ABRIR MODAL
+  ============================ */
+  const abrirModal = async (c = null) => {
+    await cargarListas(); // ⬅️ CLAVE
+
     if (c) {
       setEditando(c);
       setForm({
         usuario: c.usuario,
         nombre: c.nombre,
-        rol: c.rol,
-        equipo: c.equipo,
-        horario: c.horario,
-        modulos: c.modulos?.map((m) => m.id),
         password: "",
+        rol_id: c.rol_id || "",
+        equipo_id: c.equipo_id || "",
+        horario_id: c.horario_id || "",
+        modulos: c.modulos?.map((m) => m.id) || [],
       });
     } else {
       setEditando(null);
@@ -119,46 +126,50 @@ export default function ConsultoresTable() {
         usuario: "",
         nombre: "",
         password: "",
-        rol: "",
-        equipo: "",
-        horario: "",
+        rol_id: "",
+        equipo_id: "",
+        horario_id: "",
         modulos: [],
       });
     }
+
     setShowModal(true);
   };
 
-  /* ======================================================
-     MODAL - CERRAR
-     ====================================================== */
   const cerrarModal = () => setShowModal(false);
 
-  /* ======================================================
+  /* ============================
      GUARDAR CONSULTOR
-     ====================================================== */
+  ============================ */
   const guardarConsultor = async () => {
+    if (!form.usuario || !form.nombre || !form.rol_id) {
+      Swal.fire("Campos requeridos", "Usuario, nombre y rol son obligatorios", "warning");
+      return;
+    }
+
     const method = editando ? "PUT" : "POST";
-    const url = editando ? `${API.CONSULT}/${editando.id}` : API.CONSULT;
+    const url = editando
+      ? `${API.CONSULT}/${editando.id}`
+      : API.CONSULT;
 
     try {
       const res = await jfetch(url, {
         method,
-        headers: { "Content-Type": "application/json", "X-User-Rol": "ADMIN" },
-        body: JSON.stringify({
+        body: {
           usuario: form.usuario,
           nombre: form.nombre,
-          password: form.password || undefined,
-          rol: form.rol,
-          equipo: form.equipo,
-          horario: form.horario,
-          modulos: form.modulos,
-        }),
+          password: editando ? undefined : form.password,
+          rol_id: Number(form.rol_id),
+          equipo_id: form.equipo_id ? Number(form.equipo_id) : null,
+          horario_id: form.horario_id ? Number(form.horario_id) : null,
+          modulos: form.modulos.map(Number),
+        },
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.mensaje || "Error guardando");
 
-      Swal.fire("Éxito", "Consultor guardado", "success");
+      Swal.fire("Éxito", "Consultor guardado correctamente", "success");
       cerrarModal();
       cargarConsultores();
     } catch (err) {
@@ -166,35 +177,30 @@ export default function ConsultoresTable() {
     }
   };
 
-  /* ======================================================
-     ELIMINAR
-     ====================================================== */
+  /* ============================
+     ELIMINAR CONSULTOR
+  ============================ */
   const eliminarConsultor = async (id) => {
-    const conf = await Swal.fire({
+    const r = await Swal.fire({
       title: "¿Eliminar consultor?",
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Eliminar",
     });
-    if (!conf.isConfirmed) return;
+    if (!r.isConfirmed) return;
 
     try {
-      const res = await jfetch(`${API.CONSULT}/${id}`, {
-        method: "DELETE",
-        headers: { "X-User-Rol": "ADMIN" },
-      });
-      if (!res.ok) throw new Error();
-
+      await jfetch(`${API.CONSULT}/${id}`, { method: "DELETE" });
       Swal.fire("Eliminado", "Consultor eliminado", "success");
       cargarConsultores();
-    } catch (err) {
+    } catch {
       Swal.fire("Error", "No se pudo eliminar", "error");
     }
   };
 
-  /* ======================================================
+  /* ============================
      RENDER
-     ====================================================== */
+  ============================ */
   return (
     <div className="cst-wrapper">
       <h2 className="cst-title">👨‍💼 Gestión de Consultores</h2>
@@ -202,181 +208,123 @@ export default function ConsultoresTable() {
       {/* FILTROS */}
       <div className="cst-filtros">
         <input
-          type="text"
           placeholder="🔎 Consultor..."
           value={filtro.nombre}
           onChange={(e) => setFiltro({ ...filtro, nombre: e.target.value })}
         />
-
         <input
-          type="text"
           placeholder="🧩 Equipo..."
           value={filtro.equipo}
           onChange={(e) => setFiltro({ ...filtro, equipo: e.target.value })}
         />
-
-        <button className="cst-btn cst-btn-add" onClick={() => abrirModal()}>
+        <button className="cst-btn-add" onClick={() => abrirModal()}>
           ➕ Agregar
         </button>
       </div>
 
       {/* TABLA */}
-      <div className="cst-table-wrapper">
-        <table className="cst-table">
-          <thead>
-            <tr>
-              <th>Usuario</th>
-              <th>Nombre</th>
-              <th>Rol</th>
-              <th>Equipo</th>
-              <th>Horario</th>
-              <th>Módulos</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {consultores.length > 0 ? (
-              consultores.map((c) => (
-                <tr key={c.id}>
-                  <td>{c.usuario}</td>
-                  <td>{c.nombre}</td>
-                  <td>{c.rol}</td>
-                  <td>{c.equipo}</td>
-                  <td>{c.horario}</td>
-                  <td>{c.modulos?.map((m) => m.nombre).join(", ")}</td>
-                  <td className="cst-actions">
-                    <button
-                      className="cst-btn cst-edit"
-                      onClick={() => abrirModal(c)}
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      className="cst-btn cst-delete"
-                      onClick={() => eliminarConsultor(c.id)}
-                    >
-                      🗑️
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="7" className="cst-empty">
-                  No hay resultados
+      <table className="cst-table">
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Nombre</th>
+            <th>Rol</th>
+            <th>Equipo</th>
+            <th>Horario</th>
+            <th>Módulos</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {consultores.length ? (
+            consultores.map((c) => (
+              <tr key={c.id}>
+                <td>{c.usuario}</td>
+                <td>{c.nombre}</td>
+                <td>{c.rol_nombre}</td>
+                <td>{c.equipo_nombre}</td>
+                <td>{c.horario_rango}</td>
+                <td>{c.modulos?.map((m) => m.nombre).join(", ")}</td>
+                <td>
+                  <button onClick={() => abrirModal(c)}>✏️</button>
+                  <button onClick={() => eliminarConsultor(c.id)}>🗑️</button>
                 </td>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            ))
+          ) : (
+            <tr>
+              <td colSpan="7">Sin resultados</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
 
       {/* MODAL */}
       {showModal && (
         <div className="cst-modal-backdrop">
           <div className="cst-modal">
-            <div className="cst-modal-header">
-              <h3>{editando ? "✏️ Editar Consultor" : "➕ Nuevo Consultor"}</h3>
-              <button className="cst-close" onClick={cerrarModal}>×</button>
-            </div>
+            <h3>{editando ? "Editar Consultor" : "Nuevo Consultor"}</h3>
 
-            <div className="cst-modal-body">
-              {/* FORMULARIO */}
-              <label>Usuario</label>
+            <input
+              placeholder="Usuario"
+              value={form.usuario}
+              onChange={(e) => setForm({ ...form, usuario: e.target.value })}
+            />
+
+            <input
+              placeholder="Nombre"
+              value={form.nombre}
+              onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+            />
+
+            {!editando && (
               <input
-                type="text"
-                value={form.usuario}
-                onChange={(e) => setForm({ ...form, usuario: e.target.value })}
+                type="password"
+                placeholder="Contraseña"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
               />
+            )}
 
-              <label>Nombre</label>
-              <input
-                type="text"
-                value={form.nombre}
-                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-              />
+            <select value={form.rol_id} onChange={(e) => setForm({ ...form, rol_id: e.target.value })}>
+              <option value="">Rol</option>
+              {roles.map((r) => (
+                <option key={r.id} value={r.id}>{r.nombre}</option>
+              ))}
+            </select>
 
-              {!editando && (
-                <>
-                  <label>Contraseña</label>
-                  <input
-                    type="password"
-                    value={form.password}
-                    onChange={(e) =>
-                      setForm({ ...form, password: e.target.value })
-                    }
-                  />
-                </>
-              )}
+            <select value={form.equipo_id} onChange={(e) => setForm({ ...form, equipo_id: e.target.value })}>
+              <option value="">Equipo</option>
+              {equipos.map((e) => (
+                <option key={e.id} value={e.id}>{e.nombre}</option>
+              ))}
+            </select>
 
-              <label>Rol</label>
-              <select
-                value={form.rol}
-                onChange={(e) => setForm({ ...form, rol: e.target.value })}
-              >
-                <option value="">Seleccione...</option>
-                {roles.map((r) => (
-                  <option key={r.nombre} value={r.nombre}>
-                    {r.nombre}
-                  </option>
-                ))}
-              </select>
+            <select value={form.horario_id} onChange={(e) => setForm({ ...form, horario_id: e.target.value })}>
+              <option value="">Horario</option>
+              {horarios.map((h) => (
+                <option key={h.id} value={h.id}>{h.rango}</option>
+              ))}
+            </select>
 
-              <label>Equipo</label>
-              <select
-                value={form.equipo}
-                onChange={(e) => setForm({ ...form, equipo: e.target.value })}
-              >
-                <option value="">Seleccione...</option>
-                {equipos.map((e) => (
-                  <option key={e.nombre} value={e.nombre}>
-                    {e.nombre}
-                  </option>
-                ))}
-              </select>
-
-              <label>Horario</label>
-              <select
-                value={form.horario}
-                onChange={(e) =>
-                  setForm({ ...form, horario: e.target.value })
-                }
-              >
-                <option value="">Seleccione...</option>
-                {horarios.map((h) => (
-                  <option key={h.rango} value={h.rango}>
-                    {h.rango}
-                  </option>
-                ))}
-              </select>
-
-              <label>Módulos</label>
-              <select
-                multiple
-                value={form.modulos}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    modulos: Array.from(e.target.selectedOptions, (o) => o.value),
-                  })
-                }
-              >
-                {modulos.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <select
+              multiple
+              value={form.modulos}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  modulos: Array.from(e.target.selectedOptions, (o) => o.value),
+                })
+              }
+            >
+              {modulos.map((m) => (
+                <option key={m.id} value={m.id}>{m.nombre}</option>
+              ))}
+            </select>
 
             <div className="cst-modal-footer">
-              <button className="cst-btn cst-secondary" onClick={cerrarModal}>
-                Cancelar
-              </button>
-              <button className="cst-btn cst-primary" onClick={guardarConsultor}>
-                Guardar
-              </button>
+              <button onClick={cerrarModal}>Cancelar</button>
+              <button onClick={guardarConsultor}>Guardar</button>
             </div>
           </div>
         </div>

@@ -3,23 +3,13 @@ import Swal from "sweetalert2";
 import "./EquiposPage.css";
 import { jfetch, jsonOrThrow } from "./lib/api";
 
-/* ============================================================
-   MODAL REUTILIZABLE
-============================================================== */
-function EquipoModal({
-  open,
-  title,
-  value,
-  setValue,
-  onClose,
-  onConfirm,
-  confirmText,
-}) {
+/* ================= MODAL ================= */
+function EquipoModal({ open, title, value, setValue, onClose, onConfirm }) {
   if (!open) return null;
 
   return (
     <div className="emodal-overlay">
-      <div className="emodal-content scaleFade">
+      <div className="emodal-content">
         <h2>{title}</h2>
 
         <input
@@ -31,21 +21,15 @@ function EquipoModal({
         />
 
         <div className="emodal-actions">
-          <button className="btn-cancel" onClick={onClose}>
-            Cancelar
-          </button>
-          <button className="btn-confirm" onClick={onConfirm}>
-            {confirmText}
-          </button>
+          <button className="btn-cancel" onClick={onClose}>Cancelar</button>
+          <button className="btn-confirm" onClick={onConfirm}>Guardar</button>
         </div>
       </div>
     </div>
   );
 }
 
-/* ============================================================
-   PÁGINA PRINCIPAL
-============================================================== */
+/* ================= PAGE ================= */
 export default function EquiposPage() {
   const [equipos, setEquipos] = useState([]);
   const [consultores, setConsultores] = useState([]);
@@ -59,12 +43,19 @@ export default function EquiposPage() {
 
   const [modalCrear, setModalCrear] = useState(false);
   const [modalEditar, setModalEditar] = useState(false);
-
   const [search, setSearch] = useState("");
 
-  /* ============================================================
-     CARGAS
-  ============================================================ */
+  /* ================= LOAD ================= */
+  useEffect(() => {
+    loadEquipos();
+    loadConsultores();
+  }, []);
+
+  useEffect(() => {
+    if (selectedEquipo) loadConsultoresEquipo(selectedEquipo.id);
+    else setConsultoresEquipo([]);
+  }, [selectedEquipo]);
+
   const loadEquipos = async () => {
     const res = await jfetch("/equipos");
     setEquipos(await jsonOrThrow(res));
@@ -75,70 +66,40 @@ export default function EquiposPage() {
     setConsultores(await jsonOrThrow(res));
   };
 
-  const loadConsultoresEquipo = async (equipoId) => {
-    const res = await jfetch(`/equipos/${equipoId}/consultores`);
+  const loadConsultoresEquipo = async (id) => {
+    const res = await jfetch(`/equipos/${id}/consultores`);
     setConsultoresEquipo(await jsonOrThrow(res));
   };
 
-  useEffect(() => {
-    loadEquipos();
-    loadConsultores();
-  }, []);
-
-  useEffect(() => {
-    if (selectedEquipo) {
-      loadConsultoresEquipo(selectedEquipo.id);
-    } else {
-      setConsultoresEquipo([]);
-    }
-  }, [selectedEquipo]);
-
-  /* ============================================================
-     FILTRO + CONTADOR
-  ============================================================ */
+  /* ================= FILTER ================= */
   const equiposFiltrados = useMemo(() => {
     if (!search.trim()) return equipos;
-    return equipos.filter((e) =>
+    return equipos.filter(e =>
       e.nombre.toLowerCase().includes(search.toLowerCase())
     );
   }, [equipos, search]);
 
-  const contadorPorEquipo = useMemo(() => {
-    const map = {};
-    consultores.forEach((c) => {
-      if (c.equipo) {
-        map[c.equipo] = (map[c.equipo] || 0) + 1;
-      }
-    });
-    return map;
-  }, [consultores]);
-
-  /* ============================================================
-     CRUD EQUIPOS
-  ============================================================ */
+  /* ================= CRUD ================= */
   const crearEquipo = async () => {
-    if (!nuevoEquipo.trim())
-      return Swal.fire("Campo requerido", "Ingrese nombre", "warning");
+    if (!nuevoEquipo.trim()) return Swal.fire("Ingrese nombre", "", "warning");
 
-    const res = await jfetch("/equipos", {
+    await jfetch("/equipos", {
       method: "POST",
-      body: { nombre: nuevoEquipo },
-    });
+      body: { nombre: nuevoEquipo }
+    }).then(jsonOrThrow);
 
-    await jsonOrThrow(res);
     Swal.fire("✔ Equipo creado", "", "success");
-    setNuevoEquipo("");
     setModalCrear(false);
+    setNuevoEquipo("");
     loadEquipos();
   };
 
   const editarEquipo = async () => {
-    const res = await jfetch(`/equipos/${selectedEquipo.id}`, {
+    await jfetch(`/equipos/${selectedEquipo.id}`, {
       method: "PUT",
-      body: { nombre: editNombre },
-    });
+      body: { nombre: editNombre }
+    }).then(jsonOrThrow);
 
-    await jsonOrThrow(res);
     Swal.fire("✔ Equipo actualizado", "", "success");
     setModalEditar(false);
     loadEquipos();
@@ -149,68 +110,42 @@ export default function EquiposPage() {
       title: "¿Eliminar equipo?",
       text: equipo.nombre,
       icon: "warning",
-      showCancelButton: true,
+      showCancelButton: true
     });
 
     if (!r.isConfirmed) return;
 
-    const res = await jfetch(`/equipos/${equipo.id}`, { method: "DELETE" });
-    await jsonOrThrow(res);
-
-    Swal.fire("✔ Eliminado", "", "success");
+    await jfetch(`/equipos/${equipo.id}`, { method: "DELETE" }).then(jsonOrThrow);
     setSelectedEquipo(null);
     loadEquipos();
   };
 
-  /* ============================================================
-     ASIGNAR / REMOVER CONSULTOR
-  ============================================================ */
   const asignarConsultor = async () => {
-    if (!selectedConsultor)
-      return Swal.fire("Seleccione consultor", "", "warning");
+    if (!selectedConsultor) return;
 
-    const res = await jfetch(
-      `/consultores/${selectedConsultor}/equipo`,
-      {
-        method: "PUT",
-        body: { equipo_id: selectedEquipo.id },
-      }
-    );
+    await jfetch(`/consultores/${selectedConsultor}/equipo`, {
+      method: "PUT",
+      body: { equipo_id: selectedEquipo.id }
+    }).then(jsonOrThrow);
 
-    await jsonOrThrow(res);
-    Swal.fire("✔ Asignado", "", "success");
     setSelectedConsultor("");
     loadConsultores();
     loadConsultoresEquipo(selectedEquipo.id);
   };
 
-  const removerConsultor = async (consultor) => {
-    const r = await Swal.fire({
-      title: "¿Remover consultor?",
-      text: consultor.nombre,
-      icon: "warning",
-      showCancelButton: true,
-    });
+  const removerConsultor = async (c) => {
+    await jfetch(`/consultores/${c.id}/equipo/remove`, {
+      method: "PUT"
+    }).then(jsonOrThrow);
 
-    if (!r.isConfirmed) return;
-
-    const res = await jfetch(
-      `/consultores/${consultor.id}/equipo/remove`,
-      { method: "PUT" }
-    );
-
-    await jsonOrThrow(res);
-    Swal.fire("✔ Removido", "", "success");
     loadConsultores();
     loadConsultoresEquipo(selectedEquipo.id);
   };
 
-  /* ============================================================
-     RENDER
-  ============================================================ */
+  /* ================= RENDER ================= */
   return (
     <div className="equipos-wrapper">
-      <h1>🧩 Administración de Equipos</h1>
+      <h1 className="equipos-title">🧩 Administración de Equipos</h1>
 
       <div className="equipos-grid">
         {/* EQUIPOS */}
@@ -222,20 +157,19 @@ export default function EquiposPage() {
 
           <input
             className="search"
-            placeholder="🔍 Buscar equipo..."
+            placeholder="Buscar equipo..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
 
           <ul className="equipos-list">
-            {equiposFiltrados.map((e) => (
+            {equiposFiltrados.map(e => (
               <li
                 key={e.id}
                 className={selectedEquipo?.id === e.id ? "active" : ""}
                 onClick={() => setSelectedEquipo(e)}
               >
                 <span>{e.nombre}</span>
-                <small>{contadorPorEquipo[e.nombre] || 0} consultores</small>
 
                 <div className="actions">
                   <button onClick={(ev) => {
@@ -255,7 +189,7 @@ export default function EquiposPage() {
           </ul>
         </div>
 
-        {/* CONSULTOR DEL EQUIPO */}
+        {/* CONSULTORES */}
         <div className="equipos-card">
           <h2>Consultores del equipo</h2>
 
@@ -266,7 +200,7 @@ export default function EquiposPage() {
               <h3>{selectedEquipo.nombre}</h3>
 
               <ul className="consultores-list">
-                {consultoresEquipo.map((c) => (
+                {consultoresEquipo.map(c => (
                   <li key={c.id}>
                     {c.nombre}
                     <button onClick={() => removerConsultor(c)}>❌</button>
@@ -274,23 +208,21 @@ export default function EquiposPage() {
                 ))}
               </ul>
 
-              <select
-                value={selectedConsultor}
-                onChange={(e) => setSelectedConsultor(e.target.value)}
-              >
-                <option value="">Asignar consultor…</option>
-                {consultores
-                  .filter((c) => !consultoresEquipo.some((ce) => ce.id === c.id))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nombre}
-                    </option>
-                  ))}
-              </select>
+              <div className="assign-row">
+                <select
+                  value={selectedConsultor}
+                  onChange={(e) => setSelectedConsultor(e.target.value)}
+                >
+                  <option value="">Asignar consultor…</option>
+                  {consultores
+                    .filter(c => !consultoresEquipo.some(ce => ce.id === c.id))
+                    .map(c => (
+                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                    ))}
+                </select>
 
-              <button onClick={asignarConsultor}>
-                Asignar consultor
-              </button>
+                <button onClick={asignarConsultor}>Asignar</button>
+              </div>
             </>
           )}
         </div>
@@ -304,7 +236,6 @@ export default function EquiposPage() {
         setValue={setNuevoEquipo}
         onClose={() => setModalCrear(false)}
         onConfirm={crearEquipo}
-        confirmText="Crear"
       />
 
       <EquipoModal
@@ -314,7 +245,6 @@ export default function EquiposPage() {
         setValue={setEditNombre}
         onClose={() => setModalEditar(false)}
         onConfirm={editarEquipo}
-        confirmText="Guardar"
       />
     </div>
   );

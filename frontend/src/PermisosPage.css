@@ -1,286 +1,93 @@
-/* ==========================================================================
-   PERMISOS PAGE — ULTRA PRO (versión final definitiva)
-   Estilos encapsulados, modernos, fluidos y muy cómodos
-   ========================================================================== */
-
 #permisos-page {
-  --bg: #eef1f6;
-  --card-bg: #ffffff;
-  --card-border: #d4d9e2;
-  --text-main: #1e293b;
-  --text-muted: #64748b;
-  --accent: #2563eb;
-  --accent-green: #16a34a;
-  --accent-yellow: #eab308;
-  --danger: #dc2626;
-
   max-width: 1400px;
-  margin: 0 auto;
-  padding: 32px 22px;
-  background: var(--bg);
-  font-family: "Inter", sans-serif;
+  margin: auto;
+  padding: 32px;
+  background: #eef1f6;
+  font-family: Inter, system-ui;
 }
 
-/* ========================= TITULO GENERAL ========================= */
-
-#permisos-page .mat-title {
+.mat-title {
   font-size: 34px;
   font-weight: 800;
-  margin-bottom: 26px;
-  color: var(--text-main);
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  margin-bottom: 24px;
 }
 
-/* ========================= CARD GLOBAL ========================= */
-
-#permisos-page .mat-card {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
+.mat-card {
+  background: #fff;
   border-radius: 16px;
   padding: 26px;
-  margin-bottom: 28px;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.06);
-  transition: 0.25s ease;
+  margin-bottom: 26px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.08);
 }
 
-#permisos-page .mat-card:hover {
-  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.10);
-}
-
-/* ========================= SUBTÍTULO DE CARD ========================= */
-
-#permisos-page .mat-card h2 {
-  font-size: 21px;
-  margin-bottom: 16px;
-  color: var(--text-main);
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-/* ========================= ACCIONES SUPERIORES ========================= */
-
-#permisos-page .actions-bar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 14px;
-}
-
-#permisos-page .clean-btn {
-  padding: 10px 18px;
-  background: var(--danger);
-  color: white;
-  border-radius: 10px;
-  border: none;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 700;
-  transition: 0.25s;
-}
-
-#permisos-page .clean-btn:hover {
-  background: #b91c1c;
-  transform: translateY(-2px);
-}
-
-/* ========================= GRID DE DESTINO ========================= */
-
-#permisos-page .mat-destino-grid {
+.mat-destino-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 22px;
+  grid-template-columns: repeat(auto-fit, minmax(260px,1fr));
+  gap: 20px;
 }
 
-/* ========================= CAMPOS (SELECTS) ========================= */
-
-#permisos-page .mat-field label {
-  font-size: 15px;
+.mat-field label {
   font-weight: 700;
-  color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   display: block;
 }
 
-#permisos-page .mat-field select {
-  padding: 14px 18px;
+.mat-field select {
+  width: 100%;
+  padding: 14px;
   border-radius: 12px;
-  border: 1px solid var(--card-border);
-  background: var(--card-bg);
-  font-size: 15px;
+  border: 1px solid #cbd5e1;
+}
+
+.mat-search {
   width: 100%;
-  color: var(--text-main);
-  transition: 0.25s ease;
-}
-
-#permisos-page .mat-field select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
-  outline: none;
-}
-
-/* ========================= BADGES (CHIPS) ========================= */
-
-#permisos-page .mat-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-#permisos-page .mat-chip {
-  background: #dbeafe;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--card-border);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-main);
-}
-
-#permisos-page .chip-remove {
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  font-size: 16px;
-  color: var(--danger);
-  transition: 0.2s;
-}
-
-#permisos-page .chip-remove:hover {
-  transform: scale(1.15);
-}
-
-/* ========================= TEXTO CUANDO NO HAY DATOS ========================= */
-
-#permisos-page .empty-text {
-  color: var(--text-muted);
-  font-size: 15px;
-  margin-top: 10px;
-}
-
-/* ========================= BUSCADOR ========================= */
-
-#permisos-page .mat-search {
-  width: 100%;
-  padding: 14px 16px;
+  padding: 14px;
   margin-bottom: 18px;
   border-radius: 12px;
-  border: 1px solid var(--card-border);
-  font-size: 15px;
-  transition: 0.25s ease;
+  border: 1px solid #cbd5e1;
 }
 
-#permisos-page .mat-search:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
-  outline: none;
-}
-
-/* ========================= TABLA WRAPPER ========================= */
-
-#permisos-page .table-wrapper {
-  max-height: 550px;
+.table-wrapper {
+  max-height: 500px;
   overflow-y: auto;
   border-radius: 12px;
-  border: 1px solid var(--card-border);
-  background: var(--card-bg);
-  box-shadow: inset 0 0 4px rgba(0,0,0,0.05);
+  border: 1px solid #e5e7eb;
 }
 
-/* Scrollbar */
-#permisos-page .table-wrapper::-webkit-scrollbar {
-  width: 10px;
-}
-
-#permisos-page .table-wrapper::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 10px;
-}
-
-/* ========================= TABLA ========================= */
-
-#permisos-page .mat-table {
+.mat-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 15px;
 }
 
-#permisos-page .mat-table thead th {
+.mat-table th {
+  position: sticky;
+  top: 0;
   background: #f1f5f9;
   padding: 14px;
   font-weight: 800;
-  color: var(--text-main);
-  border-bottom: 1px solid var(--card-border);
-  position: sticky;
-  top: 0;
-  z-index: 5;
 }
 
-#permisos-page .mat-table td {
+.mat-table td {
   padding: 14px;
-  border-bottom: 1px solid var(--card-border);
-  color: var(--text-main);
+  border-bottom: 1px solid #e5e7eb;
 }
 
-#permisos-page .mat-table tbody tr:hover {
-  background: #f8fafc;
-}
-
-/* ========================= BAR DE BOTONES ========================= */
-
-#permisos-page .button-bar {
-  margin-top: 18px;
+.button-bar {
   display: flex;
   gap: 14px;
+  margin-top: 20px;
   flex-wrap: wrap;
 }
 
-/* ========================= BOTONES PRINCIPALES ========================= */
-
-#permisos-page .mat-btn {
+.mat-btn {
   padding: 14px 22px;
   border-radius: 12px;
   border: none;
-  cursor: pointer;
-  background: var(--accent);
-  color: #fff;
-  font-size: 15px;
+  background: #2563eb;
+  color: white;
   font-weight: 700;
-  transition: 0.22s ease;
+  cursor: pointer;
 }
 
-#permisos-page .mat-btn:hover {
-  transform: translateY(-2px);
-  opacity: 0.9;
-}
-
-#permisos-page .mat-btn.green {
-  background: var(--accent-green);
-}
-
-#permisos-page .mat-btn.yellow {
-  background: var(--accent-yellow);
-  color: #111;
-}
-
-/* ========================= RESPONSIVE ========================= */
-
-@media (max-width: 650px) {
-  #permisos-page .mat-btn {
-    width: 100%;
-  }
-
-  #permisos-page .clean-btn {
-    width: 100%;
-    margin-bottom: 12px;
-  }
-
-  #permisos-page .actions-bar {
-    justify-content: center;
-  }
-}
+.mat-btn.green { background: #16a34a; }
+.mat-btn.yellow { background: #eab308; color: #111; }
