@@ -3,9 +3,9 @@ import Swal from "sweetalert2";
 import "./ConsultoresTable.css";
 import { jfetch } from "./lib/api";
 
-/* ============================
+/* =========================
    RUTAS API
-============================ */
+========================= */
 const API = {
   CONSULT: "/consultores",
   MODULOS: "/modulos",
@@ -15,11 +15,10 @@ const API = {
 };
 
 export default function ConsultoresTable() {
-  /* ============================
-     ESTADO PRINCIPAL
-  ============================ */
+  /* =========================
+     ESTADOS
+  ========================= */
   const [consultores, setConsultores] = useState([]);
-
   const [modulos, setModulos] = useState([]);
   const [equipos, setEquipos] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -28,10 +27,7 @@ export default function ConsultoresTable() {
   const [showModal, setShowModal] = useState(false);
   const [editando, setEditando] = useState(null);
 
-  const [filtro, setFiltro] = useState({
-    nombre: "",
-    equipo: "",
-  });
+  const [filtro, setFiltro] = useState({ nombre: "", equipo: "" });
 
   const [form, setForm] = useState({
     usuario: "",
@@ -43,71 +39,58 @@ export default function ConsultoresTable() {
     modulos: [],
   });
 
-  /* ============================
-     CARGA INICIAL
-  ============================ */
+  /* =========================
+     CARGAS
+  ========================= */
   useEffect(() => {
     cargarConsultores();
   }, []);
 
-  /* ============================
-     FILTRO (debounce)
-  ============================ */
   useEffect(() => {
     const t = setTimeout(cargarConsultores, 250);
     return () => clearTimeout(t);
   }, [filtro]);
 
-  /* ============================
-     CARGAR LISTAS
-  ============================ */
   const cargarListas = async () => {
     try {
       const [m, e, r, h] = await Promise.all([
-        jfetch(API.MODULOS).then((r) => r.json()),
-        jfetch(API.EQUIPOS).then((r) => r.json()),
-        jfetch(API.ROLES).then((r) => r.json()),
-        jfetch(API.HORARIOS).then((r) => r.json()),
+        jfetch(API.MODULOS).then(r => r.json()),
+        jfetch(API.EQUIPOS).then(r => r.json()),
+        jfetch(API.ROLES).then(r => r.json()),
+        jfetch(API.HORARIOS).then(r => r.json()),
       ]);
 
-      setModulos(Array.isArray(m) ? m : []);
-      setEquipos(Array.isArray(e) ? e : []);
-      setRoles(Array.isArray(r) ? r : []);
-      setHorarios(Array.isArray(h) ? h : []);
-    } catch (err) {
-      console.error(err);
+      setModulos(m || []);
+      setEquipos(e || []);
+      setRoles(r || []);
+      setHorarios(h || []);
+    } catch {
       Swal.fire("Error", "Error cargando listas", "error");
     }
   };
 
-  /* ============================
-     CARGAR CONSULTORES
-  ============================ */
   const cargarConsultores = useCallback(async () => {
     try {
       const res = await jfetch(API.CONSULT);
       const data = await res.json();
       if (!Array.isArray(data)) return;
 
-      const filtrados = data.filter(
-        (c) =>
-          c.nombre?.toLowerCase().includes(filtro.nombre.toLowerCase()) &&
-          (c.equipo_nombre || "")
-            .toLowerCase()
-            .includes(filtro.equipo.toLowerCase())
+      const filtrados = data.filter(c =>
+        c.nombre?.toLowerCase().includes(filtro.nombre.toLowerCase()) &&
+        (c.equipo_nombre || "").toLowerCase().includes(filtro.equipo.toLowerCase())
       );
 
       setConsultores(filtrados);
-    } catch (err) {
+    } catch {
       Swal.fire("Error", "No fue posible cargar consultores", "error");
     }
   }, [filtro]);
 
-  /* ============================
-     ABRIR MODAL
-  ============================ */
+  /* =========================
+     MODAL
+  ========================= */
   const abrirModal = async (c = null) => {
-    await cargarListas(); // ⬅️ CLAVE
+    await cargarListas();
 
     if (c) {
       setEditando(c);
@@ -115,10 +98,10 @@ export default function ConsultoresTable() {
         usuario: c.usuario,
         nombre: c.nombre,
         password: "",
-        rol_id: c.rol_id || "",
-        equipo_id: c.equipo_id || "",
-        horario_id: c.horario_id || "",
-        modulos: c.modulos?.map((m) => m.id) || [],
+        rol_id: c.rol_id?.toString() || "",
+        equipo_id: c.equipo_id?.toString() || "",
+        horario_id: c.horario_id?.toString() || "",
+        modulos: c.modulos?.map(m => String(m.id)) || [],
       });
     } else {
       setEditando(null);
@@ -138,9 +121,9 @@ export default function ConsultoresTable() {
 
   const cerrarModal = () => setShowModal(false);
 
-  /* ============================
-     GUARDAR CONSULTOR
-  ============================ */
+  /* =========================
+     GUARDAR
+  ========================= */
   const guardarConsultor = async () => {
     if (!form.usuario || !form.nombre || !form.rol_id) {
       Swal.fire("Campos requeridos", "Usuario, nombre y rol son obligatorios", "warning");
@@ -148,9 +131,7 @@ export default function ConsultoresTable() {
     }
 
     const method = editando ? "PUT" : "POST";
-    const url = editando
-      ? `${API.CONSULT}/${editando.id}`
-      : API.CONSULT;
+    const url = editando ? `${API.CONSULT}/${editando.id}` : API.CONSULT;
 
     try {
       const res = await jfetch(url, {
@@ -166,20 +147,16 @@ export default function ConsultoresTable() {
         },
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.mensaje || "Error guardando");
+      if (!res.ok) throw new Error("Error guardando");
 
-      Swal.fire("Éxito", "Consultor guardado correctamente", "success");
+      Swal.fire("Éxito", "Consultor guardado", "success");
       cerrarModal();
       cargarConsultores();
-    } catch (err) {
-      Swal.fire("Error", err.message, "error");
+    } catch (e) {
+      Swal.fire("Error", e.message, "error");
     }
   };
 
-  /* ============================
-     ELIMINAR CONSULTOR
-  ============================ */
   const eliminarConsultor = async (id) => {
     const r = await Swal.fire({
       title: "¿Eliminar consultor?",
@@ -189,142 +166,114 @@ export default function ConsultoresTable() {
     });
     if (!r.isConfirmed) return;
 
-    try {
-      await jfetch(`${API.CONSULT}/${id}`, { method: "DELETE" });
-      Swal.fire("Eliminado", "Consultor eliminado", "success");
-      cargarConsultores();
-    } catch {
-      Swal.fire("Error", "No se pudo eliminar", "error");
-    }
+    await jfetch(`${API.CONSULT}/${id}`, { method: "DELETE" });
+    cargarConsultores();
   };
 
-  /* ============================
+  /* =========================
      RENDER
-  ============================ */
+  ========================= */
   return (
     <div className="cst-wrapper">
       <h2 className="cst-title">👨‍💼 Gestión de Consultores</h2>
 
-      {/* FILTROS */}
       <div className="cst-filtros">
         <input
           placeholder="🔎 Consultor..."
           value={filtro.nombre}
-          onChange={(e) => setFiltro({ ...filtro, nombre: e.target.value })}
+          onChange={e => setFiltro({ ...filtro, nombre: e.target.value })}
         />
         <input
           placeholder="🧩 Equipo..."
           value={filtro.equipo}
-          onChange={(e) => setFiltro({ ...filtro, equipo: e.target.value })}
+          onChange={e => setFiltro({ ...filtro, equipo: e.target.value })}
         />
         <button className="cst-btn-add" onClick={() => abrirModal()}>
           ➕ Agregar
         </button>
       </div>
 
-      {/* TABLA */}
-      <table className="cst-table">
-        <thead>
-          <tr>
-            <th>Usuario</th>
-            <th>Nombre</th>
-            <th>Rol</th>
-            <th>Equipo</th>
-            <th>Horario</th>
-            <th>Módulos</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          {consultores.length ? (
-            consultores.map((c) => (
+      <div className="cst-table-wrapper">
+        <table className="cst-table">
+          <thead>
+            <tr>
+              <th>Usuario</th>
+              <th>Nombre</th>
+              <th>Rol</th>
+              <th>Equipo</th>
+              <th>Horario</th>
+              <th>Módulos</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {consultores.length ? consultores.map(c => (
               <tr key={c.id}>
                 <td>{c.usuario}</td>
                 <td>{c.nombre}</td>
                 <td>{c.rol_nombre}</td>
-                <td>{c.equipo_nombre}</td>
-                <td>{c.horario_rango}</td>
-                <td>{c.modulos?.map((m) => m.nombre).join(", ")}</td>
-                <td>
-                  <button onClick={() => abrirModal(c)}>✏️</button>
-                  <button onClick={() => eliminarConsultor(c.id)}>🗑️</button>
+                <td>{c.equipo_nombre || "—"}</td>
+                <td>{c.horario_rango || "—"}</td>
+                <td>{c.modulos?.map(m => m.nombre).join(", ")}</td>
+                <td className="cst-actions">
+                  <button className="cst-edit" onClick={() => abrirModal(c)}>✏️</button>
+                  <button className="cst-delete" onClick={() => eliminarConsultor(c.id)}>🗑️</button>
                 </td>
               </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan="7">Sin resultados</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            )) : (
+              <tr><td colSpan="7" className="cst-empty">Sin resultados</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {/* MODAL */}
       {showModal && (
         <div className="cst-modal-backdrop">
           <div className="cst-modal">
-            <h3>{editando ? "Editar Consultor" : "Nuevo Consultor"}</h3>
+            <div className="cst-modal-header">
+              <h3>{editando ? "Editar Consultor" : "Nuevo Consultor"}</h3>
+              <button className="cst-close" onClick={cerrarModal}>×</button>
+            </div>
 
-            <input
-              placeholder="Usuario"
-              value={form.usuario}
-              onChange={(e) => setForm({ ...form, usuario: e.target.value })}
-            />
+            <div className="cst-modal-body">
+              <input placeholder="Usuario" value={form.usuario}
+                onChange={e => setForm({ ...form, usuario: e.target.value })} />
+              <input placeholder="Nombre" value={form.nombre}
+                onChange={e => setForm({ ...form, nombre: e.target.value })} />
 
-            <input
-              placeholder="Nombre"
-              value={form.nombre}
-              onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-            />
+              {!editando && (
+                <input type="password" placeholder="Contraseña"
+                  value={form.password}
+                  onChange={e => setForm({ ...form, password: e.target.value })} />
+              )}
 
-            {!editando && (
-              <input
-                type="password"
-                placeholder="Contraseña"
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-              />
-            )}
+              <select value={form.rol_id} onChange={e => setForm({ ...form, rol_id: e.target.value })}>
+                <option value="">Rol</option>
+                {roles.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+              </select>
 
-            <select value={form.rol_id} onChange={(e) => setForm({ ...form, rol_id: e.target.value })}>
-              <option value="">Rol</option>
-              {roles.map((r) => (
-                <option key={r.id} value={r.id}>{r.nombre}</option>
-              ))}
-            </select>
+              <select value={form.equipo_id} onChange={e => setForm({ ...form, equipo_id: e.target.value })}>
+                <option value="">Equipo</option>
+                {equipos.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+              </select>
 
-            <select value={form.equipo_id} onChange={(e) => setForm({ ...form, equipo_id: e.target.value })}>
-              <option value="">Equipo</option>
-              {equipos.map((e) => (
-                <option key={e.id} value={e.id}>{e.nombre}</option>
-              ))}
-            </select>
+              <select value={form.horario_id} onChange={e => setForm({ ...form, horario_id: e.target.value })}>
+                <option value="">Horario</option>
+                {horarios.map(h => <option key={h.id} value={h.id}>{h.rango}</option>)}
+              </select>
 
-            <select value={form.horario_id} onChange={(e) => setForm({ ...form, horario_id: e.target.value })}>
-              <option value="">Horario</option>
-              {horarios.map((h) => (
-                <option key={h.id} value={h.id}>{h.rango}</option>
-              ))}
-            </select>
-
-            <select
-              multiple
-              value={form.modulos}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  modulos: Array.from(e.target.selectedOptions, (o) => o.value),
-                })
-              }
-            >
-              {modulos.map((m) => (
-                <option key={m.id} value={m.id}>{m.nombre}</option>
-              ))}
-            </select>
+              <select multiple value={form.modulos}
+                onChange={e =>
+                  setForm({ ...form, modulos: Array.from(e.target.selectedOptions, o => o.value) })
+                }>
+                {modulos.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+              </select>
+            </div>
 
             <div className="cst-modal-footer">
-              <button onClick={cerrarModal}>Cancelar</button>
-              <button onClick={guardarConsultor}>Guardar</button>
+              <button className="cst-secondary" onClick={cerrarModal}>Cancelar</button>
+              <button className="cst-primary" onClick={guardarConsultor}>Guardar</button>
             </div>
           </div>
         </div>

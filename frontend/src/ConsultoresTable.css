@@ -1,5 +1,5 @@
 /* ===========================================================
-   CONSULTOR TABLE — DISEÑO PROFESIONAL VERSION FINAL
+   CONSULTOR TABLE — DISEÑO PROFESIONAL FINAL
    =========================================================== */
 
 .cst-wrapper {
@@ -15,19 +15,18 @@
   --text-main: #0f172a;
   --radius: 14px;
   --shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
-  --shadow-strong: 0 10px 25px rgba(15, 23, 42, 0.15);
-  --gradient: linear-gradient(90deg,#2563eb,#dc2626);
+  --shadow-strong: 0 12px 30px rgba(15, 23, 42, 0.18);
+  --gradient: linear-gradient(90deg, #2563eb, #dc2626);
 
   padding: 26px;
   background: var(--gray-50);
   border-radius: 20px;
   box-shadow: var(--shadow);
-  font-family: "Inter", sans-serif;
-  animation: fadeIn 0.32s ease-out;
+  font-family: "Inter", system-ui, sans-serif;
 }
 
 /* ===========================================================
-   TITULO
+   TÍTULO
    =========================================================== */
 .cst-title {
   font-size: 2rem;
@@ -52,40 +51,36 @@
 .cst-filtros input {
   flex: 1;
   padding: 12px 16px;
-  background: white;
+  background: #fff;
   border-radius: 12px;
   border: 1px solid var(--gray-200);
-  font-size: 1rem;
+  font-size: 0.95rem;
   transition: 0.25s;
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
 }
 
 .cst-filtros input:focus {
   outline: none;
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(37,99,235,0.25);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
 }
 
 /* ===========================================================
    BOTÓN AGREGAR
    =========================================================== */
-.cst-btn {
-  padding: 10px 18px;
-  font-weight: 700;
-  border-radius: 12px;
-  cursor: pointer;
-  border: none;
-  transition: 0.25s ease;
-}
-
 .cst-btn-add {
   background: var(--gradient);
-  color: white;
+  color: #fff;
+  padding: 11px 20px;
+  border-radius: 12px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
   box-shadow: var(--shadow-strong);
+  transition: 0.25s;
 }
 
 .cst-btn-add:hover {
-  transform: translateY(-2px) scale(1.03);
+  transform: translateY(-2px);
 }
 
 /* ===========================================================
@@ -93,37 +88,31 @@
    =========================================================== */
 .cst-table-wrapper {
   overflow-x: auto;
-  background: white;
+  background: #fff;
   border-radius: 16px;
-  padding: 2px;
   box-shadow: var(--shadow);
 }
 
 .cst-table {
   width: 100%;
-  border-collapse: collapse;
   min-width: 900px;
+  border-collapse: collapse;
 }
 
-/* Encabezados alineados a la izquierda */
 .cst-table thead th {
   background: var(--gray-100);
   padding: 14px;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 2px solid var(--blue);
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  text-align: left !important;
+  text-align: left;
 }
 
-/* Celdas alineadas a la izquierda */
 .cst-table td {
-  text-align: left !important;
   padding: 13px 16px;
   border-bottom: 1px solid var(--gray-200);
+  font-size: 0.95rem;
 }
 
 .cst-table tbody tr:nth-child(odd) {
@@ -136,8 +125,8 @@
 
 .cst-empty {
   text-align: center;
-  color: var(--gray-700);
   padding: 18px;
+  color: var(--gray-700);
 }
 
 /* ===========================================================
@@ -148,53 +137,64 @@
   gap: 8px;
 }
 
+.cst-edit,
+.cst-delete {
+  border: none;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: #fff;
+  transition: 0.2s;
+}
+
 .cst-edit {
   background: var(--blue);
-  color: white;
 }
+
 .cst-edit:hover {
   background: var(--blue-dark);
-  transform: translateY(-1px);
 }
 
 .cst-delete {
   background: var(--red);
-  color: white;
 }
+
 .cst-delete:hover {
   background: var(--red-dark);
-  transform: scale(1.05);
 }
 
 /* ===========================================================
-   MODAL — GLASS + ANIMACIÓN
+   MODAL BACKDROP
    =========================================================== */
 .cst-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.55);
+  background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: fadeIn 0.32s ease-out;
   z-index: 9999;
 }
 
+/* ===========================================================
+   MODAL
+   =========================================================== */
 .cst-modal {
-  width: min(550px, 95%);
-  background: white;
+  width: min(560px, 95%);
+  background: #fff;
   border-radius: 18px;
   box-shadow: var(--shadow-strong);
   overflow: hidden;
-  animation: slideUp 0.35s ease-out;
+  animation: slideUp 0.3s ease-out;
 }
 
-/* Header */
+/* HEADER */
 .cst-modal-header {
-  padding: 16px 24px;
+  padding: 16px 22px;
   background: var(--gradient);
-  color: white;
+  color: #fff;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -206,19 +206,16 @@
 }
 
 .cst-close {
-  background: none;
+  background: transparent;
   border: none;
-  font-size: 1.7rem;
+  font-size: 1.6rem;
+  color: #fff;
   cursor: pointer;
-  opacity: 0.9;
-}
-.cst-close:hover {
-  opacity: 1;
 }
 
-/* Body */
+/* BODY */
 .cst-modal-body {
-  padding: 24px;
+  padding: 22px;
   max-height: 60vh;
   overflow-y: auto;
   background: var(--gray-50);
@@ -227,89 +224,58 @@
 .cst-modal-body input,
 .cst-modal-body select {
   width: 100%;
-  padding: 12px 14px;
+  padding: 11px 14px;
   border-radius: 10px;
   border: 1px solid var(--gray-200);
   margin-bottom: 12px;
   font-size: 0.95rem;
-  transition: 0.25s;
 }
 
 .cst-modal-body input:focus,
 .cst-modal-body select:focus {
   outline: none;
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(37,99,235,0.25);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
 }
 
-/* ===========================================================
-   SELECT MÚLTIPLE — DISEÑO PROFESIONAL
-   =========================================================== */
+/* SELECT MÚLTIPLE */
 .cst-modal-body select[multiple] {
-  height: auto !important;
   min-height: 130px;
   max-height: 200px;
   overflow-y: auto;
-  padding: 10px 14px;
-  background: white;
-  border: 1px solid var(--gray-300);
-  border-radius: 12px;
-  font-size: 0.95rem;
-  color: var(--text-main);
-  cursor: pointer;
-  transition: 0.25s ease;
 }
 
-/* Scroll elegante */
-.cst-modal-body select[multiple]::-webkit-scrollbar {
-  width: 8px;
-}
-.cst-modal-body select[multiple]::-webkit-scrollbar-thumb {
-  background: var(--gray-300);
-  border-radius: 10px;
-}
-
-/* Opciones */
-.cst-modal-body select[multiple] option {
-  padding: 8px 10px;
-  border-radius: 8px;
-  margin: 4px 0;
-  cursor: pointer;
-}
-
-/* Hover */
-.cst-modal-body select[multiple] option:hover {
-  background: var(--gray-100);
-}
-
-/* Seleccionado */
-.cst-modal-body select[multiple] option:checked {
-  background: var(--blue);
-  color: white;
-  font-weight: 600;
-}
-
-/* Footer */
+/* FOOTER */
 .cst-modal-footer {
-  padding: 18px 24px;
+  padding: 16px 22px;
   background: var(--gray-100);
   display: flex;
   justify-content: flex-end;
-  gap: 14px;
+  gap: 12px;
 }
 
 .cst-primary {
   background: var(--blue);
-  color: white;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
 }
+
 .cst-primary:hover {
   background: var(--blue-dark);
 }
 
 .cst-secondary {
   background: var(--gray-300);
-  color: black;
+  color: #000;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
 }
+
 .cst-secondary:hover {
   background: var(--gray-200);
 }
@@ -317,14 +283,15 @@
 /* ===========================================================
    ANIMACIONES
    =========================================================== */
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(40px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ===========================================================
@@ -333,14 +300,9 @@
 @media (max-width: 768px) {
   .cst-filtros {
     flex-direction: column;
-    gap: 10px;
   }
 
   .cst-btn-add {
     width: 100%;
-  }
-
-  .cst-actions {
-    justify-content: center;
   }
 }

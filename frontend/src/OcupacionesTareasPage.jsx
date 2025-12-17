@@ -267,6 +267,15 @@ export default function OcupacionesTareasPage() {
       return;
     }
 
+    if (!tareasNoAsignadas.some(t => t.id === Number(tareaAsignarId))) {
+      Swal.fire(
+        "No permitido",
+        "Esta tarea ya está asignada a la ocupación",
+        "warning"
+      );
+      return;
+    }
+
     try {
       const res = await jfetch(
         `/ocupaciones/${selectedOcupacion.id}/tareas`,
@@ -474,33 +483,46 @@ export default function OcupacionesTareasPage() {
             </div>
 
             {/* Asignar tarea */}
-            <div className="ocp-section">
-              <h3>Asignar tarea</h3>
-              <div className="ocp-inline">
-                <select
-                  value={tareaAsignarId}
-                  onChange={(e) => setTareaAsignarId(e.target.value)}
-                >
-                  <option value="">Seleccionar tarea…</option>
-                  {tareasNoAsignadas.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.codigo} – {t.nombre}
-                    </option>
-                  ))}
-                </select>
+            {selectedOcupacion && tareasNoAsignadas.length > 0 && (
+              <div className="ocp-section">
+                <h3>Asignar tarea</h3>
 
-                <button
-                  className="ocp-btn ocp-btn-primary"
-                  onClick={asignarTareaAOcupacion}
-                >
-                  Asignar
-                </button>
+                <div className="ocp-inline">
+                  <select
+                    value={tareaAsignarId}
+                    onChange={(e) => setTareaAsignarId(e.target.value)}
+                  >
+                    <option value="">Seleccionar tarea…</option>
+
+                    {tareasNoAsignadas.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.codigo} – {t.nombre}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    className="ocp-btn ocp-btn-primary"
+                    onClick={asignarTareaAOcupacion}
+                  >
+                    Asignar
+                  </button>
+                </div>
+
+                <p className="ocp-hint">
+                  Solo se muestran tareas no asignadas a esta ocupación.
+                </p>
               </div>
+            )}
 
-              <p className="ocp-hint">
-                Solo se muestran tareas no asignadas a la ocupación.
-              </p>
-            </div>
+            {selectedOcupacion && tareasNoAsignadas.length === 0 && (
+              <div className="ocp-section">
+                <p className="ocp-hint">
+                  ✅ Todas las tareas ya están asignadas a esta ocupación.
+                </p>
+              </div>
+            )}
+
 
             {/* CRUD TAREAS */}
             <div className="ocp-section">
