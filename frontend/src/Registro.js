@@ -1247,6 +1247,7 @@ const Registro = ({ userData }) => {
                   placeholder="Tiempo Facturable"
                   value={registro.tiempoFacturable}
                   onChange={(e) => setRegistro({ ...registro, tiempoFacturable: e.target.value })}
+                  className="span-2"
                 />
 
                 {equipoFormulario === 'BASIS' && (
