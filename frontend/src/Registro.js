@@ -865,109 +865,113 @@ const Registro = ({ userData }) => {
     }
   };
 
+  const handleAbrirModalRegistro = async () => {
+    try {
+      const res = await jfetch(
+        `/consultores/datos?usuario=${encodeURIComponent(usuarioLogin)}`
+      );
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.mensaje || `HTTP ${res.status}`);
+      }
+
+      const lista = Array.isArray(data.modulos) ? data.modulos : [];
+      const norm = normalizeModulos(lista);
+
+      setModulos(norm);
+      setModuloElegido(norm.length === 1 ? norm[0] : "");
+
+      setRegistro({
+        ...initRegistro(),
+        modulo: norm.length === 1 ? norm[0] : "",
+        equipo: data.equipo
+          ? String(data.equipo).toUpperCase()
+          : userEquipoUpper,
+      });
+
+      setOcupacionSeleccionada("");
+      setModoEdicion(false);
+      setModalIsOpen(true);
+    } catch (err) {
+      console.error("Error cargando datos del consultor:", err);
+      Swal.fire({
+        icon: "error",
+        title: "No se pudieron cargar los datos del consultor",
+        text: err.message,
+      });
+    }
+  };
+
 
   return (
     <div className="container">
       <div className="page-head">
-        <div className="page-title">
-          <h2>Registro de Horas</h2>
-          <p className="subtitle">Filtra por fecha, cliente, tarea, consultor, equipo, Nro. de caso y horas adicionales</p>
-        </div>
-
-        <div
-          className="page-actions"
-          style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}
-        >
-          {isAdmin && (
-            <div className="team-toggle" role="tablist" aria-label="Filtrar por equipo" style={{ gap: 8 }}>
-              {equiposConConteo.map((opt) => (
-                <button
-                  key={opt.key || "ALL"}
-                  role="tab"
-                  type="button"
-                  className={`team-btn ${filtroEquipo === opt.key ? "is-active" : ""}`}
-                  onClick={() => setFiltroEquipo(opt.key)}
-                  aria-selected={filtroEquipo === opt.key}
-                  title={opt.key ? `Equipo ${opt.label}` : "Todos los equipos"}
-                >
-                  {opt.label} <span className="chip">{opt.count}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* ===== Importar Excel (solo admin) ===== */}
-          {isAdmin && (
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                paddingLeft: 12,
-                borderLeft: "1px solid #e0e0e0",
-              }}
-            >
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={(e) => setExcelFile(e.target.files?.[0] || null)}
-                style={{ maxWidth: 260 }}
-              />
-
+          <div className="page-title">
+            <h2>Registro de Horas</h2>
+            <p className="subtitle">
+              Filtra por fecha, cliente, tarea, consultor, equipo, Nro. de caso y horas adicionales
+            </p>
+          </div>
+          <div className="page-actions">
+            {canDownload && (
               <button
-                type="button"
                 className="btn btn-outline"
-                onClick={handleImportExcel}
-                disabled={!excelFile || importingExcel}
-                title="Importar Excel histórico"
+                onClick={handleExport}
+                title="Descargar Excel"
               >
-                {importingExcel ? "Importando…" : "Importar Excel"}
+                Descargar Excel
               </button>
-            </div>
-          )}
+            )}
 
-          {canDownload && (
-            <button className="btn btn-accent" onClick={handleExport} title="Descargar Excel">
-              Descargar Excel
+            {isAdmin && (
+              <>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={(e) => setExcelFile(e.target.files?.[0] || null)}
+                  className="excel-input"
+                />
+
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={handleImportExcel}
+                  disabled={!excelFile || importingExcel}
+                >
+                  {importingExcel ? "Importando…" : "Importar Excel"}
+                </button>
+              </>
+            )}
+
+            <button
+              className="btn btn-primary"
+              onClick={handleAbrirModalRegistro}
+            >
+              Agregar Registro
             </button>
-          )}
-
-          <button
-            className="btn btn-primary"
-            onClick={async () => {
-              try {
-                const res = await jfetch(`/consultores/datos?usuario=${encodeURIComponent(usuarioLogin)}`);
-                const data = await res.json();
-                if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
-
-                const lista = Array.isArray(data.modulos) ? data.modulos : [];
-                const norm = normalizeModulos(lista);
-                setModulos(norm);
-                setModuloElegido(norm.length === 1 ? norm[0] : "");
-
-                setRegistro({
-                  ...initRegistro(),
-                  modulo: norm.length === 1 ? norm[0] : "",
-                  equipo: data.equipo ? String(data.equipo).toUpperCase() : userEquipoUpper,
-                });
-
-                setOcupacionSeleccionada("");
-                setModalIsOpen(true);
-                setModoEdicion(false);
-              } catch (err) {
-                console.error("Error cargando datos del consultor:", err);
-                Swal.fire({
-                  icon: "error",
-                  title: "No se pudieron cargar los datos del consultor",
-                  text: err.message,
-                });
-              }
-            }}
-          >
-            Agregar Registro
-          </button>
+          </div>
         </div>
-      </div>
+
+      {isAdmin && (
+        <div className="team-filter-row">
+          <span className="team-filter-label">Equipo:</span>
+
+          <div className="team-toggle">
+            {equiposConConteo.map((opt) => (
+              <button
+                key={opt.key || "ALL"}
+                className={`team-btn ${filtroEquipo === opt.key ? "is-active" : ""}`}
+                onClick={() => setFiltroEquipo(opt.key)}
+              >
+                {opt.label}
+                <span className="chip">{opt.count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
 
       {/* FILTROS */}
       <div className="filters-card">
