@@ -567,6 +567,6 @@ class RegistroExcel(db.Model):
 
     oncall = db.Column(db.Boolean)
     desborde = db.Column(db.Boolean)
-    horas_adicionales = db.Column(db.Float)
+    horas_adicionales = db.Column(db.String(10))
 
     descripcion = db.Column(db.Text)
