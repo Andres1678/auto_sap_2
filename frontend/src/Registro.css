@@ -26,6 +26,15 @@
   --shadow:0 12px 28px rgba(2,6,23,.06);
 
   --radius:14px;
+
+  /* Tipografías / tamaños uniformes */
+  --fs-base: 14px;
+  --fs-small: 13px;
+  --fs-title: 28px;
+  --fs-modal-title: 20px;
+
+  /* Alturas consistentes */
+  --control-h: 44px;
 }
 
 *{ box-sizing:border-box; }
@@ -33,7 +42,15 @@
 html,body{
   background:var(--bg);
   color:var(--text);
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: var(--fs-base);
+  line-height: 1.35;
+}
+
+/* Unificar tamaño en TODO lo que sea texto interactivo */
+button, input, select, textarea{
+  font: inherit;
+  font-size: var(--fs-base);
 }
 
 :focus-visible{
@@ -68,13 +85,13 @@ html,body{
 
 .page-title h2{
   margin:0;
-  font-size:28px;
+  font-size:var(--fs-title);
   font-weight:800;
 }
 
 .page-title .subtitle{
   margin-top:6px;
-  font-size:13px;
+  font-size:var(--fs-small);
   color:var(--muted);
 }
 
@@ -86,8 +103,18 @@ html,body{
 }
 
 .page-actions .btn{
-  height:44px;
+  height:var(--control-h);
   padding:0 18px;
+}
+
+/* Si estás usando input file en header */
+.page-actions input[type="file"]{
+  height: var(--control-h);
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fff;
+  max-width: 260px;
 }
 
 /* =========================================================
@@ -102,6 +129,8 @@ html,body{
   cursor:pointer;
   transition:.25s;
   border:none;
+  height: var(--control-h);
+  padding: 0 18px;
 }
 
 .btn-primary{
@@ -134,6 +163,7 @@ html,body{
   align-items:center;
   gap:12px;
   margin:12px 0 18px;
+  flex-wrap: wrap;
 }
 
 .team-toggle{
@@ -144,6 +174,7 @@ html,body{
   border-radius:999px;
   background:linear-gradient(180deg,#ffffff,#f5f7fb);
   box-shadow:0 6px 16px rgba(2,6,23,.06);
+  flex-wrap: wrap;
 }
 
 .team-btn{
@@ -151,13 +182,14 @@ html,body{
   border:1px solid transparent;
   padding:8px 18px;
   border-radius:999px;
-  font-size:13px;
+  font-size: var(--fs-small);
   font-weight:800;
   cursor:pointer;
   display:flex;
   align-items:center;
   gap:8px;
   transition:.25s;
+  color: var(--text);
 }
 
 .team-btn:hover{
@@ -174,13 +206,15 @@ html,body{
   font-weight:700;
 }
 
-.team-btn.is-active{
+.team-btn.is-active,
+.team-btn[aria-selected="true"]{
   background:linear-gradient(135deg,var(--accent),var(--accent-700));
   color:#fff;
   box-shadow:0 8px 18px rgba(0,85,184,.35);
 }
 
-.team-btn.is-active .chip{
+.team-btn.is-active .chip,
+.team-btn[aria-selected="true"] .chip{
   background:rgba(255,255,255,.22);
 }
 
@@ -203,11 +237,11 @@ html,body{
 
 .filters-card input,
 .filters-card select{
-  height:40px;
-  padding:10px 12px;
-  border-radius:12px;
-  border:1px solid var(--border);
-  background:#fff;
+  height: var(--control-h);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fff;
 }
 
 .filters-card input:focus,
@@ -250,7 +284,7 @@ table{
   min-width:1600px;
   border-collapse:separate;
   border-spacing:0;
-  font-size:14px;
+  font-size: var(--fs-base);
 }
 
 thead th{
@@ -260,19 +294,23 @@ thead th{
   padding:12px 14px;
   font-weight:800;
   z-index:1;
+  white-space: nowrap;
 }
 
 tbody td{
   padding:14px;
   border-bottom:1px solid var(--border);
+  vertical-align: top;
 }
 
+/* Acciones sticky */
 td.actions,
 th.actions{
   position:sticky;
   right:0;
   background:#fff;
   z-index:2;
+  box-shadow: -8px 0 16px rgba(2,6,23,.04);
 }
 
 /* =========================================================
@@ -286,12 +324,15 @@ th.actions{
   background:#fff;
   cursor:pointer;
   transition:.2s;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
 }
 .icon-btn:hover{ background:#f5f7fb; }
 .icon-btn.danger:hover{ background:rgba(220,38,38,.08); }
 
 /* =========================================================
-   MODAL REGISTRO
+   MODAL REGISTRO (React Modal)
 ========================================================= */
 .ReactModal__Overlay{
   background:rgba(10,15,30,.55)!important;
@@ -311,6 +352,8 @@ th.actions{
   background:var(--card);
   box-shadow:0 30px 80px rgba(2,6,23,.35);
   padding:0;
+
+  overflow: hidden; /* evita cortes raros */
 }
 
 /* Header */
@@ -321,12 +364,11 @@ th.actions{
   display:flex;
   justify-content:space-between;
   align-items:center;
-  border-radius:20px 20px 0 0;
 }
 
 .modal-title{
   margin:0;
-  font-size:20px;
+  font-size: var(--fs-modal-title);
   font-weight:800;
 }
 
@@ -339,53 +381,78 @@ th.actions{
   height:34px;
   border-radius:50%;
   cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
 }
+.close-button:hover{ background:rgba(255,255,255,.28); }
 
 /* Body */
 .modal-body{
   padding:22px 24px;
   max-height:70vh;
   overflow:auto;
+  background: #fff;
 }
 
+/* GRID DEL FORMULARIO */
 .form-grid{
   display:grid;
   grid-template-columns:repeat(3, minmax(0,1fr));
   gap:14px;
+  align-items: start;
 }
 
-.form-grid .span-2{
-  grid-column: span 2;
-}
+/* Helpers de span */
+.form-grid .span-2{ grid-column: span 2; }
+.form-grid .span-3{ grid-column: 1 / -1; }
 
-.form-grid .span-3{
-  grid-column: 1 / -1;
-}
-
+/* Controles del modal (uniformes) */
 .modal-content input,
 .modal-content select,
 .modal-content textarea{
   width:100%;
+  height: var(--control-h);
   background:#f7f9fc;
-  padding:12px 14px;
+  padding: 12px 14px;
   border-radius:12px;
   border:1px solid var(--border);
-  font-size:14px;
+  font-size: var(--fs-base);
+  line-height: 1.2;
+}
+
+/* Textarea debe tener altura propia */
+.modal-content textarea{
+  height:auto;
+  min-height: 110px;
+  resize:vertical;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+/* Fix: el placeholder y texto se vean igual */
+.modal-content input::placeholder,
+.modal-content textarea::placeholder{
+  color: #8a94a6;
+  opacity: 1;
 }
 
 .modal-content input:focus,
 .modal-content select:focus,
 .modal-content textarea:focus{
+  outline: none;
   border-color:var(--primary);
   box-shadow:0 0 0 4px var(--ring);
 }
 
-.form-grid textarea{
-  grid-column:1 / -1;
-  min-height:90px;
-  resize:vertical;
+/* Asegura que date/number no se “encojan” */
+.modal-content input[type="date"],
+.modal-content input[type="number"],
+.modal-content input[type="time"]{
+  min-width: 0;
 }
 
+/* Bloque de horas en 2 columnas */
 .inline-2{
   display:grid;
   grid-template-columns:1fr 1fr;
@@ -400,12 +467,12 @@ th.actions{
   padding:16px 24px;
   border-top:1px solid var(--border);
   background:#fafbfd;
-  border-radius:0 0 20px 20px;
 }
 
 .modal-footer .btn{
-  height:42px;
-  padding:0 20px;
+  height: 44px;
+  padding: 0 20px;
+  font-size: var(--fs-base);
 }
 
 /* Responsive modal */
@@ -415,4 +482,21 @@ th.actions{
 @media(max-width:600px){
   .form-grid{ grid-template-columns:1fr; }
   .inline-2{ grid-template-columns:1fr; }
+  .modal-body{ padding: 18px; }
+}
+
+/* =========================================================
+   UTILIDADES (por si aparecen textos fuera)
+========================================================= */
+.table-error{
+  padding:14px;
+  font-weight:700;
+  color:var(--danger);
+}
+
+.summary-empty{
+  margin:28px 0;
+  text-align:center;
+  color:var(--muted);
+  font-weight:600;
 }
