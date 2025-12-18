@@ -545,13 +545,28 @@ class RegistroExcel(db.Model):
     __tablename__ = 'registro_excel'
 
     id = db.Column(db.Integer, primary_key=True)
+
     fecha = db.Column(db.Date)
     modulo_nombre = db.Column(db.String(100))
     equipo = db.Column(db.String(20))
     cliente = db.Column(db.String(150))
+
+    nro_caso_cliente = db.Column(db.String(100))
+    nro_caso_interno = db.Column(db.String(100))
+    nro_caso_escalado_sap = db.Column(db.String(100))
+
+    tipo_tarea_azure = db.Column(db.String(150))
+
     consultor = db.Column(db.String(100))
+
     hora_inicio = db.Column(db.Time)
     hora_fin = db.Column(db.Time)
+
     tiempo_invertido = db.Column(db.Float)
     tiempo_facturable = db.Column(db.Float)
+
+    oncall = db.Column(db.Boolean)
+    desborde = db.Column(db.Boolean)
+    horas_adicionales = db.Column(db.Float)
+
     descripcion = db.Column(db.Text)
