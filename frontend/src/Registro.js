@@ -836,7 +836,7 @@ const Registro = ({ userData }) => {
       const formData = new FormData();
       formData.append("file", excelFile); 
 
-      const res = await fetch("/registro/import-excel", {
+      const res = await fetch("/api/registro/import-excel", {
         method: "POST",
         body: formData,
         credentials: "include" 
