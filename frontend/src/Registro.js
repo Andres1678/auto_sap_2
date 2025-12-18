@@ -1279,11 +1279,12 @@ const Registro = ({ userData }) => {
                 <textarea
                   placeholder="Descripción"
                   value={registro.descripcion}
-                  onChange={(e) => setRegistro({ ...registro, descripcion: e.target.value })}
-                  required
+                  onChange={(e) =>
+                    setRegistro({ ...registro, descripcion: e.target.value })
+                  }
+                  className="span-2"
                 />
               </div>
-
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setModalIsOpen(false)}>Cancelar</button>
                 <button type="submit" className="btn btn-primary">
