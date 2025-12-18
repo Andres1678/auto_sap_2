@@ -812,7 +812,10 @@ const Registro = ({ userData }) => {
 
   const handleImportExcel = async () => {
     if (!excelFile) {
-      return Swal.fire({ icon: "warning", title: "Selecciona un archivo Excel" });
+      return Swal.fire({
+        icon: "warning",
+        title: "Selecciona un archivo Excel"
+      });
     }
 
     const confirm = await Swal.fire({
@@ -831,16 +834,19 @@ const Registro = ({ userData }) => {
 
     try {
       const formData = new FormData();
-      formData.append("file", excelFile);
+      formData.append("file", excelFile); 
 
-      // OJO: no pongas Content-Type aquí. El browser lo arma con boundary.
       const res = await jfetch("/registro/import-excel", {
         method: "POST",
-        body: formData
+        body: formData,
+        credentials: "include" 
       });
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
+      if (!res.ok) {
+        throw new Error(data?.mensaje || `HTTP ${res.status}`);
+      }
 
       await Swal.fire({
         icon: "success",
@@ -850,7 +856,6 @@ const Registro = ({ userData }) => {
 
       setExcelFile(null);
 
-      // refrescas tabla / resumen
       fetchRegistros();
       if (isAdmin) fetchResumen();
 
@@ -858,12 +863,13 @@ const Registro = ({ userData }) => {
       Swal.fire({
         icon: "error",
         title: "Error importando Excel",
-        text: String(e.message || e)
+        text: e.message
       });
     } finally {
       setImportingExcel(false);
     }
   };
+
 
   const handleAbrirModalRegistro = async () => {
     try {
