@@ -565,8 +565,8 @@ class RegistroExcel(db.Model):
     tiempo_invertido = db.Column(db.Float)
     tiempo_facturable = db.Column(db.Float)
 
-    oncall = db.Column(db.Boolean)
-    desborde = db.Column(db.Boolean)
+    oncall = db.Column(db.String(10))
+    desborde = db.Column(db.String(10))
     horas_adicionales = db.Column(db.String(10))
 
     descripcion = db.Column(db.Text)
