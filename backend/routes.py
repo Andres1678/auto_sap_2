@@ -2390,13 +2390,13 @@ def importar_registro_excel():
         return jsonify({"mensaje": "Archivo vacío"}), 400
 
     try:
-        # Leer Excel
+        
         df = pd.read_excel(file, engine="openpyxl")
 
         print("COLUMNAS ORIGINALES:", df.columns.tolist())
         print("TOTAL FILAS:", len(df))
 
-        # Normalizar encoding roto de Excel
+        
         df.columns = [
             c.strip()
              .replace("MÃ³dulo", "Modulo")
@@ -2405,7 +2405,6 @@ def importar_registro_excel():
             for c in df.columns
         ]
 
-        # Renombrar columnas EXACTAS a DB
         df = df.rename(columns={
             "Fecha": "fecha",
             "Modulo": "modulo_nombre",
@@ -2428,37 +2427,66 @@ def importar_registro_excel():
 
         print("COLUMNAS NORMALIZADAS:", df.columns.tolist())
 
-        # Reemplazar NaN por None
+       
         df = df.where(pd.notnull(df), None)
+
+       
+        def parse_tipo_tarea(valor):
+            """
+            '21 - Monitoreo' → ('21', 'Monitoreo')
+            """
+            if not valor:
+                return None, None
+
+            valor = str(valor).strip()
+
+            if '-' in valor:
+                codigo, nombre = valor.split('-', 1)
+                return codigo.strip(), nombre.strip()
+
+            return valor.strip(), None
 
         registros = []
 
+       
         for _, row in df.iterrows():
+            codigo_tarea, nombre_tarea = parse_tipo_tarea(
+                row.get("tipo_tarea_azure")
+            )
+
             registros.append(
                 RegistroExcel(
                     fecha=norm_fecha(row.get("fecha")),
                     modulo_nombre=row.get("modulo_nombre"),
+
                     equipo=str(row.get("equipo")).strip().upper()
                         if row.get("equipo") else None,
+
                     cliente=row.get("cliente"),
+
                     nro_caso_cliente=row.get("nro_caso_cliente"),
                     nro_caso_interno=row.get("nro_caso_interno"),
                     nro_caso_escalado_sap=row.get("nro_caso_escalado_sap"),
-                    tipo_tarea_azure=str(row.get("tipo_tarea_azure")).strip()
-                        if row.get("tipo_tarea_azure") else None,
+
+                    tipo_tarea_azure=codigo_tarea,     
+                    tipo_tarea_nombre=nombre_tarea,     
+
                     consultor=str(row.get("consultor")).strip().lower()
                         if row.get("consultor") else None,
+
                     hora_inicio=norm_hora(row.get("hora_inicio")),
                     hora_fin=norm_hora(row.get("hora_fin")),
+
                     tiempo_invertido=safe_float(row.get("tiempo_invertido")),
                     tiempo_facturable=safe_float(row.get("tiempo_facturable")),
+
                     oncall=row.get("oncall"),
                     desborde=row.get("desborde"),
                     horas_adicionales=row.get("horas_adicionales"),
+
                     descripcion=row.get("descripcion"),
                 )
             )
-
         db.session.bulk_save_objects(registros)
         db.session.commit()
 
@@ -2476,6 +2504,7 @@ def importar_registro_excel():
             "mensaje": "Error importando Excel",
             "error": str(e)
         }), 500
+
 
 @bp.route('/registros/importar-excel/preview', methods=['POST'])
 def preview_import_excel():

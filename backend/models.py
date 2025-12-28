@@ -555,6 +555,7 @@ class RegistroExcel(db.Model):
     nro_caso_interno = db.Column(db.String(100))
     nro_caso_escalado_sap = db.Column(db.String(100))
 
+    tipo_tarea_azure = db.Column(db.String(10)) 
     tipo_tarea_azure = db.Column(db.String(150))
 
     consultor = db.Column(db.String(100))
