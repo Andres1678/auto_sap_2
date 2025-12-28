@@ -2390,21 +2390,28 @@ def importar_registro_excel():
         return jsonify({"mensaje": "Archivo vacío"}), 400
 
     try:
-        
+        # =============================
+        # 1. Leer Excel
+        # =============================
         df = pd.read_excel(file, engine="openpyxl")
 
         print("COLUMNAS ORIGINALES:", df.columns.tolist())
         print("TOTAL FILAS:", len(df))
 
-        
+        # =============================
+        # 2. Normalizar nombres de columnas
+        # ⚠️ NO TOCAR 'Tipo Tarea Azure'
+        # =============================
         df.columns = [
             c.strip()
              .replace("MÃ³dulo", "Modulo")
              .replace("DescripciÃ³n", "Descripcion")
-             .replace("Tarea Azure", "Tipo Tarea Azure")
             for c in df.columns
         ]
 
+        # =============================
+        # 3. Renombrar columnas a DB
+        # =============================
         df = df.rename(columns={
             "Fecha": "fecha",
             "Modulo": "modulo_nombre",
@@ -2413,7 +2420,7 @@ def importar_registro_excel():
             "Nro Caso Cliente": "nro_caso_cliente",
             "Nro Caso Interno": "nro_caso_interno",
             "Nro Caso Escalado SAP": "nro_caso_escalado_sap",
-            "Tipo Tarea Azure": "tipo_tarea_azure",
+            "Tipo Tarea Azure": "tipo_tarea_raw",
             "Consultor": "consultor",
             "Hora Inicio": "hora_inicio",
             "Hora Fin": "hora_fin",
@@ -2427,13 +2434,18 @@ def importar_registro_excel():
 
         print("COLUMNAS NORMALIZADAS:", df.columns.tolist())
 
-       
+        # =============================
+        # 4. Reemplazar NaN por None
+        # =============================
         df = df.where(pd.notnull(df), None)
 
-       
+        # =============================
+        # 5. Parser de tipo de tarea
+        # =============================
         def parse_tipo_tarea(valor):
             """
             '21 - Monitoreo' → ('21', 'Monitoreo')
+            '01 - Atencion Casos' → ('01', 'Atencion Casos')
             """
             if not valor:
                 return None, None
@@ -2446,12 +2458,14 @@ def importar_registro_excel():
 
             return valor.strip(), None
 
+        # =============================
+        # 6. Construcción de registros
+        # =============================
         registros = []
 
-       
         for _, row in df.iterrows():
             codigo_tarea, nombre_tarea = parse_tipo_tarea(
-                row.get("tipo_tarea_azure")
+                row.get("tipo_tarea_raw")
             )
 
             registros.append(
@@ -2468,8 +2482,8 @@ def importar_registro_excel():
                     nro_caso_interno=row.get("nro_caso_interno"),
                     nro_caso_escalado_sap=row.get("nro_caso_escalado_sap"),
 
-                    tipo_tarea_azure=codigo_tarea,     
-                    tipo_tarea_nombre=nombre_tarea,     
+                    tipo_tarea_azure=codigo_tarea,
+                    tipo_tarea_nombre=nombre_tarea,
 
                     consultor=str(row.get("consultor")).strip().lower()
                         if row.get("consultor") else None,
@@ -2487,6 +2501,10 @@ def importar_registro_excel():
                     descripcion=row.get("descripcion"),
                 )
             )
+
+        # =============================
+        # 7. Guardar en BD
+        # =============================
         db.session.bulk_save_objects(registros)
         db.session.commit()
 
