@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import Modal from 'react-modal';
 import Swal from 'sweetalert2';
 import './Registro.css';
@@ -241,7 +241,6 @@ const Registro = ({ userData }) => {
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
 
   const canDownload = ['rodriguezso','valdezjl'].includes(String(usuarioLogin || '').toLowerCase());
-  const [excelFile, setExcelFile] = useState(null);
   const [importingExcel, setImportingExcel] = useState(false);
 
 
@@ -811,7 +810,9 @@ const Registro = ({ userData }) => {
   }, [ocupacionSeleccionada]);
 
   const handleImportExcel = async () => {
-    if (!excelFile) {
+    const file = excelInputRef.current?.files?.[0];
+
+    if (!file) {
       return Swal.fire({
         icon: "warning",
         title: "Selecciona un archivo Excel"
@@ -834,12 +835,12 @@ const Registro = ({ userData }) => {
 
     try {
       const formData = new FormData();
-      formData.append("file", excelFile); 
+      formData.append("file", file);
 
       const res = await fetch("/api/registro/import-excel", {
         method: "POST",
         body: formData,
-        credentials: "include" 
+        credentials: "include"
       });
 
       const data = await res.json().catch(() => ({}));
@@ -854,8 +855,6 @@ const Registro = ({ userData }) => {
         text: `Registros cargados: ${data?.total_registros ?? "N/D"}`
       });
 
-      setExcelFile(null);
-
       fetchRegistros();
       if (isAdmin) fetchResumen();
 
@@ -867,8 +866,12 @@ const Registro = ({ userData }) => {
       });
     } finally {
       setImportingExcel(false);
+      if (excelInputRef.current) {
+        excelInputRef.current.value = "";
+      }
     }
   };
+
 
 
   const handleAbrirModalRegistro = async () => {
@@ -933,9 +936,9 @@ const Registro = ({ userData }) => {
             {isAdmin && (
               <>
                 <input
+                  ref={excelInputRef}
                   type="file"
                   accept=".xlsx,.xls"
-                  onChange={(e) => setExcelFile(e.target.files?.[0] || null)}
                   className="excel-input"
                 />
 
@@ -943,7 +946,7 @@ const Registro = ({ userData }) => {
                   type="button"
                   className="btn btn-outline"
                   onClick={handleImportExcel}
-                  disabled={!excelFile || importingExcel}
+                  disabled={importingExcel}
                 >
                   {importingExcel ? "Importando…" : "Importar Excel"}
                 </button>
