@@ -1,34 +1,47 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 export default function ImportarExcelRegistro() {
-  const [file, setFile] = useState(null);
+  const fileInputRef = useRef(null);
   const [loading, setLoading] = useState(false);
 
   const handleUpload = async () => {
-    if (!file) return alert("Seleccione un archivo");
+    const file = fileInputRef.current?.files?.[0];
+
+    if (!file) {
+      alert("Seleccione un archivo");
+      return;
+    }
 
     const formData = new FormData();
     formData.append("file", file);
 
     setLoading(true);
 
-    const res = await fetch("/api/registro/import-excel", {
-      method: "POST",
-      body: formData,
-    });
+    try {
+      const res = await fetch("/api/registro/import-excel", {
+        method: "POST",
+        body: formData,
+      });
 
-    const data = await res.json();
-    setLoading(false);
+      const data = await res.json();
 
-    alert(data.message);
+      alert(data.mensaje || "Importado correctamente");
+    } catch (error) {
+      console.error(error);
+      alert("Error importando Excel");
+    } finally {
+      setLoading(false);
+      // limpiar input SOLO al final
+      fileInputRef.current.value = "";
+    }
   };
 
   return (
     <div>
       <input
+        ref={fileInputRef}
         type="file"
         accept=".xlsx,.csv"
-        onChange={(e) => setFile(e.target.files[0])}
       />
 
       <button onClick={handleUpload} disabled={loading}>
