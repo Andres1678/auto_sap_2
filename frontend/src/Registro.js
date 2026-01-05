@@ -215,6 +215,7 @@ const Registro = ({ userData }) => {
   const [registros, setRegistros]   = useState([]);
   const [resumen, setResumen]       = useState([]);
   const [error, setError]           = useState('');
+  const excelInputRef = useRef(null);
 
   const [registro, setRegistro] = useState(initRegistro());
   const [modoEdicion, setModoEdicion] = useState(false);
