@@ -2391,6 +2391,26 @@ def importar_registro_excel():
 
     try:
         # =============================
+        # Helpers de normalización
+        # =============================
+        import math
+
+        def normalize_float(value):
+            if value is None:
+                return None
+            if isinstance(value, float) and math.isnan(value):
+                return None
+            return float(value)
+
+        def normalize_str(value):
+            if value is None:
+                return None
+            v = str(value).strip()
+            if v == "" or v.upper() in ["NA", "N/A", "NAN"]:
+                return None
+            return v
+
+        # =============================
         # 1. Leer Excel
         # =============================
         df = pd.read_excel(file, engine="openpyxl")
@@ -2400,7 +2420,6 @@ def importar_registro_excel():
 
         # =============================
         # 2. Normalizar nombres de columnas
-        # ⚠️ NO TOCAR 'Tipo Tarea Azure'
         # =============================
         df.columns = [
             c.strip()
@@ -2435,18 +2454,9 @@ def importar_registro_excel():
         print("COLUMNAS NORMALIZADAS:", df.columns.tolist())
 
         # =============================
-        # 4. Reemplazar NaN por None
-        # =============================
-        df = df.where(pd.notnull(df), None)
-
-        # =============================
-        # 5. Parser de tipo de tarea
+        # 4. Parser tipo tarea
         # =============================
         def parse_tipo_tarea(valor):
-            """
-            '21 - Monitoreo' → ('21', 'Monitoreo')
-            '01 - Atencion Casos' → ('01', 'Atencion Casos')
-            """
             if not valor:
                 return None, None
 
@@ -2459,7 +2469,7 @@ def importar_registro_excel():
             return valor.strip(), None
 
         # =============================
-        # 6. Construcción de registros
+        # 5. Construcción de registros
         # =============================
         registros = []
 
@@ -2471,39 +2481,39 @@ def importar_registro_excel():
             registros.append(
                 RegistroExcel(
                     fecha=norm_fecha(row.get("fecha")),
-                    modulo_nombre=row.get("modulo_nombre"),
+                    modulo_nombre=normalize_str(row.get("modulo_nombre")),
 
-                    equipo=str(row.get("equipo")).strip().upper()
-                        if row.get("equipo") else None,
+                    equipo=normalize_str(row.get("equipo")).upper()
+                        if normalize_str(row.get("equipo")) else None,
 
-                    cliente=row.get("cliente"),
+                    cliente=normalize_str(row.get("cliente")),
 
-                    nro_caso_cliente=row.get("nro_caso_cliente"),
-                    nro_caso_interno=row.get("nro_caso_interno"),
-                    nro_caso_escalado_sap=row.get("nro_caso_escalado_sap"),
+                    nro_caso_cliente=normalize_str(row.get("nro_caso_cliente")),
+                    nro_caso_interno=normalize_str(row.get("nro_caso_interno")),
+                    nro_caso_escalado_sap=normalize_str(row.get("nro_caso_escalado_sap")),
 
-                    tipo_tarea_azure=codigo_tarea,
-                    tipo_tarea_nombre=nombre_tarea,
+                    tipo_tarea_azure=normalize_str(codigo_tarea),
+                    tipo_tarea_nombre=normalize_str(nombre_tarea),
 
-                    consultor=str(row.get("consultor")).strip().lower()
-                        if row.get("consultor") else None,
+                    consultor=normalize_str(row.get("consultor")).lower()
+                        if normalize_str(row.get("consultor")) else None,
 
                     hora_inicio=norm_hora(row.get("hora_inicio")),
                     hora_fin=norm_hora(row.get("hora_fin")),
 
-                    tiempo_invertido=safe_float(row.get("tiempo_invertido")),
-                    tiempo_facturable=safe_float(row.get("tiempo_facturable")),
+                    tiempo_invertido=normalize_float(row.get("tiempo_invertido")),
+                    tiempo_facturable=normalize_float(row.get("tiempo_facturable")),
 
-                    oncall=row.get("oncall"),
-                    desborde=row.get("desborde"),
-                    horas_adicionales=row.get("horas_adicionales"),
+                    oncall=normalize_str(row.get("oncall")),
+                    desborde=normalize_str(row.get("desborde")),
+                    horas_adicionales=normalize_str(row.get("horas_adicionales")),
 
-                    descripcion=row.get("descripcion"),
+                    descripcion=normalize_str(row.get("descripcion")),
                 )
             )
 
         # =============================
-        # 7. Guardar en BD
+        # 6. Guardar en BD
         # =============================
         db.session.bulk_save_objects(registros)
         db.session.commit()
