@@ -1,35 +1,52 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
 
 const API_URL = "/resumen-horas";
 
+// Extrae YYYY-MM-DD de varios formatos (incluye ISO con T/Z)
+function extraerYMD(fechaStr) {
+  if (!fechaStr) return null;
+  const match = String(fechaStr).match(/(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
+}
 
 function normalizarFecha(fechaStr) {
-  if (!fechaStr) return null;
+  const ymd = extraerYMD(fechaStr);
+  if (!ymd) return null;
 
-  
-  const soloFecha = fechaStr.split(" ")[0];
-  const [y, m, d] = soloFecha.split("-").map(Number);
-
-  const fecha = new Date(y, m - 1, d); 
-
+  const [y, m, d] = ymd.split("-").map(Number);
+  const fecha = new Date(y, m - 1, d); // local (evita líos de UTC)
   return isNaN(fecha.getTime()) ? null : fecha;
+}
+
+function keyYMDFromDate(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const d = String(dateObj.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// Convierte getDay() (Dom=0) a índice con Lunes=0 ... Domingo=6
+function mondayIndex(jsGetDay) {
+  return (jsGetDay + 6) % 7;
 }
 
 export default function Resumen({ userData }) {
   const [resumen, setResumen] = useState([]);
   const [rol, setRol] = useState("");
+  const [usuarioActual, setUsuarioActual] = useState("");
   const [consultorActivoId, setConsultorActivoId] = useState(null);
   const [error, setError] = useState("");
 
- 
-  const fetchResumen = async (rolActual, usuarioActual) => {
+  const fetchResumen = useCallback(async (rolActual, usuario) => {
+    if (!rolActual || !usuario) return;
+
     try {
       const res = await jfetch(API_URL, {
         method: "GET",
         headers: {
-          "X-User-Usuario": usuarioActual,
+          "X-User-Usuario": usuario,
           "X-User-Rol": rolActual,
         },
       });
@@ -37,7 +54,6 @@ export default function Resumen({ userData }) {
       if (!res.ok) throw new Error(`Error HTTP ${res.status}`);
       const data = await res.json();
 
-      
       const agrupado = Object.values(
         data.reduce((acc, r) => {
           const key = String(r.consultor_id);
@@ -50,9 +66,12 @@ export default function Resumen({ userData }) {
             };
           }
 
+          const fechaNorm = normalizarFecha(r.fecha);
           acc[key].registros.push({
             fecha: r.fecha,
-            fechaNorm: normalizarFecha(r.fecha),
+            fechaNorm,
+            // clave estable para comparar días sin depender de toDateString()
+            fechaKey: fechaNorm ? keyYMDFromDate(fechaNorm) : extraerYMD(r.fecha),
             total_horas: Number(r.total_horas || 0),
             estado: r.estado,
             consultor_id: r.consultor_id,
@@ -63,42 +82,58 @@ export default function Resumen({ userData }) {
       );
 
       setResumen(agrupado);
+      setError("");
     } catch (err) {
       console.error("❌ Error al obtener resumen:", err);
       setError("No se pudo cargar el resumen");
     }
-  };
+  }, []);
 
-  
+  // Inicializa rol/usuario/consultor y primer fetch
   useEffect(() => {
-    if (userData) {
-      const rolUser =
-        userData?.rol_ref?.nombre?.toUpperCase?.() ||
-        userData?.rol?.toUpperCase?.() ||
-        "USER";
-
-      const usuarioActual =
-        userData?.usuario ||
-        userData?.user?.usuario ||
-        userData?.nombre ||
-        "";
-
-      const idConsultor =
-        userData?.consultor_id ||
-        userData?.user?.consultor_id ||
-        userData?.id ||
-        null;
-
-      setRol(rolUser);
-      setConsultorActivoId(idConsultor);
-
-      fetchResumen(rolUser, usuarioActual);
-    } else {
+    if (!userData) {
       setError("No se detectó sesión activa.");
+      return;
     }
-  }, [userData]);
 
- 
+    const rolUser =
+      userData?.rol_ref?.nombre?.toUpperCase?.() ||
+      userData?.rol?.toUpperCase?.() ||
+      "USER";
+
+    const usuario =
+      userData?.usuario ||
+      userData?.user?.usuario ||
+      userData?.nombre ||
+      "";
+
+    const idConsultor =
+      userData?.consultor_id ||
+      userData?.user?.consultor_id ||
+      userData?.id ||
+      null;
+
+    setRol(rolUser);
+    setUsuarioActual(usuario);
+    setConsultorActivoId(idConsultor);
+
+    fetchResumen(rolUser, usuario);
+  }, [userData, fetchResumen]);
+
+  // ✅ “Tiempo real” (polling). Ajusta el intervalo a tu gusto.
+  useEffect(() => {
+    if (!rol || !usuarioActual) return;
+
+    const intervalMs = 30_000; // 30s (puedes poner 60_000)
+    const id = setInterval(() => {
+      // Evita gastar si la pestaña no está visible
+      if (document.hidden) return;
+      fetchResumen(rol, usuarioActual);
+    }, intervalMs);
+
+    return () => clearInterval(id);
+  }, [rol, usuarioActual, fetchResumen]);
+
   const datosVisibles = useMemo(() => {
     if (rol === "ADMIN") return resumen;
 
@@ -107,67 +142,84 @@ export default function Resumen({ userData }) {
     );
   }, [rol, resumen, consultorActivoId]);
 
-  
   const CalendarioConsultor = ({ consultor }) => {
     const hoy = new Date();
     const mesInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+
     const [mesActual, setMesActual] = useState(mesInicio);
     const [animacion, setAnimacion] = useState("slideInLeft");
 
-    const diasMes = useMemo(() => {
-      const y = mesActual.getFullYear();
-      const m = mesActual.getMonth();
-      const total = new Date(y, m + 1, 0).getDate();
-      return Array.from({ length: total }, (_, i) => i + 1);
+    const y = mesActual.getFullYear();
+    const m = mesActual.getMonth();
+
+    const totalDiasMes = useMemo(() => new Date(y, m + 1, 0).getDate(), [y, m]);
+
+    // ✅ Offset del primer día del mes (alineación L-M-X-J-V-S-D)
+    const offsetInicio = useMemo(() => {
+      const primerDia = new Date(y, m, 1);
+      return mondayIndex(primerDia.getDay());
+    }, [y, m]);
+
+    const nombreMes = useMemo(() => {
+      const nm = mesActual.toLocaleString("es-ES", { month: "long", year: "numeric" });
+      return nm.charAt(0).toUpperCase() + nm.slice(1);
     }, [mesActual]);
 
-    const nombreMes = mesActual.toLocaleString("es-ES", {
-      month: "long",
-      year: "numeric",
-    });
+    // Registros SOLO del mes actual
+    const registrosMes = useMemo(() => {
+      return consultor.registros.filter((r) => {
+        const f = r.fechaNorm;
+        if (!f) return false;
+        return f.getMonth() === m && f.getFullYear() === y;
+      });
+    }, [consultor.registros, m, y]);
 
-    
-    const registrosMes = consultor.registros.filter((r) => {
-      const f = r.fechaNorm;
-      if (!f) return false;
+    // Índice rápido: YYYY-MM-DD -> registro
+    const mapRegistros = useMemo(() => {
+      const map = new Map();
+      for (const r of registrosMes) {
+        if (r.fechaKey) map.set(r.fechaKey, r);
+      }
+      return map;
+    }, [registrosMes]);
 
-      return (
-        f.getMonth() === mesActual.getMonth() &&
-        f.getFullYear() === mesActual.getFullYear()
-      );
-    });
+    const totalMes = useMemo(() => {
+      return registrosMes.reduce((acc, r) => acc + (r.total_horas || 0), 0);
+    }, [registrosMes]);
 
-    const totalMes = registrosMes.reduce(
-      (acc, r) => acc + (r.total_horas || 0),
-      0
-    );
+    // ✅ Celdas: [null,null,null, 1,2,3...]
+    const celdas = useMemo(() => {
+      const blanks = Array.from({ length: offsetInicio }, () => null);
+      const dias = Array.from({ length: totalDiasMes }, (_, i) => i + 1);
+      return [...blanks, ...dias];
+    }, [offsetInicio, totalDiasMes]);
 
-    const renderDia = (dia) => {
-      const f2 = new Date(
-        mesActual.getFullYear(),
-        mesActual.getMonth(),
-        dia
-      ).toDateString();
+    const renderCelda = (dia, idx) => {
+      if (dia === null) {
+        return <div key={`b-${idx}`} className="cal-dia blank" />;
+      }
 
-      const registro = registrosMes.find(
-        (r) => r.fechaNorm?.toDateString() === f2
-      );
+      const fechaCelda = new Date(y, m, dia);
+      const key = keyYMDFromDate(fechaCelda);
 
-      if (!registro)
+      const registro = mapRegistros.get(key);
+
+      if (!registro) {
         return (
-          <div key={dia} className="cal-dia none" title="Sin registro">
+          <div key={key} className="cal-dia none" title="Sin registro">
             {dia}
           </div>
         );
+      }
 
       const horas = Number(registro.total_horas || 0);
       const estado = horas >= 8 ? "ok" : horas > 0 ? "warn" : "none";
 
       return (
         <div
-          key={dia}
+          key={key}
           className={`cal-dia ${estado}`}
-          title={`${registro.fecha} • ${horas}h`}
+          title={`${extraerYMD(registro.fecha) || registro.fecha} • ${horas}h`}
         >
           {dia}
           <small>{horas ? `${horas}h` : ""}</small>
@@ -185,33 +237,19 @@ export default function Resumen({ userData }) {
               className="cal-btn"
               onClick={() => {
                 setAnimacion("slideInLeft");
-                setMesActual(
-                  new Date(
-                    mesActual.getFullYear(),
-                    mesActual.getMonth() - 1,
-                    1
-                  )
-                );
+                setMesActual(new Date(y, m - 1, 1));
               }}
             >
               ◀
             </button>
 
-            <span>
-              {nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1)}
-            </span>
+            <span>{nombreMes}</span>
 
             <button
               className="cal-btn"
               onClick={() => {
                 setAnimacion("slideInRight");
-                setMesActual(
-                  new Date(
-                    mesActual.getFullYear(),
-                    mesActual.getMonth() + 1,
-                    1
-                  )
-                );
+                setMesActual(new Date(y, m + 1, 1));
               }}
             >
               ▶
@@ -228,7 +266,7 @@ export default function Resumen({ userData }) {
             ))}
           </div>
 
-          <div className="cal-grid">{diasMes.map((dia) => renderDia(dia))}</div>
+          <div className="cal-grid">{celdas.map((dia, idx) => renderCelda(dia, idx))}</div>
         </div>
       </div>
     );
@@ -244,8 +282,8 @@ export default function Resumen({ userData }) {
         <p className="resumen-empty">No hay datos para mostrar</p>
       ) : (
         <div className="resumen-grid">
-          {datosVisibles.map((consultor, idx) => (
-            <CalendarioConsultor key={idx} consultor={consultor} />
+          {datosVisibles.map((consultor) => (
+            <CalendarioConsultor key={consultor.consultor_id} consultor={consultor} />
           ))}
         </div>
       )}
