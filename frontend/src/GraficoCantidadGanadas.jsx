@@ -1,93 +1,54 @@
 import React, { useMemo } from "react";
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  CartesianGrid,
-  ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer,
 } from "recharts";
 
+const MESES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+
+function parseFecha(v) {
+  if (!v) return null;
+  const raw = String(v).trim();
+  const solo = raw.includes("T") ? raw.split("T")[0] : raw.split(" ")[0]; // ✅ clave
+  const [y, m, d] = solo.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d); // ✅ sin timezone raro
+}
+
+const normalizar = (txt) =>
+  (txt || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+
 export default function GraficoCantidadGanadas({ data }) {
-  const normalizar = (txt) =>
-    (txt || "")
-      .toString()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-      .toUpperCase();
-
   const chartData = useMemo(() => {
-    if (!data || data.length === 0) return [];
+    const base = MESES.map((mes) => ({ mes, cantidad: 0, ganadas: 0 }));
 
-    const meses = [
-      "enero","febrero","marzo","abril","mayo","junio",
-      "julio","agosto","septiembre","octubre","noviembre","diciembre"
-    ];
+    (data || []).forEach((row) => {
+      const fecha = parseFecha(row.fecha_creacion);
+      if (!fecha) return;
 
-    const base = meses.map((mes, i) => ({
-      mes,
-      cantidad: 0,
-      ganadas: 0,
-    }));
+      const idx = fecha.getMonth();
+      if (idx < 0 || idx > 11) return;
 
-    data.forEach((row) => {
-      if (!row.fecha_creacion) return;
-
-      const fecha = new Date(row.fecha_creacion);
-      if (isNaN(fecha)) return;
-
-      const mesIndex = fecha.getMonth();
       const estado = normalizar(row.estado_oferta || row.resultado_oferta);
 
-      
-      base[mesIndex].cantidad++;
-
-      
-      if (estado === "GANADA") {
-        base[mesIndex].ganadas++;
-      }
+      base[idx].cantidad += 1;
+      if (estado === "GANADA") base[idx].ganadas += 1;
     });
 
     return base;
   }, [data]);
 
   return (
-    <div className="grafico-card">
-      <h3 className="grafico-title">
-        Cantidad y Ganadas por Año y Mes
-      </h3>
+    <ResponsiveContainer width="100%" height={260}>
+      <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="mes" />
+        <YAxis allowDecimals={false} />
+        <Tooltip />
+        <Legend verticalAlign="bottom" align="center" iconSize={10} />
 
-      <ResponsiveContainer width="100%" height={320}>
-        <LineChart data={chartData} margin={{ top: 20, right: 30, left: 10, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" />
-
-          <XAxis dataKey="mes" stroke="#475569" />
-          <YAxis stroke="#475569" />
-          <Tooltip />
-          <Legend />
-
-          <Line
-            type="monotone"
-            dataKey="cantidad"
-            stroke="#2563eb"
-            strokeWidth={3}
-            dot={{ r: 4 }}
-            name="Cantidad"
-          />
-
-          <Line
-            type="monotone"
-            dataKey="ganadas"
-            stroke="#16a34a"
-            strokeWidth={3}
-            dot={{ r: 4 }}
-            name="Ganadas"
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
+        <Line type="monotone" dataKey="cantidad" stroke="#2563eb" strokeWidth={3} dot={false} name="Cantidad" />
+        <Line type="monotone" dataKey="ganadas"  stroke="#16a34a" strokeWidth={3} dot={false} name="Ganadas" />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }

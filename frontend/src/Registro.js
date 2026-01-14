@@ -4,6 +4,8 @@ import Swal from 'sweetalert2';
 import './Registro.css';
 import { jfetch } from './lib/api';
 import Resumen from './Resumen';
+import { getVisibleUsernames } from "./lib/visibility";
+
 
 Modal.setAppElement('#root');
 
@@ -96,6 +98,7 @@ function buildLocalResumen(registros, nombre, usuarioLogin) {
   const metaBase = EXCEPCION_8H_USERS.has(login) ? 8 : 9;
 
   const byFecha = new Map();
+
   for (const r of registros) {
     const fecha = r?.fecha;
     if (!fecha) continue;
@@ -238,6 +241,11 @@ const Registro = ({ userData }) => {
   const moduloUser = (userData?.modulo ?? userData?.user?.modulo) || '';
   const equipoUser = (userData?.equipo ?? userData?.user?.equipo) || '';
   const usuarioLogin = (userData?.usuario ?? userData?.user?.usuario) || '';
+  const visibleUsernames = useMemo(
+    () => getVisibleUsernames(usuarioLogin),
+    [usuarioLogin]
+  );
+
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
 
@@ -340,9 +348,12 @@ const Registro = ({ userData }) => {
   }, [usuarioLogin]);
 
   const fetchRegistros = useCallback(async () => {
-    setError('');
+    setError("");
     try {
-      const res = await jfetch(`/registros?usuario=${usuarioLogin}&rol=${rol}`);
+      const visibles = getVisibleUsernames(usuarioLogin).join(",");
+      const res = await jfetch(
+        `/registros?usuario=${encodeURIComponent(usuarioLogin)}&rol=${encodeURIComponent(rol)}&visibles=${encodeURIComponent(visibles)}`
+      );
 
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
@@ -351,7 +362,8 @@ const Registro = ({ userData }) => {
       setRegistros([]);
       setError(String(e.message || e));
     }
-  }, [usuarioLogin, rol, nombreUser]);
+  }, [usuarioLogin, rol]);
+
 
   const fetchResumen = useCallback(async () => {
     if (!isAdmin) { setResumen([]); return; }
@@ -432,9 +444,22 @@ const Registro = ({ userData }) => {
 
     const visibles = isAdmin
       ? rows
-      : rows.filter(r =>
-          (r.consultor || '').trim().toLowerCase() === nombreUser.trim().toLowerCase()
-        );
+      : rows.filter((r) => {
+          // intenta detectar username en la fila (según como lo devuelva tu API)
+          const rowUser = String(
+            r.usuario || r.usuario_consultor || r.username || ""
+          ).trim().toLowerCase();
+
+          if (rowUser) return visibleUsernames.includes(rowUser);
+
+          // fallback por nombre (por si tu API no trae username)
+          const rowName = String(r.consultor || "").trim().toLowerCase();
+          const myName = String(nombreUser || "").trim().toLowerCase();
+
+          // johngaravito verá más solo si backend le devolvió filas con esos nombres,
+          // o si tú manejas equivalencias por nombre.
+          return rowName === myName;
+        });
 
     return visibles.slice().sort((a, b) => {
       const da = new Date(a.fecha || '1970-01-01');

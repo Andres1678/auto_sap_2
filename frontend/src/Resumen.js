@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
+import { getVisibleUsernames } from "./lib/visibility";
+
 
 const API_URL = "/resumen-horas";
 
@@ -33,6 +35,7 @@ function mondayIndex(jsGetDay) {
 }
 
 export default function Resumen({ userData }) {
+  const [visibleConsultorIds, setVisibleConsultorIds] = useState([]);
   const [resumen, setResumen] = useState([]);
   const [rol, setRol] = useState("");
   const [usuarioActual, setUsuarioActual] = useState("");
@@ -89,6 +92,43 @@ export default function Resumen({ userData }) {
     }
   }, []);
 
+  useEffect(() => {
+    const run = async () => {
+      const visiblesUsers = getVisibleUsernames(usuarioActual);
+
+      // si no es supervisor, solo su propio consultor_id
+      if (visiblesUsers.length === 1) {
+        setVisibleConsultorIds([Number(consultorActivoId)].filter(Boolean));
+        return;
+      }
+
+      try {
+        // Trae datos de cada usuario para obtener su consultor_id
+        const responses = await Promise.all(
+          visiblesUsers.map((u) =>
+            jfetch(`/consultores/datos?usuario=${encodeURIComponent(u)}`)
+              .then((r) => r.json().catch(() => ({})))
+              .catch(() => ({}))
+          )
+        );
+
+        const ids = responses
+          .map((d) => Number(d?.consultor_id || d?.id || null))
+          .filter((n) => Number.isFinite(n));
+
+        // fallback: añade el id del logueado si no vino
+        const myId = Number(consultorActivoId);
+        const finalIds = Array.from(new Set([myId, ...ids].filter(Boolean)));
+
+        setVisibleConsultorIds(finalIds);
+      } catch (e) {
+        setVisibleConsultorIds([Number(consultorActivoId)].filter(Boolean));
+      }
+    };
+
+    if (usuarioActual) run();
+  }, [usuarioActual, consultorActivoId]);
+
   // Inicializa rol/usuario/consultor y primer fetch
   useEffect(() => {
     if (!userData) {
@@ -137,10 +177,9 @@ export default function Resumen({ userData }) {
   const datosVisibles = useMemo(() => {
     if (rol === "ADMIN") return resumen;
 
-    return resumen.filter(
-      (r) => Number(r.consultor_id) === Number(consultorActivoId)
-    );
-  }, [rol, resumen, consultorActivoId]);
+    return resumen.filter((r) => visibleConsultorIds.includes(Number(r.consultor_id)));
+  }, [rol, resumen, visibleConsultorIds]);
+
 
   const CalendarioConsultor = ({ consultor }) => {
     const hoy = new Date();
