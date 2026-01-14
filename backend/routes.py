@@ -50,6 +50,26 @@ def _visibles_backend(usuario_login: str):
     lst = VISIBILITY_MAP.get(u, [u])
     return [x.strip().lower() for x in lst if x and str(x).strip()]
 
+def visible_users_for(usuario_login: str, rol: str):
+    """
+    Devuelve los usuarios que puede ver el usuario logueado.
+    - ADMIN: {"*"} (puede ver todo)
+    - NO ADMIN: set con su grupo según VISIBILITY_MAP (fallback a sí mismo)
+    """
+    u = (usuario_login or "").strip().lower()
+    if not u:
+        return set()
+
+    if _is_admin_role(rol):
+        return {"*"}
+
+    return set(_visibles_backend(u)) or {u}
+
+
+# Alias para compatibilidad con tu endpoint /registros
+def _visible_users_for(usuario_login: str, rol: str):
+    return visible_users_for(usuario_login, rol)
+
 def permission_required(codigo_permiso):
     def decorator(fn):
         @wraps(fn)
@@ -859,7 +879,7 @@ def obtener_registros():
         # 2) Visibles (front) + Visibles (backend)
         # ----------------------------------------------------------
         visibles_front = _parse_visibles()  # puede venir vacío
-        visibles_backend = _visible_users_for(usuario, rol)
+        visibles_backend = visible_users_for(usuario, rol)
 
         # Si viene visibles_front, seguridad mínima:
         # - usuario logueado debe estar incluido
@@ -875,10 +895,7 @@ def obtener_registros():
         if _is_admin_role(rol):
             target_users = None  # todos
         else:
-            if visibles_front:
-                target_users = visibles_front
-            else:
-                target_users = list(visibles_backend)  # usualmente solo él mismo o su grupo
+            target_users = list(visibles_backend)  # usualmente solo él mismo o su grupo
 
         # ----------------------------------------------------------
         # 3) Query
