@@ -1,14 +1,11 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
-
-// OJO: usa el MISMO estilo de export que en Registro
-// Si tu archivo visibility exporta default + named:
 import getVisibleUsernames, { EXCEPCION_8H_USERS } from "./lib/visibility";
 // Si tu visibility exporta TODO named, cambia a:
 // import { getVisibleUsernames, EXCEPCION_8H_USERS } from "./lib/visibility";
 
-const API_URL = "/resumen-horas";
+const API_URL = "/api/resumen-horas";
 
 // Extrae YYYY-MM-DD de varios formatos (incluye ISO con T/Z)
 function extraerYMD(fechaStr) {
