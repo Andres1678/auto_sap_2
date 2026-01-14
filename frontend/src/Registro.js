@@ -250,8 +250,8 @@ const Registro = ({ userData }) => {
     userData?.user?.usuario ??
     ''
   ).trim().toLowerCase();
-  console.log("usuarioActual:", usuarioActual);
-  console.log("visibles:", getVisibleUsernames(usuarioActual));
+  console.log("usuarioLogin:", usuarioLogin);
+  console.log("visibles:", getVisibleUsernames(usuarioLogin));
   const visibleUsernames = useMemo(
     () => getVisibleUsernames(usuarioLogin),
     [usuarioLogin]
