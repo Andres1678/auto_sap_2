@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
-import { getVisibleUsernames } from "./lib/visibility";
+import { getVisibleUsernames, EXCEPCION_8H_USERS } from "./lib/visibility";
+
 
 
 const API_URL = "/resumen-horas";

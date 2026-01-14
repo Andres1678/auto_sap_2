@@ -4,7 +4,7 @@ import Swal from 'sweetalert2';
 import './Registro.css';
 import { jfetch } from './lib/api';
 import Resumen from './Resumen';
-import { getVisibleUsernames, EXCEPCION_8H_USERS } from "./lib/visibility";
+import getVisibleUsernames from "./lib/visibility";
 
 
 Modal.setAppElement('#root');
