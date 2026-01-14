@@ -26,48 +26,29 @@ _HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$", re.I)
 # Regla temporal SIN BD (server-side)
 VISIBILITY_MAP = {
     "johngaravito": ["johngaravito", "ramirezalep", "herreraea"],
-    # "otro": ["otro", "alguien"],
+    "gonzalezanf": ["gonzalezanf"],
 }
 
 def _is_admin_role(rol: str) -> bool:
     return str(rol or "").strip().upper() == "ADMIN"
 
-def _visible_users_for(usuario_login: str, rol: str) -> set:
-    u = (usuario_login or "").strip().lower()
-    r = (rol or "").strip().upper()
-
-    if _is_admin_role(r):
-        return {"*"}  # wildcard
-
-    visibles = VISIBILITY_MAP.get(u, [u])
-    return {x.strip().lower() for x in visibles if x and str(x).strip()}
-
-def _parse_visibles() -> list:
-    """
-    Lee visibles desde:
-    - query param: ?visibles=a,b,c
-    - header opcional: X-User-Visibles: a,b,c
-    """
-    raw = (
-        request.args.get("visibles")
-        or request.headers.get("X-User-Visibles")
-        or ""
-    ).strip()
-
+def _parse_visibles():
+    raw = (request.args.get("visibles") or "").strip()
     if not raw:
         return []
-
-    parts = [p.strip().lower() for p in raw.split(",")]
-    parts = [p for p in parts if p]
-
-    # unique preservando orden
-    seen = set()
     out = []
-    for p in parts:
-        if p not in seen:
-            seen.add(p)
-            out.append(p)
+    seen = set()
+    for p in raw.split(","):
+        u = (p or "").strip().lower()
+        if u and u not in seen:
+            seen.add(u)
+            out.append(u)
     return out
+
+def _visibles_backend(usuario_login: str):
+    u = (usuario_login or "").strip().lower()
+    lst = VISIBILITY_MAP.get(u, [u])
+    return [x.strip().lower() for x in lst if x and str(x).strip()]
 
 def permission_required(codigo_permiso):
     def decorator(fn):
@@ -979,9 +960,6 @@ def obtener_registros():
 @bp.route("/resumen-horas", methods=["GET"])
 def resumen_horas():
     try:
-        # ----------------------------------------------------------
-        # 1) Usuario y rol: headers o query params
-        # ----------------------------------------------------------
         usuario = (
             request.headers.get("X-User-Usuario")
             or request.args.get("usuario")
@@ -998,39 +976,33 @@ def resumen_horas():
             return jsonify({"error": "Usuario no enviado"}), 400
 
         # Validar que exista el consultor logueado
-        consultor_login = Consultor.query.filter(func.lower(Consultor.usuario) == usuario).first()
+        consultor_login = Consultor.query.filter(
+            func.lower(Consultor.usuario) == usuario
+        ).first()
         if not consultor_login:
             return jsonify({"error": "Consultor no encontrado"}), 404
 
-        # ----------------------------------------------------------
-        # 2) Visibles (front) + Visibles (backend)
-        # ----------------------------------------------------------
         visibles_front = _parse_visibles()
-        visibles_backend = _visible_users_for(usuario, rol)
 
-        # seguridad mínima
+        # Seguridad mínima: si viene visibles por query, debe incluir al usuario logueado
         if visibles_front and usuario not in visibles_front:
-            return jsonify({"error": "Lista visibles inválida (no incluye usuario logueado)"}), 403
+            return jsonify({"error": "Lista visibles inválida"}), 403
 
-        # no permitir que el front amplíe permisos (si no es admin)
-        if visibles_front and "*" not in visibles_backend:
-            if not set(visibles_front).issubset(visibles_backend):
-                return jsonify({"error": "Lista visibles no autorizada"}), 403
-
-        # target_users final
+        # Target users final
         if _is_admin_role(rol):
             target_users = None  # todos
         else:
-            target_users = visibles_front if visibles_front else list(visibles_backend)
+            # si el front manda visibles, úsalo; si no, usa el mapa hardcodeado
+            target_users = visibles_front if visibles_front else _visibles_backend(usuario)
 
-        # ----------------------------------------------------------
-        # 3) Agrupar en BD por (usuario_consultor, fecha)
-        # ----------------------------------------------------------
+        # =========================
+        # Query: agrupar por usuario y fecha
+        # =========================
         qry = (
             db.session.query(
-                func.lower(Registro.usuario_consultor).label("usuario"),
+                func.lower(Registro.usuario_consultor).label("usuario_consultor"),
                 Registro.fecha.label("fecha"),
-                func.sum(func.coalesce(Registro.tiempo_invertido, 0)).label("total_horas")
+                func.sum(func.coalesce(Registro.tiempo_invertido, 0)).label("total_horas"),
             )
         )
 
@@ -1041,35 +1013,27 @@ def resumen_horas():
 
         rows = qry.all()
 
-        # ----------------------------------------------------------
-        # 4) Traer nombres/ids de consultores de una sola vez
-        # ----------------------------------------------------------
-        usuarios_en_rows = sorted({r.usuario for r in rows if r.usuario})
+        # Traer nombres/ids de consultores (si existen en tabla Consultor)
+        usuarios = sorted({r.usuario_consultor for r in rows if r.usuario_consultor})
         consultores = (
             Consultor.query
-            .filter(func.lower(Consultor.usuario).in_(usuarios_en_rows))
+            .filter(func.lower(Consultor.usuario).in_(usuarios))
             .all()
         )
+        m = {c.usuario.strip().lower(): c for c in consultores}
 
-        map_cons = {c.usuario.strip().lower(): c for c in consultores}
-
-        # ----------------------------------------------------------
-        # 5) Respuesta final
-        # ----------------------------------------------------------
         resumen = []
         for r in rows:
-            c = map_cons.get((r.usuario or "").strip().lower())
-
+            u = (r.usuario_consultor or "").strip().lower()
+            c = m.get(u)
             total = float(r.total_horas or 0)
-            estado = "Al día" if total >= 8 else "Incompleto"
-
             resumen.append({
-                "consultor": c.nombre if c else (r.usuario or ""),
+                "consultor": c.nombre if c else u,
                 "consultor_id": c.id if c else None,
-                "usuario_consultor": (r.usuario or ""),
-                "fecha": r.fecha,  # queda como date o string, el front lo normaliza
+                "usuario_consultor": u,
+                "fecha": r.fecha,
                 "total_horas": round(total, 2),
-                "estado": estado
+                "estado": "Al día" if total >= 8 else "Incompleto",
             })
 
         return jsonify(resumen), 200
