@@ -1426,7 +1426,7 @@ const Registro = ({ userData }) => {
       </div>
 
       {error && <div style={{color:'crimson', marginTop:10}}>Error: {error}</div>}
-      <Resumen userData={userData}/>
+      <Resumen userData={userData} filtroEquipo={filtroEquipo} />
     </div>
   );
 };
