@@ -1,29 +1,16 @@
-// Resumen.jsx
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
-import * as visibility from "./lib/visibility";
+
+// OJO: usa el MISMO estilo de export que en Registro
+// Si tu archivo visibility exporta default + named:
+import getVisibleUsernames, { EXCEPCION_8H_USERS } from "./lib/visibility";
+// Si tu visibility exporta TODO named, cambia a:
+// import { getVisibleUsernames, EXCEPCION_8H_USERS } from "./lib/visibility";
 
 const API_URL = "/resumen-horas";
 
-/* ============================================================
-   Helpers: visibilidad (soporta export default o named)
-============================================================ */
-const getVisibleUsernames =
-  visibility.getVisibleUsernames ||
-  visibility.default ||
-  ((u) => [u].filter(Boolean));
-
-const EXCEPCION_8H_USERS =
-  visibility.EXCEPCION_8H_USERS ||
-  new Set([
-    "serranoel","chaburg","torresfaa","jose.raigosa","camargoje",
-    "duqueb","diazstef","castronay","sierrag","tarquinojm","celyfl"
-  ]);
-
-/* ============================================================
-   Fechas robustas (sin desfase por UTC)
-============================================================ */
+// Extrae YYYY-MM-DD de varios formatos (incluye ISO con T/Z)
 function extraerYMD(fechaStr) {
   if (!fechaStr) return null;
   const match = String(fechaStr).match(/(\d{4}-\d{2}-\d{2})/);
@@ -33,8 +20,9 @@ function extraerYMD(fechaStr) {
 function normalizarFecha(fechaStr) {
   const ymd = extraerYMD(fechaStr);
   if (!ymd) return null;
+
   const [y, m, d] = ymd.split("-").map(Number);
-  const fecha = new Date(y, m - 1, d); // local
+  const fecha = new Date(y, m - 1, d); // local (evita líos de UTC)
   return isNaN(fecha.getTime()) ? null : fecha;
 }
 
@@ -50,146 +38,105 @@ function mondayIndex(jsGetDay) {
   return (jsGetDay + 6) % 7;
 }
 
-/* ============================================================
-   Componente
-============================================================ */
-export default function Resumen({ userData }) {
-  const [visibleConsultorIds, setVisibleConsultorIds] = useState([]);
-  const [resumen, setResumen] = useState([]);
+// Normaliza equipo para comparar
+function equipoUpper(v) {
+  return String(v || "").trim().toUpperCase();
+}
+
+export default function Resumen({ userData, filtroEquipo = "" }) {
+  const [resumen, setResumen] = useState([]); // [{consultor, consultor_id, registros:[...]}]
   const [rol, setRol] = useState("");
   const [usuarioActual, setUsuarioActual] = useState("");
-  const [consultorActivoId, setConsultorActivoId] = useState(null);
   const [error, setError] = useState("");
 
-  const isAdmin = useMemo(() => (
-    ["ADMIN", "ADMIN_BASIS", "ADMIN_FUNCIONAL"].includes(String(rol || "").toUpperCase())
-  ), [rol]);
+  const isAdmin = useMemo(() => {
+    const r = String(rol || "").toUpperCase();
+    return ["ADMIN", "ADMIN_BASIS", "ADMIN_FUNCIONAL"].includes(r);
+  }, [rol]);
 
-  const visibleUsernames = useMemo(() => {
-    return getVisibleUsernames(usuarioActual) || [];
-  }, [usuarioActual]);
-
-  /* ============================================================
-     1) Calcular IDs visibles (por /consultores/datos)
-        - Esto es CLAVE para que el resumen muestre 3 personas,
-          aunque el backend aún no filtre por "visibles".
-  ============================================================ */
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      if (!usuarioActual || !rol) return;
-
-      const visiblesUsers = (getVisibleUsernames(usuarioActual) || []).filter(Boolean);
-
-      // Si solo está él mismo → solo su consultor_id
-      if (visiblesUsers.length <= 1) {
-        const myId = Number(consultorActivoId);
-        if (!cancelled) setVisibleConsultorIds([myId].filter(Boolean));
-        return;
-      }
+  // ✅ Fetch del resumen con los mismos params que ya estás usando (usuario/rol/visibles)
+  const fetchResumen = useCallback(
+    async ({ rolActual, usuario, visibles, equipo }) => {
+      if (!rolActual || !usuario) return;
 
       try {
-        const responses = await Promise.all(
-          visiblesUsers.map(async (u) => {
-            const r = await jfetch(
-              `/consultores/datos?usuario=${encodeURIComponent(u)}`,
-              {
-                method: "GET",
-                headers: {
-                  "X-User-Usuario": usuarioActual,
-                  "X-User-Rol": rol,
-                },
-              }
-            );
-            const data = await r.json().catch(() => ({}));
-            return data;
-          })
+        const params = new URLSearchParams();
+        params.set("usuario", usuario);
+        params.set("rol", rolActual);
+
+        if (visibles && visibles.length) {
+          params.set("visibles", visibles.join(","));
+        }
+
+        // ✅ opcional: se lo mandamos al backend (por si luego lo implementas allá)
+        // aunque igual filtramos en frontend
+        if (equipo) {
+          params.set("equipo", equipo);
+        }
+
+        // cache-buster
+        params.set("ts", Date.now().toString());
+
+        const url = `${API_URL}?${params.toString()}`;
+        console.log("📌 fetchResumen URL:", url);
+
+        const res = await jfetch(url, {
+          method: "GET",
+          headers: {
+            "X-User-Usuario": usuario,
+            "X-User-Rol": rolActual,
+          },
+        });
+
+        if (!res.ok) throw new Error(`Error HTTP ${res.status}`);
+        const data = await res.json();
+
+        const rows = Array.isArray(data) ? data : [];
+
+        // Agrupar por consultor_id
+        const agrupado = Object.values(
+          rows.reduce((acc, r) => {
+            const key = String(r.consultor_id ?? r.id ?? r.consultor ?? "NA");
+
+            if (!acc[key]) {
+              acc[key] = {
+                consultor: r.consultor || r.nombre || "—",
+                consultor_id: r.consultor_id ?? r.id ?? null,
+                registros: [],
+              };
+            }
+
+            const fechaNorm = normalizarFecha(r.fecha);
+
+            acc[key].registros.push({
+              fecha: r.fecha,
+              fechaNorm,
+              fechaKey: fechaNorm ? keyYMDFromDate(fechaNorm) : extraerYMD(r.fecha),
+              total_horas: Number(r.total_horas || r.totalHoras || 0),
+              estado: r.estado,
+              consultor_id: r.consultor_id ?? r.id ?? null,
+
+              // ✅ IMPORTANTE: para filtrar calendarios por equipo
+              // (esto depende de que tu API lo mande; si no lo manda, quedará vacío y no filtrará)
+              equipo: r.equipo || r.EQUIPO || "",
+            });
+
+            return acc;
+          }, {})
         );
 
-        const ids = responses
-          .map((d) => Number(d?.consultor_id || d?.id || null))
-          .filter((n) => Number.isFinite(n));
-
-        const myId = Number(consultorActivoId);
-        const finalIds = Array.from(new Set([myId, ...ids].filter(Boolean)));
-
-        if (!cancelled) setVisibleConsultorIds(finalIds);
-      } catch (e) {
-        const myId = Number(consultorActivoId);
-        if (!cancelled) setVisibleConsultorIds([myId].filter(Boolean));
+        setResumen(agrupado);
+        setError("");
+      } catch (err) {
+        console.error("❌ Error al obtener resumen:", err);
+        setError("No se pudo cargar el resumen");
+        setResumen([]);
       }
-    };
+    },
+    []
+  );
 
-    run();
-    return () => { cancelled = true; };
-  }, [usuarioActual, rol, consultorActivoId]);
-
-  /* ============================================================
-     2) Fetch resumen (envía visibles al backend)
-  ============================================================ */
-  const fetchResumen = useCallback(async () => {
-    if (!rol || !usuarioActual) return;
-
-    try {
-      const visibles = (visibleUsernames || []).filter(Boolean).join(",");
-
-      const url =
-        `/api/resumen-horas` +
-        `?usuario=${encodeURIComponent(usuarioActual)}` +
-        `&rol=${encodeURIComponent(rol)}` +
-        (visibles ? `&visibles=${encodeURIComponent(visibles)}` : "") +
-        `&ts=${Date.now()}`; // cache buster
-
-      // DEBUG (deberías ver la URL con ?... en consola)
-      console.log("📌 fetchResumen URL:", url);
-
-      const res = await fetch(url, {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          "Accept": "application/json",
-        },
-      });
-
-      if (!res.ok) throw new Error(`Error HTTP ${res.status}`);
-      const data = await res.json().catch(() => []);
-
-      // ... aquí dejas EXACTAMENTE el mismo reduce/agrupado que ya tienes ...
-      const agrupado = Object.values(
-        (Array.isArray(data) ? data : []).reduce((acc, r) => {
-          const key = String(r.consultor_id ?? "NA");
-          if (!acc[key]) {
-            acc[key] = { consultor: r.consultor, consultor_id: r.consultor_id, registros: [] };
-          }
-
-          const fechaNorm = normalizarFecha(r.fecha);
-          acc[key].registros.push({
-            fecha: r.fecha,
-            fechaNorm,
-            fechaKey: fechaNorm ? keyYMDFromDate(fechaNorm) : extraerYMD(r.fecha),
-            total_horas: Number(r.total_horas || 0),
-            estado: r.estado,
-            consultor_id: r.consultor_id,
-            usuario: r.usuario || r.usuario_consultor || r.username || null,
-          });
-
-          return acc;
-        }, {})
-      );
-
-      setResumen(agrupado);
-      setError("");
-    } catch (err) {
-      console.error("❌ Error al obtener resumen:", err);
-      setError("No se pudo cargar el resumen");
-      setResumen([]);
-    }
-  }, [rol, usuarioActual, visibleUsernames]);
-
-  /* ============================================================
-     3) Init sesión + primer fetch
-  ============================================================ */
+  // Inicializa rol/usuario
   useEffect(() => {
     if (!userData) {
       setError("No se detectó sesión activa.");
@@ -199,78 +146,91 @@ export default function Resumen({ userData }) {
     const rolUser =
       userData?.rol_ref?.nombre?.toUpperCase?.() ||
       userData?.rol?.toUpperCase?.() ||
+      userData?.user?.rol?.toUpperCase?.() ||
       "USER";
 
     const usuario = String(
-      userData?.usuario ||
-      userData?.user?.usuario ||
-      ""
-    ).trim().toLowerCase();
+      userData?.usuario || userData?.user?.usuario || ""
+    )
+      .trim()
+      .toLowerCase();
 
     if (!usuario) {
       setError("No se detectó el usuario de sesión.");
       return;
     }
 
-    const idConsultor =
-      userData?.consultor_id ||
-      userData?.user?.consultor_id ||
-      userData?.id ||
-      null;
-
     setRol(rolUser);
     setUsuarioActual(usuario);
-    setConsultorActivoId(idConsultor);
   }, [userData]);
 
-  // primer fetch cuando ya hay rol/usuario
-  useEffect(() => {
-    if (!rol || !usuarioActual) return;
-    fetchResumen();
-  }, [rol, usuarioActual, fetchResumen]);
-
-  /* ============================================================
-     4) Refrescar al guardar (evento global desde Registro)
-  ============================================================ */
+  // ✅ Carga inicial + cada vez que cambie el filtroEquipo
   useEffect(() => {
     if (!rol || !usuarioActual) return;
 
-    const handler = () => fetchResumen();
-    window.addEventListener("resumen-actualizar", handler);
-    return () => window.removeEventListener("resumen-actualizar", handler);
-  }, [rol, usuarioActual, fetchResumen]);
+    const visibles = getVisibleUsernames(usuarioActual) || [];
+    fetchResumen({
+      rolActual: rol,
+      usuario: usuarioActual,
+      visibles,
+      equipo: filtroEquipo || "",
+    });
+  }, [rol, usuarioActual, filtroEquipo, fetchResumen]);
 
-  /* ============================================================
-     5) Polling “tiempo real”
-  ============================================================ */
+  // ✅ “Tiempo real” (polling)
   useEffect(() => {
     if (!rol || !usuarioActual) return;
 
-    const intervalMs = 30_000;
+    const intervalMs = 30_000; // 30s
     const id = setInterval(() => {
       if (document.hidden) return;
-      fetchResumen();
+      const visibles = getVisibleUsernames(usuarioActual) || [];
+      fetchResumen({
+        rolActual: rol,
+        usuario: usuarioActual,
+        visibles,
+        equipo: filtroEquipo || "",
+      });
     }, intervalMs);
 
     return () => clearInterval(id);
-  }, [rol, usuarioActual, fetchResumen]);
+  }, [rol, usuarioActual, filtroEquipo, fetchResumen]);
 
-  /* ============================================================
-     6) Filtrado final visible (ADMIN ve todo)
-        - Si NO es admin → filtra por visibleConsultorIds
-  ============================================================ */
+  // ✅ refresco inmediato cuando guardas/actualizas desde Registro
+  useEffect(() => {
+    const onRefresh = () => {
+      if (!rol || !usuarioActual) return;
+      const visibles = getVisibleUsernames(usuarioActual) || [];
+      fetchResumen({
+        rolActual: rol,
+        usuario: usuarioActual,
+        visibles,
+        equipo: filtroEquipo || "",
+      });
+    };
+
+    window.addEventListener("resumen-actualizar", onRefresh);
+    return () => window.removeEventListener("resumen-actualizar", onRefresh);
+  }, [rol, usuarioActual, filtroEquipo, fetchResumen]);
+
+  // ✅ En resumen NO volvemos a “filtrar por visibles” en frontend,
+  // porque ya lo estás mandando al backend en la URL.
+  // Solo aplicamos filtro por equipo (si aplica).
   const datosVisibles = useMemo(() => {
-    if (isAdmin) return resumen;
+    const eq = equipoUpper(filtroEquipo);
+    if (!eq) return resumen;
 
-    const ids = (visibleConsultorIds || []).map(Number).filter(Boolean);
-    if (!ids.length) return resumen;
+    // Filtramos consultores que tengan al menos un registro con ese equipo
+    return resumen
+      .map((c) => {
+        const regs = (c.registros || []).filter(
+          (r) => equipoUpper(r.equipo) === eq
+        );
+        return { ...c, registros: regs };
+      })
+      .filter((c) => (c.registros || []).length > 0);
+  }, [resumen, filtroEquipo]);
 
-    return resumen.filter((r) => ids.includes(Number(r.consultor_id)));
-  }, [isAdmin, resumen, visibleConsultorIds]);
-
-  /* ============================================================
-     7) Calendario por consultor
-  ============================================================ */
   const CalendarioConsultor = ({ consultor }) => {
     const hoy = new Date();
     const mesInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
@@ -281,7 +241,10 @@ export default function Resumen({ userData }) {
     const y = mesActual.getFullYear();
     const m = mesActual.getMonth();
 
-    const totalDiasMes = useMemo(() => new Date(y, m + 1, 0).getDate(), [y, m]);
+    const totalDiasMes = useMemo(
+      () => new Date(y, m + 1, 0).getDate(),
+      [y, m]
+    );
 
     const offsetInicio = useMemo(() => {
       const primerDia = new Date(y, m, 1);
@@ -289,10 +252,14 @@ export default function Resumen({ userData }) {
     }, [y, m]);
 
     const nombreMes = useMemo(() => {
-      const nm = mesActual.toLocaleString("es-ES", { month: "long", year: "numeric" });
+      const nm = mesActual.toLocaleString("es-ES", {
+        month: "long",
+        year: "numeric",
+      });
       return nm.charAt(0).toUpperCase() + nm.slice(1);
     }, [mesActual]);
 
+    // Registros SOLO del mes actual
     const registrosMes = useMemo(() => {
       return (consultor.registros || []).filter((r) => {
         const f = r.fechaNorm;
@@ -301,6 +268,7 @@ export default function Resumen({ userData }) {
       });
     }, [consultor.registros, m, y]);
 
+    // Índice rápido: YYYY-MM-DD -> registro
     const mapRegistros = useMemo(() => {
       const map = new Map();
       for (const r of registrosMes) {
@@ -310,7 +278,7 @@ export default function Resumen({ userData }) {
     }, [registrosMes]);
 
     const totalMes = useMemo(() => {
-      return registrosMes.reduce((acc, r) => acc + (Number(r.total_horas) || 0), 0);
+      return registrosMes.reduce((acc, r) => acc + (r.total_horas || 0), 0);
     }, [registrosMes]);
 
     const celdas = useMemo(() => {
@@ -339,9 +307,9 @@ export default function Resumen({ userData }) {
 
       const horas = Number(registro.total_horas || 0);
 
-      // meta por usuario logueado (o por registro.usuario si backend lo manda)
-      const login = String(registro.usuario || usuarioActual || "").toLowerCase();
-      const metaBase = EXCEPCION_8H_USERS.has(login) ? 8 : 9;
+      // meta 8h para excepciones, 9h normal
+      const login = String(usuarioActual || "").toLowerCase();
+      const metaBase = EXCEPCION_8H_USERS?.has?.(login) ? 8 : 9;
 
       const estado = horas >= metaBase ? "ok" : horas > 0 ? "warn" : "none";
 
@@ -404,9 +372,6 @@ export default function Resumen({ userData }) {
     );
   };
 
-  /* ============================================================
-     Render
-  ============================================================ */
   return (
     <div className="resumen-wrapper">
       <h2 className="resumen-titulo">Resumen de Horas Mensual</h2>
