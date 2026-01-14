@@ -1,28 +1,27 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
-import getVisibleUsernames, { EXCEPCION_8H_USERS } from "./lib/visibility";
+import { getVisibleUsernames, EXCEPCION_8H_USERS } from "./lib/visibility";
 
-const API_URL = "/api/resumen-horas";
+const API_PATH = "/resumen-horas"; 
 
-/**
- * Extrae YYYY-MM-DD de varios formatos (incluye ISO con T/Z)
- */
+
+function normalizeApiPath(path) {
+  return String(path || "").replace(/^\/api(\/|$)/, "/");
+}
+
+// Extrae YYYY-MM-DD de varios formatos (incluye ISO con T/Z)
 function extraerYMD(fechaStr) {
   if (!fechaStr) return null;
   const match = String(fechaStr).match(/(\d{4}-\d{2}-\d{2})/);
   return match ? match[1] : null;
 }
 
-/**
- * Convierte fecha string a Date local estable (sin UTC issues)
- */
 function normalizarFecha(fechaStr) {
   const ymd = extraerYMD(fechaStr);
   if (!ymd) return null;
-
   const [y, m, d] = ymd.split("-").map(Number);
-  const fecha = new Date(y, m - 1, d);
+  const fecha = new Date(y, m - 1, d); // local
   return isNaN(fecha.getTime()) ? null : fecha;
 }
 
@@ -44,108 +43,12 @@ function equipoUpper(v) {
 }
 
 export default function Resumen({ userData, filtroEquipo = "" }) {
-  const [resumen, setResumen] = useState([]); // [{consultor, consultor_id, usuario_consultor, registros:[...]}]
+  const [resumen, setResumen] = useState([]);
   const [rol, setRol] = useState("");
   const [usuarioActual, setUsuarioActual] = useState("");
   const [error, setError] = useState("");
 
-  /**
-   * ✅ Fetch del resumen.
-   * - usuario/visibles por query
-   * - rol SOLO por header (evita "rol inconsistente")
-   */
-  const fetchResumen = useCallback(async ({ rolActual, usuario, visibles }) => {
-    if (!rolActual || !usuario) return;
-
-    try {
-      const params = new URLSearchParams();
-      params.set("usuario", usuario);
-
-      if (visibles && visibles.length) {
-        params.set("visibles", visibles.join(","));
-      }
-
-      // cache-buster
-      params.set("ts", Date.now().toString());
-
-      const url = `${API_URL}?${params.toString()}`;
-      console.log("📌 fetchResumen URL:", url);
-
-      const res = await jfetch(url, {
-        method: "GET",
-        headers: {
-          "X-User-Usuario": usuario,
-          "X-User-Rol": rolActual,
-        },
-      });
-
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`Error HTTP ${res.status} ${txt ? `- ${txt}` : ""}`);
-      }
-
-      const data = await res.json();
-      const rows = Array.isArray(data) ? data : [];
-
-      /**
-       * ✅ Agrupar por usuario_consultor (más estable)
-       */
-      const agrupado = Object.values(
-        rows.reduce((acc, r) => {
-          const userKey = String(r.usuario_consultor || "")
-            .trim()
-            .toLowerCase();
-
-          const key =
-            userKey || String(r.consultor_id ?? r.id ?? r.consultor ?? "NA");
-
-          if (!acc[key]) {
-            acc[key] = {
-              consultor: r.consultor || r.nombre || userKey || "—",
-              consultor_id: r.consultor_id ?? r.id ?? null,
-              usuario_consultor: userKey || null,
-              registros: [],
-            };
-          }
-
-          const fechaNorm = normalizarFecha(r.fecha);
-
-          acc[key].registros.push({
-            fecha: r.fecha,
-            fechaNorm,
-            fechaKey: fechaNorm
-              ? keyYMDFromDate(fechaNorm)
-              : extraerYMD(r.fecha),
-
-            total_horas: Number(r.total_horas || r.totalHoras || 0),
-            estado: r.estado,
-
-            // ✅ para excepciones 8h
-            usuario_consultor: userKey || acc[key].usuario_consultor || null,
-
-            /**
-             * ⚠️ Tu backend /resumen-horas hoy NO manda equipo.
-             * Si mañana lo implementas, esto empezará a venir.
-             */
-            equipo: r.equipo || r.EQUIPO || "",
-          });
-
-          return acc;
-        }, {})
-      );
-
-      setResumen(agrupado);
-      setError("");
-    } catch (err) {
-      console.error("❌ Error al obtener resumen:", err);
-      setError(err?.message || "No se pudo cargar el resumen");
-      setResumen([]);
-    }
-  }, []);
-
-  /**
-   * Inicializa rol/usuario
-   */
+  // Inicializa rol/usuario
   useEffect(() => {
     if (!userData) {
       setError("No se detectó sesión activa.");
@@ -169,85 +72,153 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
 
     setRol(rolUser);
     setUsuarioActual(usuario);
+    setError("");
   }, [userData]);
 
-  /**
-   * ✅ Carga inicial (y cuando cambia rol/usuario)
-   */
-  useEffect(() => {
-    if (!rol || !usuarioActual) return;
-    const visibles = getVisibleUsernames(usuarioActual) || [];
-    fetchResumen({ rolActual: rol, usuario: usuarioActual, visibles });
-  }, [rol, usuarioActual, fetchResumen]);
+  const fetchResumen = useCallback(async ({ rolActual, usuario, visibles, equipo }) => {
+    if (!usuario) return;
 
-  /**
-   * ✅ “Tiempo real” (polling)
-   */
+    try {
+      const params = new URLSearchParams();
+      params.set("usuario", usuario);
+
+      // 👇 si tu backend no necesita rol, no pasa nada tenerlo
+      if (rolActual) params.set("rol", rolActual);
+
+      if (visibles && visibles.length) {
+        params.set("visibles", visibles.join(","));
+      }
+
+      // ✅ opcional (si el backend luego lo implementa)
+      if (equipo) params.set("equipo", equipo);
+
+      params.set("ts", Date.now().toString());
+
+      const path = `${normalizeApiPath(API_PATH)}?${params.toString()}`;
+      console.log("📌 fetchResumen URL:", path);
+
+      const res = await jfetch(path, {
+        method: "GET",
+        headers: {
+          "X-User-Usuario": usuario,
+          "X-User-Rol": rolActual || "",
+        },
+      });
+
+      const data = await res.json().catch(() => []);
+      if (!res.ok) {
+        throw new Error(`Error HTTP ${res.status} - ${JSON.stringify(data)}`);
+      }
+
+      const rows = Array.isArray(data) ? data : [];
+
+      // Agrupar por consultor_id
+      const agrupado = Object.values(
+        rows.reduce((acc, r) => {
+          const key = String(r.consultor_id ?? r.id ?? r.consultor ?? "NA");
+
+          if (!acc[key]) {
+            acc[key] = {
+              consultor: r.consultor || r.nombre || "—",
+              consultor_id: r.consultor_id ?? r.id ?? null,
+              registros: [],
+            };
+          }
+
+          const fechaNorm = normalizarFecha(r.fecha);
+
+          acc[key].registros.push({
+            fecha: r.fecha,
+            fechaNorm,
+            fechaKey: fechaNorm ? keyYMDFromDate(fechaNorm) : extraerYMD(r.fecha),
+            total_horas: Number(r.total_horas ?? r.totalHoras ?? 0),
+            estado: r.estado,
+            consultor_id: r.consultor_id ?? r.id ?? null,
+            equipo: r.equipo || r.EQUIPO || "", // <- para filtrar por equipo
+          });
+
+          return acc;
+        }, {})
+      );
+
+      setResumen(agrupado);
+      setError("");
+    } catch (err) {
+      console.error("❌ Error al obtener resumen:", err);
+      setResumen([]);
+      setError("No se pudo cargar el resumen");
+    }
+  }, []);
+
+  // Carga inicial + cuando cambia filtroEquipo
   useEffect(() => {
-    if (!rol || !usuarioActual) return;
+    if (!usuarioActual) return;
+    const visibles = getVisibleUsernames(usuarioActual) || [];
+    fetchResumen({
+      rolActual: rol,
+      usuario: usuarioActual,
+      visibles,
+      equipo: filtroEquipo || "",
+    });
+  }, [rol, usuarioActual, filtroEquipo, fetchResumen]);
+
+  // “Tiempo real” (polling)
+  useEffect(() => {
+    if (!usuarioActual) return;
 
     const intervalMs = 30_000;
     const id = setInterval(() => {
       if (document.hidden) return;
       const visibles = getVisibleUsernames(usuarioActual) || [];
-      fetchResumen({ rolActual: rol, usuario: usuarioActual, visibles });
+      fetchResumen({
+        rolActual: rol,
+        usuario: usuarioActual,
+        visibles,
+        equipo: filtroEquipo || "",
+      });
     }, intervalMs);
 
     return () => clearInterval(id);
-  }, [rol, usuarioActual, fetchResumen]);
+  }, [rol, usuarioActual, filtroEquipo, fetchResumen]);
 
-  /**
-   * ✅ refresco inmediato desde Registro (evento custom)
-   */
+  // refresco inmediato cuando guardas desde Registro
   useEffect(() => {
     const onRefresh = () => {
-      if (!rol || !usuarioActual) return;
+      if (!usuarioActual) return;
       const visibles = getVisibleUsernames(usuarioActual) || [];
-      fetchResumen({ rolActual: rol, usuario: usuarioActual, visibles });
+      fetchResumen({
+        rolActual: rol,
+        usuario: usuarioActual,
+        visibles,
+        equipo: filtroEquipo || "",
+      });
     };
 
     window.addEventListener("resumen-actualizar", onRefresh);
     return () => window.removeEventListener("resumen-actualizar", onRefresh);
-  }, [rol, usuarioActual, fetchResumen]);
+  }, [rol, usuarioActual, filtroEquipo, fetchResumen]);
 
-  /**
-   * ✅ Filtro por equipo (corregido):
-   * Si backend no trae equipo, NO filtramos para no quedar vacío.
-   */
+  // ✅ Aplicar filtroEquipo en el calendario (frontend)
   const datosVisibles = useMemo(() => {
     const eq = equipoUpper(filtroEquipo);
     if (!eq) return resumen;
 
-    const hayEquipoEnRespuesta = resumen.some((c) =>
-      (c.registros || []).some((r) => equipoUpper(r.equipo))
-    );
-
-    // Si no existe equipo en respuesta, no filtramos (evita "No hay datos")
-    if (!hayEquipoEnRespuesta) return resumen;
-
     return resumen
       .map((c) => {
-        const regs = (c.registros || []).filter(
-          (r) => equipoUpper(r.equipo) === eq
-        );
+        const regs = (c.registros || []).filter((r) => equipoUpper(r.equipo) === eq);
         return { ...c, registros: regs };
       })
       .filter((c) => (c.registros || []).length > 0);
   }, [resumen, filtroEquipo]);
 
-  /**
-   * UI: calendario por consultor
-   */
   const CalendarioConsultor = ({ consultor }) => {
     const hoy = new Date();
     const mesInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-
     const [mesActual, setMesActual] = useState(mesInicio);
     const [animacion, setAnimacion] = useState("slideInLeft");
 
     const y = mesActual.getFullYear();
     const m = mesActual.getMonth();
-
     const totalDiasMes = useMemo(() => new Date(y, m + 1, 0).getDate(), [y, m]);
 
     const offsetInicio = useMemo(() => {
@@ -256,14 +227,10 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
     }, [y, m]);
 
     const nombreMes = useMemo(() => {
-      const nm = mesActual.toLocaleString("es-ES", {
-        month: "long",
-        year: "numeric",
-      });
+      const nm = mesActual.toLocaleString("es-ES", { month: "long", year: "numeric" });
       return nm.charAt(0).toUpperCase() + nm.slice(1);
     }, [mesActual]);
 
-    // Registros SOLO del mes actual
     const registrosMes = useMemo(() => {
       return (consultor.registros || []).filter((r) => {
         const f = r.fechaNorm;
@@ -272,7 +239,6 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
       });
     }, [consultor.registros, m, y]);
 
-    // Mapa YYYY-MM-DD -> registro
     const mapRegistros = useMemo(() => {
       const map = new Map();
       for (const r of registrosMes) {
@@ -281,9 +247,10 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
       return map;
     }, [registrosMes]);
 
-    const totalMes = useMemo(() => {
-      return registrosMes.reduce((acc, r) => acc + (r.total_horas || 0), 0);
-    }, [registrosMes]);
+    const totalMes = useMemo(
+      () => registrosMes.reduce((acc, r) => acc + (r.total_horas || 0), 0),
+      [registrosMes]
+    );
 
     const celdas = useMemo(() => {
       const blanks = Array.from({ length: offsetInicio }, () => null);
@@ -292,13 +259,10 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
     }, [offsetInicio, totalDiasMes]);
 
     const renderCelda = (dia, idx) => {
-      if (dia === null) {
-        return <div key={`b-${idx}`} className="cal-dia blank" />;
-      }
+      if (dia === null) return <div key={`b-${idx}`} className="cal-dia blank" />;
 
       const fechaCelda = new Date(y, m, dia);
       const key = keyYMDFromDate(fechaCelda);
-
       const registro = mapRegistros.get(key);
 
       if (!registro) {
@@ -310,17 +274,8 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
       }
 
       const horas = Number(registro.total_horas || 0);
-
-      // ✅ meta 8h para excepciones, 9h normal
-      // basado en el usuario del registro (no el logueado)
-      const u = String(
-        registro.usuario_consultor ||
-          consultor.usuario_consultor ||
-          usuarioActual ||
-          ""
-      ).toLowerCase();
-
-      const metaBase = EXCEPCION_8H_USERS?.has?.(u) ? 8 : 9;
+      const login = String(usuarioActual || "").toLowerCase();
+      const metaBase = EXCEPCION_8H_USERS?.has?.(login) ? 8 : 9;
       const estado = horas >= metaBase ? "ok" : horas > 0 ? "warn" : "none";
 
       return (
@@ -364,9 +319,7 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
             </button>
           </div>
 
-          <span className="total">
-            Total: {Math.round(totalMes * 100) / 100} h
-          </span>
+          <span className="total">Total: {Math.round(totalMes * 100) / 100} h</span>
         </div>
 
         <div className={`cal-wrapper ${animacion}`}>
@@ -376,17 +329,12 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
             ))}
           </div>
 
-          <div className="cal-grid">
-            {celdas.map((dia, idx) => renderCelda(dia, idx))}
-          </div>
+          <div className="cal-grid">{celdas.map((dia, idx) => renderCelda(dia, idx))}</div>
         </div>
       </div>
     );
   };
 
-  /**
-   * Render principal
-   */
   return (
     <div className="resumen-wrapper">
       <h2 className="resumen-titulo">Resumen de Horas Mensual</h2>
@@ -399,11 +347,7 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
         <div className="resumen-grid">
           {datosVisibles.map((consultor) => (
             <CalendarioConsultor
-              key={
-                consultor.usuario_consultor ||
-                consultor.consultor_id ||
-                consultor.consultor
-              }
+              key={consultor.consultor_id || consultor.consultor}
               consultor={consultor}
             />
           ))}
