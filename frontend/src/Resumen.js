@@ -1,9 +1,8 @@
+// Resumen.jsx
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
 import { getVisibleUsernames, EXCEPCION_8H_USERS } from "./lib/visibility";
-
-
 
 const API_URL = "/resumen-horas";
 
@@ -43,6 +42,9 @@ export default function Resumen({ userData }) {
   const [consultorActivoId, setConsultorActivoId] = useState(null);
   const [error, setError] = useState("");
 
+  // =========================
+  // FETCH resumen
+  // =========================
   const fetchResumen = useCallback(async (rolActual, usuario) => {
     if (!rolActual || !usuario) return;
 
@@ -58,14 +60,22 @@ export default function Resumen({ userData }) {
       if (!res.ok) throw new Error(`Error HTTP ${res.status}`);
       const data = await res.json();
 
+      // Agrupa por consultor_id
       const agrupado = Object.values(
-        data.reduce((acc, r) => {
+        (Array.isArray(data) ? data : []).reduce((acc, r) => {
           const key = String(r.consultor_id);
 
           if (!acc[key]) {
             acc[key] = {
               consultor: r.consultor,
               consultor_id: r.consultor_id,
+              // ✅ IMPORTANTE: username del consultor (no del que mira)
+              // Ajusta estos campos según cómo lo devuelva tu API
+              usuario: String(
+                r.usuario_consultor || r.usuario || r.username || ""
+              )
+                .trim()
+                .toLowerCase(),
               registros: [],
             };
           }
@@ -74,8 +84,9 @@ export default function Resumen({ userData }) {
           acc[key].registros.push({
             fecha: r.fecha,
             fechaNorm,
-            // clave estable para comparar días sin depender de toDateString()
-            fechaKey: fechaNorm ? keyYMDFromDate(fechaNorm) : extraerYMD(r.fecha),
+            fechaKey: fechaNorm
+              ? keyYMDFromDate(fechaNorm)
+              : extraerYMD(r.fecha),
             total_horas: Number(r.total_horas || 0),
             estado: r.estado,
             consultor_id: r.consultor_id,
@@ -93,6 +104,48 @@ export default function Resumen({ userData }) {
     }
   }, []);
 
+  // =========================
+  // Inicializa rol/usuario/consultor y primer fetch
+  // =========================
+  useEffect(() => {
+    if (!userData) {
+      setError("No se detectó sesión activa.");
+      return;
+    }
+
+    const rolUser =
+      userData?.rol_ref?.nombre?.toUpperCase?.() ||
+      userData?.rol?.toUpperCase?.() ||
+      "USER";
+
+    const usuario = String(
+      userData?.usuario || userData?.user?.usuario || ""
+    )
+      .trim()
+      .toLowerCase();
+
+    if (!usuario) {
+      setError("No se detectó el usuario de sesión.");
+      return;
+    }
+
+    const idConsultor =
+      userData?.consultor_id ||
+      userData?.user?.consultor_id ||
+      userData?.id ||
+      null;
+
+    setRol(rolUser);
+    setUsuarioActual(usuario);
+    setConsultorActivoId(idConsultor);
+
+    fetchResumen(rolUser, usuario);
+  }, [userData, fetchResumen]);
+
+  // =========================
+  // Visibilidad: convierte usernames visibles -> consultor_ids visibles
+  // (solo aplica si NO es admin; admin ve todo)
+  // =========================
   useEffect(() => {
     let cancelled = false;
 
@@ -117,7 +170,7 @@ export default function Resumen({ userData }) {
                 method: "GET",
                 headers: {
                   "X-User-Usuario": usuarioActual, // login del que está consultando
-                  "X-User-Rol": rol,               // rol real (ADMIN_BASIS, etc.)
+                  "X-User-Rol": rol, // rol real (ADMIN_BASIS, etc.)
                 },
               }
             );
@@ -149,50 +202,26 @@ export default function Resumen({ userData }) {
     };
   }, [usuarioActual, consultorActivoId, rol]);
 
-
-  // Inicializa rol/usuario/consultor y primer fetch
-  useEffect(() => {
-    if (!userData) {
-      setError("No se detectó sesión activa.");
-      return;
-    }
-
-    const rolUser =
-      userData?.rol_ref?.nombre?.toUpperCase?.() ||
-      userData?.rol?.toUpperCase?.() ||
-      "USER";
-
-    const usuario = String(
-      userData?.usuario ||
-      userData?.user?.usuario ||
-      ""
-    ).trim().toLowerCase();
-
-    if (!usuario) {
-      setError("No se detectó el usuario de sesión.");
-      return;
-    }
-
-    const idConsultor =
-      userData?.consultor_id ||
-      userData?.user?.consultor_id ||
-      userData?.id ||
-      null;
-
-    setRol(rolUser);
-    setUsuarioActual(usuario);
-    setConsultorActivoId(idConsultor);
-
-    fetchResumen(rolUser, usuario);
-  }, [userData, fetchResumen]);
-
-  // ✅ “Tiempo real” (polling). Ajusta el intervalo a tu gusto.
+  // =========================
+  // ✅ “Tiempo real” por evento: cuando Registro guarda/edita/elimina
+  // =========================
   useEffect(() => {
     if (!rol || !usuarioActual) return;
 
-    const intervalMs = 30_000; // 30s (puedes poner 60_000)
+    const onUpdate = () => fetchResumen(rol, usuarioActual);
+    window.addEventListener("resumen-actualizar", onUpdate);
+
+    return () => window.removeEventListener("resumen-actualizar", onUpdate);
+  }, [rol, usuarioActual, fetchResumen]);
+
+  // =========================
+  // ✅ “Tiempo real” (polling) como respaldo
+  // =========================
+  useEffect(() => {
+    if (!rol || !usuarioActual) return;
+
+    const intervalMs = 30_000; // 30s
     const id = setInterval(() => {
-      // Evita gastar si la pestaña no está visible
       if (document.hidden) return;
       fetchResumen(rol, usuarioActual);
     }, intervalMs);
@@ -200,17 +229,25 @@ export default function Resumen({ userData }) {
     return () => clearInterval(id);
   }, [rol, usuarioActual, fetchResumen]);
 
-  const isAdmin = useMemo(() => (
-    ["ADMIN", "ADMIN_BASIS", "ADMIN_FUNCIONAL"].includes(String(rol || "").toUpperCase())
-  ), [rol]);
+  const isAdmin = useMemo(
+    () =>
+      ["ADMIN", "ADMIN_BASIS", "ADMIN_FUNCIONAL"].includes(
+        String(rol || "").toUpperCase()
+      ),
+    [rol]
+  );
 
+  // ✅ Si admin: ve todo. Si no: filtra por consultor_ids visibles
   const datosVisibles = useMemo(() => {
     if (isAdmin) return resumen;
-    return resumen.filter((r) => visibleConsultorIds.includes(Number(r.consultor_id)));
+    return resumen.filter((r) =>
+      visibleConsultorIds.includes(Number(r.consultor_id))
+    );
   }, [isAdmin, resumen, visibleConsultorIds]);
 
-
-
+  // =========================
+  // Calendario por consultor
+  // =========================
   const CalendarioConsultor = ({ consultor }) => {
     const hoy = new Date();
     const mesInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
@@ -221,7 +258,10 @@ export default function Resumen({ userData }) {
     const y = mesActual.getFullYear();
     const m = mesActual.getMonth();
 
-    const totalDiasMes = useMemo(() => new Date(y, m + 1, 0).getDate(), [y, m]);
+    const totalDiasMes = useMemo(
+      () => new Date(y, m + 1, 0).getDate(),
+      [y, m]
+    );
 
     // ✅ Offset del primer día del mes (alineación L-M-X-J-V-S-D)
     const offsetInicio = useMemo(() => {
@@ -230,13 +270,16 @@ export default function Resumen({ userData }) {
     }, [y, m]);
 
     const nombreMes = useMemo(() => {
-      const nm = mesActual.toLocaleString("es-ES", { month: "long", year: "numeric" });
+      const nm = mesActual.toLocaleString("es-ES", {
+        month: "long",
+        year: "numeric",
+      });
       return nm.charAt(0).toUpperCase() + nm.slice(1);
     }, [mesActual]);
 
     // Registros SOLO del mes actual
     const registrosMes = useMemo(() => {
-      return consultor.registros.filter((r) => {
+      return (consultor.registros || []).filter((r) => {
         const f = r.fechaNorm;
         if (!f) return false;
         return f.getMonth() === m && f.getFullYear() === y;
@@ -270,7 +313,6 @@ export default function Resumen({ userData }) {
 
       const fechaCelda = new Date(y, m, dia);
       const key = keyYMDFromDate(fechaCelda);
-
       const registro = mapRegistros.get(key);
 
       if (!registro) {
@@ -282,8 +324,11 @@ export default function Resumen({ userData }) {
       }
 
       const horas = Number(registro.total_horas || 0);
-      const login = usuarioActual; // ya viene lower
-      const metaBase = EXCEPCION_8H_USERS.has(login) ? 8 : 9;
+
+      // ✅ meta por consultor (no por el que está mirando)
+      const loginConsultor = String(consultor.usuario || "").toLowerCase();
+      const metaBase = EXCEPCION_8H_USERS.has(loginConsultor) ? 8 : 9;
+
       const estado = horas >= metaBase ? "ok" : horas > 0 ? "warn" : "none";
 
       return (
@@ -327,7 +372,7 @@ export default function Resumen({ userData }) {
             </button>
           </div>
 
-          <span className="total">Total: {totalMes} h</span>
+          <span className="total">Total: {Math.round(totalMes * 100) / 100} h</span>
         </div>
 
         <div className={`cal-wrapper ${animacion}`}>
@@ -337,7 +382,9 @@ export default function Resumen({ userData }) {
             ))}
           </div>
 
-          <div className="cal-grid">{celdas.map((dia, idx) => renderCelda(dia, idx))}</div>
+          <div className="cal-grid">
+            {celdas.map((dia, idx) => renderCelda(dia, idx))}
+          </div>
         </div>
       </div>
     );
@@ -354,7 +401,10 @@ export default function Resumen({ userData }) {
       ) : (
         <div className="resumen-grid">
           {datosVisibles.map((consultor) => (
-            <CalendarioConsultor key={consultor.consultor_id} consultor={consultor} />
+            <CalendarioConsultor
+              key={consultor.consultor_id}
+              consultor={consultor}
+            />
           ))}
         </div>
       )}
