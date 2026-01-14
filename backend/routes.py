@@ -23,6 +23,19 @@ bp = Blueprint('routes', __name__, url_prefix="/api")
 
 _HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$", re.I)
 
+def _parse_visibles():
+    # soporta visibles=a,b,c
+    raw = (request.args.get("visibles") or "").strip()
+    if raw:
+        return [u.strip().lower() for u in raw.split(",") if u.strip()]
+
+    # soporta visibles[]=a&visibles[]=b
+    arr = request.args.getlist("visibles[]")
+    if arr:
+        return [u.strip().lower() for u in arr if u and u.strip()]
+
+    return []
+
 def permission_required(codigo_permiso):
     def decorator(fn):
         @wraps(fn)
@@ -809,12 +822,15 @@ def obtener_registros():
         if not usuario:
             return jsonify({'error': 'Usuario no enviado'}), 400
 
-        consultor = Consultor.query.filter(
-            func.lower(Consultor.usuario) == usuario
-        ).first()
-
+        consultor = Consultor.query.filter(func.lower(Consultor.usuario) == usuario).first()
         if not consultor:
             return jsonify({'error': 'Consultor no encontrado'}), 404
+
+        visibles = _parse_visibles()
+
+        # seguridad mínima: si visibles viene, el usuario logueado debe estar incluido
+        if visibles and usuario not in visibles:
+            return jsonify({'error': 'Lista visibles inválida'}), 403
 
         query = Registro.query.options(
             joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
@@ -822,62 +838,47 @@ def obtener_registros():
             joinedload(Registro.ocupacion)
         )
 
-        registros = (
-            query.all()
-            if rol == "ADMIN"
-            else query.filter(func.lower(Registro.usuario_consultor) == usuario).all()
-        )
+        if rol == "ADMIN":
+            registros = query.all()
+        else:
+            if visibles:
+                registros = query.filter(func.lower(Registro.usuario_consultor).in_(visibles)).all()
+            else:
+                registros = query.filter(func.lower(Registro.usuario_consultor) == usuario).all()
 
         data = []
-
         for r in registros:
             tarea = r.tarea
-            ocup = r.ocupacion
+            ocup = r.ocupacion or (tarea.ocupaciones[0] if tarea and tarea.ocupaciones else None)
 
-            if not ocup and tarea and tarea.ocupaciones:
-                ocup = tarea.ocupaciones[0]
-
-            tipoTarea_str = (
-                f"{tarea.codigo} - {tarea.nombre}"
-                if tarea else r.tipo_tarea
-            )
+            tipoTarea_str = f"{tarea.codigo} - {tarea.nombre}" if tarea else r.tipo_tarea
 
             data.append({
-                # ---------- IDENTIFICACIÓN ----------
                 'id': r.id,
-                'consultor_id': r.consultor.id if r.consultor else None,  # ← FIX REAL
+                'consultor_id': r.consultor.id if r.consultor else None,
                 'consultor': r.consultor.nombre if r.consultor else None,
 
-                # ---------- CAMPOS GENERALES ----------
+                # ✅ CLAVE para el front: quién es el dueño real del registro
+                'usuario_consultor': (r.usuario_consultor or "").strip().lower(),
+
                 'fecha': r.fecha,
                 'cliente': r.cliente,
                 'modulo': r.modulo,
-                'equipo': (
-                    r.consultor.equipo_obj.nombre
-                    if r.consultor and r.consultor.equipo_obj
-                    else "SIN EQUIPO"
-                ),
+                'equipo': (r.consultor.equipo_obj.nombre
+                           if r.consultor and r.consultor.equipo_obj
+                           else "SIN EQUIPO"),
 
-                # ---------- CASOS ----------
                 'nroCasoCliente': r.nro_caso_cliente,
                 'nroCasoInterno': r.nro_caso_interno,
                 'nroCasoEscaladoSap': r.nro_caso_escalado,
 
-                # ---------- TAREA ----------
                 'tarea_id': r.tarea_id,
                 'tipoTarea': tipoTarea_str,
-                'tarea': {
-                    'id': tarea.id if tarea else None,
-                    'codigo': tarea.codigo if tarea else None,
-                    'nombre': tarea.nombre if tarea else None,
-                },
 
-                # ---------- OCUPACIÓN ----------
                 'ocupacion_id': r.ocupacion_id,
                 'ocupacion_codigo': ocup.codigo if ocup else None,
                 'ocupacion_nombre': ocup.nombre if ocup else None,
 
-                # ---------- HORAS ----------
                 'horaInicio': r.hora_inicio,
                 'horaFin': r.hora_fin,
                 'tiempoInvertido': r.tiempo_invertido,
@@ -886,7 +887,6 @@ def obtener_registros():
                 'descripcion': r.descripcion,
                 'totalHoras': r.total_horas,
 
-                # ---------- OTROS ----------
                 'bloqueado': bool(r.bloqueado),
                 'oncall': r.oncall,
                 'desborde': r.desborde,
@@ -896,7 +896,7 @@ def obtener_registros():
         return jsonify(data), 200
 
     except Exception as e:
-        print(f"❌ Error en obtener_registros: {e}")
+        app.logger.exception("❌ Error en obtener_registros")
         return jsonify({'error': str(e)}), 500
 
 
