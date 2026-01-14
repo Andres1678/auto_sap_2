@@ -978,54 +978,105 @@ def obtener_registros():
 
 @bp.route("/resumen-horas", methods=["GET"])
 def resumen_horas():
-    rol = (request.headers.get("X-User-Rol") or "").upper().strip()
-    usuario = (request.headers.get("X-User-Usuario") or "").strip().lower()
+    try:
+        # ----------------------------------------------------------
+        # 1) Usuario y rol: headers o query params
+        # ----------------------------------------------------------
+        usuario = (
+            request.headers.get("X-User-Usuario")
+            or request.args.get("usuario")
+            or ""
+        ).strip().lower()
 
-    year = int(request.args.get("year", datetime.utcnow().year))
-    month = int(request.args.get("month", datetime.utcnow().month))
-    usuario_filtro = (request.args.get("usuario") or "").strip().lower()
+        rol = (
+            request.headers.get("X-User-Rol")
+            or request.args.get("rol")
+            or ""
+        ).strip().upper()
 
-    visibles = visible_users_for(usuario, rol)
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
 
-    # determinar consultores objetivo
-    if usuario_filtro:
-        if "*" not in visibles and usuario_filtro not in visibles:
-            return jsonify([]), 403
-        consultores = Consultor.query.filter(func.lower(Consultor.usuario) == usuario_filtro).all()
-    else:
-        if "*" in visibles:
-            consultores = Consultor.query.all()
+        # Validar que exista el consultor logueado
+        consultor_login = Consultor.query.filter(func.lower(Consultor.usuario) == usuario).first()
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
+
+        # ----------------------------------------------------------
+        # 2) Visibles (front) + Visibles (backend)
+        # ----------------------------------------------------------
+        visibles_front = _parse_visibles()
+        visibles_backend = _visible_users_for(usuario, rol)
+
+        # seguridad mínima
+        if visibles_front and usuario not in visibles_front:
+            return jsonify({"error": "Lista visibles inválida (no incluye usuario logueado)"}), 403
+
+        # no permitir que el front amplíe permisos (si no es admin)
+        if visibles_front and "*" not in visibles_backend:
+            if not set(visibles_front).issubset(visibles_backend):
+                return jsonify({"error": "Lista visibles no autorizada"}), 403
+
+        # target_users final
+        if _is_admin_role(rol):
+            target_users = None  # todos
         else:
-            consultores = Consultor.query.filter(func.lower(Consultor.usuario).in_(list(visibles))).all()
+            target_users = visibles_front if visibles_front else list(visibles_backend)
 
-    # rango mes
-    start = datetime(year, month, 1).date()
-    end = (datetime(year + (month == 12), (month % 12) + 1, 1).date())
+        # ----------------------------------------------------------
+        # 3) Agrupar en BD por (usuario_consultor, fecha)
+        # ----------------------------------------------------------
+        qry = (
+            db.session.query(
+                func.lower(Registro.usuario_consultor).label("usuario"),
+                Registro.fecha.label("fecha"),
+                func.sum(func.coalesce(Registro.tiempo_invertido, 0)).label("total_horas")
+            )
+        )
 
-    resumen = []
-    for c in consultores:
-        regs = (Registro.query
-                .filter(func.lower(Registro.usuario_consultor) == c.usuario.lower())
-                .filter(Registro.fecha >= start, Registro.fecha < end)
-                .all())
+        if target_users is not None:
+            qry = qry.filter(func.lower(Registro.usuario_consultor).in_(target_users))
 
-        # agrupar por fecha
-        by_date = {}
-        for r in regs:
-            by_date.setdefault(r.fecha, 0.0)
-            by_date[r.fecha] += float(r.tiempo_invertido or 0)
+        qry = qry.group_by(func.lower(Registro.usuario_consultor), Registro.fecha)
 
-        for f, total in by_date.items():
+        rows = qry.all()
+
+        # ----------------------------------------------------------
+        # 4) Traer nombres/ids de consultores de una sola vez
+        # ----------------------------------------------------------
+        usuarios_en_rows = sorted({r.usuario for r in rows if r.usuario})
+        consultores = (
+            Consultor.query
+            .filter(func.lower(Consultor.usuario).in_(usuarios_en_rows))
+            .all()
+        )
+
+        map_cons = {c.usuario.strip().lower(): c for c in consultores}
+
+        # ----------------------------------------------------------
+        # 5) Respuesta final
+        # ----------------------------------------------------------
+        resumen = []
+        for r in rows:
+            c = map_cons.get((r.usuario or "").strip().lower())
+
+            total = float(r.total_horas or 0)
+            estado = "Al día" if total >= 8 else "Incompleto"
+
             resumen.append({
-                "consultor": c.nombre,
-                "consultor_id": c.id,
-                "fecha": f,
+                "consultor": c.nombre if c else (r.usuario or ""),
+                "consultor_id": c.id if c else None,
+                "usuario_consultor": (r.usuario or ""),
+                "fecha": r.fecha,  # queda como date o string, el front lo normaliza
                 "total_horas": round(total, 2),
-                "estado": "Al día" if total >= 8 else "Incompleto"
+                "estado": estado
             })
 
-    return jsonify(resumen), 200
+        return jsonify(resumen), 200
 
+    except Exception as e:
+        app.logger.exception("❌ Error en /resumen-horas")
+        return jsonify({"error": str(e)}), 500
 
 @bp.route('/eliminar-registro/<int:id>', methods=['DELETE'])
 @permission_required("REGISTROS_ELIMINAR")
