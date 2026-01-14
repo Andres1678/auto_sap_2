@@ -93,41 +93,61 @@ export default function Resumen({ userData }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     const run = async () => {
       const visiblesUsers = getVisibleUsernames(usuarioActual);
 
       // si no es supervisor, solo su propio consultor_id
       if (visiblesUsers.length === 1) {
-        setVisibleConsultorIds([Number(consultorActivoId)].filter(Boolean));
+        if (!cancelled) {
+          setVisibleConsultorIds([Number(consultorActivoId)].filter(Boolean));
+        }
         return;
       }
 
       try {
         // Trae datos de cada usuario para obtener su consultor_id
         const responses = await Promise.all(
-          visiblesUsers.map((u) =>
-            jfetch(`/consultores/datos?usuario=${encodeURIComponent(u)}`)
-              .then((r) => r.json().catch(() => ({})))
-              .catch(() => ({}))
-          )
+          visiblesUsers.map(async (u) => {
+            const r = await jfetch(
+              `/consultores/datos?usuario=${encodeURIComponent(u)}`,
+              {
+                method: "GET",
+                headers: {
+                  "X-User-Usuario": usuarioActual, // login del que está consultando
+                  "X-User-Rol": rol,               // rol real (ADMIN_BASIS, etc.)
+                },
+              }
+            );
+
+            const data = await r.json().catch(() => ({}));
+            return data;
+          })
         );
 
         const ids = responses
           .map((d) => Number(d?.consultor_id || d?.id || null))
           .filter((n) => Number.isFinite(n));
 
-        // fallback: añade el id del logueado si no vino
         const myId = Number(consultorActivoId);
         const finalIds = Array.from(new Set([myId, ...ids].filter(Boolean)));
 
-        setVisibleConsultorIds(finalIds);
+        if (!cancelled) setVisibleConsultorIds(finalIds);
       } catch (e) {
-        setVisibleConsultorIds([Number(consultorActivoId)].filter(Boolean));
+        if (!cancelled) {
+          setVisibleConsultorIds([Number(consultorActivoId)].filter(Boolean));
+        }
       }
     };
 
-    if (usuarioActual) run();
-  }, [usuarioActual, consultorActivoId]);
+    if (usuarioActual && rol) run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [usuarioActual, consultorActivoId, rol]);
+
 
   // Inicializa rol/usuario/consultor y primer fetch
   useEffect(() => {
@@ -141,11 +161,16 @@ export default function Resumen({ userData }) {
       userData?.rol?.toUpperCase?.() ||
       "USER";
 
-    const usuario =
+    const usuario = String(
       userData?.usuario ||
       userData?.user?.usuario ||
-      userData?.nombre ||
-      "";
+      ""
+    ).trim().toLowerCase();
+
+    if (!usuario) {
+      setError("No se detectó el usuario de sesión.");
+      return;
+    }
 
     const idConsultor =
       userData?.consultor_id ||
@@ -174,11 +199,15 @@ export default function Resumen({ userData }) {
     return () => clearInterval(id);
   }, [rol, usuarioActual, fetchResumen]);
 
-  const datosVisibles = useMemo(() => {
-    if (rol === "ADMIN") return resumen;
+  const isAdmin = useMemo(() => (
+    ["ADMIN", "ADMIN_BASIS", "ADMIN_FUNCIONAL"].includes(String(rol || "").toUpperCase())
+  ), [rol]);
 
+  const datosVisibles = useMemo(() => {
+    if (isAdmin) return resumen;
     return resumen.filter((r) => visibleConsultorIds.includes(Number(r.consultor_id)));
-  }, [rol, resumen, visibleConsultorIds]);
+  }, [isAdmin, resumen, visibleConsultorIds]);
+
 
 
   const CalendarioConsultor = ({ consultor }) => {
@@ -252,7 +281,9 @@ export default function Resumen({ userData }) {
       }
 
       const horas = Number(registro.total_horas || 0);
-      const estado = horas >= 8 ? "ok" : horas > 0 ? "warn" : "none";
+      const login = usuarioActual; // ya viene lower
+      const metaBase = EXCEPCION_8H_USERS.has(login) ? 8 : 9;
+      const estado = horas >= metaBase ? "ok" : horas > 0 ? "warn" : "none";
 
       return (
         <div

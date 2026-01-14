@@ -4,7 +4,7 @@ import Swal from 'sweetalert2';
 import './Registro.css';
 import { jfetch } from './lib/api';
 import Resumen from './Resumen';
-import { getVisibleUsernames } from "./lib/visibility";
+import getVisibleUsernames from "./lib/visibility";
 
 
 Modal.setAppElement('#root');
@@ -236,11 +236,20 @@ const Registro = ({ userData }) => {
   useEffect(() => { localStorage.setItem('filtroEquipo', filtroEquipo); }, [filtroEquipo]);
 
   const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
-  const rol = (userData?.rol ?? userData?.user?.rol);
+  const rol = String(
+    userData?.rol_ref?.nombre ??
+    userData?.rol ??
+    userData?.user?.rol ??
+    ''
+  ).toUpperCase();
   const nombreUser = (userData?.nombre ?? userData?.user?.nombre) || '';
   const moduloUser = (userData?.modulo ?? userData?.user?.modulo) || '';
   const equipoUser = (userData?.equipo ?? userData?.user?.equipo) || '';
-  const usuarioLogin = (userData?.usuario ?? userData?.user?.usuario) || '';
+  const usuarioLogin = String(
+    userData?.usuario ??
+    userData?.user?.usuario ??
+    ''
+  ).trim().toLowerCase();
   const visibleUsernames = useMemo(
     () => getVisibleUsernames(usuarioLogin),
     [usuarioLogin]
@@ -350,9 +359,17 @@ const Registro = ({ userData }) => {
   const fetchRegistros = useCallback(async () => {
     setError("");
     try {
-      const visibles = getVisibleUsernames(usuarioLogin).join(",");
+      const visibles = (visibleUsernames || []).join(",");
+
       const res = await jfetch(
-        `/registros?usuario=${encodeURIComponent(usuarioLogin)}&rol=${encodeURIComponent(rol)}&visibles=${encodeURIComponent(visibles)}`
+        `/registros?usuario=${encodeURIComponent(usuarioLogin)}&rol=${encodeURIComponent(rol)}&visibles=${encodeURIComponent(visibles)}`,
+        {
+          method: "GET",
+          headers: {
+            "X-User-Usuario": usuarioLogin,
+            "X-User-Rol": rol,
+          },
+        }
       );
 
       const data = await res.json().catch(() => []);
@@ -362,7 +379,8 @@ const Registro = ({ userData }) => {
       setRegistros([]);
       setError(String(e.message || e));
     }
-  }, [usuarioLogin, rol]);
+  }, [usuarioLogin, rol, visibleUsernames]);
+
 
 
   const fetchResumen = useCallback(async () => {
@@ -407,7 +425,7 @@ const Registro = ({ userData }) => {
     return [{ key:'', label:'Todos', count: total }, ...arr.map(([k,c])=>({ key:k, label:k, count:c }))];
   }, [registros]);
 
-  const obtenerOcupacionDeRegistro = (registro) => {
+  const obtenerOcupacionDeRegistro = useCallback((registro) => {
     if (registro?.ocupacion_codigo && registro?.ocupacion_nombre) {
       return `${registro.ocupacion_codigo} - ${registro.ocupacion_nombre}`;
     }
@@ -423,8 +441,7 @@ const Registro = ({ userData }) => {
     );
 
     return occ ? `${occ.codigo} - ${occ.nombre}` : "—";
-  };
-
+  }, [todasTareas, ocupaciones]);
 
   const registrosFiltrados = useMemo(() => {
     const base = Array.isArray(registros)
@@ -776,6 +793,7 @@ const Registro = ({ userData }) => {
     try {
       const resp = await jfetch(`/toggle-bloqueado/${id}`, {
         method: 'PUT',
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rol: isAdmin ? 'ADMIN' : (rol || '') })
       });
       if (!resp.ok) throw new Error((await resp.json().catch(()=>({})))?.mensaje || `HTTP ${resp.status}`);
