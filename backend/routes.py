@@ -26,34 +26,48 @@ _HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$", re.I)
 # Regla temporal SIN BD (server-side)
 VISIBILITY_MAP = {
     "johngaravito": ["johngaravito", "ramirezalep", "herreraea"],
-    # "otro_user": ["otro_user", "alguienmas"],
+    # "otro": ["otro", "alguien"],
 }
 
-def visible_users_for(usuario_login: str, rol: str) -> set[str]:
+def _is_admin_role(rol: str) -> bool:
+    return str(rol or "").strip().upper() == "ADMIN"
+
+def _visible_users_for(usuario_login: str, rol: str) -> set:
     u = (usuario_login or "").strip().lower()
     r = (rol or "").strip().upper()
 
-    # Admin ve todo
-    if r == "ADMIN":
-        return set(["*"])  # wildcard
+    if _is_admin_role(r):
+        return {"*"}  # wildcard
 
-    # Si no está mapeado, solo se ve a sí mismo
     visibles = VISIBILITY_MAP.get(u, [u])
-    return set([x.strip().lower() for x in visibles if x])
+    return {x.strip().lower() for x in visibles if x and str(x).strip()}
 
+def _parse_visibles() -> list:
+    """
+    Lee visibles desde:
+    - query param: ?visibles=a,b,c
+    - header opcional: X-User-Visibles: a,b,c
+    """
+    raw = (
+        request.args.get("visibles")
+        or request.headers.get("X-User-Visibles")
+        or ""
+    ).strip()
 
-def _parse_visibles():
-    # soporta visibles=a,b,c
-    raw = (request.args.get("visibles") or "").strip()
-    if raw:
-        return [u.strip().lower() for u in raw.split(",") if u.strip()]
+    if not raw:
+        return []
 
-    # soporta visibles[]=a&visibles[]=b
-    arr = request.args.getlist("visibles[]")
-    if arr:
-        return [u.strip().lower() for u in arr if u and u.strip()]
+    parts = [p.strip().lower() for p in raw.split(",")]
+    parts = [p for p in parts if p]
 
-    return []
+    # unique preservando orden
+    seen = set()
+    out = []
+    for p in parts:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
 
 def permission_required(codigo_permiso):
     def decorator(fn):
@@ -835,8 +849,20 @@ def registrar_hora():
 @bp.route('/registros', methods=['GET'])
 def obtener_registros():
     try:
-        usuario = (request.headers.get('X-User-Usuario') or "").strip().lower()
-        rol = (request.headers.get('X-User-Rol') or "").strip().upper()
+        # ----------------------------------------------------------
+        # 1) Usuario y rol: headers o query params
+        # ----------------------------------------------------------
+        usuario = (
+            request.headers.get('X-User-Usuario')
+            or request.args.get("usuario")
+            or ""
+        ).strip().lower()
+
+        rol = (
+            request.headers.get('X-User-Rol')
+            or request.args.get("rol")
+            or ""
+        ).strip().upper()
 
         if not usuario:
             return jsonify({'error': 'Usuario no enviado'}), 400
@@ -849,24 +875,32 @@ def obtener_registros():
             return jsonify({'error': 'Consultor no encontrado'}), 404
 
         # ----------------------------------------------------------
-        # ✅ Visibilidad calculada en BACKEND
+        # 2) Visibles (front) + Visibles (backend)
         # ----------------------------------------------------------
-        visibles = _visible_users_for(usuario, rol)
+        visibles_front = _parse_visibles()  # puede venir vacío
+        visibles_backend = _visible_users_for(usuario, rol)
 
-        # ----------------------------------------------------------
-        # ✅ Filtro opcional por usuario (dropdown del front)
-        # /registros?usuario=ramirezalep
-        # ----------------------------------------------------------
-        usuario_filtro = (request.args.get("usuario") or "").strip().lower()
-        if usuario_filtro:
-            if "*" not in visibles and usuario_filtro not in visibles:
-                return jsonify({'error': 'No autorizado para ver ese consultor'}), 403
-            target_users = [usuario_filtro]
+        # Si viene visibles_front, seguridad mínima:
+        # - usuario logueado debe estar incluido
+        if visibles_front and usuario not in visibles_front:
+            return jsonify({'error': 'Lista visibles inválida (no incluye usuario logueado)'}), 403
+
+        # - visibles_front NO puede ampliar permisos del backend (salvo ADMIN)
+        if visibles_front and "*" not in visibles_backend:
+            if not set(visibles_front).issubset(visibles_backend):
+                return jsonify({'error': 'Lista visibles no autorizada'}), 403
+
+        # target_users final
+        if _is_admin_role(rol):
+            target_users = None  # todos
         else:
-            target_users = None if "*" in visibles else list(visibles)
+            if visibles_front:
+                target_users = visibles_front
+            else:
+                target_users = list(visibles_backend)  # usualmente solo él mismo o su grupo
 
         # ----------------------------------------------------------
-        # Query
+        # 3) Query
         # ----------------------------------------------------------
         query = Registro.query.options(
             joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
@@ -880,21 +914,25 @@ def obtener_registros():
         registros = query.all()
 
         # ----------------------------------------------------------
-        # Response
+        # 4) Response
         # ----------------------------------------------------------
         data = []
         for r in registros:
             tarea = r.tarea
-            ocup = r.ocupacion or (tarea.ocupaciones[0] if tarea and tarea.ocupaciones else None)
+            # ocup puede venir directo o inferido desde tarea.ocupaciones
+            ocup = r.ocupacion
+            if not ocup and tarea and getattr(tarea, "ocupaciones", None):
+                if tarea.ocupaciones:
+                    ocup = tarea.ocupaciones[0]
 
-            tipoTarea_str = f"{tarea.codigo} - {tarea.nombre}" if tarea else r.tipo_tarea
+            tipoTarea_str = f"{tarea.codigo} - {tarea.nombre}" if tarea else (r.tipo_tarea or "")
 
             data.append({
                 'id': r.id,
                 'consultor_id': r.consultor.id if r.consultor else None,
                 'consultor': r.consultor.nombre if r.consultor else None,
 
-                # ✅ CLAVE para el front: dueño real del registro
+                # ✅ clave para permisos front
                 'usuario_consultor': (r.usuario_consultor or "").strip().lower(),
 
                 'fecha': r.fecha,
@@ -934,9 +972,9 @@ def obtener_registros():
         return jsonify(data), 200
 
     except Exception as e:
-        app.logger.exception("❌ Error en obtener_registros")
+        # Esto te deja el traceback en consola del backend (clave para el 500)
+        app.logger.exception("❌ Error en obtener_registros (/registros)")
         return jsonify({'error': str(e)}), 500
-
 
 @bp.route("/resumen-horas", methods=["GET"])
 def resumen_horas():
