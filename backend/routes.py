@@ -23,6 +23,25 @@ bp = Blueprint('routes', __name__, url_prefix="/api")
 
 _HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$", re.I)
 
+# Regla temporal SIN BD (server-side)
+VISIBILITY_MAP = {
+    "johngaravito": ["johngaravito", "ramirezalep", "herreraea"],
+    # "otro_user": ["otro_user", "alguienmas"],
+}
+
+def visible_users_for(usuario_login: str, rol: str) -> set[str]:
+    u = (usuario_login or "").strip().lower()
+    r = (rol or "").strip().upper()
+
+    # Admin ve todo
+    if r == "ADMIN":
+        return set(["*"])  # wildcard
+
+    # Si no está mapeado, solo se ve a sí mismo
+    visibles = VISIBILITY_MAP.get(u, [u])
+    return set([x.strip().lower() for x in visibles if x])
+
+
 def _parse_visibles():
     # soporta visibles=a,b,c
     raw = (request.args.get("visibles") or "").strip()
@@ -822,30 +841,47 @@ def obtener_registros():
         if not usuario:
             return jsonify({'error': 'Usuario no enviado'}), 400
 
-        consultor = Consultor.query.filter(func.lower(Consultor.usuario) == usuario).first()
+        consultor = Consultor.query.filter(
+            func.lower(Consultor.usuario) == usuario
+        ).first()
+
         if not consultor:
             return jsonify({'error': 'Consultor no encontrado'}), 404
 
-        visibles = _parse_visibles()
+        # ----------------------------------------------------------
+        # ✅ Visibilidad calculada en BACKEND
+        # ----------------------------------------------------------
+        visibles = _visible_users_for(usuario, rol)
 
-        # seguridad mínima: si visibles viene, el usuario logueado debe estar incluido
-        if visibles and usuario not in visibles:
-            return jsonify({'error': 'Lista visibles inválida'}), 403
+        # ----------------------------------------------------------
+        # ✅ Filtro opcional por usuario (dropdown del front)
+        # /registros?usuario=ramirezalep
+        # ----------------------------------------------------------
+        usuario_filtro = (request.args.get("usuario") or "").strip().lower()
+        if usuario_filtro:
+            if "*" not in visibles and usuario_filtro not in visibles:
+                return jsonify({'error': 'No autorizado para ver ese consultor'}), 403
+            target_users = [usuario_filtro]
+        else:
+            target_users = None if "*" in visibles else list(visibles)
 
+        # ----------------------------------------------------------
+        # Query
+        # ----------------------------------------------------------
         query = Registro.query.options(
             joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
             joinedload(Registro.tarea).joinedload(Tarea.ocupaciones),
             joinedload(Registro.ocupacion)
         )
 
-        if rol == "ADMIN":
-            registros = query.all()
-        else:
-            if visibles:
-                registros = query.filter(func.lower(Registro.usuario_consultor).in_(visibles)).all()
-            else:
-                registros = query.filter(func.lower(Registro.usuario_consultor) == usuario).all()
+        if target_users is not None:
+            query = query.filter(func.lower(Registro.usuario_consultor).in_(target_users))
 
+        registros = query.all()
+
+        # ----------------------------------------------------------
+        # Response
+        # ----------------------------------------------------------
         data = []
         for r in registros:
             tarea = r.tarea
@@ -858,15 +894,17 @@ def obtener_registros():
                 'consultor_id': r.consultor.id if r.consultor else None,
                 'consultor': r.consultor.nombre if r.consultor else None,
 
-                # ✅ CLAVE para el front: quién es el dueño real del registro
+                # ✅ CLAVE para el front: dueño real del registro
                 'usuario_consultor': (r.usuario_consultor or "").strip().lower(),
 
                 'fecha': r.fecha,
                 'cliente': r.cliente,
                 'modulo': r.modulo,
-                'equipo': (r.consultor.equipo_obj.nombre
-                           if r.consultor and r.consultor.equipo_obj
-                           else "SIN EQUIPO"),
+                'equipo': (
+                    r.consultor.equipo_obj.nombre
+                    if r.consultor and r.consultor.equipo_obj
+                    else "SIN EQUIPO"
+                ),
 
                 'nroCasoCliente': r.nro_caso_cliente,
                 'nroCasoInterno': r.nro_caso_interno,
@@ -902,49 +940,54 @@ def obtener_registros():
 
 @bp.route("/resumen-horas", methods=["GET"])
 def resumen_horas():
-    from flask import request, jsonify
+    rol = (request.headers.get("X-User-Rol") or "").upper().strip()
+    usuario = (request.headers.get("X-User-Usuario") or "").strip().lower()
 
-    rol = request.headers.get("X-User-Rol", "").upper().strip()
-    usuario = request.headers.get("X-User-Usuario", "").strip()
+    year = int(request.args.get("year", datetime.utcnow().year))
+    month = int(request.args.get("month", datetime.utcnow().month))
+    usuario_filtro = (request.args.get("usuario") or "").strip().lower()
+
+    visibles = visible_users_for(usuario, rol)
+
+    # determinar consultores objetivo
+    if usuario_filtro:
+        if "*" not in visibles and usuario_filtro not in visibles:
+            return jsonify([]), 403
+        consultores = Consultor.query.filter(func.lower(Consultor.usuario) == usuario_filtro).all()
+    else:
+        if "*" in visibles:
+            consultores = Consultor.query.all()
+        else:
+            consultores = Consultor.query.filter(func.lower(Consultor.usuario).in_(list(visibles))).all()
+
+    # rango mes
+    start = datetime(year, month, 1).date()
+    end = (datetime(year + (month == 12), (month % 12) + 1, 1).date())
 
     resumen = []
+    for c in consultores:
+        regs = (Registro.query
+                .filter(func.lower(Registro.usuario_consultor) == c.usuario.lower())
+                .filter(Registro.fecha >= start, Registro.fecha < end)
+                .all())
 
-    # ADMIN ve todos los consultores
-    if rol == "ADMIN":
-        consultores = Consultor.query.all()
+        # agrupar por fecha
+        by_date = {}
+        for r in regs:
+            by_date.setdefault(r.fecha, 0.0)
+            by_date[r.fecha] += float(r.tiempo_invertido or 0)
 
-    else:
-        # Consultor normal → solo su usuario
-        consultor = Consultor.query.filter_by(usuario=usuario).first()
-
-        if not consultor:
-            print(f"⚠️ No se encontró consultor con usuario={usuario}")
-            return jsonify([])
-
-        consultores = [consultor]
-
-    # Construcción del resumen
-    for consultor in consultores:
-        fechas_unicas = {r.fecha for r in consultor.registros}
-
-        for fecha in fechas_unicas:
-            registros_fecha = [
-                r for r in consultor.registros if r.fecha == fecha
-            ]
-            total_horas = sum(r.tiempo_invertido or 0 for r in registros_fecha)
-
-            estado = "Al día" if total_horas >= 8 else "Incompleto"
-
+        for f, total in by_date.items():
             resumen.append({
-                "consultor": consultor.nombre,
-                "consultor_id": consultor.id,  
-                "fecha": fecha,
-                "total_horas": round(total_horas, 2),
-                "estado": estado
+                "consultor": c.nombre,
+                "consultor_id": c.id,
+                "fecha": f,
+                "total_horas": round(total, 2),
+                "estado": "Al día" if total >= 8 else "Incompleto"
             })
 
+    return jsonify(resumen), 200
 
-    return jsonify(resumen)
 
 @bp.route('/eliminar-registro/<int:id>', methods=['DELETE'])
 @permission_required("REGISTROS_ELIMINAR")
@@ -2566,3 +2609,24 @@ def commit_import_excel():
         "mensaje": "Registros insertados",
         "total": len(objs)
     })
+
+#   CONSULTORS VISIBLES"
+@bp.route("/consultores/visibles", methods=["GET"])
+def consultores_visibles():
+    usuario = (request.headers.get("X-User-Usuario") or "").strip().lower()
+    rol = (request.headers.get("X-User-Rol") or "").strip().upper()
+
+    visibles = visible_users_for(usuario, rol)
+
+    if "*" in visibles:
+        cons = Consultor.query.order_by(Consultor.nombre.asc()).all()
+    else:
+        cons = (Consultor.query
+                .filter(func.lower(Consultor.usuario).in_(list(visibles)))
+                .order_by(Consultor.nombre.asc())
+                .all())
+
+    return jsonify([
+        {"id": c.id, "usuario": c.usuario, "nombre": c.nombre}
+        for c in cons
+    ]), 200
