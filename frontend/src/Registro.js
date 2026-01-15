@@ -4,7 +4,6 @@ import Swal from 'sweetalert2';
 import './Registro.css';
 import { jfetch } from './lib/api';
 import Resumen from './Resumen';
-import { getVisibleUsernames} from "./lib/visibility";
 
 
 Modal.setAppElement('#root');
@@ -216,7 +215,6 @@ function isInvalidCaseNumber(nro){
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros]   = useState([]);
-  const [resumen, setResumen]       = useState([]);
   const [error, setError]           = useState('');
   const excelInputRef = useRef(null);
 
@@ -251,11 +249,6 @@ const Registro = ({ userData }) => {
     ''
   ).trim().toLowerCase();
   console.log("usuarioLogin:", usuarioLogin);
-  console.log("visibles:", getVisibleUsernames(usuarioLogin));
-  const visibleUsernames = useMemo(
-    () => getVisibleUsernames(usuarioLogin),
-    [usuarioLogin]
-  );
 
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
@@ -361,18 +354,20 @@ const Registro = ({ userData }) => {
   const fetchRegistros = useCallback(async () => {
     setError("");
     try {
-      const visibles = (visibleUsernames || []).join(",");
+      const params = new URLSearchParams();
+      params.set("usuario", usuarioLogin);
+      
+      if (filtroEquipo) params.set("equipo", String(filtroEquipo).trim().toUpperCase());
+      
+      const url = `/registros?${params.toString()}`;
 
-      const res = await jfetch(
-        `/registros?usuario=${encodeURIComponent(usuarioLogin)}&rol=${encodeURIComponent(rol)}&visibles=${encodeURIComponent(visibles)}`,
-        {
-          method: "GET",
-          headers: {
-            "X-User-Usuario": usuarioLogin,
-            "X-User-Rol": rol,
-          },
-        }
-      );
+      const res = await jfetch(url, {
+        method: "GET",
+        headers: {
+          "X-User-Usuario": usuarioLogin,
+          "X-User-Rol": rol,
+        },
+      });
 
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
@@ -381,34 +376,20 @@ const Registro = ({ userData }) => {
       setRegistros([]);
       setError(String(e.message || e));
     }
-  }, [usuarioLogin, rol, visibleUsernames]);
-
-
-
-  const fetchResumen = useCallback(async () => {
-    if (!isAdmin) { setResumen([]); return; }
-    setError('');
-    try {
-      const res = await jfetch('/resumen-horas', {
-        headers: { 'X-User-Rol': 'ADMIN' }
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
-      setResumen(asArray(data));
-    } catch (e) {
-      setResumen([]);
-      setError(String(e.message || e));
-    }
-  }, [isAdmin]);
+  }, [usuarioLogin, rol, filtroEquipo]);
 
   useEffect(() => {
     const hasId = (userData && (userData.id || userData?.user?.id));
     if (hasId) {
       fetchRegistros();
-      fetchResumen();
       refreshModulos();
     }
-  }, [userData, fetchRegistros, fetchResumen, refreshModulos]);
+  }, [userData, fetchRegistros, refreshModulos]);
+
+  useEffect(() => {
+    if (!usuarioLogin) return;
+    fetchRegistros();
+  }, [filtroEquipo, usuarioLogin, fetchRegistros]);
 
   const consultoresUnicos = useMemo(() =>
     Array.isArray(registros)
@@ -446,9 +427,7 @@ const Registro = ({ userData }) => {
   }, [todasTareas, ocupaciones]);
 
   const registrosFiltrados = useMemo(() => {
-    const base = Array.isArray(registros)
-      ? registros
-      : [];
+    const base = Array.isArray(registros) ? registros : [];
 
     const rows = base.filter((r) => (
       (!filtroEquipo || equipoOf(r) === filtroEquipo) &&
@@ -461,30 +440,11 @@ const Registro = ({ userData }) => {
       (!filtroHorasAdic || normSiNo(r.horasAdicionales) === filtroHorasAdic)
     ));
 
-    const visibles = isAdmin
-      ? rows
-      : rows.filter((r) => {
-          // intenta detectar username en la fila (según como lo devuelva tu API)
-          const rowUser = String(
-            r.usuario || r.usuario_consultor || r.username || ""
-          ).trim().toLowerCase();
-
-          if (rowUser) return visibleUsernames.includes(rowUser);
-
-          // fallback por nombre (por si tu API no trae username)
-          const rowName = String(r.consultor || "").trim().toLowerCase();
-          const myName = String(nombreUser || "").trim().toLowerCase();
-
-          // johngaravito verá más solo si backend le devolvió filas con esos nombres,
-          // o si tú manejas equivalencias por nombre.
-          return rowName === myName;
-        });
-
-    return visibles.slice().sort((a, b) => {
-      const da = new Date(a.fecha || '1970-01-01');
-      const db = new Date(b.fecha || '1970-01-01');
+    return rows.slice().sort((a, b) => {
+      const da = new Date(a.fecha || "1970-01-01");
+      const db = new Date(b.fecha || "1970-01-01");
       if (da.getTime() !== db.getTime()) return da - db;
-      return String(a.id || 0) - String(b.id || 0);
+      return String(a.id || 0).localeCompare(String(b.id || 0));
     });
   }, [
     registros,
@@ -496,9 +456,9 @@ const Registro = ({ userData }) => {
     filtroConsultor,
     filtroNroCasoCli,
     filtroHorasAdic,
-    isAdmin,
-    nombreUser
+    obtenerOcupacionDeRegistro
   ]);
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -755,7 +715,7 @@ const Registro = ({ userData }) => {
       }
       Swal.fire({ icon:'success', title:'Eliminado' });
       fetchRegistros();
-      if (isAdmin) fetchResumen();
+      window.dispatchEvent(new Event("resumen-actualizar"));
     }
   };
 
@@ -901,9 +861,6 @@ const Registro = ({ userData }) => {
         text: `Registros cargados: ${data?.total_registros ?? "N/D"}`
       });
 
-      fetchRegistros();
-      if (isAdmin) fetchResumen();
-
     } catch (e) {
       Swal.fire({
         icon: "error",
@@ -1017,7 +974,8 @@ const Registro = ({ userData }) => {
               <button
                 key={opt.key || "ALL"}
                 className={`team-btn ${filtroEquipo === opt.key ? "is-active" : ""}`}
-                onClick={() => setFiltroEquipo(opt.key)}
+                onClick={() => setFiltroEquipo(String(opt.key).trim().toUpperCase())}
+
               >
                 {opt.label}
                 <span className="chip">{opt.count}</span>
@@ -1079,7 +1037,7 @@ const Registro = ({ userData }) => {
           {isAdmin ? (
             <select
               value={filtroEquipo}
-              onChange={(e) => setFiltroEquipo(e.target.value)}
+              onChange={(e) => setFiltroEquipo(String(e.target.value).trim().toUpperCase())}
             >
               <option value="">Todos los equipos</option>
               {equiposDisponibles.map((eq) => (
