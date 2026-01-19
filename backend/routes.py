@@ -1615,6 +1615,7 @@ def get_datos_consultor():
 
 # ========== OPORTUNIDADES ==========
 def _get_list_arg(key: str):
+    # soporta ?key=a&key=b y ?key[]=a&key[]=b
     vals = request.args.getlist(key)
     if not vals:
         vals = request.args.getlist(f"{key}[]")
@@ -1638,8 +1639,8 @@ def _apply_oportunidades_filters(query):
     ultimo_mes  = _get_list_arg("ultimo_mes")
     calif       = _get_list_arg("calificacion_oportunidad")
 
-    fecha_acta_cierre_ot      = _get_list_arg("fecha_acta_cierre_ot")      # YYYY-MM-DD
-    fecha_cierre_oportunidad  = _get_list_arg("fecha_cierre_oportunidad")  # YYYY-MM-DD
+    fecha_acta_cierre_ot      = _get_list_arg("fecha_acta_cierre_ot")
+    fecha_cierre_oportunidad  = _get_list_arg("fecha_cierre_oportunidad")
 
     if q:
         like = f"%{q}%"
@@ -1694,11 +1695,7 @@ def _apply_oportunidades_filters(query):
     if tipos:
         ESTADOS_ACTIVOS = {
             "EN PROCESO",
-            "REGISTRO",
-            "PROSPECCION",
             "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
-            "PENDIENTE APROBACION SAP",
-            "PENDIENTE APROBACIÓN SAP",
             "EN ELABORACION",
             "ENTREGA COMERCIAL",
         }
@@ -1714,8 +1711,8 @@ def _apply_oportunidades_filters(query):
             "SUSPENDIDO",
         }
 
+        tipos_up = {t.upper().strip() for t in tipos}
         conds = []
-        tipos_up = {t.upper() for t in tipos}
 
         if "GANADA" in tipos_up:
             conds.append(func.upper(Oportunidad.estado_oferta) == "GANADA")
@@ -1723,7 +1720,7 @@ def _apply_oportunidades_filters(query):
         if "ACTIVA" in tipos_up:
             conds.append(func.upper(Oportunidad.estado_oferta).in_([s.upper() for s in ESTADOS_ACTIVOS]))
 
-        if "CERRADA" in tipos_up:
+        if "CERRADA" in tipos_up or "CERRADO" in tipos_up:
             conds.append(func.upper(Oportunidad.estado_oferta).in_([s.upper() for s in ESTADOS_CERRADOS]))
 
         if conds:
@@ -1741,13 +1738,22 @@ def importar_oportunidades():
     if Oportunidad.query.count() > 0:
         return jsonify({'mensaje': 'La carga inicial ya fue realizada'}), 400
 
-    df = pd.read_excel(BytesIO(file.read()))
-    df.columns = [str(c).strip().upper() for c in df.columns]
+    # leer excel
+    df = pd.read_excel(BytesIO(file.read()), dtype=str)
+
+    # normalizar columnas: upper + quitar dobles espacios
+    def norm_col(c):
+        c = str(c).strip().upper()
+        c = re.sub(r"\s+", " ", c)
+        return c
+
+    df.columns = [norm_col(c) for c in df.columns]
 
     colmap = {
         "NOMBRE CLIENTE": "nombre_cliente",
         "SERVICIO": "servicio",
-        "FECHA CREACIÓN": "fecha_creacion",
+        "FECHA DE ASIGNACION": "fecha_creacion",  # 👈 OJO: tu excel trae este nombre
+        "FECHA CREACIÓN": "fecha_creacion",       # por si vienen ambos
         "TIPO CLIENTE": "tipo_cliente",
         "TIPO DE SOLICITUD": "tipo_solicitud",
         "CASO SM": "caso_sm",
@@ -1800,40 +1806,67 @@ def importar_oportunidades():
         "PUBLICACIÓN SHAREPOINT": "publicacion_sharepoint",
     }
 
+    DATE_FIELDS = {
+        "fecha_creacion", "fecha_cierre_sm", "fecha_entrega_oferta_final",
+        "vigencia_propuesta", "fecha_aceptacion_oferta", "fecha_cierre_oportunidad",
+        "fecha_firma_aos", "fecha_compromiso", "fecha_cierre", "fecha_acta_cierre_ot"
+    }
+
+    INT_FIELDS = {"otc", "mrc", "mrc_normalizado", "valor_oferta_claro"}
+
     def parse_date(val):
-        if pd.isna(val) or val == "":
+        if val is None:
+            return None
+        s = str(val).strip()
+        if s == "" or s.lower() in ("nan", "none", "null"):
             return None
         try:
-            return pd.to_datetime(val).date()
-        except:
+            # dayfirst True para 15/01/2026
+            d = pd.to_datetime(s, errors="coerce", dayfirst=True)
+            return None if pd.isna(d) else d.date()
+        except Exception:
             return None
 
     def parse_int(val):
-        if pd.isna(val) or val == "":
+        if val is None:
+            return None
+        s = str(val).strip()
+        if s == "" or s.lower() in ("nan", "none", "null"):
+            return None
+        # quitar $, espacios, puntos, comas
+        s = re.sub(r"[^\d\-]", "", s)
+        if s == "":
             return None
         try:
-            return int(str(val).replace('.', '').replace(',', '').strip())
-        except:
+            return int(s)
+        except Exception:
             return None
+
+    def parse_str(val):
+        if val is None:
+            return None
+        s = str(val).strip()
+        if s == "" or s.lower() in ("nan", "none", "null"):
+            return None
+        return s
 
     data_list = []
     for _, row in df.iterrows():
         obj = {}
-        for k, v in colmap.items():
-            if k in df.columns:
-                value = row[k]
-                if v in [
-                    "fecha_creacion", "fecha_cierre_sm", "fecha_entrega_oferta_final",
-                    "vigencia_propuesta", "fecha_aceptacion_oferta", "fecha_cierre_oportunidad",
-                    "fecha_firma_aos", "proyeccion_ingreso", "fecha_compromiso",
-                    "fecha_cierre", "fecha_acta_cierre_ot"
-                ]:
-                    obj[v] = parse_date(value)
-                elif v in ["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"]:
-                    obj[v] = parse_int(value)
-                else:
-                    obj[v] = str(value).strip() if not pd.isna(value) else None
 
+        # mapear solo columnas presentes
+        for col_excel, field in colmap.items():
+            if col_excel in df.columns:
+                raw = row.get(col_excel)
+
+                if field in DATE_FIELDS:
+                    obj[field] = parse_date(raw)
+                elif field in INT_FIELDS:
+                    obj[field] = parse_int(raw)
+                else:
+                    obj[field] = parse_str(raw)
+
+        # semestre calculado
         fecha = obj.get("fecha_creacion")
         if fecha:
             mes = fecha.month
@@ -1860,16 +1893,14 @@ def oportunidades_filters():
     base = _apply_oportunidades_filters(base)
 
     anios = (
-        db.session.query(extract("year", Oportunidad.fecha_creacion).label("y"))
-        .select_from(Oportunidad)
+        base.with_entities(extract("year", Oportunidad.fecha_creacion).label("y"))
         .filter(Oportunidad.fecha_creacion.isnot(None))
         .distinct()
         .order_by("y")
         .all()
     )
     meses = (
-        db.session.query(extract("month", Oportunidad.fecha_creacion).label("m"))
-        .select_from(Oportunidad)
+        base.with_entities(extract("month", Oportunidad.fecha_creacion).label("m"))
         .filter(Oportunidad.fecha_creacion.isnot(None))
         .distinct()
         .order_by("m")
@@ -1918,15 +1949,14 @@ def oportunidades_filters():
         "tipos": ["GANADA", "ACTIVA", "CERRADA"],
     }), 200
 
-
 @bp.route('/oportunidades', methods=['GET'])
 @permission_required("OPORTUNIDADES_CREAR")
 def listar_oportunidades():
     query = Oportunidad.query
     query = _apply_oportunidades_filters(query)
+    query = query.order_by(Oportunidad.id.desc())
     data = [o.to_dict() for o in query.limit(2000).all()]
     return jsonify(data), 200
-
 
 @bp.route('/oportunidades', methods=['POST'])
 def crear_oportunidad():

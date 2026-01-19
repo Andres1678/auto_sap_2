@@ -2,9 +2,7 @@
 // Detectar origen actual (funciona en dev y prod)
 // ============================================================
 const origin =
-  typeof window !== "undefined" && window.location
-    ? window.location.origin
-    : "";
+  typeof window !== "undefined" && window.location ? window.location.origin : "";
 
 // ============================================================
 // URL base de la API — automática según entorno
@@ -46,42 +44,42 @@ function buildUrl(path) {
 }
 
 // ============================================================
-// FETCH PRINCIPAL — jfetch (JSON + FormData)
+// FETCH PRINCIPAL — jfetch (soporta JSON y FormData)
 // ============================================================
 export function jfetch(path, options = {}) {
   const url = buildUrl(path);
 
-  const body = options.body;
-
   const isFormData =
-    typeof FormData !== "undefined" && body instanceof FormData;
+    typeof FormData !== "undefined" && options.body instanceof FormData;
 
-  // 👇 OJO: si es FormData, NO seteamos Content-Type.
-  // El navegador lo pone con boundary automáticamente.
+  // headers base
   const headers = {
     Accept: "application/json",
-    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(options.headers || {}),
     ...getUserHeaders(),
   };
 
-  let finalBody = body;
+  // Si NO es FormData, mandamos JSON (Content-Type + stringify)
+  let body = options.body;
 
-  // Si NO es FormData y el body es un objeto, lo pasamos a JSON
-  if (!isFormData && finalBody && typeof finalBody !== "string") {
-    finalBody = JSON.stringify(finalBody);
+  if (!isFormData) {
+    headers["Content-Type"] = headers["Content-Type"] || "application/json";
+
+    if (body && typeof body !== "string") {
+      body = JSON.stringify(body);
+    }
+  } else {
+    // FormData: NO setear Content-Type (el browser pone boundary)
+    if (headers["Content-Type"]) delete headers["Content-Type"];
   }
 
   return fetch(url, {
     ...options,
     headers,
-    body: finalBody,
+    body,
   });
 }
 
-// ============================================================
-// Helpers GET y POST
-// ============================================================
 export function jget(path, options = {}) {
   return jfetch(path, { method: "GET", ...options });
 }

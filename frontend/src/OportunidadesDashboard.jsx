@@ -56,7 +56,7 @@ function valuesOf(sel) {
 
 function toQuery(f) {
   const p = new URLSearchParams();
-  const add = (k, arr) => (arr || []).forEach((v) => p.append(k, v));
+  const add = (k, arr) => (arr || []).forEach((v) => p.append(`${k}[]`, v));
 
   add("anio", valuesOf(f.anios));
   add("mes", valuesOf(f.meses));
@@ -79,6 +79,7 @@ function toQuery(f) {
   const qs = p.toString();
   return qs ? `?${qs}` : "";
 }
+
 
 function useDebouncedValue(value, delay = 350) {
   const [debounced, setDebounced] = useState(value);
