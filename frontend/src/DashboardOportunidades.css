@@ -490,3 +490,33 @@
   border-radius: 999px;
   border: 2px solid rgba(243,244,246,.65);
 }
+
+.rs-check{
+  width:16px;
+  height:16px;
+  border:2px solid var(--border);
+  border-radius:4px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:900;
+  font-size:12px;
+  line-height:1;
+  color:#fff;
+  background:#fff;
+  flex:0 0 auto;
+}
+
+.rs-check.is-on{
+  background: var(--btn-blue);
+  border-color: var(--btn-blue);
+}
+
+.rs-check.is-disabled{
+  opacity:.55;
+}
+
+.rs-label{
+  font-weight:800;
+  font-size:13px;
+}

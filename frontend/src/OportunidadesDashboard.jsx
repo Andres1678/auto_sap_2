@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
-import Select from "react-select";
+import Select, { components } from "react-select";
 import GraficoCantidadGanadas from "./GraficoCantidadGanadas";
 import GraficoActivasCerradas from "./GraficoActivasCerradas";
 import ResumenCalificacion from "./ResumenCalificacion";
@@ -23,6 +23,7 @@ const rsStyles = {
   placeholder: (base) => ({ ...base, color: "#64748b", fontWeight: 700 }),
   menuPortal: (base) => ({ ...base, zIndex: 9999 }),
   menu: (base) => ({ ...base, zIndex: 9999 }),
+  option: (base) => ({ ...base, display: "flex", alignItems: "center", gap: 10 }),
 };
 
 const ESTADOS_ACTIVOS = new Set([
@@ -80,7 +81,6 @@ function toQuery(f) {
   return qs ? `?${qs}` : "";
 }
 
-
 function useDebouncedValue(value, delay = 350) {
   const [debounced, setDebounced] = useState(value);
 
@@ -93,6 +93,20 @@ function useDebouncedValue(value, delay = 350) {
 }
 
 const portalTarget = typeof document !== "undefined" ? document.body : null;
+
+function CheckboxOption(props) {
+  const selected = props.isSelected;
+  const disabled = props.isDisabled;
+
+  return (
+    <components.Option {...props}>
+      <span className={`rs-check ${selected ? "is-on" : ""} ${disabled ? "is-disabled" : ""}`}>
+        {selected ? "✓" : ""}
+      </span>
+      <span className="rs-label">{props.label}</span>
+    </components.Option>
+  );
+}
 
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
@@ -178,7 +192,6 @@ export default function DashboardOportunidades() {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
-    
   }, []);
 
   useEffect(() => {
@@ -188,7 +201,6 @@ export default function DashboardOportunidades() {
         await fetchData(filtrosDebounced);
       } catch (e) {}
     })();
-    
   }, [filtrosDebounced]);
 
   const kpis = useMemo(() => {
@@ -257,6 +269,8 @@ export default function DashboardOportunidades() {
     menuPortalTarget: portalTarget,
     getOptionValue: (o) => String(o.value),
     getOptionLabel: (o) => String(o.label),
+    components: { Option: CheckboxOption },
+    classNamePrefix: "rs",
   };
 
   return (
