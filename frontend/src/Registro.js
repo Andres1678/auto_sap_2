@@ -387,7 +387,7 @@ const Registro = ({ userData }) => {
     try {
       const params = new URLSearchParams();
       params.set("usuario", usuarioLogin);
-      if (filtroEquipo) params.set("equipo", filtroEquipo);
+      if (filtroEquipo) params.set("equipo", filtroEquipo); 
 
       const url = `/registros?${params.toString()}`;
 
@@ -410,6 +410,7 @@ const Registro = ({ userData }) => {
       setError(String(e.message || e));
     }
   }, [usuarioLogin, rol, filtroEquipo]);
+
 
   useEffect(() => {
       const set = new Set((registros || []).map(r => equipoOf(r)));
