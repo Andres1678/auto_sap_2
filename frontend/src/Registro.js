@@ -86,8 +86,19 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   return (fueraInicio || fueraFin) ? 'Sí' : 'No';
 };
 
-const equipoOf = (r, fallback = 'SIN EQUIPO') =>
-  (String((r?.equipo ?? r?.EQUIPO) || '').trim().toUpperCase() || fallback);
+const normKey = (v) =>
+  String(v ?? '')
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '');
+
+
+const equipoOf = (r, fallback = 'SIN EQUIPO') => {
+  const raw = (r?.equipo ?? r?.EQUIPO ?? r?.equipo_nombre ?? r?.equipoName ?? '');
+  const n = normKey(raw);
+  return n || fallback;
+};
 
 function buildLocalResumen(registros, nombre, usuarioLogin) {
   if (!Array.isArray(registros)) return [];
@@ -239,9 +250,12 @@ const Registro = ({ userData }) => {
   const [filtroAnio, setFiltroAnio] = useState(""); 
 
 
-  const initialEquipo = () => (localStorage.getItem('filtroEquipo') || '');
+  const initialEquipo = () => normKey(localStorage.getItem('filtroEquipo') || '');
   const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
-  useEffect(() => { localStorage.setItem('filtroEquipo', filtroEquipo); }, [filtroEquipo]);
+
+  useEffect(() => {
+    localStorage.setItem('filtroEquipo', filtroEquipo);
+  }, [filtroEquipo]);
 
   const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
   const rol = String(
@@ -373,7 +387,7 @@ const Registro = ({ userData }) => {
     try {
       const params = new URLSearchParams();
       params.set("usuario", usuarioLogin);
-      if (filtroEquipo) params.set("equipo", String(filtroEquipo).trim().toUpperCase());
+      if (filtroEquipo) params.set("equipo", filtroEquipo);
 
       const url = `/registros?${params.toString()}`;
 
@@ -397,6 +411,11 @@ const Registro = ({ userData }) => {
     }
   }, [usuarioLogin, rol, filtroEquipo]);
 
+  useEffect(() => {
+      const set = new Set((registros || []).map(r => equipoOf(r)));
+      console.log("EQUIPOS EN REGISTROS:", Array.from(set));
+      console.log("FILTRO EQUIPO:", filtroEquipo);
+    }, [registros, filtroEquipo]);
 
   useEffect(() => {
     const hasId = (userData && (userData.id || userData?.user?.id));
@@ -464,7 +483,7 @@ const Registro = ({ userData }) => {
 
     // 1) Filtrar
     const rows = base.filter((r) => {
-      if (filtroEquipo && equipoOf(r) !== filtroEquipo) return false;
+      if (filtroEquipo && equipoOf(r) !== normKey(filtroEquipo)) return false;
       if (filtroFecha && r.fecha !== filtroFecha) return false;
       if (filtroCliente && r.cliente !== filtroCliente) return false;
       if (filtroOcupacion && obtenerOcupacionDeRegistro(r) !== filtroOcupacion) return false;
@@ -877,8 +896,8 @@ const Registro = ({ userData }) => {
     if (!userData) return;
     if (!isAdmin) {
       setFiltroConsultor(nombreUser);
-      setFiltroEquipo(equipoUser);
-    } else {
+      setFiltroEquipo(normKey(equipoUser));
+    }else {
       setFiltroConsultor('');
       setFiltroEquipo('');
     }
@@ -1070,7 +1089,7 @@ const Registro = ({ userData }) => {
               <button
                 key={opt.key || "ALL"}
                 className={`team-btn ${filtroEquipo === opt.key ? "is-active" : ""}`}
-                onClick={() => setFiltroEquipo(String(opt.key).trim().toUpperCase())}
+                onClick={() => setFiltroEquipo(normKey(opt.key))}
 
               >
                 {opt.label}
@@ -1133,7 +1152,7 @@ const Registro = ({ userData }) => {
           {isAdmin ? (
             <select
               value={filtroEquipo}
-              onChange={(e) => setFiltroEquipo(String(e.target.value).trim().toUpperCase())}
+              onChange={(e) => setFiltroEquipo(normKey(e.target.value))}
             >
               <option value="">Todos los equipos</option>
               {equiposDisponibles.map((eq) => (
