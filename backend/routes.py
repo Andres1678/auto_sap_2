@@ -894,8 +894,13 @@ def obtener_registros():
        
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
         if equipo_filter:
-            
-            query = query.filter(func.upper(func.coalesce(Registro.equipo, "")) == equipo_filter)
+            query = query.join(
+                Consultor,
+                func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
+            ).join(
+                Equipo,
+                Consultor.equipo_id == Equipo.id
+            ).filter(func.upper(Equipo.nombre) == equipo_filter)
 
        
 
