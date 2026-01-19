@@ -38,38 +38,44 @@ function isAbsoluteUrl(url) {
 // ============================================================
 function buildUrl(path) {
   if (!path) return API_URL;
-
   if (isAbsoluteUrl(path)) return path;
 
   const base = API_URL.replace(/\/$/, "");
   const p = path.startsWith("/") ? path : `/${path}`;
-
   return base + p;
 }
 
 // ============================================================
-// FETCH PRINCIPAL — jfetch
+// FETCH PRINCIPAL — jfetch (JSON + FormData)
 // ============================================================
 export function jfetch(path, options = {}) {
   const url = buildUrl(path);
 
+  const body = options.body;
+
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
+
+  // 👇 OJO: si es FormData, NO seteamos Content-Type.
+  // El navegador lo pone con boundary automáticamente.
   const headers = {
-    "Content-Type": "application/json",
     Accept: "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(options.headers || {}),
     ...getUserHeaders(),
   };
 
-  let body = options.body;
+  let finalBody = body;
 
-  if (body && typeof body !== "string") {
-    body = JSON.stringify(body);
+  // Si NO es FormData y el body es un objeto, lo pasamos a JSON
+  if (!isFormData && finalBody && typeof finalBody !== "string") {
+    finalBody = JSON.stringify(finalBody);
   }
 
   return fetch(url, {
     ...options,
     headers,
-    body,
+    body: finalBody,
   });
 }
 
@@ -108,6 +114,3 @@ export async function jsonOrThrow(res) {
 
   return data ?? {};
 }
-// ============================================================
-// Fin archivo
-// ============================================================ 
