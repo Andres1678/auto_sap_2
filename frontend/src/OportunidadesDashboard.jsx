@@ -22,15 +22,12 @@ const rsStyles = {
   multiValueLabel: (base) => ({ ...base, fontWeight: 800, fontSize: 12 }),
   placeholder: (base) => ({ ...base, color: "#64748b", fontWeight: 700 }),
   menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+  menu: (base) => ({ ...base, zIndex: 9999 }),
 };
 
 const ESTADOS_ACTIVOS = new Set([
   "EN PROCESO",
-  "REGISTRO",
-  "PROSPECCION",
   "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
-  "PENDIENTE APROBACION SAP",
-  "PENDIENTE APROBACIÓN SAP",
   "EN ELABORACION",
   "ENTREGA COMERCIAL",
 ]);
@@ -83,6 +80,19 @@ function toQuery(f) {
   return qs ? `?${qs}` : "";
 }
 
+function useDebouncedValue(value, delay = 350) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+
+  return debounced;
+}
+
+const portalTarget = typeof document !== "undefined" ? document.body : null;
+
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState([]);
@@ -91,17 +101,13 @@ export default function DashboardOportunidades() {
     anios: [],
     meses: [],
     tipos: [],
-
     direccionComercial: [],
     gerenciaComercial: [],
     cliente: [],
-
     estadoOferta: [],
     resultadoOferta: [],
-
     fechaActaCierreOT: [],
     fechaCierreOportunidad: [],
-
     estadoOT: [],
     ultimoMes: [],
     calificacion: [],
@@ -111,21 +117,19 @@ export default function DashboardOportunidades() {
     anios: [],
     meses: [],
     tipos: [],
-
     direccionComercial: [],
     gerenciaComercial: [],
     cliente: [],
-
     estadoOferta: [],
     resultadoOferta: [],
-
     fechaActaCierreOT: [],
     fechaCierreOportunidad: [],
-
     estadoOT: [],
     ultimoMes: [],
     calificacion: [],
   });
+
+  const filtrosDebounced = useDebouncedValue(filtros, 400);
 
   const fetchFilters = async (current) => {
     const res = await jfetch(`/oportunidades/filters${toQuery(current)}`);
@@ -136,17 +140,13 @@ export default function DashboardOportunidades() {
       anios: toOptions(json.anios),
       meses: toOptions(json.meses),
       tipos: toOptions(json.tipos),
-
       direccionComercial: toOptions(json.direccion_comercial),
       gerenciaComercial: toOptions(json.gerencia_comercial),
       cliente: toOptions(json.nombre_cliente),
-
       estadoOferta: toOptions(json.estado_oferta),
       resultadoOferta: toOptions(json.resultado_oferta),
-
       fechaActaCierreOT: toOptions(json.fecha_acta_cierre_ot),
       fechaCierreOportunidad: toOptions(json.fecha_cierre_oportunidad),
-
       estadoOT: toOptions(json.estado_ot),
       ultimoMes: toOptions(json.ultimo_mes),
       calificacion: toOptions(json.calificacion_oportunidad),
@@ -177,18 +177,18 @@ export default function DashboardOportunidades() {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
   }, []);
 
   useEffect(() => {
     (async () => {
       try {
-        await fetchFilters(filtros);
-        await fetchData(filtros);
+        await fetchFilters(filtrosDebounced);
+        await fetchData(filtrosDebounced);
       } catch (e) {}
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtros]);
+    
+  }, [filtrosDebounced]);
 
   const kpis = useMemo(() => {
     const total = data.length;
@@ -235,21 +235,27 @@ export default function DashboardOportunidades() {
       anios: [],
       meses: [],
       tipos: [],
-
       direccionComercial: [],
       gerenciaComercial: [],
       cliente: [],
-
       estadoOferta: [],
       resultadoOferta: [],
-
       fechaActaCierreOT: [],
       fechaCierreOportunidad: [],
-
       estadoOT: [],
       ultimoMes: [],
       calificacion: [],
     });
+  };
+
+  const selectCommon = {
+    isMulti: true,
+    closeMenuOnSelect: false,
+    hideSelectedOptions: false,
+    styles: rsStyles,
+    menuPortalTarget: portalTarget,
+    getOptionValue: (o) => String(o.value),
+    getOptionLabel: (o) => String(o.label),
   };
 
   return (
@@ -424,19 +430,15 @@ export default function DashboardOportunidades() {
             <label>Año / Mes</label>
             <div className="two-col">
               <Select
-                isMulti
+                {...selectCommon}
                 placeholder="Año"
-                styles={rsStyles}
-                menuPortalTarget={document.body}
                 options={opciones.anios}
                 value={filtros.anios}
                 onChange={(v) => setFiltros((p) => ({ ...p, anios: v || [] }))}
               />
               <Select
-                isMulti
+                {...selectCommon}
                 placeholder="Mes"
-                styles={rsStyles}
-                menuPortalTarget={document.body}
                 options={opciones.meses}
                 value={filtros.meses}
                 onChange={(v) => setFiltros((p) => ({ ...p, meses: v || [] }))}
@@ -447,10 +449,8 @@ export default function DashboardOportunidades() {
           <div className="filtro-item">
             <label>Tipo</label>
             <Select
-              isMulti
+              {...selectCommon}
               placeholder="Todos"
-              styles={rsStyles}
-              menuPortalTarget={document.body}
               options={opciones.tipos}
               value={filtros.tipos}
               onChange={(v) => setFiltros((p) => ({ ...p, tipos: v || [] }))}
@@ -460,10 +460,8 @@ export default function DashboardOportunidades() {
           <div className="filtro-item">
             <label>Dirección Comercial</label>
             <Select
-              isMulti
+              {...selectCommon}
               placeholder="Todas"
-              styles={rsStyles}
-              menuPortalTarget={document.body}
               options={opciones.direccionComercial}
               value={filtros.direccionComercial}
               onChange={(v) => setFiltros((p) => ({ ...p, direccionComercial: v || [] }))}
@@ -473,10 +471,8 @@ export default function DashboardOportunidades() {
           <div className="filtro-item">
             <label>Gerencia Comercial</label>
             <Select
-              isMulti
+              {...selectCommon}
               placeholder="Todas"
-              styles={rsStyles}
-              menuPortalTarget={document.body}
               options={opciones.gerenciaComercial}
               value={filtros.gerenciaComercial}
               onChange={(v) => setFiltros((p) => ({ ...p, gerenciaComercial: v || [] }))}
@@ -486,10 +482,8 @@ export default function DashboardOportunidades() {
           <div className="filtro-item">
             <label>Nombre Cliente</label>
             <Select
-              isMulti
+              {...selectCommon}
               placeholder="Todos"
-              styles={rsStyles}
-              menuPortalTarget={document.body}
               options={opciones.cliente}
               value={filtros.cliente}
               onChange={(v) => setFiltros((p) => ({ ...p, cliente: v || [] }))}
@@ -499,10 +493,8 @@ export default function DashboardOportunidades() {
           <div className="filtro-item">
             <label>Estado Oferta</label>
             <Select
-              isMulti
+              {...selectCommon}
               placeholder="Todos"
-              styles={rsStyles}
-              menuPortalTarget={document.body}
               options={opciones.estadoOferta}
               value={filtros.estadoOferta}
               onChange={(v) => setFiltros((p) => ({ ...p, estadoOferta: v || [] }))}
@@ -512,10 +504,8 @@ export default function DashboardOportunidades() {
           <div className="filtro-item">
             <label>Resultado Oferta</label>
             <Select
-              isMulti
+              {...selectCommon}
               placeholder="Todos"
-              styles={rsStyles}
-              menuPortalTarget={document.body}
               options={opciones.resultadoOferta}
               value={filtros.resultadoOferta}
               onChange={(v) => setFiltros((p) => ({ ...p, resultadoOferta: v || [] }))}
@@ -525,10 +515,8 @@ export default function DashboardOportunidades() {
           <div className="filtro-item">
             <label>Fecha Acta Cierre OT</label>
             <Select
-              isMulti
+              {...selectCommon}
               placeholder="Todas"
-              styles={rsStyles}
-              menuPortalTarget={document.body}
               options={opciones.fechaActaCierreOT}
               value={filtros.fechaActaCierreOT}
               onChange={(v) => setFiltros((p) => ({ ...p, fechaActaCierreOT: v || [] }))}
@@ -538,10 +526,8 @@ export default function DashboardOportunidades() {
           <div className="filtro-item">
             <label>Fecha Cierre Oportunidad</label>
             <Select
-              isMulti
+              {...selectCommon}
               placeholder="Todas"
-              styles={rsStyles}
-              menuPortalTarget={document.body}
               options={opciones.fechaCierreOportunidad}
               value={filtros.fechaCierreOportunidad}
               onChange={(v) => setFiltros((p) => ({ ...p, fechaCierreOportunidad: v || [] }))}
@@ -551,10 +537,8 @@ export default function DashboardOportunidades() {
           <div className="filtro-item">
             <label>Estado OT</label>
             <Select
-              isMulti
+              {...selectCommon}
               placeholder="Todos"
-              styles={rsStyles}
-              menuPortalTarget={document.body}
               options={opciones.estadoOT}
               value={filtros.estadoOT}
               onChange={(v) => setFiltros((p) => ({ ...p, estadoOT: v || [] }))}
@@ -564,10 +548,8 @@ export default function DashboardOportunidades() {
           <div className="filtro-item">
             <label>Último Mes</label>
             <Select
-              isMulti
+              {...selectCommon}
               placeholder="Todos"
-              styles={rsStyles}
-              menuPortalTarget={document.body}
               options={opciones.ultimoMes}
               value={filtros.ultimoMes}
               onChange={(v) => setFiltros((p) => ({ ...p, ultimoMes: v || [] }))}
@@ -577,10 +559,8 @@ export default function DashboardOportunidades() {
           <div className="filtro-item">
             <label>Calificación Oportunidad</label>
             <Select
-              isMulti
+              {...selectCommon}
               placeholder="Todas"
-              styles={rsStyles}
-              menuPortalTarget={document.body}
               options={opciones.calificacion}
               value={filtros.calificacion}
               onChange={(v) => setFiltros((p) => ({ ...p, calificacion: v || [] }))}

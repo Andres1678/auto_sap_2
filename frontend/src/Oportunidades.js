@@ -1,8 +1,75 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import Select from "react-select";
 import "./Oportunidades.css";
 import { jfetch } from "./lib/api";
+
+const NUMERIC_COLS = new Set([
+  "otc",
+  "mrc",
+  "mrc_normalizado",
+  "valor_oferta_claro",
+  "duracion",
+  "proyeccion_ingreso",
+]);
+
+const nf = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
+
+function isNumericCol(col) {
+  return NUMERIC_COLS.has(col);
+}
+
+function parseNumberSmart(input) {
+  if (input === null || input === undefined) return "";
+  if (typeof input === "number") return Number.isFinite(input) ? input : "";
+  let s = String(input).trim();
+  if (!s) return "";
+  s = s.replace(/\s/g, "");
+  s = s.replace(/[$€£]/g, "");
+  s = s.replace(/%/g, "");
+
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  const hasComma = lastComma !== -1;
+  const hasDot = lastDot !== -1;
+
+  if (hasComma && hasDot) {
+    if (lastComma > lastDot) {
+      s = s.replace(/\./g, "");
+      s = s.replace(",", ".");
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (hasComma && !hasDot) {
+    const parts = s.split(",");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      s = parts[0].replace(/\./g, "") + "." + parts[1];
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (!hasComma && hasDot) {
+    const parts = s.split(".");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      s = parts[0].replace(/,/g, "") + "." + parts[1];
+    } else {
+      s = s.replace(/\./g, "");
+    }
+  }
+
+  s = s.replace(/[^\d.-]/g, "");
+  if (!s || s === "-" || s === "." || s === "-.") return "";
+
+  const n = Number(s);
+  return Number.isFinite(n) ? n : "";
+}
+
+function formatCell(col, value) {
+  if (!isNumericCol(col)) return value ?? "-";
+  if (value === null || value === undefined || value === "") return "-";
+  const n = typeof value === "number" ? value : parseNumberSmart(value);
+  if (n === "") return value ?? "-";
+  return nf.format(n);
+}
 
 export default function Oportunidades() {
   const [data, setData] = useState([]);
@@ -14,7 +81,6 @@ export default function Oportunidades() {
   const [newRow, setNewRow] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  /* ORDEN EXACTO COMO VIENE DEL EXCEL */
   const columnOrder = [
     "nombre_cliente", "servicio", "fecha_creacion", "semestre", "tipo_cliente",
     "tipo_solicitud", "caso_sm", "fecha_cierre_sm", "salesforce",
@@ -51,7 +117,6 @@ export default function Oportunidades() {
       setData(json);
       setFilteredData(json);
 
-      // Construir valores únicos para filtros
       const uniq = {};
       columnOrder.forEach((col) => {
         const values = [...new Set(json.map((r) => r[col] ?? ""))];
@@ -62,7 +127,6 @@ export default function Oportunidades() {
       });
 
       setUniqueValues(uniq);
-
     } catch {
       Swal.fire("Error", "No se pudo cargar la información", "error");
     }
@@ -73,9 +137,6 @@ export default function Oportunidades() {
     fetchData();
   }, []);
 
-  /* =======================================================
-        SUBIR ARCHIVO
-  ======================================================= */
   const handleUpload = async () => {
     if (!file) return Swal.fire("Seleccione un archivo Excel");
 
@@ -104,9 +165,6 @@ export default function Oportunidades() {
     }
   };
 
-  /* =======================================================
-        FILTROS TIPO EXCEL
-  ======================================================= */
   const handleFilterChange = (column, option) => {
     const value = option?.value || "";
     const newFilters = { ...filters, [column]: value };
@@ -123,22 +181,39 @@ export default function Oportunidades() {
     setFilteredData(result);
   };
 
-  /* =======================================================
-        EDICIÓN DE CELDAS
-  ======================================================= */
   const startEdit = (rowIndex, col) => {
     setEditing({ row: rowIndex, col });
   };
 
+  const normalizePayload = (row) => {
+    const out = { ...row };
+    for (const col of Object.keys(out)) {
+      if (isNumericCol(col)) {
+        const parsed = parseNumberSmart(out[col]);
+        out[col] = parsed === "" ? "" : parsed;
+      }
+    }
+    return out;
+  };
+
   const saveEdit = async (rowIndex, col, newValue) => {
     const row = filteredData[rowIndex];
-    const updated = { ...row, [col]: newValue };
 
-    await jfetch(`/oportunidades/${row.id}`, {
+    const coercedValue = isNumericCol(col) ? parseNumberSmart(newValue) : newValue;
+    const updated = normalizePayload({ ...row, [col]: coercedValue });
+
+    const resp = await jfetch(`/oportunidades/${row.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updated)
     });
+
+    if (!resp.ok) {
+      const j = await resp.json().catch(() => ({}));
+      Swal.fire("Error", j.mensaje || "No se pudo guardar el cambio", "error");
+      setEditing({ row: null, col: null });
+      return;
+    }
 
     const updatedList = [...filteredData];
     updatedList[rowIndex] = updated;
@@ -156,9 +231,6 @@ export default function Oportunidades() {
     }, 50);
   };
 
-  /* =======================================================
-        AGREGAR NUEVA FILA
-  ======================================================= */
   const addRow = () => {
     const empty = {};
     columnOrder.forEach((c) => (empty[c] = ""));
@@ -166,13 +238,15 @@ export default function Oportunidades() {
   };
 
   const saveNewRow = async () => {
+    const payload = normalizePayload(newRow);
+
     const res = await jfetch("/oportunidades", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newRow),
+      body: JSON.stringify(payload),
     });
 
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
 
     if (res.ok) {
       setFilteredData((prev) => [...prev, json]);
@@ -183,14 +257,21 @@ export default function Oportunidades() {
     }
   };
 
-  /* =======================================================
-        RENDER
-  ======================================================= */
+  const inputDefaultValue = useMemo(() => {
+    if (editing.row === null || editing.col === null) return "";
+    const row = filteredData[editing.row];
+    const col = editing.col;
+    if (!row) return "";
+    const v = row[col];
+    if (!isNumericCol(col)) return v ?? "";
+    const n = typeof v === "number" ? v : parseNumberSmart(v);
+    return n === "" ? (v ?? "") : String(n);
+  }, [editing, filteredData]);
+
   return (
     <div className="oportunidades-wrapper">
       <h2>Gestión de Oportunidades</h2>
 
-      {/* SUBIR ARCHIVO */}
       <div className="upload-section">
         <label className="custom-file-upload">
           <i className="fa fa-file-excel"></i> Seleccionar Archivo
@@ -204,11 +285,9 @@ export default function Oportunidades() {
         </button>
       </div>
 
-      {/* TABLA */}
       <div className="tabla-scroll">
         <table className="tabla-oportunidades">
           <thead>
-            {/* HEADER */}
             <tr>
               {columnOrder.map((col) => (
                 <th key={col}>{col.replace(/_/g, " ").toUpperCase()}</th>
@@ -216,7 +295,6 @@ export default function Oportunidades() {
               <th>ACCIONES</th>
             </tr>
 
-            {/* FILTROS */}
             <tr className="filtros-columnas">
               {columnOrder.map((col) => (
                 <th key={col}>
@@ -235,8 +313,6 @@ export default function Oportunidades() {
           </thead>
 
           <tbody>
-
-            {/* NUEVA FILA */}
             {newRow && (
               <tr className="new-row">
                 {columnOrder.map((col) => (
@@ -244,9 +320,13 @@ export default function Oportunidades() {
                     <input
                       className="cell-input"
                       value={newRow[col]}
-                      onChange={(e) =>
-                        setNewRow({ ...newRow, [col]: e.target.value })
-                      }
+                      inputMode={isNumericCol(col) ? "decimal" : undefined}
+                      onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+                      onBlur={(e) => {
+                        if (!isNumericCol(col)) return;
+                        const parsed = parseNumberSmart(e.target.value);
+                        setNewRow((p) => ({ ...p, [col]: parsed === "" ? "" : parsed }));
+                      }}
                     />
                   </td>
                 ))}
@@ -257,7 +337,6 @@ export default function Oportunidades() {
               </tr>
             )}
 
-            {/* DATOS */}
             {filteredData.map((row, i) => (
               <tr key={row.id ?? i}>
                 {columnOrder.map((col) => (
@@ -270,26 +349,24 @@ export default function Oportunidades() {
                       <input
                         className="cell-input"
                         autoFocus
-                        defaultValue={row[col]}
+                        defaultValue={inputDefaultValue}
+                        inputMode={isNumericCol(col) ? "decimal" : undefined}
                         onBlur={(e) => saveEdit(i, col, e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && saveEdit(i, col, e.target.value)}
                       />
                     ) : (
-                      row[col] ?? "-"
+                      formatCell(col, row[col])
                     )}
                   </td>
                 ))}
 
-                <td className="acciones">
-                  {/* En el futuro puedes poner botones "Editar" / "Eliminar" aquí */}
-                </td>
+                <td className="acciones"></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* BOTÓN FLOTANTE */}
       <button className="floating-add-btn" onClick={addRow}>+</button>
     </div>
   );

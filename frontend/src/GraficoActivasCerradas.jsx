@@ -7,10 +7,7 @@ const MESES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov"
 
 const ESTADOS_ACTIVOS = [
   "EN PROCESO",
-  "REGISTRO",
-  "PROSPECCION",
   "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
-  "PENDIENTE APROBACION SAP",
   "EN ELABORACION",
   "ENTREGA COMERCIAL",
 ];

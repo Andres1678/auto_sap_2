@@ -272,7 +272,6 @@ const Registro = ({ userData }) => {
     userData?.user?.usuario ??
     ''
   ).trim().toLowerCase();
-  console.log("usuarioLogin:", usuarioLogin);
 
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
@@ -414,8 +413,6 @@ const Registro = ({ userData }) => {
 
   useEffect(() => {
       const set = new Set((registros || []).map(r => equipoOf(r)));
-      console.log("EQUIPOS EN REGISTROS:", Array.from(set));
-      console.log("FILTRO EQUIPO:", filtroEquipo);
     }, [registros, filtroEquipo]);
 
   useEffect(() => {
