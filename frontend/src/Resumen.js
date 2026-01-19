@@ -3,9 +3,7 @@ import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
 import { EXCEPCION_8H_USERS } from "./lib/visibility";
 
-
 const API_PATH = "/resumen-horas";
-
 
 function extraerYMD(fechaStr) {
   if (!fechaStr) return null;
@@ -36,13 +34,21 @@ function equipoUpper(v) {
   return String(v || "").trim().toUpperCase();
 }
 
+/* ✅ Normalizador para ordenar alfabéticamente (sin tildes, case-insensitive) */
+function normalizarNombreParaOrden(txt) {
+  return String(txt || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
 export default function Resumen({ userData, filtroEquipo = "" }) {
   const [resumen, setResumen] = useState([]);
   const [rol, setRol] = useState("");
   const [usuarioActual, setUsuarioActual] = useState("");
   const [error, setError] = useState("");
 
-  
   useEffect(() => {
     if (!userData) {
       setError("No se detectó sesión activa.");
@@ -69,7 +75,6 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
     setError("");
   }, [userData]);
 
-  
   const fetchResumen = useCallback(async ({ rolActual, usuario, equipo }) => {
     if (!usuario) return;
 
@@ -78,7 +83,6 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
       params.set("usuario", usuario);
       params.set("ts", Date.now().toString()); // evita caché
 
-      
       const eq = equipoUpper(equipo);
       if (eq) params.set("equipo", eq);
 
@@ -100,7 +104,6 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
 
       const rows = Array.isArray(data) ? data : [];
 
-      
       const agrupado = Object.values(
         rows.reduce((acc, r) => {
           const usuarioKey = String(r.usuario_consultor || "").trim().toLowerCase();
@@ -128,6 +131,15 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
         }, {})
       );
 
+      /* ✅ (Opcional pero recomendado) Ordenar registros por fecha dentro de cada consultor */
+      for (const c of agrupado) {
+        c.registros.sort((a, b) => {
+          const da = a.fechaNorm?.getTime?.() ?? 0;
+          const db = b.fechaNorm?.getTime?.() ?? 0;
+          return da - db;
+        });
+      }
+
       setResumen(agrupado);
       setError("");
     } catch (err) {
@@ -137,7 +149,6 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
     }
   }, []);
 
-  
   useEffect(() => {
     if (!usuarioActual) return;
     fetchResumen({
@@ -147,7 +158,6 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
     });
   }, [rol, usuarioActual, filtroEquipo, fetchResumen]);
 
-  
   useEffect(() => {
     if (!usuarioActual) return;
 
@@ -164,7 +174,6 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
     return () => clearInterval(id);
   }, [rol, usuarioActual, filtroEquipo, fetchResumen]);
 
-  
   useEffect(() => {
     const onRefresh = () => {
       if (!usuarioActual) return;
@@ -179,10 +188,19 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
     return () => window.removeEventListener("resumen-actualizar", onRefresh);
   }, [rol, usuarioActual, filtroEquipo, fetchResumen]);
 
-  
-  const datosVisibles = useMemo(() => resumen, [resumen]);
+  /* ✅ AQUÍ es donde se organiza por alfabeto */
+  const datosVisibles = useMemo(() => {
+    const copy = Array.isArray(resumen) ? [...resumen] : [];
 
-  
+    copy.sort((a, b) => {
+      const na = normalizarNombreParaOrden(a.consultor || a.usuario_consultor || "");
+      const nb = normalizarNombreParaOrden(b.consultor || b.usuario_consultor || "");
+      return na.localeCompare(nb, "es", { sensitivity: "base" });
+    });
+
+    return copy;
+  }, [resumen]);
+
   const CalendarioConsultor = ({ consultor }) => {
     const hoy = new Date();
     const mesInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
@@ -246,8 +264,11 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
       }
 
       const horas = Number(registro.total_horas || 0);
-      const login = String(usuarioActual || "").toLowerCase();
-      const metaBase = EXCEPCION_8H_USERS?.has?.(login) ? 8 : 9;
+
+      /* ✅ Si la meta depende del consultor (no del usuario logueado), usa el consultor.usuario_consultor */
+      const loginParaMeta = String(consultor.usuario_consultor || usuarioActual || "").toLowerCase();
+      const metaBase = EXCEPCION_8H_USERS?.has?.(loginParaMeta) ? 8 : 9;
+
       const estado = horas >= metaBase ? "ok" : horas > 0 ? "warn" : "none";
 
       return (

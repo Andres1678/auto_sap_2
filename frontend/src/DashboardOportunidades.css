@@ -1,441 +1,492 @@
-/* ===========================================================
-   VARIABLES BASE
-=========================================================== */
+:root{
+  --bg: #f3f4f6;
+  --card: #ffffff;
+  --border: #d1d5db;
+  --border-soft:#e5e7eb;
 
-:root {
-  --oport-bg: #f3f6fa;
-  --oport-card-bg: #ffffff;
-  --oport-primary: #0f172a;
-  --oport-heading: #1e293b;
-  --oport-muted: #64748b;
-  --oport-border: #d1d5db;
-  --oport-border-soft: #e5e7eb;
-  --oport-blue: #2563eb;
+  --title-red:#dc2626;
+
+  --head:#334155;        /* encabezado tablas */
+  --text:#111827;
+  --muted:#6b7280;
+
+  --sidebar:#e5e5e5;     /* panel derecho gris */
+  --sidebar-border:#bfbfbf;
+
+  --btn-blue:#1e3a8a;
+  --btn-blue-hover:#1d4ed8;
+
+  --radius: 10px;
+  --radius-sm: 8px;
+
+  /* ✅ alturas consistentes como dashboard referencia */
+  --card-min: 230px;
+  --card-min-small: 210px;
 }
 
-/* ===========================================================
-   WRAPPER GENERAL
-=========================================================== */
+*{ box-sizing:border-box; }
 
-.oport-dash-wrapper {
-  min-height: 100vh;
-  background: var(--oport-bg);
+/* ===========================================================
+   WRAPPER
+=========================================================== */
+.oport-dash-wrapper{
+  min-height:100vh;
+  background: var(--bg);
   font-family: "Segoe UI", Roboto, Arial, sans-serif;
-  color: var(--oport-primary);
-  max-width: 1700px;
+  color: var(--text);
+  max-width: 1500px;
   margin: 0 auto;
-  padding: 10px 16px 22px;
+  padding: 10px 14px 18px;
 }
 
 /* ===========================================================
-   TÍTULO
+   TOPBAR (título centrado)
 =========================================================== */
+.oport-topbar{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin: 0 0 10px;
+}
 
-.oport-dash-title {
-  font-size: clamp(1.25rem, 1.6vw, 1.85rem);
+.oport-topbar > div{
+  flex:1;
+}
+
+.oport-dash-title{
+  margin: 6px 0 2px;
+  text-align:center;
+  font-size: 2.05rem;
   font-weight: 900;
-  text-align: center;
-  color: #dc2626;
-  margin: 6px 0 14px;
+  color: var(--title-red);
   letter-spacing: -0.02em;
 }
 
-/* ===========================================================
-   LAYOUT PRINCIPAL (MAIN + FILTROS)
-=========================================================== */
-
-.dashboard-layout {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 14px;
-  align-items: start;
-}
-
-/* ===========================================================
-   COLUMNA PRINCIPAL
-=========================================================== */
-
-.dashboard-main {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-/* ===========================================================
-   KPIs
-=========================================================== */
-
-.kpi-grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(4, minmax(240px, 1fr));
-  justify-content: stretch;
-}
-
-.kpi-card {
-  background: var(--oport-card-bg);
-  border-radius: 10px;
-  padding: 12px 16px;
-  border: 1px solid var(--oport-border);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  min-height: 84px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.kpi-label {
-  font-size: 0.7rem;
-  font-weight: 900;
-  color: var(--oport-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.kpi-value {
-  font-size: 2.05rem;
-  font-weight: 900;
-  margin-top: 2px;
-  line-height: 1.1;
-}
-
-.kpi-sub {
-  margin-top: 4px;
-  font-size: 0.78rem;
-  color: #475569;
+.oport-dash-subtitle{
+  text-align:center;
+  margin: 0 0 6px;
+  font-size: .9rem;
+  color: var(--muted);
   font-weight: 700;
 }
 
-.kpi-total .kpi-value { color: #2563eb; }
-.kpi-activas .kpi-value { color: #16a34a; }
-.kpi-cerradas .kpi-value { color: #dc2626; }
-.kpi-ganadas .kpi-value { color: #0284c7; }
-
-/* ===========================================================
-   BLOQUE TABLAS (izq) + GRÁFICOS (der)
-=========================================================== */
-
-.main-grid {
-  display: grid;
-  grid-template-columns: 2fr 1fr;  /* ✅ estabilidad */
-  gap: 12px;
-  align-items: start;
-}
-
-.main-col {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.side-col {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* ===========================================================
-   CARDS BASE
-=========================================================== */
-
-.estado-oferta-card,
-.grafico-card,
-.detalle-card {
-  background: var(--oport-card-bg);
-  border-radius: 10px;
-  border: 1px solid var(--oport-border);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
-}
-
-/* ===========================================================
-   TABLAS
-=========================================================== */
-
-.estado-oferta-card {
+/* Botón limpiar (arriba) */
+.oport-btn{
+  border:1px solid var(--border);
+  background:#fff;
+  color:#111827;
   padding: 10px 12px;
-  overflow-x: auto;
-}
-
-.estado-title {
-  font-size: 0.9rem;
+  border-radius: var(--radius-sm);
   font-weight: 900;
-  color: #334155;
-  margin-bottom: 8px;
-}
-
-.estado-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.78rem;
-  min-width: 520px;
-}
-
-.estado-table thead th {
-  background: #334155;
-  color: #ffffff;
-  padding: 7px 10px;
-  text-align: left;
-  font-weight: 900;
+  cursor:pointer;
+  height: 40px;
+  align-self: center;
   white-space: nowrap;
-  letter-spacing: 0.02em;
 }
-
-.estado-table tbody td {
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--oport-border-soft);
-  color: #0f172a;
-}
-
-.estado-table tbody tr:nth-child(even) {
-  background: #f8fafc;
-}
-
-.estado-total td {
-  font-weight: 900;
-  background: #eef2f7;
-}
+.oport-btn:hover{ background:#f9fafb; }
+.oport-btn:disabled{ opacity:.6; cursor:not-allowed; }
 
 /* ===========================================================
-   GRÁFICOS (Recharts)
+   LAYOUT PRINCIPAL
 =========================================================== */
-
-.grafico-card {
-  padding: 10px 12px;
+.dashboard-layout{
+  display:grid;
+  grid-template-columns: 1fr 320px; /* sidebar como imagen */
+  gap: 12px;
+  align-items:start;
 }
 
-.grafico-title {
-  font-size: 0.9rem;
-  font-weight: 900;
-  margin-bottom: 8px;
-  color: #334155;
-}
-
-/* ✅ No tocar svg global. Solo ajustamos el legend */
-.grafico-card .recharts-default-legend svg {
-  width: 14px !important;
-  height: 14px !important;
-}
-
-.grafico-card .recharts-legend-wrapper {
-  padding-top: 4px;
-}
-
-/* ===========================================================
-   RESUMEN CALIFICACIÓN
-=========================================================== */
-
-.resumen-calificacion {
-  max-height: 260px;
-  overflow-y: auto;
-}
-
-/* ===========================================================
-   DETALLE
-=========================================================== */
-
-.detalle-card {
-  padding: 10px 12px;
-}
-
-.detalle-title {
-  font-size: 0.95rem;
-  font-weight: 900;
-  margin-bottom: 8px;
-  color: #334155;
-}
-
-.detalle-scroll {
-  overflow-x: auto;
-  max-height: 380px;
-  border: 1px solid var(--oport-border-soft);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.detalle-table {
-  min-width: 1500px;
-  font-size: 0.76rem;
-  border-collapse: collapse;
-  width: 100%;
-}
-
-.detalle-table thead th {
-  background: #334155;
-  color: white;
-  padding: 7px 8px;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  white-space: nowrap;
-  font-weight: 900;
-}
-
-.detalle-table tbody td {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--oport-border-soft);
-  white-space: nowrap;
-  color: #0f172a;
-}
-
-.detalle-table tbody tr:nth-child(even) {
-  background: #f8fafc;
-}
-
-.td-wrap {
-  white-space: normal !important;
-  min-width: 280px;
-}
-
-/* ===========================================================
-   SIDEBAR
-=========================================================== */
-
-.dashboard-filtros {
-  background: #eeeeee;
-  border-radius: 12px;
-  padding: 10px;
-  border: 1px solid var(--oport-border);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  position: sticky;
-  top: 10px;
-  max-height: calc(100vh - 18px);
-  overflow: auto;
-}
-
-.dashboard-filtros .filtro-item {
-  background: white;
-  border-radius: 8px;
-  padding: 10px;
-  border: 1px solid var(--oport-border-soft);
-}
-
-.dashboard-filtros label {
-  font-size: 0.68rem;
-  font-weight: 900;
-  color: #374151;
-  margin-bottom: 6px;
-  display: block;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.dashboard-filtros select {
-  width: 100%;
-  padding: 8px 9px;
-  font-size: 0.82rem;
-  border-radius: 6px;
-  border: 1px solid var(--oport-border);
-  background: #fff;
-  outline: none;
-}
-
-.dashboard-filtros select:focus {
-  border-color: #93c5fd;
-  box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.35);
-}
-
-.filtro-actions {
-  display: grid;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-.btn-clear {
-  background: #0f172a;
-  color: white;
-  border: none;
-  padding: 10px;
-  font-size: 0.82rem;
-  border-radius: 8px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.btn-clear:hover { opacity: 0.95; }
-
-.btn-refresh {
-  background: #1e3a8a;
-  color: white;
-  border: none;
-  padding: 10px;
-  font-size: 0.82rem;
-  border-radius: 8px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.btn-refresh:hover { background: #1d4ed8; }
-
-.sidebar-foot {
-  margin-top: 4px;
-  font-size: 0.78rem;
-  color: #334155;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid var(--oport-border-soft);
-  padding: 8px 10px;
-  border-radius: 8px;
+.dashboard-main{
+  display:flex;
+  flex-direction:column;
+  gap: 12px;
+  min-width:0;
 }
 
 /* ===========================================================
    LOADING
 =========================================================== */
-
-.oport-dash-loading {
-  margin: 0;
-  font-size: 0.85rem;
-  color: #475569;
-  font-weight: 700;
+.oport-loading{
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-weight: 800;
+  color: var(--muted);
 }
 
 /* ===========================================================
-   HELPERS
+   KPIs
 =========================================================== */
+.kpi-grid{
+  display:grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
 
-.grid-1 { display: block; }
+.kpi-card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  min-height: 76px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+}
+
+.kpi-label{
+  font-size: 0.72rem;
+  font-weight: 900;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.kpi-value{
+  font-size: 2.1rem;
+  font-weight: 900;
+  line-height: 1.05;
+  margin-top: 2px;
+  color:#0f172a;
+}
+
+.kpi-sub{
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color:#475569;
+  font-weight: 800;
+}
+
+/* ===========================================================
+   GRID MEDIO (tablas + graficas)
+=========================================================== */
+.main-grid{
+  display:grid;
+  grid-template-columns: 2fr 1.25fr;
+  gap: 10px;
+  align-items:start;
+}
+
+.main-col,
+.side-col{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+  min-width:0;
+}
+
+/* ===========================================================
+   CARDS (✅ CORRECCIÓN PRINCIPAL)
+   - Se fuerza altura mínima
+   - Se hace flex column
+   - Se asegura que el contenido tome el espacio
+=========================================================== */
+.card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow:hidden;
+
+  /* ✅ evita cards "mini" que se ven vacías */
+  min-height: var(--card-min);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Cards tipo tabla izquierda (un poco más pequeñas) */
+.main-col .card{
+  min-height: var(--card-min-small);
+}
+
+.card-title{
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  font-weight: 900;
+  color: #1f2937;
+  border-bottom: 1px solid var(--border-soft);
+  background: #ffffff;
+}
+
+/* ✅ el contenido dentro de la card crece y permite scroll interno */
+.card > :not(.card-title){
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ===========================================================
+   TABLAS (header azul oscuro)
+=========================================================== */
+.table-scroll{
+  padding: 0;
+  overflow: auto; /* ✅ scroll X + Y dentro del recuadro */
+  max-height: 280px; /* ✅ como la referencia */
+}
+
+.table{
+  width:100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+  min-width: 520px;
+}
+
+.table thead th{
+  background: var(--head);
+  color:#fff;
+  padding: 8px 10px;
+  text-align:left;
+  font-weight: 900;
+  white-space: nowrap;
+
+  /* ✅ sticky para que quede elegante si hay scroll vertical */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.table tbody td{
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  color:#111827;
+  white-space: nowrap;
+}
+
+.table tbody tr:nth-child(even){
+  background:#f9fafb;
+}
+
+.table-total td{
+  background:#eef2f7;
+  font-weight: 900;
+}
+
+/* ===========================================================
+   DETALLE (tabla grande abajo)
+=========================================================== */
+.detalle-scroll{
+  overflow:auto;            /* ✅ scroll X + Y */
+  max-height: 360px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.table-detalle{
+  min-width: 1100px;
+}
+
+.table.table-detalle thead th{
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.td-wrap{
+  white-space: normal !important;
+  min-width: 320px;
+  max-width: 520px;
+  line-height: 1.25;
+}
+
+/* ===========================================================
+   ✅ FIX: ResumenCalificacion se veía “vacío”
+   Tu componente usa:
+   <div className="calificacion-card">
+     <h3 className="estado-title">...</h3>
+     <table className="estado-table calificacion-table">...</table>
+   </div>
+
+   Estas clases no estaban bien dimensionadas dentro de card.
+=========================================================== */
+.calificacion-card{
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  padding: 10px 12px;
+  overflow: auto; /* ✅ por si en pantallas pequeñas se aprieta */
+}
+
+.estado-title{
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: #111827;
+}
+
+/* tabla de calificación */
+.estado-table{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+  min-width: 520px;
+}
+
+.estado-table thead th{
+  background: var(--head);
+  color:#fff;
+  padding: 8px 10px;
+  text-align:left;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.estado-table tbody td{
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  color:#111827;
+  white-space: nowrap;
+}
+
+.calificacion-table thead th{
+  text-align: center;
+}
+.calificacion-table tbody td{
+  text-align: center;
+}
+.calificacion-table tbody td:first-child{
+  text-align: left;
+  font-weight: 900;
+}
+
+/* ===========================================================
+   SIDEBAR FILTROS (gris, como imagen)
+=========================================================== */
+.dashboard-filtros{
+  background: var(--sidebar);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 14px;
+  padding: 10px;
+  position: sticky;
+  top: 10px;
+  max-height: calc(100vh - 20px);
+  overflow:auto;
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+}
+
+.filters-head{
+  background: transparent;
+  padding: 0;
+  border: 0;
+}
+
+.filters-title{
+  font-size: 0.95rem;
+  font-weight: 900;
+  color:#111827;
+  padding: 4px 2px 0;
+}
+
+/* Cada bloque de filtro en blanco */
+.filtro-item{
+  background:#fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.filtro-item label{
+  display:block;
+  margin-bottom: 6px;
+  font-size: .7rem;
+  font-weight: 900;
+  color:#374151;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.two-col{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* ===========================================================
+   REACT-SELECT (solo pulido, tu rsStyles manda)
+=========================================================== */
+.react-select__control{
+  border-radius: 10px !important;
+  border-color: var(--border) !important;
+  min-height: 38px !important;
+  box-shadow: none !important;
+}
+
+.react-select__control--is-focused{
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 0 0 3px rgba(148,163,184,.25) !important;
+}
+
+.react-select__menu{
+  border-radius: 10px !important;
+  overflow:hidden !important;
+  border: 1px solid var(--border) !important;
+}
+
+.react-select__option{
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+.react-select__multi-value{
+  border-radius: 999px !important;
+  background: #e5e7eb !important;
+}
+
+.react-select__multi-value__label{
+  font-weight: 900 !important;
+  color:#111827 !important;
+}
 
 /* ===========================================================
    RESPONSIVE
 =========================================================== */
-
-@media (max-width: 1300px) {
-  .dashboard-layout {
-    grid-template-columns: 1fr 290px;
-  }
-
-  .kpi-grid {
-    grid-template-columns: repeat(4, minmax(170px, 1fr));
-  }
+@media (max-width: 1250px){
+  .dashboard-layout{ grid-template-columns: 1fr 300px; }
+  .main-grid{ grid-template-columns: 1fr; }
 }
 
-@media (max-width: 1200px) {
-  .dashboard-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-filtros {
-    order: -1;
+@media (max-width: 1100px){
+  .dashboard-layout{ grid-template-columns: 1fr; }
+  .dashboard-filtros{
     position: relative;
-    top: auto;
-    max-height: none;
+    top:auto;
+    max-height:none;
+    order:-1;
   }
-
-  .main-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .kpi-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  .kpi-grid{ grid-template-columns: repeat(2, 1fr); }
 }
 
-@media (max-width: 640px) {
-  .oport-dash-wrapper {
-    padding: 10px 10px 18px;
-  }
+@media (max-width: 650px){
+  .kpi-grid{ grid-template-columns: 1fr; }
+  .two-col{ grid-template-columns: 1fr; }
+  .oport-dash-title{ font-size: 1.55rem; }
 
-  .kpi-grid {
-    grid-template-columns: 1fr;
-  }
+  /* ✅ en móvil reduce mínimos */
+  .card{ min-height: 200px; }
+  .table-scroll{ max-height: 240px; }
+}
+
+/* ===========================================================
+   Scrollbars discretas
+=========================================================== */
+.dashboard-filtros::-webkit-scrollbar,
+.detalle-scroll::-webkit-scrollbar,
+.table-scroll::-webkit-scrollbar,
+.calificacion-card::-webkit-scrollbar{
+  width: 10px;
+  height: 10px;
+}
+.dashboard-filtros::-webkit-scrollbar-thumb,
+.detalle-scroll::-webkit-scrollbar-thumb,
+.table-scroll::-webkit-scrollbar-thumb,
+.calificacion-card::-webkit-scrollbar-thumb{
+  background: rgba(107,114,128,.45);
+  border-radius: 999px;
+  border: 2px solid rgba(243,244,246,.65);
 }

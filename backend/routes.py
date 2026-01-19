@@ -7,7 +7,7 @@ from backend.models import (
 )
 from datetime import datetime, timedelta, time
 from functools import wraps
-from sqlalchemy import or_, text, func
+from sqlalchemy import or_, text, func, extract
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 import unicodedata, re
@@ -28,10 +28,8 @@ def permission_required(codigo_permiso):
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
-
-            
             if request.method == "OPTIONS":
-                return fn(*args, **kwargs)
+                return ("", 204)
 
             usuario = request.headers.get("X-User-Usuario")
             if not usuario:
@@ -42,13 +40,13 @@ def permission_required(codigo_permiso):
                 return jsonify({"mensaje": "Usuario no encontrado"}), 404
 
             permisos = obtener_permisos_finales(consultor)
-
             if codigo_permiso not in permisos:
                 return jsonify({"mensaje": f"Permiso '{codigo_permiso}' requerido"}), 403
 
             return fn(*args, **kwargs)
         return wrapper
     return decorator
+
 
 def norm_fecha(v):
     if pd.isna(v):
@@ -1611,21 +1609,136 @@ def get_datos_consultor():
 
 
 # ========== OPORTUNIDADES ==========
+def _get_list_arg(key: str):
+    vals = request.args.getlist(key)
+    if not vals:
+        vals = request.args.getlist(f"{key}[]")
+    return [str(v).strip() for v in vals if v is not None and str(v).strip() != ""]
+
+def _apply_oportunidades_filters(query):
+    q = (request.args.get("q") or "").strip()
+
+    anios = _get_list_arg("anio")
+    meses = _get_list_arg("mes")
+    tipos = _get_list_arg("tipo")  # GANADA / ACTIVA / CERRADA
+
+    direccion = _get_list_arg("direccion_comercial")
+    gerencia  = _get_list_arg("gerencia_comercial")
+    cliente   = _get_list_arg("nombre_cliente")
+
+    estado_oferta = _get_list_arg("estado_oferta")
+    resultado     = _get_list_arg("resultado_oferta")
+
+    estado_ot   = _get_list_arg("estado_ot")
+    ultimo_mes  = _get_list_arg("ultimo_mes")
+    calif       = _get_list_arg("calificacion_oportunidad")
+
+    fecha_acta_cierre_ot      = _get_list_arg("fecha_acta_cierre_ot")      # YYYY-MM-DD
+    fecha_cierre_oportunidad  = _get_list_arg("fecha_cierre_oportunidad")  # YYYY-MM-DD
+
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(
+            Oportunidad.nombre_cliente.ilike(like),
+            Oportunidad.servicio.ilike(like),
+            Oportunidad.estado_oferta.ilike(like),
+            Oportunidad.resultado_oferta.ilike(like),
+            Oportunidad.pais.ilike(like),
+            Oportunidad.direccion_comercial.ilike(like),
+            Oportunidad.gerencia_comercial.ilike(like),
+        ))
+
+    if anios:
+        try:
+            anios_int = [int(a) for a in anios]
+            query = query.filter(extract("year", Oportunidad.fecha_creacion).in_(anios_int))
+        except Exception:
+            pass
+
+    if meses:
+        try:
+            meses_int = [int(m) for m in meses]
+            query = query.filter(extract("month", Oportunidad.fecha_creacion).in_(meses_int))
+        except Exception:
+            pass
+
+    if direccion:
+        query = query.filter(Oportunidad.direccion_comercial.in_(direccion))
+    if gerencia:
+        query = query.filter(Oportunidad.gerencia_comercial.in_(gerencia))
+    if cliente:
+        query = query.filter(Oportunidad.nombre_cliente.in_(cliente))
+
+    if estado_oferta:
+        query = query.filter(Oportunidad.estado_oferta.in_(estado_oferta))
+    if resultado:
+        query = query.filter(Oportunidad.resultado_oferta.in_(resultado))
+
+    if estado_ot:
+        query = query.filter(Oportunidad.estado_ot.in_(estado_ot))
+    if ultimo_mes:
+        query = query.filter(Oportunidad.ultimo_mes.in_(ultimo_mes))
+    if calif:
+        query = query.filter(Oportunidad.calificacion_oportunidad.in_(calif))
+
+    if fecha_acta_cierre_ot:
+        query = query.filter(func.date(Oportunidad.fecha_acta_cierre_ot).in_(fecha_acta_cierre_ot))
+    if fecha_cierre_oportunidad:
+        query = query.filter(func.date(Oportunidad.fecha_cierre_oportunidad).in_(fecha_cierre_oportunidad))
+
+    if tipos:
+        ESTADOS_ACTIVOS = {
+            "EN PROCESO",
+            "REGISTRO",
+            "PROSPECCION",
+            "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
+            "PENDIENTE APROBACION SAP",
+            "PENDIENTE APROBACIÓN SAP",
+            "EN ELABORACION",
+            "ENTREGA COMERCIAL",
+        }
+        ESTADOS_CERRADOS = {
+            "CERRADO",
+            "CERRADA",
+            "CERRADOS",
+            "PERDIDA",
+            "PERDIDO",
+            "DECLINADA",
+            "DECLINADO",
+            "SUSPENDIDA",
+            "SUSPENDIDO",
+        }
+
+        conds = []
+        tipos_up = {t.upper() for t in tipos}
+
+        if "GANADA" in tipos_up:
+            conds.append(func.upper(Oportunidad.estado_oferta) == "GANADA")
+
+        if "ACTIVA" in tipos_up:
+            conds.append(func.upper(Oportunidad.estado_oferta).in_([s.upper() for s in ESTADOS_ACTIVOS]))
+
+        if "CERRADA" in tipos_up:
+            conds.append(func.upper(Oportunidad.estado_oferta).in_([s.upper() for s in ESTADOS_CERRADOS]))
+
+        if conds:
+            query = query.filter(or_(*conds))
+
+    return query
+
+
 @bp.route('/oportunidades/import', methods=['POST'])
 def importar_oportunidades():
-    """Permite cargar un único archivo Excel inicial."""
     file = request.files.get('file')
     if not file:
         return jsonify({'mensaje': 'Archivo no recibido'}), 400
 
-    
     if Oportunidad.query.count() > 0:
         return jsonify({'mensaje': 'La carga inicial ya fue realizada'}), 400
 
     df = pd.read_excel(BytesIO(file.read()))
     df.columns = [str(c).strip().upper() for c in df.columns]
-    print("Columnas detectadas:", list(df.columns))
-    
+
     colmap = {
         "NOMBRE CLIENTE": "nombre_cliente",
         "SERVICIO": "servicio",
@@ -1704,19 +1817,18 @@ def importar_oportunidades():
         for k, v in colmap.items():
             if k in df.columns:
                 value = row[k]
-
-                
-                if v in ["fecha_creacion", "fecha_cierre_sm", "fecha_entrega_oferta_final",
-                         "vigencia_propuesta", "fecha_aceptacion_oferta", "fecha_cierre_oportunidad",
-                         "fecha_firma_aos", "proyeccion_ingreso", "fecha_compromiso",
-                         "fecha_cierre", "fecha_acta_cierre_ot"]:
+                if v in [
+                    "fecha_creacion", "fecha_cierre_sm", "fecha_entrega_oferta_final",
+                    "vigencia_propuesta", "fecha_aceptacion_oferta", "fecha_cierre_oportunidad",
+                    "fecha_firma_aos", "proyeccion_ingreso", "fecha_compromiso",
+                    "fecha_cierre", "fecha_acta_cierre_ot"
+                ]:
                     obj[v] = parse_date(value)
                 elif v in ["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"]:
                     obj[v] = parse_int(value)
                 else:
                     obj[v] = str(value).strip() if not pd.isna(value) else None
 
-        
         fecha = obj.get("fecha_creacion")
         if fecha:
             mes = fecha.month
@@ -1734,25 +1846,79 @@ def importar_oportunidades():
     except Exception as e:
         db.session.rollback()
         return jsonify({'mensaje': f'Error al guardar: {str(e)}'}), 500
-    
+
+
+@bp.route('/oportunidades/filters', methods=['GET'])
+@permission_required("OPORTUNIDADES_CREAR")
+def oportunidades_filters():
+    base = Oportunidad.query
+    base = _apply_oportunidades_filters(base)
+
+    anios = (
+        db.session.query(extract("year", Oportunidad.fecha_creacion).label("y"))
+        .select_from(Oportunidad)
+        .filter(Oportunidad.fecha_creacion.isnot(None))
+        .distinct()
+        .order_by("y")
+        .all()
+    )
+    meses = (
+        db.session.query(extract("month", Oportunidad.fecha_creacion).label("m"))
+        .select_from(Oportunidad)
+        .filter(Oportunidad.fecha_creacion.isnot(None))
+        .distinct()
+        .order_by("m")
+        .all()
+    )
+
+    def distinct_col(col):
+        rows = (
+            base.with_entities(col)
+            .filter(col.isnot(None))
+            .filter(func.trim(col) != "")
+            .distinct()
+            .order_by(col.asc())
+            .all()
+        )
+        return [r[0] for r in rows]
+
+    def distinct_date(col):
+        rows = (
+            base.with_entities(func.date(col))
+            .filter(col.isnot(None))
+            .distinct()
+            .order_by(func.date(col).asc())
+            .all()
+        )
+        return [r[0].strftime("%Y-%m-%d") if hasattr(r[0], "strftime") else str(r[0]) for r in rows]
+
+    return jsonify({
+        "anios": [int(r.y) for r in anios if r.y is not None],
+        "meses": [int(r.m) for r in meses if r.m is not None],
+
+        "direccion_comercial": distinct_col(Oportunidad.direccion_comercial),
+        "gerencia_comercial": distinct_col(Oportunidad.gerencia_comercial),
+        "nombre_cliente": distinct_col(Oportunidad.nombre_cliente),
+
+        "estado_oferta": distinct_col(Oportunidad.estado_oferta),
+        "resultado_oferta": distinct_col(Oportunidad.resultado_oferta),
+
+        "estado_ot": distinct_col(Oportunidad.estado_ot),
+        "ultimo_mes": distinct_col(Oportunidad.ultimo_mes),
+        "calificacion_oportunidad": distinct_col(Oportunidad.calificacion_oportunidad),
+
+        "fecha_acta_cierre_ot": distinct_date(Oportunidad.fecha_acta_cierre_ot),
+        "fecha_cierre_oportunidad": distinct_date(Oportunidad.fecha_cierre_oportunidad),
+
+        "tipos": ["GANADA", "ACTIVA", "CERRADA"],
+    }), 200
+
 
 @bp.route('/oportunidades', methods=['GET'])
 @permission_required("OPORTUNIDADES_CREAR")
 def listar_oportunidades():
-    """Listar o filtrar oportunidades"""
-    q = (request.args.get('q') or '').strip()
     query = Oportunidad.query
-
-    if q:
-        like = f"%{q}%"
-        query = query.filter(or_(
-            Oportunidad.nombre_cliente.ilike(like),
-            Oportunidad.servicio.ilike(like),
-            Oportunidad.estado_oferta.ilike(like),
-            Oportunidad.resultado_oferta.ilike(like),
-            Oportunidad.pais.ilike(like)
-        ))
-
+    query = _apply_oportunidades_filters(query)
     data = [o.to_dict() for o in query.limit(2000).all()]
     return jsonify(data), 200
 

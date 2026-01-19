@@ -86,8 +86,6 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   return (fueraInicio || fueraFin) ? 'Sí' : 'No';
 };
 
-const asArray = (v) => Array.isArray(v) ? v : (Array.isArray(v?.data) ? v.data : []);
-
 const equipoOf = (r, fallback = 'SIN EQUIPO') =>
   (String((r?.equipo ?? r?.EQUIPO) || '').trim().toUpperCase() || fallback);
 
@@ -212,6 +210,15 @@ function isInvalidCaseNumber(nro){
   return !s || s === '0' || s === 'NA' || s === 'N/A' || s.length > 10;
 }
 
+function useDebouncedValue(value, delay = 250) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros]   = useState([]);
@@ -228,6 +235,9 @@ const Registro = ({ userData }) => {
   const [filtroConsultor, setFiltroConsultor] = useState('');
   const [filtroNroCasoCli, setFiltroNroCasoCli] = useState('');
   const [filtroHorasAdic, setFiltroHorasAdic] = useState('');
+  const [filtroMes, setFiltroMes] = useState("");   
+  const [filtroAnio, setFiltroAnio] = useState(""); 
+
 
   const initialEquipo = () => (localStorage.getItem('filtroEquipo') || '');
   const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
@@ -253,8 +263,9 @@ const Registro = ({ userData }) => {
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
   const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
 
-  const canDownload = ['rodriguezso','valdezjl'].includes(String(usuarioLogin || '').toLowerCase());
+  const canDownload = ['rodriguezso','valdezjl', 'gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
   const [importingExcel, setImportingExcel] = useState(false);
+  const canImportExcel = ['gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
 
 
   const initialVista = () => {
@@ -287,8 +298,25 @@ const Registro = ({ userData }) => {
   const [ocupacionSeleccionada, setOcupacionSeleccionada] = useState('');
   const [equiposDisponibles, setEquiposDisponibles] = useState([]);
   const [tareasBD, setTareasBD] = useState([]);
-  const [tareaSeleccionada, setTareaSeleccionada] = useState('');
+  const filtroNroCasoCliDeb = useDebouncedValue(filtroNroCasoCli, 300);
 
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 100;
+
+  useEffect(() => {
+    setPage(1);
+  }, [
+    filtroEquipo,
+    filtroFecha,
+    filtroCliente,
+    filtroOcupacion,
+    filtroTarea,
+    filtroConsultor,
+    filtroNroCasoCliDeb,
+    filtroHorasAdic,
+    filtroMes,
+    filtroAnio
+  ]);
 
   useEffect(() => {
     const fetchCatalogos = async () => {
@@ -331,38 +359,27 @@ const Registro = ({ userData }) => {
     fetchCatalogos();
   }, []);
 
-  const refreshModulos = useCallback(async () => {
-    try {
-      const res = await jfetch(`/consultores/datos?usuario=${encodeURIComponent(usuarioLogin)}`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
-
-      const lista = Array.isArray(data.modulos) ? data.modulos : [];
-      const norm = normalizeModulos(lista);
-      setModulos(norm);
-      setModuloElegido(norm.length === 1 ? norm[0] : '');
-
-      if (data.equipo) {
-        setRegistro(r => ({ ...r, equipo: String(data.equipo).toUpperCase() }));
-      }
-    } catch (err) {
-      console.error("Error al cargar datos del consultor:", err);
-      setModulos([]);
-    }
-  }, [usuarioLogin]);
+  const registrosAbortRef = useRef(null);
 
   const fetchRegistros = useCallback(async () => {
     setError("");
+
+    if (registrosAbortRef.current) {
+      try { registrosAbortRef.current.abort(); } catch {}
+    }
+    const controller = new AbortController();
+    registrosAbortRef.current = controller;
+
     try {
       const params = new URLSearchParams();
       params.set("usuario", usuarioLogin);
-      
       if (filtroEquipo) params.set("equipo", String(filtroEquipo).trim().toUpperCase());
-      
+
       const url = `/registros?${params.toString()}`;
 
       const res = await jfetch(url, {
         method: "GET",
+        signal: controller.signal,
         headers: {
           "X-User-Usuario": usuarioLogin,
           "X-User-Rol": rol,
@@ -371,25 +388,22 @@ const Registro = ({ userData }) => {
 
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
       setRegistros(Array.isArray(data) ? data : []);
     } catch (e) {
+      if (e?.name === "AbortError") return;
       setRegistros([]);
       setError(String(e.message || e));
     }
   }, [usuarioLogin, rol, filtroEquipo]);
 
-  useEffect(() => {
-    const hasId = (userData && (userData.id || userData?.user?.id));
-    if (hasId) {
-      fetchRegistros();
-      refreshModulos();
-    }
-  }, [userData, fetchRegistros, refreshModulos]);
 
   useEffect(() => {
-    if (!usuarioLogin) return;
+    const hasId = (userData && (userData.id || userData?.user?.id));
+    if (!hasId || !usuarioLogin) return;
     fetchRegistros();
-  }, [filtroEquipo, usuarioLogin, fetchRegistros]);
+  }, [userData, usuarioLogin, fetchRegistros, filtroEquipo]);
+
 
   const consultoresUnicos = useMemo(() =>
     Array.isArray(registros)
@@ -408,44 +422,98 @@ const Registro = ({ userData }) => {
     return [{ key:'', label:'Todos', count: total }, ...arr.map(([k,c])=>({ key:k, label:k, count:c }))];
   }, [registros]);
 
-  const obtenerOcupacionDeRegistro = useCallback((registro) => {
-    if (registro?.ocupacion_codigo && registro?.ocupacion_nombre) {
-      return `${registro.ocupacion_codigo} - ${registro.ocupacion_nombre}`;
+  const ocupacionLabelByTareaId = useMemo(() => {
+    const map = new Map();
+    (ocupaciones || []).forEach((o) => {
+      const label = `${o.codigo} - ${o.nombre}`;
+      (o.tareas || []).forEach((t) => {
+        if (t?.id) map.set(t.id, label);
+      });
+    });
+    return map;
+  }, [ocupaciones]);
+
+  const tareaIdByCodigoNombre = useMemo(() => {
+    const map = new Map();
+    (todasTareas || []).forEach((t) => {
+      const key = `${String(t.codigo || "").trim()} - ${String(t.nombre || "").trim()}`.toUpperCase();
+      map.set(key, t.id);
+    });
+    return map;
+  }, [todasTareas]);
+
+
+  const obtenerOcupacionDeRegistro = useCallback((r) => {
+    if (r?.ocupacion_codigo && r?.ocupacion_nombre) {
+      return `${r.ocupacion_codigo} - ${r.ocupacion_nombre}`;
     }
 
-    const t = todasTareas.find(
-      x => x.nombre === registro.tipoTarea ||
-          (x.codigo && registro.tipoTarea?.startsWith(x.codigo))
-    );
-    if (!t) return "—";
+    if (r?.ocupacion_id && ocupacionLabelByTareaId.size) {
+    }
+    const tipo = String(r?.tipoTarea || "").trim();
+    const key = tipo.toUpperCase();
+    const tareaId = tareaIdByCodigoNombre.get(key);
 
-    const occ = ocupaciones.find(o =>
-      (o.tareas || []).some(tt => tt.id === t.id)
-    );
+    if (!tareaId) return "—";
+    return ocupacionLabelByTareaId.get(tareaId) || "—";
+  }, [tareaIdByCodigoNombre, ocupacionLabelByTareaId]);
 
-    return occ ? `${occ.codigo} - ${occ.nombre}` : "—";
-  }, [todasTareas, ocupaciones]);
 
   const registrosFiltrados = useMemo(() => {
     const base = Array.isArray(registros) ? registros : [];
 
-    const rows = base.filter((r) => (
-      (!filtroEquipo || equipoOf(r) === filtroEquipo) &&
-      (!filtroFecha || r.fecha === filtroFecha) &&
-      (!filtroCliente || r.cliente === filtroCliente) &&
-      (!filtroOcupacion || obtenerOcupacionDeRegistro(r) === filtroOcupacion) &&
-      (!filtroTarea || r.tipoTarea === filtroTarea) &&
-      (!filtroConsultor || r.consultor === filtroConsultor) &&
-      (!filtroNroCasoCli || String(r.nroCasoCliente || '').toLowerCase().includes(filtroNroCasoCli.toLowerCase())) &&
-      (!filtroHorasAdic || normSiNo(r.horasAdicionales) === filtroHorasAdic)
-    ));
+    // 1) Filtrar
+    const rows = base.filter((r) => {
+      if (filtroEquipo && equipoOf(r) !== filtroEquipo) return false;
+      if (filtroFecha && r.fecha !== filtroFecha) return false;
+      if (filtroCliente && r.cliente !== filtroCliente) return false;
+      if (filtroOcupacion && obtenerOcupacionDeRegistro(r) !== filtroOcupacion) return false;
+      if (filtroTarea && r.tipoTarea !== filtroTarea) return false;
+      if (filtroConsultor && r.consultor !== filtroConsultor) return false;
 
-    return rows.slice().sort((a, b) => {
+      if (filtroNroCasoCliDeb) {
+        const val = String(r.nroCasoCliente || "").toLowerCase();
+        const needle = String(filtroNroCasoCliDeb || "").toLowerCase();
+        if (!val.includes(needle)) return false;
+      }
+
+      if (filtroHorasAdic) {
+        if (normSiNo(r.horasAdicionales) !== filtroHorasAdic) return false;
+      }
+
+      if (filtroMes || filtroAnio) {
+      const f = String(r.fecha || "");
+      const [yyyy, mm] = f.split("-");
+
+      if (filtroAnio && yyyy !== String(filtroAnio)) return false;
+      if (filtroMes && mm !== String(filtroMes)) return false;
+      }
+      return true;
+    });
+
+    // 2) Ordenar
+    const sorted = rows.slice().sort((a, b) => {
       const da = new Date(a.fecha || "1970-01-01");
       const db = new Date(b.fecha || "1970-01-01");
       if (da.getTime() !== db.getTime()) return da - db;
       return String(a.id || 0).localeCompare(String(b.id || 0));
     });
+
+    // 3) Paginar
+    const total = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const safePage = Math.min(Math.max(1, page), totalPages);
+
+    const start = (safePage - 1) * PAGE_SIZE;
+    const end = start + PAGE_SIZE;
+
+    return {
+      total,
+      totalPages,
+      page: safePage,
+      pageRows: sorted.slice(start, end),
+      allRows: sorted, 
+    };
   }, [
     registros,
     filtroEquipo,
@@ -454,10 +522,14 @@ const Registro = ({ userData }) => {
     filtroOcupacion,
     filtroTarea,
     filtroConsultor,
-    filtroNroCasoCli,
+    filtroNroCasoCliDeb,
     filtroHorasAdic,
-    obtenerOcupacionDeRegistro
+    filtroMes,
+    filtroAnio,
+    obtenerOcupacionDeRegistro,
+    page,
   ]);
+
 
 
   const handleSubmit = async (e) => {
@@ -766,9 +838,24 @@ const Registro = ({ userData }) => {
   const actividadMalla = ['AC','CRU1','CRU2','CRU3','DC','DE','DF','IN','ON','T1E','T1I','T1X','T2E','T2I','T2X','T3','VC', 'SAT', 'N/APLICA'];
   const oncall = ['SI','NO','N/A'];
   const desborde = ['SI','NO','N/A'];
+  const MESES = [
+    { value: "01", label: "Enero" },
+    { value: "02", label: "Febrero" },
+    { value: "03", label: "Marzo" },
+    { value: "04", label: "Abril" },
+    { value: "05", label: "Mayo" },
+    { value: "06", label: "Junio" },
+    { value: "07", label: "Julio" },
+    { value: "08", label: "Agosto" },
+    { value: "09", label: "Septiembre" },
+    { value: "10", label: "Octubre" },
+    { value: "11", label: "Noviembre" },
+    { value: "12", label: "Diciembre" },
+  ];
+
 
   const handleExport = () => {
-    const visible = registrosFiltrados ?? registros ?? [];
+    const visible = registrosFiltrados?.allRows || [];
     exportRegistrosExcel(
       visible,
       `registros_${new Date().toISOString().slice(0,10)}.csv`,
@@ -784,6 +871,7 @@ const Registro = ({ userData }) => {
       }
     );
   };
+
 
   useEffect(() => {
     if (!userData) return;
@@ -915,6 +1003,14 @@ const Registro = ({ userData }) => {
     }
   };
 
+  const colSpanTabla = useMemo(() => {
+    let cols = 18; 
+    if (isBASISTable) cols += 2; 
+    if (isAdmin) cols += 1; 
+    return cols;
+  }, [isBASISTable, isAdmin]);
+
+
 
   return (
     <div className="container">
@@ -936,7 +1032,7 @@ const Registro = ({ userData }) => {
               </button>
             )}
 
-            {isAdmin && (
+            {canImportExcel && (
               <>
                 <input
                   ref={excelInputRef}
@@ -1082,6 +1178,22 @@ const Registro = ({ userData }) => {
             <option value="SI">Sí</option>
             <option value="NO">No</option>
           </select>
+
+          <select value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}>
+            <option value="">Todos los meses</option>
+            {MESES.map(m => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+
+          <input
+            type="number"
+            placeholder="Año (ej: 2026)"
+            value={filtroAnio}
+            onChange={(e) => setFiltroAnio(e.target.value)}
+            min="2000"
+            max="2100"
+          />
         </div>
 
         <div className="filter-actions">
@@ -1338,7 +1450,7 @@ const Registro = ({ userData }) => {
               </tr>
             </thead>
             <tbody>
-              {registrosFiltrados.map((r) => (
+              {registrosFiltrados.pageRows.map((r) => (
                 <tr key={r.id}>
                   <td>{r.fecha}</td>
                   <td>{r.modulo ?? moduloUser}</td>
@@ -1375,11 +1487,35 @@ const Registro = ({ userData }) => {
                   )}
                 </tr>
               ))}
-              {!registrosFiltrados.length && (
-                <tr><td colSpan={isAdmin ? 18 : 17} className="muted">Sin registros</td></tr>
+              {registrosFiltrados.total === 0 && (
+                <tr>
+                  <td colSpan={colSpanTabla} className="muted">Sin registros</td>
+                </tr>
               )}
             </tbody>
           </table>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "10px 0" }}>
+            <button
+              className="btn btn-outline"
+              disabled={registrosFiltrados.page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ◀
+            </button>
+
+            <span style={{ fontWeight: 800 }}>
+              Página {registrosFiltrados.page} / {registrosFiltrados.totalPages} —{" "}
+              {registrosFiltrados.total} registros
+            </span>
+
+            <button
+              className="btn btn-outline"
+              disabled={registrosFiltrados.page >= registrosFiltrados.totalPages}
+              onClick={() => setPage((p) => Math.min(registrosFiltrados.totalPages, p + 1))}
+            >
+              ▶
+            </button>
+          </div>
         </div>
       </div>
 

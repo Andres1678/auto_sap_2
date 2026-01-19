@@ -155,6 +155,13 @@ button, input, select, textarea{
   color:#fff;
 }
 
+/* Disabled */
+.btn:disabled,
+.icon-btn:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+
 /* =========================================================
    FILTRO DE EQUIPOS (ADMIN)
 ========================================================= */
@@ -264,7 +271,7 @@ button, input, select, textarea{
 }
 
 /* =========================================================
-   TABLA
+   TABLA (MEJORADA: scroll X/Y + sticky header + sticky acciones)
 ========================================================= */
 .table-wrap{
   margin-top:16px;
@@ -274,11 +281,15 @@ button, input, select, textarea{
   background:var(--card);
 }
 
+/* Scroll doble (X/Y) */
 .table-scroll{
   overflow:auto;
   max-height:70vh;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable both-edges;
 }
 
+/* Tabla grande */
 table{
   width:100%;
   min-width:1600px;
@@ -287,31 +298,110 @@ table{
   font-size: var(--fs-base);
 }
 
+/* Header sticky */
 thead th{
   position:sticky;
   top:0;
   background:linear-gradient(180deg,#fff6f7,#f6f9ff);
   padding:12px 14px;
   font-weight:800;
-  z-index:1;
+  z-index:3;
   white-space: nowrap;
+  border-bottom:1px solid var(--border);
 }
 
+/* Celdas */
 tbody td{
-  padding:14px;
+  padding:12px 14px;
   border-bottom:1px solid var(--border);
   vertical-align: top;
+  background:#fff;
 }
 
-/* Acciones sticky */
-td.actions,
-th.actions{
+/* Zebra suave */
+tbody tr:nth-child(even) td{
+  background:#fbfcfe;
+}
+
+/* Hover */
+tbody tr:hover td{
+  background:#f6f9ff;
+}
+
+/* Números alineados */
+td.num, th.num{
+  text-align:right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Truncate */
+td.truncate{
+  max-width: 420px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Acciones sticky a la derecha */
+th.actions,
+td.actions{
   position:sticky;
   right:0;
-  background:#fff;
-  z-index:2;
-  box-shadow: -8px 0 16px rgba(2,6,23,.04);
+  z-index:4;
+  background: #fff;
+  box-shadow:-10px 0 18px rgba(2,6,23,.06);
+  border-left:1px solid var(--border);
 }
+
+/* Si usas la clase sticky-actions en el contenedor, mantenla */
+.table-scroll.sticky-actions{
+  position: relative;
+}
+
+/* Sticky también para la columna Bloqueado (si existe) */
+table th:last-child,
+table td:last-child{
+  /* No forzamos sticky aquí porque podría romper layouts
+     si quieres sticky en "Bloqueado", lo hacemos con clase dedicada */
+}
+
+/* =========================================================
+   PAGINACIÓN (debajo de tabla)
+========================================================= */
+.table-pager{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  justify-content:flex-end;
+  padding:12px 14px;
+  border-top:1px solid var(--border);
+  background:linear-gradient(180deg,#ffffff,#fafbfd);
+}
+
+.table-pager .btn{
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+}
+
+.table-pager .pager-text{
+  font-weight:800;
+  color: var(--text);
+}
+
+/* =========================================================
+   SCROLLBARS (discretas)
+========================================================= */
+.table-scroll::-webkit-scrollbar{ width: 12px; height: 12px; }
+.table-scroll::-webkit-scrollbar-track{ background: #f1f4fa; }
+.table-scroll::-webkit-scrollbar-thumb{
+  background: rgba(2,6,23,.22);
+  border-radius: 999px;
+  border: 3px solid #f1f4fa;
+}
+
+/* Firefox */
+.table-scroll{ scrollbar-width: thin; scrollbar-color: rgba(2,6,23,.28) #f1f4fa; }
 
 /* =========================================================
    ICON BUTTONS
@@ -353,7 +443,7 @@ th.actions{
   box-shadow:0 30px 80px rgba(2,6,23,.35);
   padding:0;
 
-  overflow: hidden; /* evita cortes raros */
+  overflow: hidden;
 }
 
 /* Header */
@@ -421,7 +511,7 @@ th.actions{
   line-height: 1.2;
 }
 
-/* Textarea debe tener altura propia */
+/* Textarea */
 .modal-content textarea{
   height:auto;
   min-height: 110px;
@@ -430,7 +520,6 @@ th.actions{
   padding-bottom: 12px;
 }
 
-/* Fix: el placeholder y texto se vean igual */
 .modal-content input::placeholder,
 .modal-content textarea::placeholder{
   color: #8a94a6;
@@ -445,14 +534,13 @@ th.actions{
   box-shadow:0 0 0 4px var(--ring);
 }
 
-/* Asegura que date/number no se “encojan” */
 .modal-content input[type="date"],
 .modal-content input[type="number"],
 .modal-content input[type="time"]{
   min-width: 0;
 }
 
-/* Bloque de horas en 2 columnas */
+/* Horas en 2 columnas */
 .inline-2{
   display:grid;
   grid-template-columns:1fr 1fr;
@@ -486,7 +574,7 @@ th.actions{
 }
 
 /* =========================================================
-   UTILIDADES (por si aparecen textos fuera)
+   UTILIDADES
 ========================================================= */
 .table-error{
   padding:14px;
@@ -499,4 +587,9 @@ th.actions{
   text-align:center;
   color:var(--muted);
   font-weight:600;
+}
+
+.muted{
+  color: var(--muted);
+  font-weight: 700;
 }
