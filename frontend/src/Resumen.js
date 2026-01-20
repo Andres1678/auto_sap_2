@@ -15,7 +15,7 @@ function normalizarFecha(fechaStr) {
   const ymd = extraerYMD(fechaStr);
   if (!ymd) return null;
   const [y, m, d] = ymd.split("-").map(Number);
-  const fecha = new Date(y, m - 1, d); // local
+  const fecha = new Date(y, m - 1, d);
   return isNaN(fecha.getTime()) ? null : fecha;
 }
 
@@ -34,7 +34,6 @@ function equipoUpper(v) {
   return String(v || "").trim().toUpperCase();
 }
 
-/* ✅ Normalizador para ordenar alfabéticamente (sin tildes, case-insensitive) */
 function normalizarNombreParaOrden(txt) {
   return String(txt || "")
     .normalize("NFD")
@@ -43,11 +42,35 @@ function normalizarNombreParaOrden(txt) {
     .toLowerCase();
 }
 
-export default function Resumen({ userData, filtroEquipo = "" }) {
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+export default function Resumen({ userData, filtroEquipo = "", filtroConsultor = "", filtroMes = "", filtroAnio = "" }) {
   const [resumen, setResumen] = useState([]);
   const [rol, setRol] = useState("");
   const [usuarioActual, setUsuarioActual] = useState("");
   const [error, setError] = useState("");
+
+  const [mesGlobal, setMesGlobal] = useState(() => {
+    const hoy = new Date();
+    return new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  });
+
+  const lockMesAnio = Boolean(String(filtroMes || "").trim() || String(filtroAnio || "").trim());
+
+  useEffect(() => {
+    const hoy = new Date();
+    const y = String(filtroAnio || "").trim();
+    const m = String(filtroMes || "").trim();
+
+    const year = y ? Number(y) : hoy.getFullYear();
+    const month = m ? Number(m) : hoy.getMonth() + 1;
+
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return;
+
+    setMesGlobal(new Date(year, month - 1, 1));
+  }, [filtroMes, filtroAnio]);
 
   useEffect(() => {
     if (!userData) {
@@ -81,13 +104,12 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
     try {
       const params = new URLSearchParams();
       params.set("usuario", usuario);
-      params.set("ts", Date.now().toString()); // evita caché
+      params.set("ts", Date.now().toString());
 
       const eq = equipoUpper(equipo);
       if (eq) params.set("equipo", eq);
 
       const path = `${API_PATH}?${params.toString()}`;
-      console.log("📌 fetchResumen URL:", path);
 
       const res = await jfetch(path, {
         method: "GET",
@@ -98,9 +120,7 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
       });
 
       const data = await res.json().catch(() => []);
-      if (!res.ok) {
-        throw new Error(`Error HTTP ${res.status} - ${JSON.stringify(data)}`);
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const rows = Array.isArray(data) ? data : [];
 
@@ -131,7 +151,6 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
         }, {})
       );
 
-      /* ✅ (Opcional pero recomendado) Ordenar registros por fecha dentro de cada consultor */
       for (const c of agrupado) {
         c.registros.sort((a, b) => {
           const da = a.fechaNorm?.getTime?.() ?? 0;
@@ -143,7 +162,6 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
       setResumen(agrupado);
       setError("");
     } catch (err) {
-      console.error("❌ Error al obtener resumen:", err);
       setResumen([]);
       setError("No se pudo cargar el resumen");
     }
@@ -188,27 +206,29 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
     return () => window.removeEventListener("resumen-actualizar", onRefresh);
   }, [rol, usuarioActual, filtroEquipo, fetchResumen]);
 
-  /* ✅ AQUÍ es donde se organiza por alfabeto */
   const datosVisibles = useMemo(() => {
     const copy = Array.isArray(resumen) ? [...resumen] : [];
 
-    copy.sort((a, b) => {
+    const fCons = String(filtroConsultor || "").trim();
+    const filtered = fCons
+      ? copy.filter((c) => String(c.consultor || "").trim() === fCons)
+      : copy;
+
+    filtered.sort((a, b) => {
       const na = normalizarNombreParaOrden(a.consultor || a.usuario_consultor || "");
       const nb = normalizarNombreParaOrden(b.consultor || b.usuario_consultor || "");
       return na.localeCompare(nb, "es", { sensitivity: "base" });
     });
 
-    return copy;
-  }, [resumen]);
+    return filtered;
+  }, [resumen, filtroConsultor]);
 
   const CalendarioConsultor = ({ consultor }) => {
-    const hoy = new Date();
-    const mesInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    const [mesActual, setMesActual] = useState(mesInicio);
     const [animacion, setAnimacion] = useState("slideInLeft");
 
-    const y = mesActual.getFullYear();
-    const m = mesActual.getMonth();
+    const y = mesGlobal.getFullYear();
+    const m = mesGlobal.getMonth();
+
     const totalDiasMes = useMemo(() => new Date(y, m + 1, 0).getDate(), [y, m]);
 
     const offsetInicio = useMemo(() => {
@@ -217,9 +237,9 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
     }, [y, m]);
 
     const nombreMes = useMemo(() => {
-      const nm = mesActual.toLocaleString("es-ES", { month: "long", year: "numeric" });
+      const nm = mesGlobal.toLocaleString("es-ES", { month: "long", year: "numeric" });
       return nm.charAt(0).toUpperCase() + nm.slice(1);
-    }, [mesActual]);
+    }, [mesGlobal]);
 
     const registrosMes = useMemo(() => {
       return (consultor.registros || []).filter((r) => {
@@ -264,11 +284,8 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
       }
 
       const horas = Number(registro.total_horas || 0);
-
-      /* ✅ Si la meta depende del consultor (no del usuario logueado), usa el consultor.usuario_consultor */
       const loginParaMeta = String(consultor.usuario_consultor || usuarioActual || "").toLowerCase();
       const metaBase = EXCEPCION_8H_USERS?.has?.(loginParaMeta) ? 8 : 9;
-
       const estado = horas >= metaBase ? "ok" : horas > 0 ? "warn" : "none";
 
       return (
@@ -291,9 +308,10 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
           <div className="cal-nav">
             <button
               className="cal-btn"
+              disabled={lockMesAnio}
               onClick={() => {
                 setAnimacion("slideInLeft");
-                setMesActual(new Date(y, m - 1, 1));
+                setMesGlobal(new Date(y, m - 1, 1));
               }}
             >
               ◀
@@ -303,9 +321,10 @@ export default function Resumen({ userData, filtroEquipo = "" }) {
 
             <button
               className="cal-btn"
+              disabled={lockMesAnio}
               onClick={() => {
                 setAnimacion("slideInRight");
-                setMesActual(new Date(y, m + 1, 1));
+                setMesGlobal(new Date(y, m + 1, 1));
               }}
             >
               ▶

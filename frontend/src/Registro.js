@@ -1537,7 +1537,13 @@ const Registro = ({ userData }) => {
       </div>
 
       {error && <div style={{color:'crimson', marginTop:10}}>Error: {error}</div>}
-      <Resumen userData={userData} filtroEquipo={filtroEquipo} />
+      <Resumen
+        userData={userData}
+        filtroEquipo={filtroEquipo}
+        filtroConsultor={filtroConsultor}
+        filtroMes={filtroMes}
+        filtroAnio={filtroAnio}
+      />
     </div>
   );
 };
