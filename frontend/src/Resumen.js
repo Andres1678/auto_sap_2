@@ -3,7 +3,7 @@ import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
 import { EXCEPCION_8H_USERS } from "./lib/visibility";
 
-const API_PATH = "/resumen-horas";
+const API_PATH = "/registros";
 
 function extraerYMD(fechaStr) {
   if (!fechaStr) return null;
