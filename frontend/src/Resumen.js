@@ -124,6 +124,7 @@ export default function Resumen({ userData, filtroEquipo = "", filtroConsultor =
 
       const rows = Array.isArray(data) ? data : [];
 
+      // ✅ Agrupar por consultor y SUMAR por día (YYYY-MM-DD)
       const agrupado = Object.values(
         rows.reduce((acc, r) => {
           const usuarioKey = String(r.usuario_consultor || "").trim().toLowerCase();
@@ -134,30 +135,50 @@ export default function Resumen({ userData, filtroEquipo = "", filtroConsultor =
               consultor: r.consultor || r.nombre || usuarioKey || "—",
               consultor_id: r.consultor_id ?? null,
               usuario_consultor: usuarioKey || null,
-              registros: [],
+
+              // 👇 acumulador interno por día
+              _byDay: new Map(),
             };
           }
 
           const fechaNorm = normalizarFecha(r.fecha);
-          acc[key].registros.push({
-            fecha: r.fecha,
-            fechaNorm,
-            fechaKey: fechaNorm ? keyYMDFromDate(fechaNorm) : extraerYMD(r.fecha),
-            total_horas: Number(r.total_horas ?? r.totalHoras ?? 0),
+          const fechaKey = fechaNorm ? keyYMDFromDate(fechaNorm) : extraerYMD(r.fecha);
+          if (!fechaKey) return acc;
+
+          const horas = Number(r.total_horas ?? r.totalHoras ?? 0) || 0;
+
+          const prev = acc[key]._byDay.get(fechaKey) || {
+            fecha: r.fecha,          // para tooltip
+            fechaNorm,               // para filtros por mes/año
+            fechaKey,
+            total_horas: 0,
             estado: r.estado,
-          });
+          };
+
+          prev.total_horas += horas;
+
+          // opcional: si quieres conservar algún estado “más severo”
+          // (por ejemplo, si alguno viene "warn", que quede warn)
+          // aquí lo dejo simple: si hay estado en r y no había, lo ponemos
+          if (r.estado && !prev.estado) prev.estado = r.estado;
+
+          // si por algo prev no tenía fechaNorm y ahora sí, la guardamos
+          if (!prev.fechaNorm && fechaNorm) prev.fechaNorm = fechaNorm;
+
+          acc[key]._byDay.set(fechaKey, prev);
 
           return acc;
         }, {})
-      );
-
-      for (const c of agrupado) {
-        c.registros.sort((a, b) => {
+      ).map((c) => {
+        // ✅ Convertimos el Map por día a array "registros" ya consolidado
+        c.registros = Array.from(c._byDay.values()).sort((a, b) => {
           const da = a.fechaNorm?.getTime?.() ?? 0;
           const db = b.fechaNorm?.getTime?.() ?? 0;
           return da - db;
         });
-      }
+        delete c._byDay;
+        return c;
+      });
 
       setResumen(agrupado);
       setError("");
