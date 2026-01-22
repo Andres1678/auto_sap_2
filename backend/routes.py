@@ -870,7 +870,7 @@ def scope_for(consultor: "Consultor", rol_request: str):
 def obtener_registros():
     try:
         # ----------------------------------------------------------
-        # 1) Usuario / rol desde request
+        # 1) Usuario / Rol desde request
         # ----------------------------------------------------------
         usuario = _get_usuario_from_request()
         rol_req = _get_rol_from_request()
@@ -878,61 +878,57 @@ def obtener_registros():
         if not usuario:
             return jsonify({'error': 'Usuario no enviado'}), 400
 
-        usuario_norm = _norm_user(usuario)
+        usuario_norm = (usuario or "").strip().lower()
 
         # ----------------------------------------------------------
-        # 2) Consultor + relaciones (rol/equipo)
+        # 2) Consultor login (rol/equipo)
         # ----------------------------------------------------------
-        consultor = (
-            Consultor.query.options(
-                joinedload(Consultor.rol_obj),
-                joinedload(Consultor.equipo_obj),
-            )
+        consultor_login = (
+            Consultor.query
+            .options(joinedload(Consultor.rol_obj), joinedload(Consultor.equipo_obj))
             .filter(func.lower(Consultor.usuario) == usuario_norm)
             .first()
         )
-
-        if not consultor:
+        if not consultor_login:
             return jsonify({'error': 'Consultor no encontrado'}), 404
 
         # ----------------------------------------------------------
         # 3) Scope (SELF / TEAM / ALL)
         # ----------------------------------------------------------
-        scope, val = scope_for(consultor, rol_req)
-        # scope: "SELF" -> val = usuario_norm
-        # scope: "TEAM" -> val = equipo_id (int)
-        # scope: "ALL"  -> val = None
+        scope, val = scope_for(consultor_login, rol_req)
+        # SELF -> val = usuario
+        # TEAM -> val = equipo_id
+        # ALL  -> val = None
 
         # ----------------------------------------------------------
-        # 4) Query base
+        # 4) Query base (con relaciones)
         # ----------------------------------------------------------
-        query = (
-            Registro.query.options(
+        q = (
+            Registro.query
+            .options(
                 joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
-                joinedload(Registro.tarea),         # ajusta si necesitas más relaciones
+                joinedload(Registro.tarea),
                 joinedload(Registro.ocupacion),
             )
         )
 
         # ----------------------------------------------------------
-        # 5) Aplicar scope
+        # 5) Aplicar scope SIN joins duplicados
         # ----------------------------------------------------------
         if scope == "SELF":
-            query = query.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
 
         elif scope == "TEAM":
-            # TEAM: filtra por equipo del consultor (más confiable que registro.equipo_id si hay nulos)
-            query = query.join(
-                Consultor,
-                func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
-            ).filter(Consultor.equipo_id == val)
+            # filtra por equipo del consultor dueño del registro
+            q = q.filter(Registro.consultor.has(Consultor.equipo_id == int(val)))
 
-        elif scope == "ALL":
-            pass
+        # ALL => no filtra
 
         # ----------------------------------------------------------
-        # 6) Filtro opcional por equipo_id (querystring)
-        #    /registros?equipo_id=3
+        # 6) Filtros opcionales (si los usas en front)
+        #    - equipo_id=3 (filtra por Consultor.equipo_id)
+        #    - equipo=BASIS/FUNCIONAL (filtra por nombre de equipo)
+        #    - q=texto (buscador básico)
         # ----------------------------------------------------------
         equipo_id_filter = request.args.get("equipo_id")
         if equipo_id_filter:
@@ -941,103 +937,111 @@ def obtener_registros():
             except Exception:
                 return jsonify({'error': 'equipo_id inválido'}), 400
 
-            # Si viene TEAM, NO puede consultar otro equipo
+            # si el scope es TEAM, no dejar consultar otro equipo
             if scope == "TEAM" and int(val) != int(equipo_id_filter):
                 return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
 
-            # Filtrar por equipo_id del registro (si lo guardas en registro)
-            query = query.filter(Registro.equipo_id == equipo_id_filter)
+            q = q.filter(Registro.consultor.has(Consultor.equipo_id == equipo_id_filter))
+
+        equipo_txt = (request.args.get("equipo") or "").strip().upper()
+        if equipo_txt:
+            # si viene TEAM, validar que coincida con su equipo
+            if scope == "TEAM":
+                eq = Equipo.query.get(int(val))
+                if eq and (eq.nombre or "").strip().upper() != equipo_txt:
+                    return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
+
+            q = q.filter(
+                Registro.consultor.has(
+                    Consultor.equipo_obj.has(func.upper(Equipo.nombre) == equipo_txt)
+                )
+            )
+
+        qtext = (request.args.get("q") or "").strip()
+        if qtext:
+            like = f"%{qtext}%"
+            q = q.filter(or_(
+                Registro.cliente.ilike(like),
+                Registro.modulo.ilike(like),
+                Registro.descripcion.ilike(like),
+                Registro.nro_caso_cliente.ilike(like),
+                Registro.nro_caso_interno.ilike(like),
+                Registro.tipo_tarea.ilike(like),
+            ))
 
         # ----------------------------------------------------------
         # 7) Ejecutar
         # ----------------------------------------------------------
-        registros = query.order_by(Registro.fecha.desc(), Registro.id.desc()).all()
+        registros = q.order_by(Registro.fecha.desc(), Registro.id.desc()).all()
 
         # ----------------------------------------------------------
-        # 8) Map equipos (equipo_id -> nombre) para responder "equipo" como texto
-        # ----------------------------------------------------------
-        equipo_ids = set()
-        for r in registros:
-            if getattr(r, "equipo_id", None):
-                equipo_ids.add(r.equipo_id)
-            # fallback: equipo del consultor
-            if r.consultor and getattr(r.consultor, "equipo_id", None):
-                equipo_ids.add(r.consultor.equipo_id)
-
-        equipos_map = {}
-        if equipo_ids:
-            equipos = Equipo.query.filter(Equipo.id.in_(list(equipo_ids))).all()
-            equipos_map = {e.id: e.nombre for e in equipos}
-
-        # ----------------------------------------------------------
-        # 9) Serializar
+        # 8) Serializar (con nombres consistentes para el FRONT)
         # ----------------------------------------------------------
         data = []
         for r in registros:
-            tarea = r.tarea
+            c = r.consultor
 
-            ocup = r.ocupacion
-            # si tu tarea tiene ocupacion 1-1:
-            if not ocup and tarea and getattr(tarea, "ocupacion", None):
-                ocup = tarea.ocupacion
-            # si tu tarea tiene ocupaciones (lista), usa esto en vez de lo anterior:
-            # if not ocup and tarea and getattr(tarea, "ocupaciones", None) and tarea.ocupaciones:
-            #     ocup = tarea.ocupaciones[0]
-
-            # tipoTarea
-            if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
-                tipoTarea_str = f"{tarea.codigo} - {tarea.nombre}"
+            # Nombre de equipo (prioriza consultor.equipo_obj; fallback registro.equipo)
+            equipo_nombre = None
+            if c and c.equipo_obj and c.equipo_obj.nombre:
+                equipo_nombre = c.equipo_obj.nombre.strip().upper()
             else:
-                tipoTarea_str = (r.tipo_tarea or "").strip()
+                equipo_nombre = (r.equipo or "SIN EQUIPO").strip().upper()
 
-            # equipo_id y equipo nombre (prioriza registro.equipo_id, si no, consultor.equipo_id)
-            eq_id = getattr(r, "equipo_id", None) or (r.consultor.equipo_id if r.consultor else None)
-            eq_nombre = equipos_map.get(eq_id) if eq_id else None
+            # Tipo Tarea: 1) tarea (FK), 2) tipo_tarea (texto)
+            if r.tarea and r.tarea.codigo and r.tarea.nombre:
+                tipo_tarea_str = f"{r.tarea.codigo} - {r.tarea.nombre}"
+            else:
+                tipo_tarea_str = (r.tipo_tarea or "").strip()
+
+            # Ocupación: 1) FK ocupacion, 2) si tu tarea tiene ocupacion 1-1 (opcional)
+            ocup = r.ocupacion
+            if not ocup and r.tarea and getattr(r.tarea, "ocupacion", None):
+                ocup = r.tarea.ocupacion
 
             data.append({
-                'id': r.id,
-                'consultor_id': r.consultor.id if r.consultor else None,
-                'consultor': r.consultor.nombre if r.consultor else None,
+                "id": r.id,
 
-                'usuario_consultor': (r.usuario_consultor or "").strip().lower(),
+                "fecha": r.fecha,
+                "modulo": r.modulo,
+                "equipo": equipo_nombre,
+                "cliente": r.cliente,
 
-                'fecha': r.fecha,
-                'cliente': r.cliente,
-                'modulo': r.modulo,
+                "nroCasoCliente": r.nro_caso_cliente,
+                "nroCasoInterno": r.nro_caso_interno,
+                "nroCasoEscaladoSap": r.nro_caso_escalado,
 
-                # IMPORTANTE: tu React usa r.equipo como string -> lo mantenemos
-                'equipo_id': eq_id,
-                'equipo': (eq_nombre or "SIN EQUIPO"),
+                # 👇👇 CLAVE: envía ambos nombres para que el front no falle
+                "tipoTarea": tipo_tarea_str,
+                "tipoTareaAzure": tipo_tarea_str,   # <- para tu columna "Tipo Tarea Azure"
 
-                'nroCasoCliente': r.nro_caso_cliente,
-                'nroCasoInterno': r.nro_caso_interno,
-                'nroCasoEscaladoSap': r.nro_caso_escalado,
+                "tarea_id": r.tarea_id,
 
-                'tarea_id': r.tarea_id,
-                'tipoTarea': tipoTarea_str,
+                "ocupacion_id": r.ocupacion_id,
+                "ocupacion": (f"{ocup.codigo} - {ocup.nombre}" if ocup and ocup.codigo and ocup.nombre else None),
 
-                'ocupacion_id': r.ocupacion_id,
-                'ocupacion_codigo': ocup.codigo if ocup else None,
-                'ocupacion_nombre': ocup.nombre if ocup else None,
+                "consultor": (c.nombre if c else None),
+                "consultor_id": (c.id if c else None),
+                "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
 
-                'horaInicio': r.hora_inicio,
-                'horaFin': r.hora_fin,
-                'tiempoInvertido': r.tiempo_invertido,
-                'tiempoFacturable': r.tiempo_facturable,
-                'horasAdicionales': r.horas_adicionales,
-                'descripcion': r.descripcion,
-                'totalHoras': r.total_horas,
+                "horaInicio": r.hora_inicio,
+                "horaFin": r.hora_fin,
+                "tiempoInvertido": r.tiempo_invertido,
+                "tiempoFacturable": r.tiempo_facturable,
+                "horasAdicionales": r.horas_adicionales,
+                "descripcion": r.descripcion,
+                "totalHoras": r.total_horas,
 
-                'bloqueado': bool(r.bloqueado),
-                'oncall': r.oncall,
-                'desborde': r.desborde,
-                'actividadMalla': r.actividad_malla
+                "bloqueado": bool(r.bloqueado),
+                "oncall": r.oncall,
+                "desborde": r.desborde,
+                "actividadMalla": r.actividad_malla,
             })
 
         return jsonify(data), 200
 
     except Exception as e:
-        app.logger.exception("❌ Error en obtener_registros (/registros)")
+        app.logger.exception("❌ Error en /registros")
         return jsonify({'error': str(e)}), 500
 
 @bp.route("/resumen-horas", methods=["GET"])
@@ -1058,10 +1062,11 @@ def resumen_horas():
                 joinedload(Consultor.rol_obj),
                 joinedload(Consultor.equipo_obj),
             )
-            .filter(func.lower(Consultor.usuario) == usuario)
+
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
             .first()
         )
-
+        usuario_norm = _norm_user(usuario)
         if not consultor_login:
             return jsonify({"error": "Consultor no encontrado"}), 404
 
@@ -2140,6 +2145,7 @@ def eliminar_permiso(id):
     return jsonify({"mensaje": "Permiso eliminado"}), 200
 
 @bp.route('/roles/<int:rol_id>/permisos', methods=['GET'])
+@permission_required("ROLES_VER") 
 def permisos_por_rol(rol_id):
     role = Rol.query.get_or_404(rol_id)
     permisos = (
@@ -2171,6 +2177,7 @@ def asignar_permiso_rol(rol_id):
     return jsonify({"mensaje": "Permiso asignado al rol"}), 201
 
 @bp.route('/roles/<int:rol_id>/permisos/<int:permiso_id>', methods=['DELETE'])
+@permission_required("ROLES_EDITAR")
 def quitar_permiso_rol(rol_id, permiso_id):
     rp = RolPermiso.query.filter_by(rol_id=rol_id, permiso_id=permiso_id).first()
 
@@ -2183,6 +2190,7 @@ def quitar_permiso_rol(rol_id, permiso_id):
     return jsonify({"mensaje": "Permiso removido del rol"}), 200
 
 @bp.route('/equipos/<int:equipo_id>/permisos', methods=['GET'])
+@permission_required("EQUIPOS_VER")
 def permisos_por_equipo(equipo_id):
     permisos = (
         db.session.query(EquipoPermiso, Permiso)
@@ -2223,6 +2231,7 @@ def quitar_permiso_equipo(equipo_id, permiso_id):
     return jsonify({"mensaje": "Permiso removido del equipo"}), 200
 
 @bp.route('/consultores/<int:consultor_id>/permisos', methods=['GET'])
+@permission_required("CONSULTORES_VER") 
 def permisos_por_consultor(consultor_id):
     permisos = (
         db.session.query(ConsultorPermiso, Permiso)
