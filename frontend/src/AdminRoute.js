@@ -3,7 +3,8 @@ import { Navigate } from "react-router-dom";
 
 export default function AdminRoute({
   children,
-  allow = ["ADMIN"],
+  allow = ["ADMIN"],               
+  allowAdminPrefix = true,         
   requirePermiso = null,
   requirePermisos = null,
 }) {
@@ -16,28 +17,31 @@ export default function AdminRoute({
     return <Navigate to="/login" replace />;
   }
 
-  // Validar sesión
+  
   if (!raw) {
     console.warn("❌ No hay sesión activa");
     return <Navigate to="/login" replace />;
   }
 
-  // Backend devuelve: { usuario, nombre, rol, equipo, permisos, ... }
+  
   const rol = String(raw.rol || "").trim().toUpperCase();
 
-  // Roles permitidos
   const allowedRoles = Array.isArray(allow)
     ? allow.map((r) => String(r).trim().toUpperCase())
     : [String(allow).trim().toUpperCase()];
 
-  if (!allowedRoles.includes(rol)) {
+  
+  const isAdminPrefix = allowAdminPrefix && rol.startsWith("ADMIN_");
+
+  
+  if (!allowedRoles.includes(rol) && !isAdminPrefix) {
     console.warn(
-      `⛔ Acceso denegado. Rol requerido: ${allowedRoles.join(", ")} — Rol actual: ${rol}`
+      `⛔ Acceso denegado. Rol requerido: ${allowedRoles.join(", ")}${allowAdminPrefix ? " o ADMIN_*" : ""} — Rol actual: ${rol}`
     );
     return <Navigate to="/" replace />;
   }
 
-  // Permisos
+  
   const permisos = raw.permisos || [];
 
   if (!Array.isArray(permisos)) {
@@ -45,15 +49,15 @@ export default function AdminRoute({
     return <Navigate to="/" replace />;
   }
 
-  // Validación de un solo permiso
+  
   if (requirePermiso && !permisos.includes(requirePermiso)) {
     console.warn(`⛔ Falta permiso: ${requirePermiso}`);
     return <Navigate to="/" replace />;
   }
 
-  // Validación de varios permisos
+  
   if (Array.isArray(requirePermisos) && requirePermisos.length > 0) {
-    const faltantes = requirePermisos.filter(p => !permisos.includes(p));
+    const faltantes = requirePermisos.filter((p) => !permisos.includes(p));
     if (faltantes.length > 0) {
       console.warn(`⛔ Faltan permisos: ${faltantes.join(", ")}`);
       return <Navigate to="/" replace />;
