@@ -289,20 +289,35 @@ export default function Graficos() {
 
   const rol = String(user?.rol || user?.user?.rol || '').toUpperCase();
   const nombreUser = String(user?.nombre || user?.user?.nombre || '').trim();
+  const rolUpper = String(user?.rol || user?.user?.rol || '').toUpperCase();
   const equipoUser = String(user?.equipo || user?.user?.equipo || '').toUpperCase();
   const usuario = String(user?.usuario || user?.user?.usuario || '').trim();
-  const isAdmin = ['ADMIN', 'ADMIN_BASIS', 'ADMIN_FUNCIONAL'].includes(rol);
+  const isAdminAll = rolUpper === 'ADMIN';
+  const isAdminLike = rolUpper.startsWith('ADMIN_'); // ADMIN_BASIS, ADMIN_FUNCIONAL, etc.
+  const isAdminTeam = !isAdminAll && isAdminLike && !!equipoUser;
+
+  const scope = isAdminAll ? 'ALL' : (isAdminTeam ? 'TEAM' : 'SELF');
+  const isAdmin = scope !== 'SELF';
 
   /* Carga registros */
   useEffect(() => {
     const fetchRegistros = async () => {
       setError('');
       try {
+        const rolUpper = String(rol || '').toUpperCase();
+
+        const isAdminAll = rolUpper === 'ADMIN';
+        const isAdminLike = rolUpper.startsWith('ADMIN_');
+        const isAdminTeam = !isAdminAll && isAdminLike && !!equipoUser;
+        const scope = isAdminAll ? 'ALL' : (isAdminTeam ? 'TEAM' : 'SELF');
+
         const res = await jfetch('/registros', {
           method: 'GET',
           headers: {
-            'X-User-Rol': rol,
+            'X-User-Rol': rolUpper,
             'X-User-Usuario': usuario,
+            // opcional (si tu backend lo usa): 
+            'X-User-Equipo': equipoUser,
           }
         });
 
@@ -312,14 +327,18 @@ export default function Graficos() {
         const arr = Array.isArray(json) ? json : [];
         setRegistros(arr);
 
-        // Inicializar filtros según rol
-        if (!isAdmin) {
-          if (nombreUser) setFiltroConsultor([nombreUser]);
-          if (equipoUser) setFiltroEquipo([equipoUser]);
+        // Inicializar filtros según SCOPE
+        if (scope === 'SELF') {
+          setFiltroConsultor(nombreUser ? [nombreUser] : []);
+          setFiltroEquipo(equipoUser ? [equipoUser] : []);
+        } else if (scope === 'TEAM') {
+          setFiltroEquipo(equipoUser ? [equipoUser] : []);
+          setFiltroConsultor([]); // todos los consultores del equipo
         } else {
           setFiltroConsultor([]);
           setFiltroEquipo([]);
         }
+
       } catch (err) {
         setRegistros([]);
         setError(String(err?.message || err));
@@ -328,7 +347,7 @@ export default function Graficos() {
     };
 
     fetchRegistros();
-  }, [rol, usuario, nombreUser, equipoUser, isAdmin]);
+  }, [rol, usuario, nombreUser, equipoUser]);
 
   useEffect(() => {
     const fetchOcupaciones = async () => {
@@ -471,6 +490,24 @@ export default function Graficos() {
   /* Datos filtrados */
   const datosFiltrados = useMemo(() => {
     return (registros ?? []).filter(r => {
+
+      
+      const eq = equipoOf(r);
+
+      if (scope === 'SELF') {
+        const u = String(usuario || '').trim().toLowerCase();
+        const ru = String(r.usuario_consultor || '').trim().toLowerCase();
+
+        if (u && ru && ru !== u) return false;
+        if (equipoUser && eq !== equipoUser) return false;
+      }
+
+
+      if (scope === 'TEAM') {
+        if (equipoUser && eq !== equipoUser) return false;
+      }
+
+      
       if (!coincideMes(r.fecha, filtroMes)) return false;
 
       if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultor)) return false;
@@ -478,10 +515,7 @@ export default function Graficos() {
       if (filtroCliente.length > 0 && !filtroCliente.includes(r.cliente)) return false;
       if (filtroModulo.length > 0 && !filtroModulo.includes(r.modulo)) return false;
 
-      if (filtroEquipo.length > 0) {
-        const eq = equipoOf(r);
-        if (!filtroEquipo.includes(eq)) return false;
-      }
+      if (filtroEquipo.length > 0 && !filtroEquipo.includes(eq)) return false;
 
       if (filtroNroCliente.length > 0) {
         const val = String(r.nroCasoCliente || '');
@@ -497,8 +531,10 @@ export default function Graficos() {
     });
   }, [
     registros, filtroMes, filtroConsultor, filtroTarea, filtroCliente,
-    filtroModulo, filtroEquipo, filtroNroCliente, filtroNroEscalado
+    filtroModulo, filtroEquipo, filtroNroCliente, filtroNroEscalado,
+    scope, usuario, equipoUser
   ]);
+
 
   /* Agrupaciones */
   const horasPorConsultor = useMemo(() => {
@@ -672,13 +708,20 @@ export default function Graficos() {
      RENDER
   ============================ */
 
-  const consultoresParaFiltro = isAdmin
-    ? consultoresUnicos
-    : (nombreUser ? [nombreUser] : []);
+  const consultoresUnicosTeam = useMemo(() => {
+    const set = new Set(
+      (registros ?? [])
+        .filter(r => coincideMes(r.fecha, filtroMes))
+        .filter(r => !equipoUser || equipoOf(r) === equipoUser)
+        .map(r => r.consultor)
+    );
+    return Array.from(set).filter(Boolean).sort((a,b) => a.localeCompare(b));
+  }, [registros, filtroMes, equipoUser]);
 
-  const equiposParaFiltro = isAdmin
-    ? equiposUnicos
-    : (equipoUser ? [equipoUser] : equiposUnicos);
+  const consultoresParaFiltro =
+    scope === 'ALL'  ? consultoresUnicos :
+    scope === 'TEAM' ? consultoresUnicosTeam :
+    (nombreUser ? [nombreUser] : []);
 
   return (
     <div className="panel-graficos-container">
@@ -705,9 +748,13 @@ export default function Graficos() {
           titulo="CONSULTORES"
           opciones={consultoresParaFiltro}
           seleccion={filtroConsultor}
-          onChange={isAdmin ? setFiltroConsultor : () => {}}
-          placeholder={isAdmin ? 'Todos los consultores' : (nombreUser || 'Tu usuario')}
-          disabled={!isAdmin}
+          onChange={(scope === 'ALL' || scope === 'TEAM') ? setFiltroConsultor : () => {}}
+          disabled={scope === 'SELF'}
+          placeholder={
+            scope === 'ALL' ? 'Todos los consultores' :
+            scope === 'TEAM' ? 'Consultores del equipo' :
+            (nombreUser || 'Tu usuario')
+          }
         />
 
         <MultiFiltro
@@ -752,11 +799,13 @@ export default function Graficos() {
 
         <MultiFiltro
           titulo="EQUIPOS"
-          opciones={equiposParaFiltro}
+          opciones={scope === 'ALL' ? equiposUnicos : (equipoUser ? [equipoUser] : [])}
           seleccion={filtroEquipo}
-          onChange={setFiltroEquipo}
-          placeholder={isAdmin ? 'Todos los equipos' : 'Tu equipo'}
+          onChange={scope === 'ALL' ? setFiltroEquipo : () => {}}
+          disabled={scope !== 'ALL'}
+          placeholder={scope === 'ALL' ? 'Todos los equipos' : 'Tu equipo'}
         />
+
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span className="mf-label">MES</span>
@@ -779,10 +828,13 @@ export default function Graficos() {
             setFiltroNroCliente([]);
             setFiltroNroEscalado([]);
 
-            if (isAdmin) {
+            if (scope === 'ALL') {
               setFiltroEquipo([]);
               setFiltroConsultor([]);
-            } else {
+            } else if (scope === 'TEAM') {
+              setFiltroEquipo(equipoUser ? [equipoUser] : []);
+              setFiltroConsultor([]); // deja ver todo el equipo
+            } else { // SELF
               setFiltroEquipo(equipoUser ? [equipoUser] : []);
               setFiltroConsultor(nombreUser ? [nombreUser] : []);
             }

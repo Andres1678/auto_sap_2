@@ -163,13 +163,23 @@ def obtener_permisos_finales(consultor):
 
 
 def _is_admin_role(rol: str) -> bool:
-    return str(rol or "").upper() in {"ADMIN", "ADMIN_BASIS", "ADMIN_FUNCIONAL"}
+    r = str(rol or "").strip().upper()
+    return r == "ADMIN" or r.startswith("ADMIN_")
 
-def _is_admin_request(rol: str, consultor) -> bool:
-    if _is_admin_role(rol):
+
+def _is_admin_request(rol_header: str, consultor) -> bool:
+    # 1) rol enviado por header/query
+    if _is_admin_role(rol_header):
         return True
-    if consultor and _is_admin_role(getattr(consultor, "rol", "")):
-        return True
+
+    # 2) rol real del consultor en BD (rol_obj)
+    if consultor and getattr(consultor, "rol_obj", None) and getattr(consultor.rol_obj, "nombre", None):
+        return _is_admin_role(consultor.rol_obj.nombre)
+
+    # 3) fallback por campo plano consultor.rol si lo usas en algún lado
+    if consultor and getattr(consultor, "rol", None):
+        return _is_admin_role(consultor.rol)
+
     return False
 
 
@@ -221,6 +231,7 @@ def admin_required(fn):
 
         if not _is_admin_request(rol, c):
             return jsonify({'mensaje': 'Solo ADMIN'}), 403
+
         return fn(*args, **kwargs)
     return wrapper
 
@@ -441,6 +452,7 @@ def login():
 
 
 @bp.route('/consultores', methods=['POST'])
+@permission_required("CONSULTORES_CREAR")
 def crear_consultor():
     data = request.get_json() or {}
 
@@ -507,6 +519,7 @@ def _apply_catalog_fields_to_consultor(consultor, data):
 # PUT /api/consultores/<id> — Editar consultor
 # ===============================
 @bp.route('/consultores/<int:id>', methods=['PUT'])
+@permission_required("CONSULTORES_EDITAR")
 def editar_consultor(id):
     data = request.get_json() or {}
     c = Consultor.query.get_or_404(id)
@@ -820,8 +833,9 @@ def _get_rol_from_request() -> str:
     )
 
 def _is_admin_total(role: str) -> bool:
-    # ADMIN ve TODO
-    return _norm_role(role) == "ADMIN"
+    r = _norm_role(role)
+    # ADMIN o cualquier ADMIN_*
+    return r == "ADMIN" or r.startswith("ADMIN_")
 
 def _is_admin_equipo(role: str) -> bool:
     # Admin por equipo
@@ -855,80 +869,130 @@ def scope_for(consultor: "Consultor", rol_request: str):
 @bp.route('/registros', methods=['GET'])
 def obtener_registros():
     try:
-        
+        # ----------------------------------------------------------
+        # 1) Usuario / rol desde request
+        # ----------------------------------------------------------
         usuario = _get_usuario_from_request()
         rol_req = _get_rol_from_request()
 
         if not usuario:
             return jsonify({'error': 'Usuario no enviado'}), 400
 
-        consultor = Consultor.query.options(
-            joinedload(Consultor.rol_obj),
-            joinedload(Consultor.equipo_obj),
-        ).filter(func.lower(Consultor.usuario) == usuario).first()
+        usuario_norm = _norm_user(usuario)
+
+        # ----------------------------------------------------------
+        # 2) Consultor + relaciones (rol/equipo)
+        # ----------------------------------------------------------
+        consultor = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
 
         if not consultor:
             return jsonify({'error': 'Consultor no encontrado'}), 404
 
-       
+        # ----------------------------------------------------------
+        # 3) Scope (SELF / TEAM / ALL)
+        # ----------------------------------------------------------
         scope, val = scope_for(consultor, rol_req)
+        # scope: "SELF" -> val = usuario_norm
+        # scope: "TEAM" -> val = equipo_id (int)
+        # scope: "ALL"  -> val = None
 
-        
-        query = Registro.query.options(
-            joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
-            joinedload(Registro.tarea).joinedload(Tarea.ocupaciones),
-            joinedload(Registro.ocupacion)
+        # ----------------------------------------------------------
+        # 4) Query base
+        # ----------------------------------------------------------
+        query = (
+            Registro.query.options(
+                joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
+                joinedload(Registro.tarea),         # ajusta si necesitas más relaciones
+                joinedload(Registro.ocupacion),
+            )
         )
 
-        
+        # ----------------------------------------------------------
+        # 5) Aplicar scope
+        # ----------------------------------------------------------
         if scope == "SELF":
-            query = query.filter(func.lower(Registro.usuario_consultor) == _norm_user(val))
+            query = query.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
 
         elif scope == "TEAM":
-           
+            # TEAM: filtra por equipo del consultor (más confiable que registro.equipo_id si hay nulos)
             query = query.join(
                 Consultor,
                 func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
             ).filter(Consultor.equipo_id == val)
 
-       
-        equipo_filter = (request.args.get("equipo") or "").strip().upper()
-        if equipo_filter:
-            query = query.join(
-                Consultor,
-                func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
-            ).join(
-                Equipo,
-                Consultor.equipo_id == Equipo.id
-            ).filter(func.upper(Equipo.nombre) == equipo_filter)
+        elif scope == "ALL":
+            pass
 
-       
+        # ----------------------------------------------------------
+        # 6) Filtro opcional por equipo_id (querystring)
+        #    /registros?equipo_id=3
+        # ----------------------------------------------------------
+        equipo_id_filter = request.args.get("equipo_id")
+        if equipo_id_filter:
+            try:
+                equipo_id_filter = int(str(equipo_id_filter).strip())
+            except Exception:
+                return jsonify({'error': 'equipo_id inválido'}), 400
 
+            # Si viene TEAM, NO puede consultar otro equipo
+            if scope == "TEAM" and int(val) != int(equipo_id_filter):
+                return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
+
+            # Filtrar por equipo_id del registro (si lo guardas en registro)
+            query = query.filter(Registro.equipo_id == equipo_id_filter)
+
+        # ----------------------------------------------------------
+        # 7) Ejecutar
+        # ----------------------------------------------------------
         registros = query.order_by(Registro.fecha.desc(), Registro.id.desc()).all()
 
-        
+        # ----------------------------------------------------------
+        # 8) Map equipos (equipo_id -> nombre) para responder "equipo" como texto
+        # ----------------------------------------------------------
+        equipo_ids = set()
+        for r in registros:
+            if getattr(r, "equipo_id", None):
+                equipo_ids.add(r.equipo_id)
+            # fallback: equipo del consultor
+            if r.consultor and getattr(r.consultor, "equipo_id", None):
+                equipo_ids.add(r.consultor.equipo_id)
+
+        equipos_map = {}
+        if equipo_ids:
+            equipos = Equipo.query.filter(Equipo.id.in_(list(equipo_ids))).all()
+            equipos_map = {e.id: e.nombre for e in equipos}
+
+        # ----------------------------------------------------------
+        # 9) Serializar
+        # ----------------------------------------------------------
         data = []
         for r in registros:
             tarea = r.tarea
 
-            
             ocup = r.ocupacion
-            if not ocup and tarea and getattr(tarea, "ocupaciones", None):
-                if tarea.ocupaciones:
-                    ocup = tarea.ocupaciones[0]
+            # si tu tarea tiene ocupacion 1-1:
+            if not ocup and tarea and getattr(tarea, "ocupacion", None):
+                ocup = tarea.ocupacion
+            # si tu tarea tiene ocupaciones (lista), usa esto en vez de lo anterior:
+            # if not ocup and tarea and getattr(tarea, "ocupaciones", None) and tarea.ocupaciones:
+            #     ocup = tarea.ocupaciones[0]
 
+            # tipoTarea
             if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
                 tipoTarea_str = f"{tarea.codigo} - {tarea.nombre}"
             else:
                 tipoTarea_str = (r.tipo_tarea or "").strip()
 
-            
-            if tarea and not (r.tipo_tarea or "").strip():
-                try:
-                    r.tipo_tarea = tipoTarea_str
-                    db.session.commit()
-                except Exception:
-                    db.session.rollback()
+            # equipo_id y equipo nombre (prioriza registro.equipo_id, si no, consultor.equipo_id)
+            eq_id = getattr(r, "equipo_id", None) or (r.consultor.equipo_id if r.consultor else None)
+            eq_nombre = equipos_map.get(eq_id) if eq_id else None
 
             data.append({
                 'id': r.id,
@@ -941,12 +1005,9 @@ def obtener_registros():
                 'cliente': r.cliente,
                 'modulo': r.modulo,
 
-                # equipo mostrado (del consultor si existe; si no, del campo equipo del registro)
-                'equipo': (
-                    r.consultor.equipo_obj.nombre
-                    if r.consultor and r.consultor.equipo_obj
-                    else (r.equipo or "SIN EQUIPO")
-                ),
+                # IMPORTANTE: tu React usa r.equipo como string -> lo mantenemos
+                'equipo_id': eq_id,
+                'equipo': (eq_nombre or "SIN EQUIPO"),
 
                 'nroCasoCliente': r.nro_caso_cliente,
                 'nroCasoInterno': r.nro_caso_interno,
@@ -980,6 +1041,7 @@ def obtener_registros():
         return jsonify({'error': str(e)}), 500
 
 @bp.route("/resumen-horas", methods=["GET"])
+@permission_required("GRAFICOS_VER")
 def resumen_horas():
     try:
         # ----------------------------------------------------------
@@ -1887,7 +1949,7 @@ def importar_oportunidades():
 
 
 @bp.route('/oportunidades/filters', methods=['GET'])
-@permission_required("OPORTUNIDADES_CREAR")
+@permission_required("OPORTUNIDADES_VER")
 def oportunidades_filters():
     base = Oportunidad.query
     base = _apply_oportunidades_filters(base)
@@ -1950,7 +2012,7 @@ def oportunidades_filters():
     }), 200
 
 @bp.route('/oportunidades', methods=['GET'])
-@permission_required("OPORTUNIDADES_CREAR")
+@permission_required("OPORTUNIDADES_VER")
 def listar_oportunidades():
     query = Oportunidad.query
     query = _apply_oportunidades_filters(query)
@@ -1959,6 +2021,7 @@ def listar_oportunidades():
     return jsonify(data), 200
 
 @bp.route('/oportunidades', methods=['POST'])
+@permission_required("OPORTUNIDADES_CREAR")
 def crear_oportunidad():
     data = request.get_json() or {}
     o = Oportunidad(**data)
@@ -1968,6 +2031,7 @@ def crear_oportunidad():
 
 
 @bp.route('/oportunidades/<int:id>', methods=['PUT'])
+@permission_required("OPORTUNIDADES_EDITAR")
 def editar_oportunidad(id):
     data = request.get_json() or {}
     o = Oportunidad.query.get_or_404(id)
@@ -1979,6 +2043,7 @@ def editar_oportunidad(id):
 
 
 @bp.route('/oportunidades/<int:id>', methods=['DELETE'])
+@permission_required("OPORTUNIDADES_ELIMINAR")
 def eliminar_oportunidad(id):
     o = Oportunidad.query.get_or_404(id)
     db.session.delete(o)
@@ -1988,6 +2053,7 @@ def eliminar_oportunidad(id):
 # ========== CLIENTES ==========
 
 @bp.route('/clientes', methods=['GET'])
+@permission_required("CLIENTES_VER")
 def listar_clientes():
     q = (request.args.get('q') or "").strip()
     query = Cliente.query
@@ -2000,6 +2066,7 @@ def listar_clientes():
     return jsonify(data), 200
 
 @bp.route('/clientes', methods=['POST'])
+@permission_required("CLIENTES_CREAR")
 def crear_cliente():
     data = request.get_json() or {}
 
@@ -2015,6 +2082,7 @@ def crear_cliente():
 
 
 @bp.route('/clientes/<int:id>', methods=['PUT'])
+@permission_required("CLIENTES_EDITAR")
 def editar_cliente(id):
     c = Cliente.query.get_or_404(id)
     data = request.get_json() or {}
@@ -2030,6 +2098,7 @@ def editar_cliente(id):
 
 
 @bp.route('/clientes/<int:id>', methods=['DELETE'])
+@permission_required("CLIENTES_ELIMINAR")
 def eliminar_cliente(id):
     c = Cliente.query.get_or_404(id)
     db.session.delete(c)
@@ -2039,6 +2108,7 @@ def eliminar_cliente(id):
 # ========== PERMISOS ==========
 
 @bp.route('/permisos', methods=['GET'])
+@permission_required("PERMISOS_VER")
 def listar_permisos():
     permisos = Permiso.query.order_by(Permiso.codigo).all()
     return jsonify([p.to_dict() for p in permisos]), 200
@@ -2369,6 +2439,7 @@ def quitar_tarea_de_ocupacion(ocupacion_id, tarea_id):
     return jsonify({"mensaje": "Tarea removida", "ocupacion": ocupacion.to_dict()}), 200
 
 @bp.route("/horarios-estadisticas", methods=["GET"])
+@permission_required("GRAFICOS_VER")
 def obtener_horarios():
     try:
         registros = Registro.query.all()
@@ -2485,6 +2556,7 @@ def permisos_asignados(consultor_id):
 # -------------------------------
 
 @bp.route("/horas-ocupacion", methods=["GET"])
+@permission_required("GRAFICOS_VER")
 def estadisticas_ocupaciones():
     try:
         registros = Registro.query.all()
@@ -2550,7 +2622,7 @@ def quitar_permiso_consultor_por_codigo(consultor_id, codigo):
 # ========== ROLES ==========
 
 @bp.route('/roles', methods=['POST'])
-@permission_required("ROLES_CREAR")
+@permission_required("ROLES_ADMIN")
 def crear_rol():
     data = request.get_json() or {}
     nombre = data.get("nombre", "").strip().upper()
@@ -2568,6 +2640,7 @@ def crear_rol():
     return jsonify({"mensaje": "Rol creado", "rol": rol.to_dict()}), 201
 
 @bp.route('/roles/<int:id>', methods=['PUT'])
+@permission_required("ROLES_ADMIN")
 def editar_rol(id):
     rol = Rol.query.get_or_404(id)
     data = request.get_json() or {}
@@ -2583,7 +2656,7 @@ def editar_rol(id):
     return jsonify({"mensaje": "Rol actualizado", "rol": rol.to_dict()}), 200
 
 @bp.route('/roles/<int:id>', methods=['DELETE'])
-@permission_required("ROLES_ELIMINAR")
+@permission_required("ROLES_ADMIN")
 def eliminar_rol(id):
     rol = Rol.query.get_or_404(id)
 
@@ -2617,6 +2690,7 @@ def asignar_rol_consultor(id):
 # ========== EQUIPOS ==========
 
 @bp.route('/equipos', methods=['POST'])
+@permission_required("EQUIPOS_ADMIN")
 def crear_equipo():
     data = request.get_json() or {}
     nombre = data.get("nombre", "").strip().upper()
@@ -2634,6 +2708,7 @@ def crear_equipo():
     return jsonify(eq.to_dict()), 201
 
 @bp.route('/equipos/<int:id>', methods=['PUT'])
+@permission_required("EQUIPOS_ADMIN")
 def editar_equipo(id):
     equipo = Equipo.query.get_or_404(id)
     data = request.get_json() or {}
@@ -2649,6 +2724,7 @@ def editar_equipo(id):
     return jsonify(equipo.to_dict()), 200
 
 @bp.route('/equipos/<int:id>', methods=['DELETE'])
+@permission_required("EQUIPOS_ADMIN")
 def eliminar_equipo(id):
     equipo = Equipo.query.get_or_404(id)
 
