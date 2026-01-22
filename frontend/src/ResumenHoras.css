@@ -1,7 +1,17 @@
-/* ============================================================
- 🌟 CALENDARIO RESUMEN DE HORAS (Versión Premium)
-============================================================ */
+:root{
+  --pad: 18px;
+  --text: #0b1220;
+  --muted: #6b7280;
+  --border: #e6ebf2;
+  --card: #ffffff;
+  --accent: #0055B8;
+  --success: #059669;
+  --warning: #d97706;
+}
 
+/* ========================
+   CONTENEDOR PRINCIPAL
+======================== */
 .resumen-wrapper {
   display: flex;
   flex-direction: column;
@@ -26,42 +36,81 @@
 }
 
 /* ========================
+   GRID PARA ADMIN
+======================== */
+.resumen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 28px;
+  justify-items: stretch;   /* 🔥 importante: que estire a todo el ancho */
+  width: 100%;
+  align-items: start;
+}
+
+.resumen-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;     /* 🔥 header y calendario ocupan todo el ancho */
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* ========================
    CABECERA DEL CALENDARIO
 ======================== */
 .cal-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  width: 100%;
-  max-width: 700px;
+  width: 100%;              /* ✅ */
+  max-width: none;          /* ✅ quitamos el tope 700px */
   background: linear-gradient(90deg, #fff7f7 0%, #f6f9ff 100%);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 10px 16px;
+  padding: 10px 14px;
   box-shadow: 0 4px 10px rgba(2, 6, 23, 0.06);
+  gap: 10px;
 }
 
 .cal-head h3 {
-  font-size: 1.05rem;
+  margin: 0;
+  font-size: 1.02rem;
   font-weight: 800;
   color: var(--text);
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;          /* evita que rompa el layout */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.15;
+  max-width: 48%;
 }
 
 .cal-head .total {
-  font-weight: 700;
+  font-weight: 800;
   font-size: 0.9rem;
   color: var(--accent);
+  white-space: nowrap;
 }
 
 /* Flechas de navegación */
 .cal-nav {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  flex: 1;
+  min-width: 140px;
 }
+
+.cal-nav span{
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--text);
+  white-space: nowrap;
+  text-align: center;
+}
+
 .cal-btn {
   background: #fff;
   border: 1px solid var(--border);
@@ -74,20 +123,27 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: transform .12s ease, box-shadow .18s ease, background .18s ease, color .18s ease;
 }
 .cal-btn:hover {
   background: #f7f9fc;
   color: var(--accent);
   box-shadow: 0 2px 6px rgba(2, 6, 23, 0.08);
+  transform: translateY(-1px);
+}
+.cal-btn:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 /* ========================
    CALENDARIO MENSUAL
 ======================== */
 .cal-wrapper {
-  width: 100%;
-  max-width: 700px;
+  width: 100%;              /* ✅ */
+  max-width: none;          /* ✅ quitamos el tope 700px */
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -97,29 +153,29 @@
   overflow: hidden;
 }
 
-/* Animación de transición de mes */
+/* Animaciones (clases reales que sí usas en React) */
 @keyframes slideInLeft {
-  from { transform: translateX(-40px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  from { transform: translateX(-32px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
 }
 @keyframes slideInRight {
-  from { transform: translateX(40px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  from { transform: translateX(32px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
 }
 
-.cal-month {
-  animation: slideInLeft 0.3s ease;
-}
+.cal-wrapper.slideInLeft { animation: slideInLeft .25s ease; }
+.cal-wrapper.slideInRight{ animation: slideInRight .25s ease; }
 
 /* Encabezado de días */
 .cal-days-header {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   text-align: center;
-  font-weight: 700;
-  font-size: 0.8rem;
+  font-weight: 800;
+  font-size: 0.78rem;
   color: var(--muted);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  user-select: none;
 }
 
 /* Grid de días */
@@ -131,7 +187,8 @@
 
 /* Día */
 .cal-dia {
-  aspect-ratio: 1;
+  aspect-ratio: 1 / 1;
+  min-height: 54px;               /* ✅ evita que se vea muy chico */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -142,24 +199,29 @@
   background: #f7f9fc;
   color: var(--text);
   font-size: .9rem;
-  font-weight: 800;
+  font-weight: 900;
   cursor: default;
   transition: transform .12s ease, box-shadow .18s ease, background .18s ease;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.6);
   position: relative;
+  z-index: 0;
+  will-change: transform;
 }
+
+/* 🔥 IMPORTANTE: para que el hover NO invada tarjetas vecinas */
+.resumen-card { overflow: hidden; } /* recorta hover si se sale */
 .cal-dia:hover {
-  transform: scale(1.08);
-  box-shadow: 0 4px 10px rgba(2, 6, 23, 0.08);
+  transform: scale(1.04);          /* bajamos de 1.08 */
+  box-shadow: 0 6px 14px rgba(2, 6, 23, 0.10);
   z-index: 2;
 }
 
 /* mini horas bajo el número */
 .cal-dia small {
   font-size: .7rem;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--muted);
-  opacity: .9;
+  opacity: .92;
   line-height: 1;
 }
 
@@ -170,8 +232,8 @@
   color: var(--success);
 }
 .cal-dia.warn {
-  background: linear-gradient(180deg, rgba(217,119,6,0.18), rgba(217,119,6,0.1));
-  border-color: rgba(217,119,6,0.4);
+  background: linear-gradient(180deg, rgba(217,119,6,0.18), rgba(217,119,6,0.10));
+  border-color: rgba(217,119,6,0.40);
   color: var(--warning);
 }
 .cal-dia.none {
@@ -179,11 +241,15 @@
   border-color: #e5e7eb;
   color: #a1a1aa;
 }
-.cal-dia.empty {
+.cal-dia.blank{
   background: transparent;
   border: none;
   box-shadow: none;
   cursor: default;
+}
+.cal-dia.blank:hover{
+  transform:none;
+  box-shadow:none;
 }
 
 /* Tooltip */
@@ -210,16 +276,28 @@
 /* ========================
    RESPONSIVE
 ======================== */
+@media (max-width: 900px) {
+  .cal-head h3 { max-width: 44%; }
+}
 @media (max-width: 768px) {
   .cal-head {
     flex-direction: column;
-    gap: 6px;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .cal-head h3 {
+    max-width: 100%;
+    -webkit-line-clamp: 3;
+    text-align: left;
+  }
+  .cal-head .total {
+    text-align: right;
   }
   .cal-grid {
     gap: 6px;
   }
-  .cal-dia { font-size: .8rem; }
-  .cal-dia small { font-size: .6rem; }
+  .cal-dia { font-size: .82rem; min-height: 48px; }
+  .cal-dia small { font-size: .62rem; }
 }
 
 /* ========================
@@ -230,13 +308,17 @@
   border-color: #1f2937;
   box-shadow: 0 2px 8px rgba(0,0,0,.4);
 }
+.theme-dark .cal-head{
+  background: linear-gradient(90deg, rgba(227,6,19,.10), rgba(0,85,184,.10));
+  border-color: #1f2937;
+}
 .theme-dark .cal-dia {
   background: #1e293b;
   border-color: #374151;
   color: #e5e7eb;
 }
 .theme-dark .cal-dia.ok {
-  background: linear-gradient(180deg, rgba(34,197,94,0.2), rgba(34,197,94,0.12));
+  background: linear-gradient(180deg, rgba(34,197,94,0.20), rgba(34,197,94,0.12));
   color: #22c55e;
 }
 .theme-dark .cal-dia.warn {
@@ -246,22 +328,4 @@
 .theme-dark .cal-dia.none {
   background: #1f2937;
   color: #9ca3af;
-}
-
-/* ========================
-   GRID PARA ADMIN
-======================== */
-.resumen-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 32px;
-  justify-items: center;
-  width: 100%;
-}
-
-.resumen-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
 }
