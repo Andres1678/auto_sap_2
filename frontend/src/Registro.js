@@ -1477,7 +1477,7 @@ const Registro = ({ userData }) => {
                   <td>{r.nroCasoInterno}</td>
                   <td>{r.nroCasoEscaladoSap}</td>
                   <td>{obtenerOcupacionDeRegistro(r)}</td>
-                  <td>{r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—"}</td>
+                  <td>{r.tipoTarea || (r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—")}</td>
                   <td>{r.consultor ?? nombreUser}</td>
                   <td>{r.horaInicio}</td>
                   <td>{r.horaFin}</td>
