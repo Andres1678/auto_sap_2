@@ -834,32 +834,41 @@ def _get_rol_from_request() -> str:
 
 def _is_admin_total(role: str) -> bool:
     r = _norm_role(role)
-    # ADMIN o cualquier ADMIN_*
-    return r == "ADMIN" or r.startswith("ADMIN_")
+    # SOLO admin global
+    return r in {"ADMIN", "SUPERADMIN", "ADMIN_TOTAL"}
 
 def _is_admin_equipo(role: str) -> bool:
-    # Admin por equipo
-    return _norm_role(role) in {"ADMIN_FUNCIONAL", "ADMIN_BASIS", "ADMIN_IMPLEMENTACION", "ADMIN_GESTION_DE_PROYECTOS", "ADMIN_CONSULTORIA", "ADMIN_ARQUITECTURA"}
+    return _norm_role(role) in {
+        "ADMIN_FUNCIONAL",
+        "ADMIN_BASIS",
+        "ADMIN_IMPLEMENTACION",
+        "ADMIN_GESTION_DE_PROYECTOS",
+        "ADMIN_CONSULTORIA",
+        "ADMIN_ARQUITECTURA",
+    }
 
 def scope_for(consultor: "Consultor", rol_request: str):
     """
     Reglas:
-    - ADMIN: ve todo
-    - ADMIN_* (con equipo): ve solo su equipo
-    - CONSULTOR: se ve a sí mismo
+    - ADMIN total: ve todo
+    - ADMIN_* (equipo): ve solo su equipo
+    - Otros: SELF
     """
     rol_real = _norm_role(consultor.rol_obj.nombre if consultor and consultor.rol_obj else "")
     rol = _norm_role(rol_request) or rol_real or "CONSULTOR"
 
-    if _is_admin_total(rol):
-        return "ALL", None
-
+    # ✅ 1) Admin por equipo primero
     if _is_admin_equipo(rol):
         if not getattr(consultor, "equipo_id", None):
             return "SELF", consultor.usuario
         return "TEAM", consultor.equipo_id
 
+    # ✅ 2) Admin total aparte
+    if _is_admin_total(rol):
+        return "ALL", None
+
     return "SELF", consultor.usuario
+
 
 
 # ============================================================
