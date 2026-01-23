@@ -304,22 +304,31 @@
 }
 
 /* =========================
-   MODO CONSULTOR (1 calendario)
+   MODO CONSULTOR (1 calendario) - COMPACTO REAL
 ========================= */
 .resumen-wrapper.resumen-single{
-  max-width: 980px;
+  max-width: 720px;          /* ✅ contenedor más pequeño */
+  margin: 0 auto;
 }
 
 .resumen-wrapper.resumen-single .resumen-grid{
   grid-template-columns: 1fr;
-  max-width: 980px;
+  justify-items: center;     /* ✅ centra la tarjeta (no la estira) */
 }
 
-.resumen-wrapper.resumen-single .cal-dia{
-  min-height: 46px;
-  font-size: .86rem;
+.resumen-wrapper.resumen-single .resumen-card{
+  width: 100%;
+  max-width: 620px;          /* ✅ CLAVE: limita el ancho del calendario */
 }
 
+/* header + calendario no se deben estirar */
+.resumen-wrapper.resumen-single .cal-head,
+.resumen-wrapper.resumen-single .cal-wrapper{
+  width: 100%;
+  max-width: 620px;          
+}
+
+/* un poco más compacto */
 .resumen-wrapper.resumen-single .cal-wrapper{
   padding: 12px;
 }
@@ -327,6 +336,16 @@
 .resumen-wrapper.resumen-single .cal-grid{
   gap: 7px;
 }
+
+.resumen-wrapper.resumen-single .cal-dia{
+  min-height: 44px;          
+  font-size: .85rem;
+}
+
+.resumen-wrapper.resumen-single .cal-dia small{
+  font-size: .62rem;
+}
+
 
 /* ========================
    MODO OSCURO
