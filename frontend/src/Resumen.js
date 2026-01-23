@@ -3,7 +3,8 @@ import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
 import { EXCEPCION_8H_USERS } from "./lib/visibility";
 
-const API_PATH = "/registros"; 
+// ✅ acá estás usando registros
+const API_PATH = "/registros";
 
 function extraerYMD(fechaStr) {
   if (!fechaStr) return null;
@@ -42,22 +43,6 @@ function normalizarNombreParaOrden(txt) {
     .toLowerCase();
 }
 
-// ✅ redondeo estable (evita 9.55999999999)
-function round2(n) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return 0;
-  return Math.round((x + Number.EPSILON) * 100) / 100;
-}
-
-// ✅ formato bonito: 9, 9.5, 9.56 (sin colas infinitas)
-function fmtHoras(n) {
-  const v = round2(n);
-  if (!Number.isFinite(v)) return "";
-  if (Number.isInteger(v)) return String(v);
-  // quita ceros finales
-  return String(v.toFixed(2)).replace(/\.?0+$/, "");
-}
-
 export default function Resumen({
   userData,
   filtroEquipo = "",
@@ -88,6 +73,7 @@ export default function Resumen({
     const month = m ? Number(m) : hoy.getMonth() + 1;
 
     if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return;
+
     setMesGlobal(new Date(year, month - 1, 1));
   }, [filtroMes, filtroAnio]);
 
@@ -116,6 +102,9 @@ export default function Resumen({
     setUsuarioActual(usuario);
     setError("");
   }, [userData]);
+
+  // ✅ CONSULTOR es rol exacto: CONSULTOR
+  const isConsultor = useMemo(() => String(rol || "").trim().toUpperCase() === "CONSULTOR", [rol]);
 
   const fetchResumen = useCallback(async ({ rolActual, usuario, equipo }) => {
     if (!usuario) return;
@@ -162,7 +151,7 @@ export default function Resumen({
           const fechaKey = fechaNorm ? keyYMDFromDate(fechaNorm) : extraerYMD(r.fecha);
           if (!fechaKey) return acc;
 
-          const horas = Number(r.tiempo_invertido ?? r.total_horas ?? r.totalHoras ?? 0) || 0;
+          const horas = Number(r.total_horas ?? r.totalHoras ?? 0) || 0;
 
           const prev = acc[key]._byDay.get(fechaKey) || {
             fecha: r.fecha,
@@ -172,12 +161,13 @@ export default function Resumen({
             estado: r.estado,
           };
 
-          prev.total_horas = round2(prev.total_horas + horas);
+          prev.total_horas += horas;
 
           if (r.estado && !prev.estado) prev.estado = r.estado;
           if (!prev.fechaNorm && fechaNorm) prev.fechaNorm = fechaNorm;
 
           acc[key]._byDay.set(fechaKey, prev);
+
           return acc;
         }, {})
       ).map((c) => {
@@ -200,7 +190,11 @@ export default function Resumen({
 
   useEffect(() => {
     if (!usuarioActual) return;
-    fetchResumen({ rolActual: rol, usuario: usuarioActual, equipo: filtroEquipo || "" });
+    fetchResumen({
+      rolActual: rol,
+      usuario: usuarioActual,
+      equipo: filtroEquipo || "",
+    });
   }, [rol, usuarioActual, filtroEquipo, fetchResumen]);
 
   useEffect(() => {
@@ -209,7 +203,11 @@ export default function Resumen({
     const intervalMs = 30_000;
     const id = setInterval(() => {
       if (document.hidden) return;
-      fetchResumen({ rolActual: rol, usuario: usuarioActual, equipo: filtroEquipo || "" });
+      fetchResumen({
+        rolActual: rol,
+        usuario: usuarioActual,
+        equipo: filtroEquipo || "",
+      });
     }, intervalMs);
 
     return () => clearInterval(id);
@@ -218,7 +216,11 @@ export default function Resumen({
   useEffect(() => {
     const onRefresh = () => {
       if (!usuarioActual) return;
-      fetchResumen({ rolActual: rol, usuario: usuarioActual, equipo: filtroEquipo || "" });
+      fetchResumen({
+        rolActual: rol,
+        usuario: usuarioActual,
+        equipo: filtroEquipo || "",
+      });
     };
 
     window.addEventListener("resumen-actualizar", onRefresh);
@@ -239,6 +241,21 @@ export default function Resumen({
 
     return filtered;
   }, [resumen, filtroConsultor]);
+
+  // ✅ si es consultor, garantizamos 1 calendario (el propio)
+  const datosParaRender = useMemo(() => {
+    if (!isConsultor) return datosVisibles;
+
+    if (!Array.isArray(datosVisibles) || datosVisibles.length === 0) return [];
+
+    const me = datosVisibles.find(
+      (c) =>
+        String(c.usuario_consultor || "").toLowerCase() ===
+        String(usuarioActual || "").toLowerCase()
+    );
+
+    return me ? [me] : [datosVisibles[0]];
+  }, [isConsultor, datosVisibles, usuarioActual]);
 
   const CalendarioConsultor = ({ consultor }) => {
     const [animacion, setAnimacion] = useState("slideInLeft");
@@ -275,7 +292,7 @@ export default function Resumen({
     }, [registrosMes]);
 
     const totalMes = useMemo(
-      () => round2(registrosMes.reduce((acc, r) => acc + (Number(r.total_horas) || 0), 0)),
+      () => registrosMes.reduce((acc, r) => acc + (r.total_horas || 0), 0),
       [registrosMes]
     );
 
@@ -301,8 +318,6 @@ export default function Resumen({
       }
 
       const horas = Number(registro.total_horas || 0);
-      const horasTxt = fmtHoras(horas);
-
       const loginParaMeta = String(consultor.usuario_consultor || usuarioActual || "").toLowerCase();
       const metaBase = EXCEPCION_8H_USERS?.has?.(loginParaMeta) ? 8 : 9;
       const estado = horas >= metaBase ? "ok" : horas > 0 ? "warn" : "none";
@@ -311,10 +326,10 @@ export default function Resumen({
         <div
           key={key}
           className={`cal-dia ${estado}`}
-          title={`${extraerYMD(registro.fecha) || registro.fecha} • ${horasTxt}h`}
+          title={`${extraerYMD(registro.fecha) || registro.fecha} • ${Math.round(horas * 100) / 100}h`}
         >
           {dia}
-          <small>{horasTxt ? `${horasTxt}h` : ""}</small>
+          <small>{horas ? `${Math.round(horas * 100) / 100}h` : ""}</small>
         </div>
       );
     };
@@ -350,7 +365,7 @@ export default function Resumen({
             </button>
           </div>
 
-          <span className="total">Total: {fmtHoras(totalMes)} h</span>
+          <span className="total">Total: {Math.round(totalMes * 100) / 100} h</span>
         </div>
 
         <div className={`cal-wrapper ${animacion}`}>
@@ -367,16 +382,16 @@ export default function Resumen({
   };
 
   return (
-    <div className="resumen-wrapper">
+    <div className={`resumen-wrapper ${isConsultor ? "resumen-single" : ""}`}>
       <h2 className="resumen-titulo">Resumen de Horas Mensual</h2>
 
       {error && <div className="resumen-error">{error}</div>}
 
-      {datosVisibles.length === 0 ? (
+      {datosParaRender.length === 0 ? (
         <p className="resumen-empty">No hay datos para mostrar</p>
       ) : (
         <div className="resumen-grid">
-          {datosVisibles.map((consultor) => (
+          {datosParaRender.map((consultor) => (
             <CalendarioConsultor
               key={consultor.usuario_consultor || consultor.consultor_id || consultor.consultor}
               consultor={consultor}
