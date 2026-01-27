@@ -16,25 +16,47 @@ const Login = ({ onLoginSuccess }) => {
   // CARGAR HORARIOS
   // ===========================
   useEffect(() => {
-    const cargarHorarios = async () => {
+    const u = String(usuario || "").trim().toLowerCase();
+
+    // Si no hay usuario, no llamamos nada y limpiamos lista
+    if (!u) {
+      setHorarios([]);
+      setHorario("");
+      return;
+    }
+
+    // Pequeño debounce para no llamar en cada tecla
+    const id = setTimeout(async () => {
       try {
-        const res = await jfetch(`/horarios-permitidos?usuario=${usuario}`);
-        if (!res.ok) throw new Error('No se pudieron cargar los horarios');
+        const res = await jfetch(`/horarios-permitidos?usuario=${encodeURIComponent(u)}`);
 
-        const data = await res.json();
-        setHorarios(data);
+        // Si el endpoint no existe o no hay data, NO dispares Swal aquí
+        if (!res.ok) {
+          setHorarios([]);
+          setHorario("");
+          return;
+        }
 
+        const data = await res.json().catch(() => []);
+        const arr = Array.isArray(data) ? data : [];
+
+        setHorarios(arr);
+
+        // Si el horario actual ya no está en la lista, lo resetea
+        if (horario && !arr.includes(horario)) {
+          setHorario("");
+        }
       } catch (err) {
-        console.error('Error cargando horarios:', err);
-        Swal.fire({
-          icon: 'error',
-          title: 'Error al cargar horarios',
-          text: err.message || 'No se pudieron obtener los horarios'
-        });
+        // Error silencioso mientras escribe
+        setHorarios([]);
+        setHorario("");
+        console.error("Error cargando horarios:", err);
       }
-    };
-    cargarHorarios();
-  }, []);
+    }, 300);
+
+    return () => clearTimeout(id);
+  }, [usuario]); // 👈 depende de usuario
+
 
   // ===========================
   // LOGIN
