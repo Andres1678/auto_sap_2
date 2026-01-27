@@ -357,6 +357,12 @@ def role_scope(rol_nombre: str, user_equipo: str = ""):
 # ===============================
 # Catálogos
 # ===============================
+@bp.route('/roles', methods=['GET'])
+@permission_required("ROLES_ADMIN")  
+def listar_roles():
+    roles = Rol.query.order_by(Rol.nombre.asc()).all()
+    return jsonify([{"id": r.id, "nombre": r.nombre} for r in roles]), 200
+
 
 @bp.route('/equipos', methods=['GET'])
 def listar_equipos():
