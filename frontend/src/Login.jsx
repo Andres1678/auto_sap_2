@@ -16,46 +16,22 @@ const Login = ({ onLoginSuccess }) => {
   // CARGAR HORARIOS
   // ===========================
   useEffect(() => {
-    const u = String(usuario || "").trim().toLowerCase();
+    const u = usuario.trim();
+    if (!u) { setHorarios([]); setHorario(""); return; }
 
-    // Si no hay usuario, no llamamos nada y limpiamos lista
-    if (!u) {
-      setHorarios([]);
-      setHorario("");
-      return;
-    }
-
-    // Pequeño debounce para no llamar en cada tecla
     const id = setTimeout(async () => {
       try {
         const res = await jfetch(`/horarios-permitidos?usuario=${encodeURIComponent(u)}`);
-
-        // Si el endpoint no existe o no hay data, NO dispares Swal aquí
-        if (!res.ok) {
-          setHorarios([]);
-          setHorario("");
-          return;
-        }
-
-        const data = await res.json().catch(() => []);
-        const arr = Array.isArray(data) ? data : [];
-
-        setHorarios(arr);
-
-        // Si el horario actual ya no está en la lista, lo resetea
-        if (horario && !arr.includes(horario)) {
-          setHorario("");
-        }
-      } catch (err) {
-        // Error silencioso mientras escribe
+        const data = await res.json();
+        setHorarios(Array.isArray(data?.horarios) ? data.horarios : []);
+      } catch {
         setHorarios([]);
-        setHorario("");
-        console.error("Error cargando horarios:", err);
       }
-    }, 300);
+    }, 250);
 
     return () => clearTimeout(id);
-  }, [usuario]); // 👈 depende de usuario
+  }, [usuario]);
+
 
 
   // ===========================
@@ -87,6 +63,7 @@ const Login = ({ onLoginSuccess }) => {
       }
 
       const data = await res.json();
+      setHorarios(Array.isArray(data?.horarios) ? data.horarios : []);
 
     
       const user = data.user; 
