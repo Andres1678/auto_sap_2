@@ -3033,12 +3033,32 @@ def commit_import_excel():
 
 @bp.route("/horarios-permitidos", methods=["GET"])
 def horarios_permitidos():
-    usuario = request.args.get("usuario")
-    consultor = Consultor.query.filter_by(usuario=usuario).first_or_404()
+    usuario = (request.args.get("usuario") or "").strip().lower()
 
-    equipo = consultor.equipo_obj.nombre if consultor.equipo_obj else ""
+    
+    if not usuario:
+        return jsonify({
+            "equipo": "",
+            "dias": "",
+            "horarios": []
+        }), 200
 
-    # Horarios funcionales
+    consultor = (
+        Consultor.query
+        .filter(func.lower(Consultor.usuario) == usuario)
+        .first()
+    )
+
+    
+    if not consultor:
+        return jsonify({
+            "equipo": "",
+            "dias": "",
+            "horarios": []
+        }), 200
+
+    equipo = (consultor.equipo_obj.nombre if consultor.equipo_obj else "").strip().upper()
+
     horarios_funcional = [
         "07:00 - 17:00",
         "07:00 - 16:00",
@@ -3057,7 +3077,7 @@ def horarios_permitidos():
         "equipo": equipo,
         "dias": dias,
         "horarios": horarios
-    })
+    }), 200
 
 # -------------------------------
 #   REPORTES DE HORAS 
