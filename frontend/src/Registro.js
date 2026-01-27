@@ -249,6 +249,23 @@ const Registro = ({ userData }) => {
   const [filtroMes, setFiltroMes] = useState("");   
   const [filtroAnio, setFiltroAnio] = useState(""); 
 
+  const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
+  const rol = String(
+    userData?.rol_ref?.nombre ??
+    userData?.rol ??
+    userData?.user?.rol ??
+    ''
+  ).toUpperCase();
+
+  const nombreUser = (userData?.nombre ?? userData?.user?.nombre) || '';
+  const moduloUser = (userData?.modulo ?? userData?.user?.modulo) || '';
+  const equipoUser = (userData?.equipo ?? userData?.user?.equipo) || '';
+
+  const usuarioLogin = String(
+    userData?.usuario ??
+    userData?.user?.usuario ??
+    ''
+  ).trim().toLowerCase();
 
   const initialEquipo = () => normKey(localStorage.getItem('filtroEquipo') || '');
   const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
@@ -257,24 +274,16 @@ const Registro = ({ userData }) => {
     localStorage.setItem('filtroEquipo', filtroEquipo);
   }, [filtroEquipo]);
 
-  const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
-  const rol = String(
-    userData?.rol_ref?.nombre ??
-    userData?.rol ??
-    userData?.user?.rol ??
-    ''
-  ).toUpperCase();
-  const nombreUser = (userData?.nombre ?? userData?.user?.nombre) || '';
-  const moduloUser = (userData?.modulo ?? userData?.user?.modulo) || '';
-  const equipoUser = (userData?.equipo ?? userData?.user?.equipo) || '';
-  const usuarioLogin = String(
-    userData?.usuario ??
-    userData?.user?.usuario ??
-    ''
-  ).trim().toLowerCase();
+  const rolUpper = String(rol || "").toUpperCase();
+  const isAdmin = rolUpper.startsWith("ADMIN");
+  const isAdminGlobal = rolUpper === "ADMIN";
+  const isAdminEquipo = isAdmin && !isAdminGlobal;
+
+  const miEquipo = String(equipoUser || "").trim().toUpperCase();
+  const equipoLocked = isAdminEquipo ? miEquipo : filtroEquipo;
 
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
-  const isAdmin = (rol === 'ADMIN' || rol === 'ADMIN_BASIS' || rol === 'ADMIN_FUNCIONAL');
+
 
   const canDownload = ['rodriguezso','valdezjl', 'gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
   const [importingExcel, setImportingExcel] = useState(false);
@@ -315,6 +324,28 @@ const Registro = ({ userData }) => {
 
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 100;
+
+  const pendingEditTareaIdRef = useRef(null);
+
+  useEffect(() => {
+    const pendingId = pendingEditTareaIdRef.current;
+
+    if (!modoEdicion) return;
+    if (!pendingId) return;
+    if (!Array.isArray(tareasBD) || tareasBD.length === 0) return;
+
+    const tareaObj = tareasBD.find(t => Number(t.id) === Number(pendingId));
+    if (!tareaObj) return;
+
+    setRegistro((r) => ({
+      ...r,
+      tarea_id: Number(pendingId),
+      tipoTarea: r.tipoTarea || `${tareaObj.codigo} - ${tareaObj.nombre}`,
+    }));
+
+    pendingEditTareaIdRef.current = null;
+  }, [tareasBD, modoEdicion]);
+
 
   useEffect(() => {
     setPage(1);
@@ -385,8 +416,8 @@ const Registro = ({ userData }) => {
 
     try {
       const params = new URLSearchParams();
-      params.set("usuario", usuarioLogin);
-      if (filtroEquipo) params.set("equipo", filtroEquipo); 
+
+      if (equipoLocked) params.set("equipo", equipoLocked);
 
       const url = `/registros?${params.toString()}`;
 
@@ -396,6 +427,7 @@ const Registro = ({ userData }) => {
         headers: {
           "X-User-Usuario": usuarioLogin,
           "X-User-Rol": rol,
+          "X-User-Equipo": String(equipoUser || ""),
         },
       });
 
@@ -408,7 +440,28 @@ const Registro = ({ userData }) => {
       setRegistros([]);
       setError(String(e.message || e));
     }
-  }, [usuarioLogin, rol, filtroEquipo]);
+  }, [usuarioLogin, rol, equipoUser, equipoLocked]);
+
+  const normMod = (v) => String(v || "").trim();
+  const uniq = (arr) => Array.from(new Set((arr || []).map(normMod).filter(Boolean)));
+
+
+  useEffect(() => {
+    if (!usuarioLogin) return;
+
+    (async () => {
+      try {
+        const res = await jfetch(`/consultores/datos?usuario=${encodeURIComponent(usuarioLogin)}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+
+        const norm = normalizeModulos(Array.isArray(data.modulos) ? data.modulos : []);
+        if (norm.length) {
+          setModulos(prev => uniq([...(prev || []), ...norm]));
+        }
+      } catch {}
+    })();
+  }, [usuarioLogin]);
 
 
   useEffect(() => {
@@ -419,7 +472,20 @@ const Registro = ({ userData }) => {
     const hasId = (userData && (userData.id || userData?.user?.id));
     if (!hasId || !usuarioLogin) return;
     fetchRegistros();
-  }, [userData, usuarioLogin, fetchRegistros, filtroEquipo]);
+  }, [userData, usuarioLogin, fetchRegistros]);
+
+  const resolveModulosForEdit = useCallback((reg) => {
+    // prioridad: lo que venga en el registro (por si el registro ya trae el módulo usado)
+    const fromRegistro = reg?.modulo ? [reg.modulo] : [];
+
+    // luego lo que ya tienes en estado (catálogo del usuario)
+    const fromState = Array.isArray(modulos) ? modulos : [];
+
+    // luego lo que venga del userData (fallback)
+    const fromUser = getModulosLocal(userData);
+
+    return uniq([...fromRegistro, ...fromState, ...fromUser]);
+  }, [modulos, userData]);
 
 
   const consultoresUnicos = useMemo(() =>
@@ -717,15 +783,27 @@ const Registro = ({ userData }) => {
 
 
   const handleEditar = (reg) => {
+    // 1) TareaId robusto (puede venir como tarea_id, tarea.id o por texto tipoTarea)
+    const tareaId =
+      reg?.tarea_id ??
+      reg?.tarea?.id ??
+      (tareaIdByCodigoNombre.get(String(reg?.tipoTarea || "").trim().toUpperCase()) || null);
 
-    const ocupacionId = reg.ocupacion_id
-      ? String(reg.ocupacion_id)
-      : "";
+    const tareaIdStr = tareaId ? String(tareaId) : "";
 
-    const tareaId = reg.tarea?.id
-      ? String(reg.tarea.id)
-      : "";
+    // 2) Ocupación: si no viene, la inferimos desde ocupaciones->tareas
+    let ocupacionId =
+      reg?.ocupacion_id ? String(reg.ocupacion_id) : "";
 
+    if (!ocupacionId && tareaId && Array.isArray(ocupaciones) && ocupaciones.length) {
+      const occ = ocupaciones.find(o => (o.tareas || []).some(t => Number(t.id) === Number(tareaId)));
+      if (occ?.id) ocupacionId = String(occ.id);
+    }
+
+    // 3) Deja pendiente la tarea para aplicarla cuando cargue tareasBD
+    pendingEditTareaIdRef.current = tareaId ? Number(tareaId) : null;
+
+    // 4) Setea formulario
     setRegistro({
       ...initRegistro(),
 
@@ -737,10 +815,11 @@ const Registro = ({ userData }) => {
       nroCasoInterno: reg.nroCasoInterno,
       nroCasoEscaladoSap: reg.nroCasoEscaladoSap,
 
-      tarea_id: tareaId,
-      tipoTarea: reg.tarea
+      
+      tarea_id: tareaId ? Number(tareaId) : "",
+      tipoTarea: reg?.tarea
         ? `${reg.tarea.codigo} - ${reg.tarea.nombre}`
-        : "",
+        : (reg?.tipoTarea || ""),
 
       ocupacion_id: ocupacionId,
 
@@ -761,21 +840,22 @@ const Registro = ({ userData }) => {
       modulo: reg.modulo
     });
 
-    // ⬇️ esto DISPARA la carga de tareas
+    
     setOcupacionSeleccionada(ocupacionId);
 
-    // ⬇️ se setea luego de que tareasBD cargue
-    setTimeout(() => {
-      setRegistro(r => ({
-        ...r,
-        tarea_id: tareaId
-      }));
-    }, 0);
+    const pool = resolveModulosForEdit(reg);
+    setModulos(pool);
 
-    setModuloElegido(reg.modulo || "");
+    const preferido = reg?.modulo ? String(reg.modulo).trim() : "";
+    const moduloSel = pool.length === 1 ? pool[0] : (preferido || "");
+    setModuloElegido(moduloSel);
+
+    setRegistro((prev) => ({ ...prev, modulo: moduloSel }));
+
     setModoEdicion(true);
     setModalIsOpen(true);
   };
+
 
 
   const handleEliminar = async (id) => {
@@ -811,29 +891,41 @@ const Registro = ({ userData }) => {
   const handleCopiar = (reg) => {
     const copia = { ...reg };
     delete copia.id;
-    setRegistro({ ...initRegistro(), ...copia, equipo: equipoOf(copia, userEquipoUpper) });
 
-    if (reg?.modulo) {
-      setModuloElegido(reg.modulo);
-    } else if (modulos.length === 1) {
-      setModuloElegido(modulos[0]);
-    } else {
-      setModuloElegido('');
-    }
+    // pool de módulos inmediato (sin esperar nada)
+    const pool = resolveModulosForEdit(reg);
+    setModulos(pool);
 
-    let occId = '';
-    if (reg?.tipoTarea && todasTareas.length && ocupaciones.length) {
+    const moduloPref = reg?.modulo ? String(reg.modulo).trim() : "";
+    const moduloSel = pool.length === 1 ? pool[0] : (moduloPref || "");
+
+    setModuloElegido(moduloSel);
+
+    setRegistro({
+      ...initRegistro(),
+      ...copia,
+      id: null,
+      modulo: moduloSel, // 👈 importante: que el registro tenga el modulo también
+      equipo: equipoOf(copia, userEquipoUpper),
+    });
+
+    // ocupación / tareas (opcional: si quieres que al copiar también quede lista)
+    let occId = "";
+    if (reg?.tarea_id || reg?.tarea?.id) {
+      const tid = reg?.tarea_id ?? reg?.tarea?.id;
+      const occ = ocupaciones.find(o => (o.tareas || []).some(t => Number(t.id) === Number(tid)));
+      if (occ?.id) occId = String(occ.id);
+    } else if (reg?.tipoTarea && todasTareas.length && ocupaciones.length) {
       const tarea = todasTareas.find(
-        t => t.nombre === reg.tipoTarea ||
-             (t.codigo && reg.tipoTarea.startsWith(t.codigo))
+        t => reg.tipoTarea === `${t.codigo} - ${t.nombre}` ||
+            (t.codigo && String(reg.tipoTarea).startsWith(t.codigo))
       );
       if (tarea) {
-        const occ = ocupaciones.find(o =>
-          (o.tareas || []).some(tt => tt.id === tarea.id)
-        );
+        const occ = ocupaciones.find(o => (o.tareas || []).some(tt => tt.id === tarea.id));
         if (occ) occId = String(occ.id);
       }
     }
+
     setOcupacionSeleccionada(occId);
 
     setModoEdicion(false);
@@ -1078,7 +1170,7 @@ const Registro = ({ userData }) => {
           </div>
         </div>
 
-      {isAdmin && (
+      {isAdminGlobal && (
         <div className="team-filter-row">
           <span className="team-filter-label">Equipo:</span>
 
@@ -1147,7 +1239,7 @@ const Registro = ({ userData }) => {
             ))}
           </select>
 
-          {isAdmin ? (
+          {isAdminGlobal ? (
             <select
               value={filtroEquipo}
               onChange={(e) => setFiltroEquipo(normKey(e.target.value))}

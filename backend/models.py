@@ -571,3 +571,18 @@ class RegistroExcel(db.Model):
     horas_adicionales = db.Column(db.String(10))
 
     descripcion = db.Column(db.Text)
+
+# ======================================================
+# PRESUPUESTO PROYECTO
+class PresupuestoProyecto(db.Model):
+    __tablename__ = "presupuesto_proyecto"
+
+    id = db.Column(db.Integer, primary_key=True)
+    consultor_id = db.Column(db.Integer, db.ForeignKey("consultor.id"), nullable=False)
+
+    anio = db.Column(db.Integer, nullable=False)
+    mes  = db.Column(db.Integer, nullable=False)  
+
+    presupuesto_horas = db.Column(db.Float, default=0)
+
+    consultor = relationship("Consultor", backref="presupuestos")

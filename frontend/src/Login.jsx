@@ -18,7 +18,7 @@ const Login = ({ onLoginSuccess }) => {
   useEffect(() => {
     const cargarHorarios = async () => {
       try {
-        const res = await jfetch('/horarios');
+        const res = await jfetch(`/horarios-permitidos?usuario=${usuario}`);
         if (!res.ok) throw new Error('No se pudieron cargar los horarios');
 
         const data = await res.json();
@@ -167,10 +167,8 @@ const Login = ({ onLoginSuccess }) => {
               required
             >
               <option value="">Seleccionar horario</option>
-              {horarios.map((h) => (
-                <option key={h.id} value={h.rango}>
-                  {h.rango}
-                </option>
+              {horarios.map(h => (
+                <option key={h} value={h}>{h}</option>
               ))}
             </select>
           </div>
