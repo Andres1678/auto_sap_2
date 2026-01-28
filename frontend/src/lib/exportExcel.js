@@ -36,7 +36,7 @@ export function exportRegistrosExcelXLSX_ALL(rows, filename = "registros.xlsx", 
     "Horario Trabajo",
     "Bloqueado",
     "Usuario Consultor",
-    "Consultor",
+    "Consultor"
   ];
 
   const data = (rows || []).map((r) => {

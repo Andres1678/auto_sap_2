@@ -4,6 +4,7 @@ import Swal from 'sweetalert2';
 import './Registro.css';
 import { jfetch } from './lib/api';
 import Resumen from './Resumen';
+import { exportRegistrosExcelXLSX_ALL } from "./lib/exportExcel";
 
 
 Modal.setAppElement('#root');
@@ -156,62 +157,6 @@ const normSiNo = (val) => {
   if (['no','n','false','0'].includes(s)) return 'NO';
   return 'N/D';
 };
-
-function exportRegistrosExcel(rows, filename = 'registros.csv', meta = {}) {
-  const sep = ',';
-  const q = (v) => {
-    if (v === null || v === undefined) return '';
-    const s = String(v).replace(/"/g, '""');
-    return `"${s}"`;
-  };
-
-  const headers = [
-    'Fecha','Módulo','Equipo','Cliente','Nro Caso Cliente','Nro Caso Interno','Nro Caso Escalado SAP',
-    'Tipo Tarea Azure','Consultor','Hora Inicio','Hora Fin','Tiempo Invertido','Tiempo Facturable',
-    'ONCALL','Desborde','Horas Adicionales','Descripción'
-  ];
-
-  const lines = [];
-  const metaKeys = Object.keys(meta || {});
-  if (metaKeys.length) {
-    metaKeys.forEach(k => lines.push(`# ${k}: ${meta[k]}`));
-    lines.push('# ----------------------------------------');
-  }
-
-  lines.push(headers.map(q).join(sep));
-
-  (rows || []).forEach(r => {
-    lines.push([
-      r.fecha ?? '',
-      r.modulo ?? '',
-      equipoOf(r),
-      r.cliente ?? '',
-      r.nroCasoCliente ?? '',
-      r.nroCasoInterno ?? '',
-      r.nroCasoEscaladoSap ?? '',
-      r.tipoTarea ?? '',
-      r.consultor ?? '',
-      r.horaInicio ?? '',
-      r.horaFin ?? '',
-      r.tiempoInvertido ?? '',
-      r.tiempoFacturable ?? '',
-      r.oncall ?? '',
-      r.desborde ?? '',
-      r.horasAdicionales ?? '',
-      r.descripcion ?? '',
-    ].map(q).join(sep));
-  });
-
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename.endsWith('.csv') ? filename : `${filename}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
 
 function taskCode(value){
   return (String(value || '').match(/^\d+/)?.[0] ?? '');
