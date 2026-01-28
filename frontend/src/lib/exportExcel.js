@@ -1,6 +1,5 @@
 import * as XLSX from "xlsx";
 
-
 const pick = (obj, keys, fallback = "") => {
   for (const k of keys) {
     const v = obj?.[k];
@@ -9,7 +8,7 @@ const pick = (obj, keys, fallback = "") => {
   return fallback;
 };
 
-function exportRegistrosExcelXLSX_ALL(rows, filename = "registros.xlsx", meta = {}) {
+export function exportRegistrosExcelXLSX_ALL(rows, filename = "registros.xlsx", meta = {}) {
   const headers = [
     "ID",
     "Fecha",
@@ -37,11 +36,10 @@ function exportRegistrosExcelXLSX_ALL(rows, filename = "registros.xlsx", meta = 
     "Horario Trabajo",
     "Bloqueado",
     "Usuario Consultor",
-    "Consultor"
+    "Consultor",
   ];
 
   const data = (rows || []).map((r) => {
-    // ocupación/tarea: soporta que venga "ocupacion" o "tarea" como objeto
     const ocupacionNombre =
       pick(r, ["ocupacion_nombre"], "") ||
       (r?.ocupacion ? `${r.ocupacion.codigo ?? ""} - ${r.ocupacion.nombre ?? ""}`.trim() : "");
@@ -65,7 +63,6 @@ function exportRegistrosExcelXLSX_ALL(rows, filename = "registros.xlsx", meta = 
       "Tarea (FK)": pick(r, ["tarea_id", "tareaId"], ""),
       "Tarea": tareaNombre || "—",
 
-      // texto que tú marcas como importante en el modelo
       "Tipo Tarea (texto)": pick(r, ["tipo_tarea", "tipoTarea"], ""),
 
       "Hora Inicio": pick(r, ["hora_inicio", "horaInicio"], ""),
@@ -93,13 +90,9 @@ function exportRegistrosExcelXLSX_ALL(rows, filename = "registros.xlsx", meta = 
     };
   });
 
-  // Hoja principal
   const ws = XLSX.utils.json_to_sheet(data, { header: headers });
-
-  // anchos (opcional)
   ws["!cols"] = headers.map((h) => ({ wch: Math.min(45, Math.max(12, h.length + 4)) }));
 
-  // Hoja metadata (filtros / info)
   const metaRows = Object.entries(meta || {}).map(([k, v]) => ({ Campo: k, Valor: String(v ?? "") }));
   const wsMeta = XLSX.utils.json_to_sheet(metaRows.length ? metaRows : [{ Campo: "Info", Valor: "—" }]);
 

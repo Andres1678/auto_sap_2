@@ -965,19 +965,18 @@ const Registro = ({ userData }) => {
 
   const handleExport = () => {
     const visible = registrosFiltrados?.allRows || [];
-
     exportRegistrosExcelXLSX_ALL(
       visible,
-      `registros_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      `registros_${new Date().toISOString().slice(0,10)}.xlsx`,
       {
-        "Consultor filtro": filtroConsultor || "Todos",
-        "Tarea filtro": filtroTarea || "Todas",
-        "Cliente filtro": filtroCliente || "Todos",
-        "Equipo filtro": filtroEquipo || "Todos",
-        "Nro Caso Cliente filtro": filtroNroCasoCli || "Todos",
-        "Horas Adicionales filtro": filtroHorasAdic || "Todas",
-        "Fecha filtro": filtroFecha || "Todas",
-        "Generado": new Date().toLocaleString(),
+        'Consultor filtro': filtroConsultor || 'Todos',
+        'Tarea filtro': filtroTarea || 'Todas',
+        'Cliente filtro': filtroCliente || 'Todos',
+        'Equipo filtro': filtroEquipo || 'Todos',
+        'Nro Caso Cliente filtro': filtroNroCasoCli || 'Todos',
+        'Horas Adicionales filtro': filtroHorasAdic || 'Todas',
+        'Fecha filtro': filtroFecha || 'Todas',
+        'Generado': new Date().toLocaleString()
       }
     );
   };
