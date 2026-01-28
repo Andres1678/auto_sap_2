@@ -1,0 +1,33 @@
+.rhc-shell { padding: 18px; }
+.rhc-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:12px; }
+.rhc-title { margin:0; font-size:20px; }
+.rhc-sub { margin:6px 0 0; opacity:.75; }
+
+.rhc-actions { display:flex; gap:10px; }
+.rhc-btn { padding:10px 14px; border-radius:10px; border:1px solid #d6d6d6; background:#fff; cursor:pointer; }
+.rhc-btn:disabled { opacity:.6; cursor:not-allowed; }
+
+.rhc-filters { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+.rhc-field { display:flex; flex-direction:column; gap:6px; }
+.rhc-field input, .rhc-field select {
+  height:38px; padding:0 10px; border:1px solid #d6d6d6; border-radius:10px; background:#fff;
+}
+
+.rhc-card { background:#fff; border:1px solid #eee; border-radius:14px; padding:12px; }
+.rhc-tableWrap { overflow:auto; max-height: calc(100vh - 240px); }
+
+.rhc-table { border-collapse:separate; border-spacing:0; width:max-content; min-width:100%; }
+.rhc-table th, .rhc-table td { border-bottom:1px solid #eee; padding:10px 10px; font-size:13px; white-space:nowrap; }
+.rhc-table thead th { position:sticky; top:0; background:#fafafa; z-index:2; }
+.rhc-table tfoot th { position:sticky; bottom:0; background:#fafafa; z-index:2; border-top:1px solid #ddd; }
+
+.num { text-align:right; }
+
+.sticky-left { position:sticky; left:0; background:#fff; z-index:3; }
+.sticky-left-2 { position:sticky; left:160px; background:#fff; z-index:3; }
+.sticky-right { position:sticky; right:0; background:#fff; z-index:3; }
+
+@media (max-width: 720px) {
+  .rhc-shell { padding: 12px; }
+  .sticky-left-2 { left: 140px; }
+}

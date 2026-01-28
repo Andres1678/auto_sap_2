@@ -2846,30 +2846,26 @@ def remover_consultor_equipo(id):
 # ========== IMPORTAR REGISTROS DESDE EXCEL ==========
 @bp.route('/registro/import-excel', methods=['POST'])
 def importar_registro_excel():
-    print("=== IMPORT EXCEL ===")
-    print("FILES:", request.files)
-    print("FORM:", request.form)
-
     if 'file' not in request.files:
         return jsonify({"mensaje": "No se envió archivo"}), 400
 
     file = request.files['file']
-
     if not file or file.filename == '':
         return jsonify({"mensaje": "Archivo vacío"}), 400
 
     try:
-        # =============================
-        # Helpers de normalización
-        # =============================
         import math
+        import unicodedata
 
         def normalize_float(value):
             if value is None:
                 return None
             if isinstance(value, float) and math.isnan(value):
                 return None
-            return float(value)
+            try:
+                return float(value)
+            except:
+                return None
 
         def normalize_str(value):
             if value is None:
@@ -2879,82 +2875,87 @@ def importar_registro_excel():
                 return None
             return v
 
-        # =============================
-        # 1. Leer Excel
-        # =============================
+        # normaliza nombre de columna: quita tildes, mayus, espacios dobles
+        def norm_col(s: str) -> str:
+            s = str(s or "").strip()
+            s = unicodedata.normalize("NFD", s)
+            s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+            s = s.upper()
+            s = " ".join(s.split())
+            return s
+
+        # 1) Leer Excel
         df = pd.read_excel(file, engine="openpyxl")
+        df = df.where(pd.notnull(df), None)
 
-        print("COLUMNAS ORIGINALES:", df.columns.tolist())
-        print("TOTAL FILAS:", len(df))
+        # 2) Normalizar headers (sin tocar data)
+        original_cols = list(df.columns)
+        norm_map = { norm_col(c): c for c in original_cols }  # NORMALIZADA -> ORIGINAL
 
-        # =============================
-        # 2. Normalizar nombres de columnas
-        # =============================
-        df.columns = [
-            c.strip()
-             .replace("MÃ³dulo", "Modulo")
-             .replace("DescripciÃ³n", "Descripcion")
-            for c in df.columns
-        ]
-
-        # =============================
-        # 3. Renombrar columnas a DB
-        # =============================
-        df = df.rename(columns={
-            "Fecha": "fecha",
-            "Modulo": "modulo_nombre",
-            "Equipo": "equipo",
-            "Cliente": "cliente",
-            "Nro Caso Cliente": "nro_caso_cliente",
-            "Nro Caso Interno": "nro_caso_interno",
-            "Nro Caso Escalado SAP": "nro_caso_escalado_sap",
-            "Tipo Tarea Azure": "tipo_tarea_raw",
-            "Consultor": "consultor",
-            "Hora Inicio": "hora_inicio",
-            "Hora Fin": "hora_fin",
-            "Tiempo Invertido": "tiempo_invertido",
-            "Tiempo Facturable": "tiempo_facturable",
+        # 3) Mapa esperado (NORMALIZADO)
+        expected = {
+            "FECHA": "fecha",
+            "MODULO": "modulo_nombre",
+            "EQUIPO": "equipo",
+            "CLIENTE": "cliente",
+            "NRO CASO CLIENTE": "nro_caso_cliente",
+            "NRO CASO INTERNO": "nro_caso_interno",
+            "NRO CASO ESCALADO SAP": "nro_caso_escalado_sap",
+            "TIPO TAREA AZURE": "tipo_tarea_raw",
+            "CONSULTOR": "consultor",
+            "HORA INICIO": "hora_inicio",
+            "HORA FIN": "hora_fin",
+            "TIEMPO INVERTIDO": "tiempo_invertido",
+            "TIEMPO FACTURABLE": "tiempo_facturable",
             "ONCALL": "oncall",
-            "Desborde": "desborde",
-            "Horas Adicionales": "horas_adicionales",
-            "Descripcion": "descripcion"
-        })
+            "DESBORDE": "desborde",
+            "HORAS ADICIONALES": "horas_adicionales",
+            "DESCRIPCION": "descripcion",  # soporta "Descripción" o "Descripcion"
+            "DESCRIPCIÓN": "descripcion",
 
-        print("COLUMNAS NORMALIZADAS:", df.columns.tolist())
+            # ✅ extras (si existen en el archivo)
+            "CONSOLIDADO CON EL CLIENTE": "consolidado_cliente",
+            "DIA": "dia",
+            "MES": "mes",
+            "AÑO": "anio",
+            "ANO": "anio",
+            "OCUPACION AZURE": "ocupacion_azure",
+            "TAREA AZURE": "tarea_azure",
+            "HORAS CONVERTIDAS": "horas_convertidas",
+            "PROMEDIO": "promedio",
+            "EXTEMPORANEO": "extemporaneo",
+            "EXTEMPORÁNEO": "extemporaneo",
+        }
 
-        # =============================
-        # 4. Parser tipo tarea
-        # =============================
+        # 4) Renombrar usando equivalencias (solo las que existan)
+        rename_real = {}
+        for k_norm, new_name in expected.items():
+            col_original = norm_map.get(norm_col(k_norm))
+            if col_original:
+                rename_real[col_original] = new_name
+
+        df = df.rename(columns=rename_real)
+
+        # 5) Parser tipo tarea
         def parse_tipo_tarea(valor):
             if not valor:
                 return None, None
-
             valor = str(valor).strip()
-
             if '-' in valor:
                 codigo, nombre = valor.split('-', 1)
                 return codigo.strip(), nombre.strip()
-
             return valor.strip(), None
 
-        # =============================
-        # 5. Construcción de registros
-        # =============================
+        # 6) Construcción de registros
         registros = []
-
         for _, row in df.iterrows():
-            codigo_tarea, nombre_tarea = parse_tipo_tarea(
-                row.get("tipo_tarea_raw")
-            )
+            codigo_tarea, nombre_tarea = parse_tipo_tarea(row.get("tipo_tarea_raw"))
 
             registros.append(
                 RegistroExcel(
                     fecha=norm_fecha(row.get("fecha")),
                     modulo_nombre=normalize_str(row.get("modulo_nombre")),
-
-                    equipo=normalize_str(row.get("equipo")).upper()
-                        if normalize_str(row.get("equipo")) else None,
-
+                    equipo=(normalize_str(row.get("equipo")) or "").upper() or None,
                     cliente=normalize_str(row.get("cliente")),
 
                     nro_caso_cliente=normalize_str(row.get("nro_caso_cliente")),
@@ -2964,8 +2965,7 @@ def importar_registro_excel():
                     tipo_tarea_azure=normalize_str(codigo_tarea),
                     tipo_tarea_nombre=normalize_str(nombre_tarea),
 
-                    consultor=normalize_str(row.get("consultor")).lower()
-                        if normalize_str(row.get("consultor")) else None,
+                    consultor=(normalize_str(row.get("consultor")) or "").lower() or None,
 
                     hora_inicio=norm_hora(row.get("hora_inicio")),
                     hora_fin=norm_hora(row.get("hora_fin")),
@@ -2978,12 +2978,20 @@ def importar_registro_excel():
                     horas_adicionales=normalize_str(row.get("horas_adicionales")),
 
                     descripcion=normalize_str(row.get("descripcion")),
+
+                    # ✅ extras (si tu modelo RegistroExcel los tiene)
+                    consolidado_cliente=normalize_str(row.get("consolidado_cliente")),
+                    dia=normalize_str(row.get("dia")),
+                    mes=normalize_str(row.get("mes")),
+                    anio=normalize_str(row.get("anio")),
+                    ocupacion_azure=normalize_str(row.get("ocupacion_azure")),
+                    tarea_azure=normalize_str(row.get("tarea_azure")),
+                    horas_convertidas=normalize_float(row.get("horas_convertidas")),
+                    promedio=normalize_float(row.get("promedio")),
+                    extemporaneo=normalize_str(row.get("extemporaneo")),
                 )
             )
 
-        # =============================
-        # 6. Guardar en BD
-        # =============================
         db.session.bulk_save_objects(registros)
         db.session.commit()
 
@@ -2994,13 +3002,9 @@ def importar_registro_excel():
 
     except Exception as e:
         db.session.rollback()
-        print("🔥 ERROR IMPORTANDO EXCEL 🔥")
         traceback.print_exc()
+        return jsonify({"mensaje": "Error importando Excel", "error": str(e)}), 500
 
-        return jsonify({
-            "mensaje": "Error importando Excel",
-            "error": str(e)
-        }), 500
 
 
 @bp.route('/registros/importar-excel/preview', methods=['POST'])

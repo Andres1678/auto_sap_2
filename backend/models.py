@@ -555,8 +555,14 @@ class RegistroExcel(db.Model):
     nro_caso_interno = db.Column(db.String(100))
     nro_caso_escalado_sap = db.Column(db.String(100))
 
-    tipo_tarea_azure = db.Column(db.String(10)) 
-    tipo_tarea_azure = db.Column(db.String(150))
+    # ✅ Ocupación (conservar lo del Excel)
+    ocupacion_raw = db.Column(db.String(200))
+    ocupacion_id = db.Column(db.Integer, db.ForeignKey('ocupaciones.id'), nullable=True)
+    tarea_id = db.Column(db.Integer, db.ForeignKey('tareas.id'), nullable=True)
+
+    # ✅ Tarea Azure separada
+    tipo_tarea_azure = db.Column(db.String(10))      # código
+    tipo_tarea_nombre = db.Column(db.String(150))    # nombre
 
     consultor = db.Column(db.String(100))
 
@@ -571,6 +577,8 @@ class RegistroExcel(db.Model):
     horas_adicionales = db.Column(db.String(10))
 
     descripcion = db.Column(db.Text)
+
+
 
 # ======================================================
 # PRESUPUESTO PROYECTO
