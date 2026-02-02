@@ -479,7 +479,7 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
       }
 
       // (Opcional) Debug rápido
-      // console.log("FETCH /registros", { url, headers, equipoLocked, eq });
+      console.log("FETCH /registros", { url, headers, equipoLocked, eq });
 
       const res = await jfetch(url, {
         method: "GET",
