@@ -949,20 +949,19 @@ def scope_for(consultor_login, rol_req: str):
 # ============================================================
 
 @bp.route("/registros", methods=["GET"])
-def registros():
+def get_registros():
     try:
-        # ----------------------------------------------------------
-        # 1) Usuario desde request
-        # ----------------------------------------------------------
+        # -----------------------------
+        # 1) Usuario
+        # -----------------------------
         usuario = _get_usuario_from_request()
         if not usuario:
             return jsonify({"error": "Usuario no enviado"}), 400
-
         usuario_norm = (usuario or "").strip().lower()
 
-        # ----------------------------------------------------------
-        # 2) Consultor logueado + rol/equipo desde BD
-        # ----------------------------------------------------------
+        # -----------------------------
+        # 2) Consultor login (rol/equipo desde BD)
+        # -----------------------------
         consultor_login = (
             Consultor.query
             .options(joinedload(Consultor.rol_obj), joinedload(Consultor.equipo_obj))
@@ -975,9 +974,9 @@ def registros():
         rol_bd = (consultor_login.rol_obj.nombre if consultor_login.rol_obj else "").strip().upper()
         equipo_id_bd = consultor_login.equipo_id
 
-        # ----------------------------------------------------------
-        # 3) Scope por rol (solo BD)
-        # ----------------------------------------------------------
+        # -----------------------------
+        # 3) Scope por rol
+        # -----------------------------
         if rol_bd == "ADMIN":
             scope = "ALL"
             scope_val = None
@@ -985,79 +984,57 @@ def registros():
             scope = "SELF"
             scope_val = None
         elif rol_bd == "ADMIN_OPORTUNIDADES":
-            # excepción pedida: que no vea info (ajusta si ustedes quieren otra cosa)
             return jsonify([]), 200
         elif rol_bd.startswith("ADMIN_"):
-            # admin de equipo: debe tener equipo_id
             if not equipo_id_bd:
                 return jsonify([]), 200
             scope = "TEAM"
             scope_val = int(equipo_id_bd)
         else:
-            # Rol no contemplado => no data
             return jsonify([]), 200
 
-        # ----------------------------------------------------------
-        # 4) Filtros opcionales
-        # ----------------------------------------------------------
-        # Fecha (ISO recomendado): ?desde=2026-01-01&hasta=2026-01-31
+        # -----------------------------
+        # 4) Filtros opcionales (para tabla)
+        # -----------------------------
         desde = (request.args.get("desde") or "").strip()
         hasta = (request.args.get("hasta") or "").strip()
 
-        # Filtros extra (si quieres usarlos en el futuro)
-        # ?equipo=BASIS
         equipo_req = (request.args.get("equipo") or "").strip().upper()
-        # ?consultor=Nombre Apellido  (ojo: tu front lo usa para filtrar local, pero lo dejo por si lo quieres server-side)
         consultor_req = (request.args.get("consultor") or "").strip()
 
-        # ----------------------------------------------------------
-        # 5) Query: resumen por día y consultor
-        #    El front agrupa por usuario_consultor y fechaKey.
-        # ----------------------------------------------------------
+        # -----------------------------
+        # 5) Query DETALLE (NO agrupar)
+        # -----------------------------
         q = (
-            db.session.query(
-                Registro.fecha.label("fecha"),
-                func.lower(Registro.usuario_consultor).label("usuario_consultor"),
-                # nombre visible del consultor (si tienes columna Consultor.nombre)
-                func.coalesce(Consultor.nombre, Consultor.usuario).label("consultor"),
-                # total de horas por día
-                func.coalesce(func.sum(Registro.total_horas), 0).label("total_horas"),
-                # equipo del consultor (para debug o usos futuros)
-                func.coalesce(Equipo.nombre, "SIN EQUIPO").label("equipo"),
-                # estado (si existe en registro) - si no existe, queda None
-                func.max(getattr(Registro, "estado", None)).label("estado"),
+            Registro.query
+            .options(
+                joinedload(Registro.consultor),
+                joinedload(Registro.ocupacion),
+                joinedload(Registro.tarea),
             )
-            .select_from(Registro)
-            .join(
-                Consultor,
-                func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
-            )
-            .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
+            .join(Consultor, func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario))
         )
 
-        # ----------------------------------------------------------
+        # -----------------------------
         # 6) Aplicar scope
-        # ----------------------------------------------------------
+        # -----------------------------
         if scope == "SELF":
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
-
         elif scope == "TEAM":
             q = q.filter(Consultor.equipo_id == int(scope_val))
+        # ALL: sin filtro
 
-        # ALL: no filtro
-
-        # ----------------------------------------------------------
-        # 7) Aplicar filtros opcionales del request (sin romper seguridad)
-        #    - equipo_req SOLO aplica si scope=ALL (porque si no, sería redundante)
-        # ----------------------------------------------------------
+        # -----------------------------
+        # 7) Filtros extra
+        # -----------------------------
+        # Si es ADMIN global, puede filtrar por equipo (ojo: Registro.equipo es string)
         if scope == "ALL" and equipo_req:
-            q = q.filter(func.upper(func.coalesce(Equipo.nombre, "SIN EQUIPO")) == equipo_req)
+            q = q.filter(func.upper(func.coalesce(Registro.equipo, "")) == equipo_req)
 
         if consultor_req:
-            # Si quieres permitir filtrar por nombre (string exacto)
+            # compara contra nombre del consultor
             q = q.filter(func.coalesce(Consultor.nombre, Consultor.usuario) == consultor_req)
 
-        # Fecha
         if desde and hasta:
             q = q.filter(Registro.fecha.between(desde, hasta))
         elif desde:
@@ -1065,46 +1042,154 @@ def registros():
         elif hasta:
             q = q.filter(Registro.fecha <= hasta)
 
-        # ----------------------------------------------------------
-        # 8) Agrupar por fecha y consultor
-        # ----------------------------------------------------------
+        # Orden
+        q = q.order_by(Registro.fecha.desc(), Registro.id.desc())
+
+        rows = q.all()
+
+        # -----------------------------
+        # 8) Serializar completo
+        # -----------------------------
+        out = []
+        for r in rows:
+            consultor_nombre = ""
+            if r.consultor:
+                consultor_nombre = r.consultor.nombre or r.consultor.usuario or ""
+            else:
+                consultor_nombre = r.usuario_consultor or ""
+
+            out.append({
+                "id": r.id,
+                "fecha": r.fecha,
+                "modulo": r.modulo,
+                "equipo": r.equipo,
+                "cliente": r.cliente,
+
+                "nro_caso_cliente": r.nro_caso_cliente,
+                "nro_caso_interno": r.nro_caso_interno,
+                "nro_caso_escalado": r.nro_caso_escalado,
+
+                "ocupacion": (r.ocupacion.nombre if r.ocupacion else None),
+                "ocupacion_id": r.ocupacion_id,
+
+                "tarea": (r.tarea.nombre if r.tarea else None),
+                "tarea_id": r.tarea_id,
+
+                "tipo_tarea": r.tipo_tarea,
+
+                "consultor": consultor_nombre,
+                "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+
+                "hora_inicio": r.hora_inicio,
+                "hora_fin": r.hora_fin,
+                "tiempo_invertido": float(r.tiempo_invertido or 0),
+
+                "tiempo_facturable": float(r.tiempo_facturable or 0),
+                "horas_adicionales": r.horas_adicionales,
+
+                "oncall": r.oncall,
+                "desborde": r.desborde,
+
+                "descripcion": r.descripcion,
+                "total_horas": float(r.total_horas or 0),
+
+                "horario_trabajo": r.horario_trabajo,
+                "actividad_malla": r.actividad_malla,
+                "bloqueado": bool(r.bloqueado),
+            })
+
+        return jsonify(out), 200
+
+    except Exception as e:
+        current_app.logger.exception("❌ Error en /registros")
+        return jsonify({"error": str(e)}), 500
+
+@bp.route("/registros-resumen", methods=["GET"])
+def registros_resumen():
+    try:
+        usuario = _get_usuario_from_request()
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query
+            .options(joinedload(Consultor.rol_obj), joinedload(Consultor.equipo_obj))
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
+
+        rol_bd = (consultor_login.rol_obj.nombre if consultor_login.rol_obj else "").strip().upper()
+        equipo_id_bd = consultor_login.equipo_id
+
+        if rol_bd == "ADMIN":
+            scope = "ALL"
+            scope_val = None
+        elif rol_bd == "CONSULTOR":
+            scope = "SELF"
+            scope_val = None
+        elif rol_bd == "ADMIN_OPORTUNIDADES":
+            return jsonify([]), 200
+        elif rol_bd.startswith("ADMIN_"):
+            if not equipo_id_bd:
+                return jsonify([]), 200
+            scope = "TEAM"
+            scope_val = int(equipo_id_bd)
+        else:
+            return jsonify([]), 200
+
+        desde = (request.args.get("desde") or "").strip()
+        hasta = (request.args.get("hasta") or "").strip()
+
+        q = (
+            db.session.query(
+                Registro.fecha.label("fecha"),
+                func.lower(Registro.usuario_consultor).label("usuario_consultor"),
+                func.coalesce(Consultor.nombre, Consultor.usuario).label("consultor"),
+                func.coalesce(func.sum(Registro.total_horas), 0).label("total_horas"),
+            )
+            .select_from(Registro)
+            .join(Consultor, func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario))
+        )
+
+        if scope == "SELF":
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+        elif scope == "TEAM":
+            q = q.filter(Consultor.equipo_id == int(scope_val))
+
+        if desde and hasta:
+            q = q.filter(Registro.fecha.between(desde, hasta))
+        elif desde:
+            q = q.filter(Registro.fecha >= desde)
+        elif hasta:
+            q = q.filter(Registro.fecha <= hasta)
+
         q = q.group_by(
             Registro.fecha,
             func.lower(Registro.usuario_consultor),
             func.coalesce(Consultor.nombre, Consultor.usuario),
-            func.coalesce(Equipo.nombre, "SIN EQUIPO"),
-        )
-
-        # Orden para que el front reciba consistente
-        q = q.order_by(
+        ).order_by(
             func.lower(Registro.usuario_consultor).asc(),
             Registro.fecha.asc()
         )
 
         rows = q.all()
 
-        # ----------------------------------------------------------
-        # 9) Respuesta: ARRAY (lo que tu Resumen.js espera)
-        # ----------------------------------------------------------
         out = []
         for r in rows:
             out.append({
-                "fecha": r.fecha,  # idealmente string ISO YYYY-MM-DD
+                "fecha": r.fecha,
                 "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
                 "consultor": (r.consultor or "").strip(),
                 "total_horas": float(r.total_horas or 0),
-                "equipo": (r.equipo or "SIN EQUIPO").strip(),
-                "estado": r.estado if hasattr(r, "estado") else None,
             })
 
         return jsonify(out), 200
 
     except Exception as e:
-        # Log real
-        try:
-            current_app.logger.exception("❌ Error en /registros")
-        except Exception:
-            pass
+        current_app.logger.exception("❌ Error en /registros-resumen")
         return jsonify({"error": str(e)}), 500
 
 @bp.route("/resumen-horas", methods=["GET"])
