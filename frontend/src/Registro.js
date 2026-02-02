@@ -309,17 +309,22 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
 
   const rolUpper = String(rol || "").trim().toUpperCase();
 
-  const isAdminGlobal = rolUpper === "ADMIN";
+  const miEquipo = normKey(equipoUser || "");
+
   const isAdminOportunidades = rolUpper === "ADMIN_OPORTUNIDADES";
   const isAdmin = rolUpper.startsWith("ADMIN") && !isAdminOportunidades;
 
   const isSoloPropio = rolUpper === "CONSULTOR" || isAdminOportunidades;
 
-  const isAdminEquipo = isAdmin && !isAdminGlobal;
+  
+  const isAdminGlobal = rolUpper === "ADMIN" && !miEquipo;
 
-  const miEquipo = String(equipoUser || "").trim().toUpperCase();
+  
+  const isAdminEquipo = rolUpper === "ADMIN" && !!miEquipo;
 
-  const equipoLocked = isSoloPropio ? "" : (isAdminEquipo ? miEquipo : filtroEquipo);
+  const equipoLocked = isSoloPropio
+  ? ""
+  : (isAdminEquipo ? miEquipo : (isAdminGlobal ? filtroEquipo : miEquipo));
 
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
 
@@ -444,24 +449,79 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
 
   const registrosAbortRef = useRef(null);
 
+  const pick = (obj, ...keys) => {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v !== undefined && v !== null && v !== "") return v;
+  }
+  return "";
+};
+
+  const normalizeRegistro = (raw = {}) => {
+    const tareaLabel =
+      pick(raw, "tipoTarea", "tipoTareaAzure", "tipo_tarea", "tipo_tarea_azure") ||
+      (raw?.tarea ? `${raw.tarea.codigo} - ${raw.tarea.nombre}` : "—");
+
+    return {
+      id: raw.id ?? raw.ID ?? null,
+      bloqueado: !!pick(raw, "bloqueado", "is_bloqueado"),
+
+      fecha: pick(raw, "fecha", "FECHA"),
+      modulo: pick(raw, "modulo", "MODULO"),
+      equipo: pick(raw, "equipo", "EQUIPO", "equipo_nombre", "equipoName"),
+      cliente: pick(raw, "cliente", "CLIENTE"),
+
+      nroCasoCliente: pick(raw, "nroCasoCliente", "nro_caso_cliente", "nro_caso", "nroCaso"),
+      nroCasoInterno: pick(raw, "nroCasoInterno", "nro_caso_interno"),
+      nroCasoEscaladoSap: pick(raw, "nroCasoEscaladoSap", "nro_caso_escalado", "nro_caso_escalado_sap"),
+
+      ocupacion_id: raw.ocupacion_id ?? raw.ocupacionId ?? null,
+      tarea_id: raw.tarea_id ?? raw.tareaId ?? (raw?.tarea?.id ?? null),
+      tipoTarea: tareaLabel,
+
+      consultor: pick(raw, "consultor", "usuario_consultor", "usuarioConsultor"),
+
+      horaInicio: pick(raw, "horaInicio", "hora_inicio"),
+      horaFin: pick(raw, "horaFin", "hora_fin"),
+
+      tiempoInvertido: Number(
+        pick(raw, "tiempoInvertido", "tiempo_invertido", "total_horas", "totalHoras") || 0
+      ),
+      tiempoFacturable: Number(
+        pick(raw, "tiempoFacturable", "tiempo_facturable") || 0
+      ),
+
+      oncall: pick(raw, "oncall", "ONCALL"),
+      desborde: pick(raw, "desborde", "DESBORDE"),
+
+      horasAdicionales: pick(raw, "horasAdicionales", "horas_adicionales"),
+      descripcion: pick(raw, "descripcion", "DESCRIPCION"),
+
+      tarea: raw.tarea ?? null,
+    };
+  };
+
   const fetchRegistros = useCallback(async () => {
     setError("");
 
+    // abort request anterior si existe
     if (registrosAbortRef.current) {
       try { registrosAbortRef.current.abort(); } catch {}
     }
+
     const controller = new AbortController();
     registrosAbortRef.current = controller;
 
     try {
       const params = new URLSearchParams();
 
+      // equipoLocked ya viene calculado según rol/admin
       const eq = normKey(equipoLocked);
       if (eq && eq !== "TODOS") params.set("equipo", eq);
 
+      const url = `/registros${params.toString() ? `?${params.toString()}` : ""}`;
 
-      const url = `/registros?${params.toString()}`;
-
+      // headers para backend (permisos)
       const headers = {
         "X-User-Usuario": usuarioLogin,
         "X-User-Rol": rol,
@@ -470,7 +530,7 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
       const headerEquipo = normKey(equipoUser || "");
       if (headerEquipo) headers["X-User-Equipo"] = headerEquipo;
 
-      // ✅ log para depurar
+      // log para depurar
       console.log("FETCH /registros", { url, eq, equipoLocked, headers });
 
       const res = await jfetch(url, {
@@ -482,21 +542,25 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
 
-      // ✅ ESTE ES EL FIX: tu backend responde { rows, total, ... }
-      const rows = Array.isArray(data) ? data : (Array.isArray(data?.rows) ? data.rows : []);
+      // backend puede responder:
+      // 1) []  (lista directa)
+      // 2) { rows: [], total: ... }
+      const rows = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.rows) ? data.rows : []);
 
-      setRegistros(rows);
+      // ✅ NORMALIZA para evitar campos vacíos por snake_case
+      const normalized = rows.map(normalizeRegistro);
 
-      // (Opcional) si quieres usar el total real del backend en tu UI:
-      // setTotal(data?.total ?? rows.length);
-      // setTotalPages(data?.total_pages ?? 1);
+      setRegistros(normalized);
 
     } catch (e) {
       if (e?.name === "AbortError") return;
       setRegistros([]);
-      setError(String(e.message || e));
+      setError(String(e?.message || e));
     }
   }, [usuarioLogin, rol, equipoUser, equipoLocked]);
+
 
 
   const normMod = (v) => String(v || "").trim();
@@ -527,13 +591,8 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
   }, [usuarioLogin, fetchRegistros]);
 
   const resolveModulosForEdit = useCallback((reg) => {
-    // prioridad: lo que venga en el registro (por si el registro ya trae el módulo usado)
     const fromRegistro = reg?.modulo ? [reg.modulo] : [];
-
-    // luego lo que ya tienes en estado (catálogo del usuario)
     const fromState = Array.isArray(modulos) ? modulos : [];
-
-    // luego lo que venga del userData (fallback)
     const fromUser = getModulosLocal(userData);
 
     return uniq([...fromRegistro, ...fromState, ...fromUser]);
@@ -1104,14 +1163,27 @@ const registrosIndexed = useMemo(() => {
       return;
     }
 
-    if (!isAdmin) {
-      setFiltroConsultor(nombreUser);
-      setFiltroEquipo(normKey(equipoUser));
-    } else {
+    if (isAdminGlobal) {
       setFiltroConsultor("");
       setFiltroEquipo("");
+      return;
     }
-  }, [isSoloPropio, isAdmin, nombreUser, equipoUser, userData]);
+
+    if (isAdminEquipo) {
+      setFiltroConsultor("");
+      setFiltroEquipo(miEquipo);
+      return;
+    }
+    setFiltroConsultor(nombreUser);
+    setFiltroEquipo(miEquipo);
+  }, [userData, isSoloPropio, isAdminGlobal, isAdminEquipo, nombreUser, miEquipo]);
+
+  useEffect(() => {
+    if (isAdminEquipo && miEquipo) {
+      setFiltroEquipo(miEquipo);
+    }
+  }, [isAdminEquipo, miEquipo]);
+
 
   useEffect(() => {
     if (!ocupacionSeleccionada) {
@@ -1435,12 +1507,15 @@ const registrosIndexed = useMemo(() => {
               setFiltroOcupacion('');
               setFiltroNroCasoCli('');
               setFiltroHorasAdic('');
-              if (isAdmin) {
+              if (isAdminGlobal) {
                 setFiltroConsultor('');
                 setFiltroEquipo('');
+              } else if (isAdminEquipo) {
+                setFiltroConsultor('');
+                setFiltroEquipo(miEquipo);
               } else {
                 setFiltroConsultor(nombreUser);
-                setFiltroEquipo(equipoUser);
+                setFiltroEquipo(miEquipo);
               }
             }}
           >
@@ -1479,12 +1554,7 @@ const registrosIndexed = useMemo(() => {
                     {modulos.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
                   </select>
                 ) : (
-                  <input
-                    type="text"
-                    value={modulos[0] || ''}
-                    readOnly
-                    placeholder="Módulo"
-                  />
+                  <input type="text" value={miEquipo || equipoUser} readOnly placeholder="Equipo" />
                 )}
 
                 <input

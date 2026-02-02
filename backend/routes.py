@@ -411,15 +411,6 @@ def label_codigo_nombre(obj, codigo_attr="codigo", nombre_attr="nombre"):
     return None
 
 
-def safe_float(x, default=0.0):
-    try:
-        if x is None:
-            return float(default)
-        return float(x)
-    except Exception:
-        return float(default)
-
-
 # ===============================
 # Catálogos
 # ===============================
