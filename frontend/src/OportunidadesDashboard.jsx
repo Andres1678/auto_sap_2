@@ -26,6 +26,29 @@ const rsStyles = {
   option: (base) => ({ ...base, display: "flex", alignItems: "center", gap: 10 }),
 };
 
+function normStrong(v) {
+  return String(v ?? "")
+    .replace(/\u00A0/g, " ")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+const EXCLUDE_KEYS = new Set([
+  "OTP",
+  "OTE",
+  "PROSPECCION",
+  "REGISTRO",
+  "PENDIENTE APROBACION SAP",
+]);
+
+function isExcludedLabel(v) {
+  const k = normStrong(v);
+  return k ? EXCLUDE_KEYS.has(k) : false;
+}
+
 const ESTADOS_ACTIVOS = new Set([
   "EN PROCESO",
   "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
@@ -45,30 +68,10 @@ const ESTADOS_CERRADOS = new Set([
   "SUSPENDIDO",
 ]);
 
-const ESTADOS_EXCLUIDOS = new Set([
-  "OTP",
-  "OTE",
-  "PROSPECCION",
-  "PROSPECCIÓN",
-  "REGISTRO",
-  "PENDIENTE APROBACION SAP",
-  "PENDIENTE APROBACIÓN SAP",
-]);
-
-function normTxt(v) {
-  return String(v ?? "").trim().toUpperCase();
-}
-
-function isExcluded(v) {
-  const k = normTxt(v);
-  if (!k) return false;
-  return ESTADOS_EXCLUIDOS.has(k);
-}
-
 function toOptions(arr) {
   return (Array.isArray(arr) ? arr : [])
     .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
-    .filter((v) => !isExcluded(v))
+    .filter((v) => !isExcludedLabel(v))
     .map((v) => ({ value: v, label: String(v) }));
 }
 
@@ -224,25 +227,25 @@ export default function DashboardOportunidades() {
     })();
   }, [filtrosDebounced]);
 
-  const dataFiltrada = useMemo(() => {
+  const dataClean = useMemo(() => {
     const base = Array.isArray(data) ? data : [];
-    return base.filter((op) => {
-      const eo = op?.estado_oferta;
-      const ro = op?.resultado_oferta;
-      if (isExcluded(eo)) return false;
-      if (isExcluded(ro)) return false;
+    return base.filter((r) => {
+      const eo = normStrong(r.estado_oferta);
+      const ro = normStrong(r.resultado_oferta);
+      if (eo && EXCLUDE_KEYS.has(eo)) return false;
+      if (ro && EXCLUDE_KEYS.has(ro)) return false;
       return true;
     });
   }, [data]);
 
   const kpis = useMemo(() => {
-    const total = dataFiltrada.length;
+    const total = dataClean.length;
     let activas = 0;
     let cerradas = 0;
     let ganadas = 0;
 
-    dataFiltrada.forEach((op) => {
-      const estado = normTxt(op.estado_oferta);
+    dataClean.forEach((op) => {
+      const estado = normStrong(op.estado_oferta);
       if (ESTADOS_ACTIVOS.has(estado)) activas++;
       if (ESTADOS_CERRADOS.has(estado)) cerradas++;
       if (estado === "GANADA") ganadas++;
@@ -255,27 +258,25 @@ export default function DashboardOportunidades() {
       ganadas,
       porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
     };
-  }, [dataFiltrada]);
+  }, [dataClean]);
 
   const resumenEstado = useMemo(() => {
     const m = new Map();
-    dataFiltrada.forEach((r) => {
+    dataClean.forEach((r) => {
       const k = (r.estado_oferta || "-").toString();
-      if (isExcluded(k)) return;
       m.set(k, (m.get(k) || 0) + 1);
     });
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [dataFiltrada]);
+  }, [dataClean]);
 
   const resumenResultado = useMemo(() => {
     const m = new Map();
-    dataFiltrada.forEach((r) => {
+    dataClean.forEach((r) => {
       const k = (r.resultado_oferta || "-").toString();
-      if (isExcluded(k)) return;
       m.set(k, (m.get(k) || 0) + 1);
     });
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [dataFiltrada]);
+  }, [dataClean]);
 
   const limpiar = () => {
     setFiltros({
@@ -413,17 +414,17 @@ export default function DashboardOportunidades() {
             <div className="side-col">
               <div className="card">
                 <div className="card-title">Cantidad y Ganadas/Adjudicadas por Año y Mes</div>
-                <GraficoCantidadGanadas data={dataFiltrada} />
+                <GraficoCantidadGanadas data={dataClean} />
               </div>
 
               <div className="card">
                 <div className="card-title">Activas y Cerradas por Año y Mes</div>
-                <GraficoActivasCerradas data={dataFiltrada} />
+                <GraficoActivasCerradas data={dataClean} />
               </div>
 
               <div className="card">
                 <div className="card-title">Resumen Calificación</div>
-                <ResumenCalificacion data={dataFiltrada} />
+                <ResumenCalificacion data={dataClean} />
               </div>
             </div>
           </section>
@@ -449,7 +450,7 @@ export default function DashboardOportunidades() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dataFiltrada.map((row, i) => (
+                  {dataClean.map((row, i) => (
                     <tr key={row.id ?? i}>
                       <td>{row.nombre_cliente ?? "-"}</td>
                       <td>{row.servicio ?? "-"}</td>
