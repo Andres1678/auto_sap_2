@@ -459,9 +459,6 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
       const eq = normKey(equipoLocked);
       if (eq && eq !== "TODOS") params.set("equipo", eq);
 
-      // (Opcional) si luego metes paginación en backend:
-      // params.set("page", String(page));
-      // params.set("page_size", String(PAGE_SIZE));
 
       const url = `/registros?${params.toString()}`;
 

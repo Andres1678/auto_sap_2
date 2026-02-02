@@ -891,21 +891,28 @@ def _is_admin_equipo(role: str) -> bool:
 
 def scope_for(consultor_login, rol_req: str):
     """
-    ADMIN            -> ("ALL", None)
-    ADMIN_*          -> ("TEAM", consultor_login.equipo_id)
-    CONSULTOR/otros  -> ("SELF", usuario_norm)
+    IMPORTANTE: el scope se decide SOLO con el rol real en BD.
+    - ADMIN            -> ("ALL", None)
+    - ADMIN_*          -> ("TEAM", consultor_login.equipo_id)
+    - CONSULTOR/otros  -> ("SELF", usuario_norm)
     """
-    rol = (rol_req or (consultor_login.rol_obj.nombre if consultor_login.rol_obj else "") or "").strip().upper()
+    rol_db = ""
+    if consultor_login and getattr(consultor_login, "rol_obj", None) and getattr(consultor_login.rol_obj, "nombre", None):
+        rol_db = consultor_login.rol_obj.nombre
+    else:
+        rol_db = getattr(consultor_login, "rol", "") or ""
+
+    rol = (rol_db or "").strip().upper()
     usuario_norm = (consultor_login.usuario or "").strip().lower()
 
     if rol == "ADMIN":
         return "ALL", None
 
     if rol.startswith("ADMIN_"):
-        # el admin de equipo SOLO ve su equipo real
         return "TEAM", int(consultor_login.equipo_id) if consultor_login.equipo_id else 0
 
     return "SELF", usuario_norm
+
 
 
 
@@ -1288,20 +1295,31 @@ def resumen_horas():
 @bp.route('/eliminar-registro/<int:id>', methods=['DELETE'])
 @permission_required("REGISTROS_ELIMINAR")
 def eliminar_registro(id):
-    data = request.json or {}
-    rol = (data.get('rol') or '').strip().upper()
-    nombre = data.get('nombre')
+    usuario_header = (request.headers.get("X-User-Usuario") or "").strip().lower()
+    if not usuario_header:
+        return jsonify({'mensaje': 'Usuario no enviado'}), 401
+
+    consultor_login = Consultor.query.filter(func.lower(Consultor.usuario) == usuario_header).first()
+    if not consultor_login:
+        return jsonify({'mensaje': 'Usuario no encontrado'}), 404
+
+    rol_real = (consultor_login.rol_obj.nombre if consultor_login.rol_obj else (getattr(consultor_login, "rol", "") or ""))
+    es_admin = _is_admin_request(rol_real, consultor_login)
 
     registro = Registro.query.get(id)
     if not registro:
         return jsonify({'mensaje': 'Registro no encontrado'}), 404
 
-    if rol != 'ADMIN' and (not registro.consultor or registro.consultor.nombre != (nombre or "")):
+    dueño = (registro.usuario_consultor or "").strip().lower()
+
+    # Si NO es admin, solo puede borrar lo suyo
+    if not es_admin and dueño and dueño != usuario_header:
         return jsonify({'mensaje': 'No autorizado'}), 403
 
     db.session.delete(registro)
     db.session.commit()
     return jsonify({'mensaje': 'Registro eliminado'}), 200
+
 
 @bp.route('/editar-registro/<int:id>', methods=['PUT'])
 @permission_required("REGISTROS_EDITAR")
@@ -1447,17 +1465,27 @@ def editar_registro(id):
 
 @bp.route('/toggle-bloqueado/<int:id>', methods=['PUT'])
 def toggle_bloqueado(id):
-    data = request.json or {}
-    if (data.get('rol') or '').strip().upper() != 'ADMIN':
+    usuario_header = (request.headers.get("X-User-Usuario") or "").strip().lower()
+    if not usuario_header:
+        return jsonify({'mensaje': 'Usuario no enviado'}), 401
+
+    consultor_login = Consultor.query.filter(func.lower(Consultor.usuario) == usuario_header).first()
+    if not consultor_login:
+        return jsonify({'mensaje': 'Usuario no encontrado'}), 404
+
+    rol_real = (consultor_login.rol_obj.nombre if consultor_login.rol_obj else (getattr(consultor_login, "rol", "") or ""))
+    es_admin = _is_admin_request(rol_real, consultor_login)
+    if not es_admin:
         return jsonify({'mensaje': 'No autorizado'}), 403
 
     registro = Registro.query.get(id)
     if not registro:
         return jsonify({'mensaje': 'Registro no encontrado'}), 404
 
-    registro.bloqueado = not registro.bloqueado
+    registro.bloqueado = not bool(registro.bloqueado)
     db.session.commit()
-    return jsonify({'bloqueado': registro.bloqueado}), 200
+    return jsonify({'bloqueado': bool(registro.bloqueado)}), 200
+
 
 # ===============================
 # BaseRegistro (carga masiva / listado)
