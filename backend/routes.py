@@ -1727,12 +1727,27 @@ def _get_list_arg(key: str):
         vals = request.args.getlist(f"{key}[]")
     return [str(v).strip() for v in vals if v is not None and str(v).strip() != ""]
 
+EXCLUDE = ["OTP", "OTE", "PROSPECCION", "REGISTRO", "PENDIENTE APROBACION SAP"]
+
+def _clean_col(col):
+    
+    return func.upper(func.trim(func.replace(col, "\u00A0", " ")))
+
+def _apply_oportunidades_filters(query):
+    eo = _clean_col(Oportunidad.estado_oferta)
+    ro = _clean_col(Oportunidad.resultado_oferta)
+
+    query = query.filter(~eo.in_(EXCLUDE))
+    query = query.filter(~ro.in_(EXCLUDE))
+
+
+
 def _apply_oportunidades_filters(query):
     q = (request.args.get("q") or "").strip()
 
     anios = _get_list_arg("anio")
     meses = _get_list_arg("mes")
-    tipos = _get_list_arg("tipo")  # GANADA / ACTIVA / CERRADA
+    tipos = _get_list_arg("tipo") 
 
     direccion = _get_list_arg("direccion_comercial")
     gerencia  = _get_list_arg("gerencia_comercial")
@@ -2014,10 +2029,12 @@ def oportunidades_filters():
     )
 
     def distinct_col(col):
+        c = _clean_col(col)
         rows = (
             base.with_entities(col)
             .filter(col.isnot(None))
             .filter(func.trim(col) != "")
+            .filter(~c.in_(EXCLUDE))
             .distinct()
             .order_by(col.asc())
             .all()

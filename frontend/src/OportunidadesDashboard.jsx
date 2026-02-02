@@ -26,7 +26,7 @@ const rsStyles = {
   option: (base) => ({ ...base, display: "flex", alignItems: "center", gap: 10 }),
 };
 
-function normStrong(v) {
+function normKeyForMatch(v) {
   return String(v ?? "")
     .replace(/\u00A0/g, " ")
     .trim()
@@ -36,17 +36,22 @@ function normStrong(v) {
     .replace(/\s+/g, " ");
 }
 
-const EXCLUDE_KEYS = new Set([
+const EXCLUDE_LIST = [
   "OTP",
   "OTE",
   "PROSPECCION",
   "REGISTRO",
   "PENDIENTE APROBACION SAP",
-]);
+];
 
-function isExcludedLabel(v) {
-  const k = normStrong(v);
-  return k ? EXCLUDE_KEYS.has(k) : false;
+function isExcludedLabel(raw) {
+  const k = normKeyForMatch(raw);
+  if (!k) return false;
+  for (const x of EXCLUDE_LIST) {
+    if (k === x) return true;
+    if (k.includes(x)) return true;
+  }
+  return false;
 }
 
 const ESTADOS_ACTIVOS = new Set([
@@ -230,10 +235,10 @@ export default function DashboardOportunidades() {
   const dataClean = useMemo(() => {
     const base = Array.isArray(data) ? data : [];
     return base.filter((r) => {
-      const eo = normStrong(r.estado_oferta);
-      const ro = normStrong(r.resultado_oferta);
-      if (eo && EXCLUDE_KEYS.has(eo)) return false;
-      if (ro && EXCLUDE_KEYS.has(ro)) return false;
+      const eo = normKeyForMatch(r.estado_oferta);
+      const ro = normKeyForMatch(r.resultado_oferta);
+      if (isExcludedLabel(eo)) return false;
+      if (isExcludedLabel(ro)) return false;
       return true;
     });
   }, [data]);
@@ -245,7 +250,7 @@ export default function DashboardOportunidades() {
     let ganadas = 0;
 
     dataClean.forEach((op) => {
-      const estado = normStrong(op.estado_oferta);
+      const estado = normKeyForMatch(op.estado_oferta);
       if (ESTADOS_ACTIVOS.has(estado)) activas++;
       if (ESTADOS_CERRADOS.has(estado)) cerradas++;
       if (estado === "GANADA") ganadas++;
@@ -264,6 +269,7 @@ export default function DashboardOportunidades() {
     const m = new Map();
     dataClean.forEach((r) => {
       const k = (r.estado_oferta || "-").toString();
+      if (isExcludedLabel(k)) return;
       m.set(k, (m.get(k) || 0) + 1);
     });
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
@@ -273,6 +279,7 @@ export default function DashboardOportunidades() {
     const m = new Map();
     dataClean.forEach((r) => {
       const k = (r.resultado_oferta || "-").toString();
+      if (isExcludedLabel(k)) return;
       m.set(k, (m.get(k) || 0) + 1);
     });
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
