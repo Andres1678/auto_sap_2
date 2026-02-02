@@ -456,30 +456,25 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
     try {
       const params = new URLSearchParams();
 
-      // ✅ filtro por equipo desde UI (querystring)
       const eq = normKey(equipoLocked);
-      if (eq && eq !== "TODOS") {
-        params.set("equipo", eq);
-      }
+      if (eq && eq !== "TODOS") params.set("equipo", eq);
+
+      // (Opcional) si luego metes paginación en backend:
+      // params.set("page", String(page));
+      // params.set("page_size", String(PAGE_SIZE));
 
       const url = `/registros?${params.toString()}`;
 
-      // ✅ headers base siempre
       const headers = {
         "X-User-Usuario": usuarioLogin,
         "X-User-Rol": rol,
       };
 
-      // ✅ SOLO enviar X-User-Equipo si NO es admin global
-      if (!isAdminGlobal) {
-        const headerEquipo = normKey(equipoUser || "");
-        if (headerEquipo) {
-          headers["X-User-Equipo"] = headerEquipo;
-        }
-      }
+      const headerEquipo = normKey(equipoUser || "");
+      if (headerEquipo) headers["X-User-Equipo"] = headerEquipo;
 
-      // (Opcional) Debug rápido
-      console.log("FETCH /registros", { url, headers, equipoLocked, eq });
+      // ✅ log para depurar
+      console.log("FETCH /registros", { url, eq, equipoLocked, headers });
 
       const res = await jfetch(url, {
         method: "GET",
@@ -487,22 +482,25 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
         headers,
       });
 
-      const data = await res.json().catch(() => []);
-      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
 
-      setRegistros(Array.isArray(data) ? data : []);
+      // ✅ ESTE ES EL FIX: tu backend responde { rows, total, ... }
+      const rows = Array.isArray(data) ? data : (Array.isArray(data?.rows) ? data.rows : []);
+
+      setRegistros(rows);
+
+      // (Opcional) si quieres usar el total real del backend en tu UI:
+      // setTotal(data?.total ?? rows.length);
+      // setTotalPages(data?.total_pages ?? 1);
+
     } catch (e) {
       if (e?.name === "AbortError") return;
       setRegistros([]);
       setError(String(e.message || e));
     }
-  }, [
-    usuarioLogin,
-    rol,
-    equipoUser,
-    equipoLocked,
-    isAdminGlobal, 
-  ]);
+  }, [usuarioLogin, rol, equipoUser, equipoLocked]);
+
 
   const normMod = (v) => String(v || "").trim();
   const uniq = (arr) => Array.from(new Set((arr || []).map(normMod).filter(Boolean)));
