@@ -3094,6 +3094,98 @@ def horarios_permitidos():
         "horarios": horarios
     }), 200
 
+@bp.route("/resumen-calendario", methods=["GET"])
+def resumen_calendario():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query
+            .options(joinedload(Consultor.rol_obj), joinedload(Consultor.equipo_obj))
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
+
+        scope, val = scope_for(consultor_login, rol_req)
+
+        # filtros de fecha opcionales
+        desde = (request.args.get("desde") or "").strip()
+        hasta = (request.args.get("hasta") or "").strip()
+
+        # filtro opcional de equipo (ADMIN global), pero si es TEAM solo permite su equipo
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        if equipo_filter and scope == "TEAM":
+            eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper() if consultor_login.equipo_obj else ""
+            if equipo_filter != eq_login:
+                return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
+
+        # base: traer usuario_consultor, nombre consultor, fecha, suma horas
+        q = (
+            db.session.query(
+                func.lower(Registro.usuario_consultor).label("usuario_consultor"),
+                Consultor.nombre.label("consultor"),
+                Registro.fecha.label("fecha"),
+                func.coalesce(func.sum(Registro.total_horas), 0).label("total_horas"),
+            )
+            .select_from(Registro)
+            .join(Consultor, func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario))
+            .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
+        )
+
+        # aplicar scope
+        if scope == "SELF":
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+        elif scope == "TEAM":
+            q = q.filter(Consultor.equipo_id == int(val))
+
+        # aplicar equipo_filter si viene (solo realmente útil en ADMIN global)
+        if equipo_filter:
+            q = q.filter(func.upper(Equipo.nombre) == equipo_filter)
+
+        # fecha filter
+        if desde and hasta:
+            q = q.filter(Registro.fecha.between(desde, hasta))
+        elif desde:
+            q = q.filter(Registro.fecha >= desde)
+        elif hasta:
+            q = q.filter(Registro.fecha <= hasta)
+
+        # agrupar por consultor+fecha
+        q = q.group_by(func.lower(Registro.usuario_consultor), Consultor.nombre, Registro.fecha)
+        q = q.order_by(Consultor.nombre.asc(), Registro.fecha.asc())
+
+        rows = q.all()
+
+        # armar respuesta agrupada por consultor
+        out = {}
+        for r in rows:
+            key = r.usuario_consultor or "na"
+            if key not in out:
+                out[key] = {
+                    "consultor": r.consultor or r.usuario_consultor or "—",
+                    "usuario_consultor": r.usuario_consultor,
+                    "registros": []
+                }
+            out[key]["registros"].append({
+                "fecha": r.fecha,
+                "total_horas": float(r.total_horas or 0),
+            })
+
+        return jsonify(list(out.values())), 200
+
+    except Exception as e:
+        app.logger.exception("❌ Error en /resumen-calendario")
+        return jsonify({"error": str(e)}), 500
+
+
 # -------------------------------
 #   REPORTES DE HORAS  (DIARIO)
 # -------------------------------
@@ -3321,97 +3413,6 @@ def reporte_costos_cliente_dia():
         return jsonify({"error": str(e)}), 500
 
     
-@bp.route("/resumen-calendario", methods=["GET"])
-def resumen_calendario():
-    try:
-        usuario = _get_usuario_from_request()
-        rol_req = _get_rol_from_request()
-
-        if not usuario:
-            return jsonify({"error": "Usuario no enviado"}), 400
-
-        usuario_norm = (usuario or "").strip().lower()
-
-        consultor_login = (
-            Consultor.query
-            .options(joinedload(Consultor.rol_obj), joinedload(Consultor.equipo_obj))
-            .filter(func.lower(Consultor.usuario) == usuario_norm)
-            .first()
-        )
-        if not consultor_login:
-            return jsonify({"error": "Consultor no encontrado"}), 404
-
-        scope, val = scope_for(consultor_login, rol_req)
-
-        # filtros de fecha opcionales
-        desde = (request.args.get("desde") or "").strip()
-        hasta = (request.args.get("hasta") or "").strip()
-
-        # filtro opcional de equipo (ADMIN global), pero si es TEAM solo permite su equipo
-        equipo_filter = (request.args.get("equipo") or "").strip().upper()
-        if equipo_filter and scope == "TEAM":
-            eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper() if consultor_login.equipo_obj else ""
-            if equipo_filter != eq_login:
-                return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
-
-        # base: traer usuario_consultor, nombre consultor, fecha, suma horas
-        q = (
-            db.session.query(
-                func.lower(Registro.usuario_consultor).label("usuario_consultor"),
-                Consultor.nombre.label("consultor"),
-                Registro.fecha.label("fecha"),
-                func.coalesce(func.sum(Registro.total_horas), 0).label("total_horas"),
-            )
-            .select_from(Registro)
-            .join(Consultor, func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario))
-            .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
-        )
-
-        # aplicar scope
-        if scope == "SELF":
-            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
-        elif scope == "TEAM":
-            q = q.filter(Consultor.equipo_id == int(val))
-
-        # aplicar equipo_filter si viene (solo realmente útil en ADMIN global)
-        if equipo_filter:
-            q = q.filter(func.upper(Equipo.nombre) == equipo_filter)
-
-        # fecha filter
-        if desde and hasta:
-            q = q.filter(Registro.fecha.between(desde, hasta))
-        elif desde:
-            q = q.filter(Registro.fecha >= desde)
-        elif hasta:
-            q = q.filter(Registro.fecha <= hasta)
-
-        # agrupar por consultor+fecha
-        q = q.group_by(func.lower(Registro.usuario_consultor), Consultor.nombre, Registro.fecha)
-        q = q.order_by(Consultor.nombre.asc(), Registro.fecha.asc())
-
-        rows = q.all()
-
-        # armar respuesta agrupada por consultor
-        out = {}
-        for r in rows:
-            key = r.usuario_consultor or "na"
-            if key not in out:
-                out[key] = {
-                    "consultor": r.consultor or r.usuario_consultor or "—",
-                    "usuario_consultor": r.usuario_consultor,
-                    "registros": []
-                }
-            out[key]["registros"].append({
-                "fecha": r.fecha,
-                "total_horas": float(r.total_horas or 0),
-            })
-
-        return jsonify(list(out.values())), 200
-
-    except Exception as e:
-        app.logger.exception("❌ Error en /resumen-calendario")
-        return jsonify({"error": str(e)}), 500
-
 def _norm_name(s: str) -> str:
     s = (s or "").strip().upper()
     s = re.sub(r"\s+", " ", s)
@@ -3419,10 +3420,12 @@ def _norm_name(s: str) -> str:
     s = re.sub(r"[^A-Z0-9 ,.-]", "", s)
     return s
 
+
 def _norm_doc(s: str) -> str:
     s = (s or "").strip()
     s = re.sub(r"[^\d]", "", s)
     return s
+
 
 def _parse_money_to_decimal(val) -> Decimal:
     if val is None:
@@ -3453,6 +3456,7 @@ def _parse_money_to_decimal(val) -> Decimal:
         return Decimal(s).quantize(Decimal("0.01"))
     except InvalidOperation:
         return Decimal("0.00")
+
 
 def _col_idx(headers: dict, wanted: str):
     w = (wanted or "").strip().upper()
@@ -3502,11 +3506,39 @@ def import_presupuesto_consultor_excel():
         if not f:
             return jsonify({"error": "Falta archivo (file)"}), 400
 
+        # -------------------------
+        # horas base
+        # -------------------------
         horas_base = request.form.get("horas_base_mes")
         horas_base = Decimal(str(horas_base).strip()) if horas_base else Decimal("160.00")
         if horas_base <= 0:
             horas_base = Decimal("160.00")
 
+        # -------------------------
+        # ✅ anio / mes (evita NULL)
+        # -------------------------
+        anio = request.form.get("anio")
+        mes  = request.form.get("mes")
+
+        try:
+            anio = int(str(anio).strip()) if anio else None
+        except:
+            anio = None
+
+        try:
+            mes = int(str(mes).strip()) if mes else None
+        except:
+            mes = None
+
+        now = datetime.now()
+        if not anio:
+            anio = now.year
+        if not mes or mes < 1 or mes > 12:
+            mes = now.month
+
+        # -------------------------
+        # columnas / sheet
+        # -------------------------
         sheet_name = (request.form.get("sheet") or "").strip() or None
         col_nombre = (request.form.get("col_nombre") or "NOMBRE COLABORADOR").strip()
         col_valor  = (request.form.get("col_valor")  or "VR PERFIL").strip()
@@ -3540,9 +3572,7 @@ def import_presupuesto_consultor_excel():
             }), 400
 
         consultores = Consultor.query.all()
-
-        by_name = { _norm_name(c.nombre): c for c in consultores }
-        by_user = { (c.usuario or "").strip().lower(): c for c in consultores if c.usuario }
+        by_name = {_norm_name(c.nombre): c for c in consultores}
 
         updated = 0
         created = 0
@@ -3550,6 +3580,9 @@ def import_presupuesto_consultor_excel():
         invalid_rows = []
         seen = set()
 
+        # -------------------------
+        # recorrido excel
+        # -------------------------
         for r in range(2, ws.max_row + 1):
             raw_name = ws.cell(row=r, column=ci_nombre).value
             raw_val  = ws.cell(row=r, column=ci_valor).value
@@ -3564,7 +3597,6 @@ def import_presupuesto_consultor_excel():
                 continue
 
             c = None
-
             name = _norm_name(str(raw_name or ""))
             if name:
                 c = by_name.get(name)
@@ -3578,9 +3610,19 @@ def import_presupuesto_consultor_excel():
                 continue
             seen.add(key)
 
-            db.session.query(ConsultorPresupuesto).filter_by(consultor_id=c.id, vigente=True).update({"vigente": False})
+            # ✅ solo apagar vigentes del MISMO periodo (anio/mes)
+            db.session.query(ConsultorPresupuesto).filter_by(
+                consultor_id=c.id,
+                anio=anio,
+                mes=mes,
+                vigente=True
+            ).update({"vigente": False})
+
+            # ✅ crear nuevo vigente para ese periodo
             db.session.add(ConsultorPresupuesto(
                 consultor_id=c.id,
+                anio=anio,
+                mes=mes,
                 vr_perfil=vr,
                 horas_base_mes=horas_base,
                 vigente=True
@@ -3591,6 +3633,8 @@ def import_presupuesto_consultor_excel():
 
         return jsonify({
             "ok": True,
+            "anio": anio,
+            "mes": mes,
             "created": created,
             "updated": updated,
             "notFoundCount": len(not_found),
@@ -3601,4 +3645,5 @@ def import_presupuesto_consultor_excel():
 
     except Exception as e:
         db.session.rollback()
+        current_app.logger.exception("❌ Error en /presupuestos/consultor/import-excel")
         return jsonify({"error": str(e)}), 500

@@ -14,10 +14,16 @@ const getUserData = () => {
 const hasPerm = (code) => {
   const u = getUserData();
   const perms = u?.permisos || [];
-  return perms.includes(code);
+  // si permisos es array de objetos, soporta ambos
+  const codes = Array.isArray(perms) ? perms.map(p => (typeof p === "string" ? p : p?.codigo)).filter(Boolean) : [];
+  return codes.includes(code);
 };
 
 export default function PresupuestoConsultorImport() {
+  const today = new Date();
+  const [anio, setAnio] = useState(today.getFullYear());
+  const [mes, setMes] = useState(today.getMonth() + 1);
+
   const [horasBase, setHorasBase] = useState(160);
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -39,9 +45,25 @@ export default function PresupuestoConsultorImport() {
       return;
     }
 
+    // Validación básica anio/mes
+    const anioNum = Number(anio || 0);
+    const mesNum = Number(mes || 0);
+    if (!anioNum || anioNum < 2000) {
+      Swal.fire({ icon: "warning", title: "Año inválido", text: "Ingresa un año válido." });
+      return;
+    }
+    if (!mesNum || mesNum < 1 || mesNum > 12) {
+      Swal.fire({ icon: "warning", title: "Mes inválido", text: "Mes debe estar entre 1 y 12." });
+      return;
+    }
+
     const fd = new FormData();
     fd.append("file", file);
     fd.append("horas_base_mes", String(horasBase));
+
+    // ✅ NUEVO: periodo (evita anio/mes NULL en backend)
+    fd.append("anio", String(anioNum));
+    fd.append("mes", String(mesNum));
 
     if (sheet.trim()) fd.append("sheet", sheet.trim());
     if (colNombre.trim()) fd.append("col_nombre", colNombre.trim());
@@ -71,6 +93,7 @@ export default function PresupuestoConsultorImport() {
         title: "Importación completada",
         html: `
           <div style="text-align:left">
+            <b>Periodo:</b> ${data?.anio ?? anioNum}-${String(data?.mes ?? mesNum).padStart(2, "0")}<br/>
             <b>Creados:</b> ${data.created ?? 0}<br/>
             <b>Actualizados:</b> ${data.updated ?? 0}<br/>
             <b>No encontrados:</b> ${data.notFoundCount ?? 0}<br/>
@@ -102,6 +125,30 @@ export default function PresupuestoConsultorImport() {
 
       <div className="pci-card">
         <div className="pci-grid">
+          {/* ✅ NUEVO: periodo */}
+          <div className="pci-field col-2">
+            <label>Año</label>
+            <input
+              className="pci-input"
+              type="number"
+              value={anio}
+              onChange={(e) => setAnio(Number(e.target.value))}
+              min={2000}
+            />
+          </div>
+
+          <div className="pci-field col-2">
+            <label>Mes</label>
+            <input
+              className="pci-input"
+              type="number"
+              value={mes}
+              onChange={(e) => setMes(Number(e.target.value))}
+              min={1}
+              max={12}
+            />
+          </div>
+
           <div className="pci-field col-3">
             <label>Horas base (para calcular $/hora)</label>
             <input
