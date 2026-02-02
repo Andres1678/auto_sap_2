@@ -937,11 +937,50 @@ def obtener_registros():
 
         scope, val = scope_for(consultor_login, rol_req)
 
-        # ✅ Aliases para evitar joins repetidos / ambiguos
+        # -----------------------------
+        # ✅ PAGINACIÓN
+        # -----------------------------
+        try:
+            page = int(request.args.get("page", 1))
+        except:
+            page = 1
+        if page < 1:
+            page = 1
+
+        try:
+            page_size = int(request.args.get("page_size", 100))
+        except:
+            page_size = 100
+
+        page_size = max(10, min(page_size, 500))  # tope defensivo
+
+        # -----------------------------
+        # ✅ FILTROS
+        # -----------------------------
+        desde = (request.args.get("desde") or "").strip()
+        hasta = (request.args.get("hasta") or "").strip()
+
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        cliente_filter = (request.args.get("cliente") or "").strip()
+        consultor_filter = (request.args.get("consultor") or "").strip()
+        modulo_filter = (request.args.get("modulo") or "").strip()
+
+        qtext = (request.args.get("q") or "").strip()
+
+        # sort simple
+        sort = (request.args.get("sort") or "fecha:desc").strip().lower()
+        sort_field, sort_dir = (sort.split(":", 1) + ["desc"])[:2]
+        sort_dir = "asc" if sort_dir == "asc" else "desc"
+
+        # -----------------------------
+        # ✅ Aliases (igual que tenías)
+        # -----------------------------
         C = aliased(Consultor)
         E = aliased(Equipo)
 
-        # ✅ Query base: SIEMPRE join a Consultor y Equipo UNA sola vez
+        # -----------------------------
+        # ✅ Query base (sin .all())
+        # -----------------------------
         q = (
             Registro.query
             .options(
@@ -953,7 +992,9 @@ def obtener_registros():
             .outerjoin(E, C.equipo_id == E.id)
         )
 
-        # ✅ Aplicar scope
+        # -----------------------------
+        # ✅ Scope
+        # -----------------------------
         if scope == "SELF":
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
 
@@ -962,8 +1003,9 @@ def obtener_registros():
                 return jsonify({'error': 'Consultor sin equipo asignado'}), 403
             q = q.filter(C.equipo_id == int(val))
 
-        # ✅ Filtro opcional de equipo (solo ADMIN total o TEAM (solo su propio equipo))
-        equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        # -----------------------------
+        # ✅ Equipo filter (respetando seguridad)
+        # -----------------------------
         if equipo_filter:
             if scope == "TEAM":
                 eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper() if consultor_login.equipo_obj else ""
@@ -972,11 +1014,75 @@ def obtener_registros():
 
             q = q.filter(func.upper(E.nombre) == equipo_filter)
 
-        registros = q.order_by(Registro.fecha.desc(), Registro.id.desc()).all()
+        # -----------------------------
+        # ✅ Fecha filter
+        # -----------------------------
+        if desde and hasta:
+            q = q.filter(Registro.fecha.between(desde, hasta))
+        elif desde:
+            q = q.filter(Registro.fecha >= desde)
+        elif hasta:
+            q = q.filter(Registro.fecha <= hasta)
 
-        # ---- serialización tuya tal cual ----
+        # -----------------------------
+        # ✅ cliente / consultor / modulo
+        # -----------------------------
+        if cliente_filter:
+            q = q.filter(Registro.cliente.ilike(f"%{cliente_filter}%"))
+
+        if consultor_filter:
+            # filtra por nombre de consultor, usando alias C (join ya hecho)
+            q = q.filter(C.nombre.ilike(f"%{consultor_filter}%"))
+
+        if modulo_filter:
+            q = q.filter(Registro.modulo.ilike(f"%{modulo_filter}%"))
+
+        # -----------------------------
+        # ✅ búsqueda general
+        # -----------------------------
+        if qtext:
+            like = f"%{qtext}%"
+            q = q.filter(or_(
+                Registro.cliente.ilike(like),
+                Registro.nro_caso_cliente.ilike(like),
+                Registro.nro_caso_interno.ilike(like),
+                Registro.tipo_tarea.ilike(like),
+                Registro.descripcion.ilike(like),
+                C.nombre.ilike(like),
+                C.usuario.ilike(like),
+                Registro.modulo.ilike(like),
+            ))
+
+        # -----------------------------
+        # ✅ ORDER BY
+        # -----------------------------
+        if sort_field == "id":
+            col = Registro.id
+        else:
+            # default fecha
+            col = Registro.fecha
+
+        q = q.order_by(col.asc() if sort_dir == "asc" else col.desc(), Registro.id.desc())
+
+        # -----------------------------
+        # ✅ TOTAL (ANTES DEL LIMIT)
+        # -----------------------------
+        total = q.count()
+
+        # -----------------------------
+        # ✅ LIMIT/OFFSET
+        # -----------------------------
+        rows = (
+            q.offset((page - 1) * page_size)
+             .limit(page_size)
+             .all()
+        )
+
+        # -----------------------------
+        # ✅ SERIALIZACIÓN (misma que tenías)
+        # -----------------------------
         data = []
-        for r in registros:
+        for r in rows:
             tarea = r.tarea
             ocup = r.ocupacion
 
@@ -998,9 +1104,11 @@ def obtener_registros():
                 "nroCasoCliente": r.nro_caso_cliente,
                 "nroCasoInterno": r.nro_caso_interno,
                 "nroCasoEscaladoSap": r.nro_caso_escalado,
+
                 "ocupacion_id": r.ocupacion_id,
                 "ocupacion_codigo": ocup.codigo if ocup else None,
                 "ocupacion_nombre": ocup.nombre if ocup else None,
+
                 "tarea_id": r.tarea_id,
                 "tipoTarea": tipo_tarea_str,
                 "tarea": {
@@ -1008,8 +1116,10 @@ def obtener_registros():
                     "codigo": getattr(tarea, "codigo", None),
                     "nombre": getattr(tarea, "nombre", None),
                 } if tarea else None,
+
                 "consultor": r.consultor.nombre if r.consultor else None,
                 "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+
                 "horaInicio": r.hora_inicio,
                 "horaFin": r.hora_fin,
                 "tiempoInvertido": r.tiempo_invertido,
@@ -1018,16 +1128,26 @@ def obtener_registros():
                 "descripcion": r.descripcion,
                 "totalHoras": r.total_horas,
                 "bloqueado": bool(r.bloqueado),
+
                 "oncall": r.oncall,
                 "desborde": r.desborde,
                 "actividadMalla": r.actividad_malla
             })
 
-        return jsonify(data), 200
+        total_pages = int(math.ceil(total / float(page_size))) if page_size else 1
+
+        return jsonify({
+            "rows": data,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+        }), 200
 
     except Exception as e:
         app.logger.exception("❌ Error en obtener_registros (/registros)")
         return jsonify({'error': str(e)}), 500
+
 
 @bp.route("/resumen-horas", methods=["GET"])
 def resumen_horas():
@@ -1731,6 +1851,7 @@ EXCLUDE = {
     "OTE",
     "0TP",
     "0TE",
+    "0TL",
     "PROSPECCION",
     "REGISTRO",
     "PENDIENTE APROBACION SAP",
@@ -1748,6 +1869,7 @@ def _sql_norm(col):
     x = func.upper(func.trim(func.replace(col, "\u00A0", " ")))
     x = func.replace(x, "0TP", "OTP")
     x = func.replace(x, "0TE", "OTE")
+    x = func.replace(x, "0TL", "OTL")
     return x
 
 def _apply_oportunidades_filters(query):

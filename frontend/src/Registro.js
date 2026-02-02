@@ -9,6 +9,64 @@ import { exportRegistrosExcelXLSX_ALL } from "./lib/exportExcel";
 
 Modal.setAppElement('#root');
 
+const RegistroRow = React.memo(function RegistroRow({
+  r,
+  isBASISTable,
+  isAdmin,
+  moduloUser,
+  nombreUser,
+  onEditar,
+  onEliminar,
+  onCopiar,
+  onToggleBloq,
+}) {
+  return (
+    <tr>
+      <td>{r.fecha}</td>
+      <td>{r.modulo ?? moduloUser}</td>
+
+      {/* ✅ mejor así */}
+      <td>{equipoOf(r)}</td>
+
+      <td>{r.cliente}</td>
+      <td>{r.nroCasoCliente}</td>
+      <td>{r.nroCasoInterno}</td>
+      <td>{r.nroCasoEscaladoSap}</td>
+      <td>{r.__occLabel}</td>
+      <td>{r.tipoTarea || (r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—")}</td>
+      <td>{r.consultor ?? nombreUser}</td>
+      <td>{r.horaInicio}</td>
+      <td>{r.horaFin}</td>
+      <td className="num">{r.tiempoInvertido}</td>
+      <td className="num">{r.tiempoFacturable}</td>
+
+      {isBASISTable && <td>{r.oncall}</td>}
+      {isBASISTable && <td>{r.desborde}</td>}
+
+      <td>{r.horasAdicionales}</td>
+      <td className="truncate" title={r.descripcion}>{r.descripcion}</td>
+
+      <td className="actions">
+        <button className="icon-btn" onClick={() => onEditar(r)} disabled={r.bloqueado} title="Editar">✏️</button>
+        <button className="icon-btn danger" onClick={() => onEliminar(r.id)} disabled={r.bloqueado} title="Eliminar">🗑️</button>
+        <button className="icon-btn" onClick={() => onCopiar(r)} title="Copiar">📋</button>
+      </td>
+
+      {isAdmin && (
+        <td>
+          <input
+            type="checkbox"
+            checked={!!r.bloqueado}
+            onChange={() => onToggleBloq(r.id)}
+            aria-label="Bloquear/Desbloquear fila"
+          />
+        </td>
+      )}
+    </tr>
+  );
+});
+
+
 function initRegistro() {
   return {
     id: null,
@@ -41,6 +99,27 @@ const CLIENTE_RESTRINGIDO = 'HITSS/CLARO';
 const CODES_NEED_CASE = new Set(['01','02','03']);
 const CODES_RESTRICTED_CLIENT_9H = new Set(['09','13','14','15']);
 const CODE_SUPERVISION_EQUIPO = '06';
+
+const fechaToNum = (yyyyMMdd) => {
+  // yyyy-mm-dd -> número comparable (20260202)
+  if (!yyyyMMdd || typeof yyyyMMdd !== "string") return 0;
+  const [y, m, d] = yyyyMMdd.split("-");
+  if (!y || !m || !d) return 0;
+  return (Number(y) * 10000) + (Number(m) * 100) + Number(d);
+};
+
+// construye label ocupación por tarea_id
+const buildOcupacionLabelByTareaId = (ocupaciones = []) => {
+  const map = new Map();
+  for (const o of ocupaciones) {
+    const label = `${o.codigo} - ${o.nombre}`;
+    for (const t of (o.tareas || [])) {
+      if (t?.id) map.set(Number(t.id), label);
+    }
+  }
+  return map;
+};
+
 
 const parseHHMM = (s) => {
   if (!s || typeof s !== 'string' || !/^\d{2}:\d{2}$/.test(s)) return null;
@@ -416,10 +495,6 @@ const Registro = ({ userData }) => {
 
 
   useEffect(() => {
-      const set = new Set((registros || []).map(r => equipoOf(r)));
-    }, [registros, filtroEquipo]);
-
-  useEffect(() => {
     const hasId = (userData && (userData.id || userData?.user?.id));
     if (!hasId || !usuarioLogin) return;
     fetchRegistros();
@@ -492,49 +567,113 @@ const Registro = ({ userData }) => {
     return ocupacionLabelByTareaId.get(tareaId) || "—";
   }, [tareaIdByCodigoNombre, ocupacionLabelByTareaId]);
 
+  const ocupacionLabelByTareaIdFast = useMemo(
+  () => buildOcupacionLabelByTareaId(ocupaciones),
+  [ocupaciones]
+);
+
+const tareaIdByCodigoNombreFast = useMemo(() => {
+  const map = new Map();
+  for (const t of (todasTareas || [])) {
+    const key = `${String(t.codigo || "").trim()} - ${String(t.nombre || "").trim()}`.toUpperCase();
+    map.set(key, Number(t.id));
+  }
+  return map;
+}, [todasTareas]);
+
+const registrosIndexed = useMemo(() => {
+    const base = Array.isArray(registros) ? registros : [];
+    const out = new Array(base.length);
+
+    for (let i = 0; i < base.length; i++) {
+      const r = base[i];
+
+      // equipo normalizado 1 vez
+      const eqKey = equipoOf(r); // ya devuelve normKey internamente
+
+      // fecha numérica 1 vez para ordenar rápido
+      const fNum = fechaToNum(r?.fecha);
+
+      // ocupación label 1 vez
+      let occLabel = "—";
+      const tid =
+        (r?.tarea_id != null ? Number(r.tarea_id) : null) ??
+        (r?.tarea?.id != null ? Number(r.tarea.id) : null);
+
+      if (tid && ocupacionLabelByTareaIdFast.size) {
+        occLabel = ocupacionLabelByTareaIdFast.get(tid) || "—";
+      } else {
+        const key = String(r?.tipoTarea || "").trim().toUpperCase();
+        const tid2 = tareaIdByCodigoNombreFast.get(key);
+        if (tid2) occLabel = ocupacionLabelByTareaIdFast.get(tid2) || "—";
+      }
+
+      out[i] = {
+        ...r,
+        __eqKey: eqKey,
+        __fNum: fNum,
+        __occLabel: occLabel,
+        __consultor: r?.consultor || "",
+        __tipoTarea: r?.tipoTarea || "",
+        __cliente: r?.cliente || "",
+        __nroCasoCliente: r?.nroCasoCliente || "",
+        __horasAdic: normSiNo(r?.horasAdicionales),
+        __idStr: String(r?.id ?? ""),
+      };
+    }
+
+    return out;
+  }, [registros, ocupacionLabelByTareaIdFast, tareaIdByCodigoNombreFast]);
+
 
   const registrosFiltrados = useMemo(() => {
-    const base = Array.isArray(registros) ? registros : [];
+  const base = registrosIndexed || [];
 
-    // 1) Filtrar
-    const rows = base.filter((r) => {
-      if (filtroEquipo && equipoOf(r) !== normKey(filtroEquipo)) return false;
-      if (filtroFecha && r.fecha !== filtroFecha) return false;
-      if (filtroCliente && r.cliente !== filtroCliente) return false;
-      if (filtroOcupacion && obtenerOcupacionDeRegistro(r) !== filtroOcupacion) return false;
-      if (filtroTarea && r.tipoTarea !== filtroTarea) return false;
-      if (filtroConsultor && r.consultor !== filtroConsultor) return false;
+  // normaliza 1 vez (para no hacer normKey en cada fila)
+  const filtroEqKey = filtroEquipo ? normKey(filtroEquipo) : "";
 
-      if (filtroNroCasoCliDeb) {
-        const val = String(r.nroCasoCliente || "").toLowerCase();
-        const needle = String(filtroNroCasoCliDeb || "").toLowerCase();
-        if (!val.includes(needle)) return false;
+  // needle 1 vez
+  const needle = filtroNroCasoCliDeb ? String(filtroNroCasoCliDeb).toLowerCase() : "";
+
+  // filtro rápido sin recalcular nada
+  const rows = [];
+    for (let i = 0; i < base.length; i++) {
+      const r = base[i];
+
+      // ✅ equipo: filtro global rápido
+      if (filtroEqKey && r.__eqKey !== filtroEqKey) continue;
+
+      if (filtroFecha && r.fecha !== filtroFecha) continue;
+      if (filtroCliente && r.__cliente !== filtroCliente) continue;
+      if (filtroOcupacion && r.__occLabel !== filtroOcupacion) continue;
+      if (filtroTarea && r.__tipoTarea !== filtroTarea) continue;
+      if (filtroConsultor && r.__consultor !== filtroConsultor) continue;
+
+      if (needle) {
+        if (!String(r.__nroCasoCliente).toLowerCase().includes(needle)) continue;
       }
 
       if (filtroHorasAdic) {
-        if (normSiNo(r.horasAdicionales) !== filtroHorasAdic) return false;
+        if (r.__horasAdic !== filtroHorasAdic) continue;
       }
 
       if (filtroMes || filtroAnio) {
-      const f = String(r.fecha || "");
-      const [yyyy, mm] = f.split("-");
-
-      if (filtroAnio && yyyy !== String(filtroAnio)) return false;
-      if (filtroMes && mm !== String(filtroMes)) return false;
+        const f = String(r.fecha || "");
+        const [yyyy, mm] = f.split("-");
+        if (filtroAnio && yyyy !== String(filtroAnio)) continue;
+        if (filtroMes && mm !== String(filtroMes)) continue;
       }
-      return true;
+
+      rows.push(r);
+    }
+
+    // sort súper rápido (sin Date)
+    rows.sort((a, b) => {
+      if (a.__fNum !== b.__fNum) return a.__fNum - b.__fNum;
+      return a.__idStr.localeCompare(b.__idStr);
     });
 
-    // 2) Ordenar
-    const sorted = rows.slice().sort((a, b) => {
-      const da = new Date(a.fecha || "1970-01-01");
-      const db = new Date(b.fecha || "1970-01-01");
-      if (da.getTime() !== db.getTime()) return da - db;
-      return String(a.id || 0).localeCompare(String(b.id || 0));
-    });
-
-    // 3) Paginar
-    const total = sorted.length;
+    const total = rows.length;
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
     const safePage = Math.min(Math.max(1, page), totalPages);
 
@@ -545,11 +684,11 @@ const Registro = ({ userData }) => {
       total,
       totalPages,
       page: safePage,
-      pageRows: sorted.slice(start, end),
-      allRows: sorted, 
+      pageRows: rows.slice(start, end),
+      allRows: rows,
     };
   }, [
-    registros,
+    registrosIndexed,
     filtroEquipo,
     filtroFecha,
     filtroCliente,
@@ -560,11 +699,8 @@ const Registro = ({ userData }) => {
     filtroHorasAdic,
     filtroMes,
     filtroAnio,
-    obtenerOcupacionDeRegistro,
     page,
   ]);
-
-
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -1136,7 +1272,7 @@ const Registro = ({ userData }) => {
             {equiposConConteo.map((opt) => (
               <button
                 key={opt.key || "ALL"}
-                className={`team-btn ${filtroEquipo === opt.key ? "is-active" : ""}`}
+                className={`team-btn ${normKey(filtroEquipo) === normKey(opt.key) ? "is-active" : ""}`}
                 onClick={() => setFiltroEquipo(normKey(opt.key))}
 
               >
@@ -1517,49 +1653,27 @@ const Registro = ({ userData }) => {
               </tr>
             </thead>
             <tbody>
-              {registrosFiltrados.pageRows.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.fecha}</td>
-                  <td>{r.modulo ?? moduloUser}</td>
-                  <td>{equipoOf(r)}</td>
-                  <td>{r.cliente}</td>
-                  <td>{r.nroCasoCliente}</td>
-                  <td>{r.nroCasoInterno}</td>
-                  <td>{r.nroCasoEscaladoSap}</td>
-                  <td>{obtenerOcupacionDeRegistro(r)}</td>
-                  <td>{r.tipoTarea || (r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—")}</td>
-                  <td>{r.consultor ?? nombreUser}</td>
-                  <td>{r.horaInicio}</td>
-                  <td>{r.horaFin}</td>
-                  <td className="num">{r.tiempoInvertido}</td>
-                  <td className="num">{r.tiempoFacturable}</td>
-                  {isBASISTable && <td>{r.oncall}</td>}
-                  {isBASISTable && <td>{r.desborde}</td>}
-                  <td>{r.horasAdicionales}</td>
-                  <td className="truncate" title={r.descripcion}>{r.descripcion}</td>
-                  <td className="actions">
-                    <button className="icon-btn" onClick={() => handleEditar(r)} disabled={r.bloqueado} title="Editar">✏️</button>
-                    <button className="icon-btn danger" onClick={() => handleEliminar(r.id)} disabled={r.bloqueado} title="Eliminar">🗑️</button>
-                    <button className="icon-btn" onClick={() => handleCopiar(r)} title="Copiar">📋</button>
-                  </td>
-                  {isAdmin && (
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={!!r.bloqueado}
-                        onChange={() => toggleBloqueado(r.id)}
-                        aria-label="Bloquear/Desbloquear fila"
-                      />
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {registrosFiltrados.total === 0 && (
-                <tr>
-                  <td colSpan={colSpanTabla} className="muted">Sin registros</td>
-                </tr>
-              )}
-            </tbody>
+                {registrosFiltrados.pageRows.map((r) => (
+                  <RegistroRow
+                    key={r.id}
+                    r={r}
+                    isBASISTable={isBASISTable}
+                    isAdmin={isAdmin}
+                    moduloUser={moduloUser}
+                    nombreUser={nombreUser}
+                    onEditar={handleEditar}
+                    onEliminar={handleEliminar}
+                    onCopiar={handleCopiar}
+                    onToggleBloq={toggleBloqueado}
+                  />
+                ))}
+
+                {registrosFiltrados.total === 0 && (
+                  <tr>
+                    <td colSpan={colSpanTabla} className="muted">Sin registros</td>
+                  </tr>
+                )}
+              </tbody>
           </table>
           <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "10px 0" }}>
             <button

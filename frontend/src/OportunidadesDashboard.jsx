@@ -34,7 +34,7 @@ function normKeyForMatch(v) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
-    
+
   s = s.replace(/\b0TP\b/g, "OTP").replace(/\b0TE\b/g, "OTE");
 
   return s;
@@ -45,6 +45,7 @@ const EXCLUDE_LIST = [
   "OTE",
   "0TP",
   "0TE",
+  "0TL",
   "PROSPECCION",
   "REGISTRO",
   "PENDIENTE APROBACION SAP",
