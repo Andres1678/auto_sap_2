@@ -510,9 +510,9 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
 
 
   useEffect(() => {
-    if (!hasId || !usuarioLogin) return;
+    if (!usuarioLogin) return;
     fetchRegistros();
-  }, [userData, usuarioLogin, fetchRegistros]);
+  }, [usuarioLogin, fetchRegistros]);
 
   const resolveModulosForEdit = useCallback((reg) => {
     // prioridad: lo que venga en el registro (por si el registro ya trae el módulo usado)
