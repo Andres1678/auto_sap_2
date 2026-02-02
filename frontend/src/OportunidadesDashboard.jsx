@@ -45,6 +45,28 @@ const ESTADOS_CERRADOS = new Set([
   "SUSPENDIDO",
 ]);
 
+const ESTADOS_EXCLUIDOS = new Set([
+  "OTP",
+  "OTE",
+  "PROSPECCION",
+  "REGISTRO PENDIENTE APROBACION SAP",
+]);
+
+function normStr(x) {
+  return String(x ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function isExcludedRow(op) {
+  const estado = normStr(op?.estado_oferta);
+  const resultado = normStr(op?.resultado_oferta);
+  return ESTADOS_EXCLUIDOS.has(estado) || ESTADOS_EXCLUIDOS.has(resultado);
+}
+
 function toOptions(arr) {
   return (Array.isArray(arr) ? arr : [])
     .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
@@ -146,6 +168,9 @@ export default function DashboardOportunidades() {
 
   const filtrosDebounced = useDebouncedValue(filtros, 400);
 
+  const filtrarOpciones = (arr) =>
+    toOptions(arr).filter((o) => !ESTADOS_EXCLUIDOS.has(normStr(o.value)));
+
   const fetchFilters = async (current) => {
     const res = await jfetch(`/oportunidades/filters${toQuery(current)}`);
     if (!res.ok) throw new Error("filters");
@@ -158,8 +183,8 @@ export default function DashboardOportunidades() {
       direccionComercial: toOptions(json.direccion_comercial),
       gerenciaComercial: toOptions(json.gerencia_comercial),
       cliente: toOptions(json.nombre_cliente),
-      estadoOferta: toOptions(json.estado_oferta),
-      resultadoOferta: toOptions(json.resultado_oferta),
+      estadoOferta: filtrarOpciones(json.estado_oferta),
+      resultadoOferta: filtrarOpciones(json.resultado_oferta),
       fechaActaCierreOT: toOptions(json.fecha_acta_cierre_ot),
       fechaCierreOportunidad: toOptions(json.fecha_cierre_oportunidad),
       estadoOT: toOptions(json.estado_ot),
@@ -203,14 +228,18 @@ export default function DashboardOportunidades() {
     })();
   }, [filtrosDebounced]);
 
+  const dataFiltrada = useMemo(() => {
+    return (Array.isArray(data) ? data : []).filter((op) => !isExcludedRow(op));
+  }, [data]);
+
   const kpis = useMemo(() => {
-    const total = data.length;
+    const total = dataFiltrada.length;
     let activas = 0;
     let cerradas = 0;
     let ganadas = 0;
 
-    data.forEach((op) => {
-      const estado = String(op.estado_oferta || "").toUpperCase().trim();
+    dataFiltrada.forEach((op) => {
+      const estado = normStr(op.estado_oferta);
       if (ESTADOS_ACTIVOS.has(estado)) activas++;
       if (ESTADOS_CERRADOS.has(estado)) cerradas++;
       if (estado === "GANADA") ganadas++;
@@ -223,25 +252,25 @@ export default function DashboardOportunidades() {
       ganadas,
       porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
     };
-  }, [data]);
+  }, [dataFiltrada]);
 
   const resumenEstado = useMemo(() => {
     const m = new Map();
-    data.forEach((r) => {
+    dataFiltrada.forEach((r) => {
       const k = (r.estado_oferta || "-").toString();
       m.set(k, (m.get(k) || 0) + 1);
     });
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [data]);
+  }, [dataFiltrada]);
 
   const resumenResultado = useMemo(() => {
     const m = new Map();
-    data.forEach((r) => {
+    dataFiltrada.forEach((r) => {
       const k = (r.resultado_oferta || "-").toString();
       m.set(k, (m.get(k) || 0) + 1);
     });
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [data]);
+  }, [dataFiltrada]);
 
   const limpiar = () => {
     setFiltros({
@@ -379,17 +408,17 @@ export default function DashboardOportunidades() {
             <div className="side-col">
               <div className="card">
                 <div className="card-title">Cantidad y Ganadas/Adjudicadas por Año y Mes</div>
-                <GraficoCantidadGanadas data={data} />
+                <GraficoCantidadGanadas data={dataFiltrada} />
               </div>
 
               <div className="card">
                 <div className="card-title">Activas y Cerradas por Año y Mes</div>
-                <GraficoActivasCerradas data={data} />
+                <GraficoActivasCerradas data={dataFiltrada} />
               </div>
 
               <div className="card">
                 <div className="card-title">Resumen Calificación</div>
-                <ResumenCalificacion data={data} />
+                <ResumenCalificacion data={dataFiltrada} />
               </div>
             </div>
           </section>
@@ -415,7 +444,7 @@ export default function DashboardOportunidades() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((row, i) => (
+                  {dataFiltrada.map((row, i) => (
                     <tr key={row.id ?? i}>
                       <td>{row.nombre_cliente ?? "-"}</td>
                       <td>{row.servicio ?? "-"}</td>

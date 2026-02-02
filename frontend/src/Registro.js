@@ -219,13 +219,19 @@ const Registro = ({ userData }) => {
     localStorage.setItem('filtroEquipo', filtroEquipo);
   }, [filtroEquipo]);
 
-  const rolUpper = String(rol || "").toUpperCase();
-  const isAdmin = rolUpper.startsWith("ADMIN");
+  const rolUpper = String(rol || "").trim().toUpperCase();
+
   const isAdminGlobal = rolUpper === "ADMIN";
+  const isAdminOportunidades = rolUpper === "ADMIN_OPORTUNIDADES";
+  const isAdmin = rolUpper.startsWith("ADMIN") && !isAdminOportunidades;
+
+  const isSoloPropio = rolUpper === "CONSULTOR" || isAdminOportunidades;
+
   const isAdminEquipo = isAdmin && !isAdminGlobal;
 
   const miEquipo = String(equipoUser || "").trim().toUpperCase();
-  const equipoLocked = isAdminEquipo ? miEquipo : filtroEquipo;
+
+  const equipoLocked = isSoloPropio ? "" : (isAdminEquipo ? miEquipo : filtroEquipo);
 
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
 
@@ -929,14 +935,21 @@ const Registro = ({ userData }) => {
 
   useEffect(() => {
     if (!userData) return;
+
+    if (isSoloPropio) {
+      setFiltroConsultor(nombreUser);
+      setFiltroEquipo("");
+      return;
+    }
+
     if (!isAdmin) {
       setFiltroConsultor(nombreUser);
       setFiltroEquipo(normKey(equipoUser));
-    }else {
-      setFiltroConsultor('');
-      setFiltroEquipo('');
+    } else {
+      setFiltroConsultor("");
+      setFiltroEquipo("");
     }
-  }, [isAdmin, nombreUser, equipoUser, userData]);
+  }, [isSoloPropio, isAdmin, nombreUser, equipoUser, userData]);
 
   useEffect(() => {
     if (!ocupacionSeleccionada) {
@@ -1208,7 +1221,7 @@ const Registro = ({ userData }) => {
           <select
             value={filtroConsultor}
             onChange={(e) => setFiltroConsultor(e.target.value)}
-            disabled={!isAdmin}
+            disabled={isSoloPropio || !isAdmin}
           >
             <option value="">
               {isAdmin ? 'Todos los consultores' : (nombreUser || 'Consultor')}
