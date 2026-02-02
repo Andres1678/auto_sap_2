@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import './Navbar.css';
 import logoNav from '../assets/logo_navbar.png';
@@ -6,9 +6,10 @@ import { jfetch } from '../lib/api';
 
 const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogout }) => {
   const [open, setOpen] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0); 
   const navigate = useNavigate();
 
-  const { isAdmin, nombre, rol, permisos } = useMemo(() => {
+  const readStoredUser = () => {
     let raw = null;
     try {
       raw = JSON.parse(
@@ -17,21 +18,63 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
         'null'
       );
     } catch {}
+    return raw;
+  };
 
-    const _rol = rolProp || raw?.rol || raw?.user?.rol || '';
-    const _nombre = nombreProp || raw?.nombre || raw?.user?.nombre || '';
+
+  const refreshMe = useCallback(async () => {
+    try {
+      const res = await jfetch('/me', { method: 'GET' });
+
+      const data = res?.user ? res : await (async () => {
+        try { return await res.json(); } catch { return null; }
+      })();
+
+      const user = data?.user;
+      if (!user) return;
+
+      
+      localStorage.setItem('userData', JSON.stringify(user));
+      setRefreshTick(t => t + 1);
+    } catch {
+      
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMe();
+  }, [refreshMe]);
+
+  
+  const { isAdmin, nombre, rol, permisos } = useMemo(() => {
+    const raw = readStoredUser();
+
+    const _rol = rolProp || raw?.rol || raw?.user?.rol || raw?.role || '';
+    const _nombre = nombreProp || raw?.nombre || raw?.user?.nombre || raw?.name || '';
     const rolUpper = String(_rol || '').toUpperCase();
-    const perms = raw?.permisos ? raw.permisos.map(p => p.codigo) : [];
+
+    
+    const permsRaw = raw?.permisos ?? raw?.user?.permisos ?? [];
+    const perms = Array.isArray(permsRaw)
+      ? permsRaw
+          .map(p => (typeof p === 'string' ? p : (p?.codigo || p?.code || p?.nombre)))
+          .filter(Boolean)
+      : [];
 
     return {
-      isAdmin: rolUpper === 'ADMIN',
+      isAdmin: rolUpper === 'ADMIN' || isAdminProp === true,
       nombre: _nombre,
       rol: rolUpper,
       permisos: perms
     };
-  }, [isAdminProp, rolProp, nombreProp]);
+  }, [isAdminProp, rolProp, nombreProp, refreshTick]);
 
-  const can = (perm) => isAdmin || permisos.includes(perm);
+
+  const can = useCallback((perm) => {
+    if (isAdmin) return true;
+    return permisos.includes(perm);
+  }, [isAdmin, permisos]);
+
 
   const toggleMenu = () => setOpen(v => !v);
 
@@ -68,13 +111,20 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
 
         {can("BASE_REGISTROS_VER") && <Link to="/BaseRegistros">Base Registros</Link>}
         {can("GRAFICO_BASE_VER") && <Link to="/GraficoBase">Gráfico Base</Link>}
+
         {can("OPORTUNIDADES_VER") && <Link to="/Oportunidades">Oportunidades</Link>}
+
         {can("DASHBOARD_VER") && (
           <Link to="/OportunidadesDashboard">Dashboard</Link>
         )}
-        
-        <Link to="/reportes/horas-consultor-cliente">Reporte Horas</Link>
-        <Link to="/configuracion/importar-presupuesto">Importar Excel</Link>
+
+        {can("PAGE_REPORTE_HORAS_CONSULTOR") && (
+          <Link to="/reportes/horas-consultor-cliente">Reporte Horas</Link>
+        )}
+
+        {can("PRESUPUESTO_CONSULTOR_IMPORTAR") && (
+          <Link to="/configuracion/importar-presupuesto">Importar Excel</Link>
+        )}
 
         {can("CONFIGURACION_VER") && (
           <Link to="/configuracion" className="navc-settings">⚙️</Link>

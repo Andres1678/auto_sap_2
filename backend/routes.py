@@ -3647,3 +3647,45 @@ def import_presupuesto_consultor_excel():
         db.session.rollback()
         current_app.logger.exception("❌ Error en /presupuestos/consultor/import-excel")
         return jsonify({"error": str(e)}), 500
+    
+@bp.route("/me", methods=["GET"])
+def me():
+    usuario = request.headers.get("X-User-Usuario", "").strip().lower()
+    if not usuario:
+        return jsonify({"mensaje": "Usuario no enviado"}), 401
+
+    consultor = (
+        Consultor.query
+        .options(
+            joinedload(Consultor.rol_obj)
+                .joinedload(Rol.permisos_asignados)
+                .joinedload(RolPermiso.permiso),
+            joinedload(Consultor.equipo_obj)
+                .joinedload(Equipo.permisos_asignados)
+                .joinedload(EquipoPermiso.permiso),
+            joinedload(Consultor.permisos_especiales)
+                .joinedload(ConsultorPermiso.permiso),
+            joinedload(Consultor.horario_obj),
+            joinedload(Consultor.modulos),
+        )
+        .filter(func.lower(Consultor.usuario) == usuario)
+        .first()
+    )
+
+    if not consultor:
+        return jsonify({"mensaje": "Usuario no encontrado"}), 404
+
+    permisos = sorted(list(obtener_permisos_finales(consultor)))
+
+    return jsonify({
+        "user": {
+            "id": consultor.id,
+            "usuario": consultor.usuario,
+            "nombre": consultor.nombre,
+            "rol": consultor.rol_obj.nombre.upper() if consultor.rol_obj else "CONSULTOR",
+            "equipo": consultor.equipo_obj.nombre.upper() if consultor.equipo_obj else "SIN EQUIPO",
+            "horario": consultor.horario_obj.rango if consultor.horario_obj else "N/D",
+            "modulos": [{"id": m.id, "nombre": m.nombre} for m in consultor.modulos],
+            "permisos": permisos
+        }
+    }), 200
