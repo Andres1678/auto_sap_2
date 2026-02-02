@@ -17,6 +17,8 @@ import PermisosPage from "./PermisosPage";
 import OcupacionesTareasPage from "./OcupacionesTareasPage";
 import RolesPage from "./RolesPage";
 import EquiposPage from "./EquiposPage";
+import ReporteHorasConsultorCliente from './Reportes/ReporteHorasConsultorCliente';
+import PresupuestoConsultorImport from './PresupuestoConsultorImport';
 
 function App() {
   const [userData, setUserData] = useState(null);
@@ -207,6 +209,25 @@ function App() {
               }
             />
 
+            <Route
+              path="/reportes/horas-consultor-cliente"
+              element={
+                <AdminRoute
+                  allow={["ADMIN"]}
+                >
+                  <ReporteHorasConsultorCliente />
+                </AdminRoute>
+              }
+            />
+            
+            <Route
+              path="/configuracion/importar-presupuesto"
+              element={
+                <AdminRoute allow={["ADMIN"]} requirePermiso="PRESUPUESTO_CONSULTOR_IMPORTAR">
+                  <PresupuestoConsultorImport />
+                </AdminRoute>
+              }
+            />
 
             {/* CATCH ALL */}
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -218,3 +239,4 @@ function App() {
 }
 
 export default App;
+

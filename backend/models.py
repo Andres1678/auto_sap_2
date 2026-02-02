@@ -3,12 +3,9 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Column, Integer, String, Float, Text, Boolean
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.hybrid import hybrid_property
+from decimal import Decimal
 
 db = SQLAlchemy()
-
-# ======================================================
-# TABLAS BASE (CATÁLOGOS)
-# ======================================================
 
 class Rol(db.Model):
     __tablename__ = 'rol'
@@ -27,7 +24,6 @@ class Rol(db.Model):
     def __repr__(self):
         return f"<Rol id={self.id} nombre={self.nombre!r}>"
 
-
 class Equipo(db.Model):
     __tablename__ = 'equipo'
 
@@ -45,16 +41,10 @@ class Equipo(db.Model):
     def __repr__(self):
         return f"<Equipo id={self.id} nombre={self.nombre!r}>"
 
-
 class Horario(db.Model):
     __tablename__ = 'horario'
     id = db.Column(db.Integer, primary_key=True)
     rango = db.Column(db.String(20), unique=True, nullable=False)
-
-
-# ======================================================
-# TABLA PUENTE CONSULTOR <-> MODULO
-# ======================================================
 
 consultor_modulo = db.Table(
     'consultor_modulo',
@@ -63,7 +53,6 @@ consultor_modulo = db.Table(
     mysql_charset='utf8mb4',
     mysql_collate='utf8mb4_unicode_ci'
 )
-
 
 class Modulo(db.Model):
     __tablename__ = 'modulo'
@@ -77,22 +66,15 @@ class Modulo(db.Model):
         lazy='subquery'
     )
 
-
-# ======================================================
-# CONSULTOR
-# ======================================================
-
 class Consultor(db.Model):
     __tablename__ = 'consultor'
 
     id = db.Column(db.Integer, primary_key=True)
 
-    # Datos del usuario
     usuario = db.Column(db.String(50), unique=True, nullable=False)
     nombre = db.Column(db.String(100), nullable=False)
     password = db.Column(db.Text, nullable=False)
 
-    # Relaciones principales
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id', ondelete='SET NULL'))
     equipo_id = db.Column(db.Integer, db.ForeignKey('equipo.id', ondelete='SET NULL'))
     horario_id = db.Column(db.Integer, db.ForeignKey('horario.id', ondelete='SET NULL'))
@@ -102,21 +84,18 @@ class Consultor(db.Model):
     equipo_obj = relationship('Equipo', back_populates='consultores')
     horario_obj = relationship('Horario', backref=backref('consultores', lazy='joined'))
 
-    # Modulos asignados (tabla N-N)
     modulos = relationship(
         'Modulo',
         secondary=consultor_modulo,
         back_populates='consultores'
     )
 
-    # Registros del consultor
     registros = relationship(
         'Registro',
         back_populates='consultor',
         lazy=True
     )
 
-    # Permisos especiales individuales
     permisos_especiales = relationship(
         "ConsultorPermiso",
         back_populates="consultor",
@@ -125,7 +104,6 @@ class Consultor(db.Model):
 
     @hybrid_property
     def permisos(self):
-        """Permisos finales combinados: Rol + Equipo + Individuales"""
         permisos_finales = set()
 
         if self.rol_obj:
@@ -144,12 +122,6 @@ class Consultor(db.Model):
 
         return list(permisos_finales)
 
-
-
-# ======================================================
-# REGISTRO
-# ======================================================
-
 class Registro(db.Model):
     __tablename__ = 'registro'
 
@@ -162,29 +134,18 @@ class Registro(db.Model):
     nro_caso_interno = db.Column(db.String(50))
     nro_caso_escalado = db.Column(db.String(50))
 
-    # -----------------------------
-    # Tarea & Ocupación (FK reales)
-    # -----------------------------
     tarea_id = db.Column(db.Integer, db.ForeignKey('tareas.id'))
     tarea = relationship('Tarea', backref='registros')
 
     ocupacion_id = db.Column(db.Integer, db.ForeignKey('ocupaciones.id'))
     ocupacion = relationship('Ocupacion', backref='registros')
 
-    # -------------------------------------
-    # 🔥 IMPORTANTE: texto de la tarea
-    # (ej: "04 - Informes / Documentación")
-    # -------------------------------------
-    tipo_tarea = db.Column(db.String(200))  # <-- necesario para mostrar y filtrar
+    tipo_tarea = db.Column(db.String(200))
 
-    # -----------------------------
-    # Horas
-    # -----------------------------
     hora_inicio = db.Column(db.String(10))
     hora_fin = db.Column(db.String(10))
     tiempo_invertido = db.Column(db.Float)
 
-    # Campos BASIS
     actividad_malla = db.Column(db.String(50))
     oncall = db.Column(db.String(100))
     desborde = db.Column(db.String(100))
@@ -200,9 +161,6 @@ class Registro(db.Model):
     horario_trabajo = db.Column(db.String(20))
     bloqueado = db.Column(db.Boolean, default=False)
 
-    # -----------------------------
-    # Consultor asociado al registro
-    # -----------------------------
     usuario_consultor = db.Column(db.String(50), db.ForeignKey('consultor.usuario'))
 
     consultor = relationship(
@@ -210,11 +168,6 @@ class Registro(db.Model):
         back_populates='registros',
         primaryjoin="Registro.usuario_consultor == Consultor.usuario"
     )
-
-
-# ======================================================
-# BASE REGISTRO
-# ======================================================
 
 class BaseRegistro(db.Model):
     __tablename__ = 'base_registro'
@@ -244,11 +197,6 @@ class BaseRegistro(db.Model):
     extemporaneo = Column(String(50))
     equipo = Column(String(120))
 
-
-# ======================================================
-# LOGIN SESSIONS
-# ======================================================
-
 class Login(db.Model):
     __tablename__ = 'login_sessions'
 
@@ -264,11 +212,6 @@ class Login(db.Model):
     activo = db.Column(db.Boolean, default=True)
 
     consultor = relationship('Consultor', backref=backref('logins', lazy=True))
-
-
-# ======================================================
-# OPORTUNIDADES
-# ======================================================
 
 class Oportunidad(db.Model):
     __tablename__ = 'oportunidades'
@@ -394,10 +337,6 @@ class Oportunidad(db.Model):
             "publicacion_sharepoint": self.publicacion_sharepoint,
         }
 
-# ======================================================
-# CLIENTES
-# ======================================================
-
 class Cliente(db.Model):
     __tablename__ = 'clientes'
 
@@ -406,11 +345,6 @@ class Cliente(db.Model):
 
     def to_dict(self):
         return {"id": self.id, "nombre_cliente": self.nombre_cliente}
-
-
-# ======================================================
-# PERMISOS
-# ======================================================
 
 class Permiso(db.Model):
     __tablename__ = "permiso"
@@ -422,11 +356,6 @@ class Permiso(db.Model):
     def to_dict(self):
         return {"id": self.id, "codigo": self.codigo, "descripcion": self.descripcion}
 
-
-# ======================================================
-# TABLAS PUENTE DE PERMISOS
-# ======================================================
-
 class RolPermiso(db.Model):
     __tablename__ = "rol_permiso"
 
@@ -436,7 +365,6 @@ class RolPermiso(db.Model):
 
     rol = db.relationship("Rol", back_populates="permisos_asignados")
     permiso = db.relationship("Permiso")
-
 
 class EquipoPermiso(db.Model):
     __tablename__ = "equipo_permiso"
@@ -448,7 +376,6 @@ class EquipoPermiso(db.Model):
     equipo = db.relationship("Equipo", back_populates="permisos_asignados")
     permiso = db.relationship("Permiso")
 
-
 class ConsultorPermiso(db.Model):
     __tablename__ = "consultor_permiso"
 
@@ -459,11 +386,6 @@ class ConsultorPermiso(db.Model):
     consultor = db.relationship("Consultor", back_populates="permisos_especiales")
     permiso = db.relationship("Permiso")
 
-
-# ======================================================
-# OCUPACIONES Y TAREAS
-# ======================================================
-
 ocupacion_tareas = db.Table(
     "ocupacion_tareas",
     db.Column("ocupacion_id", db.Integer, db.ForeignKey("ocupaciones.id", ondelete="CASCADE"), primary_key=True),
@@ -471,7 +393,6 @@ ocupacion_tareas = db.Table(
     mysql_charset='utf8mb4',
     mysql_collate='utf8mb4_unicode_ci'
 )
-
 
 class Ocupacion(db.Model):
     __tablename__ = "ocupaciones"
@@ -496,7 +417,6 @@ class Ocupacion(db.Model):
             "descripcion": self.descripcion,
             "tareas": [t.to_dict_simple() for t in self.tareas]
         }
-
 
 class Tarea(db.Model):
     __tablename__ = "tareas"
@@ -528,7 +448,6 @@ class Tarea(db.Model):
     def to_dict_simple(self):
         return {"id": self.id, "codigo": self.codigo, "nombre": self.nombre}
 
-
 class TareaAlias(db.Model):
     __tablename__ = "tareas_alias"
 
@@ -555,14 +474,12 @@ class RegistroExcel(db.Model):
     nro_caso_interno = db.Column(db.String(100))
     nro_caso_escalado_sap = db.Column(db.String(100))
 
-    # ✅ Ocupación (conservar lo del Excel)
     ocupacion_raw = db.Column(db.String(200))
     ocupacion_id = db.Column(db.Integer, db.ForeignKey('ocupaciones.id'), nullable=True)
     tarea_id = db.Column(db.Integer, db.ForeignKey('tareas.id'), nullable=True)
 
-    # ✅ Tarea Azure separada
-    tipo_tarea_azure = db.Column(db.String(10))      # código
-    tipo_tarea_nombre = db.Column(db.String(150))    # nombre
+    tipo_tarea_azure = db.Column(db.String(10))
+    tipo_tarea_nombre = db.Column(db.String(150))
 
     consultor = db.Column(db.String(100))
 
@@ -578,10 +495,6 @@ class RegistroExcel(db.Model):
 
     descripcion = db.Column(db.Text)
 
-
-
-# ======================================================
-# PRESUPUESTO PROYECTO
 class PresupuestoProyecto(db.Model):
     __tablename__ = "presupuesto_proyecto"
 
@@ -589,8 +502,21 @@ class PresupuestoProyecto(db.Model):
     consultor_id = db.Column(db.Integer, db.ForeignKey("consultor.id"), nullable=False)
 
     anio = db.Column(db.Integer, nullable=False)
-    mes  = db.Column(db.Integer, nullable=False)  
+    mes  = db.Column(db.Integer, nullable=False)
 
     presupuesto_horas = db.Column(db.Float, default=0)
 
-    consultor = relationship("Consultor", backref="presupuestos")
+    consultor = relationship("Consultor", backref="presupuesto_proyectos")
+
+class ConsultorPresupuesto(db.Model):
+    __tablename__ = "consultor_presupuesto"  
+
+    id = db.Column(db.Integer, primary_key=True)
+    consultor_id = db.Column(db.Integer, db.ForeignKey("consultor.id"), nullable=False)
+
+    anio = db.Column(db.Integer, nullable=False)
+    mes = db.Column(db.Integer, nullable=False)
+
+    vr_perfil = db.Column(db.Numeric(14, 2), nullable=False, default=0)
+    horas_base_mes = db.Column(db.Numeric(10, 2), nullable=False, default=160)
+    vigente = db.Column(db.Boolean, default=True)

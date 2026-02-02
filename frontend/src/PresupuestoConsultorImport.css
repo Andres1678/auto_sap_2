@@ -1,0 +1,160 @@
+/* PresupuestoConsultorImport.css */
+
+/* Tokens (si ya tienes tokens globales, puedes borrar :root y dejar las vars) */
+:root {
+  --pci-bg: #f6f7fb;
+  --pci-card: #ffffff;
+  --pci-text: #0f172a;
+  --pci-muted: #64748b;
+  --pci-line: rgba(15, 23, 42, 0.10);
+
+  --pci-radius: 16px;
+  --pci-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+  --pci-focus: rgba(14, 165, 233, 0.25);
+
+  --pci-accent: #dc2626; /* rojo */
+}
+
+/* ===== shell ===== */
+.pci-shell {
+  background: var(--pci-bg);
+  color: var(--pci-text);
+  padding: 18px;
+}
+
+.pci-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+
+.pci-sub {
+  margin: 6px 0 0;
+  color: var(--pci-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+/* ===== card ===== */
+.pci-card {
+  margin-top: 14px;
+  background: var(--pci-card);
+  border: 1px solid var(--pci-line);
+  border-radius: var(--pci-radius);
+  box-shadow: var(--pci-shadow);
+  padding: 14px;
+}
+
+/* ===== form layout ===== */
+.pci-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.pci-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pci-field label {
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(15, 23, 42, 0.75);
+}
+
+.pci-input {
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--pci-line);
+  padding: 0 12px;
+  outline: none;
+  background: #fff;
+  color: var(--pci-text);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.pci-input::placeholder {
+  color: rgba(100, 116, 139, 0.9);
+}
+
+.pci-input:focus {
+  border-color: rgba(14, 165, 233, 0.55);
+  box-shadow: 0 0 0 4px var(--pci-focus);
+}
+
+/* input file (para que se vea parejo) */
+.pci-file {
+  padding: 6px 10px;
+}
+
+/* ===== button ===== */
+.pci-btn {
+  height: 40px;
+  border-radius: 12px;
+  padding: 0 14px;
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  background: linear-gradient(180deg, rgba(220, 38, 38, 1) 0%, rgba(185, 28, 28, 1) 100%);
+  color: #fff;
+  font-weight: 900;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  box-shadow: 0 10px 18px rgba(220, 38, 38, 0.18);
+  transition: filter 0.15s ease, transform 0.05s ease, box-shadow 0.15s ease;
+  width: 100%;
+}
+
+.pci-btn:hover {
+  filter: brightness(1.03);
+  box-shadow: 0 14px 22px rgba(220, 38, 38, 0.22);
+}
+
+.pci-btn:active {
+  transform: translateY(1px);
+}
+
+.pci-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ===== helper / hint row ===== */
+.pci-hint {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.03);
+  border: 1px dashed rgba(15, 23, 42, 0.12);
+  color: rgba(15, 23, 42, 0.75);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+/* ===== column spans ===== */
+.col-2 { grid-column: span 2; }
+.col-3 { grid-column: span 3; }
+.col-4 { grid-column: span 4; }
+.col-5 { grid-column: span 5; }
+.col-6 { grid-column: span 6; }
+.col-7 { grid-column: span 7; }
+.col-8 { grid-column: span 8; }
+.col-9 { grid-column: span 9; }
+.col-10 { grid-column: span 10; }
+.col-12 { grid-column: span 12; }
+
+/* ===== responsive ===== */
+@media (max-width: 1100px) {
+  .col-2, .col-3 { grid-column: span 4; }
+  .col-6 { grid-column: span 12; }
+  .col-4 { grid-column: span 6; }
+}
+
+@media (max-width: 700px) {
+  .pci-shell { padding: 14px; }
+  .col-2, .col-3, .col-4, .col-6 { grid-column: span 12; }
+  .pci-title { font-size: 16px; }
+}

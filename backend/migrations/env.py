@@ -15,8 +15,16 @@ sys.path.insert(0, PROJECT_DIR)
 
 # Alembic config
 config = context.config
-fileConfig(config.config_file_name)
-logger = logging.getLogger("alembic.env")
+
+# -------------------------------------------------
+# CORRECCIÓN RUTA alembic.ini
+# -------------------------------------------------
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))  # backend/
+INI_PATH = os.path.join(BASE_DIR, "alembic.ini")
+
+if os.path.exists(INI_PATH):
+    config.config_file_name = INI_PATH
+    fileConfig(INI_PATH)
 
 
 # =====================================================

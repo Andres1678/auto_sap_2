@@ -72,7 +72,9 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
         {can("DASHBOARD_VER") && (
           <Link to="/OportunidadesDashboard">Dashboard</Link>
         )}
-
+        
+        <Link to="/reportes/horas-consultor-cliente">Reporte Horas</Link>
+        <Link to="/configuracion/importar-presupuesto">Importar Excel</Link>
 
         {can("CONFIGURACION_VER") && (
           <Link to="/configuracion" className="navc-settings">⚙️</Link>

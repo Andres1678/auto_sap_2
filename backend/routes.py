@@ -3,11 +3,11 @@ from backend.models import (
     db, Modulo, Consultor, Registro, BaseRegistro, Login,
     Rol, Equipo, Horario, Oportunidad, Cliente,
     Permiso, RolPermiso, EquipoPermiso, ConsultorPermiso, 
-    Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel
+    Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel, ConsultorPresupuesto
 )
 from datetime import datetime, timedelta, time
 from functools import wraps
-from sqlalchemy import or_, text, func, extract
+from sqlalchemy import or_, text, func, extract, and_, cast, Integer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, aliased
 import unicodedata, re
@@ -18,6 +18,11 @@ from sqlalchemy.exc import SQLAlchemyError
 import logging
 import traceback
 import math
+from decimal import Decimal, InvalidOperation
+from openpyxl import load_workbook
+from flask import current_app
+
+
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
 
@@ -3090,32 +3095,46 @@ def horarios_permitidos():
     }), 200
 
 # -------------------------------
-#   REPORTES DE HORAS 
+#   REPORTES DE HORAS  (DIARIO)
 # -------------------------------
-@bp.route("/reporte/horas-consultor-cliente", methods=["GET"])
-@admin_required
-def reporte_horas_consultor_cliente():
+@bp.route("/reporte/costos-cliente-dia", methods=["GET"])
+def reporte_costos_cliente_dia():
     """
-    Retorna una matriz tipo pivot:
-      - filas: consultores
+    Pivot diario:
+      - filas: fecha
       - columnas: clientes (dinámicas)
-      - valores: SUM(Registro.total_horas)
-    Incluye comparación contra presupuesto por consultor.
-    Filtros opcionales: ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD&equipo=BASIS
+      - valores: horas y costo
+
+    Costo:
+      Se calcula por consultor usando presupuesto vigente (vr_perfil / horas_base_mes),
+      y se suma por (fecha, cliente) para no distorsionar cuando en un mismo día/cliente
+      participaron varios consultores.
+
+    Filtros opcionales:
+      ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD&equipo=BASIS&modulo=FI&cliente=HITSS&consultor=andres
     """
     try:
         desde = (request.args.get("desde") or "").strip()
         hasta = (request.args.get("hasta") or "").strip()
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        modulo_filter = (request.args.get("modulo") or "").strip().upper()
+        cliente_filter = (request.args.get("cliente") or "").strip().upper()
+        consultor_filter = (request.args.get("consultor") or "").strip().lower()
 
-        # 1) Query agregado (consultor, cliente)
+        # ----------------------------------------------------------
+        # 1) Agregado base por (fecha, cliente, consultor)
+        # ----------------------------------------------------------
         q = (
             db.session.query(
+                Registro.fecha.label("fecha"),
+                Registro.cliente.label("cliente"),
+                Registro.modulo.label("modulo"),
+
                 Consultor.id.label("consultor_id"),
                 Consultor.nombre.label("consultor_nombre"),
                 Consultor.usuario.label("consultor_usuario"),
+
                 Equipo.nombre.label("equipo"),
-                Registro.cliente.label("cliente"),
                 func.coalesce(func.sum(Registro.total_horas), 0).label("horas"),
             )
             .select_from(Registro)
@@ -3123,7 +3142,9 @@ def reporte_horas_consultor_cliente():
             .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
         )
 
-        # 2) Filtro por fechas (tu Registro.fecha es string ISO)
+        # ----------------------------------------------------------
+        # 2) Filtros
+        # ----------------------------------------------------------
         if desde and hasta:
             q = q.filter(Registro.fecha.between(desde, hasta))
         elif desde:
@@ -3131,108 +3152,175 @@ def reporte_horas_consultor_cliente():
         elif hasta:
             q = q.filter(Registro.fecha <= hasta)
 
-        # 3) Filtro por equipo (solo si lo piden)
         if equipo_filter:
             q = q.filter(func.upper(Equipo.nombre) == equipo_filter)
 
+        if modulo_filter:
+            q = q.filter(func.upper(Registro.modulo) == modulo_filter)
+
+        if cliente_filter:
+            q = q.filter(func.upper(Registro.cliente) == cliente_filter)
+
+        if consultor_filter:
+            q = q.filter(func.lower(Consultor.nombre).like(f"%{consultor_filter}%"))
+
         q = q.group_by(
+            Registro.fecha,
+            Registro.cliente,
+            Registro.modulo,
             Consultor.id,
             Consultor.nombre,
             Consultor.usuario,
             Equipo.nombre,
-            Registro.cliente
         )
 
-        rows = q.all()
+        raw = q.all()
 
-        # 4) Armar columnas dinámicas
+        # ----------------------------------------------------------
+        # 3) Columnas dinámicas (clientes) + pivot por fecha
+        # ----------------------------------------------------------
         clientes_set = set()
-        consultores_map = {}  # consultor_id -> obj
+        pivot = {}  # fecha -> obj fila
 
-        for r in rows:
+        # Vamos guardando consultores únicos por fecha
+        # pivot[fecha]["consultoresSet"] = set()
+
+        for r in raw:
+            fecha = (r.fecha or "").strip()
             cliente = (r.cliente or "SIN CLIENTE").strip()
             clientes_set.add(cliente)
 
-            if r.consultor_id not in consultores_map:
-                consultores_map[r.consultor_id] = {
-                    "consultorId": r.consultor_id,
-                    "consultor": r.consultor_nombre,
-                    "usuario": (r.consultor_usuario or "").strip().lower(),
-                    "equipo": (r.equipo or "SIN EQUIPO").strip().upper(),
-                    "clientes": {},  # cliente -> horas
+            if fecha not in pivot:
+                pivot[fecha] = {
+                    "key": fecha,
+                    "fecha": fecha,
+                    "clientesHoras": {},   # cliente -> horas
+                    "clientesCosto": {},   # cliente -> costo
                     "totalHoras": 0.0,
-
-                    # Presupuesto (ver sección 2)
-                    "presupuestoHoras": 0.0,
+                    "totalCosto": 0.0,
+                    "consultoresSet": set(),  # 👈 aquí guardamos nombres únicos por fecha
                 }
 
-            h = float(r.horas or 0)
-            consultores_map[r.consultor_id]["clientes"][cliente] = round(h, 2)
-            consultores_map[r.consultor_id]["totalHoras"] = round(
-                consultores_map[r.consultor_id]["totalHoras"] + h, 2
-            )
+            # registrar consultor en el set por fecha
+            nombre_cons = (r.consultor_nombre or "").strip()
+            if nombre_cons:
+                pivot[fecha]["consultoresSet"].add(nombre_cons)
 
         clientes = sorted(list(clientes_set))
 
-        # 5) Cargar presupuesto por consultor (OPCIÓN A: campo en Consultor)
-        #    Si aún no existe, déjalo 0 y luego lo conectas.
-        cons_ids = list(consultores_map.keys())
-        if cons_ids:
-            # Si creas el campo Consultor.presupuesto_horas (Float)
+        # ----------------------------------------------------------
+        # 4) Presupuesto vigente por consultor (vr_perfil / horas_base_mes)
+        #    (sin anio/mes porque tu modelo no lo tiene)
+        # ----------------------------------------------------------
+        presupuesto_map = {}  # consultor_id -> (vr, hb)
+
+        if raw:
+            cons_ids = sorted({int(r.consultor_id) for r in raw if r.consultor_id})
+
             pres_rows = (
-                db.session.query(Consultor.id, func.coalesce(getattr(Consultor, "presupuesto_horas", 0), 0))
-                .filter(Consultor.id.in_(cons_ids))
+                db.session.query(
+                    ConsultorPresupuesto.consultor_id,
+                    ConsultorPresupuesto.vr_perfil,
+                    ConsultorPresupuesto.horas_base_mes,
+                )
+                .filter(ConsultorPresupuesto.consultor_id.in_(cons_ids))
+                .filter(ConsultorPresupuesto.vigente == True)
                 .all()
             )
-            pres_map = {cid: float(p or 0) for cid, p in pres_rows}
-        else:
-            pres_map = {}
 
-        # 6) Completar presupuesto + métricas
+            for pr in pres_rows:
+                cid = int(pr.consultor_id)
+                vr = float(pr.vr_perfil or 0)
+                hb = float(pr.horas_base_mes or 0)
+                presupuesto_map[cid] = (vr, hb)
+
+        # ----------------------------------------------------------
+        # 5) Agregar horas y costo por (fecha, cliente)
+        #    sumando consultores si aplica
+        # ----------------------------------------------------------
+        temp = {}  # (fecha, cliente) -> {"horas": x, "costo": y}
+
+        for r in raw:
+            fecha = (r.fecha or "").strip()
+            cliente = (r.cliente or "SIN CLIENTE").strip()
+            horas = float(r.horas or 0.0)
+
+            consultor_id = int(r.consultor_id) if r.consultor_id else 0
+            vr, hb = presupuesto_map.get(consultor_id, (0.0, 0.0))
+            valor_hora = round((vr / hb), 2) if hb > 0 else 0.0
+            costo = round(horas * valor_hora, 2) if valor_hora > 0 else 0.0
+
+            k = (fecha, cliente)
+            if k not in temp:
+                temp[k] = {"horas": 0.0, "costo": 0.0}
+
+            temp[k]["horas"] += horas
+            temp[k]["costo"] += costo
+
+        # ----------------------------------------------------------
+        # 6) Completar filas, asegurar columnas, totales
+        # ----------------------------------------------------------
+        totales_cliente_horas = {c: 0.0 for c in clientes}
+        totales_cliente_costo = {c: 0.0 for c in clientes}
+        total_general_horas = 0.0
+        total_general_costo = 0.0
+
         data = []
-        for cid, obj in consultores_map.items():
-            presupuesto = float(pres_map.get(cid, 0.0) or 0.0)
-            total = float(obj["totalHoras"] or 0.0)
-            diff = round(presupuesto - total, 2)   # positivo = queda presupuesto
-            pct = round((total / presupuesto) * 100, 2) if presupuesto > 0 else None
+        for fecha, obj in pivot.items():
+            total_h = 0.0
+            total_c = 0.0
 
-            obj["presupuestoHoras"] = round(presupuesto, 2)
-            obj["diferenciaHoras"] = diff
-            obj["porcentajeUso"] = pct
-
-            # asegurar todas las columnas
             for c in clientes:
-                obj["clientes"].setdefault(c, 0.0)
+                v = temp.get((fecha, c), {"horas": 0.0, "costo": 0.0})
+                h = round(float(v["horas"] or 0.0), 2)
+                co = round(float(v["costo"] or 0.0), 2)
+
+                obj["clientesHoras"][c] = h
+                obj["clientesCosto"][c] = co
+
+                totales_cliente_horas[c] += h
+                totales_cliente_costo[c] += co
+
+                total_h += h
+                total_c += co
+
+            obj["totalHoras"] = round(total_h, 2)
+            obj["totalCosto"] = round(total_c, 2)
+
+            # 👇 convertir set -> list y exponer count/list
+            consultores_list = sorted(list(obj.get("consultoresSet", set())))
+            obj["consultoresCount"] = len(consultores_list)
+            obj["consultoresList"] = consultores_list
+            obj.pop("consultoresSet", None)  # limpiar
+
+            total_general_horas += obj["totalHoras"]
+            total_general_costo += obj["totalCosto"]
 
             data.append(obj)
 
-        # ordenar por total desc
-        data.sort(key=lambda x: x["totalHoras"], reverse=True)
-
-        # 7) Totales por cliente (footer)
-        totales_cliente = {c: 0.0 for c in clientes}
-        total_general = 0.0
-        for row in data:
-            for c in clientes:
-                totales_cliente[c] += float(row["clientes"].get(c, 0) or 0)
-            total_general += float(row["totalHoras"] or 0)
+        data.sort(key=lambda x: x["fecha"], reverse=True)
 
         for c in clientes:
-            totales_cliente[c] = round(totales_cliente[c], 2)
-        total_general = round(total_general, 2)
+            totales_cliente_horas[c] = round(totales_cliente_horas[c], 2)
+            totales_cliente_costo[c] = round(totales_cliente_costo[c], 2)
+
+        total_general_horas = round(total_general_horas, 2)
+        total_general_costo = round(total_general_costo, 2)
 
         return jsonify({
             "clientes": clientes,
             "rows": data,
-            "totalesCliente": totales_cliente,
-            "totalGeneral": total_general,
+            "totalesClienteHoras": totales_cliente_horas,
+            "totalesClienteCosto": totales_cliente_costo,
+            "totalGeneralHoras": total_general_horas,
+            "totalGeneralCosto": total_general_costo,
         }), 200
 
     except Exception as e:
-        app.logger.exception("❌ Error en /reporte/horas-consultor-cliente")
+        current_app.logger.exception("❌ Error en /reporte/costos-cliente-dia")
         return jsonify({"error": str(e)}), 500
 
-
+    
 @bp.route("/resumen-calendario", methods=["GET"])
 def resumen_calendario():
     try:
@@ -3323,3 +3411,195 @@ def resumen_calendario():
     except Exception as e:
         app.logger.exception("❌ Error en /resumen-calendario")
         return jsonify({"error": str(e)}), 500
+
+def _norm_name(s: str) -> str:
+    s = (s or "").strip().upper()
+    s = re.sub(r"\s+", " ", s)
+    s = s.replace("Á","A").replace("É","E").replace("Í","I").replace("Ó","O").replace("Ú","U").replace("Ñ","N")
+    s = re.sub(r"[^A-Z0-9 ,.-]", "", s)
+    return s
+
+def _norm_doc(s: str) -> str:
+    s = (s or "").strip()
+    s = re.sub(r"[^\d]", "", s)
+    return s
+
+def _parse_money_to_decimal(val) -> Decimal:
+    if val is None:
+        return Decimal("0.00")
+
+    if isinstance(val, (int, float, Decimal)):
+        try:
+            return Decimal(str(val)).quantize(Decimal("0.01"))
+        except InvalidOperation:
+            return Decimal("0.00")
+
+    s = str(val).strip()
+    if not s:
+        return Decimal("0.00")
+
+    s = s.replace("$", "").strip()
+    s = re.sub(r"[^\d,\.]", "", s)
+
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    else:
+        if "." in s and "," not in s:
+            s = s.replace(".", "")
+        if "," in s and "." not in s:
+            s = s.replace(",", ".")
+
+    try:
+        return Decimal(s).quantize(Decimal("0.01"))
+    except InvalidOperation:
+        return Decimal("0.00")
+
+def _col_idx(headers: dict, wanted: str):
+    w = (wanted or "").strip().upper()
+    if not w:
+        return None
+    if w in headers:
+        return headers[w]
+    for hk, i in headers.items():
+        if w in hk:
+            return i
+    return None
+
+@bp.route("/presupuestos/consultor", methods=["GET"])
+def presupuestos_consultor_vigentes():
+    items = (
+        db.session.query(Consultor, ConsultorPresupuesto)
+        .outerjoin(
+            ConsultorPresupuesto,
+            (ConsultorPresupuesto.consultor_id == Consultor.id) & (ConsultorPresupuesto.vigente == True)
+        )
+        .order_by(Consultor.nombre.asc())
+        .all()
+    )
+
+    out = []
+    for c, p in items:
+        vr = Decimal(str(p.vr_perfil)) if p else Decimal("0.00")
+        hb = Decimal(str(p.horas_base_mes)) if p else Decimal("0.00")
+        valor_hora = (vr / hb).quantize(Decimal("0.01")) if hb and hb > 0 else Decimal("0.00")
+
+        out.append({
+            "consultorId": c.id,
+            "nombre": c.nombre,
+            "usuario": c.usuario,
+            "vrPerfil": float(vr),
+            "horasBaseMes": float(hb),
+            "valorHora": float(valor_hora),
+            "vigente": True if p else False
+        })
+
+    return jsonify(out), 200
+
+@bp.route("/presupuestos/consultor/import-excel", methods=["POST"])
+def import_presupuesto_consultor_excel():
+    try:
+        f = request.files.get("file")
+        if not f:
+            return jsonify({"error": "Falta archivo (file)"}), 400
+
+        horas_base = request.form.get("horas_base_mes")
+        horas_base = Decimal(str(horas_base).strip()) if horas_base else Decimal("160.00")
+        if horas_base <= 0:
+            horas_base = Decimal("160.00")
+
+        sheet_name = (request.form.get("sheet") or "").strip() or None
+        col_nombre = (request.form.get("col_nombre") or "NOMBRE COLABORADOR").strip()
+        col_valor  = (request.form.get("col_valor")  or "VR PERFIL").strip()
+        col_cedula = (request.form.get("col_cedula") or "CEDULA").strip()
+
+        wb = load_workbook(f, data_only=True)
+        ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb.worksheets[0]
+
+        headers = {}
+        for idx, cell in enumerate(ws[1], start=1):
+            key = (str(cell.value).strip() if cell.value is not None else "")
+            if key:
+                headers[key.upper()] = idx
+
+        ci_nombre = _col_idx(headers, col_nombre)
+        ci_valor  = _col_idx(headers, col_valor)
+        ci_cedula = _col_idx(headers, col_cedula)
+
+        if ci_valor is None:
+            ci_valor = _col_idx(headers, "VR PERFIL")
+
+        if ci_nombre is None or ci_valor is None:
+            return jsonify({
+                "error": "No encontré columnas requeridas",
+                "detalle": {
+                    "col_nombre": col_nombre,
+                    "col_valor": col_valor,
+                    "col_cedula": col_cedula,
+                    "headers_encontrados": list(headers.keys())[:60]
+                }
+            }), 400
+
+        consultores = Consultor.query.all()
+
+        by_name = { _norm_name(c.nombre): c for c in consultores }
+        by_user = { (c.usuario or "").strip().lower(): c for c in consultores if c.usuario }
+
+        updated = 0
+        created = 0
+        not_found = []
+        invalid_rows = []
+        seen = set()
+
+        for r in range(2, ws.max_row + 1):
+            raw_name = ws.cell(row=r, column=ci_nombre).value
+            raw_val  = ws.cell(row=r, column=ci_valor).value
+            raw_doc  = ws.cell(row=r, column=ci_cedula).value if ci_cedula else None
+
+            if raw_name is None and raw_val is None and raw_doc is None:
+                continue
+
+            vr = _parse_money_to_decimal(raw_val)
+            if vr <= 0:
+                invalid_rows.append({"row": r, "nombre": str(raw_name or ""), "valor": str(raw_val or "")})
+                continue
+
+            c = None
+
+            name = _norm_name(str(raw_name or ""))
+            if name:
+                c = by_name.get(name)
+
+            if not c:
+                not_found.append({"row": r, "nombre": str(raw_name or ""), "cedula": str(raw_doc or ""), "valor": str(raw_val or "")})
+                continue
+
+            key = f"{c.id}"
+            if key in seen:
+                continue
+            seen.add(key)
+
+            db.session.query(ConsultorPresupuesto).filter_by(consultor_id=c.id, vigente=True).update({"vigente": False})
+            db.session.add(ConsultorPresupuesto(
+                consultor_id=c.id,
+                vr_perfil=vr,
+                horas_base_mes=horas_base,
+                vigente=True
+            ))
+            created += 1
+
+        db.session.commit()
+
+        return jsonify({
+            "ok": True,
+            "created": created,
+            "updated": updated,
+            "notFoundCount": len(not_found),
+            "invalidCount": len(invalid_rows),
+            "notFound": not_found[:50],
+            "invalidRows": invalid_rows[:50]
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    

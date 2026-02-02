@@ -1,33 +1,353 @@
-.rhc-shell { padding: 18px; }
-.rhc-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:12px; }
-.rhc-title { margin:0; font-size:20px; }
-.rhc-sub { margin:6px 0 0; opacity:.75; }
+/* ReporteHorasConsultorCliente.css */
 
-.rhc-actions { display:flex; gap:10px; }
-.rhc-btn { padding:10px 14px; border-radius:10px; border:1px solid #d6d6d6; background:#fff; cursor:pointer; }
-.rhc-btn:disabled { opacity:.6; cursor:not-allowed; }
+/* ====== tokens base (ajusta acá rápido) ====== */
+:root {
+  --rhc-bg: #f6f7fb;
+  --rhc-card: #ffffff;
+  --rhc-text: #0f172a;
+  --rhc-muted: #64748b;
+  --rhc-line: rgba(15, 23, 42, 0.10);
 
-.rhc-filters { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
-.rhc-field { display:flex; flex-direction:column; gap:6px; }
-.rhc-field input, .rhc-field select {
-  height:38px; padding:0 10px; border:1px solid #d6d6d6; border-radius:10px; background:#fff;
+  --rhc-radius: 16px;
+  --rhc-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+  --rhc-shadow2: 0 6px 16px rgba(15, 23, 42, 0.08);
+
+  --rhc-accent: #dc2626; /* rojo */
+  --rhc-accent-2: #0ea5e9; /* azul */
+  --rhc-focus: rgba(14, 165, 233, 0.25);
+
+  --rhc-pad: 18px;
+  --rhc-gap: 14px;
+
+  /* Para sticky de columnas derechas */
+  --sticky-right-w: 140px;   /* ancho aprox de "Total Horas" */
+  --sticky-right2-w: 170px;  /* ancho aprox de "Total $" */
 }
 
-.rhc-card { background:#fff; border:1px solid #eee; border-radius:14px; padding:12px; }
-.rhc-tableWrap { overflow:auto; max-height: calc(100vh - 240px); }
+/* ====== shell ====== */
+.rhc-shell {
+  min-height: 100%;
+  background: var(--rhc-bg);
+  color: var(--rhc-text);
+  padding: 18px;
+}
 
-.rhc-table { border-collapse:separate; border-spacing:0; width:max-content; min-width:100%; }
-.rhc-table th, .rhc-table td { border-bottom:1px solid #eee; padding:10px 10px; font-size:13px; white-space:nowrap; }
-.rhc-table thead th { position:sticky; top:0; background:#fafafa; z-index:2; }
-.rhc-table tfoot th { position:sticky; bottom:0; background:#fafafa; z-index:2; border-top:1px solid #ddd; }
+/* ====== header / secciones ====== */
+.rhc-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 12px;
+}
 
-.num { text-align:right; }
+.rhc-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
 
-.sticky-left { position:sticky; left:0; background:#fff; z-index:3; }
-.sticky-left-2 { position:sticky; left:160px; background:#fff; z-index:3; }
-.sticky-right { position:sticky; right:0; background:#fff; z-index:3; }
+.rhc-sub {
+  margin: 6px 0 0;
+  color: var(--rhc-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
 
-@media (max-width: 720px) {
-  .rhc-shell { padding: 12px; }
-  .sticky-left-2 { left: 140px; }
+.rhc-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ====== card ====== */
+.rhc-card {
+  background: var(--rhc-card);
+  border: 1px solid var(--rhc-line);
+  border-radius: var(--rhc-radius);
+  box-shadow: var(--rhc-shadow);
+  overflow: hidden;
+}
+
+/* ====== filtros ====== */
+.rhc-filters {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(160px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  margin: 0 0 14px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--rhc-line);
+  border-radius: var(--rhc-radius);
+  box-shadow: var(--rhc-shadow);
+  backdrop-filter: blur(6px);
+}
+
+.rhc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 140px;
+}
+
+.rhc-field label {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.75);
+}
+
+.rhc-field input {
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--rhc-line);
+  padding: 0 12px;
+  outline: none;
+  background: #fff;
+  color: var(--rhc-text);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+}
+
+.rhc-field input::placeholder {
+  color: rgba(100, 116, 139, 0.9);
+}
+
+.rhc-field input:focus {
+  border-color: rgba(14, 165, 233, 0.55);
+  box-shadow: 0 0 0 4px var(--rhc-focus);
+}
+
+/* ====== checkbox ====== */
+.rhc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--rhc-line);
+  background: #fff;
+  user-select: none;
+}
+
+.rhc-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--rhc-accent-2);
+}
+
+.rhc-check span {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.8);
+}
+
+/* ====== botones ====== */
+.rhc-btn {
+  height: 40px;
+  border-radius: 12px;
+  padding: 0 14px;
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  background: linear-gradient(180deg, rgba(220, 38, 38, 1) 0%, rgba(185, 28, 28, 1) 100%);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  box-shadow: 0 10px 18px rgba(220, 38, 38, 0.18);
+  transition: transform 0.05s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.rhc-btn:hover {
+  filter: brightness(1.03);
+  box-shadow: 0 14px 22px rgba(220, 38, 38, 0.22);
+}
+
+.rhc-btn:active {
+  transform: translateY(1px);
+}
+
+.rhc-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+  box-shadow: none;
+}
+
+/* ====== tabla ====== */
+.rhc-tableWrap {
+  width: 100%;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.rhc-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 900px; /* asegura scroll si hay muchas columnas dinámicas */
+  font-size: 13px;
+}
+
+.rhc-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #0b1220;
+  color: #fff;
+  text-align: left;
+  font-weight: 800;
+  padding: 12px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+}
+
+.rhc-table tbody td,
+.rhc-table tfoot th {
+  padding: 12px 12px;
+  border-bottom: 1px solid var(--rhc-line);
+  background: #fff;
+  vertical-align: middle;
+}
+
+.rhc-table tbody tr:hover td {
+  background: rgba(14, 165, 233, 0.04);
+}
+
+.rhc-table tfoot th {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: rgba(15, 23, 42, 0.04);
+  font-weight: 900;
+}
+
+/* inputs dentro de tabla (VR Perfil / Horas base) */
+.rhc-table input[type="number"] {
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--rhc-line);
+  padding: 0 10px;
+  outline: none;
+}
+
+.rhc-table input[type="number"]:focus {
+  border-color: rgba(14, 165, 233, 0.55);
+  box-shadow: 0 0 0 4px var(--rhc-focus);
+}
+
+/* números alineados a la derecha */
+.rhc-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ====== sticky columns ====== */
+/* izquierda (Fecha / Consultor) */
+.sticky-left {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  background: inherit; /* mantiene fondo según thead/tbody/tfoot */
+  box-shadow: 8px 0 14px rgba(15, 23, 42, 0.06);
+}
+
+/* derecha 1 (Total Horas) */
+.sticky-right {
+  position: sticky;
+  right: 0;
+  z-index: 4;
+  background: inherit;
+  min-width: var(--sticky-right-w);
+  box-shadow: -8px 0 14px rgba(15, 23, 42, 0.06);
+}
+
+/* derecha 2 (Total $) - queda antes de sticky-right */
+.sticky-right-2 {
+  position: sticky;
+  right: var(--sticky-right-w);
+  z-index: 4;
+  background: inherit;
+  min-width: var(--sticky-right2-w);
+  box-shadow: -8px 0 14px rgba(15, 23, 42, 0.05);
+}
+
+/* cuando la celda sticky está en thead (fondo oscuro) */
+.rhc-table thead .sticky-left,
+.rhc-table thead .sticky-right,
+.rhc-table thead .sticky-right-2 {
+  background: #0b1220;
+}
+
+/* cuando está en tfoot */
+.rhc-table tfoot .sticky-left,
+.rhc-table tfoot .sticky-right,
+.rhc-table tfoot .sticky-right-2 {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+/* ====== pill consultores ====== */
+.rhc-pill{
+  height: 30px;
+  border-radius: 999px;
+  padding: 0 10px;
+  border: 1px solid rgba(15,23,42,0.12);
+  background: rgba(15,23,42,0.03);
+  color: rgba(15,23,42,0.78);
+  font-weight: 800;
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform .05s ease, background .15s ease, border-color .15s ease;
+}
+
+.rhc-pill:hover{
+  background: rgba(14,165,233,0.06);
+  border-color: rgba(14,165,233,0.25);
+}
+
+.rhc-pill:active{
+  transform: translateY(1px);
+}
+
+.rhc-muted{
+  color: rgba(100,116,139,0.9);
+}
+
+/* ====== responsive ====== */
+@media (max-width: 1200px) {
+  .rhc-filters {
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .rhc-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rhc-actions {
+    justify-content: flex-start;
+  }
+
+  .rhc-filters {
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+
+  .rhc-shell {
+    padding: 14px;
+  }
+}
+
+@media (max-width: 520px) {
+  .rhc-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .rhc-title {
+    font-size: 16px;
+  }
+
+  .rhc-sub {
+    font-size: 12.5px;
+  }
 }
