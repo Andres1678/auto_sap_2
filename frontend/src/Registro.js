@@ -1397,7 +1397,7 @@ const Registro = ({ userData }) => {
                   required
                   disabled={!ocupacionSeleccionada || tareasBD.length === 0}
                 >
-                  <option value="">Seleccionar Tarea Azure</option>
+                  <option value="">Seleccionar Tarea</option>
                   {tareasBD.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.codigo} - {t.nombre}
