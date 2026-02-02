@@ -27,18 +27,24 @@ const rsStyles = {
 };
 
 function normKeyForMatch(v) {
-  return String(v ?? "")
+  let s = String(v ?? "")
     .replace(/\u00A0/g, " ")
     .trim()
     .toUpperCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
+    
+  s = s.replace(/\b0TP\b/g, "OTP").replace(/\b0TE\b/g, "OTE");
+
+  return s;
 }
 
 const EXCLUDE_LIST = [
   "OTP",
   "OTE",
+  "0TP",
+  "0TE",
   "PROSPECCION",
   "REGISTRO",
   "PENDIENTE APROBACION SAP",

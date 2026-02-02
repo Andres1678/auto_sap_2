@@ -1721,33 +1721,41 @@ def get_datos_consultor():
 
 # ========== OPORTUNIDADES ==========
 def _get_list_arg(key: str):
-    # soporta ?key=a&key=b y ?key[]=a&key[]=b
     vals = request.args.getlist(key)
     if not vals:
         vals = request.args.getlist(f"{key}[]")
     return [str(v).strip() for v in vals if v is not None and str(v).strip() != ""]
 
-EXCLUDE = ["OTP", "OTE", "PROSPECCION", "REGISTRO", "PENDIENTE APROBACION SAP"]
+EXCLUDE = {
+    "OTP",
+    "OTE",
+    "0TP",
+    "0TE",
+    "PROSPECCION",
+    "REGISTRO",
+    "PENDIENTE APROBACION SAP",
+}
 
-def _clean_col(col):
-    
-    return func.upper(func.trim(func.replace(col, "\u00A0", " ")))
+EXCLUDE_CANON = {
+    "OTP",
+    "OTE",
+    "PROSPECCION",
+    "REGISTRO",
+    "PENDIENTE APROBACION SAP",
+}
 
-def _apply_oportunidades_filters(query):
-    eo = _clean_col(Oportunidad.estado_oferta)
-    ro = _clean_col(Oportunidad.resultado_oferta)
-
-    query = query.filter(~eo.in_(EXCLUDE))
-    query = query.filter(~ro.in_(EXCLUDE))
-
-
+def _sql_norm(col):
+    x = func.upper(func.trim(func.replace(col, "\u00A0", " ")))
+    x = func.replace(x, "0TP", "OTP")
+    x = func.replace(x, "0TE", "OTE")
+    return x
 
 def _apply_oportunidades_filters(query):
     q = (request.args.get("q") or "").strip()
 
     anios = _get_list_arg("anio")
     meses = _get_list_arg("mes")
-    tipos = _get_list_arg("tipo") 
+    tipos = _get_list_arg("tipo")
 
     direccion = _get_list_arg("direccion_comercial")
     gerencia  = _get_list_arg("gerencia_comercial")
@@ -1847,8 +1855,10 @@ def _apply_oportunidades_filters(query):
         if conds:
             query = query.filter(or_(*conds))
 
-    return query
+    query = query.filter(~_sql_norm(Oportunidad.estado_oferta).in_(list(EXCLUDE_CANON)))
+    query = query.filter(~_sql_norm(Oportunidad.resultado_oferta).in_(list(EXCLUDE_CANON)))
 
+    return query
 
 @bp.route('/oportunidades/import', methods=['POST'])
 def importar_oportunidades():
@@ -2029,12 +2039,12 @@ def oportunidades_filters():
     )
 
     def distinct_col(col):
-        c = _clean_col(col)
+        c = _sql_norm(col)
         rows = (
             base.with_entities(col)
             .filter(col.isnot(None))
             .filter(func.trim(col) != "")
-            .filter(~c.in_(EXCLUDE))
+            .filter(~c.in_(list(EXCLUDE_CANON)))
             .distinct()
             .order_by(col.asc())
             .all()
