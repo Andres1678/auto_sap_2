@@ -457,21 +457,22 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
       const params = new URLSearchParams();
 
       const eq = normKey(equipoLocked);
-      if (eq && eq !== "TODOS") {
-        params.set("equipo", eq);
-      }
-
+      if (eq && eq !== "TODOS") params.set("equipo", eq);
 
       const url = `/registros?${params.toString()}`;
+
+      const headers = {
+        "X-User-Usuario": usuarioLogin,
+        "X-User-Rol": rol,
+      };
+
+      const headerEquipo = normKey(equipoUser || "");
+      if (headerEquipo) headers["X-User-Equipo"] = headerEquipo;
 
       const res = await jfetch(url, {
         method: "GET",
         signal: controller.signal,
-        headers: {
-          "X-User-Usuario": usuarioLogin,
-          "X-User-Rol": rol,
-          "X-User-Equipo": String(equipoUser || ""),
-        },
+        headers,
       });
 
       const data = await res.json().catch(() => []);
@@ -484,6 +485,7 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
       setError(String(e.message || e));
     }
   }, [usuarioLogin, rol, equipoUser, equipoLocked]);
+
 
   const normMod = (v) => String(v || "").trim();
   const uniq = (arr) => Array.from(new Set((arr || []).map(normMod).filter(Boolean)));
@@ -508,7 +510,6 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
 
 
   useEffect(() => {
-    const hasId = (userData && (userData.id || userData?.user?.id));
     if (!hasId || !usuarioLogin) return;
     fetchRegistros();
   }, [userData, usuarioLogin, fetchRegistros]);
