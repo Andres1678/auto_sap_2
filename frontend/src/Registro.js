@@ -291,8 +291,17 @@ const Registro = ({ userData }) => {
     ''
   ).trim().toLowerCase();
 
-  const initialEquipo = () => normKey(localStorage.getItem('filtroEquipo') || '');
-  const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
+  const initialEquipo = () => {
+    const raw = localStorage.getItem("filtroEquipo") || "";
+    const v = normKey(raw);
+
+    
+    if (v === "TODOS") return "";
+
+    return v; 
+  };
+
+const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
 
   useEffect(() => {
     localStorage.setItem('filtroEquipo', filtroEquipo);
@@ -447,7 +456,11 @@ const Registro = ({ userData }) => {
     try {
       const params = new URLSearchParams();
 
-      if (equipoLocked) params.set("equipo", equipoLocked);
+      const eq = normKey(equipoLocked);
+      if (eq && eq !== "TODOS") {
+        params.set("equipo", eq);
+      }
+
 
       const url = `/registros?${params.toString()}`;
 
