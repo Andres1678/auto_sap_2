@@ -456,18 +456,30 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
     try {
       const params = new URLSearchParams();
 
+      // ✅ filtro por equipo desde UI (querystring)
       const eq = normKey(equipoLocked);
-      if (eq && eq !== "TODOS") params.set("equipo", eq);
+      if (eq && eq !== "TODOS") {
+        params.set("equipo", eq);
+      }
 
       const url = `/registros?${params.toString()}`;
 
+      // ✅ headers base siempre
       const headers = {
         "X-User-Usuario": usuarioLogin,
         "X-User-Rol": rol,
       };
 
-      const headerEquipo = normKey(equipoUser || "");
-      if (headerEquipo) headers["X-User-Equipo"] = headerEquipo;
+      // ✅ SOLO enviar X-User-Equipo si NO es admin global
+      if (!isAdminGlobal) {
+        const headerEquipo = normKey(equipoUser || "");
+        if (headerEquipo) {
+          headers["X-User-Equipo"] = headerEquipo;
+        }
+      }
+
+      // (Opcional) Debug rápido
+      // console.log("FETCH /registros", { url, headers, equipoLocked, eq });
 
       const res = await jfetch(url, {
         method: "GET",
@@ -484,8 +496,13 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
       setRegistros([]);
       setError(String(e.message || e));
     }
-  }, [usuarioLogin, rol, equipoUser, equipoLocked]);
-
+  }, [
+    usuarioLogin,
+    rol,
+    equipoUser,
+    equipoLocked,
+    isAdminGlobal, 
+  ]);
 
   const normMod = (v) => String(v || "").trim();
   const uniq = (arr) => Array.from(new Set((arr || []).map(normMod).filter(Boolean)));
