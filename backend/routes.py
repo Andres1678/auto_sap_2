@@ -945,13 +945,13 @@ def _scope_for_graficos():
     equipo = (request.headers.get("X-User-Equipo") or "").strip().upper()
     usuario = (request.headers.get("X-User-Usuario") or "").strip()
 
-    # 👇 SOLO para gráficas: estos ven todo
+    # ✅ SOLO para gráficas: estos ven TODO
     admin_all_roles = {"ADMIN", "ADMIN_GERENTES"}
 
     if rol in admin_all_roles:
         return "ALL", rol, equipo, usuario
 
-    # admins por equipo (ADMIN_BASIS, ADMIN_FUNCIONAL...)
+    # Admin por equipo: ADMIN_BASIS, ADMIN_FUNCIONAL...
     if rol.startswith("ADMIN_") and equipo:
         return "TEAM", rol, equipo, usuario
 
@@ -959,32 +959,71 @@ def _scope_for_graficos():
 
 
 @bp.route("/registros/graficos", methods=["GET"])
-@permission_required("GRAFICOS_VER")  # usa un permiso específico si puedes
-def registros_para_graficos():
-    scope, rol, equipo, usuario = _scope_for_graficos()
+@permission_required("GRAFICOS_VER")  # asegúrate que este permiso exista
+def registros_graficos():
+    try:
+        scope, rol, equipo, usuario = _scope_for_graficos()
 
-    q = Registro.query
+        # 🔎 DEBUG rápido: confirma que headers llegan
+        # print("HEADERS:", dict(request.headers))
 
-    # ⚠️ aquí aplicas filtros SOLO para este endpoint
-    if scope == "SELF":
-        if usuario:
-            q = q.filter(func.lower(Registro.usuario_consultor) == func.lower(usuario))
-        if equipo:
-            q = q.filter(func.upper(func.trim(Registro.equipo)) == equipo)
+        q = Registro.query
 
-    elif scope == "TEAM":
-        if equipo:
-            q = q.filter(func.upper(func.trim(Registro.equipo)) == equipo)
+        # ✅ OJO: estos campos DEBEN existir en el modelo Registro
+        # Ajusta aquí si tus columnas se llaman diferente.
+        if scope == "SELF":
+            if usuario:
+                q = q.filter(func.lower(Registro.usuario_consultor) == func.lower(usuario))
+            if equipo:
+                q = q.filter(func.upper(func.trim(Registro.equipo)) == equipo)
 
-    elif scope == "ALL":
-        # ✅ NO filtra: devuelve todo (solo para ADMIN / ADMIN_GERENTES)
-        pass
+        elif scope == "TEAM":
+            if equipo:
+                q = q.filter(func.upper(func.trim(Registro.equipo)) == equipo)
 
-    # Puedes limitar más alto para gráficas
-    rows = q.order_by(Registro.id.desc()).limit(20000).all()
-    data = [r.to_dict() for r in rows]
-    return jsonify(data), 200
+        elif scope == "ALL":
+            # ✅ NO filtra (solo ADMIN y ADMIN_GERENTES)
+            pass
 
+        rows = q.order_by(Registro.id.desc()).limit(20000).all()
+
+        # Si no tienes to_dict() en Registro, cámbialo por un armado manual
+        data = []
+        for r in rows:
+            if hasattr(r, "to_dict"):
+                data.append(r.to_dict())
+            else:
+                data.append({
+                    "id": r.id,
+                    "fecha": getattr(r, "fecha", None),
+                    "consultor": getattr(r, "consultor", None),
+                    "cliente": getattr(r, "cliente", None),
+                    "tipoTarea": getattr(r, "tipo_tarea", None) or getattr(r, "tipoTarea", None),
+                    "modulo": getattr(r, "modulo", None),
+                    "equipo": getattr(r, "equipo", None),
+                    "usuario_consultor": getattr(r, "usuario_consultor", None),
+                    "tiempoInvertido": getattr(r, "tiempo_invertido", None) or getattr(r, "tiempoInvertido", None),
+                    "horaInicio": getattr(r, "hora_inicio", None) or getattr(r, "horaInicio", None),
+                    "horaFin": getattr(r, "hora_fin", None) or getattr(r, "horaFin", None),
+                    "nroCasoCliente": getattr(r, "nro_caso_cliente", None) or getattr(r, "nroCasoCliente", None),
+                    "nroCasoEscaladoSap": getattr(r, "nro_caso_escalado_sap", None) or getattr(r, "nroCasoEscaladoSap", None),
+                    "horasAdicionales": getattr(r, "horas_adicionales", None) or getattr(r, "horasAdicionales", None),
+                    "descripcion": getattr(r, "descripcion", None),
+                })
+
+        return jsonify(data), 200
+
+    except Exception as e:
+        # ✅ Esto te muestra el error real en el log del servidor
+        import traceback
+        err = traceback.format_exc()
+        current_app.logger.error(f"❌ Error en /registros/graficos: {e}\n{err}")
+
+        # Devuelve un mensaje útil (puedes ocultar err en productivo)
+        return jsonify({
+            "mensaje": "Error interno del servidor",
+            "detalle": str(e)
+        }), 500
 
 @bp.route('/registros', methods=['GET'])
 def obtener_registros():
