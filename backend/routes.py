@@ -1748,17 +1748,9 @@ def get_datos_consultor():
 
 
 # ========== OPORTUNIDADES ==========
-def _get_list_arg(key: str):
-    # soporta ?key=a&key=b y ?key[]=a&key[]=b
-    vals = request.args.getlist(key)
-    if not vals:
-        vals = request.args.getlist(f"{key}[]")
-    return [str(v).strip() for v in vals if v is not None and str(v).strip() != ""]
-
-
-# =========================
-#  EXCLUSIÓN GLOBAL ESTADOS
-# =========================
+# ============================
+# OPORTUNIDADES - HELPERS
+# ============================
 
 EXCLUDE_LIST = [
     "OTP",
@@ -1772,61 +1764,63 @@ EXCLUDE_LIST = [
     "0TL",
 ]
 
-
-def _norm_key_for_match(v: str) -> str:
+def _norm_key_for_match(v):
     """
-    Normaliza igual que el frontend:
-    - trim, upper
+    Normaliza para comparar:
+    - trim
+    - upper
     - quita tildes
     - colapsa espacios
-    - 0TP/0TE/0TL -> OTP/OTE/OTL
+    - convierte 0TP/0TE/0TL -> OTP/OTE/OTL
     """
     s = str(v or "").replace("\u00A0", " ").strip().upper()
-
-    # quitar tildes/diacríticos
     s = unicodedata.normalize("NFD", s)
-    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-
-    # colapsar espacios
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")  # quita acentos
     s = re.sub(r"\s+", " ", s)
 
-    # equivalencias
+    # reemplazos 0TP -> OTP, etc.
     s = re.sub(r"\b0TP\b", "OTP", s)
     s = re.sub(r"\b0TE\b", "OTE", s)
     s = re.sub(r"\b0TL\b", "OTL", s)
-
     return s
 
-
-# set normalizado
 EXCLUDE_NORM_SET = {_norm_key_for_match(x) for x in EXCLUDE_LIST if x}
-
 
 def _apply_excluded_states(query):
     """
-    Excluye estados indeseados desde SQL.
-    - Exact match: NOT IN
-    - Contiene: NOT LIKE %X% (por si llega "OTP - ALGO")
+    Excluye estados de Oportunidad.estado_oferta:
+    - exact match
+    - contains match (si el estado viene con texto extra)
     """
     col = func.upper(func.trim(Oportunidad.estado_oferta))
 
     # 1) excluir exactos
-    query = query.filter(not_(col.in_(list(EXCLUDE_NORM_SET))))
+    query = query.filter(~col.in_(list(EXCLUDE_NORM_SET)))
 
-    # 2) excluir "contiene"
-    like_conds = []
+    # 2) excluir por contiene (LIKE)
     for x in EXCLUDE_NORM_SET:
-        # sanitizar comodines SQL
+        # sanitiza para LIKE (evitar comodines)
         safe = x.replace("%", "").replace("_", "")
-        like_conds.append(not_(col.like(f"%{safe}%")))
-
-    if like_conds:
-        query = query.filter(and_(*like_conds))
+        query = query.filter(~col.like(f"%{safe}%"))
 
     return query
 
+def _get_list_arg(key: str):
+    # soporta ?key=a&key=b y ?key[]=a&key[]=b
+    vals = request.args.getlist(key)
+    if not vals:
+        vals = request.args.getlist(f"{key}[]")
+    return [str(v).strip() for v in vals if v is not None and str(v).strip() != ""]
+
 
 def _apply_oportunidades_filters(query):
+    """
+    Aplica filtros del request.args al query de Oportunidad
+    + APLICA EXCLUSIÓN GLOBAL de estados (EXCLUDE_LIST).
+    """
+    # ✅ IMPORTANTE: aplicar exclusión desde el inicio
+    query = _apply_excluded_states(query)
+
     q = (request.args.get("q") or "").strip()
 
     anios = _get_list_arg("anio")
@@ -1834,35 +1828,30 @@ def _apply_oportunidades_filters(query):
     tipos = _get_list_arg("tipo")  # GANADA / ACTIVA / CERRADA
 
     direccion = _get_list_arg("direccion_comercial")
-    gerencia = _get_list_arg("gerencia_comercial")
-    cliente = _get_list_arg("nombre_cliente")
+    gerencia  = _get_list_arg("gerencia_comercial")
+    cliente   = _get_list_arg("nombre_cliente")
 
     estado_oferta = _get_list_arg("estado_oferta")
-    resultado = _get_list_arg("resultado_oferta")
+    resultado     = _get_list_arg("resultado_oferta")
 
-    estado_ot = _get_list_arg("estado_ot")
-    ultimo_mes = _get_list_arg("ultimo_mes")
-    calif = _get_list_arg("calificacion_oportunidad")
+    estado_ot   = _get_list_arg("estado_ot")
+    ultimo_mes  = _get_list_arg("ultimo_mes")
+    calif       = _get_list_arg("calificacion_oportunidad")
 
-    fecha_acta_cierre_ot = _get_list_arg("fecha_acta_cierre_ot")
-    fecha_cierre_oportunidad = _get_list_arg("fecha_cierre_oportunidad")
-
-    # ✅ EXCLUSIÓN GLOBAL (impacta datos + filtros)
-    query = _apply_excluded_states(query)
+    fecha_acta_cierre_ot      = _get_list_arg("fecha_acta_cierre_ot")
+    fecha_cierre_oportunidad  = _get_list_arg("fecha_cierre_oportunidad")
 
     if q:
         like = f"%{q}%"
-        query = query.filter(
-            or_(
-                Oportunidad.nombre_cliente.ilike(like),
-                Oportunidad.servicio.ilike(like),
-                Oportunidad.estado_oferta.ilike(like),
-                Oportunidad.resultado_oferta.ilike(like),
-                Oportunidad.pais.ilike(like),
-                Oportunidad.direccion_comercial.ilike(like),
-                Oportunidad.gerencia_comercial.ilike(like),
-            )
-        )
+        query = query.filter(or_(
+            Oportunidad.nombre_cliente.ilike(like),
+            Oportunidad.servicio.ilike(like),
+            Oportunidad.estado_oferta.ilike(like),
+            Oportunidad.resultado_oferta.ilike(like),
+            Oportunidad.pais.ilike(like),
+            Oportunidad.direccion_comercial.ilike(like),
+            Oportunidad.gerencia_comercial.ilike(like),
+        ))
 
     if anios:
         try:
@@ -1939,6 +1928,10 @@ def _apply_oportunidades_filters(query):
     return query
 
 
+# ============================
+# OPORTUNIDADES - IMPORT
+# ============================
+
 @bp.route('/oportunidades/import', methods=['POST'])
 def importar_oportunidades():
     file = request.files.get('file')
@@ -1948,10 +1941,8 @@ def importar_oportunidades():
     if Oportunidad.query.count() > 0:
         return jsonify({'mensaje': 'La carga inicial ya fue realizada'}), 400
 
-    # leer excel
     df = pd.read_excel(BytesIO(file.read()), dtype=str)
 
-    # normalizar columnas: upper + quitar dobles espacios
     def norm_col(c):
         c = str(c).strip().upper()
         c = re.sub(r"\s+", " ", c)
@@ -1962,8 +1953,8 @@ def importar_oportunidades():
     colmap = {
         "NOMBRE CLIENTE": "nombre_cliente",
         "SERVICIO": "servicio",
-        "FECHA DE ASIGNACION": "fecha_creacion",  # 👈 OJO: tu excel trae este nombre
-        "FECHA CREACIÓN": "fecha_creacion",       # por si vienen ambos
+        "FECHA DE ASIGNACION": "fecha_creacion",
+        "FECHA CREACIÓN": "fecha_creacion",
         "TIPO CLIENTE": "tipo_cliente",
         "TIPO DE SOLICITUD": "tipo_solicitud",
         "CASO SM": "caso_sm",
@@ -2093,93 +2084,111 @@ def importar_oportunidades():
         return jsonify({'mensaje': f'Error al guardar: {str(e)}'}), 500
 
 
+# ============================
+# OPORTUNIDADES - FILTERS ENDPOINT
+# ============================
+
 @bp.route('/oportunidades/filters', methods=['GET'])
 @permission_required("OPORTUNIDADES_VER")
 def oportunidades_filters():
-    base = Oportunidad.query
-    base = _apply_oportunidades_filters(base)
+    try:
+        base = Oportunidad.query
+        base = _apply_oportunidades_filters(base)
 
-    anios = (
-        base.with_entities(extract("year", Oportunidad.fecha_creacion).label("y"))
-        .filter(Oportunidad.fecha_creacion.isnot(None))
-        .distinct()
-        .order_by("y")
-        .all()
-    )
-    meses = (
-        base.with_entities(extract("month", Oportunidad.fecha_creacion).label("m"))
-        .filter(Oportunidad.fecha_creacion.isnot(None))
-        .distinct()
-        .order_by("m")
-        .all()
-    )
-
-    def distinct_col(col):
-        rows = (
-            base.with_entities(col)
-            .filter(col.isnot(None))
-            .filter(func.trim(col) != "")
+        anios = (
+            base.with_entities(extract("year", Oportunidad.fecha_creacion).label("y"))
+            .filter(Oportunidad.fecha_creacion.isnot(None))
             .distinct()
-            .order_by(col.asc())
+            .order_by("y")
             .all()
         )
-        vals = [r[0] for r in rows]
-
-        # ✅ limpiar opciones con la misma lógica de exclusión
-        cleaned = []
-        for v in vals:
-            nk = _norm_key_for_match(v)
-            if not nk:
-                continue
-            if nk in EXCLUDE_NORM_SET:
-                continue
-            # si llega con sufijos: "OTP - algo"
-            if any(x in nk for x in EXCLUDE_NORM_SET):
-                continue
-            cleaned.append(v)
-
-        return cleaned
-
-    def distinct_date(col):
-        rows = (
-            base.with_entities(func.date(col))
-            .filter(col.isnot(None))
+        meses = (
+            base.with_entities(extract("month", Oportunidad.fecha_creacion).label("m"))
+            .filter(Oportunidad.fecha_creacion.isnot(None))
             .distinct()
-            .order_by(func.date(col).asc())
+            .order_by("m")
             .all()
         )
-        return [r[0].strftime("%Y-%m-%d") if hasattr(r[0], "strftime") else str(r[0]) for r in rows]
 
-    return jsonify({
-        "anios": [int(r.y) for r in anios if r.y is not None],
-        "meses": [int(r.m) for r in meses if r.m is not None],
+        def distinct_col(col):
+            rows = (
+                base.with_entities(col)
+                .filter(col.isnot(None))
+                .filter(func.trim(col) != "")
+                .distinct()
+                .order_by(col.asc())
+                .all()
+            )
+            return [r[0] for r in rows]
 
-        "direccion_comercial": distinct_col(Oportunidad.direccion_comercial),
-        "gerencia_comercial": distinct_col(Oportunidad.gerencia_comercial),
-        "nombre_cliente": distinct_col(Oportunidad.nombre_cliente),
+        def distinct_date(col):
+            rows = (
+                base.with_entities(func.date(col))
+                .filter(col.isnot(None))
+                .distinct()
+                .order_by(func.date(col).asc())
+                .all()
+            )
+            out = []
+            for r in rows:
+                v = r[0]
+                if v is None:
+                    continue
+                if hasattr(v, "strftime"):
+                    out.append(v.strftime("%Y-%m-%d"))
+                else:
+                    out.append(str(v))
+            return out
 
-        "estado_oferta": distinct_col(Oportunidad.estado_oferta),
-        "resultado_oferta": distinct_col(Oportunidad.resultado_oferta),
+        return jsonify({
+            "anios": [int(r.y) for r in anios if r.y is not None],
+            "meses": [int(r.m) for r in meses if r.m is not None],
 
-        "estado_ot": distinct_col(Oportunidad.estado_ot),
-        "ultimo_mes": distinct_col(Oportunidad.ultimo_mes),
-        "calificacion_oportunidad": distinct_col(Oportunidad.calificacion_oportunidad),
+            "direccion_comercial": distinct_col(Oportunidad.direccion_comercial),
+            "gerencia_comercial": distinct_col(Oportunidad.gerencia_comercial),
+            "nombre_cliente": distinct_col(Oportunidad.nombre_cliente),
 
-        "fecha_acta_cierre_ot": distinct_date(Oportunidad.fecha_acta_cierre_ot),
-        "fecha_cierre_oportunidad": distinct_date(Oportunidad.fecha_cierre_oportunidad),
+            # ✅ Aquí ya vienen SIN OTP/OTE/OTL/... porque base ya pasó por _apply_oportunidades_filters
+            "estado_oferta": distinct_col(Oportunidad.estado_oferta),
+            "resultado_oferta": distinct_col(Oportunidad.resultado_oferta),
 
-        "tipos": ["GANADA", "ACTIVA", "CERRADA"],
-    }), 200
+            "estado_ot": distinct_col(Oportunidad.estado_ot),
+            "ultimo_mes": distinct_col(Oportunidad.ultimo_mes),
+            "calificacion_oportunidad": distinct_col(Oportunidad.calificacion_oportunidad),
 
+            "fecha_acta_cierre_ot": distinct_date(Oportunidad.fecha_acta_cierre_ot),
+            "fecha_cierre_oportunidad": distinct_date(Oportunidad.fecha_cierre_oportunidad),
+
+            "tipos": ["GANADA", "ACTIVA", "CERRADA"],
+        }), 200
+
+    except Exception:
+        # para que no quede “mudo” el 500 en front
+        return jsonify({
+            "mensaje": "Error interno en /oportunidades/filters",
+            "trace": traceback.format_exc()
+        }), 500
+
+
+# ============================
+# OPORTUNIDADES - LIST ENDPOINT
+# ============================
 
 @bp.route('/oportunidades', methods=['GET'])
 @permission_required("OPORTUNIDADES_VER")
 def listar_oportunidades():
-    query = Oportunidad.query
-    query = _apply_oportunidades_filters(query)
-    query = query.order_by(Oportunidad.id.desc())
-    data = [o.to_dict() for o in query.limit(2000).all()]
-    return jsonify(data), 200
+    try:
+        query = Oportunidad.query
+        query = _apply_oportunidades_filters(query)
+        query = query.order_by(Oportunidad.id.desc())
+        data = [o.to_dict() for o in query.limit(2000).all()]
+        return jsonify(data), 200
+
+    except Exception:
+        return jsonify({
+            "mensaje": "Error interno en /oportunidades",
+            "trace": traceback.format_exc()
+        }), 500
 
 
 @bp.route('/oportunidades', methods=['POST'])
