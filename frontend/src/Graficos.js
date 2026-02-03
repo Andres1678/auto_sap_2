@@ -30,27 +30,6 @@ const coincideMes = (fechaISO, mesYYYYMM) => {
 const equipoOf = (r, fallback = 'SIN EQUIPO') =>
   (String(r?.equipo || '').trim().toUpperCase() || fallback);
 
-
-function taskCodeFromTipo(t) {
-  const s = String(t ?? '').trim();
-  const m = s.match(/\b\d{1,2}\b/);
-  if (!m) return '';
-  return m[0].padStart(2, '0');
-}
-
-function ocupCodeFromRow(r) {
-  
-  const c = String(r?.ocupacion_codigo ?? '').trim();
-  if (c) return String(c).padStart(2, '0');
-
-  
-  const name = String(r?.ocupacion_nombre ?? '').trim();
-  const m = name.match(/\b\d{1,2}\b/);
-  return m ? m[0].padStart(2, '0') : '';
-}
-
-
-
 function workdaysInMonth(year, month, holidays = []) {
   const y = Number(year);
   const m = Number(month);
@@ -153,51 +132,53 @@ const PIE_COLORS = [
 /* =========================================
    COMPONENTE MultiFiltro (chips tipo Gmail)
 ========================================= */
-  function MultiFiltro({
-    titulo,
-    opciones,
-    seleccion,
-    onChange,
-    placeholder = 'Todas',
-    disabled = false,
-  }) {
-    const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState('');
-    const containerRef = useRef(null);
+function MultiFiltro({
+  titulo,
+  opciones,
+  seleccion,
+  onChange,
+  placeholder = 'Todas',
+  disabled = false,
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef(null);
 
-    // ✅ cerrar al click fuera
-    useEffect(() => {
-      if (!open) return;
+  // Cerrar al hacer click fuera
+  useEffect(() => {
+    if (!open) return;
 
-      const handler = (e) => {
-        if (!containerRef.current) return;
-        if (!containerRef.current.contains(e.target)) setOpen(false);
-      };
-
-      document.addEventListener('mousedown', handler);
-      return () => document.removeEventListener('mousedown', handler);
-    }, [open]);
-
-    const toggleValue = (val) => {
-      if (disabled) return;
-      const exists = seleccion.includes(val);
-      const next = exists
-        ? seleccion.filter(v => v !== val)
-        : [...seleccion, val];
-      onChange(next);
+    const handler = (e) => {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
     };
 
-    const removeChip = (val) => {
-      if (disabled) return;
-      onChange(seleccion.filter(v => v !== val));
-    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
 
-    const lower = search.toLowerCase();
-    const filtered = (opciones || []).filter(o =>
-      o && String(o).toLowerCase().includes(lower)
-    );
+  const toggleValue = (val) => {
+    if (disabled) return;
+    const exists = seleccion.includes(val);
+    const next = exists
+      ? seleccion.filter(v => v !== val)
+      : [...seleccion, val];
+    onChange(next);
+  };
 
-    const showPlaceholder = seleccion.length === 0;
+  const removeChip = (val) => {
+    if (disabled) return;
+    onChange(seleccion.filter(v => v !== val));
+  };
+
+  const lower = search.toLowerCase();
+  const filtered = (opciones || []).filter(o =>
+    o && String(o).toLowerCase().includes(lower)
+  );
+
+  const showPlaceholder = seleccion.length === 0;
 
   return (
     <div className="multi-filter" ref={containerRef}>
@@ -306,24 +287,16 @@ export default function Graficos() {
     }
   }, []);
 
-  const rolUpper   = String(user?.rol || user?.user?.rol || '').toUpperCase();
+  const rol = String(user?.rol || user?.user?.rol || '').toUpperCase();
   const nombreUser = String(user?.nombre || user?.user?.nombre || '').trim();
+  const rolUpper = String(user?.rol || user?.user?.rol || '').toUpperCase();
   const equipoUser = String(user?.equipo || user?.user?.equipo || '').toUpperCase();
-  const usuario    = String(user?.usuario || user?.user?.usuario || '').trim();
+  const usuario = String(user?.usuario || user?.user?.usuario || '').trim();
+  const isAdminAll = rolUpper === 'ADMIN';
+  const isAdminLike = rolUpper.startsWith('ADMIN_'); // ADMIN_BASIS, ADMIN_FUNCIONAL, etc.
+  const isAdminTeam = !isAdminAll && isAdminLike && !!equipoUser;
 
-  const isAdminAll  = rolUpper === 'ADMIN';
-  const isAdminLike = rolUpper.startsWith('ADMIN_');
-  const isAdminGerentes = rolUpper === 'ADMIN_GERENTES';
-  const [horariosBackend, setHorariosBackend] = useState([]);
-
-  // ✅ scope SIEMPRE definido ANTES de usarse en cualquier otra cosa
-  const scope = useMemo(() => {
-    if (isAdminAll) return 'ALL';
-    if (isAdminGerentes) return 'ALL';     // ellos ven todo
-    if (isAdminLike) return 'TEAM';
-    return 'SELF';
-  }, [isAdminAll, isAdminGerentes, isAdminLike]);
-
+  const scope = isAdminAll ? 'ALL' : (isAdminTeam ? 'TEAM' : 'SELF');
   const isAdmin = scope !== 'SELF';
 
   /* Carga registros */
@@ -331,28 +304,36 @@ export default function Graficos() {
     const fetchRegistros = async () => {
       setError('');
       try {
+        const rolUpper = String(rol || '').toUpperCase();
+
+        const isAdminAll = rolUpper === 'ADMIN';
+        const isAdminLike = rolUpper.startsWith('ADMIN_');
+        const isAdminTeam = !isAdminAll && isAdminLike && !!equipoUser;
+        const scope = isAdminAll ? 'ALL' : (isAdminTeam ? 'TEAM' : 'SELF');
+
         const res = await jfetch('/registros', {
           method: 'GET',
           headers: {
             'X-User-Rol': rolUpper,
             'X-User-Usuario': usuario,
+            // opcional (si tu backend lo usa): 
             'X-User-Equipo': equipoUser,
-            'X-View': 'PANEL',
           }
         });
 
         const json = await res.json().catch(() => []);
         if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
 
-        setRegistros(Array.isArray(json) ? json : []);
+        const arr = Array.isArray(json) ? json : [];
+        setRegistros(arr);
 
-        // inicialización según scope
+        // Inicializar filtros según SCOPE
         if (scope === 'SELF') {
           setFiltroConsultor(nombreUser ? [nombreUser] : []);
           setFiltroEquipo(equipoUser ? [equipoUser] : []);
         } else if (scope === 'TEAM') {
           setFiltroEquipo(equipoUser ? [equipoUser] : []);
-          setFiltroConsultor([]);
+          setFiltroConsultor([]); // todos los consultores del equipo
         } else {
           setFiltroConsultor([]);
           setFiltroEquipo([]);
@@ -361,12 +342,12 @@ export default function Graficos() {
       } catch (err) {
         setRegistros([]);
         setError(String(err?.message || err));
+        console.error('Error al cargar registros:', err);
       }
     };
 
     fetchRegistros();
-  }, [rolUpper, usuario, nombreUser, equipoUser, scope]);
-
+  }, [rol, usuario, nombreUser, equipoUser]);
 
   useEffect(() => {
     const fetchOcupaciones = async () => {
@@ -394,7 +375,6 @@ export default function Graficos() {
           nombre:
             o.nombre ??
             o.name ??
-            o.rango ??          
             o.descripcion ??
             o.title ??
             "SIN NOMBRE",
@@ -434,7 +414,7 @@ export default function Graficos() {
     fetchOcupaciones();
   }, []);
 
-  
+
 
   /* Opciones filtros */
   const consultoresUnicos = useMemo(() => {
@@ -508,9 +488,10 @@ export default function Graficos() {
   }, [registros, filtroMes]);
 
   /* Datos filtrados */
-  /* Datos filtrados */
   const datosFiltrados = useMemo(() => {
-    return (registros ?? []).filter((r) => {
+    return (registros ?? []).filter(r => {
+
+      
       const eq = equipoOf(r);
 
       if (scope === 'SELF') {
@@ -521,31 +502,12 @@ export default function Graficos() {
         if (equipoUser && eq !== equipoUser) return false;
       }
 
+
       if (scope === 'TEAM') {
         if (equipoUser && eq !== equipoUser) return false;
       }
 
-      if (rolUpper === 'ADMIN_GERENTES') {
-        const u = String(usuario || '').trim().toLowerCase();
-        const ru = String(r.usuario_consultor || '').trim().toLowerCase();
-
-        const esMioPorUsuario = u && ru && ru === u;
-
-        const esMioPorNombre =
-          String(r.consultor || '').trim().toLowerCase() ===
-          String(nombreUser || '').trim().toLowerCase();
-
-        const esMio = esMioPorUsuario || esMioPorNombre;
-
-        if (!esMio) {
-          const taskCode = taskCodeFromTipo(r.tipoTarea);
-          const ocupCode = ocupCodeFromRow(r);
-
-          if (taskCode !== '03') return false;
-          if (ocupCode !== '02') return false;
-        }
-      }
-
+      
       if (!coincideMes(r.fecha, filtroMes)) return false;
 
       if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultor)) return false;
@@ -568,21 +530,11 @@ export default function Graficos() {
       return true;
     });
   }, [
-    registros,
-    filtroMes,
-    filtroConsultor,
-    filtroTarea,
-    filtroCliente,
-    filtroModulo,
-    filtroEquipo,
-    filtroNroCliente,
-    filtroNroEscalado,
-    scope,
-    usuario,
-    equipoUser,
-    rolUpper,
-    nombreUser
+    registros, filtroMes, filtroConsultor, filtroTarea, filtroCliente,
+    filtroModulo, filtroEquipo, filtroNroCliente, filtroNroEscalado,
+    scope, usuario, equipoUser
   ]);
+
 
   /* Agrupaciones */
   const horasPorConsultor = useMemo(() => {
@@ -665,29 +617,7 @@ export default function Graficos() {
   const yWidthModulo    = yWidthFromPx(horasPorModulo.map(d => d.modulo),       { min: 140, max: 360, pad: 32 });
 
   
-  const filtroIncluyeOtros = useMemo(() => {
-    if (rolUpper !== 'ADMIN_GERENTES') return false;
-    if (!filtroConsultor || filtroConsultor.length === 0) return true;
-    const me = String(nombreUser || '').trim().toLowerCase();
-    return filtroConsultor.some(n => String(n || '').trim().toLowerCase() !== me);
-  }, [rolUpper, filtroConsultor, nombreUser]);
 
-  const tareasParaFiltro = useMemo(() => {
-    if (rolUpper !== 'ADMIN_GERENTES') return tareasUnicos;
-    if (!filtroIncluyeOtros) return tareasUnicos;
-    return (tareasUnicos || []).filter(t => taskCodeFromTipo(t) === '03');
-  }, [rolUpper, filtroIncluyeOtros, tareasUnicos]);
-
-  useEffect(() => {
-    if (!isAdminGerentes) return;
-
-    if (filtroIncluyeOtros) {
-      const opt = (tareasUnicos || []).find(t => taskCodeFromTipo(t) === '03');
-      setFiltroTarea(opt ? [opt] : []);
-    } else {
-      setFiltroTarea([]);
-    }
-  }, [isAdminGerentes, filtroIncluyeOtros, tareasUnicos]);
 
   /* Modal helpers */
   const openDetail = (kind, value, pretty) => {
@@ -733,6 +663,8 @@ export default function Graficos() {
       limite: wd * 9
     };
   }, [filtroMes]);
+
+  const [horariosBackend, setHorariosBackend] = useState([]);
 
   /* Horas por Ocupación */
   const horasPorOcupacion = useMemo(() => {
@@ -827,15 +759,10 @@ export default function Graficos() {
 
         <MultiFiltro
           titulo="TAREAS"
-          opciones={tareasParaFiltro}
+          opciones={tareasUnicos}
           seleccion={filtroTarea}
-          onChange={(!isAdminGerentes || !filtroIncluyeOtros) ? setFiltroTarea : () => {}}
-          disabled={isAdminGerentes && filtroIncluyeOtros}
-          placeholder={
-            (isAdminGerentes && filtroIncluyeOtros)
-              ? '03 - Proyectos (fijo al ver otros)'
-              : 'Todas las tareas'
-          }
+          onChange={setFiltroTarea}
+          placeholder="Todas las tareas"
         />
 
         <MultiFiltro
@@ -894,7 +821,7 @@ export default function Graficos() {
         <button
           className="btn btn-outline"
           onClick={() => {
-            if (!isAdminGerentes) setFiltroTarea([]);
+            setFiltroTarea([]);
             setFiltroCliente([]);
             setFiltroModulo([]);
             setFiltroMes('');

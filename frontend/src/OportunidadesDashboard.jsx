@@ -26,41 +26,6 @@ const rsStyles = {
   option: (base) => ({ ...base, display: "flex", alignItems: "center", gap: 10 }),
 };
 
-function normKeyForMatch(v) {
-  let s = String(v ?? "")
-    .replace(/\u00A0/g, " ")
-    .trim()
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ");
-
-  s = s.replace(/\b0TP\b/g, "OTP").replace(/\b0TE\b/g, "OTE");
-
-  return s;
-}
-
-const EXCLUDE_LIST = [
-  "OTP",
-  "OTE",
-  "0TP",
-  "0TE",
-  "0TL",
-  "PROSPECCION",
-  "REGISTRO",
-  "PENDIENTE APROBACION SAP",
-];
-
-function isExcludedLabel(raw) {
-  const k = normKeyForMatch(raw);
-  if (!k) return false;
-  for (const x of EXCLUDE_LIST) {
-    if (k === x) return true;
-    if (k.includes(x)) return true;
-  }
-  return false;
-}
-
 const ESTADOS_ACTIVOS = new Set([
   "EN PROCESO",
   "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
@@ -83,7 +48,6 @@ const ESTADOS_CERRADOS = new Set([
 function toOptions(arr) {
   return (Array.isArray(arr) ? arr : [])
     .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
-    .filter((v) => !isExcludedLabel(v))
     .map((v) => ({ value: v, label: String(v) }));
 }
 
@@ -239,25 +203,14 @@ export default function DashboardOportunidades() {
     })();
   }, [filtrosDebounced]);
 
-  const dataClean = useMemo(() => {
-    const base = Array.isArray(data) ? data : [];
-    return base.filter((r) => {
-      const eo = normKeyForMatch(r.estado_oferta);
-      const ro = normKeyForMatch(r.resultado_oferta);
-      if (isExcludedLabel(eo)) return false;
-      if (isExcludedLabel(ro)) return false;
-      return true;
-    });
-  }, [data]);
-
   const kpis = useMemo(() => {
-    const total = dataClean.length;
+    const total = data.length;
     let activas = 0;
     let cerradas = 0;
     let ganadas = 0;
 
-    dataClean.forEach((op) => {
-      const estado = normKeyForMatch(op.estado_oferta);
+    data.forEach((op) => {
+      const estado = String(op.estado_oferta || "").toUpperCase().trim();
       if (ESTADOS_ACTIVOS.has(estado)) activas++;
       if (ESTADOS_CERRADOS.has(estado)) cerradas++;
       if (estado === "GANADA") ganadas++;
@@ -270,27 +223,25 @@ export default function DashboardOportunidades() {
       ganadas,
       porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
     };
-  }, [dataClean]);
+  }, [data]);
 
   const resumenEstado = useMemo(() => {
     const m = new Map();
-    dataClean.forEach((r) => {
+    data.forEach((r) => {
       const k = (r.estado_oferta || "-").toString();
-      if (isExcludedLabel(k)) return;
       m.set(k, (m.get(k) || 0) + 1);
     });
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [dataClean]);
+  }, [data]);
 
   const resumenResultado = useMemo(() => {
     const m = new Map();
-    dataClean.forEach((r) => {
+    data.forEach((r) => {
       const k = (r.resultado_oferta || "-").toString();
-      if (isExcludedLabel(k)) return;
       m.set(k, (m.get(k) || 0) + 1);
     });
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [dataClean]);
+  }, [data]);
 
   const limpiar = () => {
     setFiltros({
@@ -428,17 +379,17 @@ export default function DashboardOportunidades() {
             <div className="side-col">
               <div className="card">
                 <div className="card-title">Cantidad y Ganadas/Adjudicadas por Año y Mes</div>
-                <GraficoCantidadGanadas data={dataClean} />
+                <GraficoCantidadGanadas data={data} />
               </div>
 
               <div className="card">
                 <div className="card-title">Activas y Cerradas por Año y Mes</div>
-                <GraficoActivasCerradas data={dataClean} />
+                <GraficoActivasCerradas data={data} />
               </div>
 
               <div className="card">
                 <div className="card-title">Resumen Calificación</div>
-                <ResumenCalificacion data={dataClean} />
+                <ResumenCalificacion data={data} />
               </div>
             </div>
           </section>
@@ -464,7 +415,7 @@ export default function DashboardOportunidades() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dataClean.map((row, i) => (
+                  {data.map((row, i) => (
                     <tr key={row.id ?? i}>
                       <td>{row.nombre_cliente ?? "-"}</td>
                       <td>{row.servicio ?? "-"}</td>

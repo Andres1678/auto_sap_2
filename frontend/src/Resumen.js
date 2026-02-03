@@ -3,7 +3,7 @@ import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
 import { EXCEPCION_8H_USERS } from "./lib/visibility";
 
-const API_PATH = "/registros-resumen";
+const API_PATH = "/registros";
 
 function extraerYMD(fechaStr) {
   if (!fechaStr) return null;
@@ -103,23 +103,19 @@ export default function Resumen({
   }, [userData]);
 
   const rolUpper = useMemo(() => String(rol || "").trim().toUpperCase(), [rol]);
-
-  const isSoloPropio = useMemo(() => {
-    return rolUpper === "CONSULTOR" || rolUpper === "ADMIN_OPORTUNIDADES";
-  }, [rolUpper]);
-
+  const isConsultor = useMemo(() => rolUpper === "CONSULTOR", [rolUpper]);
+  const isAdmin = useMemo(() => rolUpper.startsWith("ADMIN"), [rolUpper]);
   const isAdminGlobal = useMemo(() => rolUpper === "ADMIN", [rolUpper]);
-  const isAdminEquipo = useMemo(() => rolUpper.startsWith("ADMIN") && !isAdminGlobal, [rolUpper, isAdminGlobal]);
+  const isAdminEquipo = useMemo(() => isAdmin && !isAdminGlobal, [isAdmin, isAdminGlobal]);
 
   const miEquipo = useMemo(() => {
     return String(userData?.equipo || userData?.user?.equipo || "").trim().toUpperCase();
   }, [userData]);
 
   const equipoLocked = useMemo(() => {
-    if (isSoloPropio) return "";
     if (isAdminEquipo) return miEquipo;
     return String(filtroEquipo || "").trim().toUpperCase();
-  }, [isSoloPropio, isAdminEquipo, miEquipo, filtroEquipo]);
+  }, [isAdminEquipo, miEquipo, filtroEquipo]);
 
   const fetchResumen = useCallback(async ({ rolActual, usuario, equipo }) => {
     if (!usuario) return;
@@ -165,7 +161,7 @@ export default function Resumen({
           const fechaKey = fechaNorm ? keyYMDFromDate(fechaNorm) : extraerYMD(r.fecha);
           if (!fechaKey) return acc;
 
-          const horas = Number(r.total_horas ?? r.totalHoras ?? 0) || 0;
+          const horas = Number(r.total_horas ?? r.totalHoras ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.totalHoras ?? r.total_horas ?? r.total_horas ?? r.totalHoras ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.totalHoras ?? r.total_horas ?? r.total_horas ?? r.totalHoras ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? 0) || 0;
 
           const prev = acc[key]._byDay.get(fechaKey) || {
             fecha: r.fecha,
@@ -257,7 +253,7 @@ export default function Resumen({
   }, [resumen, filtroConsultor]);
 
   const datosParaRender = useMemo(() => {
-    if (!isSoloPropio) return datosVisibles;
+    if (!isConsultor) return datosVisibles;
     if (!Array.isArray(datosVisibles) || datosVisibles.length === 0) return [];
 
     const me = datosVisibles.find(
@@ -266,8 +262,8 @@ export default function Resumen({
         String(usuarioActual || "").toLowerCase()
     );
 
-    return me ? [me] : [];
-  }, [isSoloPropio, datosVisibles, usuarioActual]);
+    return me ? [me] : [datosVisibles[0]];
+  }, [isConsultor, datosVisibles, usuarioActual]);
 
   const CalendarioConsultor = ({ consultor }) => {
     const [animacion, setAnimacion] = useState("slideInLeft");
@@ -394,7 +390,7 @@ export default function Resumen({
   };
 
   return (
-    <div className={`resumen-wrapper ${isSoloPropio ? "resumen-single" : ""}`}>
+    <div className={`resumen-wrapper ${isConsultor ? "resumen-single" : ""}`}>
       <h2 className="resumen-titulo">Resumen de Horas Mensual</h2>
 
       {error && <div className="resumen-error">{error}</div>}
