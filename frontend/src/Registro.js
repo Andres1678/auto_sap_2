@@ -494,10 +494,11 @@ const Registro = ({ userData }) => {
 
     // 1) Filtrar
     const rows = base.filter((r) => {
-      if (filtroId) {
-        const idNeedle = String(filtroId).trim();
-        const rid = String(r.id ?? '').trim();
-        if (!rid.includes(idNeedle)) return false;
+      if (String(filtroId || '').trim() !== '') {
+        const idBuscado = String(filtroId).trim();
+        const idRegistro = String(r.id ?? r.registro_id ?? r.id_registro ?? '').trim();
+
+        if (!idRegistro.includes(idBuscado)) return false;
       }
       if (filtroEquipo && equipoOf(r) !== normKey(filtroEquipo)) return false;
       if (filtroFecha && r.fecha !== filtroFecha) return false;
@@ -551,6 +552,7 @@ const Registro = ({ userData }) => {
     };
   }, [
     registros,
+    filtroId,
     filtroEquipo,
     filtroFecha,
     filtroCliente,
@@ -1147,11 +1149,10 @@ const Registro = ({ userData }) => {
       <div className="filters-card">
         <div className="filter-grid">
           <input
-            type="number"
-            placeholder="ID..."
+            type="text"
             value={filtroId}
             onChange={(e) => setFiltroId(e.target.value)}
-            min="1"
+            placeholder="ID..."
           />
 
           <input
@@ -1281,7 +1282,7 @@ const Registro = ({ userData }) => {
                 setFiltroEquipo('');
               } else {
                 setFiltroConsultor(nombreUser);
-                setFiltroEquipo(equipoUser);
+                setFiltroEquipo(normKey(equipoUser));
               }
             }}
           >
