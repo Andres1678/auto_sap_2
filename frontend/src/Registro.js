@@ -173,7 +173,6 @@ const normKey = (v) =>
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '');
 
-
 const equipoOf = (r, fallback = 'SIN EQUIPO') => {
   const raw = (r?.equipo ?? r?.EQUIPO ?? r?.equipo_nombre ?? r?.equipoName ?? '');
   const n = normKey(raw);
