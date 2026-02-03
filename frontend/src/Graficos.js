@@ -30,18 +30,25 @@ const coincideMes = (fechaISO, mesYYYYMM) => {
 const equipoOf = (r, fallback = 'SIN EQUIPO') =>
   (String(r?.equipo || '').trim().toUpperCase() || fallback);
 
+
 function taskCodeFromTipo(t) {
-  return (String(t || '').match(/^\d+/)?.[0] ?? '');
+  const s = String(t ?? '').trim();
+  const m = s.match(/\b\d{1,2}\b/);
+  if (!m) return '';
+  return m[0].padStart(2, '0');
 }
 
 function ocupCodeFromRow(r) {
   
   const c = String(r?.ocupacion_codigo ?? '').trim();
-  if (c) return c;
+  if (c) return String(c).padStart(2, '0');
 
+  
   const name = String(r?.ocupacion_nombre ?? '').trim();
-  return (name.match(/^\d+/)?.[0] ?? '');
+  const m = name.match(/\b\d{1,2}\b/);
+  return m ? m[0].padStart(2, '0') : '';
 }
+
 
 
 function workdaysInMonth(year, month, holidays = []) {
@@ -307,6 +314,7 @@ export default function Graficos() {
   const isAdminAll  = rolUpper === 'ADMIN';
   const isAdminLike = rolUpper.startsWith('ADMIN_');
   const isAdminGerentes = rolUpper === 'ADMIN_GERENTES';
+  const [horariosBackend, setHorariosBackend] = useState([]);
 
   // ✅ scope SIEMPRE definido ANTES de usarse en cualquier otra cosa
   const scope = useMemo(() => {
@@ -426,7 +434,7 @@ export default function Graficos() {
     fetchOcupaciones();
   }, []);
 
-
+  
 
   /* Opciones filtros */
   const consultoresUnicos = useMemo(() => {
@@ -447,21 +455,6 @@ export default function Graficos() {
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }, [registros, filtroMes]);
-
-  useEffect(() => {
-    if (!isAdminGerentes) return;
-
-    // Si está viendo a otros (o a todos) -> fuerza tarea 03
-    if (filtroIncluyeOtros) {
-      const opt = (tareasUnicos || []).find(t => taskCodeFromTipo(t) === '03');
-      setFiltroTarea(opt ? [opt] : []);
-    } else {
-      // Si está viendo SOLO lo suyo -> deja que el usuario elija
-      setFiltroTarea([]); 
-    }
-  }, [isAdminGerentes, filtroIncluyeOtros, tareasUnicos]);
-
-
 
   const clientesUnicos = useMemo(() => {
     const set = new Set(
@@ -517,16 +510,11 @@ export default function Graficos() {
   /* Datos filtrados */
   /* Datos filtrados */
   const datosFiltrados = useMemo(() => {
-    return (registros ?? []).filter(r => {
-
+    return (registros ?? []).filter((r) => {
       const eq = equipoOf(r);
 
-      /* =========================
-        🔐 SCOPE por rol
-      ========================== */
-
       if (scope === 'SELF') {
-        const u  = String(usuario || '').trim().toLowerCase();
+        const u = String(usuario || '').trim().toLowerCase();
         const ru = String(r.usuario_consultor || '').trim().toLowerCase();
 
         if (u && ru && ru !== u) return false;
@@ -537,50 +525,29 @@ export default function Graficos() {
         if (equipoUser && eq !== equipoUser) return false;
       }
 
-      /* =========================
-        🧠 REGLA ESPECIAL
-        ADMIN_GERENTES
-        - Solo tarea 03
-        - Solo ocupación 02 (Proyectos)
-      ========================== */
       if (rolUpper === 'ADMIN_GERENTES') {
-      // 1) Identificar si el registro es del usuario logueado
-      const u  = String(usuario || '').trim().toLowerCase();
-      const ru = String(r.usuario_consultor || '').trim().toLowerCase(); // ideal que backend lo mande
+        const u = String(usuario || '').trim().toLowerCase();
+        const ru = String(r.usuario_consultor || '').trim().toLowerCase();
 
-      const esMioPorUsuario = u && ru && ru === u;
+        const esMioPorUsuario = u && ru && ru === u;
 
-      // fallback si no tienes usuario_consultor (menos confiable, pero útil)
-      const esMioPorNombre =
-        String(r.consultor || '').trim().toLowerCase() ===
-        String(nombreUser || '').trim().toLowerCase();
+        const esMioPorNombre =
+          String(r.consultor || '').trim().toLowerCase() ===
+          String(nombreUser || '').trim().toLowerCase();
 
-      const esMio = esMioPorUsuario || esMioPorNombre;
+        const esMio = esMioPorUsuario || esMioPorNombre;
 
-      // 2) Si NO es mío → solo permitir PROYECTOS (tarea + ocupación)
-      if (!esMio) {
-        // tarea proyectos (ej: "03 - Atención de Casos" o la que sea proyectos)
-        const taskCode = (String(r.tipoTarea || '').match(/^\d+/)?.[0] ?? '');
+        if (!esMio) {
+          const taskCode = taskCodeFromTipo(r.tipoTarea);
+          const ocupCode = ocupCodeFromRow(r);
 
-        // ocupación proyectos (ej: "02 - Proyectos")
-        let ocupCode = String(r.ocupacion_codigo || '').trim();
-        if (!ocupCode && r.ocupacion_nombre) {
-          ocupCode = String(r.ocupacion_nombre).match(/^\d+/)?.[0] ?? '';
+          if (taskCode !== '03') return false;
+          if (ocupCode !== '02') return false;
         }
-
-        // AJUSTA estos códigos si los tuyos son otros:
-        if (taskCode !== '03') return false;
-        if (ocupCode !== '02') return false;
       }
-    }
-      /* =========================
-        📅 Filtro por mes
-      ========================== */
+
       if (!coincideMes(r.fecha, filtroMes)) return false;
 
-      /* =========================
-        🎛️ Filtros UI
-      ========================== */
       if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultor)) return false;
       if (filtroTarea.length > 0 && !filtroTarea.includes(r.tipoTarea)) return false;
       if (filtroCliente.length > 0 && !filtroCliente.includes(r.cliente)) return false;
@@ -613,7 +580,8 @@ export default function Graficos() {
     scope,
     usuario,
     equipoUser,
-    rolUpper
+    rolUpper,
+    nombreUser
   ]);
 
   /* Agrupaciones */
@@ -699,16 +667,27 @@ export default function Graficos() {
   
   const filtroIncluyeOtros = useMemo(() => {
     if (rolUpper !== 'ADMIN_GERENTES') return false;
-    if (!filtroConsultor || filtroConsultor.length === 0) return true; // “todos” incluye otros
+    if (!filtroConsultor || filtroConsultor.length === 0) return true;
     const me = String(nombreUser || '').trim().toLowerCase();
     return filtroConsultor.some(n => String(n || '').trim().toLowerCase() !== me);
   }, [rolUpper, filtroConsultor, nombreUser]);
 
   const tareasParaFiltro = useMemo(() => {
     if (rolUpper !== 'ADMIN_GERENTES') return tareasUnicos;
-    if (!filtroIncluyeOtros) return tareasUnicos; // solo él → todas
-    return (tareasUnicos || []).filter(t => taskCodeFromTipo(t) === '03'); // solo proyectos
+    if (!filtroIncluyeOtros) return tareasUnicos;
+    return (tareasUnicos || []).filter(t => taskCodeFromTipo(t) === '03');
   }, [rolUpper, filtroIncluyeOtros, tareasUnicos]);
+
+  useEffect(() => {
+    if (!isAdminGerentes) return;
+
+    if (filtroIncluyeOtros) {
+      const opt = (tareasUnicos || []).find(t => taskCodeFromTipo(t) === '03');
+      setFiltroTarea(opt ? [opt] : []);
+    } else {
+      setFiltroTarea([]);
+    }
+  }, [isAdminGerentes, filtroIncluyeOtros, tareasUnicos]);
 
   /* Modal helpers */
   const openDetail = (kind, value, pretty) => {
@@ -754,8 +733,6 @@ export default function Graficos() {
       limite: wd * 9
     };
   }, [filtroMes]);
-
-  const [horariosBackend, setHorariosBackend] = useState([]);
 
   /* Horas por Ocupación */
   const horasPorOcupacion = useMemo(() => {
