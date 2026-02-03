@@ -306,9 +306,17 @@ export default function Graficos() {
   const equipoUser = String(user?.equipo || user?.user?.equipo || '').toUpperCase();
   const usuario = String(user?.usuario || user?.user?.usuario || '').trim();
   const isAdminAll = rolUpper === 'ADMIN';
-  const isAdminLike = rolUpper.startsWith('ADMIN_'); // ADMIN_BASIS, ADMIN_FUNCIONAL, etc.
+  const isAdminLike = rolUpper.startsWith('ADMIN_'); 
   const isAdminTeam = !isAdminAll && isAdminLike && !!equipoUser;
-  const isAdmin = scope !== 'SELF';
+  const scope = useMemo(() => {
+    if (rolUpper === 'ADMIN_GERENTES') return 'ALL'; 
+    if (isAdminAll) return 'ALL';
+    if (isAdminLike) return 'TEAM';
+    return 'SELF';
+  }, [rolUpper, isAdminAll, isAdminLike]);
+
+const isAdmin = scope !== 'SELF';
+
 
   /* Carga registros */
   useEffect(() => {
@@ -378,6 +386,7 @@ export default function Graficos() {
           nombre:
             o.nombre ??
             o.name ??
+            o.rango ??          
             o.descripcion ??
             o.title ??
             "SIN NOMBRE",
@@ -442,9 +451,16 @@ export default function Graficos() {
   useEffect(() => {
     if (!isAdminGerentes) return;
 
-    const opt = (tareasUnicos || []).find(t => taskCodeFromTipo(t) === '03');
-    setFiltroTarea(opt ? [opt] : []);
-  }, [isAdminGerentes, tareasUnicos]);
+    // Si está viendo a otros (o a todos) -> fuerza tarea 03
+    if (filtroIncluyeOtros) {
+      const opt = (tareasUnicos || []).find(t => taskCodeFromTipo(t) === '03');
+      setFiltroTarea(opt ? [opt] : []);
+    } else {
+      // Si está viendo SOLO lo suyo -> deja que el usuario elija
+      setFiltroTarea([]); 
+    }
+  }, [isAdminGerentes, filtroIncluyeOtros, tareasUnicos]);
+
 
 
   const clientesUnicos = useMemo(() => {
@@ -528,24 +544,35 @@ export default function Graficos() {
         - Solo ocupación 02 (Proyectos)
       ========================== */
       if (rolUpper === 'ADMIN_GERENTES') {
-        // Código de tarea desde "03 - Atención de Casos"
-        const taskCode =
-          (String(r.tipoTarea || '').match(/^\d+/)?.[0] ?? '');
+      // 1) Identificar si el registro es del usuario logueado
+      const u  = String(usuario || '').trim().toLowerCase();
+      const ru = String(r.usuario_consultor || '').trim().toLowerCase(); // ideal que backend lo mande
 
-        if (taskCode !== '03') return false;
+      const esMioPorUsuario = u && ru && ru === u;
 
-        // Código de ocupación (preferido: ocupacion_codigo)
+      // fallback si no tienes usuario_consultor (menos confiable, pero útil)
+      const esMioPorNombre =
+        String(r.consultor || '').trim().toLowerCase() ===
+        String(nombreUser || '').trim().toLowerCase();
+
+      const esMio = esMioPorUsuario || esMioPorNombre;
+
+      // 2) Si NO es mío → solo permitir PROYECTOS (tarea + ocupación)
+      if (!esMio) {
+        // tarea proyectos (ej: "03 - Atención de Casos" o la que sea proyectos)
+        const taskCode = (String(r.tipoTarea || '').match(/^\d+/)?.[0] ?? '');
+
+        // ocupación proyectos (ej: "02 - Proyectos")
         let ocupCode = String(r.ocupacion_codigo || '').trim();
-
-        // Fallback si viene como "02 - Proyectos"
         if (!ocupCode && r.ocupacion_nombre) {
           ocupCode = String(r.ocupacion_nombre).match(/^\d+/)?.[0] ?? '';
         }
 
-        // Si existe código y no es 02 → fuera
-        if (ocupCode && ocupCode !== '02') return false;
+        // AJUSTA estos códigos si los tuyos son otros:
+        if (taskCode !== '03') return false;
+        if (ocupCode !== '02') return false;
       }
-
+    }
       /* =========================
         📅 Filtro por mes
       ========================== */
@@ -670,7 +697,18 @@ export default function Graficos() {
   const yWidthModulo    = yWidthFromPx(horasPorModulo.map(d => d.modulo),       { min: 140, max: 360, pad: 32 });
 
   
+  const filtroIncluyeOtros = useMemo(() => {
+    if (rolUpper !== 'ADMIN_GERENTES') return false;
+    if (!filtroConsultor || filtroConsultor.length === 0) return true; // “todos” incluye otros
+    const me = String(nombreUser || '').trim().toLowerCase();
+    return filtroConsultor.some(n => String(n || '').trim().toLowerCase() !== me);
+  }, [rolUpper, filtroConsultor, nombreUser]);
 
+  const tareasParaFiltro = useMemo(() => {
+    if (rolUpper !== 'ADMIN_GERENTES') return tareasUnicos;
+    if (!filtroIncluyeOtros) return tareasUnicos; // solo él → todas
+    return (tareasUnicos || []).filter(t => taskCodeFromTipo(t) === '03'); // solo proyectos
+  }, [rolUpper, filtroIncluyeOtros, tareasUnicos]);
 
   /* Modal helpers */
   const openDetail = (kind, value, pretty) => {
@@ -812,11 +850,15 @@ export default function Graficos() {
 
         <MultiFiltro
           titulo="TAREAS"
-          opciones={tareasUnicos}
+          opciones={tareasParaFiltro}
           seleccion={filtroTarea}
-          onChange={isAdminGerentes ? () => {} : setFiltroTarea}
-          disabled={isAdminGerentes}
-          placeholder={isAdminGerentes ? '03 - Atencion de Casos (fijo)' : 'Todas las tareas'}
+          onChange={(!isAdminGerentes || !filtroIncluyeOtros) ? setFiltroTarea : () => {}}
+          disabled={isAdminGerentes && filtroIncluyeOtros}
+          placeholder={
+            (isAdminGerentes && filtroIncluyeOtros)
+              ? '03 - Proyectos (fijo al ver otros)'
+              : 'Todas las tareas'
+          }
         />
 
         <MultiFiltro
