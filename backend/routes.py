@@ -28,18 +28,6 @@ bp = Blueprint('routes', __name__, url_prefix="/api")
 
 _HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$", re.I)
 
-
-EXCLUDE_LIST = {
-  "OTP","OTE","OTL","PROSPECCION","REGISTRO","PENDIENTE APROBACION SAP","0TP","0TE","0TL"
-}
-
-def normalize_estado(v: str) -> str:
-    return " ".join((v or "").strip().upper().split())
-
-def is_excluded_estado(estado: str) -> bool:
-    return normalize_estado(estado) in EXCLUDE_LIST
-
-
 ROLE_TEAM_MAP = {
     "ADMIN_BASIS": "BASIS",
     "ADMIN_FUNCIONAL": "FUNCIONAL",
@@ -1767,6 +1755,77 @@ def _get_list_arg(key: str):
         vals = request.args.getlist(f"{key}[]")
     return [str(v).strip() for v in vals if v is not None and str(v).strip() != ""]
 
+
+# =========================
+#  EXCLUSIÓN GLOBAL ESTADOS
+# =========================
+
+EXCLUDE_LIST = [
+    "OTP",
+    "OTE",
+    "OTL",
+    "PROSPECCION",
+    "REGISTRO",
+    "PENDIENTE APROBACION SAP",
+    "0TP",
+    "0TE",
+    "0TL",
+]
+
+
+def _norm_key_for_match(v: str) -> str:
+    """
+    Normaliza igual que el frontend:
+    - trim, upper
+    - quita tildes
+    - colapsa espacios
+    - 0TP/0TE/0TL -> OTP/OTE/OTL
+    """
+    s = str(v or "").replace("\u00A0", " ").strip().upper()
+
+    # quitar tildes/diacríticos
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+
+    # colapsar espacios
+    s = re.sub(r"\s+", " ", s)
+
+    # equivalencias
+    s = re.sub(r"\b0TP\b", "OTP", s)
+    s = re.sub(r"\b0TE\b", "OTE", s)
+    s = re.sub(r"\b0TL\b", "OTL", s)
+
+    return s
+
+
+# set normalizado
+EXCLUDE_NORM_SET = {_norm_key_for_match(x) for x in EXCLUDE_LIST if x}
+
+
+def _apply_excluded_states(query):
+    """
+    Excluye estados indeseados desde SQL.
+    - Exact match: NOT IN
+    - Contiene: NOT LIKE %X% (por si llega "OTP - ALGO")
+    """
+    col = func.upper(func.trim(Oportunidad.estado_oferta))
+
+    # 1) excluir exactos
+    query = query.filter(not_(col.in_(list(EXCLUDE_NORM_SET))))
+
+    # 2) excluir "contiene"
+    like_conds = []
+    for x in EXCLUDE_NORM_SET:
+        # sanitizar comodines SQL
+        safe = x.replace("%", "").replace("_", "")
+        like_conds.append(not_(col.like(f"%{safe}%")))
+
+    if like_conds:
+        query = query.filter(and_(*like_conds))
+
+    return query
+
+
 def _apply_oportunidades_filters(query):
     q = (request.args.get("q") or "").strip()
 
@@ -1775,30 +1834,35 @@ def _apply_oportunidades_filters(query):
     tipos = _get_list_arg("tipo")  # GANADA / ACTIVA / CERRADA
 
     direccion = _get_list_arg("direccion_comercial")
-    gerencia  = _get_list_arg("gerencia_comercial")
-    cliente   = _get_list_arg("nombre_cliente")
+    gerencia = _get_list_arg("gerencia_comercial")
+    cliente = _get_list_arg("nombre_cliente")
 
     estado_oferta = _get_list_arg("estado_oferta")
-    resultado     = _get_list_arg("resultado_oferta")
+    resultado = _get_list_arg("resultado_oferta")
 
-    estado_ot   = _get_list_arg("estado_ot")
-    ultimo_mes  = _get_list_arg("ultimo_mes")
-    calif       = _get_list_arg("calificacion_oportunidad")
+    estado_ot = _get_list_arg("estado_ot")
+    ultimo_mes = _get_list_arg("ultimo_mes")
+    calif = _get_list_arg("calificacion_oportunidad")
 
-    fecha_acta_cierre_ot      = _get_list_arg("fecha_acta_cierre_ot")
-    fecha_cierre_oportunidad  = _get_list_arg("fecha_cierre_oportunidad")
+    fecha_acta_cierre_ot = _get_list_arg("fecha_acta_cierre_ot")
+    fecha_cierre_oportunidad = _get_list_arg("fecha_cierre_oportunidad")
+
+    # ✅ EXCLUSIÓN GLOBAL (impacta datos + filtros)
+    query = _apply_excluded_states(query)
 
     if q:
         like = f"%{q}%"
-        query = query.filter(or_(
-            Oportunidad.nombre_cliente.ilike(like),
-            Oportunidad.servicio.ilike(like),
-            Oportunidad.estado_oferta.ilike(like),
-            Oportunidad.resultado_oferta.ilike(like),
-            Oportunidad.pais.ilike(like),
-            Oportunidad.direccion_comercial.ilike(like),
-            Oportunidad.gerencia_comercial.ilike(like),
-        ))
+        query = query.filter(
+            or_(
+                Oportunidad.nombre_cliente.ilike(like),
+                Oportunidad.servicio.ilike(like),
+                Oportunidad.estado_oferta.ilike(like),
+                Oportunidad.resultado_oferta.ilike(like),
+                Oportunidad.pais.ilike(like),
+                Oportunidad.direccion_comercial.ilike(like),
+                Oportunidad.gerencia_comercial.ilike(like),
+            )
+        )
 
     if anios:
         try:
@@ -1967,7 +2031,6 @@ def importar_oportunidades():
         if s == "" or s.lower() in ("nan", "none", "null"):
             return None
         try:
-            # dayfirst True para 15/01/2026
             d = pd.to_datetime(s, errors="coerce", dayfirst=True)
             return None if pd.isna(d) else d.date()
         except Exception:
@@ -1979,7 +2042,6 @@ def importar_oportunidades():
         s = str(val).strip()
         if s == "" or s.lower() in ("nan", "none", "null"):
             return None
-        # quitar $, espacios, puntos, comas
         s = re.sub(r"[^\d\-]", "", s)
         if s == "":
             return None
@@ -2000,7 +2062,6 @@ def importar_oportunidades():
     for _, row in df.iterrows():
         obj = {}
 
-        # mapear solo columnas presentes
         for col_excel, field in colmap.items():
             if col_excel in df.columns:
                 raw = row.get(col_excel)
@@ -2062,7 +2123,22 @@ def oportunidades_filters():
             .order_by(col.asc())
             .all()
         )
-        return [r[0] for r in rows]
+        vals = [r[0] for r in rows]
+
+        # ✅ limpiar opciones con la misma lógica de exclusión
+        cleaned = []
+        for v in vals:
+            nk = _norm_key_for_match(v)
+            if not nk:
+                continue
+            if nk in EXCLUDE_NORM_SET:
+                continue
+            # si llega con sufijos: "OTP - algo"
+            if any(x in nk for x in EXCLUDE_NORM_SET):
+                continue
+            cleaned.append(v)
+
+        return cleaned
 
     def distinct_date(col):
         rows = (
@@ -2095,6 +2171,7 @@ def oportunidades_filters():
         "tipos": ["GANADA", "ACTIVA", "CERRADA"],
     }), 200
 
+
 @bp.route('/oportunidades', methods=['GET'])
 @permission_required("OPORTUNIDADES_VER")
 def listar_oportunidades():
@@ -2103,6 +2180,7 @@ def listar_oportunidades():
     query = query.order_by(Oportunidad.id.desc())
     data = [o.to_dict() for o in query.limit(2000).all()]
     return jsonify(data), 200
+
 
 @bp.route('/oportunidades', methods=['POST'])
 @permission_required("OPORTUNIDADES_CREAR")

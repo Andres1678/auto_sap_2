@@ -185,6 +185,17 @@ export default function DashboardOportunidades() {
 
   const filtrosDebounced = useDebouncedValue(filtros, 400);
 
+    const dataFiltrada = useMemo(() => {
+    return data.filter((op) => {
+      const e = op?.estado_oferta ?? "";
+      const r = op?.resultado_oferta ?? "";
+
+      if (isExcludedLabel(e)) return false;
+
+      return true;
+    });
+  }, [data]);
+
   const fetchFilters = async (current) => {
     const res = await jfetch(`/oportunidades/filters${toQuery(current)}`);
     if (!res.ok) throw new Error("filters");
@@ -243,12 +254,12 @@ export default function DashboardOportunidades() {
   }, [filtrosDebounced]);
 
   const kpis = useMemo(() => {
-    const total = data.length;
+    const total = dataFiltrada.length;
     let activas = 0;
     let cerradas = 0;
     let ganadas = 0;
 
-    data.forEach((op) => {
+    dataFiltrada.forEach((op) => {
       const estado = String(op.estado_oferta || "").toUpperCase().trim();
       if (ESTADOS_ACTIVOS.has(estado)) activas++;
       if (ESTADOS_CERRADOS.has(estado)) cerradas++;
@@ -262,25 +273,27 @@ export default function DashboardOportunidades() {
       ganadas,
       porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
     };
-  }, [data]);
+  }, [dataFiltrada]);
 
   const resumenEstado = useMemo(() => {
     const m = new Map();
-    data.forEach((r) => {
+    dataFiltrada.forEach((r) => {
       const k = (r.estado_oferta || "-").toString();
       m.set(k, (m.get(k) || 0) + 1);
     });
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [data]);
+  }, [dataFiltrada]);
+
 
   const resumenResultado = useMemo(() => {
     const m = new Map();
-    data.forEach((r) => {
+    dataFiltrada.forEach((r) => {
       const k = (r.resultado_oferta || "-").toString();
       m.set(k, (m.get(k) || 0) + 1);
     });
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [data]);
+  }, [dataFiltrada]);
+
 
   const limpiar = () => {
     setFiltros({
@@ -418,17 +431,17 @@ export default function DashboardOportunidades() {
             <div className="side-col">
               <div className="card">
                 <div className="card-title">Cantidad y Ganadas/Adjudicadas por Año y Mes</div>
-                <GraficoCantidadGanadas data={data} />
+                <GraficoCantidadGanadas data={dataFiltrada} />
               </div>
 
               <div className="card">
                 <div className="card-title">Activas y Cerradas por Año y Mes</div>
-                <GraficoActivasCerradas data={data} />
+                <GraficoActivasCerradas data={dataFiltrada} />
               </div>
 
               <div className="card">
                 <div className="card-title">Resumen Calificación</div>
-                <ResumenCalificacion data={data} />
+                <ResumenCalificacion data={dataFiltrada} />
               </div>
             </div>
           </section>
@@ -454,7 +467,7 @@ export default function DashboardOportunidades() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((row, i) => (
+                  {dataFiltrada.map((row, i) => (
                     <tr key={row.id ?? i}>
                       <td>{row.nombre_cliente ?? "-"}</td>
                       <td>{row.servicio ?? "-"}</td>
