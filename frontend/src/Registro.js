@@ -184,6 +184,7 @@ const Registro = ({ userData }) => {
   const [registro, setRegistro] = useState(initRegistro());
   const [modoEdicion, setModoEdicion] = useState(false);
 
+  const [filtroId, setFiltroId] = useState('');
   const [filtroFecha, setFiltroFecha] = useState('');
   const [filtroCliente, setFiltroCliente] = useState('');
   const [filtroOcupacion, setFiltroOcupacion] = useState('');
@@ -295,6 +296,7 @@ const Registro = ({ userData }) => {
   useEffect(() => {
     setPage(1);
   }, [
+    filtroId,
     filtroEquipo,
     filtroFecha,
     filtroCliente,
@@ -492,6 +494,11 @@ const Registro = ({ userData }) => {
 
     // 1) Filtrar
     const rows = base.filter((r) => {
+      if (filtroId) {
+        const idNeedle = String(filtroId).trim();
+        const rid = String(r.id ?? '').trim();
+        if (!rid.includes(idNeedle)) return false;
+      }
       if (filtroEquipo && equipoOf(r) !== normKey(filtroEquipo)) return false;
       if (filtroFecha && r.fecha !== filtroFecha) return false;
       if (filtroCliente && r.cliente !== filtroCliente) return false;
@@ -1058,9 +1065,9 @@ const Registro = ({ userData }) => {
   };
 
   const colSpanTabla = useMemo(() => {
-    let cols = 18; 
-    if (isBASISTable) cols += 2; 
-    if (isAdmin) cols += 1; 
+    let cols = 19; // ✅ antes 18, ahora +1 por ID
+    if (isBASISTable) cols += 2;
+    if (isAdmin) cols += 1;
     return cols;
   }, [isBASISTable, isAdmin]);
 
@@ -1139,6 +1146,14 @@ const Registro = ({ userData }) => {
       {/* FILTROS */}
       <div className="filters-card">
         <div className="filter-grid">
+          <input
+            type="number"
+            placeholder="ID..."
+            value={filtroId}
+            onChange={(e) => setFiltroId(e.target.value)}
+            min="1"
+          />
+
           <input
             type="date"
             value={filtroFecha}
@@ -1254,6 +1269,7 @@ const Registro = ({ userData }) => {
           <button
             className="btn btn-outline"
             onClick={() => {
+              setFiltroId('');
               setFiltroFecha('');
               setFiltroCliente('');
               setFiltroTarea('');
@@ -1481,6 +1497,7 @@ const Registro = ({ userData }) => {
           <table>
             <thead>
               <tr>
+                <th>ID</th> 
                 <th>Fecha</th>
                 <th>Módulo</th>
                 <th>Equipo</th>
@@ -1506,6 +1523,7 @@ const Registro = ({ userData }) => {
             <tbody>
               {registrosFiltrados.pageRows.map((r) => (
                 <tr key={r.id}>
+                  <td className="num">{r.id}</td> 
                   <td>{r.fecha}</td>
                   <td>{r.modulo ?? moduloUser}</td>
                   <td>{equipoOf(r)}</td>

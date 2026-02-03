@@ -1215,6 +1215,7 @@ export default function Graficos() {
                     <table className="detail-table">
                       <thead>
                         <tr>
+                          <th>ID</th>
                           <th>Consultor</th>
                           <th>Cliente</th>
                           <th>Tarea</th>
@@ -1231,6 +1232,9 @@ export default function Graficos() {
                       <tbody>
                         {bucket.rows.map((r, i) => (
                           <tr key={i}>
+                            <td className="num">
+                              {r.id ?? r.registro_id ?? r.id_registro ?? r.ID ?? '—'}
+                            </td>
                             <td className="truncate" title={r.consultor}>{r.consultor}</td>
                             <td className="truncate" title={r.cliente}>{r.cliente}</td>
                             <td className="truncate" title={r.tipoTarea}>{r.tipoTarea}</td>

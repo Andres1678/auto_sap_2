@@ -47,7 +47,7 @@ html,body{
   line-height: 1.35;
 }
 
-/* Unificar tamaño en TODO lo que sea texto interactivo */
+/* Unificar tamaño en TODO lo interactivo */
 button, input, select, textarea{
   font: inherit;
   font-size: var(--fs-base);
@@ -107,8 +107,9 @@ button, input, select, textarea{
   padding:0 18px;
 }
 
-/* Si estás usando input file en header */
-.page-actions input[type="file"]{
+/* Input file en header */
+.page-actions input[type="file"],
+.excel-input{
   height: var(--control-h);
   padding: 8px 10px;
   border-radius: 12px;
@@ -150,9 +151,13 @@ button, input, select, textarea{
   color:#fff;
 }
 
-.btn-accent{
-  background:linear-gradient(180deg,var(--accent),var(--accent-700));
-  color:#fff;
+.btn-ghost{
+  background:#fff;
+  border:1px solid var(--border);
+  color:var(--text);
+}
+.btn-ghost:hover{
+  background:#f5f7fb;
 }
 
 /* Disabled */
@@ -171,6 +176,11 @@ button, input, select, textarea{
   gap:12px;
   margin:12px 0 18px;
   flex-wrap: wrap;
+}
+
+.team-filter-label{
+  font-weight:800;
+  color: var(--text);
 }
 
 .team-toggle{
@@ -213,15 +223,13 @@ button, input, select, textarea{
   font-weight:700;
 }
 
-.team-btn.is-active,
-.team-btn[aria-selected="true"]{
+.team-btn.is-active{
   background:linear-gradient(135deg,var(--accent),var(--accent-700));
   color:#fff;
   box-shadow:0 8px 18px rgba(0,85,184,.35);
 }
 
-.team-btn.is-active .chip,
-.team-btn[aria-selected="true"] .chip{
+.team-btn.is-active .chip{
   background:rgba(255,255,255,.22);
 }
 
@@ -242,6 +250,7 @@ button, input, select, textarea{
   gap:12px;
 }
 
+/* inputs/select uniformes */
 .filters-card input,
 .filters-card select{
   height: var(--control-h);
@@ -249,12 +258,24 @@ button, input, select, textarea{
   border-radius: 12px;
   border: 1px solid var(--border);
   background: #fff;
+  width: 100%;
+}
+
+/* ✅ Input number (ID) se ve igual que el resto */
+.filters-card input[type="number"]{
+  appearance: textfield;
+}
+.filters-card input[type="number"]::-webkit-outer-spin-button,
+.filters-card input[type="number"]::-webkit-inner-spin-button{
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .filters-card input:focus,
 .filters-card select:focus{
   border-color:var(--accent);
   box-shadow:0 0 0 3px rgba(0,85,184,.18);
+  outline: none;
 }
 
 .filter-actions{
@@ -271,7 +292,7 @@ button, input, select, textarea{
 }
 
 /* =========================================================
-   TABLA (MEJORADA: scroll X/Y + sticky header + sticky acciones)
+   TABLA (scroll X/Y + sticky header + sticky acciones)
 ========================================================= */
 .table-wrap{
   margin-top:16px;
@@ -292,7 +313,7 @@ button, input, select, textarea{
 /* Tabla grande */
 table{
   width:100%;
-  min-width:1600px;
+  min-width:1700px; /* ✅ sube un poquito por la columna ID */
   border-collapse:separate;
   border-spacing:0;
   font-size: var(--fs-base);
@@ -308,6 +329,12 @@ thead th{
   z-index:3;
   white-space: nowrap;
   border-bottom:1px solid var(--border);
+}
+
+/* ✅ Columna ID: compacto */
+thead th:first-child,
+tbody td:first-child{
+  width: 90px;
 }
 
 /* Celdas */
@@ -351,57 +378,13 @@ td.actions{
   background: #fff;
   box-shadow:-10px 0 18px rgba(2,6,23,.06);
   border-left:1px solid var(--border);
+  white-space: nowrap;
 }
 
-/* Si usas la clase sticky-actions en el contenedor, mantenla */
+/* Mantener el sticky en scroll */
 .table-scroll.sticky-actions{
   position: relative;
 }
-
-/* Sticky también para la columna Bloqueado (si existe) */
-table th:last-child,
-table td:last-child{
-  /* No forzamos sticky aquí porque podría romper layouts
-     si quieres sticky en "Bloqueado", lo hacemos con clase dedicada */
-}
-
-/* =========================================================
-   PAGINACIÓN (debajo de tabla)
-========================================================= */
-.table-pager{
-  display:flex;
-  gap:10px;
-  align-items:center;
-  justify-content:flex-end;
-  padding:12px 14px;
-  border-top:1px solid var(--border);
-  background:linear-gradient(180deg,#ffffff,#fafbfd);
-}
-
-.table-pager .btn{
-  height: 40px;
-  padding: 0 14px;
-  border-radius: 12px;
-}
-
-.table-pager .pager-text{
-  font-weight:800;
-  color: var(--text);
-}
-
-/* =========================================================
-   SCROLLBARS (discretas)
-========================================================= */
-.table-scroll::-webkit-scrollbar{ width: 12px; height: 12px; }
-.table-scroll::-webkit-scrollbar-track{ background: #f1f4fa; }
-.table-scroll::-webkit-scrollbar-thumb{
-  background: rgba(2,6,23,.22);
-  border-radius: 999px;
-  border: 3px solid #f1f4fa;
-}
-
-/* Firefox */
-.table-scroll{ scrollbar-width: thin; scrollbar-color: rgba(2,6,23,.28) #f1f4fa; }
 
 /* =========================================================
    ICON BUTTONS
@@ -417,14 +400,28 @@ table td:last-child{
   display:inline-flex;
   align-items:center;
   justify-content:center;
+  margin-right:6px;
 }
 .icon-btn:hover{ background:#f5f7fb; }
 .icon-btn.danger:hover{ background:rgba(220,38,38,.08); }
 
 /* =========================================================
+   SCROLLBARS (discretas)
+========================================================= */
+.table-scroll::-webkit-scrollbar{ width: 12px; height: 12px; }
+.table-scroll::-webkit-scrollbar-track{ background: #f1f4fa; }
+.table-scroll::-webkit-scrollbar-thumb{
+  background: rgba(2,6,23,.22);
+  border-radius: 999px;
+  border: 3px solid #f1f4fa;
+}
+.table-scroll{ scrollbar-width: thin; scrollbar-color: rgba(2,6,23,.28) #f1f4fa; }
+
+/* =========================================================
    MODAL REGISTRO (React Modal)
 ========================================================= */
-.ReactModal__Overlay{
+.ReactModal__Overlay,
+.modal-overlay{
   background:rgba(10,15,30,.55)!important;
   backdrop-filter: blur(4px);
   z-index:1000;
@@ -511,7 +508,6 @@ table td:last-child{
   line-height: 1.2;
 }
 
-/* Textarea */
 .modal-content textarea{
   height:auto;
   min-height: 110px;
@@ -532,12 +528,6 @@ table td:last-child{
   outline: none;
   border-color:var(--primary);
   box-shadow:0 0 0 4px var(--ring);
-}
-
-.modal-content input[type="date"],
-.modal-content input[type="number"],
-.modal-content input[type="time"]{
-  min-width: 0;
 }
 
 /* Horas en 2 columnas */
@@ -576,19 +566,6 @@ table td:last-child{
 /* =========================================================
    UTILIDADES
 ========================================================= */
-.table-error{
-  padding:14px;
-  font-weight:700;
-  color:var(--danger);
-}
-
-.summary-empty{
-  margin:28px 0;
-  text-align:center;
-  color:var(--muted);
-  font-weight:600;
-}
-
 .muted{
   color: var(--muted);
   font-weight: 700;

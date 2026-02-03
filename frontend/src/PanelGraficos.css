@@ -1,7 +1,7 @@
 /* ===============================
    VARIABLES Y PALETA DE COLORES
 ================================ */
-:root{ 
+:root{
   --brand-red:#E30613;
   --brand-red-700:#b00510;
   --brand-blue:#0055B8;
@@ -253,7 +253,7 @@
   gap:8px;
   height:40px;
   padding:0 14px;
-  border-radius:10px; 
+  border-radius:10px;
   border:1px solid transparent;
   font-weight:700;
   cursor:pointer;
@@ -292,7 +292,7 @@
    TARJETAS DE GRÁFICOS
 ================================ */
 .grafico-box{
-  background:var(--pg-card); 
+  background:var(--pg-card);
   border:1px solid var(--pg-border);
   border-radius:var(--pg-radius);
   box-shadow:var(--pg-shadow);
@@ -321,7 +321,7 @@
   border-bottom:1px solid var(--pg-border);
 }
 
-/* Contenedor tablas internas */
+/* Contenedor charts verticales con scroll */
 .chart-scroll{
   max-height:440px;
   overflow-y:auto;
@@ -342,6 +342,7 @@
   background:#fafcff;
   min-height:260px;
   padding:16px;
+  color:var(--pg-muted);
 }
 
 /* ===============================
@@ -353,149 +354,263 @@
   border-radius:10px !important;
 }
 
-/* ===============================
-   MODAL
-================================ */
+/* =========================================================
+   MODAL (react-modal) - ACTUALIZADO
+   - z-index alto (AdminLTE/Bootstrap)
+   - overlay con blur
+   - header fijo
+   - body con scroll real
+========================================================= */
 .modal-overlay{
   position:fixed;
   inset:0;
-  background:rgba(2,6,23,.45);
-  display:grid;
-  place-items:center;
-  z-index:50;
-}
-.modal-content{
-  width:min(100%,1120px);
-  background:var(--pg-card);
-  border:1px solid var(--pg-border);
-  border-radius:16px;
-  display:grid;
-  grid-template-rows:auto 1fr auto;
-  max-height:86vh;
-}
-.modal-header--gradient{
-  background:linear-gradient(90deg,var(--brand-blue),var(--brand-red));
-  color:#fff;
-  padding:14px 16px;
-  border-top-left-radius:16px;
-  border-top-right-radius:16px;
-}
-.close-button{
-  background:none;
-  border:0;
-  color:#fff;
-  font-size:18px;
-  cursor:pointer;
+  background:rgba(2,6,23,.58);
+  backdrop-filter: blur(4px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  z-index:9999;
 }
 
+.modal-content{
+  width:min(1200px, 96vw);
+  max-height:min(86vh, 900px);
+  background:var(--pg-card);
+  border:1px solid var(--pg-border);
+  border-radius:18px;
+  box-shadow:0 30px 80px rgba(0,0,0,.35);
+  overflow:hidden;
+  outline:none;
+  display:flex;
+  flex-direction:column;
+}
+
+.modal-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px 16px;
+}
+
+.modal-header--gradient{
+  background:linear-gradient(90deg,var(--brand-red),var(--brand-blue));
+  color:#fff;
+}
+
+.modal-title{
+  margin:0;
+  font-size:16px;
+  font-weight:900;
+  line-height:1.25;
+  letter-spacing:.2px;
+  max-width:92%;
+}
+
+/* Botón cerrar (bonito) */
+.close-button{
+  appearance:none;
+  border:none;
+  background:rgba(255,255,255,.16);
+  color:#fff;
+  width:34px;
+  height:34px;
+  border-radius:10px;
+  cursor:pointer;
+  font-size:16px;
+  display:grid;
+  place-items:center;
+  transition:transform .12s ease, background .12s ease;
+}
+.close-button:hover{ transform:scale(1.04); background:rgba(255,255,255,.22); }
+.close-button:active{ transform:scale(.98); }
+
 /* Cuerpo modal */
+.modal-body{
+  padding:12px 14px;
+  background:#f7f9fc;
+}
 .modal-body--scroll{
-  padding:12px 16px 10px;
-  overflow-y:auto;
+  overflow:auto;
 }
 
 /* Footer modal */
 .modal-footer-total{
-  padding:10px 16px 14px;
+  padding:12px 14px;
   border-top:1px solid var(--pg-border);
   display:flex;
   align-items:center;
   gap:10px;
-}
-
-/* ===============================
-   TABLAS DEL MODAL
-================================ */
-.table-responsive{
-  width:100%;
-  overflow:auto;
-}
-.detail-table{
-  width:100%;
-  min-width:880px;
-  border-collapse:collapse;
-}
-.detail-table th,
-.detail-table td{
-  padding:6px 8px;
-  font-size:13px;
-  border-bottom:1px solid #e5e7eb;
-}
-.detail-table th{
-  text-align:left;
-  background:#f9fafb;
-  font-weight:700;
-}
-.detail-table td.num{
-  text-align:right;
-}
-
-.truncate{
-  max-width:220px;
-  white-space:nowrap;
-  text-overflow:ellipsis;
-  overflow:hidden;
+  background:#fff;
 }
 
 /* ===============================
    ACCORDION POR DÍA
 ================================ */
 .day-accordion{
-  border-radius:12px;
+  border-radius:14px;
   border:1px solid var(--pg-border);
   background:#fff;
   margin-bottom:10px;
   overflow:hidden;
+  box-shadow:0 10px 20px rgba(2,6,23,.06);
 }
+
+/* summary con estilo */
 .day-accordion__summary{
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:10px;
-  padding:6px 10px;
+  padding:12px 12px;
   cursor:pointer;
-  background:#f9fafb;
+  background:linear-gradient(180deg,#fff 0%, #fbfcff 100%);
+  border-bottom:1px solid #eef2f7;
 }
-.day-accordion__summary::-webkit-details-marker{
-  display:none;
-}
+.day-accordion__summary::-webkit-details-marker{ display:none; }
+
 .day-accordion__title{
   display:flex;
   align-items:center;
   gap:8px;
 }
+
+/* Badge fecha */
 .badge-date{
-  padding:2px 8px;
+  padding:6px 10px;
   border-radius:999px;
   background:#eef2ff;
-  color:#111827;
+  border:1px solid #dbe3ff;
+  color:#0b1220;
   font-size:12px;
-  font-weight:600;
+  font-weight:900;
+  letter-spacing:.2px;
 }
+
 .day-accordion__meta{
   display:flex;
   align-items:center;
   flex-wrap:wrap;
   gap:6px;
 }
+
+/* Chips */
 .chip{
   display:inline-flex;
   align-items:center;
-  gap:4px;
-  padding:2px 8px;
+  gap:6px;
+  padding:6px 10px;
   border-radius:999px;
-  background:#e5e7eb;
+  border:1px solid var(--pg-border);
+  background:#f3f6fb;
   font-size:12px;
+  font-weight:800;
+  color:var(--pg-text);
 }
 .chip--accent{
-  background:#fee2e2;
-  color:#b91c1c;
+  background:rgba(227,6,19,.08);
+  border-color:rgba(227,6,19,.22);
+  color:var(--pg-primary-700);
 }
 .chip--ghost{
-  background:#f9fafb;
+  background:#fff;
+  border-style:dashed;
+  color:#475569;
 }
-.spacer{
-  flex:1;
+
+.spacer{ flex:1; }
+
+/* ===============================
+   TABLAS DEL MODAL (ACTUALIZADO)
+================================ */
+.table-responsive{
+  width:100%;
+  overflow:auto;
+  padding:10px 10px 12px;
+}
+
+/* Tabla bonita + scroll horizontal */
+.detail-table{
+  width:100%;
+  min-width:1100px;
+  border-collapse:separate;
+  border-spacing:0;
+  background:#fff;
+  border:1px solid var(--pg-border);
+  border-radius:12px;
+  overflow:hidden;
+}
+
+/* Thead sticky */
+.detail-table thead th{
+  position:sticky;
+  top:0;
+  z-index:2;
+  background:#0b1220;
+  color:#fff;
+  font-size:12px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.25px;
+  padding:10px 10px;
+  border-bottom:1px solid rgba(255,255,255,.12);
+  white-space:nowrap;
+}
+
+.detail-table tbody td{
+  padding:10px 10px;
+  font-size:13px;
+  border-bottom:1px solid #eef2f7;
+  color:var(--pg-text);
+  vertical-align:top;
+  background:#fff;
+}
+
+/* Zebra */
+.detail-table tbody tr:nth-child(2n) td{ background:#f8fafc; }
+.detail-table tbody tr:hover td{ background:#eef6ff; }
+
+.detail-table td.num,
+.detail-table th.num{
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+
+/* Truncamiento */
+.truncate{
+  max-width:260px;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+  overflow:hidden;
+}
+
+/* Scrollbar suave */
+.modal-body--scroll::-webkit-scrollbar,
+.table-responsive::-webkit-scrollbar{
+  height:10px;
+  width:10px;
+}
+.modal-body--scroll::-webkit-scrollbar-thumb,
+.table-responsive::-webkit-scrollbar-thumb{
+  background:rgba(2,6,23,.22);
+  border-radius:999px;
+}
+.modal-body--scroll::-webkit-scrollbar-track,
+.table-responsive::-webkit-scrollbar-track{
+  background:rgba(2,6,23,.06);
+  border-radius:999px;
+}
+
+/* Responsive modal */
+@media (max-width:640px){
+  .modal-content{
+    width:98vw;
+    max-height:92vh;
+    border-radius:14px;
+  }
+  .modal-title{ font-size:14px; }
+  .truncate{ max-width:180px; }
 }
 
 /* ===============================
