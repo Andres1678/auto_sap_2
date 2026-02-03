@@ -940,6 +940,51 @@ def scope_for(consultor_login, rol_req: str):
 # ============================================================
 # ✅ ENDPOINT MODIFICADO (COMPLETO)
 # ============================================================
+def _scope_for_graficos():
+    rol = (request.headers.get("X-User-Rol") or "").strip().upper()
+    equipo = (request.headers.get("X-User-Equipo") or "").strip().upper()
+    usuario = (request.headers.get("X-User-Usuario") or "").strip()
+
+    # 👇 SOLO para gráficas: estos ven todo
+    admin_all_roles = {"ADMIN", "ADMIN_GERENTES"}
+
+    if rol in admin_all_roles:
+        return "ALL", rol, equipo, usuario
+
+    # admins por equipo (ADMIN_BASIS, ADMIN_FUNCIONAL...)
+    if rol.startswith("ADMIN_") and equipo:
+        return "TEAM", rol, equipo, usuario
+
+    return "SELF", rol, equipo, usuario
+
+
+@bp.route("/registros/graficos", methods=["GET"])
+@permission_required("GRAFICOS_VER")  # usa un permiso específico si puedes
+def registros_para_graficos():
+    scope, rol, equipo, usuario = _scope_for_graficos()
+
+    q = Registro.query
+
+    # ⚠️ aquí aplicas filtros SOLO para este endpoint
+    if scope == "SELF":
+        if usuario:
+            q = q.filter(func.lower(Registro.usuario_consultor) == func.lower(usuario))
+        if equipo:
+            q = q.filter(func.upper(func.trim(Registro.equipo)) == equipo)
+
+    elif scope == "TEAM":
+        if equipo:
+            q = q.filter(func.upper(func.trim(Registro.equipo)) == equipo)
+
+    elif scope == "ALL":
+        # ✅ NO filtra: devuelve todo (solo para ADMIN / ADMIN_GERENTES)
+        pass
+
+    # Puedes limitar más alto para gráficas
+    rows = q.order_by(Registro.id.desc()).limit(20000).all()
+    data = [r.to_dict() for r in rows]
+    return jsonify(data), 200
+
 
 @bp.route('/registros', methods=['GET'])
 def obtener_registros():

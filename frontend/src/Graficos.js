@@ -292,8 +292,9 @@ export default function Graficos() {
   const rolUpper = String(user?.rol || user?.user?.rol || '').toUpperCase();
   const equipoUser = String(user?.equipo || user?.user?.equipo || '').toUpperCase();
   const usuario = String(user?.usuario || user?.user?.usuario || '').trim();
-  const isAdminAll = rolUpper === 'ADMIN';
-  const isAdminLike = rolUpper.startsWith('ADMIN_'); // ADMIN_BASIS, ADMIN_FUNCIONAL, etc.
+  const ADMIN_ALL_ROLES = new Set(['ADMIN', 'ADMIN_GERENTES']);
+  const isAdminAll = ADMIN_ALL_ROLES.has(rolUpper);
+  const isAdminLike = rolUpper.startsWith('ADMIN_'); 
   const isAdminTeam = !isAdminAll && isAdminLike && !!equipoUser;
 
   const scope = isAdminAll ? 'ALL' : (isAdminTeam ? 'TEAM' : 'SELF');
@@ -306,12 +307,13 @@ export default function Graficos() {
       try {
         const rolUpper = String(rol || '').toUpperCase();
 
-        const isAdminAll = rolUpper === 'ADMIN';
+        const ADMIN_ALL_ROLES = new Set(['ADMIN', 'ADMIN_GERENTES']);
+        const isAdminAll = ADMIN_ALL_ROLES.has(rolUpper);
         const isAdminLike = rolUpper.startsWith('ADMIN_');
         const isAdminTeam = !isAdminAll && isAdminLike && !!equipoUser;
         const scope = isAdminAll ? 'ALL' : (isAdminTeam ? 'TEAM' : 'SELF');
 
-        const res = await jfetch('/registros', {
+        const res = await jfetch('/registros/graficos', {
           method: 'GET',
           headers: {
             'X-User-Rol': rolUpper,
