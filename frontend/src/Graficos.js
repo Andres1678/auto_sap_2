@@ -299,24 +299,24 @@ export default function Graficos() {
     }
   }, []);
 
-  const rol = String(user?.rol || user?.user?.rol || '').toUpperCase();
+  const rolUpper   = String(user?.rol || user?.user?.rol || '').toUpperCase();
   const nombreUser = String(user?.nombre || user?.user?.nombre || '').trim();
-  const rolUpper = String(user?.rol || user?.user?.rol || '').toUpperCase();
-  const isAdminGerentes = rolUpper === 'ADMIN_GERENTES';
   const equipoUser = String(user?.equipo || user?.user?.equipo || '').toUpperCase();
-  const usuario = String(user?.usuario || user?.user?.usuario || '').trim();
-  const isAdminAll = rolUpper === 'ADMIN';
-  const isAdminLike = rolUpper.startsWith('ADMIN_'); 
-  const isAdminTeam = !isAdminAll && isAdminLike && !!equipoUser;
+  const usuario    = String(user?.usuario || user?.user?.usuario || '').trim();
+
+  const isAdminAll  = rolUpper === 'ADMIN';
+  const isAdminLike = rolUpper.startsWith('ADMIN_');
+  const isAdminGerentes = rolUpper === 'ADMIN_GERENTES';
+
+  // ✅ scope SIEMPRE definido ANTES de usarse en cualquier otra cosa
   const scope = useMemo(() => {
-    if (rolUpper === 'ADMIN_GERENTES') return 'ALL'; 
     if (isAdminAll) return 'ALL';
+    if (isAdminGerentes) return 'ALL';     // ellos ven todo
     if (isAdminLike) return 'TEAM';
     return 'SELF';
-  }, [rolUpper, isAdminAll, isAdminLike]);
+  }, [isAdminAll, isAdminGerentes, isAdminLike]);
 
-const isAdmin = scope !== 'SELF';
-
+  const isAdmin = scope !== 'SELF';
 
   /* Carga registros */
   useEffect(() => {
