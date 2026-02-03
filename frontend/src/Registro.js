@@ -311,8 +311,9 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
 
   const miEquipo = normKey(equipoUser || "");
 
+  const isAdminGerentes = rolUpper === "ADMIN_GERENTES";
   const isAdminOportunidades = rolUpper === "ADMIN_OPORTUNIDADES";
-  const isAdmin = rolUpper.startsWith("ADMIN") && !isAdminOportunidades;
+  const isAdmin = rolUpper.startsWith("ADMIN") && !isAdminOportunidades && !isAdminGerentes;
   const isSoloPropio = rolUpper === "CONSULTOR" || isAdminOportunidades;
   const isAdminGlobal = rolUpper === "ADMIN";
   const isAdminEquipo = rolUpper.startsWith("ADMIN_");
@@ -519,6 +520,7 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
       const headers = {
         "X-User-Usuario": usuarioLogin,
         "X-User-Rol": rol,
+        "X-View": "REGISTRO",
       };
 
       const headerEquipo = normKey(equipoUser || "");
