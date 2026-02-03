@@ -940,88 +940,157 @@ def scope_for(consultor_login, rol_req: str):
 # ============================================================
 # ✅ ENDPOINT MODIFICADO (COMPLETO)
 # ============================================================
-def _scope_for_graficos():
-    rol = (request.headers.get("X-User-Rol") or "").strip().upper()
-    equipo = (request.headers.get("X-User-Equipo") or "").strip().upper()
-    usuario = (request.headers.get("X-User-Usuario") or "").strip()
+def _scope_for_graficos(consultor_login, rol_req: str):
+    """
+    Reglas:
+      - ADMIN y ADMIN_GERENTES -> ALL (pueden ver TODO en graficos)
+      - ADMIN_* (ej. ADMIN_BASIS, ADMIN_FUNCIONAL) -> TEAM
+      - resto -> usa scope_for normal (SELF/TEAM según tu lógica)
+    """
+    rol = (rol_req or "").strip().upper()
 
-    # ✅ SOLO para gráficas: estos ven TODO
-    admin_all_roles = {"ADMIN", "ADMIN_GERENTES"}
+    if rol in ("ADMIN", "ADMIN_GERENTES"):
+        return "ALL", None
 
-    if rol in admin_all_roles:
-        return "ALL", rol, equipo, usuario
+    # si es admin por equipo (ADMIN_BASIS, ADMIN_FUNCIONAL, etc.)
+    if rol.startswith("ADMIN_"):
+        # TEAM por su equipo (si existe)
+        equipo_id = consultor_login.equipo_id if consultor_login else None
+        if equipo_id:
+            return "TEAM", int(equipo_id)
+        # si no tiene equipo, cae a SELF
+        return "SELF", None
 
-    # Admin por equipo: ADMIN_BASIS, ADMIN_FUNCIONAL...
-    if rol.startswith("ADMIN_") and equipo:
-        return "TEAM", rol, equipo, usuario
-
-    return "SELF", rol, equipo, usuario
+    # para roles no admin, conserva tu lógica normal
+    return scope_for(consultor_login, rol_req)
 
 
-@bp.route("/registros/graficos", methods=["GET"])
-@permission_required("GRAFICOS_VER")  # asegúrate que este permiso exista
-def registros_graficos():
+# ============================================================
+#  ENDPOINT: SOLO PARA GRAFICOS
+# ============================================================
+@bp.route('/registros/graficos', methods=['GET'])
+@permission_required("GRAFICOS_VER")
+def obtener_registros_graficos():
     try:
-        scope, rol, equipo, usuario = _scope_for_graficos()
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
 
-        # 🔎 DEBUG rápido: confirma que headers llegan
-        # print("HEADERS:", dict(request.headers))
+        if not usuario:
+            return jsonify({'error': 'Usuario no enviado'}), 400
 
-        q = Registro.query
+        usuario_norm = (usuario or "").strip().lower()
 
-        # ✅ OJO: estos campos DEBEN existir en el modelo Registro
-        # Ajusta aquí si tus columnas se llaman diferente.
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+        if not consultor_login:
+            return jsonify({'error': 'Consultor no encontrado'}), 404
+
+        scope, val = _scope_for_graficos(consultor_login, rol_req)
+
+        # ✅ Aliases para evitar joins repetidos / ambiguos (igual que /registros)
+        C = aliased(Consultor)
+        E = aliased(Equipo)
+
+        # ✅ Query base: igual que /registros (misma info para serializar)
+        q = (
+            Registro.query
+            .options(
+                joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
+                joinedload(Registro.tarea),
+                joinedload(Registro.ocupacion),
+            )
+            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .outerjoin(E, C.equipo_id == E.id)
+        )
+
+        # ✅ Aplicar scope SOLO para graficos
         if scope == "SELF":
-            if usuario:
-                q = q.filter(func.lower(Registro.usuario_consultor) == func.lower(usuario))
-            if equipo:
-                q = q.filter(func.upper(func.trim(Registro.equipo)) == equipo)
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
 
         elif scope == "TEAM":
-            if equipo:
-                q = q.filter(func.upper(func.trim(Registro.equipo)) == equipo)
+            if not int(val or 0):
+                return jsonify({'error': 'Consultor sin equipo asignado'}), 403
+            q = q.filter(C.equipo_id == int(val))
 
         elif scope == "ALL":
-            # ✅ NO filtra (solo ADMIN y ADMIN_GERENTES)
+            # ✅ no filtra nada
             pass
 
-        rows = q.order_by(Registro.id.desc()).limit(20000).all()
+        # ✅ filtro opcional de equipo (para el filtro de EQUIPOS en frontend)
+        # en ALL puede filtrar cualquiera, en TEAM solo su equipo, en SELF solo su equipo
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        if equipo_filter:
+            if scope in ("TEAM", "SELF"):
+                eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper() if consultor_login.equipo_obj else ""
+                if equipo_filter != eq_login:
+                    return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
+            q = q.filter(func.upper(E.nombre) == equipo_filter)
 
-        # Si no tienes to_dict() en Registro, cámbialo por un armado manual
+        # ✅ OJO: en graficos usualmente hay más data; usa límite alto razonable
+        registros = q.order_by(Registro.fecha.desc(), Registro.id.desc()).limit(50000).all()
+
+        # ---- serialización IGUAL que /registros ----
         data = []
-        for r in rows:
-            if hasattr(r, "to_dict"):
-                data.append(r.to_dict())
+        for r in registros:
+            tarea = r.tarea
+            ocup = r.ocupacion
+
+            if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
+                tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
             else:
-                data.append({
-                    "id": r.id,
-                    "fecha": getattr(r, "fecha", None),
-                    "consultor": getattr(r, "consultor", None),
-                    "cliente": getattr(r, "cliente", None),
-                    "tipoTarea": getattr(r, "tipo_tarea", None) or getattr(r, "tipoTarea", None),
-                    "modulo": getattr(r, "modulo", None),
-                    "equipo": getattr(r, "equipo", None),
-                    "usuario_consultor": getattr(r, "usuario_consultor", None),
-                    "tiempoInvertido": getattr(r, "tiempo_invertido", None) or getattr(r, "tiempoInvertido", None),
-                    "horaInicio": getattr(r, "hora_inicio", None) or getattr(r, "horaInicio", None),
-                    "horaFin": getattr(r, "hora_fin", None) or getattr(r, "horaFin", None),
-                    "nroCasoCliente": getattr(r, "nro_caso_cliente", None) or getattr(r, "nroCasoCliente", None),
-                    "nroCasoEscaladoSap": getattr(r, "nro_caso_escalado_sap", None) or getattr(r, "nroCasoEscaladoSap", None),
-                    "horasAdicionales": getattr(r, "horas_adicionales", None) or getattr(r, "horasAdicionales", None),
-                    "descripcion": getattr(r, "descripcion", None),
-                })
+                tipo_tarea_str = (r.tipo_tarea or "").strip() or None
+
+            equipo_nombre = None
+            if r.consultor and r.consultor.equipo_obj:
+                equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
+
+            data.append({
+                "id": r.id,
+                "fecha": r.fecha,
+                "modulo": r.modulo,
+                "cliente": r.cliente,
+                "equipo": equipo_nombre or (r.equipo or "").strip().upper() or "SIN EQUIPO",
+                "nroCasoCliente": r.nro_caso_cliente,
+                "nroCasoInterno": r.nro_caso_interno,
+                "nroCasoEscaladoSap": r.nro_caso_escalado,
+                "ocupacion_id": r.ocupacion_id,
+                "ocupacion_codigo": ocup.codigo if ocup else None,
+                "ocupacion_nombre": ocup.nombre if ocup else None,
+                "tarea_id": r.tarea_id,
+                "tipoTarea": tipo_tarea_str,
+                "tarea": {
+                    "id": tarea.id,
+                    "codigo": getattr(tarea, "codigo", None),
+                    "nombre": getattr(tarea, "nombre", None),
+                } if tarea else None,
+                "consultor": r.consultor.nombre if r.consultor else None,
+                "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+                "horaInicio": r.hora_inicio,
+                "horaFin": r.hora_fin,
+                "tiempoInvertido": r.tiempo_invertido,
+                "tiempoFacturable": r.tiempo_facturable,
+                "horasAdicionales": r.horas_adicionales,
+                "descripcion": r.descripcion,
+                "totalHoras": r.total_horas,
+                "bloqueado": bool(r.bloqueado),
+                "oncall": r.oncall,
+                "desborde": r.desborde,
+                "actividadMalla": r.actividad_malla
+            })
 
         return jsonify(data), 200
 
     except Exception as e:
-        # ✅ Esto te muestra el error real en el log del servidor
-        import traceback
         err = traceback.format_exc()
         current_app.logger.error(f"❌ Error en /registros/graficos: {e}\n{err}")
-
-        # Devuelve un mensaje útil (puedes ocultar err en productivo)
         return jsonify({
-            "mensaje": "Error interno del servidor",
+            "error": "Error interno del servidor",
             "detalle": str(e)
         }), 500
 
