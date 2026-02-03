@@ -29,6 +29,46 @@ bp = Blueprint('routes', __name__, url_prefix="/api")
 _HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$", re.I)
 
 
+EXCLUDE_LIST = {
+  "OTP","OTE","OTL","PROSPECCION","REGISTRO","PENDIENTE APROBACION SAP","0TP","0TE","0TL"
+}
+
+def normalize_estado(v: str) -> str:
+    return " ".join((v or "").strip().upper().split())
+
+def is_excluded_estado(estado: str) -> bool:
+    return normalize_estado(estado) in EXCLUDE_LIST
+
+
+ROLE_TEAM_MAP = {
+    "ADMIN_BASIS": "BASIS",
+    "ADMIN_FUNCIONAL": "FUNCIONAL",
+    "ADMIN_IMPLEMENTACION": "IMPLEMENTACION",
+    "ADMIN_ARQUITECTURA": "ARQUITECTURA",
+    "ADMIN_CONSULTORIA": "CONSULTORIA",
+    "ADMIN_GESTION_DE_PROYECTOS": "GESTION_DE_PROYECTOS",
+}
+
+def apply_scope(query, rol, usuario_login):
+    if rol == "ADMIN":
+        return query  # sin filtro
+
+    if rol == "CONSULTOR":
+        return query.filter(Registro.usuario == usuario_login)
+
+    if rol == "ADMIN_OPORTUNIDADES":
+        # excepción: o devuelves vacío, o filtras distinto según tu caso
+        return query.filter(text("1=0"))  # ejemplo: no aplica a horas
+
+    # admins por equipo
+    team = ROLE_TEAM_MAP.get(rol)
+    if team:
+        return query.filter(Registro.equipo == team)
+
+    # fallback seguro: si no conoces el rol, no muestres nada
+    return query.filter(text("1=0"))
+
+
 def permission_required(codigo_permiso):
     def decorator(fn):
         @wraps(fn)

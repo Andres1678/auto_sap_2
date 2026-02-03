@@ -26,6 +26,45 @@ const rsStyles = {
   option: (base) => ({ ...base, display: "flex", alignItems: "center", gap: 10 }),
 };
 
+function normKeyForMatch(v) {
+  let s = String(v ?? "")
+    .replace(/\u00A0/g, " ")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
+  s = s
+  .replace(/\b0TP\b/g, "OTP")
+  .replace(/\b0TE\b/g, "OTE")
+  .replace(/\b0TL\b/g, "OTL");
+
+  return s;
+}
+
+const EXCLUDE_LIST = [
+  "OTP",
+  "OTE",
+  "OTL",
+  "PROSPECCION",
+  "REGISTRO",
+  "PENDIENTE APROBACION SAP",
+  "0TP",
+  "0TE",
+  "0TL",
+];
+
+function isExcludedLabel(raw) {
+  const k = normKeyForMatch(raw);
+  if (!k) return false;
+  for (const x of EXCLUDE_LIST) {
+    if (k === x) return true;
+    if (k.includes(x)) return true;
+  }
+  return false;
+}
+
 const ESTADOS_ACTIVOS = new Set([
   "EN PROCESO",
   "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
