@@ -313,18 +313,12 @@ const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
 
   const isAdminOportunidades = rolUpper === "ADMIN_OPORTUNIDADES";
   const isAdmin = rolUpper.startsWith("ADMIN") && !isAdminOportunidades;
-
   const isSoloPropio = rolUpper === "CONSULTOR" || isAdminOportunidades;
-
-  
-  const isAdminGlobal = rolUpper === "ADMIN" && !miEquipo;
-
-  
-  const isAdminEquipo = rolUpper === "ADMIN" && !!miEquipo;
-
+  const isAdminGlobal = rolUpper === "ADMIN";
+  const isAdminEquipo = rolUpper.startsWith("ADMIN_");
   const equipoLocked = isSoloPropio
   ? ""
-  : (isAdminEquipo ? miEquipo : (isAdminGlobal ? filtroEquipo : miEquipo));
+  : (isAdminGlobal ? (filtroEquipo || "") : miEquipo);
 
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
 

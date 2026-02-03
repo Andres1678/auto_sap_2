@@ -976,32 +976,72 @@ def scope_for(consultor_login, rol_req: str):
 @bp.route("/registros", methods=["GET"])
 def get_registros():
     """
-    Flask puro (sin Depends).
-    Retorna registros con payload estable para tablas.
+    Flask puro.
+    - ADMIN: ve TODO (todos los equipos)
+    - ADMIN_BASIS / ADMIN_FUNCIONAL: filtra por equipo
+    - CONSULTOR: solo ve sus registros (usuario_consultor)
+    Además:
+    - consultor: devuelve NOMBRE COMPLETO (fallback a usuario_consultor)
+    - si eres ADMIN puedes filtrar con ?equipo=BASIS/FUNCIONAL
     """
 
-    
     usuario = (request.headers.get("X-User-Usuario") or "").strip().lower()
-    rol_req = (request.headers.get("X-User-Rol") or "").strip().upper()
+    rol_header = (request.headers.get("X-User-Rol") or "").strip().upper()  # solo fallback
 
+    # 1) Rol real desde BD (NO confiar en header)
+    rol_real = ""
+    equipo_real = ""
+
+    if usuario:
+        try:
+            c = (
+                Consultor.query
+                .options(joinedload(Consultor.rol_ref))  # ajusta: rol_ref / rol_obj / rol
+                .filter(func.lower(Consultor.usuario) == usuario)
+                .first()
+            )
+            if c:
+                rol_real = (getattr(getattr(c, "rol_ref", None), "nombre", "") or "").upper()
+                equipo_real = (getattr(c, "equipo", "") or "").upper()
+        except Exception:
+            # si algo falla, cae a header para no romper
+            rol_real = rol_header
+
+    if not rol_real:
+        rol_real = rol_header
+
+    # 2) Query base
     q = (
         Registro.query
         .options(
-            joinedload(Registro.tarea),      # relación tarea
-            joinedload(Registro.ocupacion),  # relación ocupación
-            joinedload(Registro.consultor)   # si tienes relación consultor
+            joinedload(Registro.tarea),
+            joinedload(Registro.ocupacion),
+            joinedload(Registro.consultor)  # relación si existe
         )
         .order_by(Registro.id.desc())
     )
 
-    if rol_req and usuario:
-        # ejemplo simple:
-        if rol_req == "CONSULTOR":
-            q = q.filter(func.lower(Registro.usuario_consultor) == usuario)
-        elif rol_req.startswith("ADMIN_"):
-            team = ROLE_TEAM_MAP.get(rol_req)
-            if team:
-                q = q.filter(Registro.equipo == team)
+    # 3) Filtros por rol
+    # CONSULTOR: solo sus registros
+    if rol_real == "CONSULTOR" and usuario:
+        q = q.filter(func.lower(Registro.usuario_consultor) == usuario)
+
+    # ADMIN_: filtra por equipo fijo del rol
+    elif rol_real.startswith("ADMIN_"):
+        team = ROLE_TEAM_MAP.get(rol_real)
+        if team:
+            q = q.filter(func.upper(Registro.equipo) == team)
+
+    # ADMIN: ve TODO, pero puede filtrar si le mandan ?equipo=
+    elif rol_real == "ADMIN":
+        equipo_param = (request.args.get("equipo") or "").strip().upper()
+        if equipo_param and equipo_param != "TODOS":
+            q = q.filter(func.upper(Registro.equipo) == equipo_param)
+
+    # else: otros roles -> aquí defines si ven algo o nada.
+    # Por seguridad podrías restringir:
+    # else:
+    #     return jsonify([]), 200
 
     registros = q.all()
 
@@ -1019,9 +1059,17 @@ def get_registros():
             or ""
         )
 
+        # ✅ CONSULTOR: primero nombre completo, si no existe cae al usuario
+        nombre_bd = ""
+        if getattr(r, "consultor", None):
+            n = clean_text(getattr(r.consultor, "nombre", None)) or ""
+            a = clean_text(getattr(r.consultor, "apellido", None)) or ""
+            nombre_bd = f"{n} {a}".strip()
+
         consultor_nombre = (
-            clean_text(getattr(r, "usuario_consultor", None))
-            or (clean_text(getattr(r.consultor, "nombre", None)) if getattr(r, "consultor", None) else None)
+            nombre_bd
+            or clean_text(getattr(r, "consultor_nombre", None))
+            or clean_text(getattr(r, "usuario_consultor", None))
             or ""
         )
 
@@ -1053,6 +1101,7 @@ def get_registros():
             "descripcion": r.descripcion,
 
             "consultor": consultor_nombre,
+
             "bloqueado": bool(getattr(r, "bloqueado", False)),
         })
 
