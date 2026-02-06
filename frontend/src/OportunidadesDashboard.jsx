@@ -186,7 +186,6 @@ export default function DashboardOportunidades() {
     const dataFiltrada = useMemo(() => {
     return data.filter((op) => {
       const e = op?.estado_oferta ?? "";
-      const r = op?.resultado_oferta ?? "";
 
       if (isExcludedLabel(e)) return false;
 
@@ -393,7 +392,12 @@ export default function DashboardOportunidades() {
                         <tr key={it.label}>
                           <td>{it.label}</td>
                           <td>{it.count}</td>
-                          <td>{resumenResultado.totalResultado ? ((it.count / resumenResultado.totalResultado) * 100).toFixed(2) : "0.00"}%</td>
+                          <td>
+                            {resumenResultado.totalResultado
+                              ? ((it.count / resumenResultado.totalResultado) * 100).toFixed(2)
+                              : "0.00"}
+                            %
+                          </td>
                         </tr>
                       ))}
 
@@ -419,13 +423,14 @@ export default function DashboardOportunidades() {
                       </tr>
                     </thead>
                     <tbody>
-                      {resumenResultado.map(([k, v]) => (
+                      {resumenEstado.map(([k, v]) => (
                         <tr key={k}>
                           <td>{k}</td>
                           <td>{v}</td>
                           <td>{kpis.total ? ((v / kpis.total) * 100).toFixed(2) : "0.00"}%</td>
                         </tr>
                       ))}
+
                       <tr className="table-total">
                         <td>Total</td>
                         <td>{kpis.total}</td>
