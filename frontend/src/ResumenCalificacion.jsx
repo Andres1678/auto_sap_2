@@ -1,28 +1,40 @@
 import React, { useMemo } from "react";
 import "./DashboardGraficos.css";
 
+function normalizar(txt) {
+  return (txt ?? "")
+    .toString()
+    .replace(/\u00A0/g, " ")      // NBSP -> espacio normal
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+}
+
+function clasificarCalificacion(raw) {
+  const k = normalizar(raw);
+  if (!k) return null;
+
+  // Match por palabra completa para evitar falsos positivos
+  if (/\bALTO\b/.test(k) || /\bALTA\b/.test(k)) return "ALTO";
+  if (/\bBAJO\b/.test(k) || /\bBAJA\b/.test(k)) return "BAJO";
+  if (/\bMEDIO\b/.test(k) || /\bMEDIA\b/.test(k)) return "MEDIO";
+
+  return null;
+}
+
 export default function ResumenCalificacion({ data }) {
-
-  const normalizar = (txt) =>
-    (txt || "")
-      .toString()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-      .toUpperCase();
-
   const resumen = useMemo(() => {
-    let alto = 0;
-    let bajo = 0;
-    let medio = 0;
+    const rows = Array.isArray(data) ? data : [];
+    let alto = 0, bajo = 0, medio = 0;
 
-    data.forEach((row) => {
-      const calificacion = normalizar(row.calificacion_oportunidad);
-
-      if (calificacion === "ALTO") alto++;
-      if (calificacion === "BAJO") bajo++;
-      if (calificacion === "MEDIO") medio++;
-    });
+    for (const row of rows) {
+      const c = clasificarCalificacion(row?.calificacion_oportunidad);
+      if (c === "ALTO") alto++;
+      else if (c === "BAJO") bajo++;
+      else if (c === "MEDIO") medio++;
+    }
 
     return { alto, bajo, medio };
   }, [data]);
@@ -34,7 +46,6 @@ export default function ResumenCalificacion({ data }) {
       <table className="estado-table calificacion-table">
         <thead>
           <tr>
-            <th></th>
             <th>ALTO</th>
             <th>BAJO</th>
             <th>MEDIO</th>
@@ -43,7 +54,6 @@ export default function ResumenCalificacion({ data }) {
 
         <tbody>
           <tr>
-            <td><strong>Cantidad</strong></td>
             <td>{resumen.alto}</td>
             <td>{resumen.bajo}</td>
             <td>{resumen.medio}</td>

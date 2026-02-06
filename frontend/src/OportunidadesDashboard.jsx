@@ -145,6 +145,30 @@ function CheckboxOption(props) {
   );
 }
 
+function buildPivot(rows, field, { skipBlank = true } = {}) {
+  const m = new Map();
+
+  (Array.isArray(rows) ? rows : []).forEach((r) => {
+    const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
+    if (skipBlank && !raw) return;
+
+    const key = normKeyForMatch(raw);
+    if (!key) return;
+
+    const prev = m.get(key) || { label: key, count: 0 }; 
+    prev.count += 1;
+    m.set(key, prev);
+  });
+
+  const pivotRows = Array.from(m.values()).sort((a, b) => b.count - a.count);
+  const total = pivotRows.reduce((s, x) => s + x.count, 0);
+
+  return { rows: pivotRows, total };
+}
+
+
+
+
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState([]);
@@ -182,16 +206,14 @@ export default function DashboardOportunidades() {
   });
 
   const filtrosDebounced = useDebouncedValue(filtros, 400);
-
-    const dataFiltrada = useMemo(() => {
-    return data.filter((op) => {
+  const dataFiltrada = useMemo(() => {
+    return (Array.isArray(data) ? data : []).filter((op) => {
       const e = op?.estado_oferta ?? "";
-
       if (isExcludedLabel(e)) return false;
-
       return true;
     });
   }, [data]);
+
 
   const fetchFilters = async (current) => {
     const res = await jfetch(`/oportunidades/filters${toQuery(current)}`);
@@ -250,13 +272,16 @@ export default function DashboardOportunidades() {
     })();
   }, [filtrosDebounced]);
 
+  
   const kpis = useMemo(() => {
-    const total = dataFiltrada.length;
+    const base = Array.isArray(data) ? data : [];
+
+    const total = base.length;
     let activas = 0;
     let cerradas = 0;
     let ganadas = 0;
 
-    dataFiltrada.forEach((op) => {
+    base.forEach((op) => {
       const estadoN = normKeyForMatch(op?.estado_oferta ?? "");
       if (ESTADOS_ACTIVOS_N.has(estadoN)) activas++;
       if (ESTADOS_CERRADOS_N.has(estadoN)) cerradas++;
@@ -266,41 +291,23 @@ export default function DashboardOportunidades() {
     return {
       total,
       activas,
-      cerradas,             
-      ganadas,              
-      porcentajeGanadas: total ? (ganadas / total) * 100 : 0, 
+      cerradas,
+      ganadas,
+      porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
     };
-  }, [dataFiltrada]);
+  }, [data]);
 
+  const baseResumen = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
-  const resumenEstado = useMemo(() => {
-    const m = new Map();
-    dataFiltrada.forEach((r) => {
-      const k = (r.estado_oferta || "-").toString();
-      m.set(k, (m.get(k) || 0) + 1);
-    });
-    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [dataFiltrada]);
+  const resumenEstado = useMemo(
+    () => buildPivot(baseResumen, "estado_oferta"),
+    [baseResumen]
+  );
 
-
-  const resumenResultado = useMemo(() => {
-    const m = new Map(); // key -> { label, count }
-
-    dataFiltrada.forEach((r) => {
-      const raw = String(r?.resultado_oferta ?? "").replace(/\u00A0/g, " ").trim();
-      if (!raw) return; // igual que el pivot: no cuenta vacíos
-
-      const key = normKeyForMatch(raw);
-      const prev = m.get(key) || { label: raw, count: 0 };
-      prev.count += 1;
-      m.set(key, prev);
-    });
-
-    const rows = Array.from(m.values()).sort((a, b) => b.count - a.count);
-    const totalResultado = rows.reduce((s, x) => s + x.count, 0);
-    return { rows, totalResultado };
-  }, [dataFiltrada]);
-
+  const resumenResultado = useMemo(
+    () => buildPivot(baseResumen, "resultado_oferta"),
+    [baseResumen]
+  );
 
   const limpiar = () => {
     setFiltros({
@@ -393,18 +400,17 @@ export default function DashboardOportunidades() {
                           <td>{it.label}</td>
                           <td>{it.count}</td>
                           <td>
-                            {resumenResultado.totalResultado
-                              ? ((it.count / resumenResultado.totalResultado) * 100).toFixed(2)
+                            {resumenResultado.total
+                              ? ((it.count / resumenResultado.total) * 100).toFixed(2)
                               : "0.00"}
                             %
                           </td>
                         </tr>
                       ))}
-
                       <tr className="table-total">
                         <td>Total</td>
-                        <td>{resumenResultado.totalResultado}</td>
-                        <td>{resumenResultado.totalResultado ? "100%" : "0%"}</td>
+                        <td>{resumenResultado.total}</td>
+                        <td>{resumenResultado.total ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -423,18 +429,22 @@ export default function DashboardOportunidades() {
                       </tr>
                     </thead>
                     <tbody>
-                      {resumenEstado.map(([k, v]) => (
-                        <tr key={k}>
-                          <td>{k}</td>
-                          <td>{v}</td>
-                          <td>{kpis.total ? ((v / kpis.total) * 100).toFixed(2) : "0.00"}%</td>
+                      {resumenEstado.rows.map((it) => (
+                        <tr key={it.label}>
+                          <td>{it.label}</td>
+                          <td>{it.count}</td>
+                          <td>
+                            {resumenEstado.total
+                              ? ((it.count / resumenEstado.total) * 100).toFixed(2)
+                              : "0.00"}
+                            %
+                          </td>
                         </tr>
                       ))}
-
                       <tr className="table-total">
                         <td>Total</td>
-                        <td>{kpis.total}</td>
-                        <td>{kpis.total ? "100%" : "0%"}</td>
+                        <td>{resumenEstado.total}</td>
+                        <td>{resumenEstado.total ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -455,7 +465,7 @@ export default function DashboardOportunidades() {
 
               <div className="card">
                 <div className="card-title">Resumen Calificación</div>
-                <ResumenCalificacion data={dataFiltrada} />
+                <ResumenCalificacion data={data} />
               </div>
             </div>
           </section>
