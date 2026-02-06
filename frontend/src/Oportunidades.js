@@ -255,8 +255,7 @@ export default function Oportunidades() {
         return;
       }
 
-      await fetchData();          
-      await fetchFilters?.();     
+      await fetchData();             
 
       Swal.fire("Guardado", "Nueva fila creada", "success");
       setNewRow(null);
