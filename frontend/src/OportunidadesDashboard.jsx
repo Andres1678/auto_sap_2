@@ -65,24 +65,22 @@ function isExcludedLabel(raw) {
   return false;
 }
 
-const ESTADOS_ACTIVOS = new Set([
+const ESTADOS_ACTIVOS_N = new Set([
   "EN PROCESO",
   "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
   "EN ELABORACION",
   "ENTREGA COMERCIAL",
-]);
+].map(normKeyForMatch));
 
-const ESTADOS_CERRADOS = new Set([
-  "CERRADO",
-  "CERRADA",
-  "CERRADOS",
+const ESTADOS_CERRADOS_N = new Set([
+  "GANADA",
   "PERDIDA",
-  "PERDIDO",
   "DECLINADA",
-  "DECLINADO",
   "SUSPENDIDA",
-  "SUSPENDIDO",
-]);
+  "PERDIDA - SIN FEEDBACK",
+  "RFI PRESENTADO",
+  "RFP PRESENTADO",
+].map(normKeyForMatch));
 
 function toOptions(arr) {
   return (Array.isArray(arr) ? arr : [])
@@ -260,20 +258,21 @@ export default function DashboardOportunidades() {
     let ganadas = 0;
 
     dataFiltrada.forEach((op) => {
-      const estado = String(op.estado_oferta || "").toUpperCase().trim();
-      if (ESTADOS_ACTIVOS.has(estado)) activas++;
-      if (ESTADOS_CERRADOS.has(estado)) cerradas++;
-      if (estado === "GANADA") ganadas++;
+      const estadoN = normKeyForMatch(op?.estado_oferta ?? "");
+      if (ESTADOS_ACTIVOS_N.has(estadoN)) activas++;
+      if (ESTADOS_CERRADOS_N.has(estadoN)) cerradas++;
+      if (estadoN === "GANADA") ganadas++;
     });
 
     return {
       total,
       activas,
-      cerradas,
-      ganadas,
-      porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
+      cerradas,             
+      ganadas,              
+      porcentajeGanadas: total ? (ganadas / total) * 100 : 0, 
     };
   }, [dataFiltrada]);
+
 
   const resumenEstado = useMemo(() => {
     const m = new Map();
@@ -286,12 +285,21 @@ export default function DashboardOportunidades() {
 
 
   const resumenResultado = useMemo(() => {
-    const m = new Map();
+    const m = new Map(); // key -> { label, count }
+
     dataFiltrada.forEach((r) => {
-      const k = (r.resultado_oferta || "-").toString();
-      m.set(k, (m.get(k) || 0) + 1);
+      const raw = String(r?.resultado_oferta ?? "").replace(/\u00A0/g, " ").trim();
+      if (!raw) return; // igual que el pivot: no cuenta vacíos
+
+      const key = normKeyForMatch(raw);
+      const prev = m.get(key) || { label: raw, count: 0 };
+      prev.count += 1;
+      m.set(key, prev);
     });
-    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+
+    const rows = Array.from(m.values()).sort((a, b) => b.count - a.count);
+    const totalResultado = rows.reduce((s, x) => s + x.count, 0);
+    return { rows, totalResultado };
   }, [dataFiltrada]);
 
 
@@ -381,17 +389,18 @@ export default function DashboardOportunidades() {
                       </tr>
                     </thead>
                     <tbody>
-                      {resumenEstado.map(([k, v]) => (
-                        <tr key={k}>
-                          <td>{k}</td>
-                          <td>{v}</td>
-                          <td>{kpis.total ? ((v / kpis.total) * 100).toFixed(2) : "0.00"}%</td>
+                      {resumenResultado.rows.map((it) => (
+                        <tr key={it.label}>
+                          <td>{it.label}</td>
+                          <td>{it.count}</td>
+                          <td>{resumenResultado.totalResultado ? ((it.count / resumenResultado.totalResultado) * 100).toFixed(2) : "0.00"}%</td>
                         </tr>
                       ))}
+
                       <tr className="table-total">
                         <td>Total</td>
-                        <td>{kpis.total}</td>
-                        <td>{kpis.total ? "100%" : "0%"}</td>
+                        <td>{resumenResultado.totalResultado}</td>
+                        <td>{resumenResultado.totalResultado ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
                   </table>

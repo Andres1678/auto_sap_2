@@ -1939,25 +1939,6 @@ def _norm_key_for_match(v):
 
 EXCLUDE_NORM_SET = {_norm_key_for_match(x) for x in EXCLUDE_LIST if x}
 
-def _apply_excluded_states(query):
-    """
-    Excluye estados de Oportunidad.estado_oferta:
-    - exact match
-    - contains match (si el estado viene con texto extra)
-    """
-    col = func.upper(func.trim(Oportunidad.estado_oferta))
-
-    # 1) excluir exactos
-    query = query.filter(~col.in_(list(EXCLUDE_NORM_SET)))
-
-    # 2) excluir por contiene (LIKE)
-    for x in EXCLUDE_NORM_SET:
-        # sanitiza para LIKE (evitar comodines)
-        safe = x.replace("%", "").replace("_", "")
-        query = query.filter(~col.like(f"%{safe}%"))
-
-    return query
-
 def _get_list_arg(key: str):
     # soporta ?key=a&key=b y ?key[]=a&key[]=b
     vals = request.args.getlist(key)
@@ -2080,6 +2061,24 @@ def _apply_oportunidades_filters(query):
 
     return query
 
+def _sql_norm_estado(col):
+    c = func.upper(func.trim(col))
+    c = func.replace(c, "\u00A0", " ")
+    c = func.replace(c, "0TP", "OTP")
+    c = func.replace(c, "0TE", "OTE")
+    c = func.replace(c, "0TL", "OTL")
+    return c
+
+def _apply_excluded_states(query):
+    col = _sql_norm_estado(Oportunidad.estado_oferta)
+
+    query = query.filter(~col.in_(list(EXCLUDE_NORM_SET)))
+
+    for x in EXCLUDE_NORM_SET:
+        safe = x.replace("%", "").replace("_", "")
+        query = query.filter(~col.like(f"%{safe}%"))
+
+    return query
 
 # ============================
 # OPORTUNIDADES - IMPORT

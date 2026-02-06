@@ -208,11 +208,10 @@ export default function Oportunidades() {
       body: JSON.stringify(updated)
     });
 
-    if (!resp.ok) {
-      const j = await resp.json().catch(() => ({}));
-      Swal.fire("Error", j.mensaje || "No se pudo guardar el cambio", "error");
+    if (resp.ok) {
+      setData((prev) => prev.map((r) => (r.id === row.id ? updated : r)));
+      setFilteredData((prev) => prev.map((r) => (r.id === row.id ? updated : r)));
       setEditing({ row: null, col: null });
-      return;
     }
 
     const updatedList = [...filteredData];
@@ -240,22 +239,35 @@ export default function Oportunidades() {
   const saveNewRow = async () => {
     const payload = normalizePayload(newRow);
 
-    const res = await jfetch("/oportunidades", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    try {
+      setLoading(true);
 
-    const json = await res.json().catch(() => ({}));
+      const res = await jfetch("/oportunidades", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    if (res.ok) {
-      setFilteredData((prev) => [...prev, json]);
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        Swal.fire("Error", json.mensaje || "No se pudo crear el registro", "error");
+        return;
+      }
+
+      await fetchData();          
+      await fetchFilters?.();     
+
       Swal.fire("Guardado", "Nueva fila creada", "success");
       setNewRow(null);
-    } else {
-      Swal.fire("Error", json.mensaje || "No se pudo crear el registro", "error");
+
+    } catch (e) {
+      Swal.fire("Error", e?.message || "Error inesperado", "error");
+    } finally {
+      setLoading(false);
     }
   };
+
 
   const inputDefaultValue = useMemo(() => {
     if (editing.row === null || editing.col === null) return "";
