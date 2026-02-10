@@ -354,6 +354,19 @@ export default function DashboardOportunidades() {
     return buildPivot(dataBase, "estado_oferta", { excludeKeyFn });
   }, [dataBase]);
 
+  const totalCantTablaResultado = useMemo(() => {
+    return (tablaResultadoOferta.rows || []).reduce((acc, r) => acc + (r.count || 0), 0);
+  }, [tablaResultadoOferta.rows]);
+
+  const totalOtcTablaResultado = useMemo(() => {
+    return (tablaResultadoOferta.rows || []).reduce((acc, r) => acc + (r.otc || 0), 0);
+  }, [tablaResultadoOferta.rows]);
+
+  const totalMrcTablaResultado = useMemo(() => {
+    return (tablaResultadoOferta.rows || []).reduce((acc, r) => acc + (r.mrc || 0), 0);
+  }, [tablaResultadoOferta.rows]);
+
+
   const kpis = useMemo(() => {
     const base = Array.isArray(data) ? data : [];
 
