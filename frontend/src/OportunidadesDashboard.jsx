@@ -145,7 +145,55 @@ function CheckboxOption(props) {
   );
 }
 
-function buildPivot(rows, field, { skipBlank = true } = {}) {
+const nfMoney = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
+
+function toNumberSmart(v) {
+  if (v === null || v === undefined || v === "") return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+
+  let s = String(v).trim();
+  if (!s) return 0;
+
+  s = s.replace(/\s/g, "").replace(/[$€£]/g, "");
+
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  const hasComma = lastComma !== -1;
+  const hasDot = lastDot !== -1;
+
+  if (hasComma && hasDot) {
+    if (lastComma > lastDot) {
+      s = s.replace(/\./g, "");
+      s = s.replace(",", ".");
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (hasComma && !hasDot) {
+    const parts = s.split(",");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      s = parts[0].replace(/\./g, "") + "." + parts[1];
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (!hasComma && hasDot) {
+    const parts = s.split(".");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      s = parts[0].replace(/,/g, "") + "." + parts[1];
+    } else {
+      s = s.replace(/\./g, "");
+    }
+  }
+
+  s = s.replace(/[^\d.-]/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function fmtMoney(n) {
+  return nfMoney.format(n || 0);
+}
+
+function buildPivot(rows, field, { skipBlank = true, sumFields = ["otc", "mrc"] } = {}) {
   const m = new Map();
 
   (Array.isArray(rows) ? rows : []).forEach((r) => {
@@ -155,18 +203,31 @@ function buildPivot(rows, field, { skipBlank = true } = {}) {
     const key = normKeyForMatch(raw);
     if (!key) return;
 
-    const prev = m.get(key) || { label: key, count: 0 }; 
+    const prev =
+      m.get(key) ||
+      {
+        label: key,       
+        count: 0,
+        otc: 0,
+        mrc: 0,
+      };
+
     prev.count += 1;
+
+    // sumas
+    if (sumFields.includes("otc")) prev.otc += toNumberSmart(r?.otc);
+    if (sumFields.includes("mrc")) prev.mrc += toNumberSmart(r?.mrc);
+
     m.set(key, prev);
   });
 
   const pivotRows = Array.from(m.values()).sort((a, b) => b.count - a.count);
   const total = pivotRows.reduce((s, x) => s + x.count, 0);
+  const totalOtc = pivotRows.reduce((s, x) => s + (x.otc || 0), 0);
+  const totalMrc = pivotRows.reduce((s, x) => s + (x.mrc || 0), 0);
 
-  return { rows: pivotRows, total };
+  return { rows: pivotRows, total, totalOtc, totalMrc };
 }
-
-
 
 
 export default function DashboardOportunidades() {
@@ -295,18 +356,16 @@ export default function DashboardOportunidades() {
       ganadas,
       porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
     };
-  }, [data]);
-
-  const baseResumen = useMemo(() => (Array.isArray(data) ? data : []), [data]);
+  }, [dataFiltrada]);
 
   const resumenEstado = useMemo(
-    () => buildPivot(baseResumen, "estado_oferta"),
-    [baseResumen]
+    () => buildPivot(dataFiltrada, "estado_oferta"),
+    [dataFiltrada]
   );
 
   const resumenResultado = useMemo(
-    () => buildPivot(baseResumen, "resultado_oferta"),
-    [baseResumen]
+    () => buildPivot(dataFiltrada, "resultado_oferta"),
+    [dataFiltrada]
   );
 
   const limpiar = () => {
@@ -391,6 +450,8 @@ export default function DashboardOportunidades() {
                       <tr>
                         <th>ESTADO</th>
                         <th>Cant</th>
+                        <th>OTC</th>
+                        <th>MRC</th>
                         <th>%</th>
                       </tr>
                     </thead>
@@ -399,6 +460,8 @@ export default function DashboardOportunidades() {
                         <tr key={it.label}>
                           <td>{it.label}</td>
                           <td>{it.count}</td>
+                          <td>{fmtMoney(it.otc)}</td>
+                          <td>{fmtMoney(it.mrc)}</td>
                           <td>
                             {resumenResultado.total
                               ? ((it.count / resumenResultado.total) * 100).toFixed(2)
@@ -410,6 +473,8 @@ export default function DashboardOportunidades() {
                       <tr className="table-total">
                         <td>Total</td>
                         <td>{resumenResultado.total}</td>
+                        <td>{fmtMoney(resumenEstado.totalOtc)}</td>
+                        <td>{fmtMoney(resumenEstado.totalMrc)}</td>
                         <td>{resumenResultado.total ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
@@ -425,6 +490,8 @@ export default function DashboardOportunidades() {
                       <tr>
                         <th>RESULTADO</th>
                         <th>Cant</th>
+                        <th>OTC</th>
+                        <th>MRC</th>
                         <th>%</th>
                       </tr>
                     </thead>
@@ -433,6 +500,8 @@ export default function DashboardOportunidades() {
                         <tr key={it.label}>
                           <td>{it.label}</td>
                           <td>{it.count}</td>
+                          <td>{fmtMoney(it.otc)}</td>
+                          <td>{fmtMoney(it.mrc)}</td>
                           <td>
                             {resumenEstado.total
                               ? ((it.count / resumenEstado.total) * 100).toFixed(2)
@@ -444,6 +513,8 @@ export default function DashboardOportunidades() {
                       <tr className="table-total">
                         <td>Total</td>
                         <td>{resumenEstado.total}</td>
+                        <td>{fmtMoney(resumenResultado.totalOtc)}</td>
+                        <td>{fmtMoney(resumenResultado.totalMrc)}</td>
                         <td>{resumenEstado.total ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
@@ -465,7 +536,7 @@ export default function DashboardOportunidades() {
 
               <div className="card">
                 <div className="card-title">Resumen Calificación</div>
-                <ResumenCalificacion data={data} />
+                <ResumenCalificacion data={dataFiltrada} />
               </div>
             </div>
           </section>
