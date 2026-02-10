@@ -35,11 +35,7 @@ function normKeyForMatch(v) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
 
-  s = s
-  .replace(/\b0TP\b/g, "OTP")
-  .replace(/\b0TE\b/g, "OTE")
-  .replace(/\b0TL\b/g, "OTL");
-
+  s = s.replace(/\b0TP\b/g, "OTP").replace(/\b0TE\b/g, "OTE").replace(/\b0TL\b/g, "OTL");
   return s;
 }
 
@@ -65,22 +61,17 @@ function isExcludedLabel(raw) {
   return false;
 }
 
-const ESTADOS_ACTIVOS_N = new Set([
-  "EN PROCESO",
-  "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
-  "EN ELABORACION",
-  "ENTREGA COMERCIAL",
-].map(normKeyForMatch));
+const ESTADOS_ACTIVOS_N = new Set(
+  ["EN PROCESO", "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION", "EN ELABORACION", "ENTREGA COMERCIAL"].map(
+    normKeyForMatch
+  )
+);
 
-const ESTADOS_CERRADOS_N = new Set([
-  "GANADA",
-  "PERDIDA",
-  "DECLINADA",
-  "SUSPENDIDA",
-  "PERDIDA - SIN FEEDBACK",
-  "RFI PRESENTADO",
-  "RFP PRESENTADO",
-].map(normKeyForMatch));
+const ESTADOS_CERRADOS_N = new Set(
+  ["GANADA", "PERDIDA", "DECLINADA", "SUSPENDIDA", "PERDIDA - SIN FEEDBACK", "RFI PRESENTADO", "RFP PRESENTADO"].map(
+    normKeyForMatch
+  )
+);
 
 function toOptions(arr) {
   return (Array.isArray(arr) ? arr : [])
@@ -120,12 +111,10 @@ function toQuery(f) {
 
 function useDebouncedValue(value, delay = 350) {
   const [debounced, setDebounced] = useState(value);
-
   useEffect(() => {
     const t = setTimeout(() => setDebounced(value), delay);
     return () => clearTimeout(t);
   }, [value, delay]);
-
   return debounced;
 }
 
@@ -154,7 +143,7 @@ function toNumberSmart(v) {
   let s = String(v).trim();
   if (!s) return 0;
 
-  s = s.replace(/\s/g, "").replace(/[$€£]/g, "");
+  s = s.replace(/\s/g, "").replace(/[$€£]/g, "").replace(/%/g, "");
 
   const lastComma = s.lastIndexOf(",");
   const lastDot = s.lastIndexOf(".");
@@ -193,8 +182,9 @@ function fmtMoney(n) {
   return nfMoney.format(n || 0);
 }
 
-function buildPivot(rows, field, { skipBlank = true, sumFields = ["otc", "mrc"] } = {}) {
-  const m = new Map();
+function buildPivot(rows, field, { skipBlank = true, excludeKeys = [] } = {}) {
+  const excludeN = new Set(excludeKeys.map(normKeyForMatch));
+  const m = new Map(); // key -> { key,label,count,otc,mrc }
 
   (Array.isArray(rows) ? rows : []).forEach((r) => {
     const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
@@ -202,21 +192,20 @@ function buildPivot(rows, field, { skipBlank = true, sumFields = ["otc", "mrc"] 
 
     const key = normKeyForMatch(raw);
     if (!key) return;
+    if (excludeN.has(key)) return;
 
     const prev =
-      m.get(key) ||
-      {
-        label: key,       
+      m.get(key) || {
+        key,
+        label: raw, // mostramos el texto original (como Excel), pero agrupamos por "key"
         count: 0,
         otc: 0,
         mrc: 0,
       };
 
     prev.count += 1;
-
-    // sumas
-    if (sumFields.includes("otc")) prev.otc += toNumberSmart(r?.otc);
-    if (sumFields.includes("mrc")) prev.mrc += toNumberSmart(r?.mrc);
+    prev.otc += toNumberSmart(r?.otc);
+    prev.mrc += toNumberSmart(r?.mrc_normalizado ?? r?.mrc);
 
     m.set(key, prev);
   });
@@ -229,6 +218,17 @@ function buildPivot(rows, field, { skipBlank = true, sumFields = ["otc", "mrc"] 
   return { rows: pivotRows, total, totalOtc, totalMrc };
 }
 
+// Para evitar "basura" en resultado_oferta sin depender de estado_oferta
+const EXCLUDE_RESULTADO_OFERTA = [
+  "OTP",
+  "OTE",
+  "OTL",
+  "0TP",
+  "0TE",
+  "0TL",
+  "PENDIENTE APROBACION SAP",
+  "N/A",
+];
 
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
@@ -267,6 +267,8 @@ export default function DashboardOportunidades() {
   });
 
   const filtrosDebounced = useDebouncedValue(filtros, 400);
+
+  // Universo “filtrado” (para KPIs, gráficos, detalle y calificación)
   const dataFiltrada = useMemo(() => {
     return (Array.isArray(data) ? data : []).filter((op) => {
       const e = op?.estado_oferta ?? "";
@@ -274,7 +276,6 @@ export default function DashboardOportunidades() {
       return true;
     });
   }, [data]);
-
 
   const fetchFilters = async (current) => {
     const res = await jfetch(`/oportunidades/filters${toQuery(current)}`);
@@ -322,6 +323,7 @@ export default function DashboardOportunidades() {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -333,9 +335,9 @@ export default function DashboardOportunidades() {
     })();
   }, [filtrosDebounced]);
 
-  
+  // KPIs coherentes con lo que muestras (dataFiltrada)
   const kpis = useMemo(() => {
-    const base = Array.isArray(data) ? data : [];
+    const base = dataFiltrada;
 
     const total = base.length;
     let activas = 0;
@@ -358,14 +360,41 @@ export default function DashboardOportunidades() {
     };
   }, [dataFiltrada]);
 
+  /**
+   * ✅ TABLAS como estaban antes (sin invertir):
+   *  - "Estado de Oferta"     = se arma con resultado_oferta
+   *  - "Resultado de Oferta"  = se arma con estado_oferta
+   *
+   * ✅ Fix principal:
+   *  - La tabla de "Estado de Oferta" NO debe depender de dataFiltrada,
+   *    porque dataFiltrada elimina filas por estado_oferta (REGISTRO/PROSPECCION...)
+   *    y eso te borra categorías de resultado_oferta.
+   */
+  const baseTablaEstadoOferta = useMemo(() => {
+    const base = Array.isArray(data) ? data : [];
+    return base.filter((r) => {
+      const ro = String(r?.resultado_oferta ?? "").trim();
+      if (!ro) return false;
+      const roN = normKeyForMatch(ro);
+      if (!roN) return false;
+      if (EXCLUDE_RESULTADO_OFERTA.map(normKeyForMatch).includes(roN)) return false;
+      return true;
+    });
+  }, [data]);
+
+  const baseTablaResultadoOferta = useMemo(() => {
+    // Esta sí puede salir de dataFiltrada porque cuenta "estado_oferta" y quieres excluir REGISTRO/PROSPECCION/OTP...
+    return dataFiltrada;
+  }, [dataFiltrada]);
+
   const tablaEstadoOferta = useMemo(
-    () => buildPivot(dataFiltrada, "resultado_oferta"),
-    [dataFiltrada]
+    () => buildPivot(baseTablaEstadoOferta, "resultado_oferta", { excludeKeys: EXCLUDE_RESULTADO_OFERTA }),
+    [baseTablaEstadoOferta]
   );
 
   const tablaResultadoOferta = useMemo(
-    () => buildPivot(dataFiltrada, "estado_oferta"),
-    [dataFiltrada]
+    () => buildPivot(baseTablaResultadoOferta, "estado_oferta", { excludeKeys: EXCLUDE_LIST }),
+    [baseTablaResultadoOferta]
   );
 
   const limpiar = () => {
@@ -441,87 +470,88 @@ export default function DashboardOportunidades() {
           </section>
 
           <section className="main-grid">
+            {/* ✅ MAIN COL con las DOS tablas (corrige el layout) */}
             <div className="main-col">
-                <div className="card">
-                  <div className="card-title">Estado de Oferta</div>
-                  <div className="table-scroll">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>ESTADO</th>
-                          <th>Cant</th>
-                          <th>OTC</th>
-                          <th>MRC</th>
-                          <th>%</th>
+              <div className="card">
+                <div className="card-title">Estado de Oferta</div>
+                <div className="table-scroll">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>ESTADO</th>
+                        <th>Cant</th>
+                        <th>OTC</th>
+                        <th>MRC</th>
+                        <th>%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tablaEstadoOferta.rows.map((it) => (
+                        <tr key={it.key}>
+                          <td>{it.label}</td>
+                          <td>{it.count}</td>
+                          <td>{fmtMoney(it.otc)}</td>
+                          <td>{fmtMoney(it.mrc)}</td>
+                          <td>
+                            {tablaEstadoOferta.total
+                              ? ((it.count / tablaEstadoOferta.total) * 100).toFixed(2)
+                              : "0.00"}
+                            %
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {tablaEstadoOferta.rows.map((it) => (
-                          <tr key={it.label}>
-                            <td>{it.label}</td>
-                            <td>{it.count}</td>
-                            <td>{fmtMoney(it.otc)}</td>
-                            <td>{fmtMoney(it.mrc)}</td>
-                            <td>
-                              {tablaEstadoOferta.total
-                                ? ((it.count / tablaEstadoOferta.total) * 100).toFixed(2)
-                                : "0.00"}
-                              %
-                            </td>
-                          </tr>
-                        ))}
+                      ))}
 
-                        <tr className="table-total">
-                          <td>Total</td>
-                          <td>{tablaEstadoOferta.total}</td>
-                          <td>{fmtMoney(tablaEstadoOferta.totalOtc)}</td>
-                          <td>{fmtMoney(tablaEstadoOferta.totalMrc)}</td>
-                          <td>{tablaEstadoOferta.total ? "100%" : "0%"}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                      <tr className="table-total">
+                        <td>Total</td>
+                        <td>{tablaEstadoOferta.total}</td>
+                        <td>{fmtMoney(tablaEstadoOferta.totalOtc)}</td>
+                        <td>{fmtMoney(tablaEstadoOferta.totalMrc)}</td>
+                        <td>{tablaEstadoOferta.total ? "100%" : "0%"}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-            </div>          
+              </div>
 
               <div className="card">
-              <div className="card-title">Resultado de Oferta</div>
-              <div className="table-scroll">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>RESULTADO</th>
-                      <th>Cant</th>
-                      <th>OTC</th>
-                      <th>MRC</th>
-                      <th>%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tablaResultadoOferta.rows.map((it) => (
-                      <tr key={it.label}>
-                        <td>{it.label}</td>
-                        <td>{it.count}</td>
-                        <td>{fmtMoney(it.otc)}</td>
-                        <td>{fmtMoney(it.mrc)}</td>
-                        <td>
-                          {tablaResultadoOferta.total
-                            ? ((it.count / tablaResultadoOferta.total) * 100).toFixed(2)
-                            : "0.00"}
-                          %
-                        </td>
+                <div className="card-title">Resultado de Oferta</div>
+                <div className="table-scroll">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>RESULTADO</th>
+                        <th>Cant</th>
+                        <th>OTC</th>
+                        <th>MRC</th>
+                        <th>%</th>
                       </tr>
-                    ))}
+                    </thead>
+                    <tbody>
+                      {tablaResultadoOferta.rows.map((it) => (
+                        <tr key={it.key}>
+                          <td>{it.label}</td>
+                          <td>{it.count}</td>
+                          <td>{fmtMoney(it.otc)}</td>
+                          <td>{fmtMoney(it.mrc)}</td>
+                          <td>
+                            {tablaResultadoOferta.total
+                              ? ((it.count / tablaResultadoOferta.total) * 100).toFixed(2)
+                              : "0.00"}
+                            %
+                          </td>
+                        </tr>
+                      ))}
 
-                    <tr className="table-total">
-                      <td>Total</td>
-                      <td>{tablaResultadoOferta.total}</td>
-                      <td>{fmtMoney(tablaResultadoOferta.totalOtc)}</td>
-                      <td>{fmtMoney(tablaResultadoOferta.totalMrc)}</td>
-                      <td>{tablaResultadoOferta.total ? "100%" : "0%"}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                      <tr className="table-total">
+                        <td>Total</td>
+                        <td>{tablaResultadoOferta.total}</td>
+                        <td>{fmtMoney(tablaResultadoOferta.totalOtc)}</td>
+                        <td>{fmtMoney(tablaResultadoOferta.totalMrc)}</td>
+                        <td>{tablaResultadoOferta.total ? "100%" : "0%"}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
