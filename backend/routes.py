@@ -1947,19 +1947,20 @@ def _get_list_arg(key: str):
     return [str(v).strip() for v in vals if v is not None and str(v).strip() != ""]
 
 
-def _apply_oportunidades_filters(query):
+def _apply_oportunidades_filters(query, apply_exclusion: bool = True):
     """
     Aplica filtros del request.args al query de Oportunidad
-    + APLICA EXCLUSIÓN GLOBAL de estados (EXCLUDE_LIST).
+    apply_exclusion=True  -> excluye estados (para /filters)
+    apply_exclusion=False -> NO excluye (para /oportunidades)
     """
-    # ✅ IMPORTANTE: aplicar exclusión desde el inicio
-    query = _apply_excluded_states(query)
+    if apply_exclusion:
+        query = _apply_excluded_states(query)
 
     q = (request.args.get("q") or "").strip()
 
     anios = _get_list_arg("anio")
     meses = _get_list_arg("mes")
-    tipos = _get_list_arg("tipo")  # GANADA / ACTIVA / CERRADA
+    tipos = _get_list_arg("tipo")
 
     direccion = _get_list_arg("direccion_comercial")
     gerencia  = _get_list_arg("gerencia_comercial")
@@ -2008,10 +2009,14 @@ def _apply_oportunidades_filters(query):
     if cliente:
         query = query.filter(Oportunidad.nombre_cliente.in_(cliente))
 
+    # ✅ (opcional recomendado) filtros normalizados para que no fallen por tildes/0TP etc.
     if estado_oferta:
-        query = query.filter(Oportunidad.estado_oferta.in_(estado_oferta))
+        estado_norm = [_norm_key_for_match(x) for x in estado_oferta]
+        query = query.filter(_sql_norm_estado(Oportunidad.estado_oferta).in_(estado_norm))
+
     if resultado:
-        query = query.filter(Oportunidad.resultado_oferta.in_(resultado))
+        resultado_norm = [_norm_key_for_match(x) for x in resultado]
+        query = query.filter(_sql_norm_estado(Oportunidad.resultado_oferta).in_(resultado_norm))
 
     if estado_ot:
         query = query.filter(Oportunidad.estado_ot.in_(estado_ot))
@@ -2029,44 +2034,55 @@ def _apply_oportunidades_filters(query):
         ESTADOS_ACTIVOS = {
             "EN PROCESO",
             "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
+            "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACIÓN",
             "EN ELABORACION",
             "ENTREGA COMERCIAL",
         }
         ESTADOS_CERRADOS = {
-            "CERRADO",
-            "CERRADA",
-            "CERRADOS",
-            "PERDIDA",
-            "PERDIDO",
-            "DECLINADA",
-            "DECLINADO",
-            "SUSPENDIDA",
-            "SUSPENDIDO",
+            "CERRADO","CERRADA","CERRADOS",
+            "PERDIDA","PERDIDO",
+            "DECLINADA","DECLINADO",
+            "SUSPENDIDA","SUSPENDIDO",
+            "PERDIDA - SIN FEEDBACK",
+            "RFI PRESENTADO","RFP PRESENTADO",
         }
 
         tipos_up = {t.upper().strip() for t in tipos}
         conds = []
+        colN = _sql_norm_estado(Oportunidad.estado_oferta)
 
         if "GANADA" in tipos_up:
-            conds.append(func.upper(Oportunidad.estado_oferta) == "GANADA")
+            conds.append(colN == "GANADA")
 
         if "ACTIVA" in tipos_up:
-            conds.append(func.upper(Oportunidad.estado_oferta).in_([s.upper() for s in ESTADOS_ACTIVOS]))
+            activosN = [_norm_key_for_match(s) for s in ESTADOS_ACTIVOS]
+            conds.append(colN.in_(activosN))
 
         if "CERRADA" in tipos_up or "CERRADO" in tipos_up:
-            conds.append(func.upper(Oportunidad.estado_oferta).in_([s.upper() for s in ESTADOS_CERRADOS]))
+            cerradosN = [_norm_key_for_match(s) for s in ESTADOS_CERRADOS]
+            conds.append(colN.in_(cerradosN))
 
         if conds:
             query = query.filter(or_(*conds))
 
     return query
 
+
 def _sql_norm_estado(col):
-    c = func.upper(func.trim(col))
-    c = func.replace(c, "\u00A0", " ")
+    c = func.upper(func.trim(func.replace(col, "\u00A0", " ")))
+
+    # quita tildes comunes (en SQL)
+    for a, b in [("Á","A"),("É","E"),("Í","I"),("Ó","O"),("Ú","U"),("Ü","U"),("Ñ","N")]:
+        c = func.replace(c, a, b)
+
     c = func.replace(c, "0TP", "OTP")
     c = func.replace(c, "0TE", "OTE")
     c = func.replace(c, "0TL", "OTL")
+
+    # colapsa dobles espacios (unas veces basta)
+    c = func.replace(c, "  ", " ")
+    c = func.replace(c, "  ", " ")
+
     return c
 
 def _apply_excluded_states(query):
@@ -2331,7 +2347,7 @@ def oportunidades_filters():
 def listar_oportunidades():
     try:
         query = Oportunidad.query
-        query = _apply_oportunidades_filters(query)
+        query = _apply_oportunidades_filters(query, apply_exclusion=False) 
         query = query.order_by(Oportunidad.id.desc())
         data = [o.to_dict() for o in query.limit(2000).all()]
         return jsonify(data), 200
