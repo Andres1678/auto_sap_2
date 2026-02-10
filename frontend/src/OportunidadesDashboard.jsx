@@ -358,13 +358,13 @@ export default function DashboardOportunidades() {
     };
   }, [dataFiltrada]);
 
-  const resumenEstado = useMemo(
-    () => buildPivot(dataFiltrada, "estado_oferta"),
+  const tablaEstadoOferta = useMemo(
+    () => buildPivot(dataFiltrada, "resultado_oferta"),
     [dataFiltrada]
   );
 
-  const resumenResultado = useMemo(
-    () => buildPivot(dataFiltrada, "resultado_oferta"),
+  const tablaResultadoOferta = useMemo(
+    () => buildPivot(dataFiltrada, "estado_oferta"),
     [dataFiltrada]
   );
 
@@ -442,84 +442,86 @@ export default function DashboardOportunidades() {
 
           <section className="main-grid">
             <div className="main-col">
-              <div className="card">
-                <div className="card-title">Estado de Oferta</div>
-                <div className="table-scroll">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>ESTADO</th>
-                        <th>Cant</th>
-                        <th>OTC</th>
-                        <th>MRC</th>
-                        <th>%</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {resumenResultado.rows.map((it) => (
-                        <tr key={it.label}>
-                          <td>{it.label}</td>
-                          <td>{it.count}</td>
-                          <td>{fmtMoney(it.otc)}</td>
-                          <td>{fmtMoney(it.mrc)}</td>
-                          <td>
-                            {resumenResultado.total
-                              ? ((it.count / resumenResultado.total) * 100).toFixed(2)
-                              : "0.00"}
-                            %
-                          </td>
+                <div className="card">
+                  <div className="card-title">Estado de Oferta</div>
+                  <div className="table-scroll">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>ESTADO</th>
+                          <th>Cant</th>
+                          <th>OTC</th>
+                          <th>MRC</th>
+                          <th>%</th>
                         </tr>
-                      ))}
-                      <tr className="table-total">
-                        <td>Total</td>
-                        <td>{resumenResultado.total}</td>
-                        <td>{fmtMoney(resumenEstado.totalOtc)}</td>
-                        <td>{fmtMoney(resumenEstado.totalMrc)}</td>
-                        <td>{resumenResultado.total ? "100%" : "0%"}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {tablaEstadoOferta.rows.map((it) => (
+                          <tr key={it.label}>
+                            <td>{it.label}</td>
+                            <td>{it.count}</td>
+                            <td>{fmtMoney(it.otc)}</td>
+                            <td>{fmtMoney(it.mrc)}</td>
+                            <td>
+                              {tablaEstadoOferta.total
+                                ? ((it.count / tablaEstadoOferta.total) * 100).toFixed(2)
+                                : "0.00"}
+                              %
+                            </td>
+                          </tr>
+                        ))}
+
+                        <tr className="table-total">
+                          <td>Total</td>
+                          <td>{tablaEstadoOferta.total}</td>
+                          <td>{fmtMoney(tablaEstadoOferta.totalOtc)}</td>
+                          <td>{fmtMoney(tablaEstadoOferta.totalMrc)}</td>
+                          <td>{tablaEstadoOferta.total ? "100%" : "0%"}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+            </div>          
 
               <div className="card">
-                <div className="card-title">Resultado de Oferta</div>
-                <div className="table-scroll">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>RESULTADO</th>
-                        <th>Cant</th>
-                        <th>OTC</th>
-                        <th>MRC</th>
-                        <th>%</th>
+              <div className="card-title">Resultado de Oferta</div>
+              <div className="table-scroll">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>RESULTADO</th>
+                      <th>Cant</th>
+                      <th>OTC</th>
+                      <th>MRC</th>
+                      <th>%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tablaResultadoOferta.rows.map((it) => (
+                      <tr key={it.label}>
+                        <td>{it.label}</td>
+                        <td>{it.count}</td>
+                        <td>{fmtMoney(it.otc)}</td>
+                        <td>{fmtMoney(it.mrc)}</td>
+                        <td>
+                          {tablaResultadoOferta.total
+                            ? ((it.count / tablaResultadoOferta.total) * 100).toFixed(2)
+                            : "0.00"}
+                          %
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {resumenEstado.rows.map((it) => (
-                        <tr key={it.label}>
-                          <td>{it.label}</td>
-                          <td>{it.count}</td>
-                          <td>{fmtMoney(it.otc)}</td>
-                          <td>{fmtMoney(it.mrc)}</td>
-                          <td>
-                            {resumenEstado.total
-                              ? ((it.count / resumenEstado.total) * 100).toFixed(2)
-                              : "0.00"}
-                            %
-                          </td>
-                        </tr>
-                      ))}
-                      <tr className="table-total">
-                        <td>Total</td>
-                        <td>{resumenEstado.total}</td>
-                        <td>{fmtMoney(resumenResultado.totalOtc)}</td>
-                        <td>{fmtMoney(resumenResultado.totalMrc)}</td>
-                        <td>{resumenEstado.total ? "100%" : "0%"}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+
+                    <tr className="table-total">
+                      <td>Total</td>
+                      <td>{tablaResultadoOferta.total}</td>
+                      <td>{fmtMoney(tablaResultadoOferta.totalOtc)}</td>
+                      <td>{fmtMoney(tablaResultadoOferta.totalMrc)}</td>
+                      <td>{tablaResultadoOferta.total ? "100%" : "0%"}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
