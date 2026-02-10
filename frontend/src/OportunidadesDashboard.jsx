@@ -7,6 +7,7 @@ import ResumenCalificacion from "./ResumenCalificacion";
 import "./DashboardOportunidades.css";
 import { jfetch } from "./lib/api";
 
+/* ----------------------------- react-select styles ----------------------------- */
 const rsStyles = {
   control: (base, state) => ({
     ...base,
@@ -26,6 +27,7 @@ const rsStyles = {
   option: (base) => ({ ...base, display: "flex", alignItems: "center", gap: 10 }),
 };
 
+/* ----------------------------- normalización clave ----------------------------- */
 function normKeyForMatch(v) {
   let s = String(v ?? "")
     .replace(/\u00A0/g, " ")
@@ -39,29 +41,49 @@ function normKeyForMatch(v) {
   return s;
 }
 
-const EXCLUDE_LIST = [
-  "OTP",
-  "OTE",
-  "OTL",
-  "PROSPECCION",
-  "REGISTRO",
-  "PENDIENTE APROBACION SAP",
-  "N/A",
-  "0TP",
-  "0TE",
-  "0TL",
-];
-
-function isExcludedLabel(raw) {
+function matchAny(raw, list) {
   const k = normKeyForMatch(raw);
   if (!k) return false;
-  for (const x of EXCLUDE_LIST) {
+  for (const x of list) {
     if (k === x) return true;
-    if (k.includes(x)) return true;
+    if (k.includes(x)) return true; 
   }
   return false;
 }
 
+
+const EXCLUDE_ESTADO = [
+  "OTP",
+  "OTE",
+  "OTL",
+  "0TP",
+  "0TE",
+  "0TL",
+  "PROSPECCION",
+  "REGISTRO",
+  "PENDIENTE APROBACION SAP",
+  "N/A",
+].map(normKeyForMatch);
+
+const EXCLUDE_RESULTADO = [
+  "OTP",
+  "OTE",
+  "OTL",
+  "0TP",
+  "0TE",
+  "0TL",
+  "PENDIENTE APROBACION SAP",
+  "N/A",
+].map(normKeyForMatch);
+
+function isExcludedEstado(v) {
+  return matchAny(v, EXCLUDE_ESTADO);
+}
+function isExcludedResultado(v) {
+  return matchAny(v, EXCLUDE_RESULTADO);
+}
+
+/* ----------------------------- clasificaciones KPIs ----------------------------- */
 const ESTADOS_ACTIVOS_N = new Set(
   ["EN PROCESO", "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION", "EN ELABORACION", "ENTREGA COMERCIAL"].map(
     normKeyForMatch
@@ -74,6 +96,7 @@ const ESTADOS_CERRADOS_N = new Set(
   )
 );
 
+/* ----------------------------- filtros (selects) ----------------------------- */
 function toOptions(arr) {
   return (Array.isArray(arr) ? arr : [])
     .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
@@ -112,12 +135,10 @@ function toQuery(f) {
 
 function useDebouncedValue(value, delay = 350) {
   const [debounced, setDebounced] = useState(value);
-
   useEffect(() => {
     const t = setTimeout(() => setDebounced(value), delay);
     return () => clearTimeout(t);
   }, [value, delay]);
-
   return debounced;
 }
 
@@ -126,7 +147,6 @@ const portalTarget = typeof document !== "undefined" ? document.body : null;
 function CheckboxOption(props) {
   const selected = props.isSelected;
   const disabled = props.isDisabled;
-
   return (
     <components.Option {...props}>
       <span className={`rs-check ${selected ? "is-on" : ""} ${disabled ? "is-disabled" : ""}`}>
@@ -137,56 +157,97 @@ function CheckboxOption(props) {
   );
 }
 
-/**
- * Dinero grande -> BigInt (sin perder precisión)
- * Soporta "24.024.310.564.977.944", "$ 1.234.567", "1,234,567", etc.
- * (Si vienen decimales, se ignoran; en tu caso MRC/OTC vienen enteros)
- */
-function toBigIntMoney(v) {
+
+function toCentsBig(v) {
   if (v === null || v === undefined || v === "") return 0n;
   if (typeof v === "bigint") return v;
-  if (typeof v === "number") return Number.isFinite(v) ? BigInt(Math.trunc(v)) : 0n;
+
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) return 0n;
+    return BigInt(Math.round(v * 100));
+  }
 
   let s = String(v).trim();
   if (!s) return 0n;
 
-  // quita símbolos / espacios
-  s = s.replace(/\s/g, "").replace(/[$€£]/g, "");
+  s = s.replace(/\u00A0/g, " ").replace(/\s/g, "");
+  s = s.replace(/[$€£]/g, "");
+  s = s.replace(/[^\d,.\-]/g, "");
+  if (!s || s === "-") return 0n;
 
-  // si viene con separadores miles, los quitamos
-  // dejamos solo dígitos y signo
-  s = s.replace(/[^\d-]/g, "");
-  if (!s || s === "-" || s === "--") return 0n;
-
-  try {
-    return BigInt(s);
-  } catch {
-    return 0n;
+  let sign = 1n;
+  if (s.startsWith("-")) {
+    sign = -1n;
+    s = s.slice(1);
   }
+
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  const hasComma = lastComma !== -1;
+  const hasDot = lastDot !== -1;
+
+  let decSep = null;
+  if (hasComma && hasDot) decSep = lastComma > lastDot ? "," : ".";
+  else if (hasComma) decSep = ",";
+  else if (hasDot) decSep = ".";
+
+  let intPart = s;
+  let decPart = "";
+
+  if (decSep) {
+    const parts = s.split(decSep);
+
+    
+    if (parts.length === 2) {
+      intPart = parts[0];
+      decPart = parts[1];
+
+      
+      if (decPart.length > 2) {
+        intPart = s.replace(/[.,]/g, "");
+        decPart = "";
+      }
+    } else {
+      intPart = s.replace(/[.,]/g, "");
+      decPart = "";
+    }
+  }
+
+  intPart = (intPart || "").replace(/[.,]/g, "").replace(/[^\d]/g, "");
+  if (!intPart) intPart = "0";
+
+  decPart = (decPart || "").replace(/[^\d]/g, "");
+  if (decPart.length === 0) decPart = "00";
+  else if (decPart.length === 1) decPart = `${decPart}0`;
+  else if (decPart.length > 2) decPart = decPart.slice(0, 2);
+
+  const cents = BigInt(intPart) * 100n + BigInt(decPart);
+  return sign * cents;
 }
 
-const moneyFmt = new Intl.NumberFormat("es-CO");
-function fmtMoneyBI(bi) {
-  try {
-    return moneyFmt.format(bi ?? 0n);
-  } catch {
-    return moneyFmt.format(0);
-  }
+function formatCents(cents) {
+  const neg = cents < 0n;
+  const x = neg ? -cents : cents;
+
+  const intPart = x / 100n;
+  const decPart = x % 100n;
+
+  
+  const intStr = intPart.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  const decStr = decPart.toString().padStart(2, "0");
+
+  
+  const out = decPart === 0n ? intStr : `${intStr},${decStr}`;
+  return neg ? `-${out}` : out;
 }
 
-/**
- * Pivot con count + sumas OTC/MRC (BigInt)
- * - agrupa por field normalizado (sin tildes/espacios)
- * - opcional: excluir items del mismo field (OTP/REGISTRO/N/A, etc)
- */
-function buildPivot(rows, field, { skipBlank = true, excludeFieldValues = true } = {}) {
+/* ----------------------------- Pivot con conteo + sumas OTC/MRC ----------------------------- */
+function buildPivot(rows, field, { skipBlank = true } = {}) {
   const m = new Map();
 
   (Array.isArray(rows) ? rows : []).forEach((r) => {
     const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
     if (skipBlank && !raw) return;
-
-    if (excludeFieldValues && isExcludedLabel(raw)) return;
 
     const key = normKeyForMatch(raw);
     if (!key) return;
@@ -194,15 +255,16 @@ function buildPivot(rows, field, { skipBlank = true, excludeFieldValues = true }
     const prev =
       m.get(key) ||
       {
-        label: key,
+        key,
+        label: raw, 
         count: 0,
         otc: 0n,
-        mrc: 0n,
+        mrc: 0n, 
       };
 
     prev.count += 1;
-    prev.otc += toBigIntMoney(r?.otc);
-    prev.mrc += toBigIntMoney(r?.mrc);
+    prev.otc += toCentsBig(r?.otc);
+    prev.mrc += toCentsBig(r?.mrc);
 
     m.set(key, prev);
   });
@@ -214,6 +276,8 @@ function buildPivot(rows, field, { skipBlank = true, excludeFieldValues = true }
 
   return { rows: pivotRows, total, totalOtc, totalMrc };
 }
+
+/* ===================================================================================== */
 
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
@@ -253,15 +317,35 @@ export default function DashboardOportunidades() {
 
   const filtrosDebounced = useDebouncedValue(filtros, 400);
 
-  // ✅ Esta es la base para KPIs/tablas/charts: quita estados no válidos según tu lista
-  const dataFiltrada = useMemo(() => {
-    return (Array.isArray(data) ? data : []).filter((op) => {
-      const e = op?.estado_oferta ?? "";
-      if (isExcludedLabel(e)) return false;
-      return true;
-    });
-  }, [data]);
+  /* ----------------------------- Bases “correctas” (clave para cuadrar con Excel) ----------------------------- */
+  const baseAll = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
+  const baseKpi = useMemo(
+    () => baseAll.filter((r) => !isExcludedEstado(r?.estado_oferta)),
+    [baseAll]
+  );
+
+  const baseTablaEstadoOferta = useMemo(
+    () =>
+      baseAll.filter((r) => {
+        const val = r?.resultado_oferta;
+        if (!String(val ?? "").replace(/\u00A0/g, " ").trim()) return false;
+        return !isExcludedResultado(val);
+      }),
+    [baseAll]
+  );
+
+  const baseTablaResultadoOferta = useMemo(
+    () =>
+      baseAll.filter((r) => {
+        const val = r?.estado_oferta;
+        if (!String(val ?? "").replace(/\u00A0/g, " ").trim()) return false;
+        return !isExcludedEstado(val);
+      }),
+    [baseAll]
+  );
+
+  /* ----------------------------- Fetch filters/data ----------------------------- */
   const fetchFilters = async (current) => {
     const res = await jfetch(`/oportunidades/filters${toQuery(current)}`);
     if (!res.ok) throw new Error("filters");
@@ -308,7 +392,6 @@ export default function DashboardOportunidades() {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -320,14 +403,14 @@ export default function DashboardOportunidades() {
     })();
   }, [filtrosDebounced]);
 
-  // ✅ KPI sobre dataFiltrada (consistente con exclusiones)
+  /* ----------------------------- KPIs ----------------------------- */
   const kpis = useMemo(() => {
-    const total = dataFiltrada.length;
+    const total = baseKpi.length;
     let activas = 0;
     let cerradas = 0;
     let ganadas = 0;
 
-    dataFiltrada.forEach((op) => {
+    baseKpi.forEach((op) => {
       const estadoN = normKeyForMatch(op?.estado_oferta ?? "");
       if (ESTADOS_ACTIVOS_N.has(estadoN)) activas++;
       if (ESTADOS_CERRADOS_N.has(estadoN)) cerradas++;
@@ -341,14 +424,19 @@ export default function DashboardOportunidades() {
       ganadas,
       porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
     };
-  }, [dataFiltrada]);
+  }, [baseKpi]);
 
-  // ✅ Tablas (como las tenías “antes de invertir”)
-  // Estado de Oferta => resultado_oferta (OPORTUNIDAD PERDIDA, OPORTUNIDAD CERRADA, etc.)
-  const tablaEstadoOferta = useMemo(() => buildPivot(dataFiltrada, "resultado_oferta"), [dataFiltrada]);
 
-  // Resultado de Oferta => estado_oferta (GANADA, PERDIDA, DECLINADA, etc.)
-  const tablaResultadoOferta = useMemo(() => buildPivot(dataFiltrada, "estado_oferta"), [dataFiltrada]);
+  const tablaEstadoOferta = useMemo(
+    () => buildPivot(baseTablaEstadoOferta, "resultado_oferta"),
+    [baseTablaEstadoOferta]
+  );
+
+
+  const tablaResultadoOferta = useMemo(
+    () => buildPivot(baseTablaResultadoOferta, "estado_oferta"),
+    [baseTablaResultadoOferta]
+  );
 
   const limpiar = () => {
     setFiltros({
@@ -439,13 +527,16 @@ export default function DashboardOportunidades() {
                     </thead>
                     <tbody>
                       {tablaEstadoOferta.rows.map((it) => (
-                        <tr key={it.label}>
+                        <tr key={it.key}>
                           <td>{it.label}</td>
                           <td>{it.count}</td>
-                          <td>{fmtMoneyBI(it.otc)}</td>
-                          <td>{fmtMoneyBI(it.mrc)}</td>
+                          <td>{formatCents(it.otc)}</td>
+                          <td>{formatCents(it.mrc)}</td>
                           <td>
-                            {tablaEstadoOferta.total ? ((it.count / tablaEstadoOferta.total) * 100).toFixed(2) : "0.00"}%
+                            {tablaEstadoOferta.total
+                              ? ((it.count / tablaEstadoOferta.total) * 100).toFixed(2)
+                              : "0.00"}
+                            %
                           </td>
                         </tr>
                       ))}
@@ -453,8 +544,8 @@ export default function DashboardOportunidades() {
                       <tr className="table-total">
                         <td>Total</td>
                         <td>{tablaEstadoOferta.total}</td>
-                        <td>{fmtMoneyBI(tablaEstadoOferta.totalOtc)}</td>
-                        <td>{fmtMoneyBI(tablaEstadoOferta.totalMrc)}</td>
+                        <td>{formatCents(tablaEstadoOferta.totalOtc)}</td>
+                        <td>{formatCents(tablaEstadoOferta.totalMrc)}</td>
                         <td>{tablaEstadoOferta.total ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
@@ -477,11 +568,11 @@ export default function DashboardOportunidades() {
                     </thead>
                     <tbody>
                       {tablaResultadoOferta.rows.map((it) => (
-                        <tr key={it.label}>
+                        <tr key={it.key}>
                           <td>{it.label}</td>
                           <td>{it.count}</td>
-                          <td>{fmtMoneyBI(it.otc)}</td>
-                          <td>{fmtMoneyBI(it.mrc)}</td>
+                          <td>{formatCents(it.otc)}</td>
+                          <td>{formatCents(it.mrc)}</td>
                           <td>
                             {tablaResultadoOferta.total
                               ? ((it.count / tablaResultadoOferta.total) * 100).toFixed(2)
@@ -494,8 +585,8 @@ export default function DashboardOportunidades() {
                       <tr className="table-total">
                         <td>Total</td>
                         <td>{tablaResultadoOferta.total}</td>
-                        <td>{fmtMoneyBI(tablaResultadoOferta.totalOtc)}</td>
-                        <td>{fmtMoneyBI(tablaResultadoOferta.totalMrc)}</td>
+                        <td>{formatCents(tablaResultadoOferta.totalOtc)}</td>
+                        <td>{formatCents(tablaResultadoOferta.totalMrc)}</td>
                         <td>{tablaResultadoOferta.total ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
@@ -507,17 +598,17 @@ export default function DashboardOportunidades() {
             <div className="side-col">
               <div className="card">
                 <div className="card-title">Cantidad y Ganadas/Adjudicadas por Año y Mes</div>
-                <GraficoCantidadGanadas data={dataFiltrada} />
+                <GraficoCantidadGanadas data={baseKpi} />
               </div>
 
               <div className="card">
                 <div className="card-title">Activas y Cerradas por Año y Mes</div>
-                <GraficoActivasCerradas data={dataFiltrada} />
+                <GraficoActivasCerradas data={baseKpi} />
               </div>
 
               <div className="card">
                 <div className="card-title">Resumen Calificación</div>
-                <ResumenCalificacion data={data} />
+                <ResumenCalificacion data={baseAll} />
               </div>
             </div>
           </section>
@@ -543,7 +634,7 @@ export default function DashboardOportunidades() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dataFiltrada.map((row, i) => (
+                  {baseKpi.map((row, i) => (
                     <tr key={row.id ?? i}>
                       <td>{row.nombre_cliente ?? "-"}</td>
                       <td>{row.servicio ?? "-"}</td>
