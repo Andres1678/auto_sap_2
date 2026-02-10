@@ -7,7 +7,6 @@ import ResumenCalificacion from "./ResumenCalificacion";
 import "./DashboardOportunidades.css";
 import { jfetch } from "./lib/api";
 
-/* ----------------------------- react-select styles ----------------------------- */
 const rsStyles = {
   control: (base, state) => ({
     ...base,
@@ -27,7 +26,6 @@ const rsStyles = {
   option: (base) => ({ ...base, display: "flex", alignItems: "center", gap: 10 }),
 };
 
-/* ----------------------------- normalización clave ----------------------------- */
 function normKeyForMatch(v) {
   let s = String(v ?? "")
     .replace(/\u00A0/g, " ")
@@ -41,62 +39,49 @@ function normKeyForMatch(v) {
   return s;
 }
 
-function matchAny(raw, list) {
+const EXCLUDE_LIST = [
+  "OTP",
+  "OTE",
+  "OTL",
+  "PROSPECCION",
+  "REGISTRO",
+  "PENDIENTE APROBACION SAP",
+  "0TP",
+  "0TE",
+  "0TL",
+];
+
+function isExcludedLabel(raw) {
   const k = normKeyForMatch(raw);
   if (!k) return false;
-  for (const x of list) {
+  for (const x of EXCLUDE_LIST) {
     if (k === x) return true;
-    if (k.includes(x)) return true; 
+    if (k.includes(x)) return true;
   }
   return false;
 }
 
-
-const EXCLUDE_ESTADO = [
-  "OTP",
-  "OTE",
-  "OTL",
-  "0TP",
-  "0TE",
-  "0TL",
-  "PROSPECCION",
-  "REGISTRO",
-  "PENDIENTE APROBACION SAP",
-  "N/A",
-].map(normKeyForMatch);
-
-const EXCLUDE_RESULTADO = [
-  "OTP",
-  "OTE",
-  "OTL",
-  "0TP",
-  "0TE",
-  "0TL",
-  "PENDIENTE APROBACION SAP",
-  "N/A",
-].map(normKeyForMatch);
-
-function isExcludedEstado(v) {
-  return matchAny(v, EXCLUDE_ESTADO);
-}
-function isExcludedResultado(v) {
-  return matchAny(v, EXCLUDE_RESULTADO);
-}
-
-/* ----------------------------- clasificaciones KPIs ----------------------------- */
 const ESTADOS_ACTIVOS_N = new Set(
-  ["EN PROCESO", "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION", "EN ELABORACION", "ENTREGA COMERCIAL"].map(
-    normKeyForMatch
-  )
+  [
+    "EN PROCESO",
+    "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
+    "EN ELABORACION",
+    "ENTREGA COMERCIAL",
+  ].map(normKeyForMatch)
 );
 
 const ESTADOS_CERRADOS_N = new Set(
-  ["GANADA", "PERDIDA", "DECLINADA", "SUSPENDIDA", "PERDIDA - SIN FEEDBACK", "RFI PRESENTADO", "RFP PRESENTADO"].map(
-    normKeyForMatch
-  )
+  [
+    "GANADA",
+    "PERDIDA",
+    "DECLINADA",
+    "SUSPENDIDA",
+    "PERDIDA - SIN FEEDBACK",
+    "RFI PRESENTADO",
+    "RFP PRESENTADO",
+  ].map(normKeyForMatch)
 );
 
-/* ----------------------------- filtros (selects) ----------------------------- */
 function toOptions(arr) {
   return (Array.isArray(arr) ? arr : [])
     .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
@@ -157,93 +142,66 @@ function CheckboxOption(props) {
   );
 }
 
+/** --------- Money helpers (SIN BigInt/globalThis) ---------- */
+const nfMoney = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 
-function toCentsBig(v) {
-  if (v === null || v === undefined || v === "") return 0n;
-  if (typeof v === "bigint") return v;
-
-  if (typeof v === "number") {
-    if (!Number.isFinite(v)) return 0n;
-    return globalThis.BigInt(Math.round(v * 100));
-  }
+function toNumberSmart(v) {
+  if (v === null || v === undefined || v === "") return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
 
   let s = String(v).trim();
-  if (!s) return 0n;
+  if (!s) return 0;
 
-  s = s.replace(/\u00A0/g, " ").replace(/\s/g, "");
-  s = s.replace(/[$€£]/g, "");
-  s = s.replace(/[^\d,.\-]/g, "");
-  if (!s || s === "-") return 0n;
-
-  let sign = 1n;
-  if (s.startsWith("-")) {
-    sign = -1n;
-    s = s.slice(1);
-  }
+  s = s.replace(/\s/g, "").replace(/[$€£]/g, "");
 
   const lastComma = s.lastIndexOf(",");
   const lastDot = s.lastIndexOf(".");
   const hasComma = lastComma !== -1;
   const hasDot = lastDot !== -1;
 
-  let decSep = null;
-  if (hasComma && hasDot) decSep = lastComma > lastDot ? "," : ".";
-  else if (hasComma) decSep = ",";
-  else if (hasDot) decSep = ".";
-
-  let intPart = s;
-  let decPart = "";
-
-  if (decSep) {
-    const parts = s.split(decSep);
-
-    
-    if (parts.length === 2) {
-      intPart = parts[0];
-      decPart = parts[1];
-
-      
-      if (decPart.length > 2) {
-        intPart = s.replace(/[.,]/g, "");
-        decPart = "";
-      }
+  if (hasComma && hasDot) {
+    if (lastComma > lastDot) {
+      s = s.replace(/\./g, "");
+      s = s.replace(",", ".");
     } else {
-      intPart = s.replace(/[.,]/g, "");
-      decPart = "";
+      s = s.replace(/,/g, "");
+    }
+  } else if (hasComma && !hasDot) {
+    const parts = s.split(",");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      s = parts[0].replace(/\./g, "") + "." + parts[1];
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (!hasComma && hasDot) {
+    const parts = s.split(".");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      s = parts[0].replace(/,/g, "") + "." + parts[1];
+    } else {
+      s = s.replace(/\./g, "");
     }
   }
 
-  intPart = (intPart || "").replace(/[.,]/g, "").replace(/[^\d]/g, "");
-  if (!intPart) intPart = "0";
-
-  decPart = (decPart || "").replace(/[^\d]/g, "");
-  if (decPart.length === 0) decPart = "00";
-  else if (decPart.length === 1) decPart = `${decPart}0`;
-  else if (decPart.length > 2) decPart = decPart.slice(0, 2);
-
-  const cents = globalThis.BigInt(intPart) * 100n + globalThis.BigInt(decPart);
-  return sign * cents;
+  s = s.replace(/[^\d.-]/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
 }
 
-function formatCents(cents) {
-  const neg = cents < 0n;
-  const x = neg ? -cents : cents;
-
-  const intPart = x / 100n;
-  const decPart = x % 100n;
-
-  
-  const intStr = intPart.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  const decStr = decPart.toString().padStart(2, "0");
-
-  
-  const out = decPart === 0n ? intStr : `${intStr},${decStr}`;
-  return neg ? `-${out}` : out;
+function fmtMoney(n) {
+  return nfMoney.format(n || 0);
 }
 
-/* ----------------------------- Pivot con conteo + sumas OTC/MRC ----------------------------- */
-function buildPivot(rows, field, { skipBlank = true } = {}) {
+/**
+ * Pivot que:
+ * - Cuenta SIEMPRE con base en rows (no “borra filas”)
+ * - Permite: ocultar keys (excludeKeyFn) pero SIN afectar el total base (para que % y total cuadren con Excel)
+ * - Suma OTC y MRC por grupo
+ */
+function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {}) {
   const m = new Map();
+  let totalCount = 0;
+  let totalOtc = 0;
+  let totalMrc = 0;
 
   (Array.isArray(rows) ? rows : []).forEach((r) => {
     const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
@@ -252,32 +210,24 @@ function buildPivot(rows, field, { skipBlank = true } = {}) {
     const key = normKeyForMatch(raw);
     if (!key) return;
 
-    const prev =
-      m.get(key) ||
-      {
-        key,
-        label: raw, 
-        count: 0,
-        otc: 0n,
-        mrc: 0n, 
-      };
+    // Totales SIEMPRE incluyen todo (incluyendo excluidos)
+    totalCount += 1;
+    totalOtc += toNumberSmart(r?.otc);
+    totalMrc += toNumberSmart(r?.mrc);
 
+    // Si está excluido, NO lo mostramos como fila
+    if (excludeKeyFn && excludeKeyFn(key, raw, r)) return;
+
+    const prev = m.get(key) || { label: key, count: 0, otc: 0, mrc: 0 };
     prev.count += 1;
-    prev.otc += toCentsBig(r?.otc);
-    prev.mrc += toCentsBig(r?.mrc);
-
+    prev.otc += toNumberSmart(r?.otc);
+    prev.mrc += toNumberSmart(r?.mrc);
     m.set(key, prev);
   });
 
   const pivotRows = Array.from(m.values()).sort((a, b) => b.count - a.count);
-  const total = pivotRows.reduce((s, x) => s + x.count, 0);
-  const totalOtc = pivotRows.reduce((s, x) => s + (x.otc || 0n), 0n);
-  const totalMrc = pivotRows.reduce((s, x) => s + (x.mrc || 0n), 0n);
-
-  return { rows: pivotRows, total, totalOtc, totalMrc };
+  return { rows: pivotRows, total: totalCount, totalOtc, totalMrc };
 }
-
-/* ===================================================================================== */
 
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
@@ -317,35 +267,14 @@ export default function DashboardOportunidades() {
 
   const filtrosDebounced = useDebouncedValue(filtros, 400);
 
-  /* ----------------------------- Bases “correctas” (clave para cuadrar con Excel) ----------------------------- */
-  const baseAll = useMemo(() => (Array.isArray(data) ? data : []), [data]);
+  // ✅ Base SIN excluir filas (para que tablas/KPIs cuadren con Excel)
+  const dataBase = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
-  const baseKpi = useMemo(
-    () => baseAll.filter((r) => !isExcludedEstado(r?.estado_oferta)),
-    [baseAll]
-  );
+  // ✅ Vista “limpia” (sin excluidos) para gráficas + detalle si quieres
+  const dataFiltrada = useMemo(() => {
+    return dataBase.filter((op) => !isExcludedLabel(op?.estado_oferta ?? ""));
+  }, [dataBase]);
 
-  const baseTablaEstadoOferta = useMemo(
-    () =>
-      baseAll.filter((r) => {
-        const val = r?.resultado_oferta;
-        if (!String(val ?? "").replace(/\u00A0/g, " ").trim()) return false;
-        return !isExcludedResultado(val);
-      }),
-    [baseAll]
-  );
-
-  const baseTablaResultadoOferta = useMemo(
-    () =>
-      baseAll.filter((r) => {
-        const val = r?.estado_oferta;
-        if (!String(val ?? "").replace(/\u00A0/g, " ").trim()) return false;
-        return !isExcludedEstado(val);
-      }),
-    [baseAll]
-  );
-
-  /* ----------------------------- Fetch filters/data ----------------------------- */
   const fetchFilters = async (current) => {
     const res = await jfetch(`/oportunidades/filters${toQuery(current)}`);
     if (!res.ok) throw new Error("filters");
@@ -392,6 +321,7 @@ export default function DashboardOportunidades() {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -403,14 +333,14 @@ export default function DashboardOportunidades() {
     })();
   }, [filtrosDebounced]);
 
-  /* ----------------------------- KPIs ----------------------------- */
+  // ✅ KPIs con base COMPLETA (incluye excluidos)
   const kpis = useMemo(() => {
-    const total = baseKpi.length;
+    const total = dataBase.length;
     let activas = 0;
     let cerradas = 0;
     let ganadas = 0;
 
-    baseKpi.forEach((op) => {
+    dataBase.forEach((op) => {
       const estadoN = normKeyForMatch(op?.estado_oferta ?? "");
       if (ESTADOS_ACTIVOS_N.has(estadoN)) activas++;
       if (ESTADOS_CERRADOS_N.has(estadoN)) cerradas++;
@@ -424,19 +354,29 @@ export default function DashboardOportunidades() {
       ganadas,
       porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
     };
-  }, [baseKpi]);
+  }, [dataBase]);
 
+  /**
+   * 👇 IMPORTANTE:
+   * Mantengo las tablas “como estaban antes” (títulos como las tenías),
+   * pero ahora los conteos salen bien porque usan dataBase (sin excluir filas).
+   *
+   * - "Estado de Oferta" muestra PIVOT de resultado_oferta
+   * - "Resultado de Oferta" muestra PIVOT de estado_oferta (pero ocultando los excluidos)
+   */
 
-  const tablaEstadoOferta = useMemo(
-    () => buildPivot(baseTablaEstadoOferta, "resultado_oferta"),
-    [baseTablaEstadoOferta]
-  );
+  const tablaEstadoOferta = useMemo(() => {
+    // pivotea por resultado_oferta
+    // si quieres ocultar valores tipo 0TP/0TE/0TL también aquí:
+    const excludeKeyFn = (key) => isExcludedLabel(key);
+    return buildPivot(dataBase, "resultado_oferta", { excludeKeyFn });
+  }, [dataBase]);
 
-
-  const tablaResultadoOferta = useMemo(
-    () => buildPivot(baseTablaResultadoOferta, "estado_oferta"),
-    [baseTablaResultadoOferta]
-  );
+  const tablaResultadoOferta = useMemo(() => {
+    // pivotea por estado_oferta, pero NO muestra los excluidos
+    const excludeKeyFn = (key) => isExcludedLabel(key);
+    return buildPivot(dataBase, "estado_oferta", { excludeKeyFn });
+  }, [dataBase]);
 
   const limpiar = () => {
     setFiltros({
@@ -527,11 +467,11 @@ export default function DashboardOportunidades() {
                     </thead>
                     <tbody>
                       {tablaEstadoOferta.rows.map((it) => (
-                        <tr key={it.key}>
+                        <tr key={it.label}>
                           <td>{it.label}</td>
                           <td>{it.count}</td>
-                          <td>{formatCents(it.otc)}</td>
-                          <td>{formatCents(it.mrc)}</td>
+                          <td>{fmtMoney(it.otc)}</td>
+                          <td>{fmtMoney(it.mrc)}</td>
                           <td>
                             {tablaEstadoOferta.total
                               ? ((it.count / tablaEstadoOferta.total) * 100).toFixed(2)
@@ -544,8 +484,8 @@ export default function DashboardOportunidades() {
                       <tr className="table-total">
                         <td>Total</td>
                         <td>{tablaEstadoOferta.total}</td>
-                        <td>{formatCents(tablaEstadoOferta.totalOtc)}</td>
-                        <td>{formatCents(tablaEstadoOferta.totalMrc)}</td>
+                        <td>{fmtMoney(tablaEstadoOferta.totalOtc)}</td>
+                        <td>{fmtMoney(tablaEstadoOferta.totalMrc)}</td>
                         <td>{tablaEstadoOferta.total ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
@@ -568,11 +508,11 @@ export default function DashboardOportunidades() {
                     </thead>
                     <tbody>
                       {tablaResultadoOferta.rows.map((it) => (
-                        <tr key={it.key}>
+                        <tr key={it.label}>
                           <td>{it.label}</td>
                           <td>{it.count}</td>
-                          <td>{formatCents(it.otc)}</td>
-                          <td>{formatCents(it.mrc)}</td>
+                          <td>{fmtMoney(it.otc)}</td>
+                          <td>{fmtMoney(it.mrc)}</td>
                           <td>
                             {tablaResultadoOferta.total
                               ? ((it.count / tablaResultadoOferta.total) * 100).toFixed(2)
@@ -585,8 +525,8 @@ export default function DashboardOportunidades() {
                       <tr className="table-total">
                         <td>Total</td>
                         <td>{tablaResultadoOferta.total}</td>
-                        <td>{formatCents(tablaResultadoOferta.totalOtc)}</td>
-                        <td>{formatCents(tablaResultadoOferta.totalMrc)}</td>
+                        <td>{fmtMoney(tablaResultadoOferta.totalOtc)}</td>
+                        <td>{fmtMoney(tablaResultadoOferta.totalMrc)}</td>
                         <td>{tablaResultadoOferta.total ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
@@ -598,17 +538,17 @@ export default function DashboardOportunidades() {
             <div className="side-col">
               <div className="card">
                 <div className="card-title">Cantidad y Ganadas/Adjudicadas por Año y Mes</div>
-                <GraficoCantidadGanadas data={baseKpi} />
+                <GraficoCantidadGanadas data={dataFiltrada} />
               </div>
 
               <div className="card">
                 <div className="card-title">Activas y Cerradas por Año y Mes</div>
-                <GraficoActivasCerradas data={baseKpi} />
+                <GraficoActivasCerradas data={dataFiltrada} />
               </div>
 
               <div className="card">
                 <div className="card-title">Resumen Calificación</div>
-                <ResumenCalificacion data={baseAll} />
+                <ResumenCalificacion data={dataFiltrada} />
               </div>
             </div>
           </section>
@@ -634,7 +574,7 @@ export default function DashboardOportunidades() {
                   </tr>
                 </thead>
                 <tbody>
-                  {baseKpi.map((row, i) => (
+                  {dataFiltrada.map((row, i) => (
                     <tr key={row.id ?? i}>
                       <td>{row.nombre_cliente ?? "-"}</td>
                       <td>{row.servicio ?? "-"}</td>
