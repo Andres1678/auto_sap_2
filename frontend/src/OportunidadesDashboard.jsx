@@ -164,7 +164,7 @@ function toCentsBig(v) {
 
   if (typeof v === "number") {
     if (!Number.isFinite(v)) return 0n;
-    return BigInt(Math.round(v * 100));
+    return globalThis.BigInt(Math.round(v * 100));
   }
 
   let s = String(v).trim();
@@ -221,7 +221,7 @@ function toCentsBig(v) {
   else if (decPart.length === 1) decPart = `${decPart}0`;
   else if (decPart.length > 2) decPart = decPart.slice(0, 2);
 
-  const cents = BigInt(intPart) * 100n + BigInt(decPart);
+  const cents = globalThis.BigInt(intPart) * 100n + globalThis.BigInt(decPart);
   return sign * cents;
 }
 
