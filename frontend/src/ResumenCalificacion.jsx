@@ -4,7 +4,7 @@ import "./DashboardGraficos.css";
 function normalizar(txt) {
   return (txt ?? "")
     .toString()
-    .replace(/\u00A0/g, " ")      // NBSP -> espacio normal
+    .replace(/\u00A0/g, " ")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
@@ -16,7 +16,6 @@ function clasificarCalificacion(raw) {
   const k = normalizar(raw);
   if (!k) return null;
 
-  // Match por palabra completa para evitar falsos positivos
   if (/\bALTO\b/.test(k) || /\bALTA\b/.test(k)) return "ALTO";
   if (/\bBAJO\b/.test(k) || /\bBAJA\b/.test(k)) return "BAJO";
   if (/\bMEDIO\b/.test(k) || /\bMEDIA\b/.test(k)) return "MEDIO";
@@ -36,7 +35,8 @@ export default function ResumenCalificacion({ data }) {
       else if (c === "MEDIO") medio++;
     }
 
-    return { alto, bajo, medio };
+    const total = alto + bajo + medio; 
+    return { alto, bajo, medio, total };
   }, [data]);
 
   return (
@@ -49,6 +49,7 @@ export default function ResumenCalificacion({ data }) {
             <th>ALTO</th>
             <th>BAJO</th>
             <th>MEDIO</th>
+            <th>TOTAL</th>
           </tr>
         </thead>
 
@@ -57,6 +58,7 @@ export default function ResumenCalificacion({ data }) {
             <td>{resumen.alto}</td>
             <td>{resumen.bajo}</td>
             <td>{resumen.medio}</td>
+            <td>{resumen.total}</td>
           </tr>
         </tbody>
       </table>
