@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, time
 from functools import wraps
 from sqlalchemy import or_, text, func, extract, and_, cast, Integer
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import joinedload, aliased
+from sqlalchemy.orm import relationship, backref, joinedload, aliased
 import unicodedata, re
 from collections import defaultdict
 import pandas as pd
