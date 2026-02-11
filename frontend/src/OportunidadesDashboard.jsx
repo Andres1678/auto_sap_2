@@ -571,7 +571,7 @@ export default function DashboardOportunidades() {
 
               <div className="card">
                 <div className="card-title">Resumen Calificación</div>
-                <ResumenCalificacion data={dataFiltrada} />
+                <ResumenCalificacion data={dataBase} />
               </div>
             </div>
           </section>

@@ -16,9 +16,10 @@ function clasificarCalificacion(raw) {
   const k = normalizar(raw);
   if (!k) return null;
 
-  if (/\bALTO\b/.test(k) || /\bALTA\b/.test(k)) return "ALTO";
-  if (/\bBAJO\b/.test(k) || /\bBAJA\b/.test(k)) return "BAJO";
-  if (/\bMEDIO\b/.test(k) || /\bMEDIA\b/.test(k)) return "MEDIO";
+  
+  if (k === "ALTO" || k === "ALTA") return "ALTO";
+  if (k === "BAJO" || k === "BAJA") return "BAJO";
+  if (k === "MEDIO" || k === "MEDIA") return "MEDIO";
 
   return null;
 }
@@ -26,7 +27,9 @@ function clasificarCalificacion(raw) {
 export default function ResumenCalificacion({ data }) {
   const resumen = useMemo(() => {
     const rows = Array.isArray(data) ? data : [];
-    let alto = 0, bajo = 0, medio = 0;
+    let alto = 0,
+      bajo = 0,
+      medio = 0;
 
     for (const row of rows) {
       const c = clasificarCalificacion(row?.calificacion_oportunidad);
@@ -35,7 +38,7 @@ export default function ResumenCalificacion({ data }) {
       else if (c === "MEDIO") medio++;
     }
 
-    const total = alto + bajo + medio; 
+    const total = alto + bajo + medio;
     return { alto, bajo, medio, total };
   }, [data]);
 
