@@ -368,35 +368,42 @@ export default function DashboardOportunidades() {
 
 
   const kpis = useMemo(() => {
-    const base = Array.isArray(data) ? data : [];
+    const rows = Array.isArray(dataBase) ? dataBase : [];
 
     let activas = 0;
     let cerradas = 0;
     let ganadas = 0;
 
-    base.forEach((op) => {
-      if (isExcludedLabel(op?.estado_oferta ?? "")) return;
+    const GANADA_N = normKeyForMatch("GANADA");
 
-      const estadoN = normKeyForMatch(op?.estado_oferta ?? "");
+    for (const op of rows) {
+      const estadoRaw = op?.estado_oferta ?? "";
 
-      if (ESTADOS_ACTIVOS_N.has(estadoN)) activas++;
-      if (ESTADOS_CERRADOS_N.has(estadoN)) cerradas++;
-      if (estadoN === normKeyForMatch("GANADA")) ganadas++;
-    });
+      if (isExcludedLabel(estadoRaw)) continue;
 
-    const cantidad = (tablaEstadoOferta?.rows || []).reduce(
-      (acc, r) => acc + (r?.count || 0),
-      0
-    );
+      const estadoN = normKeyForMatch(estadoRaw);
+
+      
+      if (ESTADOS_ACTIVOS_N.has(estadoN)) {
+        activas++;
+      } else if (ESTADOS_CERRADOS_N.has(estadoN)) {
+        cerradas++;
+      }
+
+      if (estadoN === GANADA_N) ganadas++;
+    }
+
+    const total = activas + cerradas; 
 
     return {
-      total: cantidad,
+      total,
       activas,
       cerradas,
       ganadas,
-      porcentajeGanadas: cantidad ? (ganadas / cantidad) * 100 : 0,
+      porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
     };
-  }, [data, tablaEstadoOferta?.rows]);
+  }, [dataBase]);
+
 
   const limpiar = () => {
     setFiltros({
