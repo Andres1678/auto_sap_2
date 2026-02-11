@@ -175,6 +175,15 @@ function useDebouncedValue(value, delay = 250) {
   return debounced;
 }
 
+const isActiveValue = (v) => {
+  if (v === null || v === undefined) return true; 
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1;
+  const s = String(v).trim().toLowerCase();
+  return s === "1" || s === "true" || s === "si" || s === "sí";
+};
+
+
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros]   = useState([]);
@@ -194,6 +203,10 @@ const Registro = ({ userData }) => {
   const [filtroHorasAdic, setFiltroHorasAdic] = useState('');
   const [filtroMes, setFiltroMes] = useState("");   
   const [filtroAnio, setFiltroAnio] = useState(""); 
+  const [consultorActivo, setConsultorActivo] = useState(
+    isActiveValue(userData?.activo ?? userData?.user?.activo ?? localStorage.getItem("consultorActivo"))
+  );
+
 
   const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
   const rol = String(
@@ -272,6 +285,12 @@ const Registro = ({ userData }) => {
   const PAGE_SIZE = 100;
 
   const pendingEditTareaIdRef = useRef(null);
+
+  useEffect(() => {
+    const v = userData?.activo ?? userData?.user?.activo;
+    if (v !== undefined) setConsultorActivo(isActiveValue(v));
+  }, [userData]);
+
 
   useEffect(() => {
     const pendingId = pendingEditTareaIdRef.current;
@@ -402,6 +421,11 @@ const Registro = ({ userData }) => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) return;
 
+        // ✅ NUEVO: setear activo
+        const act = isActiveValue(data?.activo);
+        setConsultorActivo(act);
+        localStorage.setItem("consultorActivo", act ? "1" : "0");
+
         const norm = normalizeModulos(Array.isArray(data.modulos) ? data.modulos : []);
         if (norm.length) {
           setModulos(prev => uniq([...(prev || []), ...norm]));
@@ -409,6 +433,7 @@ const Registro = ({ userData }) => {
       } catch {}
     })();
   }, [usuarioLogin]);
+
 
 
   useEffect(() => {
@@ -571,6 +596,14 @@ const Registro = ({ userData }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!isAdmin && !consultorActivo) {
+      return Swal.fire({
+        icon: "warning",
+        title: "Usuario inactivo",
+        text: "No puedes registrar horas porque tu usuario está inactivo.",
+      });
+    }
+
     if (!registro.horaInicio || !registro.horaFin) {
       return Swal.fire({ icon: 'warning', title: 'Completa las horas de inicio y fin' });
     }
@@ -1026,17 +1059,27 @@ const Registro = ({ userData }) => {
     }
   };
 
-
-
   const handleAbrirModalRegistro = async () => {
     try {
       const res = await jfetch(
         `/consultores/datos?usuario=${encodeURIComponent(usuarioLogin)}`
       );
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.mensaje || `HTTP ${res.status}`);
+      }
+
+      const act = isActiveValue(data?.activo);
+      setConsultorActivo(act);
+      localStorage.setItem("consultorActivo", act ? "1" : "0");
+
+      if (!isAdmin && !act) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Usuario inactivo",
+          text: "Tu usuario está inactivo. No puedes registrar horas. Contacta al administrador.",
+        });
       }
 
       const lista = Array.isArray(data.modulos) ? data.modulos : [];
@@ -1048,9 +1091,7 @@ const Registro = ({ userData }) => {
       setRegistro({
         ...initRegistro(),
         modulo: norm.length === 1 ? norm[0] : "",
-        equipo: data.equipo
-          ? String(data.equipo).toUpperCase()
-          : userEquipoUpper,
+        equipo: data.equipo ? String(data.equipo).toUpperCase() : userEquipoUpper,
       });
 
       setOcupacionSeleccionada("");
@@ -1066,13 +1107,13 @@ const Registro = ({ userData }) => {
     }
   };
 
+
   const colSpanTabla = useMemo(() => {
     let cols = 19; // ✅ antes 18, ahora +1 por ID
     if (isBASISTable) cols += 2;
     if (isAdmin) cols += 1;
     return cols;
   }, [isBASISTable, isAdmin]);
-
 
 
   return (
@@ -1118,6 +1159,8 @@ const Registro = ({ userData }) => {
             <button
               className="btn btn-primary"
               onClick={handleAbrirModalRegistro}
+              disabled={!isAdmin && !consultorActivo}
+              title={!isAdmin && !consultorActivo ? "Usuario inactivo" : "Agregar Registro"}
             >
               Agregar Registro
             </button>

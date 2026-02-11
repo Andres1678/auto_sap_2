@@ -83,6 +83,7 @@ class Consultor(db.Model):
     rol_obj = relationship('Rol', back_populates='consultores')
     equipo_obj = relationship('Equipo', back_populates='consultores')
     horario_obj = relationship('Horario', backref=backref('consultores', lazy='joined'))
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
 
     modulos = relationship(
         'Modulo',

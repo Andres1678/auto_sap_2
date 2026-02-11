@@ -260,16 +260,24 @@ def _rol_from_request():
 def admin_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        data = request.get_json(silent=True) or {}
-        usuario = request.headers.get('X-User-Usuario') or request.args.get('usuario') or data.get('usuario')
-        c = Consultor.query.filter_by(usuario=usuario).first() if usuario else None
+        if request.method == "OPTIONS":
+            return ("", 204)
 
-        rol_real = (c.rol_obj.nombre if (c and c.rol_obj) else (getattr(c, "rol", "") if c else ""))
+        usuario = (request.headers.get("X-User-Usuario") or "").strip().lower()
+        if not usuario:
+            return jsonify({"mensaje": "Usuario no enviado"}), 401
+
+        c = Consultor.query.filter(func.lower(Consultor.usuario) == usuario).first()
+        if not c:
+            return jsonify({"mensaje": "Usuario no encontrado"}), 404
+
+        rol_real = (c.rol_obj.nombre if (c and c.rol_obj) else (getattr(c, "rol", "") or ""))
         if not _is_admin_request(rol_real, c):
-            return jsonify({'mensaje': 'Solo ADMIN'}), 403
+            return jsonify({"mensaje": "Solo ADMIN"}), 403
 
         return fn(*args, **kwargs)
     return wrapper
+
 
 
 
@@ -413,39 +421,59 @@ def listar_horarios():
 
 @bp.route('/login', methods=['POST'])
 def login():
-    data = request.json or {}
-    usuario = data.get("usuario")
-    password = data.get("password")
-    horario = data.get("horario")
+    data = request.get_json(silent=True) or {}
+
+    # Normaliza inputs
+    usuario = (data.get("usuario") or "").strip().lower()
+    password = data.get("password") or ""
+    horario  = data.get("horario")
+
+    if not usuario or not password:
+        return jsonify({"mensaje": "Usuario y password son obligatorios"}), 400
 
     # ===========================
     #   Cargar consultor + roles
     # ===========================
     consultor = (
         Consultor.query.options(
-
-            # Rol + permisos del rol
             joinedload(Consultor.rol_obj)
                 .joinedload(Rol.permisos_asignados)
                 .joinedload(RolPermiso.permiso),
 
-            # Equipo + permisos del equipo
             joinedload(Consultor.equipo_obj)
                 .joinedload(Equipo.permisos_asignados)
                 .joinedload(EquipoPermiso.permiso),
 
-            # Permisos individuales
             joinedload(Consultor.permisos_especiales)
                 .joinedload(ConsultorPermiso.permiso),
 
-            # Modulos
             joinedload(Consultor.modulos)
         )
-        .filter_by(usuario=usuario)
+        # Búsqueda case-insensitive
+        .filter(func.lower(Consultor.usuario) == usuario)
         .first()
     )
 
-    if not consultor or consultor.password != password:
+    if not consultor:
+        return jsonify({"mensaje": "Credenciales incorrectas"}), 401
+
+    # ✅ Validar usuario activo (ajusta el nombre del campo si es distinto)
+    if not bool(getattr(consultor, "activo", True)):
+        return jsonify({"mensaje": "Usuario inactivo. Contacte al administrador."}), 403
+
+    # ===========================
+    #   Validación de contraseña
+    # ===========================
+    stored = (consultor.password or "")
+
+    # Si está hasheada con bcrypt ($2a/$2b/$2y)
+    if stored.startswith("$2"):
+        ok_pass = bcrypt.checkpw(password.encode("utf-8"), stored.encode("utf-8"))
+    else:
+        # Fallback: si aún guardas en texto plano (no recomendado)
+        ok_pass = (stored == password)
+
+    if not ok_pass:
         return jsonify({"mensaje": "Credenciales incorrectas"}), 401
 
     # ==================================================
@@ -454,9 +482,10 @@ def login():
     if horario:
         ok, _ = _validar_horario(horario)
         if ok:
-            h = Horario.query.filter_by(rango=horario.strip()).first()
+            rango = horario.strip()
+            h = Horario.query.filter_by(rango=rango).first()
             if not h:
-                h = Horario(rango=horario.strip())
+                h = Horario(rango=rango)
                 db.session.add(h)
                 db.session.flush()
 
@@ -483,20 +512,16 @@ def login():
     # ============================================
     #   🔥 RECOLECCIÓN DE PERMISOS COMPLETA 🔥
     # ============================================
-
     permisos_set = set()
 
-    # Permisos del rol
     if consultor.rol_obj:
         for rp in consultor.rol_obj.permisos_asignados:
             permisos_set.add(rp.permiso.codigo)
 
-    # Permisos del equipo
     if consultor.equipo_obj:
         for ep in consultor.equipo_obj.permisos_asignados:
             permisos_set.add(ep.permiso.codigo)
 
-    # Permisos individuales
     for cp in consultor.permisos_especiales:
         permisos_set.add(cp.permiso.codigo)
 
@@ -511,14 +536,21 @@ def login():
             "rol": consultor.rol_obj.nombre.upper() if consultor.rol_obj else "CONSULTOR",
             "equipo": consultor.equipo_obj.nombre.upper() if consultor.equipo_obj else "SIN EQUIPO",
             "horario": consultor.horario_obj.rango if consultor.horario_obj else "N/D",
-            "consultor_id": consultor.id,   # 🔥 CORREGIDO
+            "consultor_id": consultor.id,
             "modulos": [{"id": m.id, "nombre": m.nombre} for m in consultor.modulos],
             "permisos": permisos_list
         }
     }), 200
 
-
-
+def _to_bool(v, default=True):
+    if v is None:
+        return default
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v == 1
+    s = str(v).strip().lower()
+    return s in ("1", "true", "si", "sí", "yes", "y")
 
 @bp.route('/consultores', methods=['POST'])
 @permission_required("CONSULTORES_CREAR")
@@ -528,7 +560,8 @@ def crear_consultor():
     c = Consultor(
         usuario=data.get('usuario'),
         nombre=data.get('nombre'),
-        password=data.get('password')
+        password=data.get('password'),
+        activo=_to_bool(data.get("activo"), default=True),  # ✅ NUEVO
     )
     _apply_catalog_fields_to_consultor(c, data)
 
@@ -549,6 +582,16 @@ def crear_consultor():
     except Exception as e:
         db.session.rollback()
         return jsonify({"mensaje": f"Error interno: {e}"}), 500
+    
+@bp.route("/consultores/<int:consultor_id>/activo", methods=["PUT"])
+@permission_required("CONSULTORES_EDITAR")
+def set_activo_consultor(consultor_id):
+    data = request.get_json() or {}
+    c = Consultor.query.get_or_404(consultor_id)
+    c.activo = _to_bool(data.get("activo"), default=True)
+    db.session.commit()
+    return jsonify({"mensaje": "Estado actualizado", "activo": bool(c.activo)}), 200
+
 
 # ===============================
 # Helper: asignar catálogos y módulos
@@ -893,14 +936,11 @@ def _norm_role(r: str) -> str:
     return (r or "").strip().upper()
 
 def _get_usuario_from_request() -> str:
-    return _norm_user(
-        request.headers.get("X-User-Usuario") or request.args.get("usuario") or ""
-    )
+    return (request.headers.get("X-User-Usuario") or "").strip().lower()
 
 def _get_rol_from_request() -> str:
-    return _norm_role(
-        request.headers.get("X-User-Rol") or request.args.get("rol") or ""
-    )
+    return (request.headers.get("X-User-Rol") or "").strip().upper()
+
 
 def _is_admin_total(role: str) -> bool:
     r = _norm_role(role)
@@ -1896,8 +1936,10 @@ def get_datos_consultor():
         "rol": rol,
         "equipo": equipo,
         "horario": horario,
-        "modulos": modulos
+        "modulos": modulos,
+        "activo": bool(consultor.activo), 
     }), 200
+
 
 
 # ========== OPORTUNIDADES ==========
@@ -2479,18 +2521,16 @@ def eliminar_permiso(id):
     return jsonify({"mensaje": "Permiso eliminado"}), 200
 
 @bp.route('/roles/<int:rol_id>/permisos', methods=['GET'])
-@permission_required("ROLES_VER") 
+@permission_required("ROLES_VER")
 def permisos_por_rol(rol_id):
-    role = Rol.query.get_or_404(rol_id)
-    permisos = (
-        db.session.query(RolPermiso, Permiso)
-        .join(Permiso, RolPermiso.permiso_id == Permiso.id)
+    perms = (
+        db.session.query(Permiso)
+        .join(RolPermiso, RolPermiso.permiso_id == Permiso.id)
         .filter(RolPermiso.rol_id == rol_id)
+        .order_by(Permiso.codigo.asc())
         .all()
     )
-
-    data = [{"id": p.Permiso.id, "codigo": p.Permiso.codigo} for p in permisos]
-    return jsonify(data), 200
+    return jsonify([p.to_dict() for p in perms]), 200
 
 @bp.route('/roles/<int:rol_id>/permisos', methods=['POST'])
 @permission_required("ROLES_EDITAR")
@@ -2526,14 +2566,14 @@ def quitar_permiso_rol(rol_id, permiso_id):
 @bp.route('/equipos/<int:equipo_id>/permisos', methods=['GET'])
 @permission_required("EQUIPOS_VER")
 def permisos_por_equipo(equipo_id):
-    permisos = (
-        db.session.query(EquipoPermiso, Permiso)
-        .join(Permiso, EquipoPermiso.permiso_id == Permiso.id)
+    perms = (
+        db.session.query(Permiso)
+        .join(EquipoPermiso, EquipoPermiso.permiso_id == Permiso.id)
         .filter(EquipoPermiso.equipo_id == equipo_id)
+        .order_by(Permiso.codigo.asc())
         .all()
     )
-
-    return jsonify([p.Permiso.to_dict() for p in permisos]), 200
+    return jsonify([p.to_dict() for p in perms]), 200
 
 @bp.route('/equipos/<int:equipo_id>/permisos', methods=['POST'])
 def asignar_permiso_equipo(equipo_id):
@@ -2565,16 +2605,16 @@ def quitar_permiso_equipo(equipo_id, permiso_id):
     return jsonify({"mensaje": "Permiso removido del equipo"}), 200
 
 @bp.route('/consultores/<int:consultor_id>/permisos', methods=['GET'])
-@permission_required("CONSULTORES_VER") 
+@permission_required("CONSULTORES_VER")
 def permisos_por_consultor(consultor_id):
-    permisos = (
-        db.session.query(ConsultorPermiso, Permiso)
-        .join(Permiso, ConsultorPermiso.permiso_id == Permiso.id)
+    perms = (
+        db.session.query(Permiso)
+        .join(ConsultorPermiso, ConsultorPermiso.permiso_id == Permiso.id)
         .filter(ConsultorPermiso.consultor_id == consultor_id)
+        .order_by(Permiso.codigo.asc())
         .all()
     )
-
-    return jsonify([p.Permiso.to_dict() for p in permisos]), 200
+    return jsonify([p.to_dict() for p in perms]), 200
 
 @bp.route('/consultores/<int:consultor_id>/permisos-efectivos', methods=['GET'])
 def permisos_efectivos_consultor(consultor_id):
