@@ -35,6 +35,7 @@ function normKeyForMatch(v) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
 
+  // Normaliza 0TP/0TE/0TL
   s = s.replace(/\b0TP\b/g, "OTP").replace(/\b0TE\b/g, "OTE").replace(/\b0TL\b/g, "OTL");
   return s;
 }
@@ -61,40 +62,151 @@ function isExcludedLabel(raw) {
   return false;
 }
 
+/* ===================== SUMAS EXACTAS SIN BigInt ===================== */
+/**
+ * Convierte un valor de dinero a string ENTERO (sin decimales),
+ * manejando casos como:
+ *  - "5.920.708.590"
+ *  - "$ 5.920.708.590"
+ *  - "14795751,389140608"   (coma decimal con muchos decimales) -> "14795751"
+ *  - "42.161.140,799359320" (miles + coma decimal) -> "42161140"
+ */
+function moneyToIntStr(v) {
+  if (v === null || v === undefined || v === "") return "0";
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) return "0";
+    return String(Math.trunc(v));
+  }
+
+  let s = String(v).trim();
+  if (!s) return "0";
+
+  // quita símbolos y espacios
+  s = s.replace(/\s/g, "").replace(/[$€£]/g, "");
+
+  // deja solo dígitos, punto, coma y signo
+  let neg = false;
+  if (s.startsWith("-")) {
+    neg = true;
+    s = s.slice(1);
+  }
+  s = s.replace(/[^\d.,]/g, "");
+
+  const commaCount = (s.match(/,/g) || []).length;
+  const dotCount = (s.match(/\./g) || []).length;
+
+  // Caso: tiene ambos separadores -> el ÚLTIMO separador es decimal
+  if (commaCount > 0 && dotCount > 0) {
+    const lastComma = s.lastIndexOf(",");
+    const lastDot = s.lastIndexOf(".");
+    const decSep = lastComma > lastDot ? "," : ".";
+    const thouSep = decSep === "," ? "." : ",";
+
+    const intPart = s.split(decSep)[0].replace(new RegExp(`\\${thouSep}`, "g"), "");
+    s = intPart;
+  }
+  // Caso: solo comas
+  else if (commaCount > 0 && dotCount === 0) {
+    if (commaCount === 1) {
+      const [a, b = ""] = s.split(",");
+      // si son 3 dígitos -> probablemente miles; si no -> decimal (cortamos)
+      if (b.length === 3) s = a + b;
+      else s = a; // decimal con muchos dígitos -> cortar
+    } else {
+      // varias comas => miles
+      s = s.replace(/,/g, "");
+    }
+  }
+  // Caso: solo puntos
+  else if (dotCount > 0 && commaCount === 0) {
+    if (dotCount === 1) {
+      const [a, b = ""] = s.split(".");
+      // si son 3 dígitos -> miles; si no -> decimal (cortamos)
+      if (b.length === 3) s = a + b;
+      else s = a;
+    } else {
+      // varios puntos => miles
+      s = s.replace(/\./g, "");
+    }
+  }
+
+  s = s.replace(/^0+(?=\d)/, "");
+  if (!s) s = "0";
+  return neg ? "-" + s : s;
+}
+
+function addPosIntStr(a, b) {
+  // suma strings de enteros positivos
+  let i = a.length - 1;
+  let j = b.length - 1;
+  let carry = 0;
+  let out = "";
+
+  while (i >= 0 || j >= 0 || carry) {
+    const da = i >= 0 ? a.charCodeAt(i) - 48 : 0;
+    const db = j >= 0 ? b.charCodeAt(j) - 48 : 0;
+    const sum = da + db + carry;
+    out = String(sum % 10) + out;
+    carry = Math.floor(sum / 10);
+    i--;
+    j--;
+  }
+
+  // remove leading zeros
+  out = out.replace(/^0+(?=\d)/, "");
+  return out || "0";
+}
+
+function fmtMoneyStr(intStr) {
+  let s = String(intStr ?? "0");
+  let neg = false;
+  if (s.startsWith("-")) {
+    neg = true;
+    s = s.slice(1);
+  }
+  s = s.replace(/^0+(?=\d)/, "") || "0";
+  const formatted = s.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return (neg ? "-" : "") + formatted;
+}
+
+/* ===================== Pivot (suma SOLO lo visible) ===================== */
+function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {}) {
+  const m = new Map();
+
+  (Array.isArray(rows) ? rows : []).forEach((r) => {
+    const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
+    if (skipBlank && !raw) return;
+
+    const key = normKeyForMatch(raw);
+    if (!key) return;
+
+    // excluye la FILA completa del pivot (no se muestra y no suma)
+    if (excludeKeyFn && excludeKeyFn(key, raw, r)) return;
+
+    const prev = m.get(key) || { label: key, count: 0, otc: "0", mrc: "0" };
+    prev.count += 1;
+    prev.otc = addPosIntStr(prev.otc, moneyToIntStr(r?.otc));
+    prev.mrc = addPosIntStr(prev.mrc, moneyToIntStr(r?.mrc));
+    m.set(key, prev);
+  });
+
+  const pivotRows = Array.from(m.values()).sort((a, b) => b.count - a.count);
+  return { rows: pivotRows };
+}
+
 function sumPivotRows(rows) {
   return (rows || []).reduce(
     (acc, r) => {
       acc.count += r.count || 0;
-      acc.otc += r.otc || 0;
-      acc.mrc += r.mrc || 0;
+      acc.otc = addPosIntStr(acc.otc, r.otc || "0");
+      acc.mrc = addPosIntStr(acc.mrc, r.mrc || "0");
       return acc;
     },
-    { count: 0, otc: 0, mrc: 0 }
+    { count: 0, otc: "0", mrc: "0" }
   );
 }
 
-
-const ESTADOS_ACTIVOS_N = new Set(
-  [
-    "EN PROCESO",
-    "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
-    "EN ELABORACION",
-    "ENTREGA COMERCIAL",
-  ].map(normKeyForMatch)
-);
-
-const ESTADOS_CERRADOS_N = new Set(
-  [
-    "GANADA",
-    "PERDIDA",
-    "DECLINADA",
-    "SUSPENDIDA",
-    "PERDIDA - SIN FEEDBACK",
-    "RFI PRESENTADO",
-    "RFP PRESENTADO",
-  ].map(normKeyForMatch)
-);
-
+/* ===================== filtros helpers ===================== */
 function toOptions(arr) {
   return (Array.isArray(arr) ? arr : [])
     .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
@@ -155,92 +267,27 @@ function CheckboxOption(props) {
   );
 }
 
-/** --------- Money helpers (SIN BigInt/globalThis) ---------- */
-const nfMoney = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
+/* ===================== KPIs ===================== */
+const ESTADOS_ACTIVOS_N = new Set(
+  [
+    "EN PROCESO",
+    "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
+    "EN ELABORACION",
+    "ENTREGA COMERCIAL",
+  ].map(normKeyForMatch)
+);
 
-function toNumberSmart(v) {
-  if (v === null || v === undefined || v === "") return 0;
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-
-  let s = String(v).trim();
-  if (!s) return 0;
-
-  s = s.replace(/\s/g, "").replace(/[$€£]/g, "");
-
-  const lastComma = s.lastIndexOf(",");
-  const lastDot = s.lastIndexOf(".");
-  const hasComma = lastComma !== -1;
-  const hasDot = lastDot !== -1;
-
-  if (hasComma && hasDot) {
-    if (lastComma > lastDot) {
-      s = s.replace(/\./g, "");
-      s = s.replace(",", ".");
-    } else {
-      s = s.replace(/,/g, "");
-    }
-  } else if (hasComma && !hasDot) {
-    const parts = s.split(",");
-    if (parts.length === 2 && parts[1].length <= 2) {
-      s = parts[0].replace(/\./g, "") + "." + parts[1];
-    } else {
-      s = s.replace(/,/g, "");
-    }
-  } else if (!hasComma && hasDot) {
-    const parts = s.split(".");
-    if (parts.length === 2 && parts[1].length <= 2) {
-      s = parts[0].replace(/,/g, "") + "." + parts[1];
-    } else {
-      s = s.replace(/\./g, "");
-    }
-  }
-
-  s = s.replace(/[^\d.-]/g, "");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function fmtMoney(n) {
-  return nfMoney.format(n || 0);
-}
-
-/**
- * Pivot que:
- * - Cuenta SIEMPRE con base en rows (no “borra filas”)
- * - Permite: ocultar keys (excludeKeyFn) pero SIN afectar el total base (para que % y total cuadren con Excel)
- * - Suma OTC y MRC por grupo
- */
-function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {}) {
-  const m = new Map();
-  let totalCount = 0;
-  let totalOtc = 0;
-  let totalMrc = 0;
-
-  (Array.isArray(rows) ? rows : []).forEach((r) => {
-    const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
-    if (skipBlank && !raw) return;
-
-    const key = normKeyForMatch(raw);
-    if (!key) return;
-
-    // Totales SIEMPRE incluyen todo (incluyendo excluidos)
-    totalCount += 1;
-    totalOtc += toNumberSmart(r?.otc);
-    totalMrc += toNumberSmart(r?.mrc);
-
-    // Si está excluido, NO lo mostramos como fila
-    if (excludeKeyFn && excludeKeyFn(key, raw, r)) return;
-
-    const prev = m.get(key) || { label: key, count: 0, otc: 0, mrc: 0 };
-    prev.count += 1;
-    prev.otc += toNumberSmart(r?.otc);
-    prev.mrc += toNumberSmart(r?.mrc);
-    m.set(key, prev);
-  });
-
-  const pivotRows = Array.from(m.values()).sort((a, b) => b.count - a.count);
-  return { rows: pivotRows, total: totalCount, totalOtc, totalMrc };
-}
+const ESTADOS_CERRADOS_N = new Set(
+  [
+    "GANADA",
+    "PERDIDA",
+    "DECLINADA",
+    "SUSPENDIDA",
+    "PERDIDA - SIN FEEDBACK",
+    "RFI PRESENTADO",
+    "RFP PRESENTADO",
+  ].map(normKeyForMatch)
+);
 
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
@@ -280,11 +327,15 @@ export default function DashboardOportunidades() {
 
   const filtrosDebounced = useDebouncedValue(filtros, 400);
 
-  
   const dataBase = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
-  
+  // Esta es la “vista limpia” (para gráficas + detalle)
   const dataFiltrada = useMemo(() => {
+    return dataBase.filter((op) => !isExcludedLabel(op?.estado_oferta ?? ""));
+  }, [dataBase]);
+
+  // Base para tablas (solo lo que debe sumar/verse)
+  const baseTablas = useMemo(() => {
     return dataBase.filter((op) => !isExcludedLabel(op?.estado_oferta ?? ""));
   }, [dataBase]);
 
@@ -334,6 +385,7 @@ export default function DashboardOportunidades() {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -345,24 +397,32 @@ export default function DashboardOportunidades() {
     })();
   }, [filtrosDebounced]);
 
-  
-  const tablaEstadoOferta = useMemo(() => {
-    const excludeKeyFn = (key) => isExcludedLabel(key);
-    return buildPivot(dataBase, "estado_oferta", { excludeKeyFn });
-  }, [dataBase]);
-
-  const totEstadoOferta = useMemo(
-    () => sumPivotRows(tablaEstadoOferta.rows),
-    [tablaEstadoOferta.rows]
-  );
+  /**
+   * ✅ IMPORTANTE (como tu Excel):
+   * - "Resultado de Oferta" -> PIVOT por estado_oferta (GANADA, PERDIDA, ...)
+   * - "Estado de Oferta"    -> PIVOT por resultado_oferta (OPORTUNIDAD PERDIDA, CERRADA, VAR, ...)
+   */
 
   const tablaResultadoOferta = useMemo(() => {
-    return buildPivot(dataBase, "resultado_oferta", { excludeKeyFn: null });
-  }, [dataBase]);
+    // excluye REGISTRO / PROSPECCION / etc si llegaran a venir
+    const excludeKeyFn = (key) => isExcludedLabel(key);
+    return buildPivot(baseTablas, "estado_oferta", { excludeKeyFn });
+  }, [baseTablas]);
 
   const totResultadoOferta = useMemo(
     () => sumPivotRows(tablaResultadoOferta.rows),
     [tablaResultadoOferta.rows]
+  );
+
+  const tablaEstadoOferta = useMemo(() => {
+    // ✅ aquí es donde debes excluir OTP/OTE/OTL, PENDIENTE APROBACION SAP, etc
+    const excludeKeyFn = (key) => isExcludedLabel(key);
+    return buildPivot(baseTablas, "resultado_oferta", { excludeKeyFn });
+  }, [baseTablas]);
+
+  const totEstadoOferta = useMemo(
+    () => sumPivotRows(tablaEstadoOferta.rows),
+    [tablaEstadoOferta.rows]
   );
 
   const kpis = useMemo(() => {
@@ -376,23 +436,17 @@ export default function DashboardOportunidades() {
 
     for (const op of rows) {
       const estadoRaw = op?.estado_oferta ?? "";
-
       if (isExcludedLabel(estadoRaw)) continue;
 
       const estadoN = normKeyForMatch(estadoRaw);
 
-      
-      if (ESTADOS_ACTIVOS_N.has(estadoN)) {
-        activas++;
-      } else if (ESTADOS_CERRADOS_N.has(estadoN)) {
-        cerradas++;
-      }
+      if (ESTADOS_ACTIVOS_N.has(estadoN)) activas++;
+      else if (ESTADOS_CERRADOS_N.has(estadoN)) cerradas++;
 
       if (estadoN === GANADA_N) ganadas++;
     }
 
-    const total = activas + cerradas; 
-
+    const total = activas + cerradas;
     return {
       total,
       activas,
@@ -401,7 +455,6 @@ export default function DashboardOportunidades() {
       porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
     };
   }, [dataBase]);
-
 
   const limpiar = () => {
     setFiltros({
@@ -477,49 +530,7 @@ export default function DashboardOportunidades() {
 
           <section className="main-grid">
             <div className="main-col">
-              <div className="card">
-                <div className="card-title">Estado de Oferta</div>
-                <div className="table-scroll">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>ESTADO</th>
-                        <th>Cant</th>
-                        <th>OTC</th>
-                        <th>MRC</th>
-                        <th>%</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {tablaEstadoOferta.rows.map((it) => (
-                        <tr key={it.label}>
-                          <td>{it.label}</td>
-                          <td>{it.count}</td>
-                          <td>{fmtMoney(it.otc)}</td>
-                          <td>{fmtMoney(it.mrc)}</td>
-                          <td>
-                            {totEstadoOferta.count
-                              ? ((it.count / totEstadoOferta.count) * 100).toFixed(2)
-                              : "0.00"}
-                            %
-                          </td>
-                        </tr>
-                      ))}
-
-                      <tr className="table-total">
-                        <td>Total</td>
-                        <td>{totEstadoOferta.count}</td>
-                        <td>{fmtMoney(totEstadoOferta.otc)}</td>
-                        <td>{fmtMoney(totEstadoOferta.mrc)}</td>
-                        <td>{totEstadoOferta.count ? "100%" : "0%"}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* ===================== RESULTADO DE OFERTA ===================== */}
+              {/* ===================== RESULTADO DE OFERTA (estado_oferta) ===================== */}
               <div className="card">
                 <div className="card-title">Resultado de Oferta</div>
                 <div className="table-scroll">
@@ -539,8 +550,8 @@ export default function DashboardOportunidades() {
                         <tr key={it.label}>
                           <td>{it.label}</td>
                           <td>{it.count}</td>
-                          <td>{fmtMoney(it.otc)}</td>
-                          <td>{fmtMoney(it.mrc)}</td>
+                          <td>{fmtMoneyStr(it.otc)}</td>
+                          <td>{fmtMoneyStr(it.mrc)}</td>
                           <td>
                             {totResultadoOferta.count
                               ? ((it.count / totResultadoOferta.count) * 100).toFixed(2)
@@ -553,15 +564,58 @@ export default function DashboardOportunidades() {
                       <tr className="table-total">
                         <td>Total</td>
                         <td>{totResultadoOferta.count}</td>
-                        <td>{fmtMoney(totResultadoOferta.otc)}</td>
-                        <td>{fmtMoney(totResultadoOferta.mrc)}</td>
+                        <td>{fmtMoneyStr(totResultadoOferta.otc)}</td>
+                        <td>{fmtMoneyStr(totResultadoOferta.mrc)}</td>
                         <td>{totResultadoOferta.count ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               </div>
-            </div>            
+
+              {/* ===================== ESTADO DE OFERTA (resultado_oferta) ===================== */}
+              <div className="card">
+                <div className="card-title">Estado de Oferta</div>
+                <div className="table-scroll">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>ESTADO</th>
+                        <th>Cant</th>
+                        <th>OTC</th>
+                        <th>MRC</th>
+                        <th>%</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {tablaEstadoOferta.rows.map((it) => (
+                        <tr key={it.label}>
+                          <td>{it.label}</td>
+                          <td>{it.count}</td>
+                          <td>{fmtMoneyStr(it.otc)}</td>
+                          <td>{fmtMoneyStr(it.mrc)}</td>
+                          <td>
+                            {totEstadoOferta.count
+                              ? ((it.count / totEstadoOferta.count) * 100).toFixed(2)
+                              : "0.00"}
+                            %
+                          </td>
+                        </tr>
+                      ))}
+
+                      <tr className="table-total">
+                        <td>Total</td>
+                        <td>{totEstadoOferta.count}</td>
+                        <td>{fmtMoneyStr(totEstadoOferta.otc)}</td>
+                        <td>{fmtMoneyStr(totEstadoOferta.mrc)}</td>
+                        <td>{totEstadoOferta.count ? "100%" : "0%"}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
 
             <div className="side-col">
               <div className="card">
