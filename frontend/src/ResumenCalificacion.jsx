@@ -12,6 +12,11 @@ function normalizar(txt) {
     .replace(/\s+/g, " ");
 }
 
+function esEnProceso(row) {
+  const estado = normalizar(row?.estado_oportunidad);
+  return estado === "EN PROCESO";
+}
+
 function clasificarCalificacion(raw) {
   const k = normalizar(raw);
   if (!k) return null;
@@ -32,12 +37,13 @@ export default function ResumenCalificacion({ data }) {
       medio = 0;
 
     for (const row of rows) {
+      if (!esEnProceso(row)) continue;
+
       const c = clasificarCalificacion(row?.calificacion_oportunidad);
       if (c === "ALTO") alto++;
       else if (c === "BAJO") bajo++;
       else if (c === "MEDIO") medio++;
     }
-
     const total = alto + bajo + medio;
     return { alto, bajo, medio, total };
   }, [data]);

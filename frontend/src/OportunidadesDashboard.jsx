@@ -61,6 +61,19 @@ function isExcludedLabel(raw) {
   return false;
 }
 
+function sumPivotRows(rows) {
+  return (rows || []).reduce(
+    (acc, r) => {
+      acc.count += r.count || 0;
+      acc.otc += r.otc || 0;
+      acc.mrc += r.mrc || 0;
+      return acc;
+    },
+    { count: 0, otc: 0, mrc: 0 }
+  );
+}
+
+
 const ESTADOS_ACTIVOS_N = new Set(
   [
     "EN PROCESO",
@@ -267,10 +280,10 @@ export default function DashboardOportunidades() {
 
   const filtrosDebounced = useDebouncedValue(filtros, 400);
 
-  // ✅ Base SIN excluir filas (para que tablas/KPIs cuadren con Excel)
+  
   const dataBase = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
-  // ✅ Vista “limpia” (sin excluidos) para gráficas + detalle si quieres
+  
   const dataFiltrada = useMemo(() => {
     return dataBase.filter((op) => !isExcludedLabel(op?.estado_oferta ?? ""));
   }, [dataBase]);
@@ -332,40 +345,25 @@ export default function DashboardOportunidades() {
     })();
   }, [filtrosDebounced]);
 
+  
   const tablaEstadoOferta = useMemo(() => {
-    const excludeKeyFn = (key) => isExcludedLabel(key);
-    return buildPivot(dataBase, "resultado_oferta", { excludeKeyFn });
-  }, [dataBase]);
-
-  const totalCantTablaEstado = useMemo(() => {
-    return (tablaEstadoOferta.rows || []).reduce((acc, r) => acc + (r.count || 0), 0);
-  }, [tablaEstadoOferta.rows]);
-
-  const totalOtcTablaEstado = useMemo(() => {
-    return (tablaEstadoOferta.rows || []).reduce((acc, r) => acc + (r.otc || 0), 0);
-  }, [tablaEstadoOferta.rows]);
-
-  const totalMrcTablaEstado = useMemo(() => {
-    return (tablaEstadoOferta.rows || []).reduce((acc, r) => acc + (r.mrc || 0), 0);
-  }, [tablaEstadoOferta.rows]);
-
-  const tablaResultadoOferta = useMemo(() => {
     const excludeKeyFn = (key) => isExcludedLabel(key);
     return buildPivot(dataBase, "estado_oferta", { excludeKeyFn });
   }, [dataBase]);
 
-  const totalCantTablaResultado = useMemo(() => {
-    return (tablaResultadoOferta.rows || []).reduce((acc, r) => acc + (r.count || 0), 0);
-  }, [tablaResultadoOferta.rows]);
+  const totEstadoOferta = useMemo(
+    () => sumPivotRows(tablaEstadoOferta.rows),
+    [tablaEstadoOferta.rows]
+  );
 
-  const totalOtcTablaResultado = useMemo(() => {
-    return (tablaResultadoOferta.rows || []).reduce((acc, r) => acc + (r.otc || 0), 0);
-  }, [tablaResultadoOferta.rows]);
+  const tablaResultadoOferta = useMemo(() => {
+    return buildPivot(dataBase, "resultado_oferta", { excludeKeyFn: null });
+  }, [dataBase]);
 
-  const totalMrcTablaResultado = useMemo(() => {
-    return (tablaResultadoOferta.rows || []).reduce((acc, r) => acc + (r.mrc || 0), 0);
-  }, [tablaResultadoOferta.rows]);
-
+  const totResultadoOferta = useMemo(
+    () => sumPivotRows(tablaResultadoOferta.rows),
+    [tablaResultadoOferta.rows]
+  );
 
   const kpis = useMemo(() => {
     const rows = Array.isArray(dataBase) ? dataBase : [];
@@ -501,8 +499,8 @@ export default function DashboardOportunidades() {
                           <td>{fmtMoney(it.otc)}</td>
                           <td>{fmtMoney(it.mrc)}</td>
                           <td>
-                            {totalCantTablaEstado
-                              ? ((it.count / totalCantTablaEstado) * 100).toFixed(2)
+                            {totEstadoOferta.count
+                              ? ((it.count / totEstadoOferta.count) * 100).toFixed(2)
                               : "0.00"}
                             %
                           </td>
@@ -511,10 +509,10 @@ export default function DashboardOportunidades() {
 
                       <tr className="table-total">
                         <td>Total</td>
-                        <td>{totalCantTablaEstado}</td>
-                        <td>{fmtMoney(totalOtcTablaEstado)}</td>
-                        <td>{fmtMoney(totalMrcTablaEstado)}</td>
-                        <td>{totalCantTablaEstado ? "100%" : "0%"}</td>
+                        <td>{totEstadoOferta.count}</td>
+                        <td>{fmtMoney(totEstadoOferta.otc)}</td>
+                        <td>{fmtMoney(totEstadoOferta.mrc)}</td>
+                        <td>{totEstadoOferta.count ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -544,8 +542,8 @@ export default function DashboardOportunidades() {
                           <td>{fmtMoney(it.otc)}</td>
                           <td>{fmtMoney(it.mrc)}</td>
                           <td>
-                            {totalCantTablaResultado
-                              ? ((it.count / totalCantTablaResultado) * 100).toFixed(2)
+                            {totResultadoOferta.count
+                              ? ((it.count / totResultadoOferta.count) * 100).toFixed(2)
                               : "0.00"}
                             %
                           </td>
@@ -554,16 +552,16 @@ export default function DashboardOportunidades() {
 
                       <tr className="table-total">
                         <td>Total</td>
-                        <td>{totalCantTablaResultado}</td>
-                        <td>{fmtMoney(totalOtcTablaResultado)}</td>
-                        <td>{fmtMoney(totalMrcTablaResultado)}</td>
-                        <td>{totalCantTablaResultado ? "100%" : "0%"}</td>
+                        <td>{totResultadoOferta.count}</td>
+                        <td>{fmtMoney(totResultadoOferta.otc)}</td>
+                        <td>{fmtMoney(totResultadoOferta.mrc)}</td>
+                        <td>{totResultadoOferta.count ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               </div>
-            </div>
+            </div>            
 
             <div className="side-col">
               <div className="card">
