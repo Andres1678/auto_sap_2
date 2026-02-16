@@ -35,9 +35,18 @@ function normKeyForMatch(v) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
 
-  // Normaliza 0TP/0TE/0TL
+  // Corrige ceros típicos: 0TP => OTP, etc.
   s = s.replace(/\b0TP\b/g, "OTP").replace(/\b0TE\b/g, "OTE").replace(/\b0TL\b/g, "OTL");
   return s;
+}
+
+// Para mostrar (preserva acentos si vienen del backend)
+function displayLabel(v) {
+  return String(v ?? "")
+    .replace(/\u00A0/g, " ")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
 }
 
 const EXCLUDE_LIST = [
@@ -50,163 +59,46 @@ const EXCLUDE_LIST = [
   "0TP",
   "0TE",
   "0TL",
-];
+].map(normKeyForMatch);
+
+const EXCLUDE_SET = new Set(EXCLUDE_LIST);
 
 function isExcludedLabel(raw) {
   const k = normKeyForMatch(raw);
   if (!k) return false;
-  for (const x of EXCLUDE_LIST) {
-    if (k === x) return true;
+  if (EXCLUDE_SET.has(k)) return true;
+
+  // Para variantes tipo "OTP - ALGO"
+  for (const x of EXCLUDE_SET) {
     if (k.includes(x)) return true;
   }
   return false;
-}
-
-/* ===================== SUMAS EXACTAS SIN BigInt ===================== */
-/**
- * Convierte un valor de dinero a string ENTERO (sin decimales),
- * manejando casos como:
- *  - "5.920.708.590"
- *  - "$ 5.920.708.590"
- *  - "14795751,389140608"   (coma decimal con muchos decimales) -> "14795751"
- *  - "42.161.140,799359320" (miles + coma decimal) -> "42161140"
- */
-function moneyToIntStr(v) {
-  if (v === null || v === undefined || v === "") return "0";
-  if (typeof v === "number") {
-    if (!Number.isFinite(v)) return "0";
-    return String(Math.trunc(v));
-  }
-
-  let s = String(v).trim();
-  if (!s) return "0";
-
-  // quita símbolos y espacios
-  s = s.replace(/\s/g, "").replace(/[$€£]/g, "");
-
-  // deja solo dígitos, punto, coma y signo
-  let neg = false;
-  if (s.startsWith("-")) {
-    neg = true;
-    s = s.slice(1);
-  }
-  s = s.replace(/[^\d.,]/g, "");
-
-  const commaCount = (s.match(/,/g) || []).length;
-  const dotCount = (s.match(/\./g) || []).length;
-
-  // Caso: tiene ambos separadores -> el ÚLTIMO separador es decimal
-  if (commaCount > 0 && dotCount > 0) {
-    const lastComma = s.lastIndexOf(",");
-    const lastDot = s.lastIndexOf(".");
-    const decSep = lastComma > lastDot ? "," : ".";
-    const thouSep = decSep === "," ? "." : ",";
-
-    const intPart = s.split(decSep)[0].replace(new RegExp(`\\${thouSep}`, "g"), "");
-    s = intPart;
-  }
-  // Caso: solo comas
-  else if (commaCount > 0 && dotCount === 0) {
-    if (commaCount === 1) {
-      const [a, b = ""] = s.split(",");
-      // si son 3 dígitos -> probablemente miles; si no -> decimal (cortamos)
-      if (b.length === 3) s = a + b;
-      else s = a; // decimal con muchos dígitos -> cortar
-    } else {
-      // varias comas => miles
-      s = s.replace(/,/g, "");
-    }
-  }
-  // Caso: solo puntos
-  else if (dotCount > 0 && commaCount === 0) {
-    if (dotCount === 1) {
-      const [a, b = ""] = s.split(".");
-      // si son 3 dígitos -> miles; si no -> decimal (cortamos)
-      if (b.length === 3) s = a + b;
-      else s = a;
-    } else {
-      // varios puntos => miles
-      s = s.replace(/\./g, "");
-    }
-  }
-
-  s = s.replace(/^0+(?=\d)/, "");
-  if (!s) s = "0";
-  return neg ? "-" + s : s;
-}
-
-function addPosIntStr(a, b) {
-  // suma strings de enteros positivos
-  let i = a.length - 1;
-  let j = b.length - 1;
-  let carry = 0;
-  let out = "";
-
-  while (i >= 0 || j >= 0 || carry) {
-    const da = i >= 0 ? a.charCodeAt(i) - 48 : 0;
-    const db = j >= 0 ? b.charCodeAt(j) - 48 : 0;
-    const sum = da + db + carry;
-    out = String(sum % 10) + out;
-    carry = Math.floor(sum / 10);
-    i--;
-    j--;
-  }
-
-  // remove leading zeros
-  out = out.replace(/^0+(?=\d)/, "");
-  return out || "0";
-}
-
-function fmtMoneyStr(intStr) {
-  let s = String(intStr ?? "0");
-  let neg = false;
-  if (s.startsWith("-")) {
-    neg = true;
-    s = s.slice(1);
-  }
-  s = s.replace(/^0+(?=\d)/, "") || "0";
-  const formatted = s.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return (neg ? "-" : "") + formatted;
-}
-
-/* ===================== Pivot (suma SOLO lo visible) ===================== */
-function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {}) {
-  const m = new Map();
-
-  (Array.isArray(rows) ? rows : []).forEach((r) => {
-    const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
-    if (skipBlank && !raw) return;
-
-    const key = normKeyForMatch(raw);
-    if (!key) return;
-
-    // excluye la FILA completa del pivot (no se muestra y no suma)
-    if (excludeKeyFn && excludeKeyFn(key, raw, r)) return;
-
-    const prev = m.get(key) || { label: key, count: 0, otc: "0", mrc: "0" };
-    prev.count += 1;
-    prev.otc = addPosIntStr(prev.otc, moneyToIntStr(r?.otc));
-    prev.mrc = addPosIntStr(prev.mrc, moneyToIntStr(r?.mrc));
-    m.set(key, prev);
-  });
-
-  const pivotRows = Array.from(m.values()).sort((a, b) => b.count - a.count);
-  return { rows: pivotRows };
 }
 
 function sumPivotRows(rows) {
   return (rows || []).reduce(
     (acc, r) => {
       acc.count += r.count || 0;
-      acc.otc = addPosIntStr(acc.otc, r.otc || "0");
-      acc.mrc = addPosIntStr(acc.mrc, r.mrc || "0");
+      acc.otc += r.otc || 0;
+      acc.mrc += r.mrc || 0;
       return acc;
     },
-    { count: 0, otc: "0", mrc: "0" }
+    { count: 0, otc: 0, mrc: 0 }
   );
 }
 
-/* ===================== filtros helpers ===================== */
+const ESTADOS_ACTIVOS_N = new Set(
+  ["EN PROCESO", "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION", "EN ELABORACION", "ENTREGA COMERCIAL"].map(
+    normKeyForMatch
+  )
+);
+
+const ESTADOS_CERRADOS_N = new Set(
+  ["GANADA", "PERDIDA", "DECLINADA", "SUSPENDIDA", "PERDIDA - SIN FEEDBACK", "RFI PRESENTADO", "RFP PRESENTADO"].map(
+    normKeyForMatch
+  )
+);
+
 function toOptions(arr) {
   return (Array.isArray(arr) ? arr : [])
     .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
@@ -267,27 +159,121 @@ function CheckboxOption(props) {
   );
 }
 
-/* ===================== KPIs ===================== */
-const ESTADOS_ACTIVOS_N = new Set(
-  [
-    "EN PROCESO",
-    "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
-    "EN ELABORACION",
-    "ENTREGA COMERCIAL",
-  ].map(normKeyForMatch)
-);
+/** --------- Money helpers (SIN BigInt) ---------- */
+const nfMoney = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 });
 
-const ESTADOS_CERRADOS_N = new Set(
-  [
-    "GANADA",
-    "PERDIDA",
-    "DECLINADA",
-    "SUSPENDIDA",
-    "PERDIDA - SIN FEEDBACK",
-    "RFI PRESENTADO",
-    "RFP PRESENTADO",
-  ].map(normKeyForMatch)
-);
+function toNumberSmart(v) {
+  if (v === null || v === undefined || v === "") return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+
+  let s = String(v).trim();
+  if (!s) return 0;
+
+  // limpia moneda y espacios
+  s = s.replace(/\s/g, "").replace(/[$€£]/g, "");
+
+  // Si ya viene como número estándar con punto decimal (y opcional exponente), parse directo
+  // Ej: 5920708590.000000  ó  1.19394921E9
+  if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s)) {
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  const commaCount = (s.match(/,/g) || []).length;
+  const dotCount = (s.match(/\./g) || []).length;
+
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+
+  // Caso con coma y punto: decide decimal por el último separador
+  if (commaCount > 0 && dotCount > 0) {
+    const decimalSep = lastComma > lastDot ? "," : ".";
+    const thousandSep = decimalSep === "," ? "." : ",";
+
+    s = s.split(thousandSep).join("");
+    if (decimalSep === ",") s = s.replace(",", ".");
+  } else if (commaCount > 0 && dotCount === 0) {
+    // Solo comas
+    if (commaCount === 1) {
+      const after = s.slice(lastComma + 1);
+      const before = s.slice(0, lastComma).replace(/^[+-]/, "");
+
+      // Si es tipo 12,345 y before <=3 -> miles; si no, decimal
+      if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
+      else s = s.replace(",", ".");
+    } else {
+      // muchas comas => miles
+      s = s.replace(/,/g, "");
+    }
+  } else if (dotCount > 0 && commaCount === 0) {
+    // Solo puntos
+    if (dotCount === 1) {
+      const after = s.slice(lastDot + 1);
+      const before = s.slice(0, lastDot).replace(/^[+-]/, "");
+
+      // 12.345 (before<=3 y after=3) => miles, si no => decimal (permite muchos decimales)
+      if (after.length === 3 && before.length <= 3) s = s.replace(".", "");
+      // else: se queda como decimal con punto
+    } else {
+      // Muchos puntos: puede ser miles (7.022.381.356) o miles + decimal al final (42.161.182.407.593226)
+      const parts = s.split(".");
+      const last = parts[parts.length - 1];
+      const mid = parts.slice(1, -1);
+
+      const midAll3 = mid.every((p) => p.length === 3);
+      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3; // estilo 7.022.381.356
+      const looksLikeGrouped = midAll3 && firstOk;
+
+      // Si el último grupo NO tiene 3 dígitos => lo tratamos como DECIMAL final
+      if (looksLikeGrouped && last.length !== 3) {
+        const intPart = parts.slice(0, -1).join("");
+        s = intPart + "." + last;
+      } else {
+        // si no, es miles
+        s = s.replace(/\./g, "");
+      }
+    }
+  }
+
+  // deja solo dígitos + signos + punto + exponente por si venía raro
+  s = s.replace(/[^\d.+-eE]/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function fmtMoney(n) {
+  return nfMoney.format(n || 0);
+}
+
+/**
+ * Pivot:
+ * - Agrupa por field
+ * - Suma count/otc/mrc
+ * - Permite ocultar keys (excludeKeyFn) y entonces NO entran en filas (y tu total lo sacas de sumPivotRows)
+ */
+function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {}) {
+  const m = new Map();
+
+  (Array.isArray(rows) ? rows : []).forEach((r) => {
+    const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
+    if (skipBlank && !raw) return;
+
+    const key = normKeyForMatch(raw);
+    if (!key) return;
+
+    // Si está excluido, no lo mostramos
+    if (excludeKeyFn && excludeKeyFn(key, raw, r)) return;
+
+    const prev = m.get(key) || { label: displayLabel(raw), count: 0, otc: 0, mrc: 0 };
+    prev.count += 1;
+    prev.otc += toNumberSmart(r?.otc);
+    prev.mrc += toNumberSmart(r?.mrc);
+    m.set(key, prev);
+  });
+
+  const pivotRows = Array.from(m.values()).sort((a, b) => b.count - a.count);
+  return { rows: pivotRows };
+}
 
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
@@ -329,13 +315,8 @@ export default function DashboardOportunidades() {
 
   const dataBase = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
-  // Esta es la “vista limpia” (para gráficas + detalle)
+  // Vista “limpia” para gráficas/detalle (basada en estado_oferta)
   const dataFiltrada = useMemo(() => {
-    return dataBase.filter((op) => !isExcludedLabel(op?.estado_oferta ?? ""));
-  }, [dataBase]);
-
-  // Base para tablas (solo lo que debe sumar/verse)
-  const baseTablas = useMemo(() => {
     return dataBase.filter((op) => !isExcludedLabel(op?.estado_oferta ?? ""));
   }, [dataBase]);
 
@@ -385,7 +366,6 @@ export default function DashboardOportunidades() {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -397,32 +377,21 @@ export default function DashboardOportunidades() {
     })();
   }, [filtrosDebounced]);
 
-  /**
-   * ✅ IMPORTANTE (como tu Excel):
-   * - "Resultado de Oferta" -> PIVOT por estado_oferta (GANADA, PERDIDA, ...)
-   * - "Estado de Oferta"    -> PIVOT por resultado_oferta (OPORTUNIDAD PERDIDA, CERRADA, VAR, ...)
-   */
+  // ✅ ESTADO DE OFERTA (excluye OTP/OTE/OTL/etc)
+  const tablaEstadoOferta = useMemo(() => {
+    return buildPivot(dataBase, "estado_oferta", { excludeKeyFn: (key) => isExcludedLabel(key) });
+  }, [dataBase]);
 
+  const totEstadoOferta = useMemo(() => sumPivotRows(tablaEstadoOferta.rows), [tablaEstadoOferta.rows]);
+
+  // ✅ RESULTADO DE OFERTA (excluye OTP/OTE/OTL/etc)  <-- AQUÍ ESTABA EL ERROR
   const tablaResultadoOferta = useMemo(() => {
-    // excluye REGISTRO / PROSPECCION / etc si llegaran a venir
-    const excludeKeyFn = (key) => isExcludedLabel(key);
-    return buildPivot(baseTablas, "estado_oferta", { excludeKeyFn });
-  }, [baseTablas]);
+    return buildPivot(dataBase, "resultado_oferta", { excludeKeyFn: (key) => isExcludedLabel(key) });
+  }, [dataBase]);
 
   const totResultadoOferta = useMemo(
     () => sumPivotRows(tablaResultadoOferta.rows),
     [tablaResultadoOferta.rows]
-  );
-
-  const tablaEstadoOferta = useMemo(() => {
-    // ✅ aquí es donde debes excluir OTP/OTE/OTL, PENDIENTE APROBACION SAP, etc
-    const excludeKeyFn = (key) => isExcludedLabel(key);
-    return buildPivot(baseTablas, "resultado_oferta", { excludeKeyFn });
-  }, [baseTablas]);
-
-  const totEstadoOferta = useMemo(
-    () => sumPivotRows(tablaEstadoOferta.rows),
-    [tablaEstadoOferta.rows]
   );
 
   const kpis = useMemo(() => {
@@ -447,6 +416,7 @@ export default function DashboardOportunidades() {
     }
 
     const total = activas + cerradas;
+
     return {
       total,
       activas,
@@ -530,50 +500,7 @@ export default function DashboardOportunidades() {
 
           <section className="main-grid">
             <div className="main-col">
-              {/* ===================== RESULTADO DE OFERTA (estado_oferta) ===================== */}
-              <div className="card">
-                <div className="card-title">Resultado de Oferta</div>
-                <div className="table-scroll">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>RESULTADO</th>
-                        <th>Cant</th>
-                        <th>OTC</th>
-                        <th>MRC</th>
-                        <th>%</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {tablaResultadoOferta.rows.map((it) => (
-                        <tr key={it.label}>
-                          <td>{it.label}</td>
-                          <td>{it.count}</td>
-                          <td>{fmtMoneyStr(it.otc)}</td>
-                          <td>{fmtMoneyStr(it.mrc)}</td>
-                          <td>
-                            {totResultadoOferta.count
-                              ? ((it.count / totResultadoOferta.count) * 100).toFixed(2)
-                              : "0.00"}
-                            %
-                          </td>
-                        </tr>
-                      ))}
-
-                      <tr className="table-total">
-                        <td>Total</td>
-                        <td>{totResultadoOferta.count}</td>
-                        <td>{fmtMoneyStr(totResultadoOferta.otc)}</td>
-                        <td>{fmtMoneyStr(totResultadoOferta.mrc)}</td>
-                        <td>{totResultadoOferta.count ? "100%" : "0%"}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* ===================== ESTADO DE OFERTA (resultado_oferta) ===================== */}
+              {/* ===================== ESTADO DE OFERTA ===================== */}
               <div className="card">
                 <div className="card-title">Estado de Oferta</div>
                 <div className="table-scroll">
@@ -593,8 +520,8 @@ export default function DashboardOportunidades() {
                         <tr key={it.label}>
                           <td>{it.label}</td>
                           <td>{it.count}</td>
-                          <td>{fmtMoneyStr(it.otc)}</td>
-                          <td>{fmtMoneyStr(it.mrc)}</td>
+                          <td>{fmtMoney(it.otc)}</td>
+                          <td>{fmtMoney(it.mrc)}</td>
                           <td>
                             {totEstadoOferta.count
                               ? ((it.count / totEstadoOferta.count) * 100).toFixed(2)
@@ -607,9 +534,52 @@ export default function DashboardOportunidades() {
                       <tr className="table-total">
                         <td>Total</td>
                         <td>{totEstadoOferta.count}</td>
-                        <td>{fmtMoneyStr(totEstadoOferta.otc)}</td>
-                        <td>{fmtMoneyStr(totEstadoOferta.mrc)}</td>
+                        <td>{fmtMoney(totEstadoOferta.otc)}</td>
+                        <td>{fmtMoney(totEstadoOferta.mrc)}</td>
                         <td>{totEstadoOferta.count ? "100%" : "0%"}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* ===================== RESULTADO DE OFERTA ===================== */}
+              <div className="card">
+                <div className="card-title">Resultado de Oferta</div>
+                <div className="table-scroll">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>RESULTADO</th>
+                        <th>Cant</th>
+                        <th>OTC</th>
+                        <th>MRC</th>
+                        <th>%</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {tablaResultadoOferta.rows.map((it) => (
+                        <tr key={it.label}>
+                          <td>{it.label}</td>
+                          <td>{it.count}</td>
+                          <td>{fmtMoney(it.otc)}</td>
+                          <td>{fmtMoney(it.mrc)}</td>
+                          <td>
+                            {totResultadoOferta.count
+                              ? ((it.count / totResultadoOferta.count) * 100).toFixed(2)
+                              : "0.00"}
+                            %
+                          </td>
+                        </tr>
+                      ))}
+
+                      <tr className="table-total">
+                        <td>Total</td>
+                        <td>{totResultadoOferta.count}</td>
+                        <td>{fmtMoney(totResultadoOferta.otc)}</td>
+                        <td>{fmtMoney(totResultadoOferta.mrc)}</td>
+                        <td>{totResultadoOferta.count ? "100%" : "0%"}</td>
                       </tr>
                     </tbody>
                   </table>

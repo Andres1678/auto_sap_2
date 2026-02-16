@@ -14,7 +14,7 @@ function normalizar(txt) {
 
 function esEnProceso(row) {
   const estado = normalizar(row?.estado_oportunidad);
-  return estado === "EN PROCESO";
+  return estado === "OPORTUNIDAD EN PROCESO";
 }
 
 function clasificarCalificacion(raw) {
