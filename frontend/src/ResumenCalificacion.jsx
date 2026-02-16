@@ -12,16 +12,39 @@ function normalizar(txt) {
     .replace(/\s+/g, " ");
 }
 
+
+function getEstadoProceso(row) {
+  return (
+    row?.estado_oportunidad ??
+    row?.resultado_oferta ??
+    row?.estado_oferta ??
+    row?.estado_ot ??
+    ""
+  );
+}
+
 function esEnProceso(row) {
-  const estado = normalizar(row?.estado_oportunidad);
-  return estado === "OPORTUNIDAD EN PROCESO";
+  const estado = normalizar(getEstadoProceso(row));
+
+  
+  if (estado === "OPORTUNIDAD EN PROCESO") return true;
+
+  
+  if (estado.startsWith("OPORTUNIDAD EN PROCESO")) return true;
+
+  
+  if (estado === "EN PROCESO") return true;
+
+  
+  if (estado.includes("EN PROCESO")) return true;
+
+  return false;
 }
 
 function clasificarCalificacion(raw) {
   const k = normalizar(raw);
   if (!k) return null;
 
-  
   if (k === "ALTO" || k === "ALTA") return "ALTO";
   if (k === "BAJO" || k === "BAJA") return "BAJO";
   if (k === "MEDIO" || k === "MEDIA") return "MEDIO";
@@ -44,6 +67,7 @@ export default function ResumenCalificacion({ data }) {
       else if (c === "BAJO") bajo++;
       else if (c === "MEDIO") medio++;
     }
+
     const total = alto + bajo + medio;
     return { alto, bajo, medio, total };
   }, [data]);
