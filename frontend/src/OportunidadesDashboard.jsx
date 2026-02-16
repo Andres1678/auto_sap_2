@@ -7,6 +7,7 @@ import ResumenCalificacion from "./ResumenCalificacion";
 import "./DashboardOportunidades.css";
 import { jfetch } from "./lib/api";
 
+/* ===================== React-Select styles ===================== */
 const rsStyles = {
   control: (base, state) => ({
     ...base,
@@ -26,6 +27,22 @@ const rsStyles = {
   option: (base) => ({ ...base, display: "flex", alignItems: "center", gap: 10 }),
 };
 
+const portalTarget = typeof document !== "undefined" ? document.body : null;
+
+function CheckboxOption(props) {
+  const selected = props.isSelected;
+  const disabled = props.isDisabled;
+  return (
+    <components.Option {...props}>
+      <span className={`rs-check ${selected ? "is-on" : ""} ${disabled ? "is-disabled" : ""}`}>
+        {selected ? "✓" : ""}
+      </span>
+      <span className="rs-label">{props.label}</span>
+    </components.Option>
+  );
+}
+
+/* ===================== Normalizadores de texto ===================== */
 function normKeyForMatch(v) {
   let s = String(v ?? "")
     .replace(/\u00A0/g, " ")
@@ -40,7 +57,6 @@ function normKeyForMatch(v) {
   return s;
 }
 
-// Para mostrar (preserva acentos si vienen del backend)
 function displayLabel(v) {
   return String(v ?? "")
     .replace(/\u00A0/g, " ")
@@ -49,32 +65,143 @@ function displayLabel(v) {
     .replace(/\s+/g, " ");
 }
 
-const EXCLUDE_LIST = [
-  "OTP",
-  "OTE",
-  "OTL",
-  "PROSPECCION",
-  "REGISTRO",
-  "PENDIENTE APROBACION SAP",
-  "0TP",
-  "0TE",
-  "0TL",
-].map(normKeyForMatch);
-
-const EXCLUDE_SET = new Set(EXCLUDE_LIST);
+/* ===================== Exclusiones (no deben salir en tablas/pivots) ===================== */
+const EXCLUDE_SET = new Set(
+  [
+    "OTP",
+    "OTE",
+    "OTL",
+    "PROSPECCION",
+    "REGISTRO",
+    "PENDIENTE APROBACION SAP",
+    "0TP",
+    "0TE",
+    "0TL",
+  ].map(normKeyForMatch)
+);
 
 function isExcludedLabel(raw) {
   const k = normKeyForMatch(raw);
   if (!k) return false;
   if (EXCLUDE_SET.has(k)) return true;
 
-  // Para variantes tipo "OTP - ALGO"
+  // variantes tipo "OTP - algo"
   for (const x of EXCLUDE_SET) {
     if (k.includes(x)) return true;
   }
   return false;
 }
 
+/* ===================== Money helpers (SIN BigInt) ===================== */
+const nfMoney = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 });
+
+/**
+ * Parser robusto:
+ * - soporta "$ 56.564.988,00"
+ * - soporta "5920708590.000000"
+ * - soporta "1.19394921E9"
+ * - soporta "7.022.381.356"
+ */
+function toNumberSmart(v) {
+  if (v === null || v === undefined || v === "") return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+
+  let s = String(v).trim();
+  if (!s) return 0;
+
+  // limpia moneda/espacios/%/COP
+  s = s
+    .replace(/\u00A0/g, " ")
+    .replace(/\s/g, "")
+    .replace(/COP/gi, "")
+    .replace(/[$€£]/g, "")
+    .replace(/%/g, "");
+
+  // ✅ Si ya viene como número estándar con punto decimal (y opcional exponente), parse directo
+  // Ej: 5920708590.000000  ó  1.19394921E9  ó  42161182407.593220
+  if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s)) {
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  const commaCount = (s.match(/,/g) || []).length;
+  const dotCount = (s.match(/\./g) || []).length;
+
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+
+  // Caso con coma y punto: decide decimal por el último separador
+  if (commaCount > 0 && dotCount > 0) {
+    const decimalSep = lastComma > lastDot ? "," : ".";
+    const thousandSep = decimalSep === "," ? "." : ",";
+
+    s = s.split(thousandSep).join("");
+    if (decimalSep === ",") s = s.replace(",", ".");
+  } else if (commaCount > 0 && dotCount === 0) {
+    // Solo comas: puede ser decimal o miles
+    if (commaCount === 1) {
+      const after = s.slice(lastComma + 1);
+      const before = s.slice(0, lastComma).replace(/^[+-]/, "");
+      // Si luce como miles "12,345" (after=3 y before<=3) => miles
+      if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
+      else s = s.replace(",", ".");
+    } else {
+      // muchas comas => miles
+      s = s.replace(/,/g, "");
+    }
+  } else if (dotCount > 0 && commaCount === 0) {
+    // Solo puntos: puede ser miles o decimal
+    if (dotCount === 1) {
+      const after = s.slice(lastDot + 1);
+      const before = s.slice(0, lastDot).replace(/^[+-]/, "");
+
+      // miles estilo "12.345" (before<=3 y after=3)
+      if (after.length === 3 && before.length <= 3) {
+        s = s.replace(".", "");
+      } else {
+        // ✅ si after NO es 3 (o before > 3), lo tratamos como decimal (ej: .000000, .593220, .157)
+        // se deja el punto tal cual
+      }
+    } else {
+      // Muchos puntos: puede ser miles (7.022.381.356) o miles + decimal al final
+      const parts = s.split(".");
+      const last = parts[parts.length - 1];
+      const mid = parts.slice(1, -1);
+
+      const midAll3 = mid.every((p) => p.length === 3);
+      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3; // estilo 7.022.381.356
+      const looksLikeGrouped = midAll3 && firstOk;
+
+      // Si el último grupo NO tiene 3 dígitos => decimal final
+      if (looksLikeGrouped && last.length !== 3) {
+        const intPart = parts.slice(0, -1).join("");
+        s = intPart + "." + last;
+      } else {
+        // miles
+        s = s.replace(/\./g, "");
+      }
+    }
+  }
+
+  s = s.replace(/[^\d.+-eE]/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function fmtMoney(n) {
+  return nfMoney.format(n || 0);
+}
+
+/* Si alguna vez viene "otr" en vez de "otc", hacemos fallback */
+function readMoney(row, keys) {
+  for (const k of keys) {
+    const v = row?.[k];
+    if (v !== null && v !== undefined && String(v).trim() !== "") return toNumberSmart(v);
+  }
+  return 0;
+}
+
+/* ===================== Pivot helpers ===================== */
 function sumPivotRows(rows) {
   return (rows || []).reduce(
     (acc, r) => {
@@ -87,18 +214,40 @@ function sumPivotRows(rows) {
   );
 }
 
-const ESTADOS_ACTIVOS_N = new Set(
-  ["EN PROCESO", "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION", "EN ELABORACION", "ENTREGA COMERCIAL"].map(
-    normKeyForMatch
-  )
-);
+/**
+ * buildPivot:
+ * - Agrupa por field
+ * - Suma count + money (OTC/MRC)
+ * - Permite excluir keys
+ */
+function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {}) {
+  const m = new Map();
 
-const ESTADOS_CERRADOS_N = new Set(
-  ["GANADA", "PERDIDA", "DECLINADA", "SUSPENDIDA", "PERDIDA - SIN FEEDBACK", "RFI PRESENTADO", "RFP PRESENTADO"].map(
-    normKeyForMatch
-  )
-);
+  (Array.isArray(rows) ? rows : []).forEach((r) => {
+    const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
+    if (skipBlank && !raw) return;
 
+    const key = normKeyForMatch(raw);
+    if (!key) return;
+
+    if (excludeKeyFn && excludeKeyFn(key, raw, r)) return;
+
+    const prev = m.get(key) || { label: displayLabel(raw), count: 0, otc: 0, mrc: 0 };
+
+    prev.count += 1;
+
+    // ✅ aquí la suma correcta
+    prev.otc += readMoney(r, ["otc", "otr", "OTC", "OTR"]);
+    prev.mrc += readMoney(r, ["mrc", "MRC"]);
+
+    m.set(key, prev);
+  });
+
+  const pivotRows = Array.from(m.values()).sort((a, b) => b.count - a.count);
+  return { rows: pivotRows };
+}
+
+/* ===================== filtros/query ===================== */
 function toOptions(arr) {
   return (Array.isArray(arr) ? arr : [])
     .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
@@ -144,137 +293,20 @@ function useDebouncedValue(value, delay = 350) {
   return debounced;
 }
 
-const portalTarget = typeof document !== "undefined" ? document.body : null;
+/* ===================== sets de KPIs ===================== */
+const ESTADOS_ACTIVOS_N = new Set(
+  ["EN PROCESO", "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION", "EN ELABORACION", "ENTREGA COMERCIAL"].map(
+    normKeyForMatch
+  )
+);
 
-function CheckboxOption(props) {
-  const selected = props.isSelected;
-  const disabled = props.isDisabled;
-  return (
-    <components.Option {...props}>
-      <span className={`rs-check ${selected ? "is-on" : ""} ${disabled ? "is-disabled" : ""}`}>
-        {selected ? "✓" : ""}
-      </span>
-      <span className="rs-label">{props.label}</span>
-    </components.Option>
-  );
-}
+const ESTADOS_CERRADOS_N = new Set(
+  ["GANADA", "PERDIDA", "DECLINADA", "SUSPENDIDA", "PERDIDA - SIN FEEDBACK", "RFI PRESENTADO", "RFP PRESENTADO"].map(
+    normKeyForMatch
+  )
+);
 
-/** --------- Money helpers (SIN BigInt) ---------- */
-const nfMoney = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 });
-
-function toNumberSmart(v) {
-  if (v === null || v === undefined || v === "") return 0;
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-
-  let s = String(v).trim();
-  if (!s) return 0;
-
-  // limpia moneda y espacios
-  s = s.replace(/\s/g, "").replace(/[$€£]/g, "");
-
-  // Si ya viene como número estándar con punto decimal (y opcional exponente), parse directo
-  // Ej: 5920708590.000000  ó  1.19394921E9
-  if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s)) {
-    const n = Number(s);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  const commaCount = (s.match(/,/g) || []).length;
-  const dotCount = (s.match(/\./g) || []).length;
-
-  const lastComma = s.lastIndexOf(",");
-  const lastDot = s.lastIndexOf(".");
-
-  // Caso con coma y punto: decide decimal por el último separador
-  if (commaCount > 0 && dotCount > 0) {
-    const decimalSep = lastComma > lastDot ? "," : ".";
-    const thousandSep = decimalSep === "," ? "." : ",";
-
-    s = s.split(thousandSep).join("");
-    if (decimalSep === ",") s = s.replace(",", ".");
-  } else if (commaCount > 0 && dotCount === 0) {
-    // Solo comas
-    if (commaCount === 1) {
-      const after = s.slice(lastComma + 1);
-      const before = s.slice(0, lastComma).replace(/^[+-]/, "");
-
-      // Si es tipo 12,345 y before <=3 -> miles; si no, decimal
-      if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
-      else s = s.replace(",", ".");
-    } else {
-      // muchas comas => miles
-      s = s.replace(/,/g, "");
-    }
-  } else if (dotCount > 0 && commaCount === 0) {
-    // Solo puntos
-    if (dotCount === 1) {
-      const after = s.slice(lastDot + 1);
-      const before = s.slice(0, lastDot).replace(/^[+-]/, "");
-
-      // 12.345 (before<=3 y after=3) => miles, si no => decimal (permite muchos decimales)
-      if (after.length === 3 && before.length <= 3) s = s.replace(".", "");
-      // else: se queda como decimal con punto
-    } else {
-      // Muchos puntos: puede ser miles (7.022.381.356) o miles + decimal al final (42.161.182.407.593226)
-      const parts = s.split(".");
-      const last = parts[parts.length - 1];
-      const mid = parts.slice(1, -1);
-
-      const midAll3 = mid.every((p) => p.length === 3);
-      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3; // estilo 7.022.381.356
-      const looksLikeGrouped = midAll3 && firstOk;
-
-      // Si el último grupo NO tiene 3 dígitos => lo tratamos como DECIMAL final
-      if (looksLikeGrouped && last.length !== 3) {
-        const intPart = parts.slice(0, -1).join("");
-        s = intPart + "." + last;
-      } else {
-        // si no, es miles
-        s = s.replace(/\./g, "");
-      }
-    }
-  }
-
-  // deja solo dígitos + signos + punto + exponente por si venía raro
-  s = s.replace(/[^\d.+-eE]/g, "");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function fmtMoney(n) {
-  return nfMoney.format(n || 0);
-}
-
-/**
- * Pivot:
- * - Agrupa por field
- * - Suma count/otc/mrc
- * - Permite ocultar keys (excludeKeyFn) y entonces NO entran en filas (y tu total lo sacas de sumPivotRows)
- */
-function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {}) {
-  const m = new Map();
-
-  (Array.isArray(rows) ? rows : []).forEach((r) => {
-    const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
-    if (skipBlank && !raw) return;
-
-    const key = normKeyForMatch(raw);
-    if (!key) return;
-
-    // Si está excluido, no lo mostramos
-    if (excludeKeyFn && excludeKeyFn(key, raw, r)) return;
-
-    const prev = m.get(key) || { label: displayLabel(raw), count: 0, otc: 0, mrc: 0 };
-    prev.count += 1;
-    prev.otc += toNumberSmart(r?.otc);
-    prev.mrc += toNumberSmart(r?.mrc);
-    m.set(key, prev);
-  });
-
-  const pivotRows = Array.from(m.values()).sort((a, b) => b.count - a.count);
-  return { rows: pivotRows };
-}
-
+/* ===================== Component ===================== */
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState([]);
@@ -366,6 +398,7 @@ export default function DashboardOportunidades() {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -379,24 +412,20 @@ export default function DashboardOportunidades() {
 
   // ✅ ESTADO DE OFERTA (excluye OTP/OTE/OTL/etc)
   const tablaEstadoOferta = useMemo(() => {
-    return buildPivot(dataBase, "estado_oferta", { excludeKeyFn: (key) => isExcludedLabel(key) });
+    return buildPivot(dataBase, "estado_oferta", { excludeKeyFn: (_key, raw) => isExcludedLabel(raw) });
   }, [dataBase]);
 
   const totEstadoOferta = useMemo(() => sumPivotRows(tablaEstadoOferta.rows), [tablaEstadoOferta.rows]);
 
-  // ✅ RESULTADO DE OFERTA (excluye OTP/OTE/OTL/etc)  <-- AQUÍ ESTABA EL ERROR
+  // ✅ RESULTADO DE OFERTA (excluye OTP/OTE/OTL/etc)
   const tablaResultadoOferta = useMemo(() => {
-    return buildPivot(dataBase, "resultado_oferta", { excludeKeyFn: (key) => isExcludedLabel(key) });
+    return buildPivot(dataBase, "resultado_oferta", { excludeKeyFn: (_key, raw) => isExcludedLabel(raw) });
   }, [dataBase]);
 
-  const totResultadoOferta = useMemo(
-    () => sumPivotRows(tablaResultadoOferta.rows),
-    [tablaResultadoOferta.rows]
-  );
+  const totResultadoOferta = useMemo(() => sumPivotRows(tablaResultadoOferta.rows), [tablaResultadoOferta.rows]);
 
   const kpis = useMemo(() => {
     const rows = Array.isArray(dataBase) ? dataBase : [];
-
     let activas = 0;
     let cerradas = 0;
     let ganadas = 0;
@@ -634,8 +663,8 @@ export default function DashboardOportunidades() {
                       <td>{row.calificacion_oportunidad ?? "-"}</td>
                       <td>{row.estado_oferta ?? "-"}</td>
                       <td>{row.resultado_oferta ?? "-"}</td>
-                      <td>{row.otc ?? "-"}</td>
-                      <td>{row.mrc ?? "-"}</td>
+                      <td>{fmtMoney(readMoney(row, ["otc", "otr", "OTC", "OTR"]))}</td>
+                      <td>{fmtMoney(readMoney(row, ["mrc", "MRC"]))}</td>
                       <td>{row.gerencia_comercial ?? "-"}</td>
                       <td>{row.comercial_asignado ?? "-"}</td>
                       <td className="td-wrap">{row.observaciones ?? "-"}</td>

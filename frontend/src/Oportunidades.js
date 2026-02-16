@@ -20,48 +20,74 @@ function isNumericCol(col) {
 }
 
 function parseNumberSmart(input) {
-  if (input === null || input === undefined) return "";
+  if (input === null || input === undefined || input === "") return "";
   if (typeof input === "number") return Number.isFinite(input) ? input : "";
+
   let s = String(input).trim();
   if (!s) return "";
+
   s = s.replace(/\s/g, "");
   s = s.replace(/[$€£]/g, "");
   s = s.replace(/%/g, "");
 
+  if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s)) {
+    const n = Number(s);
+    return Number.isFinite(n) ? n : "";
+  }
+
+  const commaCount = (s.match(/,/g) || []).length;
+  const dotCount = (s.match(/\./g) || []).length;
+
   const lastComma = s.lastIndexOf(",");
   const lastDot = s.lastIndexOf(".");
-  const hasComma = lastComma !== -1;
-  const hasDot = lastDot !== -1;
 
-  if (hasComma && hasDot) {
-    if (lastComma > lastDot) {
-      s = s.replace(/\./g, "");
-      s = s.replace(",", ".");
+  if (commaCount > 0 && dotCount > 0) {
+    const decimalSep = lastComma > lastDot ? "," : ".";
+    const thousandSep = decimalSep === "," ? "." : ",";
+
+    s = s.split(thousandSep).join("");
+    if (decimalSep === ",") s = s.replace(",", ".");
+  } else if (commaCount > 0 && dotCount === 0) {
+    if (commaCount === 1) {
+      const after = s.slice(lastComma + 1);
+      const before = s.slice(0, lastComma).replace(/^[+-]/, "");
+
+      if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
+      else s = s.replace(",", ".");
     } else {
       s = s.replace(/,/g, "");
     }
-  } else if (hasComma && !hasDot) {
-    const parts = s.split(",");
-    if (parts.length === 2 && parts[1].length <= 2) {
-      s = parts[0].replace(/\./g, "") + "." + parts[1];
+  } else if (dotCount > 0 && commaCount === 0) {
+    if (dotCount === 1) {
+      const after = s.slice(lastDot + 1);
+      const before = s.slice(0, lastDot).replace(/^[+-]/, "");
+      if (after.length === 3 && before.length <= 3) s = s.replace(".", "");
+      
     } else {
-      s = s.replace(/,/g, "");
-    }
-  } else if (!hasComma && hasDot) {
-    const parts = s.split(".");
-    if (parts.length === 2 && parts[1].length <= 2) {
-      s = parts[0].replace(/,/g, "") + "." + parts[1];
-    } else {
-      s = s.replace(/\./g, "");
+      const parts = s.split(".");
+      const last = parts[parts.length - 1];
+      const mid = parts.slice(1, -1);
+
+      const midAll3 = mid.every((p) => p.length === 3);
+      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3;
+      const looksLikeGrouped = midAll3 && firstOk;
+
+      if (looksLikeGrouped && last.length !== 3) {
+        const intPart = parts.slice(0, -1).join("");
+        s = intPart + "." + last;
+      } else {
+        s = s.replace(/\./g, "");
+      }
     }
   }
 
-  s = s.replace(/[^\d.-]/g, "");
+  s = s.replace(/[^\d.+-eE]/g, "");
   if (!s || s === "-" || s === "." || s === "-.") return "";
 
   const n = Number(s);
   return Number.isFinite(n) ? n : "";
 }
+
 
 function formatCell(col, value) {
   if (!isNumericCol(col)) return value ?? "-";
@@ -102,6 +128,12 @@ export default function Oportunidades() {
     "publicacion_sharepoint"
   ];
 
+  
+  function normalizeRowFromApi(r) {
+    const otcValue = (r?.otc ?? r?.otr ?? ""); 
+    return { ...r, otc: otcValue };
+  }
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -114,12 +146,14 @@ export default function Oportunidades() {
         return;
       }
 
-      setData(json);
-      setFilteredData(json);
+      const normalized = json.map(normalizeRowFromApi);
+
+      setData(normalized);
+      setFilteredData(normalized);
 
       const uniq = {};
       columnOrder.forEach((col) => {
-        const values = [...new Set(json.map((r) => r[col] ?? ""))];
+        const values = [...new Set(normalized.map((r) => r?.[col] ?? ""))];
         uniq[col] = values.map((v) => ({
           label: v?.toString() || "-",
           value: v ?? ""
@@ -129,8 +163,9 @@ export default function Oportunidades() {
       setUniqueValues(uniq);
     } catch {
       Swal.fire("Error", "No se pudo cargar la información", "error");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {

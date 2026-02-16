@@ -18,7 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 import logging
 import traceback
 import math
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from openpyxl import load_workbook
 from flask import current_app
 
@@ -2148,18 +2148,22 @@ def importar_oportunidades():
     if not file:
         return jsonify({'mensaje': 'Archivo no recibido'}), 400
 
+    # ✅ mantiene regla de "solo carga inicial"
     if Oportunidad.query.count() > 0:
         return jsonify({'mensaje': 'La carga inicial ya fue realizada'}), 400
 
+    # Lee Excel (forzamos texto, pero el parser también soporta números puros)
     df = pd.read_excel(BytesIO(file.read()), dtype=str)
 
     def norm_col(c):
-        c = str(c).strip().upper()
+        c = str(c).replace("\u00A0", " ").strip().upper()
         c = re.sub(r"\s+", " ", c)
         return c
 
     df.columns = [norm_col(c) for c in df.columns]
 
+    # ✅ Mapeo Excel -> Modelo
+    # OJO: agregué "OTR" como posible columna monetaria (por tu comentario)
     colmap = {
         "NOMBRE CLIENTE": "nombre_cliente",
         "SERVICIO": "servicio",
@@ -2189,10 +2193,15 @@ def importar_oportunidades():
         "VIGENCIA DE LA PROPUESTA": "vigencia_propuesta",
         "FECHA ACEPTACIÓN DE LA OFERTA": "fecha_aceptacion_oferta",
         "TIPO DE MONEDA": "tipo_moneda",
+
+        # ✅ monetarios (OTC o OTR)
         "OTC": "otc",
+        "OTR": "otc",
+
         "MRC": "mrc",
         "MRC NORMALIZADO": "mrc_normalizado",
         "VALOR OFERTA CLARO": "valor_oferta_claro",
+
         "DURACION": "duracion",
         "PAIS": "pais",
         "FECHA DE CIERRE OPORTUNIDAD": "fecha_cierre_oportunidad",
@@ -2223,7 +2232,8 @@ def importar_oportunidades():
         "fecha_firma_aos", "fecha_compromiso", "fecha_cierre", "fecha_acta_cierre_ot"
     }
 
-    INT_FIELDS = {"otc", "mrc", "mrc_normalizado", "valor_oferta_claro"}
+    # ✅ estos son los campos monetarios que NO se deben “limpiar a solo dígitos”
+    MONEY_FIELDS = {"otc", "mrc", "mrc_normalizado", "valor_oferta_claro"}
 
     def parse_date(val):
         if val is None:
@@ -2237,29 +2247,76 @@ def importar_oportunidades():
         except Exception:
             return None
 
-    def parse_int(val):
-        if val is None:
-            return None
-        s = str(val).strip()
-        if s == "" or s.lower() in ("nan", "none", "null"):
-            return None
-        s = re.sub(r"[^\d\-]", "", s)
-        if s == "":
-            return None
-        try:
-            return int(s)
-        except Exception:
-            return None
-
     def parse_str(val):
         if val is None:
             return None
-        s = str(val).strip()
+        s = str(val).replace("\u00A0", " ").strip()
         if s == "" or s.lower() in ("nan", "none", "null"):
             return None
         return s
 
+    # ✅ parser correcto para dinero
+    def parse_money_int(val):
+        if val is None:
+            return None
+
+        s = str(val).strip()
+        if s == "" or s.lower() in ("nan", "none", "null"):
+            return None
+
+        # limpia moneda/espacios/%/COP
+        s = re.sub(r"\s+", "", s)
+        s = re.sub(r"(?i)COP", "", s)
+        s = re.sub(r"[$€£%]", "", s)
+
+        # caso: número estándar / decimal / exponente
+        if re.match(r"^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$", s):
+            try:
+                d = Decimal(s)
+                return int(d.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            except InvalidOperation:
+                return None
+
+        last_comma = s.rfind(",")
+        last_dot = s.rfind(".")
+
+        # ambos separadores: el último manda como decimal
+        if last_comma != -1 and last_dot != -1:
+            if last_comma > last_dot:
+                # 56.564.988,00 => 56564988.00
+                s = s.replace(".", "").replace(",", ".")
+            else:
+                # 56,564,988.00 => 56564988.00
+                s = s.replace(",", "")
+        elif last_comma != -1 and last_dot == -1:
+            # solo coma: decimal o miles
+            parts = s.split(",")
+            if len(parts) == 2 and len(parts[1]) <= 6:
+                s = parts[0].replace(".", "") + "." + parts[1]
+            else:
+                s = s.replace(",", "").replace(".", "")
+        elif last_dot != -1 and last_comma == -1:
+            # solo punto: decimal o miles
+            parts = s.split(".")
+            if len(parts) == 2 and len(parts[1]) != 3:
+                # decimal (ej: .000000, .593220, .157)
+                pass
+            else:
+                # miles (7.022.381.356)
+                s = s.replace(".", "")
+
+        s = re.sub(r"[^\d\.-]", "", s)
+        if s == "" or s in ("-", ".", "-."):
+            return None
+
+        try:
+            d = Decimal(s)
+            return int(d.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        except InvalidOperation:
+            return None
+
     data_list = []
+
     for _, row in df.iterrows():
         obj = {}
 
@@ -2269,8 +2326,8 @@ def importar_oportunidades():
 
                 if field in DATE_FIELDS:
                     obj[field] = parse_date(raw)
-                elif field in INT_FIELDS:
-                    obj[field] = parse_int(raw)
+                elif field in MONEY_FIELDS:
+                    obj[field] = parse_money_int(raw)
                 else:
                     obj[field] = parse_str(raw)
 
@@ -2292,7 +2349,6 @@ def importar_oportunidades():
     except Exception as e:
         db.session.rollback()
         return jsonify({'mensaje': f'Error al guardar: {str(e)}'}), 500
-
 
 # ============================
 # OPORTUNIDADES - FILTERS ENDPOINT
