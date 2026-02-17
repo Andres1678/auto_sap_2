@@ -391,7 +391,10 @@ export default function DashboardOportunidades() {
   const totEstadoOferta = useMemo(() => sumPivotRows(tablaEstadoOferta.rows), [tablaEstadoOferta.rows]);
 
   const tablaResultadoOferta = useMemo(() => {
-    return buildPivot(dataBase, "resultado_oferta", { excludeKeyFn: (_key, raw) => isExcludedLabel(raw) });
+    return buildPivot(dataBase, "resultado_oferta", {
+      excludeKeyFn: (_key, raw, row) =>
+        isExcludedLabel(row?.estado_oferta ?? "") || isExcludedLabel(raw),
+    });
   }, [dataBase]);
 
   const totResultadoOferta = useMemo(() => sumPivotRows(tablaResultadoOferta.rows), [tablaResultadoOferta.rows]);
