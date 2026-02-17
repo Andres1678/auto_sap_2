@@ -173,18 +173,18 @@ export default function Oportunidades() {
   const toDbPayload = (row) => {
     const out = {};
     for (const col of columnOrder) {
-      let v = row?.[col];
+      const v = row?.[col];
 
       if (isNumericCol(col)) {
         const parsed = parseNumberSmart(v);
-        out[col] = parsed === "" ? null : parsed; 
+        out[col] = parsed === "" ? null : parsed;
       } else {
-        out[col] = (v === "" ? null : v);
+        out[col] = (v === undefined || v === null) ? null : v;
       }
     }
-
     return out;
   };
+
 
 
   useEffect(() => {
@@ -233,17 +233,6 @@ export default function Oportunidades() {
     });
 
     setFilteredData(result);
-  };
-
-  const normalizePayload = (row) => {
-    const out = { ...row };
-    for (const col of Object.keys(out)) {
-      if (isNumericCol(col)) {
-        const parsed = parseNumberSmart(out[col]);
-        out[col] = parsed === "" ? "" : parsed;
-      }
-    }
-    return out;
   };
 
   const [editValue, setEditValue] = useState("");
@@ -312,8 +301,9 @@ export default function Oportunidades() {
   const highlightRow = (index) => {
     setTimeout(() => {
       const rows = document.querySelectorAll("tbody tr");
-      rows[index]?.classList.add("row-success");
-      setTimeout(() => rows[index]?.classList.remove("row-success"), 1600);
+      const offset = newRow ? 1 : 0; 
+      rows[index + offset]?.classList.add("row-success");
+      setTimeout(() => rows[index + offset]?.classList.remove("row-success"), 1600);
     }, 50);
   };
 
@@ -351,17 +341,6 @@ export default function Oportunidades() {
       setLoading(false);
     }
   };
-
-  const inputDefaultValue = useMemo(() => {
-    if (editing.row === null || editing.col === null) return "";
-    const row = filteredData[editing.row];
-    const col = editing.col;
-    if (!row) return "";
-    const v = row[col];
-    if (!isNumericCol(col)) return v ?? "";
-    const n = typeof v === "number" ? v : parseNumberSmart(v);
-    return n === "" ? (v ?? "") : String(n);
-  }, [editing, filteredData]);
 
   return (
     <div className="oportunidades-wrapper">
