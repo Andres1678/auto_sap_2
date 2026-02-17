@@ -52,7 +52,6 @@ function normKeyForMatch(v) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
 
-  // Corrige ceros típicos: 0TP => OTP, etc.
   s = s.replace(/\b0TP\b/g, "OTP").replace(/\b0TE\b/g, "OTE").replace(/\b0TL\b/g, "OTL");
   return s;
 }
@@ -85,7 +84,6 @@ function isExcludedLabel(raw) {
   if (!k) return false;
   if (EXCLUDE_SET.has(k)) return true;
 
-  // variantes tipo "OTP - algo"
   for (const x of EXCLUDE_SET) {
     if (k.includes(x)) return true;
   }
@@ -95,13 +93,6 @@ function isExcludedLabel(raw) {
 /* ===================== Money helpers (SIN BigInt) ===================== */
 const nfMoney = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 });
 
-/**
- * Parser robusto:
- * - soporta "$ 56.564.988,00"
- * - soporta "5920708590.000000"
- * - soporta "1.19394921E9"
- * - soporta "7.022.381.356"
- */
 function toNumberSmart(v) {
   if (v === null || v === undefined || v === "") return 0;
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
@@ -117,8 +108,6 @@ function toNumberSmart(v) {
     .replace(/[$€£]/g, "")
     .replace(/%/g, "");
 
-  // ✅ Si ya viene como número estándar con punto decimal (y opcional exponente), parse directo
-  // Ej: 5920708590.000000  ó  1.19394921E9  ó  42161182407.593220
   if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s)) {
     const n = Number(s);
     return Number.isFinite(n) ? n : 0;
@@ -130,7 +119,7 @@ function toNumberSmart(v) {
   const lastComma = s.lastIndexOf(",");
   const lastDot = s.lastIndexOf(".");
 
-  // Caso con coma y punto: decide decimal por el último separador
+  
   if (commaCount > 0 && dotCount > 0) {
     const decimalSep = lastComma > lastDot ? "," : ".";
     const thousandSep = decimalSep === "," ? "." : ",";
@@ -138,46 +127,40 @@ function toNumberSmart(v) {
     s = s.split(thousandSep).join("");
     if (decimalSep === ",") s = s.replace(",", ".");
   } else if (commaCount > 0 && dotCount === 0) {
-    // Solo comas: puede ser decimal o miles
+   
     if (commaCount === 1) {
       const after = s.slice(lastComma + 1);
       const before = s.slice(0, lastComma).replace(/^[+-]/, "");
-      // Si luce como miles "12,345" (after=3 y before<=3) => miles
+      
       if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
       else s = s.replace(",", ".");
     } else {
-      // muchas comas => miles
       s = s.replace(/,/g, "");
     }
   } else if (dotCount > 0 && commaCount === 0) {
-    // Solo puntos: puede ser miles o decimal
     if (dotCount === 1) {
       const after = s.slice(lastDot + 1);
       const before = s.slice(0, lastDot).replace(/^[+-]/, "");
 
-      // miles estilo "12.345" (before<=3 y after=3)
       if (after.length === 3 && before.length <= 3) {
         s = s.replace(".", "");
       } else {
-        // ✅ si after NO es 3 (o before > 3), lo tratamos como decimal (ej: .000000, .593220, .157)
-        // se deja el punto tal cual
       }
     } else {
-      // Muchos puntos: puede ser miles (7.022.381.356) o miles + decimal al final
       const parts = s.split(".");
       const last = parts[parts.length - 1];
       const mid = parts.slice(1, -1);
 
       const midAll3 = mid.every((p) => p.length === 3);
-      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3; // estilo 7.022.381.356
+      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3; 
       const looksLikeGrouped = midAll3 && firstOk;
 
-      // Si el último grupo NO tiene 3 dígitos => decimal final
+      
       if (looksLikeGrouped && last.length !== 3) {
         const intPart = parts.slice(0, -1).join("");
         s = intPart + "." + last;
       } else {
-        // miles
+        
         s = s.replace(/\./g, "");
       }
     }
@@ -192,7 +175,7 @@ function fmtMoney(n) {
   return nfMoney.format(n || 0);
 }
 
-/* Si alguna vez viene "otr" en vez de "otc", hacemos fallback */
+
 function readMoney(row, keys) {
   for (const k of keys) {
     const v = row?.[k];
@@ -214,12 +197,6 @@ function sumPivotRows(rows) {
   );
 }
 
-/**
- * buildPivot:
- * - Agrupa por field
- * - Suma count + money (OTC/MRC)
- * - Permite excluir keys
- */
 function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {}) {
   const m = new Map();
 
@@ -236,7 +213,6 @@ function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {})
 
     prev.count += 1;
 
-    // ✅ aquí la suma correcta
     prev.otc += readMoney(r, ["otc", "otr", "OTC", "OTR"]);
     prev.mrc += readMoney(r, ["mrc", "MRC"]);
 
@@ -347,13 +323,12 @@ export default function DashboardOportunidades() {
 
   const dataBase = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
-  // Vista “limpia” para gráficas/detalle (basada en estado_oferta)
   const dataFiltrada = useMemo(() => {
     return dataBase.filter((op) => !isExcludedLabel(op?.estado_oferta ?? ""));
   }, [dataBase]);
 
-  const fetchFilters = async (current) => {
-    const res = await jfetch(`/oportunidades/filters${toQuery(current)}`);
+  const fetchFilters = async () => {
+    const res = await jfetch(`/oportunidades/filters`); 
     if (!res.ok) throw new Error("filters");
     const json = await res.json();
 
@@ -392,32 +367,29 @@ export default function DashboardOportunidades() {
   useEffect(() => {
     (async () => {
       try {
-        await fetchFilters(filtros);
-        await fetchData(filtros);
+        await fetchFilters();      
+        await fetchData(filtros);  
       } catch (e) {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
 
   useEffect(() => {
     (async () => {
       try {
-        await fetchFilters(filtrosDebounced);
-        await fetchData(filtrosDebounced);
+        await fetchData(filtrosDebounced); 
       } catch (e) {}
     })();
   }, [filtrosDebounced]);
 
-  // ✅ ESTADO DE OFERTA (excluye OTP/OTE/OTL/etc)
   const tablaEstadoOferta = useMemo(() => {
     return buildPivot(dataBase, "estado_oferta", { excludeKeyFn: (_key, raw) => isExcludedLabel(raw) });
   }, [dataBase]);
 
   const totEstadoOferta = useMemo(() => sumPivotRows(tablaEstadoOferta.rows), [tablaEstadoOferta.rows]);
 
-  // ✅ RESULTADO DE OFERTA (excluye OTP/OTE/OTL/etc)
   const tablaResultadoOferta = useMemo(() => {
     return buildPivot(dataBase, "resultado_oferta", { excludeKeyFn: (_key, raw) => isExcludedLabel(raw) });
   }, [dataBase]);

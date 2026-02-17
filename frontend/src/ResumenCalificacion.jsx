@@ -12,33 +12,20 @@ function normalizar(txt) {
     .replace(/\s+/g, " ");
 }
 
-
-function getEstadoProceso(row) {
-  return (
-    row?.estado_oportunidad ??
-    row?.resultado_oferta ??
-    row?.estado_oferta ??
-    row?.estado_ot ??
-    ""
-  );
+// ✅ EN PROCESO = resultado_oferta == "OPORTUNIDAD EN PROCESO"
+function esOportunidadEnProceso(row) {
+  const estado = normalizar(row?.resultado_oferta ?? "");
+  return estado === "OPORTUNIDAD EN PROCESO";
 }
 
-function esEnProceso(row) {
-  const estado = normalizar(getEstadoProceso(row));
+// ✅ estado_oferta solo ENTREGA COMERCIAL y EN ELABORACION
+const ESTADOS_OFERTA_VALIDOS = new Set(
+  ["ENTREGA COMERCIAL", "EN ELABORACION"].map(normalizar)
+);
 
-  
-  if (estado === "OPORTUNIDAD EN PROCESO") return true;
-
-  
-  if (estado.startsWith("OPORTUNIDAD EN PROCESO")) return true;
-
-  
-  if (estado === "EN PROCESO") return true;
-
-  
-  if (estado.includes("EN PROCESO")) return true;
-
-  return false;
+function esEstadoOfertaValido(row) {
+  const estadoOferta = normalizar(row?.estado_oferta ?? "");
+  return ESTADOS_OFERTA_VALIDOS.has(estadoOferta);
 }
 
 function clasificarCalificacion(raw) {
@@ -60,7 +47,8 @@ export default function ResumenCalificacion({ data }) {
       medio = 0;
 
     for (const row of rows) {
-      if (!esEnProceso(row)) continue;
+      if (!esOportunidadEnProceso(row)) continue;
+      if (!esEstadoOfertaValido(row)) continue;
 
       const c = clasificarCalificacion(row?.calificacion_oportunidad);
       if (c === "ALTO") alto++;

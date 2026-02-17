@@ -2359,7 +2359,6 @@ def importar_oportunidades():
 def oportunidades_filters():
     try:
         base = Oportunidad.query
-        base = _apply_oportunidades_filters(base)
 
         anios = (
             base.with_entities(extract("year", Oportunidad.fecha_creacion).label("y"))
@@ -2409,27 +2408,20 @@ def oportunidades_filters():
         return jsonify({
             "anios": [int(r.y) for r in anios if r.y is not None],
             "meses": [int(r.m) for r in meses if r.m is not None],
-
             "direccion_comercial": distinct_col(Oportunidad.direccion_comercial),
             "gerencia_comercial": distinct_col(Oportunidad.gerencia_comercial),
             "nombre_cliente": distinct_col(Oportunidad.nombre_cliente),
-
-            # ✅ Aquí ya vienen SIN OTP/OTE/OTL/... porque base ya pasó por _apply_oportunidades_filters
             "estado_oferta": distinct_col(Oportunidad.estado_oferta),
             "resultado_oferta": distinct_col(Oportunidad.resultado_oferta),
-
             "estado_ot": distinct_col(Oportunidad.estado_ot),
             "ultimo_mes": distinct_col(Oportunidad.ultimo_mes),
             "calificacion_oportunidad": distinct_col(Oportunidad.calificacion_oportunidad),
-
             "fecha_acta_cierre_ot": distinct_date(Oportunidad.fecha_acta_cierre_ot),
             "fecha_cierre_oportunidad": distinct_date(Oportunidad.fecha_cierre_oportunidad),
-
             "tipos": ["GANADA", "ACTIVA", "CERRADA"],
         }), 200
 
     except Exception:
-        # para que no quede “mudo” el 500 en front
         return jsonify({
             "mensaje": "Error interno en /oportunidades/filters",
             "trace": traceback.format_exc()
