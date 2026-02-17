@@ -130,8 +130,10 @@ export default function Oportunidades() {
 
   
   function normalizeRowFromApi(r) {
-    const otcValue = (r?.otc ?? r?.otr ?? ""); 
-    return { ...r, otc: otcValue };
+    const obj = r || {};
+    const otcValue = obj.otc ?? obj.otr ?? obj.OTR ?? "";
+    const { otr, OTR, ...rest } = obj;
+    return { ...rest, otc: otcValue };
   }
 
   const fetchData = async () => {
@@ -167,6 +169,23 @@ export default function Oportunidades() {
       setLoading(false);
     }
   };
+
+  const toDbPayload = (row) => {
+    const out = {};
+    for (const col of columnOrder) {
+      let v = row?.[col];
+
+      if (isNumericCol(col)) {
+        const parsed = parseNumberSmart(v);
+        out[col] = parsed === "" ? null : parsed; 
+      } else {
+        out[col] = (v === "" ? null : v);
+      }
+    }
+
+    return out;
+  };
+
 
   useEffect(() => {
     fetchData();
@@ -216,10 +235,6 @@ export default function Oportunidades() {
     setFilteredData(result);
   };
 
-  const startEdit = (rowIndex, col) => {
-    setEditing({ row: rowIndex, col });
-  };
-
   const normalizePayload = (row) => {
     const out = { ...row };
     for (const col of Object.keys(out)) {
@@ -231,30 +246,67 @@ export default function Oportunidades() {
     return out;
   };
 
-  const saveEdit = async (rowIndex, col, newValue) => {
+  const [editValue, setEditValue] = useState("");
+
+  const startEdit = (rowIndex, col) => {
     const row = filteredData[rowIndex];
+    if (!row) return;
 
-    const coercedValue = isNumericCol(col) ? parseNumberSmart(newValue) : newValue;
-    const updated = normalizePayload({ ...row, [col]: coercedValue });
+    setEditing({ row: rowIndex, col });
 
-    const resp = await jfetch(`/oportunidades/${row.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updated)
-    });
+    const v = row[col];
+    if (!isNumericCol(col)) {
+      setEditValue(v ?? "");
+    } else {
+      const n = typeof v === "number" ? v : parseNumberSmart(v);
+      setEditValue(n === "" ? (v ?? "") : String(n));
+    }
+  };
 
-    if (resp.ok) {
-      setData((prev) => prev.map((r) => (r.id === row.id ? updated : r)));
-      setFilteredData((prev) => prev.map((r) => (r.id === row.id ? updated : r)));
+
+  const saveEdit = async (rowIndex, col, newValue) => {
+    const row = filteredData?.[rowIndex];
+
+    if (!row || !row.id) {
       setEditing({ row: null, col: null });
+      return;
     }
 
-    const updatedList = [...filteredData];
-    updatedList[rowIndex] = updated;
-    setFilteredData(updatedList);
+    const original = row?.[col];
+    if (String(original ?? "") === String(newValue ?? "")) {
+      setEditing({ row: null, col: null });
+      return;
+    }
 
-    highlightRow(rowIndex);
-    setEditing({ row: null, col: null });
+    try {
+      const coercedValue = isNumericCol(col) ? parseNumberSmart(newValue) : newValue;
+
+      const payload = toDbPayload({ ...row, [col]: coercedValue });
+
+      const resp = await jfetch(`/oportunidades/${row.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const j = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        Swal.fire("Error", j?.mensaje || j?.error || `HTTP ${resp.status}`, "error");
+        setEditing({ row: null, col: null });
+        return;
+      }
+
+      
+      setData((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...payload } : r)));
+      setFilteredData((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...payload } : r)));
+
+      highlightRow(rowIndex);
+      setEditing({ row: null, col: null });
+    } catch (e) {
+      Swal.fire("Error", e?.message || "Error inesperado", "error");
+      setEditing({ row: null, col: null });
+    }
   };
 
   const highlightRow = (index) => {
@@ -272,10 +324,10 @@ export default function Oportunidades() {
   };
 
   const saveNewRow = async () => {
-    const payload = normalizePayload(newRow);
-
     try {
       setLoading(true);
+
+      const payload = toDbPayload(newRow);
 
       const res = await jfetch("/oportunidades", {
         method: "POST",
@@ -286,22 +338,19 @@ export default function Oportunidades() {
       const json = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        Swal.fire("Error", json.mensaje || "No se pudo crear el registro", "error");
+        Swal.fire("Error", json?.mensaje || `HTTP ${res.status}`, "error");
         return;
       }
 
-      await fetchData();             
-
+      await fetchData();
       Swal.fire("Guardado", "Nueva fila creada", "success");
       setNewRow(null);
-
     } catch (e) {
       Swal.fire("Error", e?.message || "Error inesperado", "error");
     } finally {
       setLoading(false);
     }
   };
-
 
   const inputDefaultValue = useMemo(() => {
     if (editing.row === null || editing.col === null) return "";
@@ -395,10 +444,20 @@ export default function Oportunidades() {
                       <input
                         className="cell-input"
                         autoFocus
-                        defaultValue={inputDefaultValue}
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
                         inputMode={isNumericCol(col) ? "decimal" : undefined}
-                        onBlur={(e) => saveEdit(i, col, e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && saveEdit(i, col, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            e.currentTarget.blur(); 
+                          }
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setEditing({ row: null, col: null });
+                          }
+                        }}
+                        onBlur={() => saveEdit(i, col, editValue)}  
                       />
                     ) : (
                       formatCell(col, row[col])

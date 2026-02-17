@@ -324,7 +324,10 @@ export default function DashboardOportunidades() {
   const dataBase = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
   const dataFiltrada = useMemo(() => {
-    return dataBase.filter((op) => !isExcludedLabel(op?.estado_oferta ?? ""));
+    return dataBase.filter((op) =>
+      !isExcludedLabel(op?.estado_oferta ?? "") &&
+      !isExcludedLabel(op?.resultado_oferta ?? "")
+    );
   }, [dataBase]);
 
   const fetchFilters = async () => {
