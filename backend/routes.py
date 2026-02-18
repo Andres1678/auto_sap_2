@@ -5,7 +5,7 @@ from backend.models import (
     Permiso, RolPermiso, EquipoPermiso, ConsultorPermiso, 
     Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel, ConsultorPresupuesto
 )
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, date
 from functools import wraps
 from sqlalchemy import or_, text, func, extract, and_, cast, Integer
 from sqlalchemy.exc import IntegrityError
@@ -2121,14 +2121,215 @@ def _apply_oportunidades_filters(query, apply_exclusion: bool = True):
     return query
 
 
+ESTADO_RESULTADO = {
+    "REGISTRO": {"OPORTUNIDAD EN PROCESO"},
+    "PROSPECCION": {"OPORTUNIDAD EN PROCESO"},
+    "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACIÓN": {"OPORTUNIDAD EN PROCESO"},
+    "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION": {"OPORTUNIDAD EN PROCESO"},
+    "PENDIENTE APROBACION SAP": {"PENDIENTE APROBACION SAP"},
+    "EN ELABORACION": {"OPORTUNIDAD EN PROCESO"},
+    "RFI PRESENTADO": {"A LA ESPERA DEL RFP"},
+    "ENTREGA COMERCIAL": {"OPORTUNIDAD EN PROCESO"},
+    "GANADA": {
+        "BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN",
+        "EVOLUTIVO",
+        "PROYECTO",
+        "VAR",
+        "VALORES AGREGADOS",
+        "LICENCIAMIENTO",
+    },
+    "PERDIDA": {"OPORTUNIDAD PERDIDA"},
+    "PERDIDA - SIN FEEDBACK": {"OPORTUNIDAD CERRADA"},
+    "DECLINADA": {"OPORTUNIDAD CERRADA"},
+    "SUSPENDIDA": {"OPORTUNIDAD CERRADA"},
+    "0TL": {"0TL"},
+    "0TP": {"0TP"},
+    "0TE": {"0TE"},
+    "N/A": {"N/A"},
+}
+
+CATEGORIA_SUBCATEGORIA = {
+    "CLIENTE": {"PRESUPUESTO NO ASIGNADO", "SUSPENDE POR DIRECTRIZ INTERNA"},
+    "COMPETENCIA": {"MEJOR POSICIONAMIENTO", "CONDICIONES CONTRACTUALES", "PRESENCIA LOCAL"},
+    "PRECIO": {"TARIFA NO COMPETITIVA", "NO CUMPLE PRESUPUESTO"},
+    "PRODUCTO": {
+        "OTRO PORTAFOLIO DE SOLUCION",
+        "PRODUCTO NO SATISFACE LAS NECESIDADES",
+        "SOLUCION PROPUESTA NO CUMPLIO",
+        "TARIFA NO COMPETITIVA",
+    },
+    "REASIGNADO": {"SERVICIO DE CLARO EXISTENTE", "REASIGNADO"},
+    "SEGUIMIENTO": {"COMERCIAL", "CLIENTE NO RESPONDE"},
+}
+
+DATE_FIELDS_API = {
+    "fecha_creacion",
+    "fecha_cierre_sm",
+    "fecha_entrega_oferta_final",
+    "vigencia_propuesta",
+    "fecha_aceptacion_oferta",
+    "fecha_cierre_oportunidad",
+    "fecha_firma_aos",
+    "fecha_compromiso",
+    "fecha_cierre",
+    "fecha_acta_cierre_ot",
+    "proyeccion_ingreso",
+}
+
+INT_FIELDS_API = {
+    "otc",
+    "mrc",
+    "mrc_normalizado",
+    "valor_oferta_claro",
+}
+
+def _upper(v):
+    return str(v).strip().upper() if v is not None else None
+
+def _parse_iso_date(v):
+    if v is None:
+        return None
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return v
+    s = str(v).strip()
+    if s == "" or s.lower() in ("nan", "none", "null"):
+        return None
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except Exception:
+            return None
+    return None
+
+def _parse_decimal(v):
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        try:
+            return Decimal(str(v))
+        except Exception:
+            return None
+
+    s = str(v).strip()
+    if s == "" or s.lower() in ("nan", "none", "null"):
+        return None
+
+    s = re.sub(r"\s+", "", s)
+    s = re.sub(r"(?i)COP|USD", "", s)
+    s = re.sub(r"[$€£%]", "", s)
+
+    if re.match(r"^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$", s):
+        try:
+            return Decimal(s)
+        except Exception:
+            return None
+
+    last_comma = s.rfind(",")
+    last_dot = s.rfind(".")
+
+    if last_comma != -1 and last_dot != -1:
+        if last_comma > last_dot:
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif last_comma != -1 and last_dot == -1:
+        parts = s.split(",")
+        if len(parts) == 2 and len(parts[1]) <= 6:
+            s = parts[0].replace(".", "") + "." + parts[1]
+        else:
+            s = s.replace(",", "").replace(".", "")
+    elif last_dot != -1 and last_comma == -1:
+        parts = s.split(".")
+        if len(parts) == 2 and len(parts[1]) != 3:
+            pass
+        else:
+            s = s.replace(".", "")
+
+    s = re.sub(r"[^\d\.-]", "", s)
+    if s == "" or s in ("-", ".", "-."):
+        return None
+
+    try:
+        return Decimal(s)
+    except Exception:
+        return None
+
+def _to_int_round(v_dec):
+    if v_dec is None:
+        return None
+    try:
+        return int(v_dec.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except Exception:
+        return None
+
 def clean_payload(data: dict) -> dict:
     out = {}
-    for k, v in (data or {}).items():
+    data = data or {}
+
+    for k, v in data.items():
         if isinstance(v, str):
             v = v.strip()
             if v == "":
                 v = None
+
+        if k in DATE_FIELDS_API:
+            v = _parse_iso_date(v)
+
+        if k in INT_FIELDS_API and k != "mrc_normalizado":
+            v = _to_int_round(_parse_decimal(v))
+
+        if k == "mrc_normalizado":
+            v = None
+
         out[k] = v
+
+    moneda = out.get("tipo_moneda")
+    if moneda is not None:
+        m = _upper(moneda)
+        out["tipo_moneda"] = m if m in ("COP", "USD") else None
+
+    estado = out.get("estado_oferta")
+    resultado = out.get("resultado_oferta")
+    if estado:
+        estado_n = _upper(estado)
+        allowed = ESTADO_RESULTADO.get(estado_n)
+        if allowed:
+            if resultado:
+                res_n = _upper(resultado)
+                allowed_up = {a.upper() for a in allowed}
+                if res_n not in allowed_up:
+                    out["resultado_oferta"] = None
+            if not out.get("resultado_oferta") and len(allowed) == 1:
+                out["resultado_oferta"] = next(iter(allowed))
+
+    cat = out.get("categoria_perdida")
+    sub = out.get("subcategoria_perdida")
+    if cat:
+        cat_n = _upper(cat)
+        allowed = CATEGORIA_SUBCATEGORIA.get(cat_n)
+        if allowed:
+            if sub:
+                sub_n = _upper(sub)
+                allowed_up = {a.upper() for a in allowed}
+                if sub_n not in allowed_up:
+                    out["subcategoria_perdida"] = None
+
+    otc = out.get("otc")
+    mrc = out.get("mrc")
+
+    mrc_norm = None
+    try:
+        if otc is not None and mrc is not None:
+            mrc_norm = (Decimal(str(otc)) / Decimal("12")) + Decimal(str(mrc))
+        elif otc is not None:
+            mrc_norm = Decimal(str(otc)) / Decimal("12")
+        elif mrc is not None:
+            mrc_norm = Decimal(str(mrc))
+    except Exception:
+        mrc_norm = None
+
+    out["mrc_normalizado"] = _to_int_round(mrc_norm)
+
     return out
 
 
@@ -2220,6 +2421,7 @@ def importar_oportunidades():
         "fecha_compromiso",
         "fecha_cierre",
         "fecha_acta_cierre_ot",
+        "proyeccion_ingreso",
     }
 
     MONEY_FIELDS = {"otc", "mrc", "mrc_normalizado", "valor_oferta_claro"}
@@ -2253,7 +2455,7 @@ def importar_oportunidades():
             return None
 
         s = re.sub(r"\s+", "", s)
-        s = re.sub(r"(?i)COP", "", s)
+        s = re.sub(r"(?i)COP|USD", "", s)
         s = re.sub(r"[$€£%]", "", s)
 
         if re.match(r"^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$", s):
@@ -2317,6 +2519,27 @@ def importar_oportunidades():
             obj["semestre"] = f"{'1ER' if mes <= 6 else '2DO'} SEMESTRE {anio}"
         else:
             obj["semestre"] = None
+
+        otc = obj.get("otc")
+        mrc = obj.get("mrc")
+
+        try:
+            if otc is not None and mrc is not None:
+                obj["mrc_normalizado"] = int(
+                    (Decimal(otc) / Decimal("12") + Decimal(mrc)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                )
+            elif otc is not None:
+                obj["mrc_normalizado"] = int(
+                    (Decimal(otc) / Decimal("12")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                )
+            elif mrc is not None:
+                obj["mrc_normalizado"] = int(Decimal(mrc).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            else:
+                obj["mrc_normalizado"] = None
+        except Exception:
+            obj["mrc_normalizado"] = None
+
+        obj = clean_payload(obj)
 
         data_list.append(Oportunidad(**obj))
 
@@ -2408,7 +2631,7 @@ def oportunidades_filters():
 def listar_oportunidades():
     try:
         query = Oportunidad.query
-        query = _apply_oportunidades_filters(query, apply_exclusion=False)
+        query = _apply_oportunidades_filters(query, apply_exclusion=True)
         query = query.order_by(Oportunidad.id.desc())
         data = [o.to_dict() for o in query.limit(2000).all()]
         return jsonify(data), 200

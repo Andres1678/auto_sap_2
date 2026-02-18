@@ -50,6 +50,7 @@
   border: 2px dashed var(--brand-blue);
   border-radius: 12px;
   margin-bottom: 20px;
+  flex-wrap: wrap;
 }
 
 .oportunidades-wrapper .custom-file-upload {
@@ -59,9 +60,14 @@
   border-radius: 8px;
   cursor: pointer;
   font-weight: 600;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
+  user-select: none;
+}
+
+.oportunidades-wrapper .custom-file-upload input[type="file"] {
+  display: none;
 }
 
 .oportunidades-wrapper .custom-file-upload:hover {
@@ -75,6 +81,10 @@
   padding: 6px 12px;
   border-radius: 6px;
   border: 1px solid var(--gray-border);
+  max-width: 520px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .oportunidades-wrapper .upload-btn {
@@ -84,10 +94,35 @@
   border: none;
   border-radius: 8px;
   font-weight: 700;
+  cursor: pointer;
 }
 
 .oportunidades-wrapper .upload-btn:hover {
   background: var(--brand-green-dark);
+}
+
+.oportunidades-wrapper .upload-btn:disabled,
+.oportunidades-wrapper .floating-add-btn:disabled,
+.oportunidades-wrapper .btn-save:disabled,
+.oportunidades-wrapper .btn-cancel:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ==========================================
+   CONTEXTO EDICIÓN
+========================================== */
+.oportunidades-wrapper .edit-context-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: #fff3cd;
+  border: 1px solid #ffeeba;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  color: #7c5a00;
+  font-size: 0.9rem;
 }
 
 /* ==========================================
@@ -146,14 +181,13 @@
 ========================================== */
 .oportunidades-wrapper .filtros-columnas th {
   background: #e2e8f0;
-  padding: 4px 6px;
+  padding: 6px 8px;
   position: sticky;
-  top: 45px;
+  top: 44px;
   z-index: 14;
   text-align: center;
 }
 
-/* 🔥 ADAPTACIÓN PERFECTA DEL SELECT AL ANCHO DE LA COLUMNA */
 .oportunidades-wrapper .filtros-columnas th .select-filter {
   width: 100% !important;
   min-width: 140px !important;
@@ -216,19 +250,11 @@
   border: 1px solid var(--gray-border);
   white-space: nowrap;
   color: #000;
+  vertical-align: middle;
 }
 
 .oportunidades-wrapper .tabla-oportunidades tbody tr:hover {
   background: #f1f5f9;
-}
-
-/* Alineación numérica */
-.oportunidades-wrapper .tabla-oportunidades td:nth-child(29),
-.oportunidades-wrapper .tabla-oportunidades td:nth-child(30),
-.oportunidades-wrapper .tabla-oportunidades td:nth-child(31),
-.oportunidades-wrapper .tabla-oportunidades td:nth-child(32) {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ==========================================
@@ -241,14 +267,26 @@
 .oportunidades-wrapper .cell-input {
   width: 100%;
   border: 1px solid var(--brand-blue);
-  border-radius: 4px;
-  padding: 4px;
+  border-radius: 6px;
+  padding: 6px 8px;
   background: #eef6ff;
   color: #000;
+  outline: none;
+  font-size: 0.82rem;
+  box-sizing: border-box;
 }
 
 .oportunidades-wrapper .cell-input:focus {
   background: #dbeafe;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.oportunidades-wrapper .cell-input[type="date"] {
+  padding: 4px 8px;
+}
+
+.oportunidades-wrapper select.cell-input {
+  cursor: pointer;
 }
 
 /* ==========================================
@@ -258,13 +296,22 @@
   background: #ecfdf5;
 }
 
+/* ==========================================
+   BOTONES
+========================================== */
+.oportunidades-wrapper .acciones {
+  white-space: nowrap;
+  text-align: center;
+}
+
 .oportunidades-wrapper .btn-save,
 .oportunidades-wrapper .btn-cancel {
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-weight: 700;
   cursor: pointer;
   margin-right: 6px;
+  border: none;
 }
 
 .oportunidades-wrapper .btn-save {
@@ -283,6 +330,20 @@
 
 .oportunidades-wrapper .btn-cancel:hover {
   background: var(--brand-red-dark);
+}
+
+.oportunidades-wrapper .btn-edit-long {
+  background: var(--brand-blue);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.oportunidades-wrapper .btn-edit-long:hover {
+  background: var(--brand-blue-dark);
 }
 
 /* ==========================================
@@ -325,6 +386,9 @@
   box-shadow: 0 6px 14px rgba(16, 185, 129, 0.35);
   transition: 0.2s;
   z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .oportunidades-wrapper .floating-add-btn:hover {
@@ -347,5 +411,9 @@
 
   .oportunidades-wrapper .tabla-oportunidades {
     min-width: 1600px;
+  }
+
+  .oportunidades-wrapper .edit-context-bar {
+    font-size: 0.85rem;
   }
 }
