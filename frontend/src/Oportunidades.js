@@ -9,8 +9,6 @@ const NUMERIC_COLS = new Set([
   "mrc",
   "mrc_normalizado",
   "valor_oferta_claro",
-  "duracion",
-  "proyeccion_ingreso",
 ]);
 
 const DATE_COLS = new Set([
@@ -21,6 +19,7 @@ const DATE_COLS = new Set([
   "fecha_firma_aos",
   "fecha_compromiso",
   "fecha_cierre",
+  "proyeccion_ingreso",
 ]);
 
 const REMOVE_COLS = new Set([
@@ -32,6 +31,32 @@ const REMOVE_COLS = new Set([
   "semestre_ejecucion",
   "publicacion_sharepoint",
 ]);
+
+const TIPO_CLIENTE_OPTS = ["CORPORATIVO", "INTERCOMPANY"];
+const TIPO_SOLICITUD_OPTS = ["INVITACION DIRECTA", "RFI", "RFP"];
+const CALIFICACION_OPTS = ["BAJO", "MEDIO", "ALTO"];
+const ORIGEN_OPTS = ["AMERICA MOVIL", "CLARO - COLOMBIA", "GLOBAL HITSS"];
+
+const ESTADO_OT_OPTS = [
+  "CANCELADO",
+  "CERRADO",
+  "CERRADO SIN PAGO",
+  "EN PROCESO",
+  "EN TRAMITE",
+  "SUSPENDIDO",
+  "NO APLICA",
+];
+
+const ESTADO_PROYECTO_OPTS = [
+  "NO APLICA",
+  "NO INICIADO",
+  "EN EJECUCION",
+  "FINALIZADO",
+  "CERRADO SIN PAGO",
+  "OT",
+  "SUSPENDIDO",
+  "CANCELADO",
+];
 
 const ESTADO_RESULTADO = {
   REGISTRO: ["OPORTUNIDAD EN PROCESO"],
@@ -89,7 +114,8 @@ function isObservationsCol(col) {
 
 function toIsoDate(v) {
   if (!v) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(v))) return String(v);
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return "";
   const yyyy = d.getFullYear();
@@ -108,6 +134,7 @@ function parseNumberSmart(input) {
   s = s.replace(/\s/g, "");
   s = s.replace(/[$€£]/g, "");
   s = s.replace(/%/g, "");
+  s = s.replace(/\b(COP|USD)\b/gi, "");
 
   if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s)) {
     const n = Number(s);
@@ -116,7 +143,6 @@ function parseNumberSmart(input) {
 
   const commaCount = (s.match(/,/g) || []).length;
   const dotCount = (s.match(/\./g) || []).length;
-
   const lastComma = s.lastIndexOf(",");
   const lastDot = s.lastIndexOf(".");
 
@@ -146,6 +172,7 @@ function parseNumberSmart(input) {
       const midAll3 = mid.every((p) => p.length === 3);
       const firstOk = parts[0].replace(/^[+-]/, "").length <= 3;
       const looksLikeGrouped = midAll3 && firstOk;
+
       if (looksLikeGrouped && last.length !== 3) {
         const intPart = parts.slice(0, -1).join("");
         s = intPart + "." + last;
@@ -169,6 +196,14 @@ function formatCell(col, value) {
   const n = typeof value === "number" ? value : parseNumberSmart(value);
   if (n === "") return value ?? "-";
   return nf.format(n);
+}
+
+function todayStamp() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 export default function Oportunidades() {
@@ -223,7 +258,7 @@ export default function Oportunidades() {
       "codigo_prc",
       "fecha_firma_aos",
       "pm_asignado_claro",
-      "pm_asignado_global_hitss",
+      "pm_asignado_hitss",
       "descripcion_ot",
       "num_enlace",
       "num_incidente",
@@ -255,6 +290,19 @@ export default function Oportunidades() {
     return { ...rest, otc: otcValue };
   }
 
+  const computeUniqueValues = (rows) => {
+    const uniq = {};
+    columnOrder.forEach((col) => {
+      const rawValues = rows.map((r) => r?.[col] ?? "");
+      const values = [...new Set(rawValues.map((v) => (isDateCol(col) ? toIsoDate(v) : v ?? "")))];
+      uniq[col] = values.map((v) => ({
+        label: v?.toString() || "-",
+        value: v ?? "",
+      }));
+    });
+    setUniqueValues(uniq);
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -264,24 +312,14 @@ export default function Oportunidades() {
       if (!Array.isArray(json)) {
         setData([]);
         setFilteredData([]);
+        setUniqueValues({});
         return;
       }
 
       const normalized = json.map(normalizeRowFromApi);
-
       setData(normalized);
       setFilteredData(normalized);
-
-      const uniq = {};
-      columnOrder.forEach((col) => {
-        const values = [...new Set(normalized.map((r) => r?.[col] ?? ""))];
-        uniq[col] = values.map((v) => ({
-          label: v?.toString() || "-",
-          value: v ?? "",
-        }));
-      });
-
-      setUniqueValues(uniq);
+      computeUniqueValues(normalized);
     } catch {
       Swal.fire("Error", "No se pudo cargar la información", "error");
     } finally {
@@ -293,14 +331,23 @@ export default function Oportunidades() {
     const out = {};
     for (const col of columnOrder) {
       const v = row?.[col];
-      if (isDateCol(col)) out[col] = v ? toIsoDate(v) : null;
-      else if (isNumericCol(col)) {
-        if (col === "mrc_normalizado") out[col] = null;
-        else {
+
+      if (isDateCol(col)) {
+        out[col] = v ? toIsoDate(v) : null;
+        continue;
+      }
+
+      if (isNumericCol(col)) {
+        if (col === "mrc_normalizado") {
+          out[col] = null;
+        } else {
           const parsed = parseNumberSmart(v);
           out[col] = parsed === "" ? null : parsed;
         }
-      } else out[col] = v === undefined || v === null ? null : v;
+        continue;
+      }
+
+      out[col] = v === undefined || v === null ? null : v;
     }
     return out;
   };
@@ -318,18 +365,15 @@ export default function Oportunidades() {
     setLoading(true);
 
     try {
-      const res = await jfetch("/oportunidades/import", {
-        method: "POST",
-        body: form,
-      });
+      const res = await jfetch("/oportunidades/import", { method: "POST", body: form });
+      const json = await res.json().catch(() => ({}));
 
-      const json = await res.json();
       Swal.fire({
         icon: res.ok ? "success" : "error",
         title: json.mensaje || "Resultado de carga",
       });
 
-      fetchData();
+      await fetchData();
     } catch (err) {
       Swal.fire("Error", err.message, "error");
     } finally {
@@ -346,7 +390,10 @@ export default function Oportunidades() {
 
     Object.entries(newFilters).forEach(([col, val]) => {
       if (val !== "") {
-        result = result.filter((r) => (r[col] ?? "").toString() === val.toString());
+        result = result.filter((r) => {
+          const cell = isDateCol(col) ? toIsoDate(r?.[col]) : (r?.[col] ?? "").toString();
+          return cell.toString() === val.toString();
+        });
       }
     });
 
@@ -387,29 +434,17 @@ export default function Oportunidades() {
     }
   };
 
-  const saveEdit = async (rowIndex, col, newValue) => {
+  const saveEditMulti = async (rowIndex, updates) => {
     const row = filteredData?.[rowIndex];
-
     if (!row || !row.id) {
       setEditing({ row: null, col: null });
       setEditingContext(null);
       return;
     }
 
-    const original = row?.[col];
-    if (String(original ?? "") === String(newValue ?? "")) {
-      setEditing({ row: null, col: null });
-      setEditingContext(null);
-      return;
-    }
-
     try {
-      let coercedValue = newValue;
-
-      if (isDateCol(col)) coercedValue = toIsoDate(newValue);
-      else if (isNumericCol(col)) coercedValue = parseNumberSmart(newValue);
-
-      const payload = toDbPayload({ ...row, [col]: coercedValue });
+      const nextRow = { ...row, ...updates };
+      const payload = toDbPayload(nextRow);
 
       const resp = await jfetch(`/oportunidades/${row.id}`, {
         method: "PUT",
@@ -439,19 +474,37 @@ export default function Oportunidades() {
     }
   };
 
+  const saveEdit = async (rowIndex, col, newValue) => {
+    const row = filteredData?.[rowIndex];
+    if (!row || !row.id) {
+      setEditing({ row: null, col: null });
+      setEditingContext(null);
+      return;
+    }
+
+    const original = isDateCol(col) ? toIsoDate(row?.[col]) : row?.[col];
+    const incoming = isDateCol(col) ? toIsoDate(newValue) : newValue;
+
+    if (String(original ?? "") === String(incoming ?? "")) {
+      setEditing({ row: null, col: null });
+      setEditingContext(null);
+      return;
+    }
+
+    let coercedValue = incoming;
+    if (isNumericCol(col)) coercedValue = parseNumberSmart(incoming);
+
+    await saveEditMulti(rowIndex, { [col]: coercedValue });
+  };
+
   const editLongText = async (rowIndex, col) => {
     const row = filteredData[rowIndex];
     if (!row?.id) return;
 
     const cliente = row?.nombre_cliente ?? "-";
     const servicio = row?.servicio ?? "-";
-
     const current = row?.[col] ?? "";
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, "0");
-    const dd = String(today.getDate()).padStart(2, "0");
-    const stamp = `${yyyy}-${mm}-${dd}`;
+    const stamp = todayStamp();
 
     const res = await Swal.fire({
       title: col === "observaciones" ? "Observaciones" : "Seguimiento OT",
@@ -486,6 +539,7 @@ export default function Oportunidades() {
   const addRow = () => {
     const empty = {};
     columnOrder.forEach((c) => (empty[c] = ""));
+    empty.tipo_moneda = "COP";
     setNewRow(empty);
   };
 
@@ -517,6 +571,19 @@ export default function Oportunidades() {
     }
   };
 
+  const renderSelect = (value, setValue, onBlur, options) => {
+    return (
+      <select className="cell-input" autoFocus value={value ?? ""} onChange={(e) => setValue(e.target.value)} onBlur={onBlur}>
+        <option value="">-</option>
+        {options.map((op) => (
+          <option key={op} value={op}>
+            {op}
+          </option>
+        ))}
+      </select>
+    );
+  };
+
   const renderEditorCell = (row, i, col) => {
     if (editing.row !== i || editing.col !== col) return null;
 
@@ -542,19 +609,31 @@ export default function Oportunidades() {
     }
 
     if (col === "tipo_moneda") {
-      return (
-        <select
-          className="cell-input"
-          autoFocus
-          value={editValue ?? ""}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={() => saveEdit(i, col, editValue)}
-        >
-          <option value="">-</option>
-          <option value="COP">COP</option>
-          <option value="USD">USD</option>
-        </select>
-      );
+      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), ["COP", "USD"]);
+    }
+
+    if (col === "tipo_cliente") {
+      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), TIPO_CLIENTE_OPTS);
+    }
+
+    if (col === "tipo_solicitud") {
+      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), TIPO_SOLICITUD_OPTS);
+    }
+
+    if (col === "calificacion_oportunidad") {
+      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), CALIFICACION_OPTS);
+    }
+
+    if (col === "origen_oportunidad") {
+      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), ORIGEN_OPTS);
+    }
+
+    if (col === "estado_ot") {
+      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), ESTADO_OT_OPTS);
+    }
+
+    if (col === "estado_proyecto") {
+      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), ESTADO_PROYECTO_OPTS);
     }
 
     if (col === "estado_oferta") {
@@ -565,25 +644,24 @@ export default function Oportunidades() {
           value={editValue ?? ""}
           onChange={(e) => {
             const estado = e.target.value;
-            setEditValue(estado);
             const allowed = ESTADO_RESULTADO[estado] || [];
-            const auto = allowed.length === 1 ? allowed[0] : "";
-            setData((prev) =>
-              prev.map((r) =>
-                r.id === row.id
-                  ? { ...r, estado_oferta: estado, resultado_oferta: auto || r.resultado_oferta }
-                  : r
-              )
-            );
+            const autoRes = allowed.length === 1 ? allowed[0] : "";
+            setEditValue(estado);
+
             setFilteredData((prev) =>
-              prev.map((r) =>
-                r.id === row.id
-                  ? { ...r, estado_oferta: estado, resultado_oferta: auto || r.resultado_oferta }
-                  : r
-              )
+              prev.map((r) => (r.id === row.id ? { ...r, estado_oferta: estado, resultado_oferta: autoRes || r.resultado_oferta } : r))
+            );
+            setData((prev) =>
+              prev.map((r) => (r.id === row.id ? { ...r, estado_oferta: estado, resultado_oferta: autoRes || r.resultado_oferta } : r))
             );
           }}
-          onBlur={() => saveEdit(i, col, editValue)}
+          onBlur={() => {
+            const estado = editValue ?? "";
+            const allowed = ESTADO_RESULTADO[estado] || [];
+            const autoRes = allowed.length === 1 ? allowed[0] : "";
+            const nextResultado = autoRes || row.resultado_oferta || "";
+            saveEditMulti(i, { estado_oferta: estado, resultado_oferta: nextResultado });
+          }}
         >
           <option value="">-</option>
           {Object.keys(ESTADO_RESULTADO).map((op) => (
@@ -596,6 +674,7 @@ export default function Oportunidades() {
     }
 
     if (col === "resultado_oferta") {
+      const allowed = ESTADO_RESULTADO[row.estado_oferta] || [];
       return (
         <select
           className="cell-input"
@@ -605,7 +684,7 @@ export default function Oportunidades() {
           onBlur={() => saveEdit(i, col, editValue)}
         >
           <option value="">-</option>
-          {(ESTADO_RESULTADO[row.estado_oferta] || []).map((op) => (
+          {allowed.map((op) => (
             <option key={op} value={op}>
               {op}
             </option>
@@ -624,23 +703,22 @@ export default function Oportunidades() {
             const cat = e.target.value;
             setEditValue(cat);
             const allowed = CATEGORIA_SUBCATEGORIA[cat] || [];
-            const auto = allowed.length === 1 ? allowed[0] : "";
-            setData((prev) =>
-              prev.map((r) =>
-                r.id === row.id
-                  ? { ...r, categoria_perdida: cat, subcategoria_perdida: auto || r.subcategoria_perdida }
-                  : r
-              )
-            );
+            const autoSub = allowed.length === 1 ? allowed[0] : "";
+
             setFilteredData((prev) =>
-              prev.map((r) =>
-                r.id === row.id
-                  ? { ...r, categoria_perdida: cat, subcategoria_perdida: auto || r.subcategoria_perdida }
-                  : r
-              )
+              prev.map((r) => (r.id === row.id ? { ...r, categoria_perdida: cat, subcategoria_perdida: autoSub || r.subcategoria_perdida } : r))
+            );
+            setData((prev) =>
+              prev.map((r) => (r.id === row.id ? { ...r, categoria_perdida: cat, subcategoria_perdida: autoSub || r.subcategoria_perdida } : r))
             );
           }}
-          onBlur={() => saveEdit(i, col, editValue)}
+          onBlur={() => {
+            const cat = editValue ?? "";
+            const allowed = CATEGORIA_SUBCATEGORIA[cat] || [];
+            const autoSub = allowed.length === 1 ? allowed[0] : "";
+            const nextSub = autoSub || row.subcategoria_perdida || "";
+            saveEditMulti(i, { categoria_perdida: cat, subcategoria_perdida: nextSub });
+          }}
         >
           <option value="">-</option>
           {Object.keys(CATEGORIA_SUBCATEGORIA).map((op) => (
@@ -653,6 +731,7 @@ export default function Oportunidades() {
     }
 
     if (col === "subcategoria_perdida") {
+      const allowed = CATEGORIA_SUBCATEGORIA[row.categoria_perdida] || [];
       return (
         <select
           className="cell-input"
@@ -662,7 +741,7 @@ export default function Oportunidades() {
           onBlur={() => saveEdit(i, col, editValue)}
         >
           <option value="">-</option>
-          {(CATEGORIA_SUBCATEGORIA[row.categoria_perdida] || []).map((op) => (
+          {allowed.map((op) => (
             <option key={op} value={op}>
               {op}
             </option>
@@ -690,6 +769,201 @@ export default function Oportunidades() {
           }
         }}
         onBlur={() => saveEdit(i, col, editValue)}
+      />
+    );
+  };
+
+  const renderNewRowCell = (col) => {
+    if (col === "mrc_normalizado") return <span>-</span>;
+
+    if (isDateCol(col)) {
+      return (
+        <input
+          className="cell-input"
+          type="date"
+          value={toIsoDate(newRow[col])}
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        />
+      );
+    }
+
+    if (col === "tipo_moneda") {
+      return (
+        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+          <option value="">-</option>
+          <option value="COP">COP</option>
+          <option value="USD">USD</option>
+        </select>
+      );
+    }
+
+    if (col === "tipo_cliente") {
+      return (
+        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+          <option value="">-</option>
+          {TIPO_CLIENTE_OPTS.map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === "tipo_solicitud") {
+      return (
+        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+          <option value="">-</option>
+          {TIPO_SOLICITUD_OPTS.map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === "calificacion_oportunidad") {
+      return (
+        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+          <option value="">-</option>
+          {CALIFICACION_OPTS.map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === "origen_oportunidad") {
+      return (
+        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+          <option value="">-</option>
+          {ORIGEN_OPTS.map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === "estado_ot") {
+      return (
+        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+          <option value="">-</option>
+          {ESTADO_OT_OPTS.map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === "estado_proyecto") {
+      return (
+        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+          <option value="">-</option>
+          {ESTADO_PROYECTO_OPTS.map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === "estado_oferta") {
+      return (
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => {
+            const estado = e.target.value;
+            const allowed = ESTADO_RESULTADO[estado] || [];
+            const auto = allowed.length === 1 ? allowed[0] : "";
+            setNewRow((p) => ({
+              ...p,
+              estado_oferta: estado,
+              resultado_oferta: auto || p.resultado_oferta,
+            }));
+          }}
+        >
+          <option value="">-</option>
+          {Object.keys(ESTADO_RESULTADO).map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === "resultado_oferta") {
+      return (
+        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+          <option value="">-</option>
+          {(ESTADO_RESULTADO[newRow.estado_oferta] || []).map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === "categoria_perdida") {
+      return (
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => {
+            const cat = e.target.value;
+            const allowed = CATEGORIA_SUBCATEGORIA[cat] || [];
+            const auto = allowed.length === 1 ? allowed[0] : "";
+            setNewRow((p) => ({
+              ...p,
+              categoria_perdida: cat,
+              subcategoria_perdida: auto || p.subcategoria_perdida,
+            }));
+          }}
+        >
+          <option value="">-</option>
+          {Object.keys(CATEGORIA_SUBCATEGORIA).map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === "subcategoria_perdida") {
+      return (
+        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+          <option value="">-</option>
+          {(CATEGORIA_SUBCATEGORIA[newRow.categoria_perdida] || []).map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    return (
+      <input
+        className="cell-input"
+        value={newRow[col] ?? ""}
+        inputMode={isNumericCol(col) ? "decimal" : undefined}
+        onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        onBlur={(e) => {
+          if (!isNumericCol(col)) return;
+          const parsed = parseNumberSmart(e.target.value);
+          setNewRow((p) => ({ ...p, [col]: parsed === "" ? "" : parsed }));
+        }}
       />
     );
   };
@@ -751,118 +1025,7 @@ export default function Oportunidades() {
             {newRow && (
               <tr className="new-row">
                 {columnOrder.map((col) => (
-                  <td key={col}>
-                    {col === "mrc_normalizado" ? (
-                      <span>-</span>
-                    ) : isDateCol(col) ? (
-                      <input
-                        className="cell-input"
-                        type="date"
-                        value={toIsoDate(newRow[col])}
-                        onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
-                      />
-                    ) : col === "tipo_moneda" ? (
-                      <select
-                        className="cell-input"
-                        value={newRow[col] ?? ""}
-                        onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
-                      >
-                        <option value="">-</option>
-                        <option value="COP">COP</option>
-                        <option value="USD">USD</option>
-                      </select>
-                    ) : col === "resultado_oferta" ? (
-                      <select
-                        className="cell-input"
-                        value={newRow[col] ?? ""}
-                        onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
-                      >
-                        <option value="">-</option>
-                        {(ESTADO_RESULTADO[newRow.estado_oferta] || []).map((op) => (
-                          <option key={op} value={op}>
-                            {op}
-                          </option>
-                        ))}
-                      </select>
-                    ) : col === "estado_oferta" ? (
-                      <select
-                        className="cell-input"
-                        value={newRow[col] ?? ""}
-                        onChange={(e) => {
-                          const estado = e.target.value;
-                          const allowed = ESTADO_RESULTADO[estado] || [];
-                          const auto = allowed.length === 1 ? allowed[0] : "";
-                          setNewRow((p) => ({
-                            ...p,
-                            estado_oferta: estado,
-                            resultado_oferta: auto || p.resultado_oferta,
-                          }));
-                        }}
-                      >
-                        <option value="">-</option>
-                        {Object.keys(ESTADO_RESULTADO).map((op) => (
-                          <option key={op} value={op}>
-                            {op}
-                          </option>
-                        ))}
-                      </select>
-                    ) : col === "subcategoria_perdida" ? (
-                      <select
-                        className="cell-input"
-                        value={newRow[col] ?? ""}
-                        onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
-                      >
-                        <option value="">-</option>
-                        {(CATEGORIA_SUBCATEGORIA[newRow.categoria_perdida] || []).map((op) => (
-                          <option key={op} value={op}>
-                            {op}
-                          </option>
-                        ))}
-                      </select>
-                    ) : col === "categoria_perdida" ? (
-                      <select
-                        className="cell-input"
-                        value={newRow[col] ?? ""}
-                        onChange={(e) => {
-                          const cat = e.target.value;
-                          const allowed = CATEGORIA_SUBCATEGORIA[cat] || [];
-                          const auto = allowed.length === 1 ? allowed[0] : "";
-                          setNewRow((p) => ({
-                            ...p,
-                            categoria_perdida: cat,
-                            subcategoria_perdida: auto || p.subcategoria_perdida,
-                          }));
-                        }}
-                      >
-                        <option value="">-</option>
-                        {Object.keys(CATEGORIA_SUBCATEGORIA).map((op) => (
-                          <option key={op} value={op}>
-                            {op}
-                          </option>
-                        ))}
-                      </select>
-                    ) : isObservationsCol(col) ? (
-                      <button
-                        className="btn-edit-long"
-                        onClick={() => editLongText(-1, col)}
-                        disabled
-                      >
-                        Editar
-                      </button>
-                    ) : (
-                      <input
-                        className="cell-input"
-                        value={newRow[col]}
-                        inputMode={isNumericCol(col) ? "decimal" : undefined}
-                        onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
-                        onBlur={(e) => {
-                          if (!isNumericCol(col)) return;
-                          const parsed = parseNumberSmart(e.target.value);
-                          setNewRow((p) => ({ ...p, [col]: parsed === "" ? "" : parsed }));
-                        }}
-                      />
-                    )}
-                  </td>
+                  <td key={col}>{renderNewRowCell(col)}</td>
                 ))}
                 <td className="acciones">
                   <button className="btn-save" onClick={saveNewRow} disabled={loading}>
@@ -886,11 +1049,7 @@ export default function Oportunidades() {
                     }}
                     className={editing.row === i && editing.col === col ? "editing" : ""}
                   >
-                    {editing.row === i && editing.col === col ? (
-                      renderEditorCell(row, i, col)
-                    ) : (
-                      formatCell(col, row[col])
-                    )}
+                    {editing.row === i && editing.col === col ? renderEditorCell(row, i, col) : formatCell(col, row[col])}
                   </td>
                 ))}
                 <td className="acciones"></td>
