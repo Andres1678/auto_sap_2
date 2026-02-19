@@ -631,19 +631,17 @@ const Registro = ({ userData }) => {
       return true;
     });
 
-    // 2) Ordenar
+    
     const sorted = rows.slice().sort((a, b) => {
       const ia = Number(a?.id ?? a?.registro_id ?? a?.id_registro ?? 0);
       const ib = Number(b?.id ?? b?.registro_id ?? b?.id_registro ?? 0);
       if (ia !== ib) return ia - ib;
 
-      // desempate opcional por fecha (por si hay ids raros o iguales)
       const da = new Date(a?.fecha || "1970-01-01");
       const db = new Date(b?.fecha || "1970-01-01");
       return da - db;
     });
 
-    // 3) Paginar
     const total = sorted.length;
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
     const safePage = Math.min(Math.max(1, page), totalPages);
@@ -978,24 +976,27 @@ const Registro = ({ userData }) => {
     const copia = { ...reg };
     delete copia.id;
 
-    // pool de módulos inmediato (sin esperar nada)
     const pool = resolveModulosForEdit(reg);
     setModulos(pool);
 
     const moduloPref = reg?.modulo ? String(reg.modulo).trim() : "";
     const moduloSel = pool.length === 1 ? pool[0] : (moduloPref || "");
-
     setModuloElegido(moduloSel);
+
+    const newHoraInicio = reg?.horaFin || "";
 
     setRegistro({
       ...initRegistro(),
       ...copia,
       id: null,
-      modulo: moduloSel, // 👈 importante: que el registro tenga el modulo también
+      modulo: moduloSel,
       equipo: equipoOf(copia, userEquipoUpper),
+
+      horaInicio: newHoraInicio,
+      horaFin: "", 
     });
 
-    // ocupación / tareas (opcional: si quieres que al copiar también quede lista)
+    
     let occId = "";
     if (reg?.tarea_id || reg?.tarea?.id) {
       const tid = reg?.tarea_id ?? reg?.tarea?.id;
@@ -1017,6 +1018,7 @@ const Registro = ({ userData }) => {
     setModoEdicion(false);
     setModalIsOpen(true);
   };
+
 
   const toggleBloqueado = async (id) => {
     try {
