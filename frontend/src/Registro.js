@@ -367,7 +367,7 @@ const Registro = ({ userData }) => {
   const filtroNroCasoCliDeb = useDebouncedValue(filtroNroCasoCli, 300);
 
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 100;
+  const PAGE_SIZE = 250;
 
   const pendingEditTareaIdRef = useRef(null);
 
@@ -633,10 +633,14 @@ const Registro = ({ userData }) => {
 
     // 2) Ordenar
     const sorted = rows.slice().sort((a, b) => {
-      const da = new Date(a.fecha || "1970-01-01");
-      const db = new Date(b.fecha || "1970-01-01");
-      if (da.getTime() !== db.getTime()) return da - db;
-      return String(a.id || 0).localeCompare(String(b.id || 0));
+      const ia = Number(a?.id ?? a?.registro_id ?? a?.id_registro ?? 0);
+      const ib = Number(b?.id ?? b?.registro_id ?? b?.id_registro ?? 0);
+      if (ia !== ib) return ia - ib;
+
+      // desempate opcional por fecha (por si hay ids raros o iguales)
+      const da = new Date(a?.fecha || "1970-01-01");
+      const db = new Date(b?.fecha || "1970-01-01");
+      return da - db;
     });
 
     // 3) Paginar

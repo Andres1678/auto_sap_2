@@ -305,9 +305,7 @@ button, input, select, textarea{
 /* Scroll doble (X/Y) */
 .table-scroll{
   overflow:auto;
-  max-height:70vh;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-gutter: stable both-edges;
+  max-height: calc(100vh - 260px); 
 }
 
 /* Tabla grande */
@@ -569,4 +567,11 @@ td.actions{
 .muted{
   color: var(--muted);
   font-weight: 700;
+}
+
+.swal2-container{
+  z-index: 30000 !important;
+}
+.swal2-backdrop-show{
+  z-index: 29999 !important;
 }
