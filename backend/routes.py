@@ -1134,6 +1134,10 @@ def obtener_registros_graficos():
             "detalle": str(e)
         }), 500
 
+USUARIOS_PUEDE_SEMANAS_ANTERIORES = {
+    "johngaravito",
+}
+
 @bp.route('/registros', methods=['GET'])
 def obtener_registros():
     try:
@@ -1409,9 +1413,6 @@ def eliminar_registro(id):
 def editar_registro(id):
     data = request.get_json(silent=True) or {}
 
-    # -------------------------------------------------------------
-    # ✅ Usuario real desde headers (NO confiar en rol/usuario del body)
-    # -------------------------------------------------------------
     usuario_header = (request.headers.get("X-User-Usuario") or "").strip().lower()
     if not usuario_header:
         return jsonify({'mensaje': 'Usuario no enviado'}), 401
@@ -1422,7 +1423,6 @@ def editar_registro(id):
     if not consultor_login:
         return jsonify({'mensaje': 'Usuario no encontrado'}), 404
 
-    # Admin real desde BD (rol_obj o campo plano)
     rol_real = ""
     if getattr(consultor_login, "rol_obj", None) and getattr(consultor_login.rol_obj, "nombre", None):
         rol_real = consultor_login.rol_obj.nombre
@@ -1431,34 +1431,34 @@ def editar_registro(id):
 
     es_admin = _is_admin_request(rol_real, consultor_login)
 
-    # -------------------------------------------------------------
-    # ✅ Registro
-    # -------------------------------------------------------------
     registro = Registro.query.get(id)
     if not registro:
         return jsonify({'mensaje': 'Registro no encontrado'}), 404
 
-    # -------------------------------------------------------------
-    # 🔐 Autorización: si NO es admin, solo puede editar lo suyo
-    # -------------------------------------------------------------
     dueño = (registro.usuario_consultor or "").strip().lower()
     if not es_admin and dueño and dueño != usuario_header:
         return jsonify({'mensaje': 'No autorizado'}), 403
 
+    # ✅ EXCEPCIÓN: permitir semanas anteriores solo a johngaravito (y admins)
+    puede_semanas_anteriores = es_admin or (usuario_header in USUARIOS_PUEDE_SEMANAS_ANTERIORES)
+
+    # Si tienes una validación de semana en editar, métela aquí.
+    # (Si NO la tienes en backend, esto no afecta nada)
+    # Requiere helper isDateInRangeISO o equivalente en python.
+    fecha_nueva = data.get("fecha")
+    if fecha_nueva and not puede_semanas_anteriores:
+        # Si ya tienes tu propia función de semana actual, úsala aquí.
+        # Ejemplo (si la implementaste):  if not _is_in_current_week(fecha_nueva): ...
+        pass
+
     try:
-        # =============================================================
-        # 🔥 CAMPOS BASE
-        # =============================================================
         registro.fecha = pick(data, 'fecha', default=registro.fecha)
         registro.cliente = pick(data, 'cliente', default=registro.cliente)
         registro.nro_caso_cliente = pick(data, 'nroCasoCliente', default=registro.nro_caso_cliente)
         registro.nro_caso_interno = pick(data, 'nroCasoInterno', default=registro.nro_caso_interno)
 
-        # =============================================================
-        # 🔥 TAREA (FK REAL) + TIPO_TAREA (TEXTO)
-        # =============================================================
         tarea_id = data.get("tarea_id")
-        tipoTareaTexto = data.get("tipoTarea")  # Ej: "05 - Documentación"
+        tipoTareaTexto = data.get("tipoTarea")
 
         if tarea_id:
             try:
@@ -1472,19 +1472,13 @@ def editar_registro(id):
 
             registro.tarea_id = tarea_obj.id
 
-            # Si NO viene texto, lo generamos
             if not tipoTareaTexto:
                 registro.tipo_tarea = f"{tarea_obj.codigo} - {tarea_obj.nombre}"
 
-        # Si viene texto explícito desde React → guardarlo
         if tipoTareaTexto:
             registro.tipo_tarea = str(tipoTareaTexto).strip()
 
-        # =============================================================
-        # 🔥 OCUPACIÓN
-        # =============================================================
         ocupacion_id = data.get("ocupacion_id")
-
         if ocupacion_id:
             try:
                 ocupacion_id_int = int(ocupacion_id)
@@ -1497,16 +1491,12 @@ def editar_registro(id):
 
             registro.ocupacion_id = ocupacion_id_int
 
-        # Si NO viene ocupación → intentar inferirla desde la tarea
         if not ocupacion_id and registro.tarea_id:
             tarea_db = Tarea.query.options(db.joinedload(Tarea.ocupaciones)).get(registro.tarea_id)
             if tarea_db and getattr(tarea_db, "ocupaciones", None):
                 if tarea_db.ocupaciones:
                     registro.ocupacion_id = tarea_db.ocupaciones[0].id
 
-        # =============================================================
-        # 🔥 HORAS Y DETALLES
-        # =============================================================
         registro.hora_inicio = pick(data, 'horaInicio', default=registro.hora_inicio)
         registro.hora_fin = pick(data, 'horaFin', default=registro.hora_fin)
         registro.tiempo_invertido = pick(data, 'tiempoInvertido', default=registro.tiempo_invertido)
@@ -1517,9 +1507,6 @@ def editar_registro(id):
         registro.total_horas = pick(data, 'totalHoras', default=registro.total_horas)
         registro.modulo = pick(data, 'modulo', default=registro.modulo)
 
-        # =============================================================
-        # 🔥 BASIS (solo si vienen en payload; no pisa si no vienen)
-        # =============================================================
         bd = _basis_defaults_from_payload(data)
 
         if 'actividadMalla' in data or 'actividad_malla' in data:
@@ -1529,7 +1516,6 @@ def editar_registro(id):
         if 'desborde' in data:
             registro.desborde = bd["desborde"]
 
-        # Defaults defensivos
         if not registro.actividad_malla:
             registro.actividad_malla = "N/APLICA"
         if not registro.oncall:
@@ -1543,7 +1529,6 @@ def editar_registro(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'mensaje': f'No se pudo actualizar el registro: {e}'}), 500
-
 
 
 @bp.route('/toggle-bloqueado/<int:id>', methods=['PUT'])

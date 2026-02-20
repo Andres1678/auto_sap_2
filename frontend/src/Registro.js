@@ -41,6 +41,9 @@ const CLIENTE_RESTRINGIDO = 'HITSS/CLARO';
 const CODES_NEED_CASE = new Set(['01','02','03']);
 const CODES_RESTRICTED_CLIENT_9H = new Set(['09','13','14','15']);
 const CODE_SUPERVISION_EQUIPO = '06';
+const USERS_PUEDE_SEMANAS_ANTERIORES = new Set([
+  'johngaravito'
+]);
 
 
 const parseHHMM = (s) => {
@@ -313,6 +316,7 @@ const Registro = ({ userData }) => {
 
   const initialEquipo = () => normKey(localStorage.getItem('filtroEquipo') || '');
   const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
+  const puedeSemanasAnteriores = USERS_PUEDE_SEMANAS_ANTERIORES.has(usuarioLogin);
 
   useEffect(() => {
     localStorage.setItem('filtroEquipo', filtroEquipo);
@@ -688,7 +692,7 @@ const Registro = ({ userData }) => {
 
     const { minISO: weekMinISO, maxISO: weekMaxISO } = getWeekBoundsISO(new Date());
 
-    if (!isDateInRangeISO(registro.fecha, weekMinISO, weekMaxISO)) {
+    if (!puedeSemanasAnteriores && !isDateInRangeISO(registro.fecha, weekMinISO, weekMaxISO)) {
       return Swal.fire({
         icon: "warning",
         title: "Fecha fuera de la semana actual",
@@ -1484,8 +1488,8 @@ const Registro = ({ userData }) => {
                 <input
                   type="date"
                   value={registro.fecha}
-                  min={weekMinISO}
-                  max={weekMaxISO}
+                  min={puedeSemanasAnteriores ? undefined : weekMinISO}
+                  max={puedeSemanasAnteriores ? undefined : weekMaxISO}
                   onChange={(e) => setRegistro({ ...registro, fecha: e.target.value })}
                   required
                 />
