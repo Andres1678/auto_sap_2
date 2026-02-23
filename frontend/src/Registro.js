@@ -42,7 +42,7 @@ const CODES_NEED_CASE = new Set(['01','02','03']);
 const CODES_RESTRICTED_CLIENT_9H = new Set(['09','13','14','15']);
 const CODE_SUPERVISION_EQUIPO = '06';
 const USERS_PUEDE_SEMANAS_ANTERIORES = new Set([
-  'johngaravito', 'gonzalezanf', 'baezjc', 'cardenasf'
+  'johngaravito', 'gonzalezanf', 'baezjc', 'cardenasf', 'rodriguezso'
 ]);
 
 
