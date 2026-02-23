@@ -17,7 +17,11 @@ import "./ModalProyectosHoras.css";
 import { ACTIVE_PROJECTS } from "./activeProjects";
 import { buildProjectIndex, matchProject } from "./projectMatch";
 
+Modal.setAppElement("#root");
 
+/* =========================
+   Helpers
+========================= */
 const toNum = (v) => {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
@@ -89,7 +93,9 @@ function MultiFiltro({
       <button
         type="button"
         className={
-          "pmf-control" + (open ? " is-open" : "") + (disabled ? " is-disabled" : "")
+          "pmf-control" +
+          (open ? " is-open" : "") +
+          (disabled ? " is-disabled" : "")
         }
         onClick={() => {
           if (!disabled) setOpen((o) => !o);
@@ -157,13 +163,13 @@ export default function ModalProyectosHoras({
   onClose,
   userData,
   defaultMonth = "",
-  registrosOverride = null,
+  registrosOverride = null, // ✅ si viene, NO hace fetch
 }) {
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState("");
 
   // filtros
-  const [filtroMes, setFiltroMes] = useState(defaultMonth);
+  const [filtroMes, setFiltroMes] = useState(defaultMonth || "");
   const [filtroEquipo, setFiltroEquipo] = useState([]);
   const [filtroConsultor, setFiltroConsultor] = useState([]);
   const [filtroModulo, setFiltroModulo] = useState([]);
@@ -175,10 +181,6 @@ export default function ModalProyectosHoras({
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTitle, setDetailTitle] = useState("");
   const [detailRows, setDetailRows] = useState([]);
-
-  // ✅ refs para manejar foco y evitar warning aria-hidden
-  const closeBtnRef = useRef(null);
-  const closeDetailBtnRef = useRef(null);
 
   // user
   const user = useMemo(() => {
@@ -230,7 +232,7 @@ export default function ModalProyectosHoras({
   const projectOfficial = (r) => getProjectMatch(r).official;
 
   /* =========================
-     Sync month cuando abres
+     Sync: al abrir / cambiar defaultMonth
   ========================= */
   useEffect(() => {
     if (!isOpen) return;
@@ -239,17 +241,14 @@ export default function ModalProyectosHoras({
 
   /* =========================
      Cargar data SOLO al abrir
+     ✅ si viene registrosOverride, NO hacemos fetch
   ========================= */
   useEffect(() => {
     if (!isOpen) return;
 
-    // usar override
-    if (Array.isArray(registrosOverride)) {
-      setError("");
-      setRegistros(registrosOverride);
-
-      if (scope === 'SELF') {
-        setFiltroConsultor([]); 
+    const initFiltrosPorScope = () => {
+      if (scope === "SELF") {
+        setFiltroConsultor(nombreUser ? [nombreUser] : []);
         setFiltroEquipo(equipoUser ? [equipoUser] : []);
       } else if (scope === "TEAM") {
         setFiltroEquipo(equipoUser ? [equipoUser] : []);
@@ -258,10 +257,17 @@ export default function ModalProyectosHoras({
         setFiltroEquipo([]);
         setFiltroConsultor([]);
       }
+    };
 
+    // ✅ override
+    if (Array.isArray(registrosOverride)) {
+      setError("");
+      setRegistros(registrosOverride);
+      initFiltrosPorScope();
       return;
     }
 
+    // fetch normal
     const fetchData = async () => {
       setError("");
       try {
@@ -279,17 +285,7 @@ export default function ModalProyectosHoras({
 
         const arr = Array.isArray(json) ? json : [];
         setRegistros(arr);
-
-        if (scope === "SELF") {
-          setFiltroConsultor(nombreUser ? [nombreUser] : []);
-          setFiltroEquipo(equipoUser ? [equipoUser] : []);
-        } else if (scope === "TEAM") {
-          setFiltroEquipo(equipoUser ? [equipoUser] : []);
-          setFiltroConsultor([]);
-        } else {
-          setFiltroEquipo([]);
-          setFiltroConsultor([]);
-        }
+        initFiltrosPorScope();
       } catch (e) {
         setRegistros([]);
         setError(String(e?.message || e));
@@ -364,6 +360,7 @@ export default function ModalProyectosHoras({
     return (registros ?? []).filter((r) => {
       const eq = equipoOf(r);
 
+      // scope
       if (scope === "SELF") {
         const u = String(usuario || "").trim().toLowerCase();
         const ru = String(r.usuario_consultor || "").trim().toLowerCase();
@@ -374,8 +371,10 @@ export default function ModalProyectosHoras({
         if (equipoUser && eq !== equipoUser) return false;
       }
 
+      // mes
       if (!coincideMes(r.fecha, filtroMes)) return false;
 
+      // filtros
       if (filtroEquipo.length > 0 && !filtroEquipo.includes(eq)) return false;
       if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultor)) return false;
       if (filtroModulo.length > 0 && !filtroModulo.includes(r.modulo)) return false;
@@ -408,17 +407,11 @@ export default function ModalProyectosHoras({
   /* =========================
      Agrupaciones
   ========================= */
-  const horasPorProyecto = useMemo(
-    () => groupSum(datosFiltrados, (r) => projectOfficial(r)),
-    [datosFiltrados, projectIndex]
-  );
+  const horasPorProyecto = useMemo(() => groupSum(datosFiltrados, (r) => projectOfficial(r)), [datosFiltrados, projectIndex]);
   const horasPorModulo = useMemo(() => groupSum(datosFiltrados, (r) => r.modulo || "—"), [datosFiltrados]);
   const horasPorConsultor = useMemo(() => groupSum(datosFiltrados, (r) => r.consultor || "—"), [datosFiltrados]);
   const horasPorTarea = useMemo(() => groupSum(datosFiltrados, (r) => r.tipoTarea || "—"), [datosFiltrados]);
-  const horasPorOcupacion = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.ocupacion_nombre || "SIN OCUPACIÓN"),
-    [datosFiltrados]
-  );
+  const horasPorOcupacion = useMemo(() => groupSum(datosFiltrados, (r) => r.ocupacion_nombre || "SIN OCUPACIÓN"), [datosFiltrados]);
 
   const totalHoras = useMemo(() => datosFiltrados.reduce((s, r) => s + toNum(r.tiempoInvertido), 0), [datosFiltrados]);
 
@@ -431,8 +424,7 @@ export default function ModalProyectosHoras({
     if (kind === "modulo") rows = datosFiltrados.filter((r) => (r.modulo || "—") === value);
     if (kind === "consultor") rows = datosFiltrados.filter((r) => (r.consultor || "—") === value);
     if (kind === "tarea") rows = datosFiltrados.filter((r) => (r.tipoTarea || "—") === value);
-    if (kind === "ocupacion")
-      rows = datosFiltrados.filter((r) => (r.ocupacion_nombre || "SIN OCUPACIÓN") === value);
+    if (kind === "ocupacion") rows = datosFiltrados.filter((r) => (r.ocupacion_nombre || "SIN OCUPACIÓN") === value);
 
     rows = rows.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
     const subtotal = rows.reduce((s, r) => s + toNum(r.tiempoInvertido), 0);
@@ -447,269 +439,165 @@ export default function ModalProyectosHoras({
   const TOP = 20;
   const topProyectos = horasPorProyecto.slice(0, TOP);
 
-  return (
-    <Modal
-      isOpen={isOpen}
-      onRequestClose={onClose}
-      className="mph-modal"
-      overlayClassName="mph-overlay"
-      contentLabel="Horas por Proyecto"
-      shouldCloseOnOverlayClick
-      // ✅ evita warning aria-hidden moviendo foco dentro del modal
-      shouldFocusAfterRender={true}
-      shouldReturnFocusAfterClose={true}
-      onAfterOpen={() => {
-        closeBtnRef.current?.focus();
-      }}
-    >
-      <div className="mph-header">
-        <div>
-          <h3 className="mph-title">Horas por Proyecto (mapeo por Nro. Caso Cliente)</h3>
-          <div className="mph-sub">
-            Total filtrado: <b>{totalHoras.toFixed(2)} h</b> · Registros: <b>{datosFiltrados.length}</b>
+  const renderChartCard = (title, data, color, kind) => {
+    if (!data || data.length === 0) {
+      return (
+        <div className="mph-card">
+          <h4>{title}</h4>
+          <div className="mph-empty">Sin datos con los filtros.</div>
+        </div>
+      );
+    }
+
+    const height = Math.max(320, data.length * 28);
+
+    return (
+      <div className="mph-card">
+        <h4>{title}</h4>
+        <div className="mph-chartWrap">
+          <div className="mph-chartInner">
+            <ResponsiveContainer width="100%" height={height}>
+              <BarChart data={data} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" />
+                <YAxis type="category" dataKey="name" width={360} />
+                <Tooltip formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]} />
+                {kind === "proyecto" && <Legend />}
+                <Bar dataKey="horas" name="Horas">
+                  {data.map((entry, idx) => (
+                    <Cell
+                      key={idx}
+                      fill={color}
+                      onClick={() => openDetail(kind, entry.name)}
+                      style={{ cursor: "pointer" }}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
-        <button
-          ref={closeBtnRef}
-          className="mph-close"
-          onClick={onClose}
-          aria-label="Cerrar"
-          type="button"
-        >
-          ✖
-        </button>
       </div>
+    );
+  };
 
-      {error && <div className="mph-error">Error: {error}</div>}
-
-      <div className="mph-filtros">
-        <div className="mph-month">
-          <span className="mph-label">MES</span>
-          <input type="month" value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)} />
-        </div>
-
-        <MultiFiltro
-          titulo="PROYECTOS (OFICIAL)"
-          opciones={proyectosUnicos}
-          seleccion={filtroProyecto}
-          onChange={setFiltroProyecto}
-          placeholder="Todos los proyectos"
-        />
-
-        <MultiFiltro
-          titulo="MÓDULOS"
-          opciones={modulosUnicos}
-          seleccion={filtroModulo}
-          onChange={setFiltroModulo}
-          placeholder="Todos los módulos"
-        />
-
-        <MultiFiltro
-          titulo="OCUPACIÓN"
-          opciones={ocupacionesUnicas}
-          seleccion={filtroOcupacion}
-          onChange={setFiltroOcupacion}
-          placeholder="Todas las ocupaciones"
-        />
-
-        <MultiFiltro
-          titulo="TAREAS"
-          opciones={tareasUnicas}
-          seleccion={filtroTarea}
-          onChange={setFiltroTarea}
-          placeholder="Todas las tareas"
-        />
-
-        <MultiFiltro
-          titulo="CONSULTORES"
-          opciones={scope === "SELF" ? (nombreUser ? [nombreUser] : []) : consultoresUnicos}
-          seleccion={filtroConsultor}
-          onChange={scope === "SELF" ? () => {} : setFiltroConsultor}
-          disabled={scope === "SELF"}
-          placeholder={scope === "SELF" ? nombreUser || "Tu usuario" : "Todos"}
-        />
-
-        <MultiFiltro
-          titulo="EQUIPOS"
-          opciones={scope === "ALL" ? equiposUnicos : equipoUser ? [equipoUser] : []}
-          seleccion={filtroEquipo}
-          onChange={scope === "ALL" ? setFiltroEquipo : () => {}}
-          disabled={scope !== "ALL"}
-          placeholder={scope === "ALL" ? "Todos" : "Tu equipo"}
-        />
-
-        <button
-          className="mph-btn"
-          type="button"
-          onClick={() => {
-            setFiltroModulo([]);
-            setFiltroOcupacion([]);
-            setFiltroTarea([]);
-            setFiltroProyecto([]);
-
-            if (scope === "ALL") {
-              setFiltroEquipo([]);
-              setFiltroConsultor([]);
-            } else if (scope === "TEAM") {
-              setFiltroEquipo(equipoUser ? [equipoUser] : []);
-              setFiltroConsultor([]);
-            } else {
-              setFiltroEquipo(equipoUser ? [equipoUser] : []);
-              setFiltroConsultor(nombreUser ? [nombreUser] : []);
-            }
-          }}
-        >
-          Limpiar
-        </button>
-      </div>
-
-      <div className="mph-grid">
-        {/* Top Proyectos */}
-        <div className="mph-card">
-          <h4>Top Proyectos (Top {TOP})</h4>
-          {topProyectos.length === 0 ? (
-            <div className="mph-empty">Sin datos con los filtros.</div>
-          ) : (
-            <div className="mph-chartScroll">
-              <ResponsiveContainer width="100%" height={Math.max(320, topProyectos.length * 28)}>
-                <BarChart data={topProyectos} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={360} />
-                  <Tooltip formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]} />
-                  <Legend />
-                  <Bar dataKey="horas" name="Horas">
-                    {topProyectos.map((entry, idx) => (
-                      <Cell
-                        key={idx}
-                        fill="#0055B8"
-                        onClick={() => openDetail("proyecto", entry.name)}
-                        style={{ cursor: "pointer" }}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+  return (
+    <>
+      <Modal
+        isOpen={isOpen}
+        onRequestClose={onClose}
+        className="mph-modal"
+        overlayClassName="mph-overlay"
+        contentLabel="Horas por Proyecto"
+        shouldCloseOnOverlayClick
+        ariaHideApp={false}
+      >
+        <div className="mph-header">
+          <div>
+            <h3 className="mph-title">Horas por Proyecto (mapeo por Nro. Caso Cliente)</h3>
+            <div className="mph-sub">
+              Total filtrado: <b>{totalHoras.toFixed(2)} h</b> · Registros:{" "}
+              <b>{datosFiltrados.length}</b>
             </div>
-          )}
+          </div>
+          <button className="mph-close" onClick={onClose} aria-label="Cerrar">
+            ✖
+          </button>
         </div>
 
-        {/* Módulo */}
-        <div className="mph-card">
-          <h4>Horas por Módulo</h4>
-          {horasPorModulo.length === 0 ? (
-            <div className="mph-empty">Sin datos.</div>
-          ) : (
-            <div className="mph-chartScroll">
-              <ResponsiveContainer width="100%" height={Math.max(320, horasPorModulo.length * 28)}>
-                <BarChart data={horasPorModulo} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={260} />
-                  <Tooltip formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]} />
-                  <Bar dataKey="horas">
-                    {horasPorModulo.map((entry, idx) => (
-                      <Cell
-                        key={idx}
-                        fill="#E30613"
-                        onClick={() => openDetail("modulo", entry.name)}
-                        style={{ cursor: "pointer" }}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
+        {error && <div className="mph-error">Error: {error}</div>}
 
-        {/* Consultor */}
-        <div className="mph-card">
-          <h4>Horas por Consultor</h4>
-          {horasPorConsultor.length === 0 ? (
-            <div className="mph-empty">Sin datos.</div>
-          ) : (
-            <div className="mph-chartScroll">
-              <ResponsiveContainer width="100%" height={Math.max(320, horasPorConsultor.length * 28)}>
-                <BarChart data={horasPorConsultor} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={300} />
-                  <Tooltip formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]} />
-                  <Bar dataKey="horas">
-                    {horasPorConsultor.map((entry, idx) => (
-                      <Cell
-                        key={idx}
-                        fill="#111827"
-                        onClick={() => openDetail("consultor", entry.name)}
-                        style={{ cursor: "pointer" }}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+        {/* ✅ Scroll general del contenido */}
+        <div className="mph-body">
+          <div className="mph-filtros">
+            <div className="mph-month">
+              <span className="mph-label">MES</span>
+              <input type="month" value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)} />
             </div>
-          )}
-        </div>
 
-        {/* Tarea */}
-        <div className="mph-card">
-          <h4>Horas por Tarea</h4>
-          {horasPorTarea.length === 0 ? (
-            <div className="mph-empty">Sin datos.</div>
-          ) : (
-            <div className="mph-chartScroll">
-              <ResponsiveContainer width="100%" height={Math.max(320, horasPorTarea.length * 28)}>
-                <BarChart data={horasPorTarea} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={420} />
-                  <Tooltip formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]} />
-                  <Bar dataKey="horas">
-                    {horasPorTarea.map((entry, idx) => (
-                      <Cell
-                        key={idx}
-                        fill="#0EA5E9"
-                        onClick={() => openDetail("tarea", entry.name)}
-                        style={{ cursor: "pointer" }}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
+            <MultiFiltro
+              titulo="PROYECTOS (OFICIAL)"
+              opciones={proyectosUnicos}
+              seleccion={filtroProyecto}
+              onChange={setFiltroProyecto}
+              placeholder="Todos los proyectos"
+            />
 
-        {/* Ocupación */}
-        <div className="mph-card">
-          <h4>Horas por Ocupación</h4>
-          {horasPorOcupacion.length === 0 ? (
-            <div className="mph-empty">Sin datos.</div>
-          ) : (
-            <div className="mph-chartScroll">
-              <ResponsiveContainer width="100%" height={Math.max(320, horasPorOcupacion.length * 28)}>
-                <BarChart data={horasPorOcupacion} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={380} />
-                  <Tooltip formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]} />
-                  <Bar dataKey="horas">
-                    {horasPorOcupacion.map((entry, idx) => (
-                      <Cell
-                        key={idx}
-                        fill="#10B981"
-                        onClick={() => openDetail("ocupacion", entry.name)}
-                        style={{ cursor: "pointer" }}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+            <MultiFiltro
+              titulo="MÓDULOS"
+              opciones={modulosUnicos}
+              seleccion={filtroModulo}
+              onChange={setFiltroModulo}
+              placeholder="Todos los módulos"
+            />
+
+            <MultiFiltro
+              titulo="OCUPACIÓN"
+              opciones={ocupacionesUnicas}
+              seleccion={filtroOcupacion}
+              onChange={setFiltroOcupacion}
+              placeholder="Todas las ocupaciones"
+            />
+
+            <MultiFiltro
+              titulo="TAREAS"
+              opciones={tareasUnicas}
+              seleccion={filtroTarea}
+              onChange={setFiltroTarea}
+              placeholder="Todas las tareas"
+            />
+
+            <MultiFiltro
+              titulo="CONSULTORES"
+              opciones={scope === "SELF" ? (nombreUser ? [nombreUser] : []) : consultoresUnicos}
+              seleccion={filtroConsultor}
+              onChange={scope === "SELF" ? () => {} : setFiltroConsultor}
+              disabled={scope === "SELF"}
+              placeholder={scope === "SELF" ? nombreUser || "Tu usuario" : "Todos"}
+            />
+
+            <MultiFiltro
+              titulo="EQUIPOS"
+              opciones={scope === "ALL" ? equiposUnicos : equipoUser ? [equipoUser] : []}
+              seleccion={filtroEquipo}
+              onChange={scope === "ALL" ? setFiltroEquipo : () => {}}
+              disabled={scope !== "ALL"}
+              placeholder={scope === "ALL" ? "Todos" : "Tu equipo"}
+            />
+
+            <button
+              className="mph-btn"
+              onClick={() => {
+                setFiltroModulo([]);
+                setFiltroOcupacion([]);
+                setFiltroTarea([]);
+                setFiltroProyecto([]);
+
+                if (scope === "ALL") {
+                  setFiltroEquipo([]);
+                  setFiltroConsultor([]);
+                } else if (scope === "TEAM") {
+                  setFiltroEquipo(equipoUser ? [equipoUser] : []);
+                  setFiltroConsultor([]);
+                } else {
+                  setFiltroEquipo(equipoUser ? [equipoUser] : []);
+                  setFiltroConsultor(nombreUser ? [nombreUser] : []);
+                }
+              }}
+            >
+              Limpiar
+            </button>
+          </div>
+
+          <div className="mph-grid">
+            {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#0055B8", "proyecto")}
+            {renderChartCard("Horas por Módulo", horasPorModulo, "#E30613", "modulo")}
+            {renderChartCard("Horas por Consultor", horasPorConsultor, "#111827", "consultor")}
+            {renderChartCard("Horas por Tarea", horasPorTarea, "#0EA5E9", "tarea")}
+            {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#10B981", "ocupacion")}
+          </div>
         </div>
-      </div>
+      </Modal>
 
       {/* =============== MODAL DETALLE (tabla) =============== */}
       {detailOpen && (
@@ -719,21 +607,12 @@ export default function ModalProyectosHoras({
           className="mph-modalDetail"
           overlayClassName="mph-overlayDetail"
           contentLabel="Detalle"
-          shouldFocusAfterRender={true}
-          shouldReturnFocusAfterClose={true}
-          onAfterOpen={() => {
-            closeDetailBtnRef.current?.focus();
-          }}
+          shouldCloseOnOverlayClick
+          ariaHideApp={false}
         >
           <div className="mph-header">
             <h3 className="mph-title">{detailTitle}</h3>
-            <button
-              ref={closeDetailBtnRef}
-              className="mph-close"
-              onClick={closeDetail}
-              aria-label="Cerrar"
-              type="button"
-            >
+            <button className="mph-close" onClick={closeDetail} aria-label="Cerrar">
               ✖
             </button>
           </div>
@@ -809,6 +688,6 @@ export default function ModalProyectosHoras({
           </div>
         </Modal>
       )}
-    </Modal>
+    </>
   );
 }
