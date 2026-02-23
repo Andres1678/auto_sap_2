@@ -1,11 +1,10 @@
 /* =====================================================================
-   ModalProyectosHoras.css  ✅ (STACK + MODALES ARRIBA)
-   - Cada gráfico uno debajo del otro (1 columna)
-   - Overlay/modal SIEMPRE arriba de todo (z-index alto)
-   - Scroll interno del modal, NO de la página
+   ModalProyectosHoras.css ✅ (SCROLL GENERAL + ESPACIO PARA LABELS)
+   - Scroll vertical en TODO el modal (contenido)
+   - Espacio cómodo para etiquetas (eje Y)
+   - Scroll horizontal por tarjeta si el chart lo necesita
 ===================================================================== */
 
-/* ---------------- Overlay / Modal principal ---------------- */
 .mph-overlay{
   position: fixed;
   inset: 0;
@@ -15,26 +14,26 @@
   align-items:center;
   justify-content:center;
   padding: 16px;
-  z-index: 20000; /* ✅ arriba de todo */
+  z-index: 20000;
 }
 
 .mph-modal{
   width: min(1280px, 96vw);
   max-height: 92vh;
-  overflow: hidden;
   background: #fff;
   border-radius: 18px;
   box-shadow: 0 25px 70px rgba(0,0,0,.28);
   display:flex;
   flex-direction:column;
+  overflow: hidden; /* el scroll va en el body */
   outline: none;
 }
 
-/* Header fijo (no se pierde al hacer scroll) */
+/* Header fijo */
 .mph-header{
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 5;
   padding: 14px 16px;
   border-bottom: 1px solid rgba(0,0,0,.08);
   display:flex;
@@ -69,10 +68,8 @@
   opacity: .85;
   display:grid;
   place-items:center;
-  transition: transform .08s ease, background .12s ease, opacity .12s ease;
 }
 .mph-close:hover{ opacity:1; background: rgba(2,6,23,.10); }
-.mph-close:active{ transform: scale(.98); }
 
 /* Error */
 .mph-error{
@@ -85,11 +82,18 @@
   font-weight: 900;
 }
 
-/* ---------------- Filtros ---------------- */
+/* ✅ Scroll GENERAL del contenido del modal */
+.mph-body{
+  flex: 1;
+  overflow: auto;
+  padding-bottom: 14px;
+}
+
+/* Filtros sticky dentro del body */
 .mph-filtros{
   position: sticky;
-  top: 62px; /* debajo del header */
-  z-index: 2;
+  top: 64px; /* debajo del header */
+  z-index: 4;
   padding: 12px 16px;
   border-bottom: 1px solid rgba(0,0,0,.08);
   display:flex;
@@ -99,16 +103,22 @@
   background: #fff;
 }
 
-.mph-label{ font-size: 11px; font-weight: 950; opacity:.7; letter-spacing:.06em; }
+.mph-label{
+  font-size: 11px;
+  font-weight: 950;
+  opacity:.7;
+  letter-spacing:.06em;
+}
 
 .mph-month{
   display:flex;
   flex-direction:column;
   gap: 5px;
-  min-width: 170px;
+  min-width: 180px;
 }
 .mph-month input{
-  padding: 9px 10px;
+  height: 40px;
+  padding: 8px 10px;
   border-radius: 12px;
   border: 1px solid rgba(0,0,0,.15);
   font-weight: 900;
@@ -129,32 +139,26 @@
   color: #fff;
   font-weight: 950;
   cursor: pointer;
-  transition: transform .08s ease, filter .12s ease;
 }
-.mph-btn:hover{ filter: brightness(1.05); }
-.mph-btn:active{ transform: scale(.99); }
 
-/* ---------------- Grid (STACK) ----------------
-   ✅ Cada tarjeta (gráfico) uno debajo del otro.
-*/
+/* ✅ Grid 1 columna */
 .mph-grid{
   padding: 14px 16px 18px;
-  overflow: auto;              /* scroll interno */
   display: grid;
-  grid-template-columns: 1fr;  /* ✅ 1 columna */
+  grid-template-columns: 1fr;
   gap: 14px;
 }
 
-/* Tarjetas */
+/* Tarjeta */
 .mph-card{
   background:#fff;
   border: 1px solid rgba(0,0,0,.08);
   border-radius: 16px;
   padding: 14px;
   box-shadow: 0 8px 20px rgba(0,0,0,.06);
-  overflow: hidden;
 }
 
+/* Títulos */
 .mph-card h4{
   margin:0 0 10px;
   font-weight: 950;
@@ -162,12 +166,35 @@
   line-height: 1.2;
 }
 
-/* Contenedor scroll de chart (para verticales largos) */
-.mph-chartScroll{
-  overflow: auto;
-  border-radius: 14px;
-  padding-right: 6px;
-  margin-right: -6px;
+/* ✅ Este wrapper da “aire” para labels y permite scroll horizontal */
+.mph-chartWrap{
+  width: 100%;
+  overflow-x: auto;     /* ✅ si el gráfico necesita espacio */
+  overflow-y: hidden;
+  padding-left: 22px;   /* ✅ aire para etiquetas */
+  padding-right: 10px;
+}
+
+/* ✅ Contenedor interno con mínimo ancho para que el eje Y no quede aplastado */
+.mph-chartInner{
+  min-width: 980px;     /* ✅ forzamos espacio, así no se recorta */
+}
+
+/* Scroll suave */
+.mph-chartWrap::-webkit-scrollbar,
+.mph-body::-webkit-scrollbar{
+  height: 10px;
+  width: 10px;
+}
+.mph-chartWrap::-webkit-scrollbar-thumb,
+.mph-body::-webkit-scrollbar-thumb{
+  background: rgba(2,6,23,.22);
+  border-radius: 999px;
+}
+.mph-chartWrap::-webkit-scrollbar-track,
+.mph-body::-webkit-scrollbar-track{
+  background: rgba(2,6,23,.06);
+  border-radius: 999px;
 }
 
 /* Empty */
@@ -177,8 +204,13 @@
   font-weight: 900;
 }
 
-/* ---------------- MultiFiltro mini ---------------- */
-.pmf{ min-width: 200px; max-width: 360px; flex: 1 1 240px; position: relative; }
+/* ---------------- MultiFiltro ---------------- */
+.pmf{
+  min-width: 220px;
+  max-width: 420px;
+  flex: 1 1 260px;
+  position: relative;
+}
 .pmf-label{
   display:block;
   font-size:11px;
@@ -201,13 +233,17 @@
   text-align:left;
   overflow:hidden;
 }
-.pmf-control:hover{ border-color: rgba(0,0,0,.22); }
 .pmf-control.is-open{
   border-color: rgba(227,6,19,.65);
   box-shadow: 0 0 0 3px rgba(227,6,19,.18);
 }
-.pmf-control.is-disabled{ opacity:.6; cursor:not-allowed; }
-.pmf-placeholder{ opacity:.75; font-weight:900; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pmf-placeholder{
+  opacity:.75;
+  font-weight:900;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 .pmf-arrow{ margin-left:auto; opacity:.6; font-weight:950; }
 .pmf-chips{ display:flex; gap:6px; flex-wrap:wrap; max-height: 56px; overflow:hidden; }
 .pmf-chip{
@@ -229,15 +265,12 @@
   font-weight:950;
   padding:0;
 }
-.pmf-chip button:hover{ opacity:1; }
-
-/* Dropdown arriba de charts */
 .pmf-dropdown{
   position:absolute;
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  z-index: 20050; /* ✅ encima del modal */
+  z-index: 20050;
   background:#fff;
   border:1px solid rgba(0,0,0,.12);
   border-radius: 14px;
@@ -253,15 +286,9 @@
   font-weight: 900;
   outline:none;
 }
-.pmf-search input:focus{
-  border-color: rgba(227,6,19,.65);
-  box-shadow: 0 0 0 3px rgba(227,6,19,.18);
-}
 .pmf-options{ max-height: 240px; overflow:auto; }
 .pmf-option{ display:flex; gap:8px; padding: 10px; cursor:pointer; align-items:center; }
 .pmf-option:hover{ background: rgba(2,6,23,.04); }
-.pmf-option input{ width: 14px; height: 14px; }
-.pmf-empty{ padding: 10px; opacity:.7; font-style: italic; }
 
 /* ---------------- Modal detalle (tabla) ---------------- */
 .mph-overlayDetail{
@@ -273,7 +300,7 @@
   align-items:center;
   justify-content:center;
   padding: 16px;
-  z-index: 25000; /* ✅ encima del modal principal */
+  z-index: 25000;
 }
 
 .mph-modalDetail{
@@ -335,42 +362,14 @@
 .mph-table td.num{ text-align:right; font-weight: 950; }
 .truncate{ max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* ---------------- Scrollbars suaves ---------------- */
-.mph-grid::-webkit-scrollbar,
-.mph-chartScroll::-webkit-scrollbar,
-.pmf-options::-webkit-scrollbar,
-.mph-detailBody::-webkit-scrollbar,
-.mph-tableWrap::-webkit-scrollbar{
-  height: 10px;
-  width: 10px;
-}
-.mph-grid::-webkit-scrollbar-thumb,
-.mph-chartScroll::-webkit-scrollbar-thumb,
-.pmf-options::-webkit-scrollbar-thumb,
-.mph-detailBody::-webkit-scrollbar-thumb,
-.mph-tableWrap::-webkit-scrollbar-thumb{
-  background: rgba(2,6,23,.22);
-  border-radius: 999px;
-}
-.mph-grid::-webkit-scrollbar-track,
-.mph-chartScroll::-webkit-scrollbar-track,
-.pmf-options::-webkit-scrollbar-track,
-.mph-detailBody::-webkit-scrollbar-track,
-.mph-tableWrap::-webkit-scrollbar-track{
-  background: rgba(2,6,23,.06);
-  border-radius: 999px;
-}
-
-/* ---------------- Responsive ---------------- */
 @media (max-width: 860px){
-  .pmf{ min-width: 180px; }
   .mph-modal{ width: 98vw; max-height: 94vh; border-radius: 16px; }
-  .mph-filtros{ top: 60px; }
-  .mph-card{ padding: 12px; }
+  .mph-filtros{ top: 62px; }
+  .mph-chartInner{ min-width: 900px; }
 }
-
 @media (max-width: 520px){
   .mph-title{ font-size: 16px; }
   .mph-sub{ font-size: 12px; }
   .pmf{ max-width: none; flex: 1 1 100%; }
+  .mph-chartInner{ min-width: 820px; }
 }
