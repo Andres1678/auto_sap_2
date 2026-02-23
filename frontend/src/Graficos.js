@@ -356,69 +356,32 @@ export default function Graficos() {
   useEffect(() => {
     const fetchOcupaciones = async () => {
       try {
-        const res = await jfetch('/horarios', { method: 'GET' });
+        const res = await jfetch('/horas-ocupacion', { method: 'GET' });
         const json = await res.json();
 
-        console.log("📌 Datos crudos de /horarios:", json);
+        console.log("📌 Datos crudos de /horas-ocupacion:", json);
 
-        if (!Array.isArray(json)) {
-          console.error("❌ /horarios no devolvió un array");
-          setHorariosBackend([]);
-          return;
-        }
+        const ocupaciones = Array.isArray(json?.ocupaciones) ? json.ocupaciones : [];
 
-        // Transformación universal y segura
-        const normalizados = json.map((o, idx) => ({
-          codigo:
-            o.codigo ??
-            o.code ??
-            o.cod ??
-            o.id ??
-            `COD-${idx}`,
-
-          nombre:
-            o.nombre ??
-            o.name ??
-            o.descripcion ??
-            o.title ??
-            "SIN NOMBRE",
-
-          value: Number(
-            o.value ??
-            o.porcentaje ??
-            o.pct ??
-            o.percent ??
-            0
-          ),
-
-          horas: Number(
-            o.horas ??
-            o.total_horas ??
-            o.time ??
-            o.hours ??
-            0
-          ),
-
-          ocupacion_id:
-            o.ocupacion_id ??
-            o.id ??
-            o.codigo ??
-            idx
+        const normalizados = ocupaciones.map((o, idx) => ({
+          codigo: o.codigo ?? o.ocupacion_id ?? idx,
+          nombre: o.name ?? o.nombre ?? "SIN NOMBRE",
+          value: Number(o.value ?? 0),
+          horas: Number(o.horas ?? 0),
+          ocupacion_id: o.ocupacion_id ?? idx,
         }));
 
-        console.log("📌 Normalizado para gráficas:", normalizados);
-
+        console.log("📌 Normalizado ocupaciones:", normalizados);
         setHorariosBackend(normalizados);
+
       } catch (err) {
-        console.error("❌ Error cargando /horarios:", err);
+        console.error("❌ Error cargando /horas-ocupacion:", err);
         setHorariosBackend([]);
       }
     };
 
     fetchOcupaciones();
   }, []);
-
-
 
   /* Opciones filtros */
   const consultoresUnicos = useMemo(() => {
@@ -1283,7 +1246,9 @@ export default function Graficos() {
         onClose={() => setModalProyectosOpen(false)}
         userData={user}
         defaultMonth={filtroMes}
-        registrosOverride={registros}  
+        registrosOverride={registros}
+        shouldReturnFocusAfterClose={true}
+        preventScroll={true}  
       />
     </div>
   );
