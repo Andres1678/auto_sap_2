@@ -580,6 +580,8 @@ const Registro = ({ userData }) => {
     return map;
   }, [todasTareas]);
 
+  const editOriginalRef = useRef(null);
+
 
   const obtenerOcupacionDeRegistro = useCallback((r) => {
     if (r?.ocupacion_codigo && r?.ocupacion_nombre) {
