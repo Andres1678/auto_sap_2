@@ -719,23 +719,38 @@ const Registro = ({ userData }) => {
     const nombreConsultor =
       userData?.nombre || userData?.user?.nombre || userData?.consultor?.nombre || "";
 
-    const conflict = findOverlapRegistro({
-      registros,
-      fecha: registro.fecha,
-      consultorId,
-      usuarioLogin,
-      nombreConsultor,
-      excludeId: modoEdicion ? registro.id : null,
-      horaInicio: registro.horaInicio,
-      horaFin: registro.horaFin,
-    });
+    const original = editOriginalRef.current;
 
-    if (conflict) {
-      return Swal.fire({
-        icon: "warning",
-        title: "Horas duplicadas o solapadas",
-        html: `Ya existe un registro que se cruza con este rango:<br/><b>${conflict.horaInicio} - ${conflict.horaFin}</b> (ID: ${conflict.id})`,
+    const cambioRangoEnEdicion =
+      modoEdicion &&
+      original &&
+      (
+        String(original.fecha) !== String(registro.fecha) ||
+        String(original.horaInicio) !== String(registro.horaInicio) ||
+        String(original.horaFin) !== String(registro.horaFin)
+      );
+
+    const debeValidarOverlap = !modoEdicion || cambioRangoEnEdicion;
+
+    if (debeValidarOverlap) {
+      const conflict = findOverlapRegistro({
+        registros,
+        fecha: registro.fecha,
+        consultorId,
+        usuarioLogin,
+        nombreConsultor,
+        excludeId: modoEdicion ? registro.id : null,
+        horaInicio: registro.horaInicio,
+        horaFin: registro.horaFin,
       });
+
+      if (conflict) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Horas duplicadas",
+          html: `Ya existe un registro que se cruza con este rango:<br/><b>${conflict.horaInicio} - ${conflict.horaFin}</b> (ID: ${conflict.id})`,
+        });
+      }
     }
 
     const code = taskCode(registro.tipoTarea);
