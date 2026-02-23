@@ -6,6 +6,7 @@ import {
 import Modal from 'react-modal';
 import './PanelGraficos.css';
 import { jfetch } from './lib/api';
+import ModalProyectosHoras from "./ModalProyectosHoras";
 
 /* ======== config ======== */
 const OPEN_ON_HOVER = false;
@@ -273,6 +274,7 @@ export default function Graficos() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRows, setModalRows] = useState([]);
   const [modalTitle, setModalTitle] = useState('');
+  const [modalProyectosOpen, setModalProyectosOpen] = useState(false);
 
   /* Usuario / rol */
   const user = useMemo(() => {
@@ -822,6 +824,13 @@ export default function Graficos() {
 
         <button
           className="btn btn-outline"
+          onClick={() => setModalProyectosOpen(true)}
+        >
+          Proyectos
+        </button>
+
+        <button
+          className="btn btn-outline"
           onClick={() => {
             setFiltroTarea([]);
             setFiltroCliente([]);
@@ -1268,6 +1277,14 @@ export default function Graficos() {
           </div>
         </Modal>
       )}
+
+      <ModalProyectosHoras
+        isOpen={modalProyectosOpen}
+        onClose={() => setModalProyectosOpen(false)}
+        userData={user}
+        defaultMonth={filtroMes}
+        registrosOverride={registros}  
+      />
     </div>
   );
 }
