@@ -3176,38 +3176,72 @@ def permisos_asignados(consultor_id):
 
 @bp.route("/horas-ocupacion", methods=["GET"])
 @permission_required("GRAFICOS_VER")
-def estadisticas_ocupaciones():
+def horas_ocupacion():
     try:
-        registros = Registro.query.all()
-        registros = normalizar_ocupaciones(registros)
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
 
-        data = []
-        for r in registros:
-            occ_text = r.ocupacion_azure or "00 - SIN CLASIFICAR"
-            horas = float(r.horas_convertidas or 0)
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
 
-            data.append({
-                "ocupacion": occ_text,
-                "tarea": r.tipo_tarea,
-                "horas": horas
-            })
+        usuario_norm = (usuario or "").strip().lower()
 
-        agrupado = {}
-        for d in data:
-            agrupado.setdefault(d["ocupacion"], 0)
-            agrupado[d["ocupacion"]] += d["horas"]
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
 
-        resultado = [
-            {"name": k, "value": round((h / sum(agrupado.values())) * 100, 2), "horas": h}
-            for k, h in agrupado.items()
-        ]
+        scope, val = _scope_for_graficos(consultor_login, rol_req)
 
-        resultado.sort(key=lambda x: x["value"], reverse=True)
+        C = aliased(Consultor)
+        E = aliased(Equipo)
 
-        return jsonify({"ocupaciones": resultado})
+        # horas: usa total_horas si lo llenas, si no, usa tiempo_invertido
+        horas_col = func.coalesce(Registro.total_horas, Registro.tiempo_invertido, 0)
+
+        q = (
+            db.session.query(
+                func.coalesce(Ocupacion.nombre, "SIN OCUPACIÓN").label("ocupacion"),
+                func.coalesce(func.sum(horas_col), 0).label("horas"),
+            )
+            .select_from(Registro)
+            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .outerjoin(E, C.equipo_id == E.id)
+            .outerjoin(Ocupacion, Registro.ocupacion_id == Ocupacion.id)
+        )
+
+        if scope == "SELF":
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+        elif scope == "TEAM":
+            if not int(val or 0):
+                return jsonify({"error": "Consultor sin equipo asignado"}), 403
+            q = q.filter(C.equipo_id == int(val))
+        # ALL: sin filtro
+
+        # (opcional) filtros por fecha
+        desde = (request.args.get("desde") or "").strip()
+        hasta = (request.args.get("hasta") or "").strip()
+        if desde and hasta:
+            q = q.filter(Registro.fecha.between(desde, hasta))
+        elif desde:
+            q = q.filter(Registro.fecha >= desde)
+        elif hasta:
+            q = q.filter(Registro.fecha <= hasta)
+
+        q = q.group_by(func.coalesce(Ocupacion.nombre, "SIN OCUPACIÓN"))
+        rows = q.order_by(func.sum(horas_col).desc()).all()
+
+        out = [{"ocupacion": r.ocupacion, "horas": float(r.horas or 0)} for r in rows]
+        return jsonify(out), 200
 
     except Exception as e:
-        print("❌ Error:", str(e))
+        current_app.logger.exception("❌ Error en /horas-ocupacion")
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/equipos/<int:equipo_id>/permisos/codigo/<string:codigo>', methods=['DELETE'])
