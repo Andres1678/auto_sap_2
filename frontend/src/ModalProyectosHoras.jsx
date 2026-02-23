@@ -222,7 +222,12 @@ export default function ModalProyectosHoras({
     }
 
     const rawText = String(raw ?? "").trim();
-    if (!rawText || rawText === "0" || rawText.toUpperCase() === "NA" || rawText.toUpperCase() === "N/A") {
+    if (
+      !rawText ||
+      rawText === "0" ||
+      rawText.toUpperCase() === "NA" ||
+      rawText.toUpperCase() === "N/A"
+    ) {
       return { status: "EMPTY", official: "SIN PROYECTO", raw: rawText };
     }
 
@@ -407,13 +412,31 @@ export default function ModalProyectosHoras({
   /* =========================
      Agrupaciones
   ========================= */
-  const horasPorProyecto = useMemo(() => groupSum(datosFiltrados, (r) => projectOfficial(r)), [datosFiltrados, projectIndex]);
-  const horasPorModulo = useMemo(() => groupSum(datosFiltrados, (r) => r.modulo || "—"), [datosFiltrados]);
-  const horasPorConsultor = useMemo(() => groupSum(datosFiltrados, (r) => r.consultor || "—"), [datosFiltrados]);
-  const horasPorTarea = useMemo(() => groupSum(datosFiltrados, (r) => r.tipoTarea || "—"), [datosFiltrados]);
-  const horasPorOcupacion = useMemo(() => groupSum(datosFiltrados, (r) => r.ocupacion_nombre || "SIN OCUPACIÓN"), [datosFiltrados]);
+  const horasPorProyecto = useMemo(
+    () => groupSum(datosFiltrados, (r) => projectOfficial(r)),
+    [datosFiltrados, projectIndex]
+  );
+  const horasPorModulo = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.modulo || "—"),
+    [datosFiltrados]
+  );
+  const horasPorConsultor = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.consultor || "—"),
+    [datosFiltrados]
+  );
+  const horasPorTarea = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.tipoTarea || "—"),
+    [datosFiltrados]
+  );
+  const horasPorOcupacion = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.ocupacion_nombre || "SIN OCUPACIÓN"),
+    [datosFiltrados]
+  );
 
-  const totalHoras = useMemo(() => datosFiltrados.reduce((s, r) => s + toNum(r.tiempoInvertido), 0), [datosFiltrados]);
+  const totalHoras = useMemo(
+    () => datosFiltrados.reduce((s, r) => s + toNum(r.tiempoInvertido), 0),
+    [datosFiltrados]
+  );
 
   /* =========================
      Modal detalle
@@ -496,8 +519,7 @@ export default function ModalProyectosHoras({
           <div>
             <h3 className="mph-title">Horas por Proyecto (mapeo por Nro. Caso Cliente)</h3>
             <div className="mph-sub">
-              Total filtrado: <b>{totalHoras.toFixed(2)} h</b> · Registros:{" "}
-              <b>{datosFiltrados.length}</b>
+              Total filtrado: <b>{totalHoras.toFixed(2)} h</b> · Registros: <b>{datosFiltrados.length}</b>
             </div>
           </div>
           <button className="mph-close" onClick={onClose} aria-label="Cerrar">
@@ -507,7 +529,6 @@ export default function ModalProyectosHoras({
 
         {error && <div className="mph-error">Error: {error}</div>}
 
-        {/* ✅ Scroll general del contenido */}
         <div className="mph-body">
           <div className="mph-filtros">
             <div className="mph-month">

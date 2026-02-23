@@ -15,19 +15,31 @@
 
   --mph-control-h:44px;
   --mph-control-radius:12px;
-  --mph-max:1680px;
+
+  
+  --mph-max:2200px;
+
+  
   --mph-modal-h: min(94vh, 1040px);
+
+  
   --mph-z-overlay: 99999;
   --mph-z-overlay-detail: 100000;
+
+  
   --mph-pad:18px;
   --mph-gap:12px;
+
+  
   --mph-font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, "Apple Color Emoji","Segoe UI Emoji";
 }
 
 *{ box-sizing: border-box; }
 .mph-overlay, .mph-overlayDetail, .mph-modal, .mph-modalDetail { font-family: var(--mph-font); }
 
-
+/* =========================
+   OVERLAYS (SIEMPRE ARRIBA)
+========================= */
 .mph-overlay{
   position:fixed;
   inset:0;
@@ -36,7 +48,7 @@
   display:flex;
   align-items:center;
   justify-content:center;
-  padding:18px;
+  padding:10px; /* ✅ menos padding = más ancho real */
   z-index: var(--mph-z-overlay);
 }
 
@@ -48,15 +60,16 @@
   display:flex;
   align-items:center;
   justify-content:center;
-  padding:18px;
+  padding:10px; /* ✅ */
   z-index: var(--mph-z-overlay-detail);
 }
 
 /* =========================
-   MODAL (contenedor)
+   MODAL (contenedor) - FULL WIDTH
 ========================= */
 .mph-modal{
-  width: min(var(--mph-max), 99vw);     /* ✅ más ancho */
+  width: 99vw !important;       /* ✅ casi pantalla completa */
+  max-width: none !important;   /* ✅ sin límite */
   height: var(--mph-modal-h);
   background: var(--mph-bg);
   color: var(--mph-text);
@@ -67,13 +80,13 @@
   display:flex;
   flex-direction:column;
   outline:none;
-
-  /* mejora visual */
+  margin: 0 !important;
   transform: translateZ(0);
 }
 
 .mph-modalDetail{
-  width: min(1760px, 99vw);
+  width: 99vw !important;
+  max-width: none !important;
   height: var(--mph-modal-h);
   background: var(--mph-bg);
   color: var(--mph-text);
@@ -84,6 +97,7 @@
   display:flex;
   flex-direction:column;
   outline:none;
+  margin: 0 !important;
 }
 
 /* =========================
@@ -195,7 +209,7 @@
 }
 
 /* =========================
-   FILTROS (sticky) - más organizado
+   FILTROS (sticky) - organizado
 ========================= */
 .mph-filtros{
   position: sticky;
@@ -313,20 +327,15 @@
   font-weight:900;
 }
 
-/* ✅ mejor contenedor para gráficos: scroll horizontal solo si se requiere */
+/* ✅ contenedor para gráficos: scroll horizontal solo si se requiere */
 .mph-chartWrap{
   overflow:auto;
   padding: 12px 12px 14px;
 }
 
-/* ✅ ancho mínimo un poco mayor para etiquetas largas (proyectos) */
+/* ✅ aprovecha el nuevo ancho del modal (menos scroll) */
 .mph-chartInner{
-  min-width: 1120px;
-}
-
-/* pequeño “aire” extra para charts cuando hay muchos items */
-.mph-card .recharts-wrapper{
-  margin-top: 2px;
+  min-width: 1080px; /* antes 1120/980, ajustado para que casi nunca “se salga” */
 }
 
 /* =========================
@@ -506,7 +515,7 @@
 
 .mph-table{
   width: 100%;
-  min-width: 1400px; /* ✅ un poco más ancho para respirar */
+  min-width: 1400px;
   border-collapse: collapse;
 }
 
@@ -551,20 +560,19 @@
    RESPONSIVE
 ========================= */
 @media (max-width: 1200px){
-  .mph-chartInner{ min-width: 1040px; }
-
-  /* filtros a 2 filas más limpias */
   .mph-filtros{
     grid-template-columns: repeat(8, minmax(0, 1fr));
   }
   .mph-month{ grid-column: span 4; }
   .pmf{ grid-column: span 4; }
   .mph-btn{ grid-column: span 8; justify-self: start; }
+
+  .mph-chartInner{ min-width: 980px; }
 }
 
 @media (max-width: 860px){
   .mph-modal, .mph-modalDetail{
-    width: 99vw;
+    width: 99vw !important;
     height: min(95vh, 980px);
     border-radius: 14px;
   }
@@ -578,7 +586,7 @@
   .pmf{ grid-column: span 6; }
   .mph-btn{ grid-column: span 6; justify-self: stretch; }
 
-  .mph-chartInner{ min-width: 980px; }
+  .mph-chartInner{ min-width: 900px; }
   .truncate{ max-width: 300px; }
 }
 
@@ -596,6 +604,6 @@
     padding-right: 14px;
   }
 
-  .mph-chartInner{ min-width: 900px; }
+  .mph-chartInner{ min-width: 860px; }
   .mph-table{ min-width: 1200px; }
 }
