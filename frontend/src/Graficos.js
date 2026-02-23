@@ -156,8 +156,8 @@ function MultiFiltro({
       }
     };
 
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
   }, [open]);
 
   const toggleValue = (val) => {
@@ -361,17 +361,21 @@ export default function Graficos() {
 
         console.log("📌 Datos crudos de /horas-ocupacion:", json);
 
-        const ocupaciones = Array.isArray(json?.ocupaciones) ? json.ocupaciones : [];
+        // ✅ tu endpoint devuelve Array plano: [{ horas, ocupacion }]
+        const arr = Array.isArray(json)
+          ? json
+          : (Array.isArray(json?.ocupaciones) ? json.ocupaciones : []);
 
-        const normalizados = ocupaciones.map((o, idx) => ({
-          codigo: o.codigo ?? o.ocupacion_id ?? idx,
-          nombre: o.name ?? o.nombre ?? "SIN NOMBRE",
-          value: Number(o.value ?? 0),
+        const normalizados = arr.map((o, idx) => ({
+          ocupacion_id: o.ocupacion_id ?? o.id ?? idx,
+          codigo: o.codigo ?? o.ocupacion_codigo ?? o.ocupacion_id ?? idx,
+          nombre: (o.ocupacion ?? o.name ?? o.nombre ?? "SIN OCUPACIÓN"),
           horas: Number(o.horas ?? 0),
-          ocupacion_id: o.ocupacion_id ?? idx,
         }));
 
         console.log("📌 Normalizado ocupaciones:", normalizados);
+
+        // si lo quieres guardar para usarlo en una gráfica aparte:
         setHorariosBackend(normalizados);
 
       } catch (err) {
@@ -786,8 +790,14 @@ export default function Graficos() {
         </div>
 
         <button
+          type="button"
           className="btn btn-outline"
-          onClick={() => setModalProyectosOpen(true)}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.blur();   
+            setModalProyectosOpen(true);
+          }}
         >
           Proyectos
         </button>
@@ -1159,6 +1169,7 @@ export default function Graficos() {
           overlayClassName="modal-overlay"
           contentLabel="Detalle de barra"
           shouldCloseOnOverlayClick
+          ariaHideApp={false}
         >
           <div className="modal-header modal-header--gradient">
             <h3 className="modal-title">{modalTitle || 'Detalle'}</h3>
@@ -1247,8 +1258,6 @@ export default function Graficos() {
         userData={user}
         defaultMonth={filtroMes}
         registrosOverride={registros}
-        shouldReturnFocusAfterClose={true}
-        preventScroll={true}  
       />
     </div>
   );

@@ -17,11 +17,7 @@ import "./ModalProyectosHoras.css";
 import { ACTIVE_PROJECTS } from "./activeProjects";
 import { buildProjectIndex, matchProject } from "./projectMatch";
 
-Modal.setAppElement("#root");
 
-/* =========================
-   Helpers (alineados a tu estilo)
-========================= */
 const toNum = (v) => {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
@@ -93,9 +89,7 @@ function MultiFiltro({
       <button
         type="button"
         className={
-          "pmf-control" +
-          (open ? " is-open" : "") +
-          (disabled ? " is-disabled" : "")
+          "pmf-control" + (open ? " is-open" : "") + (disabled ? " is-disabled" : "")
         }
         onClick={() => {
           if (!disabled) setOpen((o) => !o);
@@ -115,6 +109,7 @@ function MultiFiltro({
                       e.stopPropagation();
                       onChange(seleccion.filter((v) => v !== val));
                     }}
+                    aria-label={`Quitar ${val}`}
                   >
                     ✕
                   </button>
@@ -162,7 +157,7 @@ export default function ModalProyectosHoras({
   onClose,
   userData,
   defaultMonth = "",
-  registrosOverride = null, // ✅ NUEVO
+  registrosOverride = null,
 }) {
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState("");
@@ -180,6 +175,10 @@ export default function ModalProyectosHoras({
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTitle, setDetailTitle] = useState("");
   const [detailRows, setDetailRows] = useState([]);
+
+  // ✅ refs para manejar foco y evitar warning aria-hidden
+  const closeBtnRef = useRef(null);
+  const closeDetailBtnRef = useRef(null);
 
   // user
   const user = useMemo(() => {
@@ -205,10 +204,9 @@ export default function ModalProyectosHoras({
   const isAdminTeam = !isAdminAll && rolUpper.startsWith("ADMIN_") && !!equipoUser;
   const scope = isAdminAll ? "ALL" : isAdminTeam ? "TEAM" : "SELF";
 
-  // ✅ índice para comparar proyectos
+  // índice proyectos
   const projectIndex = useMemo(() => buildProjectIndex(ACTIVE_PROJECTS), []);
 
-  // ✅ Proyecto oficial + raw digitado
   const getProjectMatch = (r) => {
     const raw = r?.nroCasoCliente;
     const m = matchProject(raw, projectIndex);
@@ -222,12 +220,7 @@ export default function ModalProyectosHoras({
     }
 
     const rawText = String(raw ?? "").trim();
-    if (
-      !rawText ||
-      rawText === "0" ||
-      rawText.toUpperCase() === "NA" ||
-      rawText.toUpperCase() === "N/A"
-    ) {
+    if (!rawText || rawText === "0" || rawText.toUpperCase() === "NA" || rawText.toUpperCase() === "N/A") {
       return { status: "EMPTY", official: "SIN PROYECTO", raw: rawText };
     }
 
@@ -237,28 +230,24 @@ export default function ModalProyectosHoras({
   const projectOfficial = (r) => getProjectMatch(r).official;
 
   /* =========================
-     Sync: si cambian defaultMonth / abres modal
+     Sync month cuando abres
   ========================= */
   useEffect(() => {
     if (!isOpen) return;
-    if (defaultMonth !== undefined && defaultMonth !== null) {
-      setFiltroMes(defaultMonth || "");
-    }
+    setFiltroMes(defaultMonth || "");
   }, [isOpen, defaultMonth]);
 
   /* =========================
      Cargar data SOLO al abrir
-     ✅ si viene registrosOverride, NO hacemos fetch
   ========================= */
   useEffect(() => {
     if (!isOpen) return;
 
-    // ✅ usar override
+    // usar override
     if (Array.isArray(registrosOverride)) {
       setError("");
       setRegistros(registrosOverride);
 
-      // init filtros por scope
       if (scope === "SELF") {
         setFiltroConsultor(nombreUser ? [nombreUser] : []);
         setFiltroEquipo(equipoUser ? [equipoUser] : []);
@@ -273,7 +262,6 @@ export default function ModalProyectosHoras({
       return;
     }
 
-    // fetch normal
     const fetchData = async () => {
       setError("");
       try {
@@ -292,7 +280,6 @@ export default function ModalProyectosHoras({
         const arr = Array.isArray(json) ? json : [];
         setRegistros(arr);
 
-        // init filtros por scope
         if (scope === "SELF") {
           setFiltroConsultor(nombreUser ? [nombreUser] : []);
           setFiltroEquipo(equipoUser ? [equipoUser] : []);
@@ -310,16 +297,7 @@ export default function ModalProyectosHoras({
     };
 
     fetchData();
-  }, [
-    isOpen,
-    registrosOverride, // ✅ importante
-    rolUpper,
-    usuario,
-    equipoUser,
-    scope,
-    nombreUser,
-    projectIndex,
-  ]);
+  }, [isOpen, registrosOverride, rolUpper, usuario, equipoUser, scope, nombreUser]);
 
   /* =========================
      Opciones filtros
@@ -337,9 +315,7 @@ export default function ModalProyectosHoras({
     const set = new Set(
       (registros ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
-        .filter((r) =>
-          scope !== "TEAM" ? true : !equipoUser || equipoOf(r) === equipoUser
-        )
+        .filter((r) => (scope !== "TEAM" ? true : !equipoUser || equipoOf(r) === equipoUser))
         .map((r) => r.consultor)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
@@ -388,7 +364,6 @@ export default function ModalProyectosHoras({
     return (registros ?? []).filter((r) => {
       const eq = equipoOf(r);
 
-      // scope
       if (scope === "SELF") {
         const u = String(usuario || "").trim().toLowerCase();
         const ru = String(r.usuario_consultor || "").trim().toLowerCase();
@@ -399,24 +374,19 @@ export default function ModalProyectosHoras({
         if (equipoUser && eq !== equipoUser) return false;
       }
 
-      // mes
       if (!coincideMes(r.fecha, filtroMes)) return false;
 
-      // filtros
       if (filtroEquipo.length > 0 && !filtroEquipo.includes(eq)) return false;
-      if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultor))
-        return false;
+      if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultor)) return false;
       if (filtroModulo.length > 0 && !filtroModulo.includes(r.modulo)) return false;
 
       const ocup = r.ocupacion_nombre || "SIN OCUPACIÓN";
-      if (filtroOcupacion.length > 0 && !filtroOcupacion.includes(ocup))
-        return false;
+      if (filtroOcupacion.length > 0 && !filtroOcupacion.includes(ocup)) return false;
 
       if (filtroTarea.length > 0 && !filtroTarea.includes(r.tipoTarea)) return false;
 
       const prjOfficial = projectOfficial(r);
-      if (filtroProyecto.length > 0 && !filtroProyecto.includes(prjOfficial))
-        return false;
+      if (filtroProyecto.length > 0 && !filtroProyecto.includes(prjOfficial)) return false;
 
       return true;
     });
@@ -442,45 +412,27 @@ export default function ModalProyectosHoras({
     () => groupSum(datosFiltrados, (r) => projectOfficial(r)),
     [datosFiltrados, projectIndex]
   );
-  const horasPorModulo = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.modulo || "—"),
-    [datosFiltrados]
-  );
-  const horasPorConsultor = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.consultor || "—"),
-    [datosFiltrados]
-  );
-  const horasPorTarea = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.tipoTarea || "—"),
-    [datosFiltrados]
-  );
+  const horasPorModulo = useMemo(() => groupSum(datosFiltrados, (r) => r.modulo || "—"), [datosFiltrados]);
+  const horasPorConsultor = useMemo(() => groupSum(datosFiltrados, (r) => r.consultor || "—"), [datosFiltrados]);
+  const horasPorTarea = useMemo(() => groupSum(datosFiltrados, (r) => r.tipoTarea || "—"), [datosFiltrados]);
   const horasPorOcupacion = useMemo(
     () => groupSum(datosFiltrados, (r) => r.ocupacion_nombre || "SIN OCUPACIÓN"),
     [datosFiltrados]
   );
 
-  const totalHoras = useMemo(
-    () => datosFiltrados.reduce((s, r) => s + toNum(r.tiempoInvertido), 0),
-    [datosFiltrados]
-  );
+  const totalHoras = useMemo(() => datosFiltrados.reduce((s, r) => s + toNum(r.tiempoInvertido), 0), [datosFiltrados]);
 
   /* =========================
      Modal detalle
   ========================= */
   const openDetail = (kind, value) => {
     let rows = [];
-    if (kind === "proyecto")
-      rows = datosFiltrados.filter((r) => projectOfficial(r) === value);
-    if (kind === "modulo")
-      rows = datosFiltrados.filter((r) => (r.modulo || "—") === value);
-    if (kind === "consultor")
-      rows = datosFiltrados.filter((r) => (r.consultor || "—") === value);
-    if (kind === "tarea")
-      rows = datosFiltrados.filter((r) => (r.tipoTarea || "—") === value);
+    if (kind === "proyecto") rows = datosFiltrados.filter((r) => projectOfficial(r) === value);
+    if (kind === "modulo") rows = datosFiltrados.filter((r) => (r.modulo || "—") === value);
+    if (kind === "consultor") rows = datosFiltrados.filter((r) => (r.consultor || "—") === value);
+    if (kind === "tarea") rows = datosFiltrados.filter((r) => (r.tipoTarea || "—") === value);
     if (kind === "ocupacion")
-      rows = datosFiltrados.filter(
-        (r) => (r.ocupacion_nombre || "SIN OCUPACIÓN") === value
-      );
+      rows = datosFiltrados.filter((r) => (r.ocupacion_nombre || "SIN OCUPACIÓN") === value);
 
     rows = rows.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
     const subtotal = rows.reduce((s, r) => s + toNum(r.tiempoInvertido), 0);
@@ -503,16 +455,27 @@ export default function ModalProyectosHoras({
       overlayClassName="mph-overlay"
       contentLabel="Horas por Proyecto"
       shouldCloseOnOverlayClick
+      // ✅ evita warning aria-hidden moviendo foco dentro del modal
+      shouldFocusAfterRender={true}
+      shouldReturnFocusAfterClose={true}
+      onAfterOpen={() => {
+        closeBtnRef.current?.focus();
+      }}
     >
       <div className="mph-header">
         <div>
           <h3 className="mph-title">Horas por Proyecto (mapeo por Nro. Caso Cliente)</h3>
           <div className="mph-sub">
-            Total filtrado: <b>{totalHoras.toFixed(2)} h</b> · Registros:{" "}
-            <b>{datosFiltrados.length}</b>
+            Total filtrado: <b>{totalHoras.toFixed(2)} h</b> · Registros: <b>{datosFiltrados.length}</b>
           </div>
         </div>
-        <button className="mph-close" onClick={onClose} aria-label="Cerrar">
+        <button
+          ref={closeBtnRef}
+          className="mph-close"
+          onClick={onClose}
+          aria-label="Cerrar"
+          type="button"
+        >
           ✖
         </button>
       </div>
@@ -522,11 +485,7 @@ export default function ModalProyectosHoras({
       <div className="mph-filtros">
         <div className="mph-month">
           <span className="mph-label">MES</span>
-          <input
-            type="month"
-            value={filtroMes}
-            onChange={(e) => setFiltroMes(e.target.value)}
-          />
+          <input type="month" value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)} />
         </div>
 
         <MultiFiltro
@@ -581,6 +540,7 @@ export default function ModalProyectosHoras({
 
         <button
           className="mph-btn"
+          type="button"
           onClick={() => {
             setFiltroModulo([]);
             setFiltroOcupacion([]);
@@ -612,11 +572,7 @@ export default function ModalProyectosHoras({
           ) : (
             <div className="mph-chartScroll">
               <ResponsiveContainer width="100%" height={Math.max(320, topProyectos.length * 28)}>
-                <BarChart
-                  data={topProyectos}
-                  layout="vertical"
-                  margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
-                >
+                <BarChart data={topProyectos} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" />
                   <YAxis type="category" dataKey="name" width={360} />
@@ -646,11 +602,7 @@ export default function ModalProyectosHoras({
           ) : (
             <div className="mph-chartScroll">
               <ResponsiveContainer width="100%" height={Math.max(320, horasPorModulo.length * 28)}>
-                <BarChart
-                  data={horasPorModulo}
-                  layout="vertical"
-                  margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
-                >
+                <BarChart data={horasPorModulo} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" />
                   <YAxis type="category" dataKey="name" width={260} />
@@ -679,11 +631,7 @@ export default function ModalProyectosHoras({
           ) : (
             <div className="mph-chartScroll">
               <ResponsiveContainer width="100%" height={Math.max(320, horasPorConsultor.length * 28)}>
-                <BarChart
-                  data={horasPorConsultor}
-                  layout="vertical"
-                  margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
-                >
+                <BarChart data={horasPorConsultor} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" />
                   <YAxis type="category" dataKey="name" width={300} />
@@ -712,11 +660,7 @@ export default function ModalProyectosHoras({
           ) : (
             <div className="mph-chartScroll">
               <ResponsiveContainer width="100%" height={Math.max(320, horasPorTarea.length * 28)}>
-                <BarChart
-                  data={horasPorTarea}
-                  layout="vertical"
-                  margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
-                >
+                <BarChart data={horasPorTarea} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" />
                   <YAxis type="category" dataKey="name" width={420} />
@@ -745,11 +689,7 @@ export default function ModalProyectosHoras({
           ) : (
             <div className="mph-chartScroll">
               <ResponsiveContainer width="100%" height={Math.max(320, horasPorOcupacion.length * 28)}>
-                <BarChart
-                  data={horasPorOcupacion}
-                  layout="vertical"
-                  margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
-                >
+                <BarChart data={horasPorOcupacion} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" />
                   <YAxis type="category" dataKey="name" width={380} />
@@ -779,10 +719,21 @@ export default function ModalProyectosHoras({
           className="mph-modalDetail"
           overlayClassName="mph-overlayDetail"
           contentLabel="Detalle"
+          shouldFocusAfterRender={true}
+          shouldReturnFocusAfterClose={true}
+          onAfterOpen={() => {
+            closeDetailBtnRef.current?.focus();
+          }}
         >
           <div className="mph-header">
             <h3 className="mph-title">{detailTitle}</h3>
-            <button className="mph-close" onClick={closeDetail} aria-label="Cerrar">
+            <button
+              ref={closeDetailBtnRef}
+              className="mph-close"
+              onClick={closeDetail}
+              aria-label="Cerrar"
+              type="button"
+            >
               ✖
             </button>
           </div>
