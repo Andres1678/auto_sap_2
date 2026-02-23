@@ -1,3 +1,9 @@
+/* =====================================================================
+   PanelGraficos.css ✅ (STACK + MODALES ARRIBA)
+   - Tu página de gráficos queda ordenada
+   - El Modal “detalle” y el modal de proyectos quedan encima de todo
+===================================================================== */
+
 /* ===============================
    VARIABLES Y PALETA DE COLORES
 ================================ */
@@ -26,7 +32,7 @@
   --pg-max:1160px;
 
   --pg-control-h:40px;
-  --pg-control-radius:10px;
+  --pg-control-radius:12px;
 }
 
 /* ===============================
@@ -43,17 +49,14 @@ button{ -webkit-tap-highlight-color: transparent; }
   display:flex;
   flex-direction:column;
   align-items:center;
-  gap:28px;
-  padding:24px 14px 44px;
+  gap:24px;
+  padding:22px 14px 44px;
   background:var(--pg-bg);
   min-height:100vh;
   color:var(--pg-text);
 }
 
-/* Mensaje error */
-.pg-error{
-  border-radius:12px;
-}
+.pg-error{ border-radius:12px; }
 
 /* ===============================
    FILTROS GLOBALES
@@ -76,14 +79,12 @@ button{ -webkit-tap-highlight-color: transparent; }
   box-shadow:var(--pg-shadow);
 }
 
-/* Sticky de la barra */
 .pg-sticky{
   position:sticky;
   top:10px;
-  z-index:30;
+  z-index:120; /* ✅ arriba de gráficos */
 }
 
-/* Cuando el sticky se pega, que no se vea “apretado” */
 .pg-sticky::after{
   content:"";
   position:absolute;
@@ -107,7 +108,7 @@ button{ -webkit-tap-highlight-color: transparent; }
 .mf-label{
   display:block;
   font-size:11px;
-  font-weight:700;
+  font-weight:800;
   letter-spacing:.06em;
   text-transform:uppercase;
   color:var(--pg-muted);
@@ -129,16 +130,11 @@ button{ -webkit-tap-highlight-color: transparent; }
   overflow:hidden;
   text-align:left;
 }
-
-.mf-control:hover{
-  border-color:#d7deea;
-}
-
+.mf-control:hover{ border-color:#d7deea; }
 .mf-control.is-open{
   border-color:var(--pg-primary);
   box-shadow:0 0 0 3px var(--pg-ring);
 }
-
 .mf-control.is-disabled{
   background:#f3f4f6;
   color:#9ca3af;
@@ -171,10 +167,9 @@ button{ -webkit-tap-highlight-color: transparent; }
   background:#eef2ff;
   color:#111827;
   font-size:11px;
-  font-weight:700;
+  font-weight:800;
   white-space:nowrap;
 }
-
 .mf-chip button{
   border:0;
   background:transparent;
@@ -184,12 +179,8 @@ button{ -webkit-tap-highlight-color: transparent; }
   padding:0;
   color:#6b7280;
 }
+.mf-chip button:hover{ color:#111827; }
 
-.mf-chip button:hover{
-  color:#111827;
-}
-
-/* Iconito ▼ */
 .mf-arrow{
   position:absolute;
   right:10px;
@@ -200,17 +191,17 @@ button{ -webkit-tap-highlight-color: transparent; }
   pointer-events:none;
 }
 
-/* Dropdown */
+/* Dropdown encima de todo */
 .mf-dropdown{
   position:absolute;
   left:0;
   right:0;
   margin-top:6px;
   background:#fff;
-  border-radius:12px;
+  border-radius:14px;
   border:1px solid var(--pg-border);
   box-shadow:0 18px 40px rgba(15,23,42,.16);
-  z-index:50;
+  z-index: 500; /* ✅ encima de charts */
   max-height:280px;
   display:flex;
   flex-direction:column;
@@ -222,17 +213,15 @@ button{ -webkit-tap-highlight-color: transparent; }
   border-bottom:1px solid var(--pg-border);
   background:#fbfcfe;
 }
-
 .mf-search input{
   width:100%;
-  border-radius:10px;
+  border-radius:12px;
   border:1px solid var(--pg-border);
   padding:8px 10px;
   font-size:12px;
   outline:0;
   background:#fff;
 }
-
 .mf-search input:focus{
   border-color:var(--pg-primary);
   box-shadow:0 0 0 2px var(--pg-ring);
@@ -242,7 +231,6 @@ button{ -webkit-tap-highlight-color: transparent; }
   padding:8px 10px 10px;
   overflow-y:auto;
 }
-
 .mf-option{
   display:flex;
   align-items:center;
@@ -253,15 +241,8 @@ button{ -webkit-tap-highlight-color: transparent; }
   cursor:pointer;
   color:var(--pg-text);
 }
-
-.mf-option:hover{
-  background:#f3f4ff;
-}
-
-.mf-option input{
-  width:14px;
-  height:14px;
-}
+.mf-option:hover{ background:#f3f4ff; }
+.mf-option input{ width:14px; height:14px; }
 
 /* ===============================
    INPUT MES
@@ -277,7 +258,6 @@ button{ -webkit-tap-highlight-color: transparent; }
   border-radius:var(--pg-control-radius);
   transition:border-color .18s, box-shadow .18s, background .18s;
 }
-
 .filtro-month:focus{
   border-color:var(--pg-primary);
   box-shadow:0 0 0 4px var(--pg-ring);
@@ -296,17 +276,13 @@ button{ -webkit-tap-highlight-color: transparent; }
   padding:0 14px;
   border-radius:var(--pg-control-radius);
   border:1px solid transparent;
-  font-weight:800;
+  font-weight:900;
   cursor:pointer;
   white-space:nowrap;
   font-size:13px;
   transition:background .15s, color .15s, border-color .15s, transform .06s;
 }
-
-.filtros-globales .btn:active{
-  transform:scale(.99);
-}
-
+.filtros-globales .btn:active{ transform:scale(.99); }
 .filtros-globales .btn.btn-outline{
   background:#fff;
   color:var(--pg-accent);
@@ -319,25 +295,20 @@ button{ -webkit-tap-highlight-color: transparent; }
 
 /* ===============================
    GRID DE GRÁFICOS
+   ✅ Uno debajo del otro
 ================================ */
 .pg-grid{
   width:100%;
   max-width:var(--pg-max);
   display:grid;
   gap:22px;
-  grid-template-columns:1fr;
+  grid-template-columns: 1fr; /* ✅ 1 columna */
 }
 
-@media (min-width:1080px){
-  .pg-grid{
-    grid-template-columns:1fr 1fr;
-  }
-}
-
-/* Tu layout actual fuerza stack: lo respetamos */
+/* por si usas pg-grid--stack */
 .pg-grid--stack{
   grid-template-columns:1fr !important;
-  gap:28px !important;
+  gap:22px !important;
 }
 
 /* ===============================
@@ -357,7 +328,6 @@ button{ -webkit-tap-highlight-color: transparent; }
   position:relative;
   overflow:hidden;
 }
-
 .grafico-box::before{
   content:"";
   position:absolute;
@@ -365,17 +335,16 @@ button{ -webkit-tap-highlight-color: transparent; }
   height:4px;
   background:linear-gradient(90deg,var(--pg-primary),var(--pg-accent));
 }
-
 .grafico-box h3{
   margin:0;
   font-size:18px;
-  font-weight:900;
+  font-weight:950;
   padding:4px 0 10px;
   border-bottom:1px solid var(--pg-border);
   line-height:1.15;
 }
 
-/* Contenedor charts verticales con scroll */
+/* Contenedor charts con scroll */
 .chart-scroll{
   max-height:460px;
   overflow:auto;
@@ -409,9 +378,10 @@ button{ -webkit-tap-highlight-color: transparent; }
   box-shadow:0 12px 24px rgba(2,6,23,.12);
 }
 
-/* =========================================================
-   MODAL (react-modal)
-========================================================= */
+/* ===============================
+   MODAL (detalle dentro de Graficos.jsx)
+   ✅ arriba del resto
+================================ */
 .modal-overlay{
   position:fixed;
   inset:0;
@@ -421,7 +391,7 @@ button{ -webkit-tap-highlight-color: transparent; }
   align-items:center;
   justify-content:center;
   padding:16px;
-  z-index:9999;
+  z-index: 22000; /* ✅ arriba de todo (solo debajo del detail del proyecto) */
 }
 
 .modal-content{
@@ -437,7 +407,6 @@ button{ -webkit-tap-highlight-color: transparent; }
   flex-direction:column;
 }
 
-/* Header fijo */
 .modal-header{
   display:flex;
   align-items:center;
@@ -445,22 +414,18 @@ button{ -webkit-tap-highlight-color: transparent; }
   gap:12px;
   padding:14px 16px;
 }
-
 .modal-header--gradient{
   background:linear-gradient(90deg,var(--brand-red),var(--brand-blue));
   color:#fff;
 }
-
 .modal-title{
   margin:0;
   font-size:16px;
-  font-weight:900;
+  font-weight:950;
   line-height:1.25;
   letter-spacing:.2px;
   max-width:92%;
 }
-
-/* Botón cerrar */
 .close-button{
   appearance:none;
   border:none;
@@ -468,7 +433,7 @@ button{ -webkit-tap-highlight-color: transparent; }
   color:#fff;
   width:34px;
   height:34px;
-  border-radius:10px;
+  border-radius:12px;
   cursor:pointer;
   font-size:16px;
   display:grid;
@@ -478,16 +443,12 @@ button{ -webkit-tap-highlight-color: transparent; }
 .close-button:hover{ transform:scale(1.04); background:rgba(255,255,255,.22); }
 .close-button:active{ transform:scale(.98); }
 
-/* Cuerpo modal */
 .modal-body{
   padding:12px 14px;
   background:#f7f9fc;
 }
-.modal-body--scroll{
-  overflow:auto;
-}
+.modal-body--scroll{ overflow:auto; }
 
-/* Footer modal */
 .modal-footer-total{
   padding:12px 14px;
   border-top:1px solid var(--pg-border);
@@ -498,80 +459,6 @@ button{ -webkit-tap-highlight-color: transparent; }
 }
 
 /* ===============================
-   ACCORDION POR DÍA
-================================ */
-.day-accordion{
-  border-radius:14px;
-  border:1px solid var(--pg-border);
-  background:#fff;
-  margin-bottom:10px;
-  overflow:hidden;
-  box-shadow:0 10px 20px rgba(2,6,23,.06);
-}
-
-.day-accordion__summary{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-  padding:12px 12px;
-  cursor:pointer;
-  background:linear-gradient(180deg,#fff 0%, #fbfcff 100%);
-  border-bottom:1px solid #eef2f7;
-}
-.day-accordion__summary::-webkit-details-marker{ display:none; }
-
-.day-accordion__title{
-  display:flex;
-  align-items:center;
-  gap:8px;
-}
-
-.badge-date{
-  padding:6px 10px;
-  border-radius:999px;
-  background:#eef2ff;
-  border:1px solid #dbe3ff;
-  color:#0b1220;
-  font-size:12px;
-  font-weight:900;
-  letter-spacing:.2px;
-}
-
-.day-accordion__meta{
-  display:flex;
-  align-items:center;
-  flex-wrap:wrap;
-  gap:6px;
-}
-
-/* Chips */
-.chip{
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  padding:6px 10px;
-  border-radius:999px;
-  border:1px solid var(--pg-border);
-  background:#f3f6fb;
-  font-size:12px;
-  font-weight:800;
-  color:var(--pg-text);
-}
-.chip--accent{
-  background:rgba(227,6,19,.08);
-  border-color:rgba(227,6,19,.22);
-  color:var(--pg-primary-700);
-}
-.chip--ghost{
-  background:#fff;
-  border-style:dashed;
-  color:#475569;
-}
-
-.spacer{ flex:1; }
-
-/* ===============================
    TABLAS DEL MODAL
 ================================ */
 .table-responsive{
@@ -579,7 +466,6 @@ button{ -webkit-tap-highlight-color: transparent; }
   overflow:auto;
   padding:10px 10px 12px;
 }
-
 .detail-table{
   width:100%;
   min-width:1100px;
@@ -590,7 +476,6 @@ button{ -webkit-tap-highlight-color: transparent; }
   border-radius:12px;
   overflow:hidden;
 }
-
 .detail-table thead th{
   position:sticky;
   top:0;
@@ -598,14 +483,13 @@ button{ -webkit-tap-highlight-color: transparent; }
   background:#0b1220;
   color:#fff;
   font-size:12px;
-  font-weight:900;
+  font-weight:950;
   text-transform:uppercase;
   letter-spacing:.25px;
   padding:10px 10px;
   border-bottom:1px solid rgba(255,255,255,.12);
   white-space:nowrap;
 }
-
 .detail-table tbody td{
   padding:10px 10px;
   font-size:13px;
@@ -614,16 +498,12 @@ button{ -webkit-tap-highlight-color: transparent; }
   vertical-align:top;
   background:#fff;
 }
-
 .detail-table tbody tr:nth-child(2n) td{ background:#f8fafc; }
 .detail-table tbody tr:hover td{ background:#eef6ff; }
-
-.detail-table td.num,
-.detail-table th.num{
+.detail-table td.num, .detail-table th.num{
   text-align:right;
   font-variant-numeric:tabular-nums;
 }
-
 .truncate{
   max-width:260px;
   white-space:nowrap;
@@ -631,7 +511,7 @@ button{ -webkit-tap-highlight-color: transparent; }
   overflow:hidden;
 }
 
-/* Scrollbar suave */
+/* Scrollbars */
 .modal-body--scroll::-webkit-scrollbar,
 .table-responsive::-webkit-scrollbar,
 .mf-options::-webkit-scrollbar,
@@ -654,101 +534,16 @@ button{ -webkit-tap-highlight-color: transparent; }
   border-radius:999px;
 }
 
-/* ===============================
-   RESPONSIVE
-================================ */
+/* Responsive */
 @media (max-width:860px){
-  .filtros-globales{
-    justify-content:stretch;
-  }
-  .multi-filter{
-    max-width:none;
-  }
+  .filtros-globales{ justify-content:stretch; }
+  .multi-filter{ max-width:none; }
 }
-
 @media (max-width:640px){
-  .panel-graficos-container{
-    padding:18px 10px 40px;
-  }
-
-  .modal-content{
-    width:98vw;
-    max-height:92vh;
-    border-radius:14px;
-  }
+  .panel-graficos-container{ padding:18px 10px 40px; }
+  .modal-content{ width:98vw; max-height:92vh; border-radius:14px; }
   .modal-title{ font-size:14px; }
   .truncate{ max-width:180px; }
-
-  .grafico-box{
-    padding:16px 14px 14px;
-  }
-
-  .chart-scroll{
-    max-height:520px;
-  }
-}
-
-/* ===============================
-   CALENDARIO (si lo usas)
-================================ */
-.calendar-wrapper{
-  width:100%;
-  max-width:900px;
-  margin:0 auto;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:18px;
-}
-.calendar-grid{
-  display:grid;
-  grid-template-columns:repeat(7,1fr);
-  gap:12px;
-  width:100%;
-  padding:10px 0;
-}
-.calendar-day{
-  width:80px;
-  height:80px;
-  background:#fff;
-  border:1px solid var(--pg-border);
-  border-radius:14px;
-  box-shadow:0 2px 6px rgba(0,0,0,.05);
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  font-size:16px;
-  font-weight:800;
-  color:var(--pg-text);
-  cursor:pointer;
-}
-.calendar-day span{
-  font-size:12px;
-  font-weight:700;
-  color:var(--pg-muted);
-}
-.calendar-day.has-hours{
-  background:#e6f2ff;
-  border-color:#99c2ff;
-  color:#024aa2;
-}
-.calendar-day.today{
-  background:#fff5f5;
-  border-color:#f2aaaa;
-  color:#b00510;
-}
-.calendar-day.empty{
-  background:transparent;
-  border:none;
-  cursor:default;
-  box-shadow:none;
-}
-@media (max-width:650px){
-  .calendar-day{
-    width:50px;
-    height:50px;
-    font-size:13px;
-  }
-  .calendar-grid{ gap:6px; }
+  .grafico-box{ padding:16px 14px 14px; }
+  .chart-scroll{ max-height:520px; }
 }

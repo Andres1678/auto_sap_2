@@ -248,8 +248,8 @@ export default function ModalProyectosHoras({
       setError("");
       setRegistros(registrosOverride);
 
-      if (scope === "SELF") {
-        setFiltroConsultor(nombreUser ? [nombreUser] : []);
+      if (scope === 'SELF') {
+        setFiltroConsultor([]); 
         setFiltroEquipo(equipoUser ? [equipoUser] : []);
       } else if (scope === "TEAM") {
         setFiltroEquipo(equipoUser ? [equipoUser] : []);
