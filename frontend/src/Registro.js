@@ -800,8 +800,6 @@ const Registro = ({ userData }) => {
             html: `
               Para <b>02 - Proyectos</b> y <b>03 - Atención de proyectos</b> debes diligenciar:
               <br/>• <b>Nro Caso Cliente</b>
-              <br/>• <b>Nro Caso Interno</b>
-              <br/>• <b>Nro Caso Escalado SAP</b>
               <br/><br/>
               No se permite <b>NA</b>, <b>N/A</b>, <b>0</b> ni dejarlo vacío.
             `,
