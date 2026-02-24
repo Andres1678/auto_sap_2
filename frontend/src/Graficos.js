@@ -7,6 +7,7 @@ import Modal from 'react-modal';
 import './PanelGraficos.css';
 import { jfetch } from './lib/api';
 import ModalProyectosHoras from "./ModalProyectosHoras";
+import Swal from "sweetalert2";
 
 /* ======== config ======== */
 const OPEN_ON_HOVER = false;
