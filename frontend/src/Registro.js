@@ -793,7 +793,7 @@ const Registro = ({ userData }) => {
       if (occCode === "02" && tareaCode === "03") {
         const badCliente = isNAValue(registro.nroCasoCliente);
 
-        if (badCliente || badInterno || badSap) {
+        if (badCliente) {
           return Swal.fire({
             icon: "warning",
             title: "Número de proyecto obligatorio",
