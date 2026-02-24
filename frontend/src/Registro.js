@@ -792,8 +792,6 @@ const Registro = ({ userData }) => {
 
       if (occCode === "02" && tareaCode === "03") {
         const badCliente = isNAValue(registro.nroCasoCliente);
-        const badInterno = isNAValue(registro.nroCasoInterno);
-        const badSap     = isNAValue(registro.nroCasoEscaladoSap);
 
         if (badCliente || badInterno || badSap) {
           return Swal.fire({
