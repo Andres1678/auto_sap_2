@@ -46,6 +46,7 @@ const USERS_PUEDE_SEMANAS_ANTERIORES = new Set([
 ]);
 
 
+
 const parseHHMM = (s) => {
   if (!s || typeof s !== "string") return null;
   const m = s.match(/^(\d{2}):(\d{2})/);
@@ -250,6 +251,28 @@ function taskCode(value){
 function isInvalidCaseNumber(nro){
   const s = String(nro ?? '').trim().toUpperCase();
   return !s || s === '0' || s === 'NA' || s === 'N/A' || s.length > 10;
+}
+
+function ocupacionCodeFromId(ocupacionId, ocupacionesArr) {
+  if (!ocupacionId) return "";
+  const occ = (ocupacionesArr || []).find(o => String(o.id) === String(ocupacionId));
+  return String(occ?.codigo || "").trim(); // "02"
+}
+
+function isNAValue(v) {
+  const s = String(v ?? "").trim().toUpperCase();
+  return !s || s === "0" || s === "NA" || s === "N/A";
+}
+
+function tareaCodeFromRegistro(registro, tareasBD) {
+  // Prioridad: texto tipoTarea "03 - ..."
+  const fromText = String(registro?.tipoTarea || "").match(/^\d+/)?.[0] || "";
+  if (fromText) return fromText;
+
+  // Fallback: buscar el código en tareasBD usando tarea_id
+  const tid = Number(registro?.tarea_id || 0);
+  const t = (tareasBD || []).find(x => Number(x.id) === tid);
+  return String(t?.codigo || "").trim(); // "03"
 }
 
 function useDebouncedValue(value, delay = 250) {
@@ -682,210 +705,244 @@ const Registro = ({ userData }) => {
 
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+      e.preventDefault();
 
-    if (!isAdmin && !consultorActivo) {
-      return Swal.fire({
-        icon: "warning",
-        title: "Usuario inactivo",
-        text: "No puedes registrar horas porque tu usuario está inactivo.",
-      });
-    }
+      // ✅ 0) Usuario activo
+      if (!isAdmin && !consultorActivo) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Usuario inactivo",
+          text: "No puedes registrar horas porque tu usuario está inactivo.",
+        });
+      }
 
-    const { minISO: weekMinISO, maxISO: weekMaxISO } = getWeekBoundsISO(new Date());
+      // ✅ 1) Semana y código de tarea
+      const { minISO: weekMinISO, maxISO: weekMaxISO } = getWeekBoundsISO(new Date());
+      const code = taskCode(registro.tipoTarea);
 
-    if (!puedeSemanasAnteriores && !isDateInRangeISO(registro.fecha, weekMinISO, weekMaxISO)) {
-      return Swal.fire({
-        icon: "warning",
-        title: "Fecha fuera de la semana actual",
-        text: `Solo puedes registrar entre ${weekMinISO} y ${weekMaxISO}.`,
-      });
-    }
+      // ✅ 2) Fecha en rango (si aplica)
+      if (!puedeSemanasAnteriores && !isDateInRangeISO(registro.fecha, weekMinISO, weekMaxISO)) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Fecha fuera de la semana actual",
+          text: `Solo puedes registrar entre ${weekMinISO} y ${weekMaxISO}.`,
+        });
+      }
 
-    if (!registro.horaInicio || !registro.horaFin) {
-      return Swal.fire({ icon: "warning", title: "Completa las horas de inicio y fin" });
-    }
+      // ✅ 3) Horas obligatorias
+      if (!registro.horaInicio || !registro.horaFin) {
+        return Swal.fire({ icon: "warning", title: "Completa las horas de inicio y fin" });
+      }
 
-    const tiempo = calcularTiempo(registro.horaInicio, registro.horaFin);
-    if (tiempo <= 0) {
-      return Swal.fire({ icon: "error", title: "Hora fin debe ser mayor a inicio" });
-    }
+      // ✅ 4) Tiempo válido
+      const tiempo = calcularTiempo(registro.horaInicio, registro.horaFin);
+      if (tiempo <= 0) {
+        return Swal.fire({ icon: "error", title: "Hora fin debe ser mayor a inicio" });
+      }
 
-    const consultorId =
-      registro.consultor_id ||
-      userData?.consultor_id ||
-      userData?.user?.consultor_id ||
-      localStorage.getItem("consultorId") ||
-      null;
+      // ✅ 5) IDs consultor / nombre
+      const consultorId =
+        registro.consultor_id ||
+        userData?.consultor_id ||
+        userData?.user?.consultor_id ||
+        localStorage.getItem("consultorId") ||
+        null;
 
-    const nombreConsultor =
-      userData?.nombre || userData?.user?.nombre || userData?.consultor?.nombre || "";
+      const nombreConsultor =
+        userData?.nombre || userData?.user?.nombre || userData?.consultor?.nombre || "";
 
-    const original = editOriginalRef.current;
+      // ✅ 6) Overlap (si aplica)
+      const original = editOriginalRef.current;
 
-    const cambioRangoEnEdicion =
-      modoEdicion &&
-      original &&
-      (
-        String(original.fecha) !== String(registro.fecha) ||
-        String(original.horaInicio) !== String(registro.horaInicio) ||
-        String(original.horaFin) !== String(registro.horaFin)
+      const cambioRangoEnEdicion =
+        modoEdicion &&
+        original &&
+        (
+          String(original.fecha) !== String(registro.fecha) ||
+          String(original.horaInicio) !== String(registro.horaInicio) ||
+          String(original.horaFin) !== String(registro.horaFin)
+        );
+
+      const debeValidarOverlap = !modoEdicion || cambioRangoEnEdicion;
+
+      if (debeValidarOverlap) {
+        const conflict = findOverlapRegistro({
+          registros,
+          fecha: registro.fecha,
+          consultorId,
+          usuarioLogin,
+          nombreConsultor,
+          excludeId: modoEdicion ? registro.id : null,
+          horaInicio: registro.horaInicio,
+          horaFin: registro.horaFin,
+        });
+
+        if (conflict) {
+          return Swal.fire({
+            icon: "warning",
+            title: "Horas duplicadas",
+            html: `Ya existe un registro que se cruza con este rango:<br/><b>${conflict.horaInicio} - ${conflict.horaFin}</b> (ID: ${conflict.id})`,
+          });
+        }
+      }
+
+      // ✅ 7) VALIDACIÓN ESPECIAL: Ocupación 02 + Tarea 03 (ANTES de guardar)
+      const occCode = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
+      const tareaCode = tareaCodeFromRegistro(registro, tareasBD);
+
+      if (occCode === "02" && tareaCode === "03") {
+        const badCliente = isNAValue(registro.nroCasoCliente);
+        const badInterno = isNAValue(registro.nroCasoInterno);
+        const badSap     = isNAValue(registro.nroCasoEscaladoSap);
+
+        if (badCliente || badInterno || badSap) {
+          return Swal.fire({
+            icon: "warning",
+            title: "Número de proyecto obligatorio",
+            html: `
+              Para <b>02 - Proyectos</b> y <b>03 - Atención de proyectos</b> debes diligenciar:
+              <br/>• <b>Nro Caso Cliente</b>
+              <br/>• <b>Nro Caso Interno</b>
+              <br/>• <b>Nro Caso Escalado SAP</b>
+              <br/><br/>
+              No se permite <b>NA</b>, <b>N/A</b>, <b>0</b> ni dejarlo vacío.
+            `,
+          });
+        }
+      }
+
+      // ✅ 8) Validación existente (tareas 01,02,03) - solo Nro Caso Cliente
+      if (CODES_NEED_CASE.has(code) && isInvalidCaseNumber(registro.nroCasoCliente)) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Número de caso inválido",
+          text:
+            'Para las tareas 01, 02 o 03, el Nro. Caso Cliente no puede ser "0", "NA", estar vacío ni superar los 10 caracteres.',
+        });
+      }
+
+      // ✅ 9) Restricción cliente + límite 9h
+      if (CODES_RESTRICTED_CLIENT_9H.has(code)) {
+        if ((registro.cliente || "").trim().toUpperCase() !== CLIENTE_RESTRINGIDO) {
+          return Swal.fire({
+            icon: "warning",
+            title: "Cliente no permitido",
+            text: "Esta tarea solo puede registrarse al cliente HITSS/CLARO.",
+          });
+        }
+        if (tiempo > 9) {
+          return Swal.fire({
+            icon: "warning",
+            title: "Límite de horas excedido",
+            text: "Estas tareas no pueden superar 9 horas en un registro.",
+          });
+        }
+      }
+
+      // ✅ 10) Supervisión equipo (solo si tiene módulo LIDER)
+      if (code === CODE_SUPERVISION_EQUIPO) {
+        const poolModulos = [moduloElegido, moduloUser, ...(modulos || [])].map((v) =>
+          String(v || "").trim().toUpperCase()
+        );
+        const canUseLider = poolModulos.includes("LIDER");
+        if (!canUseLider) {
+          return Swal.fire({
+            icon: "warning",
+            title: "Módulo no autorizado",
+            text:
+              'La tarea "Seguimiento y Supervisión Equipo" solo puede ser usada por quienes pueden diligenciar el módulo LIDER.',
+          });
+        }
+      }
+
+      // ✅ 11) Módulo elegido (si tiene más de 1)
+      if (modulos.length > 1 && !moduloElegido) {
+        return Swal.fire({ icon: "warning", title: "Selecciona un módulo" });
+      }
+
+      // ✅ 12) Horas adicionales
+      const horasAdic = calcularHorasAdicionales(
+        registro.horaInicio,
+        registro.horaFin,
+        /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
       );
 
-    const debeValidarOverlap = !modoEdicion || cambioRangoEnEdicion;
+      // ✅ 13) Módulo final
+      const moduloFinal = (moduloElegido || modulos[0] || moduloUser || "").trim();
+      if (!moduloFinal) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Selecciona un módulo antes de guardar",
+        });
+      }
 
-    if (debeValidarOverlap) {
-      const conflict = findOverlapRegistro({
-        registros,
+      // ✅ 14) Payload
+      const base = {
         fecha: registro.fecha,
-        consultorId,
-        usuarioLogin,
-        nombreConsultor,
-        excludeId: modoEdicion ? registro.id : null,
+        cliente: registro.cliente,
+        nroCasoCliente: registro.nroCasoCliente,
+        nroCasoInterno: registro.nroCasoInterno,
+        nroCasoEscaladoSap: registro.nroCasoEscaladoSap,
+        tarea_id: registro.tarea_id || null,
+        ocupacion_id: ocupacionSeleccionada ? parseInt(ocupacionSeleccionada, 10) : null,
         horaInicio: registro.horaInicio,
         horaFin: registro.horaFin,
-      });
+        tiempoInvertido: tiempo,
+        tiempoFacturable: registro.tiempoFacturable,
+        horasAdicionales: horasAdic,
+        descripcion: registro.descripcion,
+        totalHoras: tiempo,
+        modulo: moduloFinal,
+        equipo: equipoFormulario,
+        usuario: usuarioLogin,
+        consultor_id: consultorId,
+        rol,
+      };
 
-      if (conflict) {
-        return Swal.fire({
-          icon: "warning",
-          title: "Horas duplicadas",
-          html: `Ya existe un registro que se cruza con este rango:<br/><b>${conflict.horaInicio} - ${conflict.horaFin}</b> (ID: ${conflict.id})`,
-        });
+      const payload = {
+        ...base,
+        nombre: nombreConsultor,
+        consultor: nombreConsultor,
+        modulo: moduloFinal,
+      };
+
+      if (equipoFormulario !== "BASIS") {
+        delete payload.actividadMalla;
+        delete payload.oncall;
+        delete payload.desborde;
       }
-    }
 
-    const code = taskCode(registro.tipoTarea);
+      // ✅ 15) Guardar
+      try {
+        const path = modoEdicion ? `/editar-registro/${registro.id}` : "/registrar-hora";
+        const method = modoEdicion ? "PUT" : "POST";
 
-    if (CODES_NEED_CASE.has(code) && isInvalidCaseNumber(registro.nroCasoCliente)) {
-      return Swal.fire({
-        icon: "warning",
-        title: "Número de caso inválido",
-        text:
-          'Para las tareas 01, 02 o 03, el Nro. Caso Cliente no puede ser "0", "NA", estar vacío ni superar los 10 caracteres.',
-      });
-    }
-
-    if (CODES_RESTRICTED_CLIENT_9H.has(code)) {
-      if ((registro.cliente || "").trim().toUpperCase() !== CLIENTE_RESTRINGIDO) {
-        return Swal.fire({
-          icon: "warning",
-          title: "Cliente no permitido",
-          text: "Esta tarea solo puede registrarse al cliente HITSS/CLARO.",
+        const resp = await jfetch(path, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
         });
-      }
-      if (tiempo > 9) {
-        return Swal.fire({
-          icon: "warning",
-          title: "Límite de horas excedido",
-          text: "Estas tareas no pueden superar 9 horas en un registro.",
+
+        const j = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(j?.mensaje || `HTTP ${resp.status}`);
+
+        Swal.fire({
+          icon: "success",
+          title: modoEdicion ? "Registro actualizado" : "Registro guardado",
         });
+
+        window.dispatchEvent(new Event("resumen-actualizar"));
+        fetchRegistros();
+
+        setRegistro(initRegistro());
+        setModuloElegido(modulos.length === 1 ? modulos[0] : "");
+        setModoEdicion(false);
+        setOcupacionSeleccionada("");
+        setModalIsOpen(false);
+      } catch (e) {
+        Swal.fire({ icon: "error", title: String(e.message || e) });
       }
-    }
-
-    if (code === CODE_SUPERVISION_EQUIPO) {
-      const poolModulos = [moduloElegido, moduloUser, ...(modulos || [])].map((v) =>
-        String(v || "")
-          .trim()
-          .toUpperCase()
-      );
-      const canUseLider = poolModulos.includes("LIDER");
-      if (!canUseLider) {
-        return Swal.fire({
-          icon: "warning",
-          title: "Módulo no autorizado",
-          text:
-            'La tarea "Seguimiento y Supervisión Equipo" solo puede ser usada por quienes pueden diligenciar el módulo LIDER.',
-        });
-      }
-    }
-
-    if (modulos.length > 1 && !moduloElegido) {
-      return Swal.fire({ icon: "warning", title: "Selecciona un módulo" });
-    }
-
-    const horasAdic = calcularHorasAdicionales(
-      registro.horaInicio,
-      registro.horaFin,
-      /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
-    );
-
-    const moduloFinal = (moduloElegido || modulos[0] || moduloUser || "").trim();
-
-    if (!moduloFinal || moduloFinal.trim() === "") {
-      return Swal.fire({
-        icon: "warning",
-        title: "Selecciona un módulo antes de guardar",
-      });
-    }
-
-    const base = {
-      fecha: registro.fecha,
-      cliente: registro.cliente,
-      nroCasoCliente: registro.nroCasoCliente,
-      nroCasoInterno: registro.nroCasoInterno,
-      nroCasoEscaladoSap: registro.nroCasoEscaladoSap,
-      tarea_id: registro.tarea_id || null,
-      ocupacion_id: ocupacionSeleccionada ? parseInt(ocupacionSeleccionada) : null,
-      horaInicio: registro.horaInicio,
-      horaFin: registro.horaFin,
-      tiempoInvertido: tiempo,
-      tiempoFacturable: registro.tiempoFacturable,
-      horasAdicionales: horasAdic,
-      descripcion: registro.descripcion,
-      totalHoras: tiempo,
-      modulo: moduloFinal,
-      equipo: equipoFormulario,
-      usuario: usuarioLogin,
-      consultor_id: consultorId,
-      rol,
     };
-
-    const payload = { ...base };
-    payload.nombre = nombreConsultor;
-    payload.consultor = nombreConsultor;
-    payload.modulo = moduloFinal;
-
-    if (equipoFormulario !== "BASIS") {
-      delete payload.actividadMalla;
-      delete payload.oncall;
-      delete payload.desborde;
-    }
-
-    try {
-      const path = modoEdicion ? `/editar-registro/${registro.id}` : "/registrar-hora";
-      const method = modoEdicion ? "PUT" : "POST";
-
-      const resp = await jfetch(path, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const j = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(j?.mensaje || `HTTP ${resp.status}`);
-
-      Swal.fire({
-        icon: "success",
-        title: modoEdicion ? "Registro actualizado" : "Registro guardado",
-      });
-
-      window.dispatchEvent(new Event("resumen-actualizar"));
-      fetchRegistros();
-
-      setRegistro(initRegistro());
-      setModuloElegido(modulos.length === 1 ? modulos[0] : "");
-      setModoEdicion(false);
-      setOcupacionSeleccionada("");
-      setModalIsOpen(false);
-    } catch (e) {
-      Swal.fire({ icon: "error", title: String(e.message || e) });
-    }
-  };
-
-
 
     const handleEditar = (reg) => {
       // 1) TareaId robusto (puede venir como tarea_id, tarea.id o por texto tipoTarea)

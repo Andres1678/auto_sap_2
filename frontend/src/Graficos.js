@@ -301,6 +301,7 @@ export default function Graficos() {
 
   const scope = isAdminAll ? 'ALL' : (isAdminTeam ? 'TEAM' : 'SELF');
   const isAdmin = scope !== 'SELF';
+  const canOpenProyectos = scope === 'ALL' || scope === 'TEAM';
 
   /* Carga registros */
   useEffect(() => {
@@ -790,17 +791,33 @@ export default function Graficos() {
         </div>
 
         <button
-          type="button"
-          className="btn btn-outline"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.currentTarget.blur();   
-            setModalProyectosOpen(true);
-          }}
-        >
-          Proyectos
-        </button>
+            type="button"
+            className={"btn btn-outline" + (!canOpenProyectos ? " is-disabled" : "")}
+            disabled={!canOpenProyectos}
+            title={
+              canOpenProyectos
+                ? "Ver reporte de proyectos"
+                : "No tienes permisos para ver Proyectos"
+            }
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.currentTarget.blur();
+
+              if (!canOpenProyectos) {
+                Swal.fire({
+                  icon: "warning",
+                  title: "Acceso restringido",
+                  text: "Solo ADMIN o ADMIN por equipo pueden abrir el reporte de Proyectos.",
+                });
+                return;
+              }
+
+              setModalProyectosOpen(true);
+            }}
+          >
+            Proyectos
+          </button>
 
         <button
           className="btn btn-outline"
@@ -1252,13 +1269,15 @@ export default function Graficos() {
         </Modal>
       )}
 
-      <ModalProyectosHoras
-        isOpen={modalProyectosOpen}
-        onClose={() => setModalProyectosOpen(false)}
-        userData={user}
-        defaultMonth={filtroMes}
-        registrosOverride={registros}
-      />
+      {canOpenProyectos && (
+        <ModalProyectosHoras
+          isOpen={modalProyectosOpen}
+          onClose={() => setModalProyectosOpen(false)}
+          userData={user}
+          defaultMonth={filtroMes}
+          registrosOverride={registros}
+        />
+      )}
     </div>
   );
 }
