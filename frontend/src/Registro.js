@@ -44,6 +44,7 @@ const CODE_SUPERVISION_EQUIPO = '06';
 const USERS_PUEDE_SEMANAS_ANTERIORES = new Set([
   'johngaravito', 'gonzalezanf', 'baezjc', 'cardenasf', 'rodriguezso'
 ]);
+const CUTOFF_FREE_DATE_ISO = "2026-02-20"; 
 
 
 
@@ -716,18 +717,43 @@ const Registro = ({ userData }) => {
         });
       }
 
-      // ✅ 1) Semana y código de tarea
+      // ✅ 1) Semana vigente y código de tarea
       const { minISO: weekMinISO, maxISO: weekMaxISO } = getWeekBoundsISO(new Date());
       const code = taskCode(registro.tipoTarea);
 
-      // ✅ 2) Fecha en rango (si aplica)
-      if (!puedeSemanasAnteriores && !isDateInRangeISO(registro.fecha, weekMinISO, weekMaxISO)) {
+      // ✅ 2) Validación por FECHA (nueva regla)
+      if (!registro.fecha) {
         return Swal.fire({
           icon: "warning",
-          title: "Fecha fuera de la semana actual",
-          text: `Solo puedes registrar entre ${weekMinISO} y ${weekMaxISO}.`,
+          title: "Selecciona una fecha",
         });
       }
+
+      // No permitir futuras (por seguridad, además del max={todayISO})
+      if (registro.fecha > todayISO) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Fecha futura no permitida",
+          text: "No puedes registrar fechas futuras.",
+        });
+      }
+
+      // Desde 21-Feb-2026 ( > 2026-02-20 ) solo semana vigente
+      if (registro.fecha > CUTOFF_FREE_DATE_ISO) {
+        if (!isDateInRangeISO(registro.fecha, weekMinISO, weekMaxISO)) {
+          return Swal.fire({
+            icon: "warning",
+            title: "Fecha fuera de la semana vigente",
+            html: `
+              Desde el <b>21-Feb-2026</b> solo puedes registrar en la <b>semana vigente</b>.
+              <br/><br/>
+              Semana actual permitida:
+              <br/>• <b>${weekMinISO}</b> a <b>${weekMaxISO}</b>
+            `,
+          });
+        }
+      }
+      // <= 2026-02-20 => permitido (histórico libre)
 
       // ✅ 3) Horas obligatorias
       if (!registro.horaInicio || !registro.horaFin) {
@@ -1558,8 +1584,7 @@ const Registro = ({ userData }) => {
                 <input
                   type="date"
                   value={registro.fecha}
-                  min={puedeSemanasAnteriores ? undefined : weekMinISO}
-                  max={puedeSemanasAnteriores ? undefined : weekMaxISO}
+                  max={todayISO} 
                   onChange={(e) => setRegistro({ ...registro, fecha: e.target.value })}
                   required
                 />
