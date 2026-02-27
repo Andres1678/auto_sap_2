@@ -762,8 +762,8 @@ def registrar_hora():
     if not consultor and cid:
         try:
             consultor = Consultor.query.get(int(cid))
-        except:
-            pass
+        except Exception:
+            consultor = None
 
     if not consultor:
         cname = pick(data, 'consultor', 'nombre')
@@ -780,8 +780,8 @@ def registrar_hora():
     # ------------------------------------------------------------------
     fecha = pick(data, 'fecha')
     cliente = pick(data, 'cliente')
-    hora_inicio = pick(data, 'horaInicio')
-    hora_fin = pick(data, 'horaFin')
+    hora_inicio = pick(data, 'horaInicio', 'hora_inicio')
+    hora_fin = pick(data, 'horaFin', 'hora_fin')
 
     if not fecha or not cliente or not hora_inicio or not hora_fin:
         return jsonify({'mensaje': 'Campos obligatorios faltantes'}), 400
@@ -799,14 +799,13 @@ def registrar_hora():
             tarea_obj = Tarea.query.get(tarea_id)
             if not tarea_obj:
                 return jsonify({'mensaje': 'Tarea inválida'}), 400
-        except:
+        except Exception:
             return jsonify({'mensaje': 'Tarea inválida'}), 400
-
     else:
-        # B) Compatibilidad → detectar desde tipoTarea si existe
-        tipoTareaRaw = pick(data, "tipoTarea")
+        # B) Compatibilidad → detectar desde tipoTarea si existe ("03 - Nombre")
+        tipoTareaRaw = pick(data, "tipoTarea", "tipo_tarea")
         if tipoTareaRaw:
-            codigo = tipoTareaRaw.split("-")[0].strip()
+            codigo = str(tipoTareaRaw).split("-", 1)[0].strip()
             tarea_obj = Tarea.query.filter(Tarea.codigo == codigo).first()
             if tarea_obj:
                 tarea_id = tarea_obj.id
@@ -814,16 +813,16 @@ def registrar_hora():
     # ------------------------------------------------------------------
     # 4) VALORES NUMÉRICOS
     # ------------------------------------------------------------------
-    tiempo_invertido = float(pick(data, 'tiempoInvertido', default=0) or 0)
-    tiempo_facturable = float(pick(data, 'tiempoFacturable', default=0) or 0)
-    total_horas = float(pick(data, 'totalHoras', default=tiempo_invertido) or 0)
+    tiempo_invertido = float(pick(data, 'tiempoInvertido', 'tiempo_invertido', default=0) or 0)
+    tiempo_facturable = float(pick(data, 'tiempoFacturable', 'tiempo_facturable', default=0) or 0)
+    total_horas = float(pick(data, 'totalHoras', 'total_horas', default=tiempo_invertido) or 0)
 
     # ------------------------------------------------------------------
     # 5) MÓDULO
     # ------------------------------------------------------------------
     modulo_final = pick(data, "modulo")
     if modulo_final:
-        modulo_final = modulo_final.strip()
+        modulo_final = str(modulo_final).strip()
     else:
         modulo_final = consultor.modulos[0].nombre if consultor.modulos else "SIN MODULO"
 
@@ -855,7 +854,7 @@ def registrar_hora():
         "actividad_malla": "N/APLICA",
         "oncall": "N/A",
         "desborde": "N/A",
-        "nro_escalado": pick(data, 'nroCasoEscaladoSap')
+        "nro_escalado": pick(data, 'nroCasoEscaladoSap', 'nro_caso_escalado')
     }
 
     # ------------------------------------------------------------------
@@ -864,7 +863,11 @@ def registrar_hora():
     ocupacion_id = pick(data, "ocupacion_id")
 
     if ocupacion_id:
-        # validar que exista
+        try:
+            ocupacion_id = int(ocupacion_id)
+        except Exception:
+            return jsonify({'mensaje': 'Ocupación inválida'}), 400
+
         occ = Ocupacion.query.get(ocupacion_id)
         if not occ:
             return jsonify({'mensaje': 'Ocupación inválida'}), 400
@@ -878,18 +881,53 @@ def registrar_hora():
                 ocupacion_id = None
 
     # ------------------------------------------------------------------
+    # 9.1) ✅ PROYECTOS (NUEVO)
+    # ------------------------------------------------------------------
+    proyecto_id = pick(data, "proyecto_id")
+    fase_proyecto_id = pick(data, "fase_proyecto_id", "faseProyectoId")
+
+    # normalizar a int / None
+    try:
+        proyecto_id = int(proyecto_id) if proyecto_id not in (None, "", "null", "None") else None
+    except Exception:
+        return jsonify({'mensaje': 'proyecto_id inválido'}), 400
+
+    try:
+        fase_proyecto_id = int(fase_proyecto_id) if fase_proyecto_id not in (None, "", "null", "None") else None
+    except Exception:
+        return jsonify({'mensaje': 'fase_proyecto_id inválido'}), 400
+
+    # validar que existan (si vienen)
+    if proyecto_id:
+        if not Proyecto.query.get(proyecto_id):
+            return jsonify({'mensaje': 'Proyecto no existe'}), 400
+
+    if fase_proyecto_id:
+        if not ProyectoFase.query.get(fase_proyecto_id):
+            return jsonify({'mensaje': 'Fase de proyecto no existe'}), 400
+
+    # Si viene proyecto y NO viene fase_proyecto_id, intenta inferirla del proyecto.fase_id
+    if proyecto_id and not fase_proyecto_id:
+        p = Proyecto.query.get(proyecto_id)
+        fase_proyecto_id = getattr(p, "fase_id", None) if p else None
+
+    # ------------------------------------------------------------------
     # 10) CREAR REGISTRO
     # ------------------------------------------------------------------
     try:
         nuevo = Registro(
             fecha=fecha,
             cliente=cliente,
-            nro_caso_cliente=_norm_default(pick(data, 'nroCasoCliente'), '0'),
-            nro_caso_interno=_norm_default(pick(data, 'nroCasoInterno'), '0'),
+            nro_caso_cliente=_norm_default(pick(data, 'nroCasoCliente', 'nro_caso_cliente'), '0'),
+            nro_caso_interno=_norm_default(pick(data, 'nroCasoInterno', 'nro_caso_interno'), '0'),
             nro_caso_escalado=bd["nro_escalado"],
 
             tarea_id=tarea_id,
             ocupacion_id=ocupacion_id,
+
+            # ✅ Proyectos (NUEVO)
+            proyecto_id=proyecto_id,
+            fase_proyecto_id=fase_proyecto_id,
 
             hora_inicio=hora_inicio,
             hora_fin=hora_fin,
@@ -900,7 +938,7 @@ def registrar_hora():
             oncall=bd["oncall"],
             desborde=bd["desborde"],
 
-            horas_adicionales=_norm_default(pick(data, 'horasAdicionales'), 'No'),
+            horas_adicionales=_norm_default(pick(data, 'horasAdicionales', 'horas_adicionales'), 'No'),
             descripcion=_norm_default(pick(data, 'descripcion'), ''),
 
             total_horas=total_horas,
@@ -923,9 +961,8 @@ def registrar_hora():
         db.session.rollback()
         return jsonify({'mensaje': f'No se pudo guardar el registro: {e}'}), 500
 
-
 # ============================================================
-#  ✅ HELPERS (ponlos UNA sola vez arriba del archivo)
+#  ✅ HELPERS 
 # ============================================================
 
 def _norm_user(u: str) -> str:
@@ -1413,6 +1450,9 @@ def eliminar_registro(id):
 def editar_registro(id):
     data = request.get_json(silent=True) or {}
 
+    # ----------------------------------------------------------
+    # 1) Usuario autenticado por header
+    # ----------------------------------------------------------
     usuario_header = (request.headers.get("X-User-Usuario") or "").strip().lower()
     if not usuario_header:
         return jsonify({'mensaje': 'Usuario no enviado'}), 401
@@ -1431,36 +1471,48 @@ def editar_registro(id):
 
     es_admin = _is_admin_request(rol_real, consultor_login)
 
+    # ----------------------------------------------------------
+    # 2) Registro + autorización (dueño o admin)
+    # ----------------------------------------------------------
     registro = Registro.query.get(id)
     if not registro:
         return jsonify({'mensaje': 'Registro no encontrado'}), 404
 
-    dueño = (registro.usuario_consultor or "").strip().lower()
-    if not es_admin and dueño and dueño != usuario_header:
+    dueno = (registro.usuario_consultor or "").strip().lower()
+    if not es_admin and dueno and dueno != usuario_header:
         return jsonify({'mensaje': 'No autorizado'}), 403
 
-    # ✅ EXCEPCIÓN: permitir semanas anteriores solo a johngaravito (y admins)
+    # ✅ EXCEPCIÓN: permitir semanas anteriores solo a ciertos usuarios (y admins)
     puede_semanas_anteriores = es_admin or (usuario_header in USUARIOS_PUEDE_SEMANAS_ANTERIORES)
 
-    # Si tienes una validación de semana en editar, métela aquí.
-    # (Si NO la tienes en backend, esto no afecta nada)
-    # Requiere helper isDateInRangeISO o equivalente en python.
     fecha_nueva = data.get("fecha")
     if fecha_nueva and not puede_semanas_anteriores:
-        # Si ya tienes tu propia función de semana actual, úsala aquí.
-        # Ejemplo (si la implementaste):  if not _is_in_current_week(fecha_nueva): ...
+        # si tienes validación de semana actual, aplícala aquí
+        # if not _is_in_current_week(fecha_nueva): return jsonify(...), 400
         pass
 
     try:
+        # ----------------------------------------------------------
+        # 3) Campos básicos
+        # ----------------------------------------------------------
         registro.fecha = pick(data, 'fecha', default=registro.fecha)
         registro.cliente = pick(data, 'cliente', default=registro.cliente)
-        registro.nro_caso_cliente = pick(data, 'nroCasoCliente', default=registro.nro_caso_cliente)
-        registro.nro_caso_interno = pick(data, 'nroCasoInterno', default=registro.nro_caso_interno)
 
-        tarea_id = data.get("tarea_id")
-        tipoTareaTexto = data.get("tipoTarea")
+        registro.nro_caso_cliente = pick(data, 'nroCasoCliente', 'nro_caso_cliente', default=registro.nro_caso_cliente)
+        registro.nro_caso_interno = pick(data, 'nroCasoInterno', 'nro_caso_interno', default=registro.nro_caso_interno)
 
-        if tarea_id:
+        # OJO: en DB se llama nro_caso_escalado
+        nro_escalado = pick(data, 'nroCasoEscaladoSap', 'nro_caso_escalado')
+        if nro_escalado is not None:
+            registro.nro_caso_escalado = nro_escalado
+
+        # ----------------------------------------------------------
+        # 4) Tarea
+        # ----------------------------------------------------------
+        tarea_id = pick(data, "tarea_id")
+        tipoTareaTexto = pick(data, "tipoTarea", "tipo_tarea")
+
+        if tarea_id not in (None, "", "null", "None"):
             try:
                 tarea_id_int = int(tarea_id)
             except Exception:
@@ -1478,8 +1530,11 @@ def editar_registro(id):
         if tipoTareaTexto:
             registro.tipo_tarea = str(tipoTareaTexto).strip()
 
-        ocupacion_id = data.get("ocupacion_id")
-        if ocupacion_id:
+        # ----------------------------------------------------------
+        # 5) Ocupación
+        # ----------------------------------------------------------
+        ocupacion_id = pick(data, "ocupacion_id")
+        if ocupacion_id not in (None, "", "null", "None"):
             try:
                 ocupacion_id_int = int(ocupacion_id)
             except Exception:
@@ -1491,22 +1546,78 @@ def editar_registro(id):
 
             registro.ocupacion_id = ocupacion_id_int
 
-        if not ocupacion_id and registro.tarea_id:
+        # si no viene ocupacion pero sí tarea, inferir
+        if (ocupacion_id in (None, "", "null", "None")) and registro.tarea_id:
             tarea_db = Tarea.query.options(db.joinedload(Tarea.ocupaciones)).get(registro.tarea_id)
-            if tarea_db and getattr(tarea_db, "ocupaciones", None):
-                if tarea_db.ocupaciones:
-                    registro.ocupacion_id = tarea_db.ocupaciones[0].id
+            if tarea_db and getattr(tarea_db, "ocupaciones", None) and tarea_db.ocupaciones:
+                registro.ocupacion_id = tarea_db.ocupaciones[0].id
 
-        registro.hora_inicio = pick(data, 'horaInicio', default=registro.hora_inicio)
-        registro.hora_fin = pick(data, 'horaFin', default=registro.hora_fin)
-        registro.tiempo_invertido = pick(data, 'tiempoInvertido', default=registro.tiempo_invertido)
-        registro.tiempo_facturable = pick(data, 'tiempoFacturable', default=registro.tiempo_facturable)
-        registro.horas_adicionales = pick(data, 'horasAdicionales', default=registro.horas_adicionales)
+        # ----------------------------------------------------------
+        # 6) Fechas/horas y valores numéricos
+        # ----------------------------------------------------------
+        registro.hora_inicio = pick(data, 'horaInicio', 'hora_inicio', default=registro.hora_inicio)
+        registro.hora_fin = pick(data, 'horaFin', 'hora_fin', default=registro.hora_fin)
+
+        registro.tiempo_invertido = pick(data, 'tiempoInvertido', 'tiempo_invertido', default=registro.tiempo_invertido)
+        registro.tiempo_facturable = pick(data, 'tiempoFacturable', 'tiempo_facturable', default=registro.tiempo_facturable)
+        registro.horas_adicionales = pick(data, 'horasAdicionales', 'horas_adicionales', default=registro.horas_adicionales)
         registro.descripcion = pick(data, 'descripcion', default=registro.descripcion)
+        registro.total_horas = pick(data, 'totalHoras', 'total_horas', default=registro.total_horas)
 
-        registro.total_horas = pick(data, 'totalHoras', default=registro.total_horas)
-        registro.modulo = pick(data, 'modulo', default=registro.modulo)
+        # ----------------------------------------------------------
+        # 7) Módulo / Equipo (si los mandan)
+        # ----------------------------------------------------------
+        modulo_in = pick(data, 'modulo')
+        if modulo_in is not None:
+            registro.modulo = modulo_in
 
+        equipo_in = pick(data, 'equipo')
+        if equipo_in is not None:
+            registro.equipo = str(equipo_in).strip().upper() if isinstance(equipo_in, str) else equipo_in
+
+        # ----------------------------------------------------------
+        # 8) ✅ Proyectos (NUEVO) — guarda proyecto y fase
+        # ----------------------------------------------------------
+        proyecto_id = pick(data, "proyecto_id")
+        fase_proyecto_id = pick(data, "fase_proyecto_id", "faseProyectoId")
+
+        # normalizar int / None
+        if proyecto_id in ("", "null", "None"):
+            proyecto_id = None
+        if fase_proyecto_id in ("", "null", "None"):
+            fase_proyecto_id = None
+
+        if proyecto_id is not None:
+            try:
+                proyecto_id = int(proyecto_id) if proyecto_id is not None else None
+            except Exception:
+                return jsonify({'mensaje': 'proyecto_id inválido'}), 400
+
+            if proyecto_id and not Proyecto.query.get(proyecto_id):
+                return jsonify({'mensaje': 'Proyecto no existe'}), 400
+
+            registro.proyecto_id = proyecto_id
+
+        if fase_proyecto_id is not None:
+            try:
+                fase_proyecto_id = int(fase_proyecto_id) if fase_proyecto_id is not None else None
+            except Exception:
+                return jsonify({'mensaje': 'fase_proyecto_id inválido'}), 400
+
+            if fase_proyecto_id and not ProyectoFase.query.get(fase_proyecto_id):
+                return jsonify({'mensaje': 'Fase de proyecto no existe'}), 400
+
+            registro.fase_proyecto_id = fase_proyecto_id
+
+        # si hay proyecto y no fase_proyecto_id, inferirla del proyecto (si aplica)
+        if registro.proyecto_id and not registro.fase_proyecto_id:
+            p = Proyecto.query.get(registro.proyecto_id)
+            if p and getattr(p, "fase_id", None):
+                registro.fase_proyecto_id = p.fase_id
+
+        # ----------------------------------------------------------
+        # 9) Campos BASIS (si se envían)
+        # ----------------------------------------------------------
         bd = _basis_defaults_from_payload(data)
 
         if 'actividadMalla' in data or 'actividad_malla' in data:
@@ -1516,6 +1627,7 @@ def editar_registro(id):
         if 'desborde' in data:
             registro.desborde = bd["desborde"]
 
+        # defaults
         if not registro.actividad_malla:
             registro.actividad_malla = "N/APLICA"
         if not registro.oncall:
@@ -1529,7 +1641,6 @@ def editar_registro(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'mensaje': f'No se pudo actualizar el registro: {e}'}), 500
-
 
 @bp.route('/toggle-bloqueado/<int:id>', methods=['PUT'])
 def toggle_bloqueado(id):

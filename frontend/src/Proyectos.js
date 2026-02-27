@@ -7,9 +7,9 @@ const emptyForm = () => ({
   id: null,
   codigo: "",
   nombre: "",
-  fase: "",
+  fase_id: "",      
   activo: true,
-  modulos_ids: [], 
+  modulos: [],      
 });
 
 const norm = (s) => String(s ?? "").trim();
@@ -20,6 +20,7 @@ export default function Proyectos() {
 
   const [proyectos, setProyectos] = useState([]);
   const [modulos, setModulos] = useState([]);
+  const [fases, setFases] = useState([]);
 
   const [q, setQ] = useState("");
   const [soloActivos, setSoloActivos] = useState(false);
@@ -30,24 +31,33 @@ export default function Proyectos() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [pRes, mRes] = await Promise.all([
-        jfetch("/proyectos"),
+      const [pRes, mRes, fRes] = await Promise.all([
+        jfetch("/proyectos?include_modulos=1"),
         jfetch("/modulos"),
+        jfetch("/proyecto-fases"),
       ]);
 
       const pData = await pRes.json().catch(() => []);
       const mData = await mRes.json().catch(() => []);
+      const fData = await fRes.json().catch(() => []);
 
       if (!pRes.ok) throw new Error(pData?.mensaje || `HTTP ${pRes.status}`);
       if (!mRes.ok) throw new Error(mData?.mensaje || `HTTP ${mRes.status}`);
+      if (!fRes.ok) throw new Error(fData?.mensaje || `HTTP ${fRes.status}`);
 
       setProyectos(Array.isArray(pData) ? pData : []);
       setModulos(Array.isArray(mData) ? mData : []);
+      setFases(Array.isArray(fData) ? fData : []);
     } catch (e) {
       console.error(e);
-      Swal.fire({ icon: "error", title: "Error cargando datos", text: String(e.message || e) });
+      Swal.fire({
+        icon: "error",
+        title: "Error cargando datos",
+        text: String(e.message || e),
+      });
       setProyectos([]);
       setModulos([]);
+      setFases([]);
     } finally {
       setLoading(false);
     }
@@ -63,26 +73,35 @@ export default function Proyectos() {
     return m;
   }, [modulos]);
 
+  const fasesMap = useMemo(() => {
+    const m = new Map();
+    (fases || []).forEach((x) => m.set(Number(x.id), x.nombre));
+    return m;
+  }, [fases]);
+
   const proyectosFiltrados = useMemo(() => {
     const needle = norm(q).toLowerCase();
     return (proyectos || []).filter((p) => {
       if (soloActivos && !p.activo) return false;
       if (!needle) return true;
+
+      const faseNombre = String(p?.fase?.nombre || fasesMap.get(Number(p?.fase_id)) || "");
       const hay =
         String(p.codigo || "").toLowerCase().includes(needle) ||
         String(p.nombre || "").toLowerCase().includes(needle) ||
-        String(p.fase || "").toLowerCase().includes(needle);
+        faseNombre.toLowerCase().includes(needle);
+
       return hay;
     });
-  }, [proyectos, q, soloActivos]);
+  }, [proyectos, q, soloActivos, fasesMap]);
 
   const toggleModulo = (id) => {
     const mid = Number(id);
     setForm((f) => {
-      const set = new Set((f.modulos_ids || []).map(Number));
+      const set = new Set((f.modulos || []).map(Number));
       if (set.has(mid)) set.delete(mid);
       else set.add(mid);
-      return { ...f, modulos_ids: Array.from(set) };
+      return { ...f, modulos: Array.from(set) };
     });
   };
 
@@ -93,14 +112,9 @@ export default function Proyectos() {
       id: p.id,
       codigo: p.codigo || "",
       nombre: p.nombre || "",
-      fase: p.fase || "",
+      fase_id: p?.fase?.id ? String(p.fase.id) : (p?.fase_id ? String(p.fase_id) : ""),
       activo: !!p.activo,
-      // backend puede devolver modulos como ids o como objects; soporta ambos
-      modulos_ids: Array.isArray(p.modulos_ids)
-        ? p.modulos_ids.map(Number)
-        : Array.isArray(p.modulos)
-          ? p.modulos.map((x) => Number(x.id ?? x))
-          : [],
+      modulos: Array.isArray(p.modulos) ? p.modulos.map((x) => Number(x.id)) : [],
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -126,7 +140,11 @@ export default function Proyectos() {
       fetchAll();
       if (form.id === p.id) resetForm();
     } catch (e) {
-      Swal.fire({ icon: "error", title: "No se pudo eliminar", text: String(e.message || e) });
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo eliminar",
+        text: String(e.message || e),
+      });
     } finally {
       setSaving(false);
     }
@@ -135,17 +153,16 @@ export default function Proyectos() {
   const toggleActivo = async (p) => {
     try {
       setSaving(true);
-      // opción A: endpoint PATCH activo
-      const r = await jfetch(`/proyectos/${p.id}/activo`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ activo: !p.activo }),
-      });
+      const r = await jfetch(`/proyectos/${p.id}/toggle-activo`, { method: "PUT" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.mensaje || `HTTP ${r.status}`);
       fetchAll();
     } catch (e) {
-      Swal.fire({ icon: "error", title: "No se pudo cambiar estado", text: String(e.message || e) });
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo cambiar estado",
+        text: String(e.message || e),
+      });
     } finally {
       setSaving(false);
     }
@@ -154,8 +171,7 @@ export default function Proyectos() {
   const validateForm = () => {
     if (!norm(form.codigo)) return "El código es obligatorio";
     if (!norm(form.nombre)) return "El nombre es obligatorio";
-    if (!norm(form.fase)) return "La fase es obligatoria";
-    if (!Array.isArray(form.modulos_ids) || form.modulos_ids.length === 0)
+    if (!Array.isArray(form.modulos) || form.modulos.length === 0)
       return "Debes seleccionar al menos 1 módulo";
     return null;
   };
@@ -169,9 +185,9 @@ export default function Proyectos() {
     const payload = {
       codigo: norm(form.codigo).toUpperCase(),
       nombre: norm(form.nombre),
-      fase: norm(form.fase),
       activo: !!form.activo,
-      modulos_ids: (form.modulos_ids || []).map(Number),
+      fase_id: form.fase_id ? Number(form.fase_id) : null,
+      modulos: (form.modulos || []).map(Number),
     };
 
     try {
@@ -189,12 +205,19 @@ export default function Proyectos() {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.mensaje || `HTTP ${r.status}`);
 
-      Swal.fire({ icon: "success", title: isEdit ? "Proyecto actualizado" : "Proyecto creado" });
+      Swal.fire({
+        icon: "success",
+        title: isEdit ? "Proyecto actualizado" : "Proyecto creado",
+      });
 
       resetForm();
       fetchAll();
     } catch (e2) {
-      Swal.fire({ icon: "error", title: "Error guardando", text: String(e2.message || e2) });
+      Swal.fire({
+        icon: "error",
+        title: "Error guardando",
+        text: String(e2.message || e2),
+      });
     } finally {
       setSaving(false);
     }
@@ -250,11 +273,17 @@ export default function Proyectos() {
 
             <div className="field">
               <label>Fase</label>
-              <input
-                value={form.fase}
-                onChange={(e) => setForm((f) => ({ ...f, fase: e.target.value }))}
-                placeholder="Ej: Diagnóstico / Ejecución / Cierre"
-              />
+              <select
+                value={form.fase_id}
+                onChange={(e) => setForm((f) => ({ ...f, fase_id: e.target.value }))}
+              >
+                <option value="">Sin fase</option>
+                {fases.map((fx) => (
+                  <option key={fx.id} value={fx.id}>
+                    {fx.nombre}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -266,7 +295,7 @@ export default function Proyectos() {
                   <div className="muted">No hay módulos cargados</div>
                 ) : (
                   modulos.map((m) => {
-                    const checked = (form.modulos_ids || []).map(Number).includes(Number(m.id));
+                    const checked = (form.modulos || []).map(Number).includes(Number(m.id));
                     return (
                       <label key={m.id} className={`mod-chip ${checked ? "is-on" : ""}`}>
                         <input
@@ -342,44 +371,56 @@ export default function Proyectos() {
               </tr>
             </thead>
             <tbody>
-              {proyectosFiltrados.map((p) => (
-                <tr key={p.id}>
-                  <td className="num">{p.id}</td>
-                  <td className="mono">{p.codigo}</td>
-                  <td>{p.nombre}</td>
-                  <td>{p.fase}</td>
-                  <td>
-                    <span className={`badge ${p.activo ? "ok" : "off"}`}>
-                      {p.activo ? "Activo" : "Inactivo"}
-                    </span>
-                  </td>
-                  <td className="mods-cell">
-                    {(Array.isArray(p.modulos_ids) ? p.modulos_ids : (p.modulos || [])).slice(0, 6).map((x, idx) => {
-                      const id = Number(x?.id ?? x);
-                      const label = x?.nombre ?? modulosMap.get(id) ?? String(id);
-                      return (
-                        <span key={`${p.id}-${id}-${idx}`} className="pill">
-                          {label}
-                        </span>
-                      );
-                    })}
-                    {(Array.isArray(p.modulos_ids) ? p.modulos_ids : (p.modulos || [])).length > 6 && (
-                      <span className="pill more">+ más…</span>
-                    )}
-                  </td>
-                  <td className="actions">
-                    <button className="icon-btn" onClick={() => startEdit(p)} disabled={saving}>
-                      ✏️
-                    </button>
-                    <button className="icon-btn" onClick={() => toggleActivo(p)} disabled={saving}>
-                      {p.activo ? "⛔" : "✅"}
-                    </button>
-                    <button className="icon-btn danger" onClick={() => confirmDelete(p)} disabled={saving}>
-                      🗑️
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {proyectosFiltrados.map((p) => {
+                const faseNombre =
+                  p?.fase?.nombre || fasesMap.get(Number(p?.fase_id)) || "—";
+
+                return (
+                  <tr key={p.id}>
+                    <td className="num">{p.id}</td>
+                    <td className="mono">{p.codigo}</td>
+                    <td>{p.nombre}</td>
+                    <td>{faseNombre}</td>
+                    <td>
+                      <span className={`badge ${p.activo ? "ok" : "off"}`}>
+                        {p.activo ? "Activo" : "Inactivo"}
+                      </span>
+                    </td>
+                    <td className="mods-cell">
+                      {(Array.isArray(p.modulos) ? p.modulos : [])
+                        .slice(0, 6)
+                        .map((x, idx) => {
+                          const id = Number(x?.id ?? x);
+                          const label = x?.nombre ?? modulosMap.get(id) ?? String(id);
+                          return (
+                            <span key={`${p.id}-${id}-${idx}`} className="pill">
+                              {label}
+                            </span>
+                          );
+                        })}
+
+                      {(Array.isArray(p.modulos) ? p.modulos : []).length > 6 && (
+                        <span className="pill more">+ más…</span>
+                      )}
+                    </td>
+                    <td className="actions">
+                      <button className="icon-btn" onClick={() => startEdit(p)} disabled={saving}>
+                        ✏️
+                      </button>
+                      <button className="icon-btn" onClick={() => toggleActivo(p)} disabled={saving}>
+                        {p.activo ? "⛔" : "✅"}
+                      </button>
+                      <button
+                        className="icon-btn danger"
+                        onClick={() => confirmDelete(p)}
+                        disabled={saving}
+                      >
+                        🗑️
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {proyectosFiltrados.length === 0 && (
                 <tr>

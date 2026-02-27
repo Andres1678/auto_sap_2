@@ -167,7 +167,7 @@ class Registro(db.Model):
     proyecto = relationship("Proyecto", lazy="joined")
 
     # SOLO si quieres permitir elegir fase en el registro (opcional)
-    fase_proyecto_id = db.Column(db.Integer, db.ForeignKey("proyecto_fase.id", ondelete="SET NULL"), nullable=True)
+    fase_proyecto_id = db.Column(db.BigInteger, db.ForeignKey("proyecto_fase.id", ...), nullable=True)
     fase_proyecto = relationship("ProyectoFase", lazy="joined")
 
     usuario_consultor = db.Column(db.String(50), db.ForeignKey('consultor.usuario'))

@@ -1764,7 +1764,8 @@ const Registro = ({ userData }) => {
                           proyecto_id: pid,
                           proyecto_codigo: p?.codigo || "",
                           proyecto_nombre: p?.nombre || "",
-                          proyecto_fase: p?.fase || "",
+                          proyecto_fase: p?.fase?.nombre || "",   
+                          fase_proyecto_id: p?.fase_id || null,   
                         }));
                       }}
                       required
