@@ -31,8 +31,8 @@ export default function Proyectos() {
     setLoading(true);
     try {
       const [pRes, mRes] = await Promise.all([
-        jfetch("/api/proyectos"),
-        jfetch("/api/modulos"),
+        jfetch("/proyectos"),
+        jfetch("/modulos"),
       ]);
 
       const pData = await pRes.json().catch(() => []);
@@ -119,7 +119,7 @@ export default function Proyectos() {
 
     try {
       setSaving(true);
-      const r = await jfetch(`/api/proyectos/${p.id}`, { method: "DELETE" });
+      const r = await jfetch(`/proyectos/${p.id}`, { method: "DELETE" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.mensaje || `HTTP ${r.status}`);
       Swal.fire({ icon: "success", title: "Eliminado" });
@@ -136,7 +136,7 @@ export default function Proyectos() {
     try {
       setSaving(true);
       // opción A: endpoint PATCH activo
-      const r = await jfetch(`/api/proyectos/${p.id}/activo`, {
+      const r = await jfetch(`/proyectos/${p.id}/activo`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ activo: !p.activo }),
@@ -177,7 +177,7 @@ export default function Proyectos() {
     try {
       setSaving(true);
 
-      const url = isEdit ? `/api/proyectos/${form.id}` : "/api/proyectos";
+      const url = isEdit ? `/proyectos/${form.id}` : "/proyectos";
       const method = isEdit ? "PUT" : "POST";
 
       const r = await jfetch(url, {
