@@ -4556,13 +4556,18 @@ def listar_proyectos():
     q = (request.args.get("q") or "").strip()
     activo = request.args.get("activo")
     modulo = (request.args.get("modulo") or "").strip()
+
     include_modulos = _to_bool2(request.args.get("include_modulos"), default=True)
     include_fases = _to_bool2(request.args.get("include_fases"), default=True)
 
-    opts = [joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo)]
-    if hasattr(Proyecto, "fase"):
-        opts.append(joinedload(Proyecto.fase))
-    if include_fases and hasattr(Proyecto, "fases"):
+    opts = []
+
+    if include_modulos:
+        opts.append(joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo))
+
+    opts.append(joinedload(Proyecto.fase))
+
+    if include_fases:
         opts.append(joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase))
 
     query = Proyecto.query.options(*opts)
@@ -4586,7 +4591,10 @@ def listar_proyectos():
         )
 
     proyectos = query.order_by(Proyecto.activo.desc(), Proyecto.codigo.asc()).all()
-    return jsonify([proyecto_to_dict(p, include_modulos=include_modulos, include_fases=include_fases) for p in proyectos]), 200
+    return jsonify([
+        proyecto_to_dict(p, include_modulos=include_modulos, include_fases=include_fases)
+        for p in proyectos
+    ]), 200
 
 @bp.route("/proyectos/<int:id>", methods=["GET"])
 @permission_required("PROYECTOS_VER")

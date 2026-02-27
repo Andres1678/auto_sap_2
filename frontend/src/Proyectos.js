@@ -229,12 +229,7 @@ export default function Proyectos() {
 
     const err = validateForm();
     if (err) return Swal.fire({ icon: "warning", title: err });
-
-    const fasesIds = (form.fases || [])
-      .map(String)
-      .filter((x) => !x.startsWith("__"))
-      .map(Number);
-
+    
     const payload = {
       codigo: norm(form.codigo).toUpperCase(),
       nombre: norm(form.nombre),

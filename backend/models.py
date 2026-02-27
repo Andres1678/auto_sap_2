@@ -552,10 +552,8 @@ class Proyecto(db.Model):
     __tablename__ = "proyecto"
 
     id = db.Column(db.Integer, primary_key=True)
-
-    codigo = db.Column(db.String(50), nullable=False, unique=True)  # ej: "PRJ-001"
+    codigo = db.Column(db.String(50), nullable=False, unique=True)
     nombre = db.Column(db.String(180), nullable=False)
-
     activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
 
     fase_id = db.Column(db.Integer, db.ForeignKey("proyecto_fase.id", ondelete="SET NULL"), nullable=True)
@@ -563,6 +561,13 @@ class Proyecto(db.Model):
 
     modulos = relationship(
         "ProyectoModulo",
+        back_populates="proyecto",
+        cascade="all, delete-orphan",
+        lazy="joined"
+    )
+
+    fases = relationship(
+        "ProyectoFaseProyecto",
         back_populates="proyecto",
         cascade="all, delete-orphan",
         lazy="joined"
@@ -596,12 +601,14 @@ class ProyectoFaseProyecto(db.Model):
     __tablename__ = "proyecto_fase_proyecto"
 
     id = db.Column(db.BigInteger, primary_key=True)
+
     proyecto_id = db.Column(db.Integer, db.ForeignKey("proyecto.id", ondelete="CASCADE"), nullable=False)
-    fase_id = db.Column(db.BigInteger, db.ForeignKey("proyecto_fase.id", ondelete="CASCADE"), nullable=False)
+    fase_id = db.Column(db.Integer, db.ForeignKey("proyecto_fase.id", ondelete="CASCADE"), nullable=False)
 
     activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
     orden = db.Column(db.Integer, nullable=True)
 
+    proyecto = relationship("Proyecto", back_populates="fases")
     fase = relationship("ProyectoFase", lazy="joined")
 
     __table_args__ = (
