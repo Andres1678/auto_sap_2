@@ -3,13 +3,21 @@ import Swal from "sweetalert2";
 import { jfetch } from "./lib/api";
 import "./Proyectos.css";
 
+const DEFAULT_FASES = [
+  { id: "__F1__", nombre: "F1" },
+  { id: "__F2__", nombre: "F2" },
+  { id: "__F3__", nombre: "F3" },
+  { id: "__F4__", nombre: "F4" },
+  { id: "__F5__", nombre: "F5" },
+];
+
 const emptyForm = () => ({
   id: null,
   codigo: "",
   nombre: "",
-  fase_id: "",      
+  fases: [],        
   activo: true,
-  modulos: [],      
+  modulos: [],
 });
 
 const norm = (s) => String(s ?? "").trim();
@@ -47,7 +55,22 @@ export default function Proyectos() {
 
       setProyectos(Array.isArray(pData) ? pData : []);
       setModulos(Array.isArray(mData) ? mData : []);
-      setFases(Array.isArray(fData) ? fData : []);
+
+      
+      const backendFases = Array.isArray(fData) ? fData : [];
+      const byName = new Map();
+      backendFases.forEach(x => byName.set(String(x.nombre || "").trim().toUpperCase(), x));
+
+      
+      const merged = [...backendFases];
+      DEFAULT_FASES.forEach(df => {
+        if (!byName.has(df.nombre)) merged.push({ id: df.id, nombre: df.nombre, activo: true, orden: 0 });
+      });
+
+     
+      merged.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es"));
+
+      setFases(merged);
     } catch (e) {
       console.error(e);
       Swal.fire({
@@ -57,15 +80,13 @@ export default function Proyectos() {
       });
       setProyectos([]);
       setModulos([]);
-      setFases([]);
+      setFases(DEFAULT_FASES);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchAll();
-  }, []);
+  useEffect(() => { fetchAll(); }, []);
 
   const modulosMap = useMemo(() => {
     const m = new Map();
@@ -75,7 +96,10 @@ export default function Proyectos() {
 
   const fasesMap = useMemo(() => {
     const m = new Map();
-    (fases || []).forEach((x) => m.set(Number(x.id), x.nombre));
+    (fases || []).forEach((x) => {
+      const id = x.id;
+      if (id != null) m.set(String(id), x.nombre);
+    });
     return m;
   }, [fases]);
 
@@ -85,15 +109,18 @@ export default function Proyectos() {
       if (soloActivos && !p.activo) return false;
       if (!needle) return true;
 
-      const faseNombre = String(p?.fase?.nombre || fasesMap.get(Number(p?.fase_id)) || "");
+      const fasesTxt = Array.isArray(p.fases)
+        ? p.fases.map(f => f?.nombre).filter(Boolean).join(" ")
+        : "";
+
       const hay =
         String(p.codigo || "").toLowerCase().includes(needle) ||
         String(p.nombre || "").toLowerCase().includes(needle) ||
-        faseNombre.toLowerCase().includes(needle);
+        fasesTxt.toLowerCase().includes(needle);
 
       return hay;
     });
-  }, [proyectos, q, soloActivos, fasesMap]);
+  }, [proyectos, q, soloActivos]);
 
   const toggleModulo = (id) => {
     const mid = Number(id);
@@ -105,17 +132,33 @@ export default function Proyectos() {
     });
   };
 
+  const toggleFase = (faseId) => {
+    const fid = String(faseId);
+    setForm((f) => {
+      const set = new Set((f.fases || []).map(String));
+      if (set.has(fid)) set.delete(fid);
+      else set.add(fid);
+      return { ...f, fases: Array.from(set) };
+    });
+  };
+
   const resetForm = () => setForm(emptyForm());
 
   const startEdit = (p) => {
+    const fasesIds =
+      Array.isArray(p.fases_ids) ? p.fases_ids.map(String)
+      : Array.isArray(p.fases) ? p.fases.map(x => String(x.id))
+      : [];
+
     setForm({
       id: p.id,
       codigo: p.codigo || "",
       nombre: p.nombre || "",
-      fase_id: p?.fase?.id ? String(p.fase.id) : (p?.fase_id ? String(p.fase_id) : ""),
       activo: !!p.activo,
       modulos: Array.isArray(p.modulos) ? p.modulos.map((x) => Number(x.id)) : [],
+      fases: fasesIds,
     });
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -173,6 +216,7 @@ export default function Proyectos() {
     if (!norm(form.nombre)) return "El nombre es obligatorio";
     if (!Array.isArray(form.modulos) || form.modulos.length === 0)
       return "Debes seleccionar al menos 1 módulo";
+
     return null;
   };
 
@@ -182,12 +226,17 @@ export default function Proyectos() {
     const err = validateForm();
     if (err) return Swal.fire({ icon: "warning", title: err });
 
+    const fasesIds = (form.fases || [])
+      .map(String)
+      .filter(x => !x.startsWith("__"))     
+      .map(Number);
+
     const payload = {
       codigo: norm(form.codigo).toUpperCase(),
       nombre: norm(form.nombre),
       activo: !!form.activo,
-      fase_id: form.fase_id ? Number(form.fase_id) : null,
       modulos: (form.modulos || []).map(Number),
+      fases: fasesIds, 
     };
 
     try {
@@ -229,7 +278,7 @@ export default function Proyectos() {
         <div>
           <h2 className="proj-title">Gestión de Proyectos</h2>
           <p className="proj-subtitle">
-            Crear / editar proyectos, asignar módulos permitidos, fase y estado activo.
+            Crear / editar proyectos, asignar módulos permitidos, múltiples fases y estado activo.
           </p>
         </div>
 
@@ -252,7 +301,7 @@ export default function Proyectos() {
         </div>
 
         <form onSubmit={onSubmit} className="proj-form">
-          <div className="grid-3">
+          <div className="grid-2">
             <div className="field">
               <label>Código</label>
               <input
@@ -270,44 +319,33 @@ export default function Proyectos() {
                 placeholder="Ej: Proyecto Migración"
               />
             </div>
-
-            <div className="field">
-              <label>Fase</label>
-              <select
-                value={form.fase_id}
-                onChange={(e) => setForm((f) => ({ ...f, fase_id: e.target.value }))}
-              >
-                <option value="">Sin fase</option>
-                {fases.map((fx) => (
-                  <option key={fx.id} value={fx.id}>
-                    {fx.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
 
           <div className="grid-2">
             <div className="field">
-              <label>Módulos permitidos</label>
+              <label>Fases permitidas (multi)</label>
               <div className="mods-box">
-                {modulos.length === 0 ? (
-                  <div className="muted">No hay módulos cargados</div>
+                {(fases || []).length === 0 ? (
+                  <div className="muted">No hay fases cargadas</div>
                 ) : (
-                  modulos.map((m) => {
-                    const checked = (form.modulos || []).map(Number).includes(Number(m.id));
+                  (fases || []).map((fx) => {
+                    const fid = String(fx.id);
+                    const checked = (form.fases || []).map(String).includes(fid);
                     return (
-                      <label key={m.id} className={`mod-chip ${checked ? "is-on" : ""}`}>
+                      <label key={fid} className={`mod-chip ${checked ? "is-on" : ""}`}>
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={() => toggleModulo(m.id)}
+                          onChange={() => toggleFase(fid)}
                         />
-                        <span>{m.nombre}</span>
+                        <span>{fx.nombre}</span>
                       </label>
                     );
                   })
                 )}
+              </div>
+              <div className="muted" style={{ marginTop: 6 }}>
+                Tip: ejecuta el SQL de F1..F5 para que tengan ID real.
               </div>
             </div>
 
@@ -332,6 +370,31 @@ export default function Proyectos() {
               </div>
             </div>
           </div>
+
+          <div className="grid-1">
+            <div className="field">
+              <label>Módulos permitidos</label>
+              <div className="mods-box">
+                {modulos.length === 0 ? (
+                  <div className="muted">No hay módulos cargados</div>
+                ) : (
+                  modulos.map((m) => {
+                    const checked = (form.modulos || []).map(Number).includes(Number(m.id));
+                    return (
+                      <label key={m.id} className={`mod-chip ${checked ? "is-on" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleModulo(m.id)}
+                        />
+                        <span>{m.nombre}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
         </form>
       </div>
 
@@ -342,7 +405,7 @@ export default function Proyectos() {
           <div className="proj-list-filters">
             <input
               className="search"
-              placeholder="Buscar por código, nombre o fase…"
+              placeholder="Buscar por código, nombre o fases…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -364,7 +427,7 @@ export default function Proyectos() {
                 <th>ID</th>
                 <th>Código</th>
                 <th>Nombre</th>
-                <th>Fase</th>
+                <th>Fases</th>
                 <th>Activo</th>
                 <th>Módulos</th>
                 <th className="actions">Acciones</th>
@@ -372,15 +435,16 @@ export default function Proyectos() {
             </thead>
             <tbody>
               {proyectosFiltrados.map((p) => {
-                const faseNombre =
-                  p?.fase?.nombre || fasesMap.get(Number(p?.fase_id)) || "—";
+                const fasesTxt = Array.isArray(p.fases) && p.fases.length
+                  ? p.fases.map(f => f.nombre).filter(Boolean).join(", ")
+                  : "—";
 
                 return (
                   <tr key={p.id}>
                     <td className="num">{p.id}</td>
                     <td className="mono">{p.codigo}</td>
                     <td>{p.nombre}</td>
-                    <td>{faseNombre}</td>
+                    <td>{fasesTxt}</td>
                     <td>
                       <span className={`badge ${p.activo ? "ok" : "off"}`}>
                         {p.activo ? "Activo" : "Inactivo"}
@@ -410,11 +474,7 @@ export default function Proyectos() {
                       <button className="icon-btn" onClick={() => toggleActivo(p)} disabled={saving}>
                         {p.activo ? "⛔" : "✅"}
                       </button>
-                      <button
-                        className="icon-btn danger"
-                        onClick={() => confirmDelete(p)}
-                        disabled={saving}
-                      >
+                      <button className="icon-btn danger" onClick={() => confirmDelete(p)} disabled={saving}>
                         🗑️
                       </button>
                     </td>

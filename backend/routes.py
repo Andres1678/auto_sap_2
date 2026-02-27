@@ -3,7 +3,7 @@ from backend.models import (
     db, Modulo, Consultor, Registro, BaseRegistro, Login,
     Rol, Equipo, Horario, Oportunidad, Cliente,
     Permiso, RolPermiso, EquipoPermiso, ConsultorPermiso, 
-    Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel, ConsultorPresupuesto, Proyecto, ProyectoFase, ProyectoModulo
+    Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel, ConsultorPresupuesto, Proyecto, ProyectoFase, ProyectoModulo, ProyectoFaseProyecto
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
@@ -4406,8 +4406,6 @@ def me():
         }
     }), 200
 
-# ============================Proyectos============================
-
 def _to_bool2(v, default=False):
     if v is None:
         return default
@@ -4426,8 +4424,8 @@ def proyecto_fase_to_dict(f: ProyectoFase):
         "activo": bool(f.activo),
     }
 
-def proyecto_to_dict(p: Proyecto, include_modulos=True):
-    fase = p.fase
+def proyecto_to_dict(p: Proyecto, include_modulos=True, include_fases=True):
+    fase = getattr(p, "fase", None)
     out = {
         "id": p.id,
         "codigo": p.codigo,
@@ -4441,6 +4439,22 @@ def proyecto_to_dict(p: Proyecto, include_modulos=True):
             "activo": bool(fase.activo),
         } if fase else None,
     }
+
+    if include_fases:
+        fases = []
+        for pf in (getattr(p, "fases", None) or []):
+            fx = getattr(pf, "fase", None)
+            if not fx:
+                continue
+            fases.append({
+                "id": fx.id,
+                "nombre": fx.nombre,
+                "orden": int((pf.orden if pf.orden is not None else (fx.orden or 0)) or 0),
+                "activo": bool(pf.activo),
+            })
+        fases.sort(key=lambda x: (x["orden"], x["nombre"]))
+        out["fases"] = fases
+        out["fases_ids"] = [x["id"] for x in fases]
 
     if include_modulos:
         mods = []
@@ -4464,7 +4478,7 @@ def listar_proyecto_fases():
     return jsonify([proyecto_fase_to_dict(f) for f in fases]), 200
 
 @bp.route("/proyecto-fases", methods=["POST"])
-@permission_required("PROYECTOS_CREAR")  # o PROYECTOS_ADMIN si prefieres
+@permission_required("PROYECTOS_CREAR")
 def crear_proyecto_fase():
     data = request.get_json(silent=True) or {}
     nombre = (data.get("nombre") or "").strip()
@@ -4522,9 +4536,14 @@ def editar_proyecto_fase(id):
 def eliminar_proyecto_fase(id):
     f = ProyectoFase.query.get_or_404(id)
 
-    # si está usada por proyectos, no dejar borrar
-    usados = Proyecto.query.filter(Proyecto.fase_id == id).count()
-    if usados > 0:
+    usados_main = Proyecto.query.filter(Proyecto.fase_id == id).count()
+    usados_multi = 0
+    try:
+        usados_multi = ProyectoFaseProyecto.query.filter(ProyectoFaseProyecto.fase_id == id).count()
+    except Exception:
+        usados_multi = 0
+
+    if (usados_main + usados_multi) > 0:
         return jsonify({"mensaje": "No se puede eliminar: hay proyectos usando esta fase"}), 400
 
     db.session.delete(f)
@@ -4535,14 +4554,18 @@ def eliminar_proyecto_fase(id):
 @permission_required("PROYECTOS_VER")
 def listar_proyectos():
     q = (request.args.get("q") or "").strip()
-    activo = request.args.get("activo")  # "1" / "0" / None
-    modulo = (request.args.get("modulo") or "").strip()  # nombre módulo
+    activo = request.args.get("activo")
+    modulo = (request.args.get("modulo") or "").strip()
     include_modulos = _to_bool2(request.args.get("include_modulos"), default=True)
+    include_fases = _to_bool2(request.args.get("include_fases"), default=True)
 
-    query = Proyecto.query.options(
-        joinedload(Proyecto.fase),
-        joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo),
-    )
+    opts = [joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo)]
+    if hasattr(Proyecto, "fase"):
+        opts.append(joinedload(Proyecto.fase))
+    if include_fases and hasattr(Proyecto, "fases"):
+        opts.append(joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase))
+
+    query = Proyecto.query.options(*opts)
 
     if q:
         like = f"%{q}%"
@@ -4554,7 +4577,6 @@ def listar_proyectos():
     if activo in ("0", "1", 0, 1):
         query = query.filter(Proyecto.activo == (str(activo) == "1"))
 
-    # filtrar por módulo permitido/activo en el proyecto
     if modulo:
         query = (
             query.join(ProyectoModulo, ProyectoModulo.proyecto_id == Proyecto.id)
@@ -4564,16 +4586,19 @@ def listar_proyectos():
         )
 
     proyectos = query.order_by(Proyecto.activo.desc(), Proyecto.codigo.asc()).all()
-    return jsonify([proyecto_to_dict(p, include_modulos=include_modulos) for p in proyectos]), 200
+    return jsonify([proyecto_to_dict(p, include_modulos=include_modulos, include_fases=include_fases) for p in proyectos]), 200
 
 @bp.route("/proyectos/<int:id>", methods=["GET"])
 @permission_required("PROYECTOS_VER")
 def get_proyecto(id):
-    p = Proyecto.query.options(
-        joinedload(Proyecto.fase),
-        joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo),
-    ).get_or_404(id)
-    return jsonify(proyecto_to_dict(p, include_modulos=True)), 200
+    opts = [joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo)]
+    if hasattr(Proyecto, "fase"):
+        opts.append(joinedload(Proyecto.fase))
+    if hasattr(Proyecto, "fases"):
+        opts.append(joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase))
+
+    p = Proyecto.query.options(*opts).get_or_404(id)
+    return jsonify(proyecto_to_dict(p, include_modulos=True, include_fases=True)), 200
 
 @bp.route("/proyectos", methods=["POST"])
 @permission_required("PROYECTOS_CREAR")
@@ -4583,8 +4608,10 @@ def crear_proyecto():
     codigo = (data.get("codigo") or "").strip()
     nombre = (data.get("nombre") or "").strip()
     activo = _to_bool2(data.get("activo"), default=True)
+
     fase_id = data.get("fase_id")
     modulos_ids = data.get("modulos") or []
+    fases_ids = data.get("fases") or data.get("fases_ids") or []
 
     if not codigo:
         return jsonify({"mensaje": "codigo requerido"}), 400
@@ -4595,54 +4622,73 @@ def crear_proyecto():
     if dupe:
         return jsonify({"mensaje": "Ya existe un proyecto con ese código"}), 400
 
-    # validar fase si viene
-    if fase_id is not None:
+    if fase_id is not None and fase_id not in ("", "null"):
         try:
             fase_id = int(fase_id)
-        except:
+        except Exception:
             return jsonify({"mensaje": "fase_id inválido"}), 400
         if fase_id and not ProyectoFase.query.get(fase_id):
             return jsonify({"mensaje": "fase_id no existe"}), 400
+    else:
+        fase_id = None
+
+    if not isinstance(modulos_ids, list):
+        return jsonify({"mensaje": "modulos debe ser una lista de ids"}), 400
+
+    if not isinstance(fases_ids, list):
+        return jsonify({"mensaje": "fases debe ser una lista de ids"}), 400
+
+    if modulos_ids:
+        mods = Modulo.query.filter(Modulo.id.in_(modulos_ids)).all()
+        found_ids = {int(m.id) for m in mods}
+        missing = [int(mid) for mid in modulos_ids if int(mid) not in found_ids]
+        if missing:
+            return jsonify({"mensaje": f"Módulos no encontrados: {missing}"}), 400
+
+    if fases_ids:
+        fases_db = ProyectoFase.query.filter(ProyectoFase.id.in_([int(x) for x in fases_ids])).all()
+        found_ids = {int(fx.id) for fx in fases_db}
+        missing = [int(fid) for fid in fases_ids if int(fid) not in found_ids]
+        if missing:
+            return jsonify({"mensaje": f"Fases no encontradas: {missing}"}), 400
 
     p = Proyecto(
         codigo=codigo,
         nombre=nombre,
         activo=activo,
-        fase_id=fase_id if fase_id else None
+        fase_id=fase_id
     )
     db.session.add(p)
     db.session.flush()
 
-    # módulos permitidos
-    if not isinstance(modulos_ids, list):
-        return jsonify({"mensaje": "modulos debe ser una lista de ids"}), 400
-
     if modulos_ids:
         mods = Modulo.query.filter(Modulo.id.in_(modulos_ids)).all()
-        found_ids = {m.id for m in mods}
-        missing = [mid for mid in modulos_ids if int(mid) not in found_ids]
-        if missing:
-            return jsonify({"mensaje": f"Módulos no encontrados: {missing}"}), 400
-
         for m in mods:
             db.session.add(ProyectoModulo(proyecto_id=p.id, modulo_id=m.id, activo=True))
 
+    if fases_ids:
+        for fid in fases_ids:
+            db.session.add(ProyectoFaseProyecto(proyecto_id=p.id, fase_id=int(fid), activo=True))
+
     db.session.commit()
 
-    p = Proyecto.query.options(
-        joinedload(Proyecto.fase),
-        joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo),
-    ).get(p.id)
+    opts = [joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo)]
+    if hasattr(Proyecto, "fase"):
+        opts.append(joinedload(Proyecto.fase))
+    if hasattr(Proyecto, "fases"):
+        opts.append(joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase))
 
-    return jsonify({"mensaje": "Proyecto creado", "proyecto": proyecto_to_dict(p)}), 201
+    p = Proyecto.query.options(*opts).get(p.id)
+    return jsonify({"mensaje": "Proyecto creado", "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True)}), 201
 
 @bp.route("/proyectos/<int:id>", methods=["PUT"])
 @permission_required("PROYECTOS_EDITAR")
 def editar_proyecto(id):
-    p = Proyecto.query.options(
-        joinedload(Proyecto.modulos),
-    ).get_or_404(id)
+    opts = [joinedload(Proyecto.modulos)]
+    if hasattr(Proyecto, "fases"):
+        opts.append(joinedload(Proyecto.fases))
 
+    p = Proyecto.query.options(*opts).get_or_404(id)
     data = request.get_json(silent=True) or {}
 
     if "codigo" in data:
@@ -4673,39 +4719,54 @@ def editar_proyecto(id):
         else:
             try:
                 fase_id = int(fase_id)
-            except:
+            except Exception:
                 return jsonify({"mensaje": "fase_id inválido"}), 400
             if fase_id and not ProyectoFase.query.get(fase_id):
                 return jsonify({"mensaje": "fase_id no existe"}), 400
             p.fase_id = fase_id
 
-    # reemplazar módulos permitidos (si viene modulos)
     if "modulos" in data:
         modulos_ids = data.get("modulos") or []
         if not isinstance(modulos_ids, list):
             return jsonify({"mensaje": "modulos debe ser una lista de ids"}), 400
 
         mods = Modulo.query.filter(Modulo.id.in_(modulos_ids)).all() if modulos_ids else []
-        found_ids = {m.id for m in mods}
+        found_ids = {int(m.id) for m in mods}
         missing = [int(mid) for mid in modulos_ids if int(mid) not in found_ids]
         if missing:
             return jsonify({"mensaje": f"Módulos no encontrados: {missing}"}), 400
 
-        # borrar relaciones actuales
         ProyectoModulo.query.filter_by(proyecto_id=p.id).delete()
-
-        # crear nuevas
         for m in mods:
             db.session.add(ProyectoModulo(proyecto_id=p.id, modulo_id=m.id, activo=True))
 
+    if "fases" in data or "fases_ids" in data:
+        fases_ids = data.get("fases") or data.get("fases_ids") or []
+        if not isinstance(fases_ids, list):
+            return jsonify({"mensaje": "fases debe ser una lista de ids"}), 400
+
+        ProyectoFaseProyecto.query.filter_by(proyecto_id=p.id).delete()
+
+        if fases_ids:
+            fases_db = ProyectoFase.query.filter(ProyectoFase.id.in_([int(x) for x in fases_ids])).all()
+            found_ids = {int(fx.id) for fx in fases_db}
+            missing = [int(fid) for fid in fases_ids if int(fid) not in found_ids]
+            if missing:
+                return jsonify({"mensaje": f"Fases no encontradas: {missing}"}), 400
+
+            for fid in fases_ids:
+                db.session.add(ProyectoFaseProyecto(proyecto_id=p.id, fase_id=int(fid), activo=True))
+
     db.session.commit()
 
-    p = Proyecto.query.options(
-        joinedload(Proyecto.fase),
-        joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo),
-    ).get(p.id)
+    opts2 = [joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo)]
+    if hasattr(Proyecto, "fase"):
+        opts2.append(joinedload(Proyecto.fase))
+    if hasattr(Proyecto, "fases"):
+        opts2.append(joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase))
 
-    return jsonify({"mensaje": "Proyecto actualizado", "proyecto": proyecto_to_dict(p)}), 200
+    p = Proyecto.query.options(*opts2).get(p.id)
+    return jsonify({"mensaje": "Proyecto actualizado", "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True)}), 200
 
 @bp.route("/proyectos/<int:id>/toggle-activo", methods=["PUT"])
 @permission_required("PROYECTOS_EDITAR")
@@ -4719,13 +4780,14 @@ def toggle_activo_proyecto(id):
 @permission_required("PROYECTOS_ELIMINAR")
 def eliminar_proyecto(id):
     p = Proyecto.query.get_or_404(id)
-
-    # si en el futuro agregas registro.proyecto_id:
-    # usados = Registro.query.filter(Registro.proyecto_id == id).count()
-    # if usados > 0:
-    #     return jsonify({"mensaje": "No se puede eliminar: hay registros asociados. Desactiva el proyecto."}), 400
-
-    ProyectoModulo.query.filter_by(proyecto_id=id).delete()
+    try:
+        ProyectoModulo.query.filter_by(proyecto_id=id).delete()
+    except Exception:
+        pass
+    try:
+        ProyectoFaseProyecto.query.filter_by(proyecto_id=id).delete()
+    except Exception:
+        pass
     db.session.delete(p)
     db.session.commit()
     return jsonify({"mensaje": "Proyecto eliminado"}), 200
@@ -4737,14 +4799,19 @@ def proyectos_activos_por_modulo():
     if not modulo:
         return jsonify({"mensaje": "modulo requerido"}), 400
 
+    opts = [
+        joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo),
+    ]
+    if hasattr(Proyecto, "fase"):
+        opts.append(joinedload(Proyecto.fase))
+    if hasattr(Proyecto, "fases"):
+        opts.append(joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase))
+
     query = (
         Proyecto.query
         .join(ProyectoModulo, ProyectoModulo.proyecto_id == Proyecto.id)
         .join(Modulo, Modulo.id == ProyectoModulo.modulo_id)
-        .options(
-            joinedload(Proyecto.fase),
-            joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo),
-        )
+        .options(*opts)
         .filter(Proyecto.activo == True)
         .filter(ProyectoModulo.activo == True)
         .filter(func.upper(Modulo.nombre) == modulo)
@@ -4757,5 +4824,7 @@ def proyectos_activos_por_modulo():
         "codigo": p.codigo,
         "nombre": p.nombre,
         "fase_id": p.fase_id,
-        "fase": p.fase.nombre if p.fase else None,
+        "fase": p.fase.nombre if getattr(p, "fase", None) else None,
+        "fases": [{"id": x["id"], "nombre": x["nombre"], "orden": x["orden"], "activo": x["activo"]} for x in (proyecto_to_dict(p, include_modulos=False, include_fases=True).get("fases") or [])],
+        "fases_ids": proyecto_to_dict(p, include_modulos=False, include_fases=True).get("fases_ids") or [],
     } for p in proyectos]), 200

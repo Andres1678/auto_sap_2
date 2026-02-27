@@ -1,10 +1,9 @@
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Column, Integer, String, Float, Text, Boolean, text
+from sqlalchemy import Column, Integer, String, Float, Text, Boolean, text, UniqueConstraint
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.hybrid import hybrid_property
 from decimal import Decimal
-from sqlalchemy import UniqueConstraint
 
 db = SQLAlchemy()
 
@@ -592,3 +591,19 @@ class ProyectoModulo(db.Model):
 
     def __repr__(self):
         return f"<ProyectoModulo proyecto_id={self.proyecto_id} modulo_id={self.modulo_id} activo={self.activo}>"
+
+class ProyectoFaseProyecto(db.Model):
+    __tablename__ = "proyecto_fase_proyecto"
+
+    id = db.Column(db.BigInteger, primary_key=True)
+    proyecto_id = db.Column(db.Integer, db.ForeignKey("proyecto.id", ondelete="CASCADE"), nullable=False)
+    fase_id = db.Column(db.BigInteger, db.ForeignKey("proyecto_fase.id", ondelete="CASCADE"), nullable=False)
+
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+    orden = db.Column(db.Integer, nullable=True)
+
+    fase = relationship("ProyectoFase", lazy="joined")
+
+    __table_args__ = (
+        UniqueConstraint("proyecto_id", "fase_id", name="uq_proyecto_fase_proyecto"),
+    )
