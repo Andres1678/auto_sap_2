@@ -4,23 +4,47 @@ import { jfetch } from "./lib/api";
 import "./Proyectos.css";
 
 const DEFAULT_FASES = [
-  { id: "__F1__", nombre: "F1" },
-  { id: "__F2__", nombre: "F2" },
-  { id: "__F3__", nombre: "F3" },
-  { id: "__F4__", nombre: "F4" },
-  { id: "__F5__", nombre: "F5" },
+  { id: "__DESCUBRIR__", nombre: "Descubrir" },
+  { id: "__PREPARAR__", nombre: "Preparar" },
+  { id: "__EXPLORAR__", nombre: "Explorar" },
+  { id: "__REALIZAR__", nombre: "Realizar" },
+  { id: "__DESPLEGAR__", nombre: "Desplegar" },
+  { id: "__OPERAR__", nombre: "Operar" },
 ];
 
 const emptyForm = () => ({
   id: null,
   codigo: "",
   nombre: "",
-  fases: [],        
+  fases: [],
   activo: true,
   modulos: [],
 });
 
 const norm = (s) => String(s ?? "").trim();
+const normKey = (s) =>
+  String(s ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+
+const getProyectoFasesIds = (p) => {
+  if (Array.isArray(p?.fases_ids)) return p.fases_ids.map(String).filter(Boolean);
+  if (Array.isArray(p?.fases)) return p.fases.map((x) => String(x?.id)).filter(Boolean);
+  return [];
+};
+
+const getProyectoFasesNames = (p, fasesMap) => {
+  if (Array.isArray(p?.fases) && p.fases.length) {
+    const names = p.fases.map((f) => String(f?.nombre || "").trim()).filter(Boolean);
+    if (names.length) return names;
+  }
+
+  const ids = getProyectoFasesIds(p);
+  const namesFromIds = ids.map((id) => fasesMap.get(String(id))).filter(Boolean);
+  return namesFromIds;
+};
 
 export default function Proyectos() {
   const [loading, setLoading] = useState(false);
@@ -40,7 +64,7 @@ export default function Proyectos() {
     setLoading(true);
     try {
       const [pRes, mRes, fRes] = await Promise.all([
-        jfetch("/proyectos?include_modulos=1"),
+        jfetch("/proyectos?include_modulos=1&include_fases=1"),
         jfetch("/modulos"),
         jfetch("/proyecto-fases"),
       ]);
@@ -56,20 +80,18 @@ export default function Proyectos() {
       setProyectos(Array.isArray(pData) ? pData : []);
       setModulos(Array.isArray(mData) ? mData : []);
 
-      
       const backendFases = Array.isArray(fData) ? fData : [];
       const byName = new Map();
-      backendFases.forEach(x => byName.set(String(x.nombre || "").trim().toUpperCase(), x));
+      backendFases.forEach((x) => byName.set(normKey(x?.nombre), x));
 
-      
       const merged = [...backendFases];
-      DEFAULT_FASES.forEach(df => {
-        if (!byName.has(df.nombre)) merged.push({ id: df.id, nombre: df.nombre, activo: true, orden: 0 });
+      DEFAULT_FASES.forEach((df) => {
+        if (!byName.has(normKey(df.nombre))) {
+          merged.push({ id: df.id, nombre: df.nombre, activo: true, orden: 0 });
+        }
       });
 
-     
       merged.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es"));
-
       setFases(merged);
     } catch (e) {
       console.error(e);
@@ -86,7 +108,9 @@ export default function Proyectos() {
     }
   };
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => {
+    fetchAll();
+  }, []);
 
   const modulosMap = useMemo(() => {
     const m = new Map();
@@ -97,8 +121,7 @@ export default function Proyectos() {
   const fasesMap = useMemo(() => {
     const m = new Map();
     (fases || []).forEach((x) => {
-      const id = x.id;
-      if (id != null) m.set(String(id), x.nombre);
+      if (x?.id != null) m.set(String(x.id), String(x.nombre || ""));
     });
     return m;
   }, [fases]);
@@ -109,18 +132,14 @@ export default function Proyectos() {
       if (soloActivos && !p.activo) return false;
       if (!needle) return true;
 
-      const fasesTxt = Array.isArray(p.fases)
-        ? p.fases.map(f => f?.nombre).filter(Boolean).join(" ")
-        : "";
-
-      const hay =
+      const fasesTxt = getProyectoFasesNames(p, fasesMap).join(" ");
+      return (
         String(p.codigo || "").toLowerCase().includes(needle) ||
         String(p.nombre || "").toLowerCase().includes(needle) ||
-        fasesTxt.toLowerCase().includes(needle);
-
-      return hay;
+        fasesTxt.toLowerCase().includes(needle)
+      );
     });
-  }, [proyectos, q, soloActivos]);
+  }, [proyectos, q, soloActivos, fasesMap]);
 
   const toggleModulo = (id) => {
     const mid = Number(id);
@@ -145,11 +164,7 @@ export default function Proyectos() {
   const resetForm = () => setForm(emptyForm());
 
   const startEdit = (p) => {
-    const fasesIds =
-      Array.isArray(p.fases_ids) ? p.fases_ids.map(String)
-      : Array.isArray(p.fases) ? p.fases.map(x => String(x.id))
-      : [];
-
+    const fasesIds = getProyectoFasesIds(p);
     setForm({
       id: p.id,
       codigo: p.codigo || "",
@@ -158,7 +173,6 @@ export default function Proyectos() {
       modulos: Array.isArray(p.modulos) ? p.modulos.map((x) => Number(x.id)) : [],
       fases: fasesIds,
     });
-
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -183,11 +197,7 @@ export default function Proyectos() {
       fetchAll();
       if (form.id === p.id) resetForm();
     } catch (e) {
-      Swal.fire({
-        icon: "error",
-        title: "No se pudo eliminar",
-        text: String(e.message || e),
-      });
+      Swal.fire({ icon: "error", title: "No se pudo eliminar", text: String(e.message || e) });
     } finally {
       setSaving(false);
     }
@@ -201,11 +211,7 @@ export default function Proyectos() {
       if (!r.ok) throw new Error(j?.mensaje || `HTTP ${r.status}`);
       fetchAll();
     } catch (e) {
-      Swal.fire({
-        icon: "error",
-        title: "No se pudo cambiar estado",
-        text: String(e.message || e),
-      });
+      Swal.fire({ icon: "error", title: "No se pudo cambiar estado", text: String(e.message || e) });
     } finally {
       setSaving(false);
     }
@@ -214,9 +220,7 @@ export default function Proyectos() {
   const validateForm = () => {
     if (!norm(form.codigo)) return "El código es obligatorio";
     if (!norm(form.nombre)) return "El nombre es obligatorio";
-    if (!Array.isArray(form.modulos) || form.modulos.length === 0)
-      return "Debes seleccionar al menos 1 módulo";
-
+    if (!Array.isArray(form.modulos) || form.modulos.length === 0) return "Debes seleccionar al menos 1 módulo";
     return null;
   };
 
@@ -228,7 +232,7 @@ export default function Proyectos() {
 
     const fasesIds = (form.fases || [])
       .map(String)
-      .filter(x => !x.startsWith("__"))     
+      .filter((x) => !x.startsWith("__"))
       .map(Number);
 
     const payload = {
@@ -236,7 +240,7 @@ export default function Proyectos() {
       nombre: norm(form.nombre),
       activo: !!form.activo,
       modulos: (form.modulos || []).map(Number),
-      fases: fasesIds, 
+      fases: fasesIds,
     };
 
     try {
@@ -254,19 +258,12 @@ export default function Proyectos() {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.mensaje || `HTTP ${r.status}`);
 
-      Swal.fire({
-        icon: "success",
-        title: isEdit ? "Proyecto actualizado" : "Proyecto creado",
-      });
+      Swal.fire({ icon: "success", title: isEdit ? "Proyecto actualizado" : "Proyecto creado" });
 
       resetForm();
       fetchAll();
     } catch (e2) {
-      Swal.fire({
-        icon: "error",
-        title: "Error guardando",
-        text: String(e2.message || e2),
-      });
+      Swal.fire({ icon: "error", title: "Error guardando", text: String(e2.message || e2) });
     } finally {
       setSaving(false);
     }
@@ -277,9 +274,7 @@ export default function Proyectos() {
       <div className="proj-head">
         <div>
           <h2 className="proj-title">Gestión de Proyectos</h2>
-          <p className="proj-subtitle">
-            Crear / editar proyectos, asignar módulos permitidos, múltiples fases y estado activo.
-          </p>
+          <p className="proj-subtitle">Crear / editar proyectos, asignar módulos permitidos, múltiples fases y estado activo.</p>
         </div>
 
         <div className="proj-head-actions">
@@ -289,7 +284,6 @@ export default function Proyectos() {
         </div>
       </div>
 
-      {/* FORM */}
       <div className="proj-card">
         <div className="proj-card-head">
           <h3>{isEdit ? "Editar proyecto" : "Nuevo proyecto"}</h3>
@@ -304,20 +298,12 @@ export default function Proyectos() {
           <div className="grid-2">
             <div className="field">
               <label>Código</label>
-              <input
-                value={form.codigo}
-                onChange={(e) => setForm((f) => ({ ...f, codigo: e.target.value }))}
-                placeholder="Ej: PRY-001"
-              />
+              <input value={form.codigo} onChange={(e) => setForm((f) => ({ ...f, codigo: e.target.value }))} placeholder="Ej: PRY-001" />
             </div>
 
             <div className="field">
               <label>Nombre</label>
-              <input
-                value={form.nombre}
-                onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
-                placeholder="Ej: Proyecto Migración"
-              />
+              <input value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} placeholder="Ej: Proyecto Migración" />
             </div>
           </div>
 
@@ -333,19 +319,12 @@ export default function Proyectos() {
                     const checked = (form.fases || []).map(String).includes(fid);
                     return (
                       <label key={fid} className={`mod-chip ${checked ? "is-on" : ""}`}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleFase(fid)}
-                        />
+                        <input type="checkbox" checked={checked} onChange={() => toggleFase(fid)} />
                         <span>{fx.nombre}</span>
                       </label>
                     );
                   })
                 )}
-              </div>
-              <div className="muted" style={{ marginTop: 6 }}>
-                Tip: ejecuta el SQL de F1..F5 para que tengan ID real.
               </div>
             </div>
 
@@ -353,11 +332,7 @@ export default function Proyectos() {
               <label>Estado</label>
               <div className="inline">
                 <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={!!form.activo}
-                    onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))}
-                  />
+                  <input type="checkbox" checked={!!form.activo} onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))} />
                   <span className="slider" />
                 </label>
                 <span className="muted">{form.activo ? "Activo" : "Inactivo"}</span>
@@ -382,11 +357,7 @@ export default function Proyectos() {
                     const checked = (form.modulos || []).map(Number).includes(Number(m.id));
                     return (
                       <label key={m.id} className={`mod-chip ${checked ? "is-on" : ""}`}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleModulo(m.id)}
-                        />
+                        <input type="checkbox" checked={checked} onChange={() => toggleModulo(m.id)} />
                         <span>{m.nombre}</span>
                       </label>
                     );
@@ -398,23 +369,13 @@ export default function Proyectos() {
         </form>
       </div>
 
-      {/* LISTADO */}
       <div className="proj-card">
         <div className="proj-list-head">
           <h3>Proyectos</h3>
           <div className="proj-list-filters">
-            <input
-              className="search"
-              placeholder="Buscar por código, nombre o fases…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
+            <input className="search" placeholder="Buscar por código, nombre o fases…" value={q} onChange={(e) => setQ(e.target.value)} />
             <label className="check">
-              <input
-                type="checkbox"
-                checked={soloActivos}
-                onChange={(e) => setSoloActivos(e.target.checked)}
-              />
+              <input type="checkbox" checked={soloActivos} onChange={(e) => setSoloActivos(e.target.checked)} />
               <span>Solo activos</span>
             </label>
           </div>
@@ -435,9 +396,8 @@ export default function Proyectos() {
             </thead>
             <tbody>
               {proyectosFiltrados.map((p) => {
-                const fasesTxt = Array.isArray(p.fases) && p.fases.length
-                  ? p.fases.map(f => f.nombre).filter(Boolean).join(", ")
-                  : "—";
+                const fasesNames = getProyectoFasesNames(p, fasesMap);
+                const fasesTxt = fasesNames.length ? fasesNames.join(", ") : "—";
 
                 return (
                   <tr key={p.id}>
@@ -446,9 +406,7 @@ export default function Proyectos() {
                     <td>{p.nombre}</td>
                     <td>{fasesTxt}</td>
                     <td>
-                      <span className={`badge ${p.activo ? "ok" : "off"}`}>
-                        {p.activo ? "Activo" : "Inactivo"}
-                      </span>
+                      <span className={`badge ${p.activo ? "ok" : "off"}`}>{p.activo ? "Activo" : "Inactivo"}</span>
                     </td>
                     <td className="mods-cell">
                       {(Array.isArray(p.modulos) ? p.modulos : [])
@@ -462,10 +420,7 @@ export default function Proyectos() {
                             </span>
                           );
                         })}
-
-                      {(Array.isArray(p.modulos) ? p.modulos : []).length > 6 && (
-                        <span className="pill more">+ más…</span>
-                      )}
+                      {(Array.isArray(p.modulos) ? p.modulos : []).length > 6 && <span className="pill more">+ más…</span>}
                     </td>
                     <td className="actions">
                       <button className="icon-btn" onClick={() => startEdit(p)} disabled={saving}>
