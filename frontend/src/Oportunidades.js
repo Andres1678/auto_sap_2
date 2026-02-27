@@ -4,12 +4,7 @@ import Select from "react-select";
 import "./Oportunidades.css";
 import { jfetch } from "./lib/api";
 
-const NUMERIC_COLS = new Set([
-  "otc",
-  "mrc",
-  "mrc_normalizado",
-  "valor_oferta_claro",
-]);
+const NUMERIC_COLS = new Set(["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"]);
 
 const DATE_COLS = new Set([
   "fecha_creacion",
@@ -206,6 +201,86 @@ function todayStamp() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+/* ===========================
+   Observaciones: split por fecha
+   =========================== */
+
+// Detecta fecha al inicio: 11.09.23 | 11/09/2023 | 2024-06-23
+const DATE_AT_START = /^\s*(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*/;
+// Detecta fecha dentro del texto para cortar entradas pegadas
+const DATE_ANYWHERE = /(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]\s*/g;
+
+function normalizeCommentText(v) {
+  return String(v ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim();
+}
+
+function splitDatedEntries(raw) {
+  const text = normalizeCommentText(raw);
+  if (!text) return [];
+
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  const out = [];
+  for (const line of lines) {
+    const parts = [];
+    let lastIndex = 0;
+
+    const matches = [...line.matchAll(DATE_ANYWHERE)];
+
+    if (matches.length <= 1) {
+      parts.push(line);
+    } else {
+      for (let i = 0; i < matches.length; i++) {
+        const start = matches[i].index ?? 0;
+
+        if (i === 0 && start !== 0) {
+          const pre = line.slice(0, start).trim();
+          if (pre) parts.push(pre);
+        }
+        if (i > 0) {
+          const chunk = line.slice(lastIndex, start).trim();
+          if (chunk) parts.push(chunk);
+        }
+        lastIndex = start;
+      }
+      const tail = line.slice(lastIndex).trim();
+      if (tail) parts.push(tail);
+    }
+
+    for (const p of parts) {
+      const m = p.match(DATE_AT_START);
+      if (m) {
+        const date = m[1];
+        const body = p.replace(DATE_AT_START, "").trim();
+        out.push({ date, text: body || "-" });
+      } else {
+        out.push({ date: null, text: p });
+      }
+    }
+  }
+
+  return out;
+}
+
+function renderLongTextCell(value) {
+  const items = splitDatedEntries(value);
+  if (!items.length) return "-";
+
+  return (
+    <div className="obs-list">
+      {items.map((it, idx) => (
+        <div key={idx} className="obs-item">
+          {it.date ? <span className="obs-date">{it.date}</span> : null}
+          <span className="obs-text">{it.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Oportunidades() {
   const [data, setData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
@@ -278,10 +353,7 @@ export default function Oportunidades() {
     []
   );
 
-  const columnOrder = useMemo(
-    () => baseColumnOrder.filter((c) => !REMOVE_COLS.has(c)),
-    [baseColumnOrder]
-  );
+  const columnOrder = useMemo(() => baseColumnOrder.filter((c) => !REMOVE_COLS.has(c)), [baseColumnOrder]);
 
   function normalizeRowFromApi(r) {
     const obj = r || {};
@@ -294,7 +366,9 @@ export default function Oportunidades() {
     const uniq = {};
     columnOrder.forEach((col) => {
       const rawValues = rows.map((r) => r?.[col] ?? "");
-      const values = [...new Set(rawValues.map((v) => (isDateCol(col) ? toIsoDate(v) : v ?? "")))];
+      const values = [
+        ...new Set(rawValues.map((v) => (isDateCol(col) ? toIsoDate(v) : v ?? ""))),
+      ];
       uniq[col] = values.map((v) => ({
         label: v?.toString() || "-",
         value: v ?? "",
@@ -573,7 +647,13 @@ export default function Oportunidades() {
 
   const renderSelect = (value, setValue, onBlur, options) => {
     return (
-      <select className="cell-input" autoFocus value={value ?? ""} onChange={(e) => setValue(e.target.value)} onBlur={onBlur}>
+      <select
+        className="cell-input"
+        autoFocus
+        value={value ?? ""}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={onBlur}
+      >
         <option value="">-</option>
         {options.map((op) => (
           <option key={op} value={op}>
@@ -649,10 +729,18 @@ export default function Oportunidades() {
             setEditValue(estado);
 
             setFilteredData((prev) =>
-              prev.map((r) => (r.id === row.id ? { ...r, estado_oferta: estado, resultado_oferta: autoRes || r.resultado_oferta } : r))
+              prev.map((r) =>
+                r.id === row.id
+                  ? { ...r, estado_oferta: estado, resultado_oferta: autoRes || r.resultado_oferta }
+                  : r
+              )
             );
             setData((prev) =>
-              prev.map((r) => (r.id === row.id ? { ...r, estado_oferta: estado, resultado_oferta: autoRes || r.resultado_oferta } : r))
+              prev.map((r) =>
+                r.id === row.id
+                  ? { ...r, estado_oferta: estado, resultado_oferta: autoRes || r.resultado_oferta }
+                  : r
+              )
             );
           }}
           onBlur={() => {
@@ -706,10 +794,18 @@ export default function Oportunidades() {
             const autoSub = allowed.length === 1 ? allowed[0] : "";
 
             setFilteredData((prev) =>
-              prev.map((r) => (r.id === row.id ? { ...r, categoria_perdida: cat, subcategoria_perdida: autoSub || r.subcategoria_perdida } : r))
+              prev.map((r) =>
+                r.id === row.id
+                  ? { ...r, categoria_perdida: cat, subcategoria_perdida: autoSub || r.subcategoria_perdida }
+                  : r
+              )
             );
             setData((prev) =>
-              prev.map((r) => (r.id === row.id ? { ...r, categoria_perdida: cat, subcategoria_perdida: autoSub || r.subcategoria_perdida } : r))
+              prev.map((r) =>
+                r.id === row.id
+                  ? { ...r, categoria_perdida: cat, subcategoria_perdida: autoSub || r.subcategoria_perdida }
+                  : r
+              )
             );
           }}
           onBlur={() => {
@@ -789,7 +885,11 @@ export default function Oportunidades() {
 
     if (col === "tipo_moneda") {
       return (
-        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        >
           <option value="">-</option>
           <option value="COP">COP</option>
           <option value="USD">USD</option>
@@ -799,7 +899,11 @@ export default function Oportunidades() {
 
     if (col === "tipo_cliente") {
       return (
-        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        >
           <option value="">-</option>
           {TIPO_CLIENTE_OPTS.map((op) => (
             <option key={op} value={op}>
@@ -812,7 +916,11 @@ export default function Oportunidades() {
 
     if (col === "tipo_solicitud") {
       return (
-        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        >
           <option value="">-</option>
           {TIPO_SOLICITUD_OPTS.map((op) => (
             <option key={op} value={op}>
@@ -825,7 +933,11 @@ export default function Oportunidades() {
 
     if (col === "calificacion_oportunidad") {
       return (
-        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        >
           <option value="">-</option>
           {CALIFICACION_OPTS.map((op) => (
             <option key={op} value={op}>
@@ -838,7 +950,11 @@ export default function Oportunidades() {
 
     if (col === "origen_oportunidad") {
       return (
-        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        >
           <option value="">-</option>
           {ORIGEN_OPTS.map((op) => (
             <option key={op} value={op}>
@@ -851,7 +967,11 @@ export default function Oportunidades() {
 
     if (col === "estado_ot") {
       return (
-        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        >
           <option value="">-</option>
           {ESTADO_OT_OPTS.map((op) => (
             <option key={op} value={op}>
@@ -864,7 +984,11 @@ export default function Oportunidades() {
 
     if (col === "estado_proyecto") {
       return (
-        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        >
           <option value="">-</option>
           {ESTADO_PROYECTO_OPTS.map((op) => (
             <option key={op} value={op}>
@@ -903,7 +1027,11 @@ export default function Oportunidades() {
 
     if (col === "resultado_oferta") {
       return (
-        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        >
           <option value="">-</option>
           {(ESTADO_RESULTADO[newRow.estado_oferta] || []).map((op) => (
             <option key={op} value={op}>
@@ -942,7 +1070,11 @@ export default function Oportunidades() {
 
     if (col === "subcategoria_perdida") {
       return (
-        <select className="cell-input" value={newRow[col] ?? ""} onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}>
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        >
           <option value="">-</option>
           {(CATEGORIA_SUBCATEGORIA[newRow.categoria_perdida] || []).map((op) => (
             <option key={op} value={op}>
@@ -1040,18 +1172,30 @@ export default function Oportunidades() {
 
             {filteredData.map((row, i) => (
               <tr key={row.id ?? i}>
-                {columnOrder.map((col) => (
-                  <td
-                    key={col}
-                    onDoubleClick={() => {
-                      if (isObservationsCol(col)) return editLongText(i, col);
-                      startEdit(i, col);
-                    }}
-                    className={editing.row === i && editing.col === col ? "editing" : ""}
-                  >
-                    {editing.row === i && editing.col === col ? renderEditorCell(row, i, col) : formatCell(col, row[col])}
-                  </td>
-                ))}
+                {columnOrder.map((col) => {
+                  const isLong = isObservationsCol(col);
+
+                  return (
+                    <td
+                      key={col}
+                      onDoubleClick={() => {
+                        if (isLong) return editLongText(i, col);
+                        startEdit(i, col);
+                      }}
+                      className={[
+                        editing.row === i && editing.col === col ? "editing" : "",
+                        isLong ? "obs-col" : "",
+                      ].join(" ")}
+                      title={isLong ? undefined : (row?.[col] ?? "").toString()}
+                    >
+                      {editing.row === i && editing.col === col
+                        ? renderEditorCell(row, i, col)
+                        : isLong
+                        ? renderLongTextCell(row?.[col])
+                        : formatCell(col, row[col])}
+                    </td>
+                  );
+                })}
                 <td className="acciones"></td>
               </tr>
             ))}
