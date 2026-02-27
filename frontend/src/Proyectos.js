@@ -40,10 +40,8 @@ const getProyectoFasesNames = (p, fasesMap) => {
     const names = p.fases.map((f) => String(f?.nombre || "").trim()).filter(Boolean);
     if (names.length) return names;
   }
-
   const ids = getProyectoFasesIds(p);
-  const namesFromIds = ids.map((id) => fasesMap.get(String(id))).filter(Boolean);
-  return namesFromIds;
+  return ids.map((id) => fasesMap.get(String(id))).filter(Boolean);
 };
 
 export default function Proyectos() {
@@ -229,7 +227,13 @@ export default function Proyectos() {
 
     const err = validateForm();
     if (err) return Swal.fire({ icon: "warning", title: err });
-    
+
+    const fasesIds = (form.fases || [])
+      .map(String)
+      .filter((x) => x && !x.startsWith("__"))
+      .map((x) => Number(x))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
     const payload = {
       codigo: norm(form.codigo).toUpperCase(),
       nombre: norm(form.nombre),
@@ -269,7 +273,9 @@ export default function Proyectos() {
       <div className="proj-head">
         <div>
           <h2 className="proj-title">Gestión de Proyectos</h2>
-          <p className="proj-subtitle">Crear / editar proyectos, asignar módulos permitidos, múltiples fases y estado activo.</p>
+          <p className="proj-subtitle">
+            Crear / editar proyectos, asignar módulos permitidos, múltiples fases y estado activo.
+          </p>
         </div>
 
         <div className="proj-head-actions">
@@ -293,12 +299,20 @@ export default function Proyectos() {
           <div className="grid-2">
             <div className="field">
               <label>Código</label>
-              <input value={form.codigo} onChange={(e) => setForm((f) => ({ ...f, codigo: e.target.value }))} placeholder="Ej: PRY-001" />
+              <input
+                value={form.codigo}
+                onChange={(e) => setForm((f) => ({ ...f, codigo: e.target.value }))}
+                placeholder="Ej: PRY-001"
+              />
             </div>
 
             <div className="field">
               <label>Nombre</label>
-              <input value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} placeholder="Ej: Proyecto Migración" />
+              <input
+                value={form.nombre}
+                onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
+                placeholder="Ej: Proyecto Migración"
+              />
             </div>
           </div>
 
@@ -327,7 +341,11 @@ export default function Proyectos() {
               <label>Estado</label>
               <div className="inline">
                 <label className="switch">
-                  <input type="checkbox" checked={!!form.activo} onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))} />
+                  <input
+                    type="checkbox"
+                    checked={!!form.activo}
+                    onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))}
+                  />
                   <span className="slider" />
                 </label>
                 <span className="muted">{form.activo ? "Activo" : "Inactivo"}</span>
@@ -368,7 +386,12 @@ export default function Proyectos() {
         <div className="proj-list-head">
           <h3>Proyectos</h3>
           <div className="proj-list-filters">
-            <input className="search" placeholder="Buscar por código, nombre o fases…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input
+              className="search"
+              placeholder="Buscar por código, nombre o fases…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
             <label className="check">
               <input type="checkbox" checked={soloActivos} onChange={(e) => setSoloActivos(e.target.checked)} />
               <span>Solo activos</span>
