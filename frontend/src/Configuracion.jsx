@@ -1,8 +1,20 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
 import "./Configuracion.css";
 
 export default function Configuracion() {
+  const permisos = useMemo(() => {
+    try {
+      const raw = localStorage.getItem("userData");
+      const u = raw ? JSON.parse(raw) : null;
+      return Array.isArray(u?.permisos) ? u.permisos : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const canProyectos = permisos.includes("PROYECTOS_ADMIN");
+
   return (
     <div className="config-wrapper">
       <div className="config-title">
@@ -13,7 +25,6 @@ export default function Configuracion() {
       </div>
 
       <div className="config-grid">
-
         {/* Card Usuarios */}
         <Link to="/configuracion/usuarios" className="config-card">
           <div className="config-icon">👥</div>
@@ -42,18 +53,28 @@ export default function Configuracion() {
           <p>Configura las ocupaciones y las tareas asociadas.</p>
         </Link>
 
-        {/* 🆕 Card Roles */}
+        {/* Card Roles */}
         <Link to="/configuracion/roles" className="config-card">
           <div className="config-icon">🛡️</div>
           <h3>Gestión de Roles</h3>
           <p>Crear, modificar y asignar permisos a los roles del sistema.</p>
         </Link>
 
+        {/* Card Equipos */}
         <Link to="/configuracion/equipos" className="config-card">
           <div className="config-icon">🧩</div>
           <h3>Gestión de Equipos</h3>
           <p>Administrar equipos y asignar consultores.</p>
         </Link>
+
+        {/* 🆕 Card Proyectos (con permiso) */}
+        {canProyectos && (
+          <Link to="/configuracion/proyectos" className="config-card">
+            <div className="config-icon">📌</div>
+            <h3>Gestión de Proyectos</h3>
+            <p>Crear proyectos, asignar módulos, definir fase y activar/inactivar.</p>
+          </Link>
+        )}
       </div>
     </div>
   );

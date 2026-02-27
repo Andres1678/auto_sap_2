@@ -19,6 +19,7 @@ import RolesPage from "./RolesPage";
 import EquiposPage from "./EquiposPage";
 import ReporteHorasConsultorCliente from './Reportes/ReporteHorasConsultorCliente';
 import PresupuestoConsultorImport from './PresupuestoConsultorImport';
+import Proyectos from "./Proyectos";
 
 function App() {
   const [userData, setUserData] = useState(null);
@@ -205,6 +206,15 @@ function App() {
               element={
                 <AdminRoute allow={['ADMIN']} requirePermiso="EQUIPOS_ADMIN">
                   <EquiposPage />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/configuracion/proyectos"
+              element={
+                <AdminRoute allow={['ADMIN']} requirePermiso="PROYECTOS_ADMIN">
+                  <Proyectos />
                 </AdminRoute>
               }
             />

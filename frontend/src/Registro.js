@@ -28,7 +28,11 @@ function initRegistro() {
     descripcion: '',
     totalHoras: 0,
     modulo: '',
-    equipo: ''
+    equipo: '',
+    proyecto_id: '',
+    proyecto_codigo: '',
+    proyecto_nombre: '',
+    proyecto_fase: '',
   };
 }
 
@@ -259,6 +263,8 @@ function ocupacionCodeFromId(ocupacionId, ocupacionesArr) {
   return String(occ?.codigo || "").trim(); // "02"
 }
 
+
+
 function isNAValue(v) {
   const s = String(v ?? "").trim().toUpperCase();
   return !s || s === "0" || s === "NA" || s === "N/A";
@@ -360,6 +366,9 @@ const Registro = ({ userData }) => {
   const [importingExcel, setImportingExcel] = useState(false);
   const canImportExcel = ['gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
 
+  const [proyectos, setProyectos] = useState([]);
+  const [loadingProyectos, setLoadingProyectos] = useState(false);
+
 
   const initialVista = () => {
     const persisted = localStorage.getItem('equipoView');
@@ -422,6 +431,50 @@ const Registro = ({ userData }) => {
 
     pendingEditTareaIdRef.current = null;
   }, [tareasBD, modoEdicion]);
+
+  const isProyectoMode = useMemo(() => {
+    const occ = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
+    const tc  = tareaCodeFromRegistro(registro, tareasBD);
+    return occ === "02" && tc === "03";
+  }, [ocupacionSeleccionada, ocupaciones, registro, tareasBD]);
+
+  useEffect(() => {
+  if (!isProyectoMode) {
+    setProyectos([]);
+    setRegistro(r => ({ ...r, proyecto_id:'', proyecto_codigo:'', proyecto_nombre:'', proyecto_fase:'' }));
+    return;
+  }
+
+  const mod = (moduloElegido || moduloUser || "").trim();
+  if (!mod) {
+    setProyectos([]);
+    return;
+  }
+
+  const fetchProyectos = async () => {
+    setLoadingProyectos(true);
+    try {
+      const res = await jfetch(`/proyectos?modulo=${encodeURIComponent(mod)}`, {
+        headers: {
+          "X-User-Usuario": usuarioLogin,
+          "X-User-Rol": rol,
+        }
+      });
+
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
+      setProyectos(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("Error cargando proyectos:", e);
+      setProyectos([]);
+    } finally {
+      setLoadingProyectos(false);
+    }
+  };
+
+  fetchProyectos();
+}, [isProyectoMode, moduloElegido, moduloUser, usuarioLogin, rol]);
 
 
   useEffect(() => {
@@ -703,8 +756,18 @@ const Registro = ({ userData }) => {
   ]);
 
 
+    const closeModal = () => {
+      setModalIsOpen(false);
+      setModoEdicion(false);
+      setOcupacionSeleccionada("");
+      editOriginalRef.current = null;
 
-  const handleSubmit = async (e) => {
+      setRegistro(initRegistro());
+      setModuloElegido(modulos.length === 1 ? modulos[0] : "");
+    };
+  
+    // ✅ SUBMIT COMPLETO CORREGIDO (sin hooks adentro + validación por tarea)
+    const handleSubmit = async (e) => {
       e.preventDefault();
 
       // ✅ 0) Usuario activo
@@ -720,15 +783,11 @@ const Registro = ({ userData }) => {
       const { minISO: weekMinISO, maxISO: weekMaxISO } = getWeekBoundsISO(new Date());
       const code = taskCode(registro.tipoTarea);
 
-      // ✅ 2) Validación por FECHA (nueva regla)
+      // ✅ 2) Validación por FECHA
       if (!registro.fecha) {
-        return Swal.fire({
-          icon: "warning",
-          title: "Selecciona una fecha",
-        });
+        return Swal.fire({ icon: "warning", title: "Selecciona una fecha" });
       }
 
-      // No permitir futuras (por seguridad, además del max={todayISO})
       if (registro.fecha > todayISO) {
         return Swal.fire({
           icon: "warning",
@@ -737,7 +796,6 @@ const Registro = ({ userData }) => {
         });
       }
 
-      // Desde 21-Feb-2026 ( > 2026-02-20 ) solo semana vigente
       if (registro.fecha > CUTOFF_FREE_DATE_ISO) {
         if (!isDateInRangeISO(registro.fecha, weekMinISO, weekMaxISO)) {
           return Swal.fire({
@@ -752,7 +810,6 @@ const Registro = ({ userData }) => {
           });
         }
       }
-      // <= 2026-02-20 => permitido (histórico libre)
 
       // ✅ 3) Horas obligatorias
       if (!registro.horaInicio || !registro.horaFin) {
@@ -811,13 +868,13 @@ const Registro = ({ userData }) => {
         }
       }
 
-      // ✅ 7) VALIDACIÓN ESPECIAL: Ocupación 02 + Tarea 03 (ANTES de guardar)
+      // ✅ 7) Reglas especiales por Ocupación/Tarea
       const occCode = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
       const tareaCode = tareaCodeFromRegistro(registro, tareasBD);
 
+      // 7.1) Ocupación 02 + Tarea 03 => Nro Caso Cliente obligatorio y Proyecto obligatorio
       if (occCode === "02" && tareaCode === "03") {
         const badCliente = isNAValue(registro.nroCasoCliente);
-
         if (badCliente) {
           return Swal.fire({
             icon: "warning",
@@ -828,6 +885,14 @@ const Registro = ({ userData }) => {
               <br/><br/>
               No se permite <b>NA</b>, <b>N/A</b>, <b>0</b> ni dejarlo vacío.
             `,
+          });
+        }
+
+        if (!registro.proyecto_id) {
+          return Swal.fire({
+            icon: "warning",
+            title: "Proyecto obligatorio",
+            text: "Selecciona un proyecto para Atención de Proyectos.",
           });
         }
       }
@@ -906,6 +971,13 @@ const Registro = ({ userData }) => {
         nroCasoEscaladoSap: registro.nroCasoEscaladoSap,
         tarea_id: registro.tarea_id || null,
         ocupacion_id: ocupacionSeleccionada ? parseInt(ocupacionSeleccionada, 10) : null,
+
+        // ✅ Proyectos (solo se usan cuando aplica; si no, van null)
+        proyecto_id: isProyectoMode && registro.proyecto_id ? Number(registro.proyecto_id) : null,
+        proyecto_codigo: isProyectoMode ? (registro.proyecto_codigo || null) : null,
+        proyecto_nombre: isProyectoMode ? (registro.proyecto_nombre || null) : null,
+        proyecto_fase: isProyectoMode ? (registro.proyecto_fase || null) : null,
+
         horaInicio: registro.horaInicio,
         horaFin: registro.horaFin,
         tiempoInvertido: tiempo,
@@ -954,18 +1026,21 @@ const Registro = ({ userData }) => {
 
         window.dispatchEvent(new Event("resumen-actualizar"));
         fetchRegistros();
-
-        setRegistro(initRegistro());
-        setModuloElegido(modulos.length === 1 ? modulos[0] : "");
-        setModoEdicion(false);
-        setOcupacionSeleccionada("");
-        setModalIsOpen(false);
+        
+        closeModal(); 
       } catch (e) {
         Swal.fire({ icon: "error", title: String(e.message || e) });
       }
     };
 
     const handleEditar = (reg) => {
+
+      editOriginalRef.current = {
+        id: reg.id,
+        fecha: reg.fecha,
+        horaInicio: reg.horaInicio,
+        horaFin: reg.horaFin,
+      };
       // 1) TareaId robusto (puede venir como tarea_id, tarea.id o por texto tipoTarea)
       const tareaId =
         reg?.tarea_id ??
@@ -973,7 +1048,7 @@ const Registro = ({ userData }) => {
         (tareaIdByCodigoNombre.get(String(reg?.tipoTarea || "").trim().toUpperCase()) || null);
 
       //const tareaIdStr = tareaId ? String(tareaId) : "";
-
+      
       // 2) Ocupación: si no viene, la inferimos desde ocupaciones->tareas
       let ocupacionId =
         reg?.ocupacion_id ? String(reg.ocupacion_id) : "";
@@ -1020,7 +1095,11 @@ const Registro = ({ userData }) => {
 
         consultor_id: reg.consultor_id,
         equipo: reg.equipo,
-        modulo: reg.modulo
+        modulo: reg.modulo,
+        proyecto_id: reg.proyecto_id ?? "",
+        proyecto_codigo: reg.proyecto_codigo ?? "",
+        proyecto_nombre: reg.proyecto_nombre ?? "",
+        proyecto_fase: reg.proyecto_fase ?? "",
       });
 
       
@@ -1093,6 +1172,10 @@ const Registro = ({ userData }) => {
 
       horaInicio: newHoraInicio,
       horaFin: "", 
+      proyecto_id: reg.proyecto_id ?? "",
+      proyecto_codigo: reg.proyecto_codigo ?? "",
+      proyecto_nombre: reg.proyecto_nombre ?? "",
+      proyecto_fase: reg.proyecto_fase ?? "",
     });
 
     
@@ -1538,7 +1621,7 @@ const Registro = ({ userData }) => {
       {/* MODAL */}
       <Modal
         isOpen={modalIsOpen}
-        onRequestClose={() => setModalIsOpen(false)}
+        onRequestClose={closeModal}
         className="modal-content"
         overlayClassName="modal-overlay"
         contentLabel="Registro"
@@ -1546,7 +1629,7 @@ const Registro = ({ userData }) => {
         <div>
           <div className="modal-header">
             <h3 className="modal-title">{modoEdicion ? 'Editar Registro' : 'Nuevo Registro'}</h3>
-            <button className="close-button" onClick={() => setModalIsOpen(false)} aria-label="Cerrar">✖</button>
+            <button className="close-button" onClick={closeModal} aria-label="Cerrar">✖</button>
           </div>
           <div className="modal-body">
             <form onSubmit={handleSubmit}>
@@ -1668,6 +1751,44 @@ const Registro = ({ userData }) => {
                   ))}
                 </select>
 
+                {isProyectoMode && (
+                  <>
+                    <select
+                      value={registro.proyecto_id || ""}
+                      onChange={(e) => {
+                        const pid = e.target.value;
+                        const p = proyectos.find(x => String(x.id) === String(pid));
+
+                        setRegistro(r => ({
+                          ...r,
+                          proyecto_id: pid,
+                          proyecto_codigo: p?.codigo || "",
+                          proyecto_nombre: p?.nombre || "",
+                          proyecto_fase: p?.fase || "",
+                        }));
+                      }}
+                      required
+                      disabled={loadingProyectos || proyectos.length === 0}
+                    >
+                      <option value="">
+                        {loadingProyectos ? "Cargando proyectos..." : "Seleccionar Proyecto"}
+                      </option>
+                      {proyectos.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.codigo} - {p.nombre}
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      type="text"
+                      value={registro.proyecto_fase || ""}
+                      readOnly
+                      placeholder="Fase del proyecto"
+                    />
+                  </>
+                )}
+
                 <div className="inline-2">
                   <input
                     type="time"
@@ -1728,7 +1849,7 @@ const Registro = ({ userData }) => {
                 />
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-ghost" onClick={() => setModalIsOpen(false)}>Cancelar</button>
+                <button type="button" className="btn btn-ghost" onClick={closeModal}>Cancelar</button>
                 <button type="submit" className="btn btn-primary">
                   {modoEdicion ? 'Actualizar' : 'Guardar'}
                 </button>

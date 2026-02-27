@@ -4,6 +4,7 @@ from sqlalchemy import Column, Integer, String, Float, Text, Boolean, text
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.hybrid import hybrid_property
 from decimal import Decimal
+from sqlalchemy import UniqueConstraint
 
 db = SQLAlchemy()
 
@@ -161,6 +162,13 @@ class Registro(db.Model):
     modulo = db.Column(db.String(100))
     horario_trabajo = db.Column(db.String(20))
     bloqueado = db.Column(db.Boolean, default=False)
+
+    proyecto_id = db.Column(db.Integer, db.ForeignKey("proyecto.id", ondelete="SET NULL"), nullable=True)
+    proyecto = relationship("Proyecto", lazy="joined")
+
+    # SOLO si quieres permitir elegir fase en el registro (opcional)
+    fase_proyecto_id = db.Column(db.Integer, db.ForeignKey("proyecto_fase.id", ondelete="SET NULL"), nullable=True)
+    fase_proyecto = relationship("ProyectoFase", lazy="joined")
 
     usuario_consultor = db.Column(db.String(50), db.ForeignKey('consultor.usuario'))
 
@@ -521,3 +529,62 @@ class ConsultorPresupuesto(db.Model):
     vr_perfil = db.Column(db.Numeric(14, 2), nullable=False, default=0)
     horas_base_mes = db.Column(db.Numeric(10, 2), nullable=False, default=160)
     vigente = db.Column(db.Boolean, default=True)
+
+##Proyectos
+
+class ProyectoFase(db.Model):
+    __tablename__ = "proyecto_fase"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(120), nullable=False, unique=True)  
+    orden = db.Column(db.Integer, nullable=False, default=0)
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+
+    proyectos = relationship("Proyecto", back_populates="fase")
+
+    def __repr__(self):
+        return f"<ProyectoFase id={self.id} nombre={self.nombre!r}>"
+    
+class Proyecto(db.Model):
+    __tablename__ = "proyecto"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    codigo = db.Column(db.String(50), nullable=False, unique=True)  # ej: "PRJ-001"
+    nombre = db.Column(db.String(180), nullable=False)
+
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+
+    fase_id = db.Column(db.Integer, db.ForeignKey("proyecto_fase.id", ondelete="SET NULL"), nullable=True)
+    fase = relationship("ProyectoFase", back_populates="proyectos")
+
+    modulos = relationship(
+        "ProyectoModulo",
+        back_populates="proyecto",
+        cascade="all, delete-orphan",
+        lazy="joined"
+    )
+
+    def __repr__(self):
+        return f"<Proyecto id={self.id} codigo={self.codigo!r} activo={self.activo}>"
+    
+class ProyectoModulo(db.Model):
+    __tablename__ = "proyecto_modulo"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    proyecto_id = db.Column(db.Integer, db.ForeignKey("proyecto.id", ondelete="CASCADE"), nullable=False)
+    modulo_id = db.Column(db.Integer, db.ForeignKey("modulo.id", ondelete="CASCADE"), nullable=False)
+
+    # ✅ Por si algún día quieres desactivar un módulo en un proyecto sin borrarlo
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+
+    proyecto = relationship("Proyecto", back_populates="modulos")
+    modulo = relationship("Modulo", lazy="joined")
+
+    __table_args__ = (
+        UniqueConstraint("proyecto_id", "modulo_id", name="uq_proyecto_modulo"),
+    )
+
+    def __repr__(self):
+        return f"<ProyectoModulo proyecto_id={self.proyecto_id} modulo_id={self.modulo_id} activo={self.activo}>"
