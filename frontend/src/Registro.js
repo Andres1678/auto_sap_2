@@ -32,7 +32,7 @@ function initRegistro() {
     proyecto_codigo: '',
     proyecto_nombre: '',
     proyecto_fase: '',
-    proyecto_fase_id: '', 
+    fase_proyecto_id: '', 
   };
 }
 
@@ -346,20 +346,23 @@ const Registro = ({ userData }) => {
   const pendingEditTareaIdRef = useRef(null);
   const editOriginalRef = useRef(null);
 
-  const [fasesProyecto, setFasesProyecto] = useState([]); // ✅ NUEVO: fases del proyecto seleccionado
+  const [fasesProyecto, setFasesProyecto] = useState([]);
+  const prevIsProyectoModeRef = useRef(false);
 
   useEffect(() => {
     const v = userData?.activo ?? userData?.user?.activo;
     if (v !== undefined) setConsultorActivo(isActiveValue(v));
   }, [userData]);
 
+  
   useEffect(() => {
     const pendingId = pendingEditTareaIdRef.current;
+
     if (!modoEdicion) return;
     if (!pendingId) return;
     if (!Array.isArray(tareasBD) || tareasBD.length === 0) return;
 
-    const tareaObj = tareasBD.find(t => Number(t.id) === Number(pendingId));
+    const tareaObj = tareasBD.find((t) => Number(t.id) === Number(pendingId));
     if (!tareaObj) return;
 
     setRegistro((r) => ({
@@ -371,24 +374,47 @@ const Registro = ({ userData }) => {
     pendingEditTareaIdRef.current = null;
   }, [tareasBD, modoEdicion]);
 
+
   const isProyectoMode = useMemo(() => {
     const occ = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
-    const tc  = tareaCodeFromRegistro(registro, tareasBD);
+    const tc = tareaCodeFromRegistro(registro, tareasBD);
     return occ === "02" && tc === "03";
-  }, [ocupacionSeleccionada, ocupaciones, registro, tareasBD]);
+  }, [
+    ocupacionSeleccionada,
+    ocupaciones,
+    registro?.tarea_id,
+    registro?.tipoTarea,
+    tareasBD,
+  ]);
 
+  
+  const forceProyectoMode = useMemo(() => {
+    return !!String(registro?.proyecto_id || "").trim();
+  }, [registro?.proyecto_id]);
+
+  
+  const showProyectoUI = isProyectoMode || forceProyectoMode;
+
+  
   useEffect(() => {
-    if (!isProyectoMode) {
-      setProyectos([]);
-      setFasesProyecto([]);
-      setRegistro(r => ({
-        ...r,
-        proyecto_id:'',
-        proyecto_codigo:'',
-        proyecto_nombre:'',
-        proyecto_fase:'',
-        proyecto_fase_id:''
-      }));
+    const prev = prevIsProyectoModeRef.current;
+    prevIsProyectoModeRef.current = showProyectoUI;
+
+    const debeLimpiar = prev === true && showProyectoUI === false;
+
+    if (!showProyectoUI) {
+      if (debeLimpiar) {
+        setProyectos([]);
+        setFasesProyecto([]);
+        setRegistro((r) => ({
+          ...r,
+          proyecto_id: "",
+          proyecto_codigo: "",
+          proyecto_nombre: "",
+          proyecto_fase: "",
+          fase_proyecto_id: "",
+        }));
+      }
       return;
     }
 
@@ -403,12 +429,7 @@ const Registro = ({ userData }) => {
       try {
         const res = await jfetch(
           `/proyectos?modulo=${encodeURIComponent(mod)}&include_fases=1`,
-          {
-            headers: {
-              "X-User-Usuario": usuarioLogin,
-              "X-User-Rol": rol,
-            }
-          }
+          { headers: { "X-User-Usuario": usuarioLogin, "X-User-Rol": rol } }
         );
 
         const data = await res.json().catch(() => []);
@@ -424,7 +445,7 @@ const Registro = ({ userData }) => {
     };
 
     fetchProyectos();
-  }, [isProyectoMode, moduloElegido, moduloUser, usuarioLogin, rol]);
+  }, [showProyectoUI, moduloElegido, moduloUser, usuarioLogin, rol]);
 
   useEffect(() => {
     setPage(1);
@@ -814,7 +835,7 @@ const Registro = ({ userData }) => {
       }
 
       if (Array.isArray(fasesProyecto) && fasesProyecto.length > 0) {
-        if (!registro.proyecto_fase_id) {
+        if (!registro.fase_proyecto_id) {
           return Swal.fire({
             icon: "warning",
             title: "Fase del proyecto obligatoria",
@@ -892,11 +913,11 @@ const Registro = ({ userData }) => {
       tarea_id: registro.tarea_id || null,
       ocupacion_id: ocupacionSeleccionada ? parseInt(ocupacionSeleccionada, 10) : null,
 
-      proyecto_id: isProyectoMode && registro.proyecto_id ? Number(registro.proyecto_id) : null,
-      proyecto_codigo: isProyectoMode ? (registro.proyecto_codigo || null) : null,
-      proyecto_nombre: isProyectoMode ? (registro.proyecto_nombre || null) : null,
-      proyecto_fase: isProyectoMode ? (registro.proyecto_fase || null) : null,
-      proyecto_fase_id: isProyectoMode && registro.proyecto_fase_id ? Number(registro.proyecto_fase_id) : null,
+      proyecto_id: showProyectoUI && registro.proyecto_id ? Number(registro.proyecto_id) : null,
+      proyecto_codigo: showProyectoUI ? (registro.proyecto_codigo || null) : null,
+      proyecto_nombre: showProyectoUI ? (registro.proyecto_nombre || null) : null,
+      proyecto_fase: showProyectoUI ? (registro.proyecto_fase || null) : null,
+      fase_proyecto_id: showProyectoUI && registro.fase_proyecto_id ? Number(registro.fase_proyecto_id) : null,
 
       horaInicio: registro.horaInicio,
       horaFin: registro.horaFin,
@@ -951,7 +972,7 @@ const Registro = ({ userData }) => {
     }
   };
 
-  const handleEditar = (reg) => {
+  const handleEditar = async (reg) => {
     editOriginalRef.current = {
       id: reg.id,
       fecha: reg.fecha,
@@ -964,8 +985,7 @@ const Registro = ({ userData }) => {
       reg?.tarea?.id ??
       (tareaIdByCodigoNombre.get(String(reg?.tipoTarea || "").trim().toUpperCase()) || null);
 
-    let ocupacionId =
-      reg?.ocupacion_id ? String(reg.ocupacion_id) : "";
+    let ocupacionId = reg?.ocupacion_id ? String(reg.ocupacion_id) : "";
 
     if (!ocupacionId && tareaId && Array.isArray(ocupaciones) && ocupaciones.length) {
       const occ = ocupaciones.find(o => (o.tareas || []).some(t => Number(t.id) === Number(tareaId)));
@@ -974,9 +994,30 @@ const Registro = ({ userData }) => {
 
     pendingEditTareaIdRef.current = tareaId ? Number(tareaId) : null;
 
-    const pid = reg.proyecto_id ? String(reg.proyecto_id) : "";
-    const proj = pid ? proyectos.find(x => String(x.id) === String(pid)) : null;
-    const fases = Array.isArray(proj?.fases) ? proj.fases : [];
+    const pid = reg?.proyecto_id ? String(reg.proyecto_id) : "";
+
+    if (pid && (!Array.isArray(proyectos) || proyectos.length === 0)) {
+      const mod = (reg?.modulo || moduloElegido || moduloUser || "").trim();
+      if (mod) {
+        try {
+          const res = await jfetch(
+            `/proyectos?modulo=${encodeURIComponent(mod)}&include_fases=1`,
+            { headers: { "X-User-Usuario": usuarioLogin, "X-User-Rol": rol } }
+          );
+          const data = await res.json().catch(() => []);
+          if (res.ok) setProyectos(Array.isArray(data) ? data : []);
+        } catch {}
+      }
+    }
+
+    let fases = [];
+    if (Array.isArray(reg?.proyecto?.fases)) {
+      fases = reg.proyecto.fases;
+    } else {
+      const p = pid ? (proyectos || []).find(x => String(x.id) === pid) : null;
+      fases = Array.isArray(p?.fases) ? p.fases : [];
+    }
+
     setFasesProyecto(fases);
 
     setRegistro({
@@ -987,28 +1028,23 @@ const Registro = ({ userData }) => {
       nroCasoCliente: reg.nroCasoCliente,
       nroCasoInterno: reg.nroCasoInterno,
       nroCasoEscaladoSap: reg.nroCasoEscaladoSap,
+
       tarea_id: tareaId ? Number(tareaId) : "",
-      tipoTarea: reg?.tarea
-        ? `${reg.tarea.codigo} - ${reg.tarea.nombre}`
-        : (reg?.tipoTarea || ""),
+      tipoTarea: reg?.tarea ? `${reg.tarea.codigo} - ${reg.tarea.nombre}` : (reg?.tipoTarea || ""),
       ocupacion_id: ocupacionId,
+
       horaInicio: reg.horaInicio,
       horaFin: reg.horaFin,
-      tiempoInvertido: reg.tiempoInvertido,
       tiempoFacturable: reg.tiempoFacturable,
-      horasAdicionales: reg.horasAdicionales,
       descripcion: reg.descripcion,
-      actividadMalla: reg.actividadMalla,
-      oncall: reg.oncall,
-      desborde: reg.desborde,
-      consultor_id: reg.consultor_id,
-      equipo: reg.equipo,
-      modulo: reg.modulo,
+
       proyecto_id: pid,
-      proyecto_codigo: reg.proyecto_codigo ?? "",
-      proyecto_nombre: reg.proyecto_nombre ?? "",
-      proyecto_fase: reg.proyecto_fase ?? "",
-      proyecto_fase_id: reg.proyecto_fase_id ? String(reg.proyecto_fase_id) : "",
+      proyecto_codigo: reg?.proyecto_codigo ?? reg?.proyecto?.codigo ?? "",
+      proyecto_nombre: reg?.proyecto_nombre ?? reg?.proyecto?.nombre ?? "",
+      proyecto_fase: reg?.proyecto_fase ?? reg?.fase_proyecto?.nombre ?? "",
+      fase_proyecto_id: reg?.fase_proyecto_id
+        ? String(reg.fase_proyecto_id)
+        : (reg?.fase_proyecto?.id ? String(reg.fase_proyecto.id) : ""),
     });
 
     setOcupacionSeleccionada(ocupacionId);
@@ -1055,7 +1091,7 @@ const Registro = ({ userData }) => {
     }
   };
 
-  const handleCopiar = (reg) => {
+  const handleCopiar = async (reg) => {
     const copia = { ...reg };
     delete copia.id;
 
@@ -1065,6 +1101,21 @@ const Registro = ({ userData }) => {
     const moduloPref = reg?.modulo ? String(reg.modulo).trim() : "";
     const moduloSel = pool.length === 1 ? pool[0] : (moduloPref || "");
     setModuloElegido(moduloSel);
+
+    const pid = reg?.proyecto_id ? String(reg.proyecto_id) : "";
+    if (pid && (!Array.isArray(proyectos) || proyectos.length === 0)) {
+      const mod = (reg?.modulo || moduloSel || moduloUser || "").trim();
+      if (mod) {
+        try {
+          const res = await jfetch(
+            `/proyectos?modulo=${encodeURIComponent(mod)}&include_fases=1`,
+            { headers: { "X-User-Usuario": usuarioLogin, "X-User-Rol": rol } }
+          );
+          const data = await res.json().catch(() => []);
+          if (res.ok) setProyectos(Array.isArray(data) ? data : []);
+        } catch {}
+      }
+    }
 
     const newHoraInicio = reg?.horaFin || "";
 
@@ -1080,7 +1131,9 @@ const Registro = ({ userData }) => {
       proyecto_codigo: reg.proyecto_codigo ?? "",
       proyecto_nombre: reg.proyecto_nombre ?? "",
       proyecto_fase: reg.proyecto_fase ?? "",
-      proyecto_fase_id: reg.proyecto_fase_id ? String(reg.proyecto_fase_id) : "",
+      fase_proyecto_id: reg.fase_proyecto_id
+        ? String(reg.fase_proyecto_id)
+        : (reg?.fase_proyecto?.id ? String(reg.fase_proyecto.id) : ""),
     });
 
     let occId = "";
@@ -1577,27 +1630,6 @@ const Registro = ({ userData }) => {
                   ))}
                 </select>
 
-                <input
-                  type="text"
-                  placeholder="Nro Caso Cliente"
-                  value={registro.nroCasoCliente}
-                  onChange={(e) => setRegistro({ ...registro, nroCasoCliente: e.target.value })}
-                />
-
-                <input
-                  type="text"
-                  placeholder="Nro Caso Interno"
-                  value={registro.nroCasoInterno}
-                  onChange={(e) => setRegistro({ ...registro, nroCasoInterno: e.target.value })}
-                />
-
-                <input
-                  type="text"
-                  placeholder="Nro Caso Escalado SAP"
-                  value={registro.nroCasoEscaladoSap}
-                  onChange={(e) => setRegistro({ ...registro, nroCasoEscaladoSap: e.target.value })}
-                />
-
                 <select
                   value={ocupacionSeleccionada}
                   onChange={(e) => {
@@ -1612,7 +1644,7 @@ const Registro = ({ userData }) => {
                       proyecto_codigo: '',
                       proyecto_nombre: '',
                       proyecto_fase: '',
-                      proyecto_fase_id: '',
+                      fase_proyecto_id: '',
                     }));
                     setFasesProyecto([]);
                     pendingEditTareaIdRef.current = null;
@@ -1631,13 +1663,13 @@ const Registro = ({ userData }) => {
                   value={registro.tarea_id || ""}
                   onChange={(e) => {
                     const tareaId = Number(e.target.value);
-                    const tareaObj = tareasBD.find(t => t.id === tareaId);
+                    const tareaObj = tareasBD.find(t => Number(t.id) === Number(tareaId));
 
-                    setRegistro({
-                      ...registro,
+                    setRegistro(r => ({
+                      ...r,
                       tarea_id: tareaId,
                       tipoTarea: tareaObj ? `${tareaObj.codigo} - ${tareaObj.nombre}` : ""
-                    });
+                    }));
                   }}
                   required
                   disabled={!ocupacionSeleccionada || tareasBD.length === 0}
@@ -1650,8 +1682,9 @@ const Registro = ({ userData }) => {
                   ))}
                 </select>
 
-                {isProyectoMode && (
+                {showProyectoUI && (
                   <>
+                    {/* PROYECTO */}
                     <select
                       value={registro.proyecto_id || ""}
                       onChange={(e) => {
@@ -1661,6 +1694,7 @@ const Registro = ({ userData }) => {
                         const fases = Array.isArray(p?.fases) ? p.fases : [];
                         setFasesProyecto(fases);
 
+                        // si el proyecto tiene fases, dejamos la primera por defecto (opcional)
                         const firstFase = fases.length ? fases[0] : null;
 
                         setRegistro(r => ({
@@ -1668,8 +1702,10 @@ const Registro = ({ userData }) => {
                           proyecto_id: pid,
                           proyecto_codigo: p?.codigo || "",
                           proyecto_nombre: p?.nombre || "",
-                          nroCasoCliente: p?.codigo ? String(p.codigo) : r.nroCasoCliente, // ✅ AUTO: pone código en Nro Caso Cliente
-                          proyecto_fase_id: firstFase ? String(firstFase.id) : "",
+                          nroCasoCliente: p?.codigo ? String(p.codigo) : r.nroCasoCliente,
+
+                          // importante: usar fase_proyecto_id (no proyecto_fase_id)
+                          fase_proyecto_id: firstFase ? String(firstFase.id) : "",
                           proyecto_fase: firstFase ? String(firstFase.nombre) : "",
                         }));
                       }}
@@ -1686,16 +1722,18 @@ const Registro = ({ userData }) => {
                       ))}
                     </select>
 
+                    {/* FASE */}
                     {Array.isArray(fasesProyecto) && fasesProyecto.length > 0 && (
                       <select
-                        value={registro.proyecto_fase_id || ""}
+                        value={registro.fase_proyecto_id || ""}
                         onChange={(e) => {
-                          const fid = e.target.value;
-                          const fx = fasesProyecto.find(x => String(x.id) === String(fid));
+                          const faseId = e.target.value;
+                          const faseObj = fasesProyecto.find(f => String(f.id) === String(faseId));
+
                           setRegistro(r => ({
                             ...r,
-                            proyecto_fase_id: fid,
-                            proyecto_fase: fx?.nombre || "",
+                            fase_proyecto_id: faseId,
+                            proyecto_fase: faseObj?.nombre || "",
                           }));
                         }}
                         required
@@ -1717,6 +1755,27 @@ const Registro = ({ userData }) => {
                     />
                   </>
                 )}
+
+                <input
+                  type="text"
+                  placeholder="Nro Caso Cliente"
+                  value={registro.nroCasoCliente}
+                  onChange={(e) => setRegistro({ ...registro, nroCasoCliente: e.target.value })}
+                />
+
+                <input
+                  type="text"
+                  placeholder="Nro Caso Interno"
+                  value={registro.nroCasoInterno}
+                  onChange={(e) => setRegistro({ ...registro, nroCasoInterno: e.target.value })}
+                />
+
+                <input
+                  type="text"
+                  placeholder="Nro Caso Escalado SAP"
+                  value={registro.nroCasoEscaladoSap}
+                  onChange={(e) => setRegistro({ ...registro, nroCasoEscaladoSap: e.target.value })}
+                />
 
                 <div className="inline-2">
                   <input

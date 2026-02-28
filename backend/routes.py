@@ -1199,23 +1199,22 @@ def obtener_registros():
 
         scope, val = scope_for(consultor_login, rol_req)
 
-        # ✅ Aliases para evitar joins repetidos / ambiguos
         C = aliased(Consultor)
         E = aliased(Equipo)
 
-        # ✅ Query base: SIEMPRE join a Consultor y Equipo UNA sola vez
         q = (
             Registro.query
             .options(
                 joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
                 joinedload(Registro.tarea),
                 joinedload(Registro.ocupacion),
+                joinedload(Registro.proyecto),
+                joinedload(Registro.fase_proyecto),
             )
             .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
             .outerjoin(E, C.equipo_id == E.id)
         )
 
-        # ✅ Aplicar scope
         if scope == "SELF":
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
 
@@ -1224,7 +1223,6 @@ def obtener_registros():
                 return jsonify({'error': 'Consultor sin equipo asignado'}), 403
             q = q.filter(C.equipo_id == int(val))
 
-        # ✅ Filtro opcional de equipo (solo ADMIN total o TEAM (solo su propio equipo))
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
         if equipo_filter:
             if scope == "TEAM":
@@ -1236,7 +1234,6 @@ def obtener_registros():
 
         registros = q.order_by(Registro.fecha.desc(), Registro.id.desc()).all()
 
-        # ---- serialización tuya tal cual ----
         data = []
         for r in registros:
             tarea = r.tarea
@@ -1250,6 +1247,9 @@ def obtener_registros():
             equipo_nombre = None
             if r.consultor and r.consultor.equipo_obj:
                 equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
+
+            proyecto = getattr(r, "proyecto", None)
+            fase_proyecto = getattr(r, "fase_proyecto", None)
 
             data.append({
                 "id": r.id,
@@ -1282,7 +1282,23 @@ def obtener_registros():
                 "bloqueado": bool(r.bloqueado),
                 "oncall": r.oncall,
                 "desborde": r.desborde,
-                "actividadMalla": r.actividad_malla
+                "actividadMalla": r.actividad_malla,
+
+                "proyecto_id": r.proyecto_id,
+                "fase_proyecto_id": r.fase_proyecto_id,
+                "proyecto": {
+                    "id": proyecto.id,
+                    "codigo": proyecto.codigo,
+                    "nombre": proyecto.nombre,
+                    "activo": bool(getattr(proyecto, "activo", True)),
+                } if proyecto else None,
+                "fase_proyecto": {
+                    "id": fase_proyecto.id,
+                    "nombre": fase_proyecto.nombre,
+                } if fase_proyecto else None,
+                "proyecto_codigo": proyecto.codigo if proyecto else None,
+                "proyecto_nombre": proyecto.nombre if proyecto else None,
+                "proyecto_fase": fase_proyecto.nombre if fase_proyecto else None,
             })
 
         return jsonify(data), 200
