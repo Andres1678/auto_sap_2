@@ -377,15 +377,8 @@ const Registro = ({ userData }) => {
 
   const isProyectoMode = useMemo(() => {
     const occ = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
-    const tc = tareaCodeFromRegistro(registro, tareasBD);
-    return occ === "02" && tc === "03";
-  }, [
-    ocupacionSeleccionada,
-    ocupaciones,
-    registro?.tarea_id,
-    registro?.tipoTarea,
-    tareasBD,
-  ]);
+    return occ === "02"; 
+  }, [ocupacionSeleccionada, ocupaciones]);
 
   
   const forceProyectoMode = useMemo(() => {
@@ -811,14 +804,14 @@ const Registro = ({ userData }) => {
     const occCode = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
     const tareaCode = tareaCodeFromRegistro(registro, tareasBD);
 
-    if (occCode === "02" && tareaCode === "03") {
+    if (occCode === "02") {
       const badCliente = isNAValue(registro.nroCasoCliente);
       if (badCliente) {
         return Swal.fire({
           icon: "warning",
           title: "Número de proyecto obligatorio",
           html: `
-              Para <b>02 - Proyectos</b> y <b>03 - Atención de proyectos</b> debes diligenciar:
+              Para <b>02 - Proyectos</b> debes diligenciar:
               <br/>• <b>Nro Caso Cliente</b>
               <br/><br/>
               No se permite <b>NA</b>, <b>N/A</b>, <b>0</b> ni dejarlo vacío.
@@ -830,7 +823,7 @@ const Registro = ({ userData }) => {
         return Swal.fire({
           icon: "warning",
           title: "Proyecto obligatorio",
-          text: "Selecciona un proyecto para Atención de Proyectos.",
+          text: "Selecciona un proyecto.",
         });
       }
 
@@ -994,31 +987,50 @@ const Registro = ({ userData }) => {
 
     pendingEditTareaIdRef.current = tareaId ? Number(tareaId) : null;
 
-    const pid = reg?.proyecto_id ? String(reg.proyecto_id) : "";
+    const pool = resolveModulosForEdit(reg);
+    setModulos(pool);
 
-    if (pid && (!Array.isArray(proyectos) || proyectos.length === 0)) {
-      const mod = (reg?.modulo || moduloElegido || moduloUser || "").trim();
-      if (mod) {
-        try {
-          const res = await jfetch(
-            `/proyectos?modulo=${encodeURIComponent(mod)}&include_fases=1`,
-            { headers: { "X-User-Usuario": usuarioLogin, "X-User-Rol": rol } }
-          );
-          const data = await res.json().catch(() => []);
-          if (res.ok) setProyectos(Array.isArray(data) ? data : []);
-        } catch {}
-      }
+    const preferido = reg?.modulo ? String(reg.modulo).trim() : "";
+    const moduloSel = pool.length === 1 ? pool[0] : (preferido || "");
+    setModuloElegido(moduloSel);
+
+    const pid = reg?.proyecto_id ? String(reg.proyecto_id) : "";
+    const mod = (reg?.modulo || moduloSel || moduloUser || "").trim();
+
+    let proyectosData = Array.isArray(proyectos) ? proyectos : [];
+
+    if (pid && proyectosData.length === 0 && mod) {
+      try {
+        const res = await jfetch(
+          `/proyectos?modulo=${encodeURIComponent(mod)}&include_fases=1`,
+          { headers: { "X-User-Usuario": usuarioLogin, "X-User-Rol": rol } }
+        );
+        const data = await res.json().catch(() => []);
+        if (res.ok) {
+          proyectosData = Array.isArray(data) ? data : [];
+          setProyectos(proyectosData);
+        }
+      } catch {}
     }
+
+    const proyectoObj = pid ? (proyectosData || []).find(x => String(x.id) === pid) : null;
 
     let fases = [];
-    if (Array.isArray(reg?.proyecto?.fases)) {
+    if (Array.isArray(reg?.proyecto?.fases) && reg.proyecto.fases.length) {
       fases = reg.proyecto.fases;
-    } else {
-      const p = pid ? (proyectos || []).find(x => String(x.id) === pid) : null;
-      fases = Array.isArray(p?.fases) ? p.fases : [];
+    } else if (Array.isArray(proyectoObj?.fases)) {
+      fases = proyectoObj.fases;
     }
-
     setFasesProyecto(fases);
+
+    const faseIdFromReg =
+      reg?.fase_proyecto_id
+        ? String(reg.fase_proyecto_id)
+        : (reg?.fase_proyecto?.id ? String(reg.fase_proyecto.id) : "");
+
+    const faseObj =
+      (faseIdFromReg && fases.find(f => String(f.id) === String(faseIdFromReg))) ||
+      (fases.length ? fases[0] : null);
 
     setRegistro({
       ...initRegistro(),
@@ -1028,34 +1040,23 @@ const Registro = ({ userData }) => {
       nroCasoCliente: reg.nroCasoCliente,
       nroCasoInterno: reg.nroCasoInterno,
       nroCasoEscaladoSap: reg.nroCasoEscaladoSap,
-
-      tarea_id: tareaId ? Number(tareaId) : "",
+      tarea_id: "",
       tipoTarea: reg?.tarea ? `${reg.tarea.codigo} - ${reg.tarea.nombre}` : (reg?.tipoTarea || ""),
       ocupacion_id: ocupacionId,
-
       horaInicio: reg.horaInicio,
       horaFin: reg.horaFin,
       tiempoFacturable: reg.tiempoFacturable,
       descripcion: reg.descripcion,
-
+      modulo: moduloSel,
+      equipo: equipoOf(reg, userEquipoUpper),
       proyecto_id: pid,
-      proyecto_codigo: reg?.proyecto_codigo ?? reg?.proyecto?.codigo ?? "",
-      proyecto_nombre: reg?.proyecto_nombre ?? reg?.proyecto?.nombre ?? "",
-      proyecto_fase: reg?.proyecto_fase ?? reg?.fase_proyecto?.nombre ?? "",
-      fase_proyecto_id: reg?.fase_proyecto_id
-        ? String(reg.fase_proyecto_id)
-        : (reg?.fase_proyecto?.id ? String(reg.fase_proyecto.id) : ""),
+      proyecto_codigo: reg?.proyecto_codigo ?? reg?.proyecto?.codigo ?? (proyectoObj?.codigo ?? ""),
+      proyecto_nombre: reg?.proyecto_nombre ?? reg?.proyecto?.nombre ?? (proyectoObj?.nombre ?? ""),
+      proyecto_fase: faseObj?.nombre || (reg?.proyecto_fase ?? reg?.fase_proyecto?.nombre ?? ""),
+      fase_proyecto_id: faseObj?.id ? String(faseObj.id) : (faseIdFromReg || ""),
     });
 
     setOcupacionSeleccionada(ocupacionId);
-
-    const pool = resolveModulosForEdit(reg);
-    setModulos(pool);
-
-    const preferido = reg?.modulo ? String(reg.modulo).trim() : "";
-    const moduloSel = pool.length === 1 ? pool[0] : (preferido || "");
-    setModuloElegido(moduloSel);
-    setRegistro((prev) => ({ ...prev, modulo: moduloSel }));
 
     setModoEdicion(true);
     setModalIsOpen(true);
@@ -1092,8 +1093,7 @@ const Registro = ({ userData }) => {
   };
 
   const handleCopiar = async (reg) => {
-    const copia = { ...reg };
-    delete copia.id;
+    editOriginalRef.current = null;
 
     const pool = resolveModulosForEdit(reg);
     setModulos(pool);
@@ -1102,7 +1102,21 @@ const Registro = ({ userData }) => {
     const moduloSel = pool.length === 1 ? pool[0] : (moduloPref || "");
     setModuloElegido(moduloSel);
 
+    const tareaId =
+      reg?.tarea_id ??
+      reg?.tarea?.id ??
+      (tareaIdByCodigoNombre.get(String(reg?.tipoTarea || "").trim().toUpperCase()) || null);
+
+    let ocupacionId = reg?.ocupacion_id ? String(reg.ocupacion_id) : "";
+    if (!ocupacionId && tareaId && Array.isArray(ocupaciones) && ocupaciones.length) {
+      const occ = ocupaciones.find(o => (o.tareas || []).some(t => Number(t.id) === Number(tareaId)));
+      if (occ?.id) ocupacionId = String(occ.id);
+    }
+
+    pendingEditTareaIdRef.current = tareaId ? Number(tareaId) : null;
+
     const pid = reg?.proyecto_id ? String(reg.proyecto_id) : "";
+
     if (pid && (!Array.isArray(proyectos) || proyectos.length === 0)) {
       const mod = (reg?.modulo || moduloSel || moduloUser || "").trim();
       if (mod) {
@@ -1117,42 +1131,55 @@ const Registro = ({ userData }) => {
       }
     }
 
+    let fases = [];
+    if (Array.isArray(reg?.proyecto?.fases)) {
+      fases = reg.proyecto.fases;
+    } else {
+      const p = pid ? (proyectos || []).find(x => String(x.id) === pid) : null;
+      fases = Array.isArray(p?.fases) ? p.fases : [];
+    }
+    setFasesProyecto(fases);
+
+    const faseIdFromReg =
+      reg?.fase_proyecto_id
+        ? String(reg.fase_proyecto_id)
+        : (reg?.fase_proyecto?.id ? String(reg.fase_proyecto.id) : "");
+
+    const faseObj =
+      (faseIdFromReg && fases.find(f => String(f.id) === String(faseIdFromReg))) ||
+      (fases.length ? fases[0] : null);
+
     const newHoraInicio = reg?.horaFin || "";
 
     setRegistro({
       ...initRegistro(),
-      ...copia,
       id: null,
-      modulo: moduloSel,
-      equipo: equipoOf(copia, userEquipoUpper),
+      fecha: reg.fecha,
+      cliente: reg.cliente,
+      nroCasoCliente: reg.nroCasoCliente,
+      nroCasoInterno: reg.nroCasoInterno,
+      nroCasoEscaladoSap: reg.nroCasoEscaladoSap,
+      tarea_id: "",
+      tipoTarea: reg?.tarea ? `${reg.tarea.codigo} - ${reg.tarea.nombre}` : (reg?.tipoTarea || ""),
+
+      ocupacion_id: ocupacionId,
+
       horaInicio: newHoraInicio,
       horaFin: "",
-      proyecto_id: reg.proyecto_id ?? "",
-      proyecto_codigo: reg.proyecto_codigo ?? "",
-      proyecto_nombre: reg.proyecto_nombre ?? "",
-      proyecto_fase: reg.proyecto_fase ?? "",
-      fase_proyecto_id: reg.fase_proyecto_id
-        ? String(reg.fase_proyecto_id)
-        : (reg?.fase_proyecto?.id ? String(reg.fase_proyecto.id) : ""),
+      tiempoFacturable: reg.tiempoFacturable,
+      descripcion: reg.descripcion,
+
+      modulo: moduloSel,
+      equipo: equipoOf(reg, userEquipoUpper),
+
+      proyecto_id: pid,
+      proyecto_codigo: reg?.proyecto_codigo ?? reg?.proyecto?.codigo ?? "",
+      proyecto_nombre: reg?.proyecto_nombre ?? reg?.proyecto?.nombre ?? "",
+      proyecto_fase: faseObj?.nombre || (reg?.proyecto_fase ?? ""),
+      fase_proyecto_id: faseObj?.id ? String(faseObj.id) : "",
     });
 
-    let occId = "";
-    if (reg?.tarea_id || reg?.tarea?.id) {
-      const tid = reg?.tarea_id ?? reg?.tarea?.id;
-      const occ = ocupaciones.find(o => (o.tareas || []).some(t => Number(t.id) === Number(tid)));
-      if (occ?.id) occId = String(occ.id);
-    } else if (reg?.tipoTarea && todasTareas.length && ocupaciones.length) {
-      const tarea = todasTareas.find(
-        t => reg.tipoTarea === `${t.codigo} - ${t.nombre}` ||
-            (t.codigo && String(reg.tipoTarea).startsWith(t.codigo))
-      );
-      if (tarea) {
-        const occ = ocupaciones.find(o => (o.tareas || []).some(tt => tt.id === tarea.id));
-        if (occ) occId = String(occ.id);
-      }
-    }
-
-    setOcupacionSeleccionada(occId);
+    setOcupacionSeleccionada(ocupacionId);
 
     setModoEdicion(false);
     setModalIsOpen(true);
