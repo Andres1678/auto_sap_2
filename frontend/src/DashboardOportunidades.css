@@ -10,7 +10,7 @@
   --text:#111827;
   --muted:#6b7280;
 
-  --sidebar:#e5e5e5;     /* panel derecho gris */
+  --sidebar:#e5e5e5;
   --sidebar-border:#bfbfbf;
 
   --btn-blue:#1e3a8a;
@@ -19,7 +19,6 @@
   --radius: 10px;
   --radius-sm: 8px;
 
-  /* ✅ alturas consistentes como dashboard referencia */
   --card-min: 230px;
   --card-min-small: 210px;
 }
@@ -71,7 +70,7 @@
   font-weight: 700;
 }
 
-/* Botón limpiar (arriba) */
+/* Botón */
 .oport-btn{
   border:1px solid var(--border);
   background:#fff;
@@ -88,13 +87,10 @@
 .oport-btn:disabled{ opacity:.6; cursor:not-allowed; }
 
 /* ===========================================================
-   LAYOUT PRINCIPAL
+   LAYOUT (1 sola columna)
 =========================================================== */
-.dashboard-layout{
-  display:grid;
-  grid-template-columns: 1fr 320px; /* sidebar como imagen */
-  gap: 12px;
-  align-items:start;
+.dashboard-layout-single{
+  display:block;
 }
 
 .dashboard-main{
@@ -123,6 +119,10 @@
   display:grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 10px;
+}
+
+.kpi-grid-5{
+  grid-template-columns: repeat(5, 1fr);
 }
 
 .kpi-card{
@@ -159,228 +159,51 @@
   font-weight: 800;
 }
 
-/* ===========================================================
-   GRID MEDIO (tablas + graficas)
-=========================================================== */
-.main-grid{
-  display:grid;
-  grid-template-columns: 2fr 1.25fr;
-  gap: 10px;
-  align-items:start;
+.kpi-card-click{
+  border: 1px solid var(--border);
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  background: #fff;
+}
+.kpi-card-click:hover{ background:#f9fafb; }
+
+.kpi-hint{
+  margin-top: 6px;
+  font-size: .72rem;
+  font-weight: 900;
+  color: #64748b;
+  text-transform: uppercase;
 }
 
-.main-col,
-.side-col{
-  display:flex;
-  flex-direction:column;
-  gap: 10px;
-  min-width:0;
-}
-
 /* ===========================================================
-   CARDS (✅ CORRECCIÓN PRINCIPAL)
-   - Se fuerza altura mínima
-   - Se hace flex column
-   - Se asegura que el contenido tome el espacio
+   FILTROS INLINE (debajo KPIs)
 =========================================================== */
-.card{
-  background: var(--card);
+.filters-inline{
+  background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow:hidden;
-
-  /* ✅ evita cards "mini" que se ven vacías */
-  min-height: var(--card-min);
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-/* Cards tipo tabla izquierda (un poco más pequeñas) */
-.main-col .card{
-  min-height: var(--card-min-small);
-}
-
-.card-title{
-  padding: 10px 12px;
-  font-size: 0.92rem;
-  font-weight: 900;
-  color: #1f2937;
-  border-bottom: 1px solid var(--border-soft);
-  background: #ffffff;
-}
-
-/* ✅ el contenido dentro de la card crece y permite scroll interno */
-.card > :not(.card-title){
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-/* ===========================================================
-   TABLAS (header azul oscuro)
-=========================================================== */
-.table-scroll{
-  padding: 0;
-  overflow: auto; /* ✅ scroll X + Y dentro del recuadro */
-  max-height: 280px; /* ✅ como la referencia */
-}
-
-.table{
-  width:100%;
-  border-collapse: collapse;
-  font-size: .82rem;
-  min-width: 520px;
-}
-
-.table thead th{
-  background: var(--head);
-  color:#fff;
-  padding: 8px 10px;
-  text-align:left;
-  font-weight: 900;
-  white-space: nowrap;
-
-  /* ✅ sticky para que quede elegante si hay scroll vertical */
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-
-.table tbody td{
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--border-soft);
-  color:#111827;
-  white-space: nowrap;
-}
-
-.table tbody tr:nth-child(even){
-  background:#f9fafb;
-}
-
-.table-total td{
-  background:#eef2f7;
-  font-weight: 900;
-}
-
-/* ===========================================================
-   DETALLE (tabla grande abajo)
-=========================================================== */
-.detalle-scroll{
-  overflow:auto;            /* ✅ scroll X + Y */
-  max-height: 360px;
-  border-top: 1px solid var(--border-soft);
-}
-
-.table-detalle{
-  min-width: 1100px;
-}
-
-.table.table-detalle thead th{
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-
-.td-wrap{
-  white-space: normal !important;
-  min-width: 320px;
-  max-width: 520px;
-  line-height: 1.25;
-}
-
-/* ===========================================================
-   ✅ FIX: ResumenCalificacion se veía “vacío”
-   Tu componente usa:
-   <div className="calificacion-card">
-     <h3 className="estado-title">...</h3>
-     <table className="estado-table calificacion-table">...</table>
-   </div>
-
-   Estas clases no estaban bien dimensionadas dentro de card.
-=========================================================== */
-.calificacion-card{
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-
-  padding: 10px 12px;
-  overflow: auto; /* ✅ por si en pantallas pequeñas se aprieta */
-}
-
-.estado-title{
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 900;
-  color: #111827;
-}
-
-/* tabla de calificación */
-.estado-table{
-  width: 100%;
-  border-collapse: collapse;
-  font-size: .82rem;
-  min-width: 520px;
-}
-
-.estado-table thead th{
-  background: var(--head);
-  color:#fff;
-  padding: 8px 10px;
-  text-align:left;
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-.estado-table tbody td{
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--border-soft);
-  color:#111827;
-  white-space: nowrap;
-}
-
-.calificacion-table thead th{
-  text-align: center;
-}
-.calificacion-table tbody td{
-  text-align: center;
-}
-.calificacion-table tbody td:first-child{
-  text-align: left;
-  font-weight: 900;
-}
-
-/* ===========================================================
-   SIDEBAR FILTROS (gris, como imagen)
-=========================================================== */
-.dashboard-filtros{
-  background: var(--sidebar);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 14px;
   padding: 10px;
-  position: sticky;
-  top: 10px;
-  max-height: calc(100vh - 20px);
-  overflow:auto;
-  display:flex;
-  flex-direction:column;
-  gap: 10px;
 }
 
-.filters-head{
-  background: transparent;
-  padding: 0;
-  border: 0;
+.filters-inline-head{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .filters-title{
   font-size: 0.95rem;
   font-weight: 900;
   color:#111827;
-  padding: 4px 2px 0;
+}
+
+.filters-inline-grid{
+  display:grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
 }
 
 /* Cada bloque de filtro en blanco */
@@ -408,7 +231,354 @@
 }
 
 /* ===========================================================
-   REACT-SELECT (solo pulido, tu rsStyles manda)
+   GRID MEDIO (tablas + graficas)
+=========================================================== */
+.main-grid{
+  display:grid;
+  grid-template-columns: 2fr 1.25fr;
+  gap: 10px;
+  align-items:start;
+}
+
+.main-col,
+.side-col{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+  min-width:0;
+}
+
+/* ===========================================================
+   CARDS
+=========================================================== */
+.card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow:hidden;
+  min-height: var(--card-min);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.main-col .card{
+  min-height: var(--card-min-small);
+}
+
+.card-title{
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  font-weight: 900;
+  color: #1f2937;
+  border-bottom: 1px solid var(--border-soft);
+  background: #ffffff;
+}
+
+.card > :not(.card-title){
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ===========================================================
+   TABLAS
+=========================================================== */
+.table-scroll{
+  padding: 0;
+  overflow: auto;
+  max-height: 280px;
+}
+
+.table{
+  width:100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+  min-width: 520px;
+}
+
+.table thead th{
+  background: var(--head);
+  color:#fff;
+  padding: 8px 10px;
+  text-align:left;
+  font-weight: 900;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.table tbody td{
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  color:#111827;
+  white-space: nowrap;
+}
+
+.table tbody tr:nth-child(even){
+  background:#f9fafb;
+}
+
+.table-total td{
+  background:#eef2f7;
+  font-weight: 900;
+}
+
+/* ===========================================================
+   DETALLE
+=========================================================== */
+.detalle-scroll{
+  overflow:auto;
+  max-height: 360px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.table-detalle{
+  min-width: 1100px;
+}
+
+.table.table-detalle thead th{
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.td-wrap{
+  white-space: normal !important;
+  min-width: 320px;
+  max-width: 520px;
+  line-height: 1.25;
+}
+
+/* ===========================================================
+   Observaciones bonitas
+=========================================================== */
+.obs-box{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.obs-item{
+  border: 1px solid var(--border-soft);
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, .04);
+}
+
+.obs-item.has-date{
+  border-left: 4px solid var(--btn-blue);
+}
+
+.obs-item.no-date{
+  border-left: 4px solid #94a3b8;
+  opacity: .95;
+}
+
+.obs-date{
+  font-size: .72rem;
+  font-weight: 900;
+  color: #0f172a;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.obs-text{
+  font-size: .82rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.25;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===========================================================
+   ResumenCalificacion
+=========================================================== */
+.calificacion-card{
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+.estado-title{
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: #111827;
+}
+
+.estado-table{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+  min-width: 520px;
+}
+
+.estado-table thead th{
+  background: var(--head);
+  color:#fff;
+  padding: 8px 10px;
+  text-align:left;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.estado-table tbody td{
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  color:#111827;
+  white-space: nowrap;
+}
+
+.calificacion-table thead th{ text-align: center; }
+.calificacion-table tbody td{ text-align: center; }
+.calificacion-table tbody td:first-child{
+  text-align: left;
+  font-weight: 900;
+}
+
+/* ===========================================================
+   Modal WIN RATE
+=========================================================== */
+.wr-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,.55);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 18px;
+  z-index: 9999;
+}
+
+.wr-modal{
+  width: min(1100px, 95vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  padding: 14px;
+  outline: none;
+}
+
+.wr-head{
+  display:flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items:flex-start;
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+
+.wr-title{
+  font-size: 1.2rem;
+  font-weight: 900;
+  color: #0f172a;
+}
+.wr-sub{
+  font-size: .85rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.wr-close{
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor:pointer;
+  font-weight: 900;
+}
+.wr-close:hover{ background:#f9fafb; }
+
+.wr-filters{
+  background:#f8fafc;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.wr-filters-title{
+  font-size: .75rem;
+  font-weight: 900;
+  color: #334155;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.wr-filters-grid{
+  display:grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.wr-grid{
+  display:grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 12px;
+}
+
+.wr-card{
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow:hidden;
+  background:#fff;
+}
+
+.wr-card-title{
+  padding: 10px 12px;
+  font-weight: 900;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.wr-scroll{
+  max-height: 380px;
+  overflow:auto;
+}
+
+.wr-table{
+  width:100%;
+  border-collapse: collapse;
+  font-size: .85rem;
+}
+
+.wr-table th{
+  background: var(--head);
+  color:#fff;
+  padding: 8px 10px;
+  text-align:left;
+  font-weight: 900;
+  position: sticky;
+  top: 0;
+}
+
+.wr-table td{
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.wr-table td.num, .wr-table th.num{
+  text-align:right;
+}
+
+.wr-total td{
+  background:#eef2f7;
+  font-weight: 900;
+}
+
+/* ===========================================================
+   REACT-SELECT extra
 =========================================================== */
 .react-select__control{
   border-radius: 10px !important;
@@ -416,76 +586,42 @@
   min-height: 38px !important;
   box-shadow: none !important;
 }
-
 .react-select__control--is-focused{
   border-color: #cbd5e1 !important;
   box-shadow: 0 0 0 3px rgba(148,163,184,.25) !important;
 }
-
 .react-select__menu{
   border-radius: 10px !important;
   overflow:hidden !important;
   border: 1px solid var(--border) !important;
 }
-
 .react-select__option{
   font-size: 13px !important;
   font-weight: 700 !important;
 }
-
 .react-select__multi-value{
   border-radius: 999px !important;
   background: #e5e7eb !important;
 }
-
 .react-select__multi-value__label{
   font-weight: 900 !important;
   color:#111827 !important;
 }
 
 /* ===========================================================
-   RESPONSIVE
-=========================================================== */
-@media (max-width: 1250px){
-  .dashboard-layout{ grid-template-columns: 1fr 300px; }
-  .main-grid{ grid-template-columns: 1fr; }
-}
-
-@media (max-width: 1100px){
-  .dashboard-layout{ grid-template-columns: 1fr; }
-  .dashboard-filtros{
-    position: relative;
-    top:auto;
-    max-height:none;
-    order:-1;
-  }
-  .kpi-grid{ grid-template-columns: repeat(2, 1fr); }
-}
-
-@media (max-width: 650px){
-  .kpi-grid{ grid-template-columns: 1fr; }
-  .two-col{ grid-template-columns: 1fr; }
-  .oport-dash-title{ font-size: 1.55rem; }
-
-  /* ✅ en móvil reduce mínimos */
-  .card{ min-height: 200px; }
-  .table-scroll{ max-height: 240px; }
-}
-
-/* ===========================================================
    Scrollbars discretas
 =========================================================== */
-.dashboard-filtros::-webkit-scrollbar,
 .detalle-scroll::-webkit-scrollbar,
 .table-scroll::-webkit-scrollbar,
-.calificacion-card::-webkit-scrollbar{
+.calificacion-card::-webkit-scrollbar,
+.wr-scroll::-webkit-scrollbar{
   width: 10px;
   height: 10px;
 }
-.dashboard-filtros::-webkit-scrollbar-thumb,
 .detalle-scroll::-webkit-scrollbar-thumb,
 .table-scroll::-webkit-scrollbar-thumb,
-.calificacion-card::-webkit-scrollbar-thumb{
+.calificacion-card::-webkit-scrollbar-thumb,
+.wr-scroll::-webkit-scrollbar-thumb{
   background: rgba(107,114,128,.45);
   border-radius: 999px;
   border: 2px solid rgba(243,244,246,.65);
@@ -519,4 +655,23 @@
 .rs-label{
   font-weight:800;
   font-size:13px;
+}
+
+/* ===========================================================
+   RESPONSIVE
+=========================================================== */
+@media (max-width: 1250px){
+  .main-grid{ grid-template-columns: 1fr; }
+  .filters-inline-grid{ grid-template-columns: repeat(2, 1fr); }
+  .kpi-grid-5{ grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 650px){
+  .kpi-grid-5{ grid-template-columns: 1fr; }
+  .two-col{ grid-template-columns: 1fr; }
+  .oport-dash-title{ font-size: 1.55rem; }
+  .card{ min-height: 200px; }
+  .table-scroll{ max-height: 240px; }
+  .wr-filters-grid{ grid-template-columns: repeat(2, 1fr); }
+  .wr-grid{ grid-template-columns: 1fr; }
 }
