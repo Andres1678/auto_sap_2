@@ -1,15 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import Select, { components } from "react-select";
-import Modal from "react-modal";
-
 import GraficoCantidadGanadas from "./GraficoCantidadGanadas";
 import GraficoActivasCerradas from "./GraficoActivasCerradas";
 import ResumenCalificacion from "./ResumenCalificacion";
 import "./DashboardOportunidades.css";
 import { jfetch } from "./lib/api";
-
-Modal.setAppElement("#root");
 
 /* ===================== React-Select styles ===================== */
 const rsStyles = {
@@ -104,6 +100,7 @@ function toNumberSmart(v) {
   let s = String(v).trim();
   if (!s) return 0;
 
+  // limpia moneda/espacios/%/COP
   s = s
     .replace(/\u00A0/g, " ")
     .replace(/\s/g, "")
@@ -208,6 +205,7 @@ function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {})
     const prev = m.get(key) || { label: displayLabel(raw), count: 0, otc: 0, mrc: 0 };
 
     prev.count += 1;
+
     prev.otc += readMoney(r, ["otc", "otr", "OTC", "OTR"]);
     prev.mrc += readMoney(r, ["mrc", "MRC"]);
 
@@ -277,11 +275,6 @@ const ESTADOS_CERRADOS_N = new Set(
   )
 );
 
-function pct(n, d) {
-  if (!d) return "0,00%";
-  return `${(100 * (n / d)).toFixed(2).replace(".", ",")}%`;
-}
-
 /* ===================== Observaciones: separar por fechas ===================== */
 const OBS_DATE_TOKEN = /(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})/g;
 
@@ -309,15 +302,22 @@ function splitObservacionesByDate(raw) {
     const m = line.match(
       /^(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*(.*)$/
     );
-    if (m) out.push({ date: m[1], text: (m[2] || "").trim() || "-" });
-    else out.push({ date: null, text: line });
+    if (m) {
+      out.push({ date: m[1], text: (m[2] || "").trim() || "-" });
+    } else {
+      out.push({ date: null, text: line });
+    }
   }
 
+  // Si hay líneas sin fecha después de una fechada, se pegan como continuación
   const merged = [];
   for (const it of out) {
     const last = merged[merged.length - 1];
-    if (!it.date && last && last.date) last.text = `${last.text}\n${it.text}`.trim();
-    else merged.push({ ...it });
+    if (!it.date && last && last.date) {
+      last.text = `${last.text}\n${it.text}`.trim();
+    } else {
+      merged.push({ ...it });
+    }
   }
 
   return merged;
@@ -347,7 +347,6 @@ function renderObservacionesCell(value) {
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState([]);
-  const [winRateOpen, setWinRateOpen] = useState(false);
 
   const [filtros, setFiltros] = useState({
     anios: [],
@@ -433,18 +432,17 @@ export default function DashboardOportunidades() {
       try {
         await fetchFilters();
         await fetchData(filtros);
-      } catch {
+      } catch (e) {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     (async () => {
       try {
         await fetchData(filtrosDebounced);
-      } catch {}
+      } catch (e) {}
     })();
   }, [filtrosDebounced]);
 
@@ -493,38 +491,6 @@ export default function DashboardOportunidades() {
     };
   }, [dataBase]);
 
-  const winRate = useMemo(() => {
-    const rows = Array.isArray(dataFiltrada) ? dataFiltrada : [];
-
-    const GANADA_N = normKeyForMatch("GANADA");
-    const PERDIDA_N = normKeyForMatch("PERDIDA");
-
-    let ganadas = 0;
-    let perdidas = 0;
-    let enProceso = 0;
-
-    for (const r of rows) {
-      const estadoRaw = r?.estado_oferta ?? "";
-      if (isExcludedLabel(estadoRaw)) continue;
-
-      const estadoN = normKeyForMatch(estadoRaw);
-
-      if (estadoN === GANADA_N) ganadas++;
-      else if (estadoN === PERDIDA_N) perdidas++;
-      else if (ESTADOS_ACTIVOS_N.has(estadoN)) enProceso++;
-    }
-
-    const total = rows.filter((r) => !isExcludedLabel(r?.estado_oferta ?? "")).length;
-
-    return {
-      ganadas,
-      perdidas,
-      enProceso,
-      total,
-      indicador: total ? (ganadas / total) * 100 : 0,
-    };
-  }, [dataFiltrada]);
-
   const limpiar = () => {
     setFiltros({
       anios: [],
@@ -562,14 +528,17 @@ export default function DashboardOportunidades() {
           <h2 className="oport-dash-title">Consultorías y oportunidades comerciales CoE SAP</h2>
           <div className="oport-dash-subtitle">KPIs, filtros y detalle consolidado</div>
         </div>
+
+        <button className="oport-btn" onClick={limpiar} disabled={loading}>
+          Limpiar filtros
+        </button>
       </div>
 
-      <div className="dashboard-layout-single">
+      <div className="dashboard-layout">
         <main className="dashboard-main">
           {loading && <div className="oport-loading">Cargando...</div>}
 
-          {/* ===== KPIs + WIN RATE ===== */}
-          <section className="kpi-grid kpi-grid-5">
+          <section className="kpi-grid">
             <div className="kpi-card">
               <div className="kpi-label">Cantidad</div>
               <div className="kpi-value">{kpis.total}</div>
@@ -592,153 +561,8 @@ export default function DashboardOportunidades() {
                 {kpis.ganadas} de {kpis.total}
               </div>
             </div>
-
-            <button
-              type="button"
-              className="kpi-card kpi-card-click winrate-card"
-              onClick={() => setWinRateOpen(true)}
-            >
-              <div className="kpi-label">WIN RATE</div>
-              <div className="kpi-value">{winRate.indicador.toFixed(2)}%</div>
-              <div className="kpi-sub">
-                {winRate.ganadas} ganadas / {winRate.total} total
-              </div>
-              <div className="kpi-hint">Click para ver detalle</div>
-            </button>
           </section>
 
-          {/* ===== FILTROS DEBAJO ===== */}
-          <section className="filters-inline">
-            <div className="filters-inline-head">
-              <div className="filters-title">Filtros</div>
-              <button className="oport-btn" onClick={limpiar} disabled={loading}>
-                Limpiar filtros
-              </button>
-            </div>
-
-            <div className="filters-inline-grid">
-              <div className="filtro-item">
-                <label>Año / Mes</label>
-                <div className="two-col">
-                  <Select
-                    {...selectCommon}
-                    placeholder="Año"
-                    options={opciones.anios}
-                    value={filtros.anios}
-                    onChange={(v) => setFiltros((p) => ({ ...p, anios: v || [] }))}
-                  />
-                  <Select
-                    {...selectCommon}
-                    placeholder="Mes"
-                    options={opciones.meses}
-                    value={filtros.meses}
-                    onChange={(v) => setFiltros((p) => ({ ...p, meses: v || [] }))}
-                  />
-                </div>
-              </div>
-
-              <div className="filtro-item">
-                <label>Tipo</label>
-                <Select
-                  {...selectCommon}
-                  placeholder="Todos"
-                  options={opciones.tipos}
-                  value={filtros.tipos}
-                  onChange={(v) => setFiltros((p) => ({ ...p, tipos: v || [] }))}
-                />
-              </div>
-
-              <div className="filtro-item">
-                <label>Dirección Comercial</label>
-                <Select
-                  {...selectCommon}
-                  placeholder="Todas"
-                  options={opciones.direccionComercial}
-                  value={filtros.direccionComercial}
-                  onChange={(v) => setFiltros((p) => ({ ...p, direccionComercial: v || [] }))}
-                />
-              </div>
-
-              <div className="filtro-item">
-                <label>Gerencia Comercial</label>
-                <Select
-                  {...selectCommon}
-                  placeholder="Todas"
-                  options={opciones.gerenciaComercial}
-                  value={filtros.gerenciaComercial}
-                  onChange={(v) => setFiltros((p) => ({ ...p, gerenciaComercial: v || [] }))}
-                />
-              </div>
-
-              <div className="filtro-item">
-                <label>Nombre Cliente</label>
-                <Select
-                  {...selectCommon}
-                  placeholder="Todos"
-                  options={opciones.cliente}
-                  value={filtros.cliente}
-                  onChange={(v) => setFiltros((p) => ({ ...p, cliente: v || [] }))}
-                />
-              </div>
-
-              <div className="filtro-item">
-                <label>Estado Oferta</label>
-                <Select
-                  {...selectCommon}
-                  placeholder="Todos"
-                  options={opciones.estadoOferta}
-                  value={filtros.estadoOferta}
-                  onChange={(v) => setFiltros((p) => ({ ...p, estadoOferta: v || [] }))}
-                />
-              </div>
-
-              <div className="filtro-item">
-                <label>Resultado Oferta</label>
-                <Select
-                  {...selectCommon}
-                  placeholder="Todos"
-                  options={opciones.resultadoOferta}
-                  value={filtros.resultadoOferta}
-                  onChange={(v) => setFiltros((p) => ({ ...p, resultadoOferta: v || [] }))}
-                />
-              </div>
-
-              <div className="filtro-item">
-                <label>Estado OT</label>
-                <Select
-                  {...selectCommon}
-                  placeholder="Todos"
-                  options={opciones.estadoOT}
-                  value={filtros.estadoOT}
-                  onChange={(v) => setFiltros((p) => ({ ...p, estadoOT: v || [] }))}
-                />
-              </div>
-
-              <div className="filtro-item">
-                <label>Último Mes</label>
-                <Select
-                  {...selectCommon}
-                  placeholder="Todos"
-                  options={opciones.ultimoMes}
-                  value={filtros.ultimoMes}
-                  onChange={(v) => setFiltros((p) => ({ ...p, ultimoMes: v || [] }))}
-                />
-              </div>
-
-              <div className="filtro-item">
-                <label>Calificación Oportunidad</label>
-                <Select
-                  {...selectCommon}
-                  placeholder="Todas"
-                  options={opciones.calificacion}
-                  value={filtros.calificacion}
-                  onChange={(v) => setFiltros((p) => ({ ...p, calificacion: v || [] }))}
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* ===== Tablas + gráficas ===== */}
           <section className="main-grid">
             <div className="main-col">
               <div className="card">
@@ -763,10 +587,7 @@ export default function DashboardOportunidades() {
                           <td>{fmtMoney(it.otc)}</td>
                           <td>{fmtMoney(it.mrc)}</td>
                           <td>
-                            {totEstadoOferta.count
-                              ? ((it.count / totEstadoOferta.count) * 100).toFixed(2)
-                              : "0.00"}
-                            %
+                            {totEstadoOferta.count ? ((it.count / totEstadoOferta.count) * 100).toFixed(2) : "0.00"}%
                           </td>
                         </tr>
                       ))}
@@ -844,7 +665,6 @@ export default function DashboardOportunidades() {
             </div>
           </section>
 
-          {/* ===== Detalle ===== */}
           <section className="card">
             <div className="card-title">Detalle de Oportunidades</div>
 
@@ -885,127 +705,154 @@ export default function DashboardOportunidades() {
               </table>
             </div>
           </section>
-
-          {/* ===== MODAL WIN RATE ===== */}
-          <Modal
-            isOpen={winRateOpen}
-            onRequestClose={() => setWinRateOpen(false)}
-            className="wr-modal"
-            overlayClassName="wr-overlay"
-            contentLabel="Win Rate"
-          >
-            <div className="wr-head">
-              <div>
-                <div className="wr-title">WIN RATE</div>
-                <div className="wr-sub">Resumen + distribución por Estado de Oferta</div>
-              </div>
-
-              <button className="wr-close" onClick={() => setWinRateOpen(false)}>
-                ✖
-              </button>
-            </div>
-
-            <div className="wr-filters">
-              <div className="wr-filters-title">Filtros (sincronizados con el Dashboard)</div>
-              <div className="wr-filters-grid">
-                <Select
-                  {...selectCommon}
-                  placeholder="Año"
-                  options={opciones.anios}
-                  value={filtros.anios}
-                  onChange={(v) => setFiltros((p) => ({ ...p, anios: v || [] }))}
-                />
-                <Select
-                  {...selectCommon}
-                  placeholder="Mes"
-                  options={opciones.meses}
-                  value={filtros.meses}
-                  onChange={(v) => setFiltros((p) => ({ ...p, meses: v || [] }))}
-                />
-                <Select
-                  {...selectCommon}
-                  placeholder="Gerencia"
-                  options={opciones.gerenciaComercial}
-                  value={filtros.gerenciaComercial}
-                  onChange={(v) => setFiltros((p) => ({ ...p, gerenciaComercial: v || [] }))}
-                />
-                <Select
-                  {...selectCommon}
-                  placeholder="Cliente"
-                  options={opciones.cliente}
-                  value={filtros.cliente}
-                  onChange={(v) => setFiltros((p) => ({ ...p, cliente: v || [] }))}
-                />
-              </div>
-            </div>
-
-            <div className="wr-grid">
-              <div className="wr-card">
-                <div className="wr-card-title">Resumen</div>
-                <table className="wr-table">
-                  <tbody>
-                    <tr>
-                      <td><b>Total ganadas</b></td>
-                      <td className="num">{winRate.ganadas}</td>
-                    </tr>
-                    <tr>
-                      <td><b>Total ofertas perdidas</b></td>
-                      <td className="num">{winRate.perdidas}</td>
-                    </tr>
-                    <tr>
-                      <td><b>Total ofertas en proceso</b></td>
-                      <td className="num">{winRate.enProceso}</td>
-                    </tr>
-                    <tr>
-                      <td><b>Total</b></td>
-                      <td className="num">{winRate.total}</td>
-                    </tr>
-                    <tr className="wr-total">
-                      <td><b>Indicador Win Rate</b></td>
-                      <td className="num">{winRate.indicador.toFixed(2).replace(".", ",")}%</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="wr-card">
-                <div className="wr-card-title">Distribución por Estado Oferta</div>
-                <div className="wr-scroll">
-                  <table className="wr-table">
-                    <thead>
-                      <tr>
-                        <th>ESTADO_OFERTA</th>
-                        <th className="num">Cantidad</th>
-                        <th className="num">%Part</th>
-                        <th className="num">MRC</th>
-                        <th className="num">OTC</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tablaEstadoOferta.rows.map((it) => (
-                        <tr key={it.label}>
-                          <td>{it.label}</td>
-                          <td className="num">{it.count}</td>
-                          <td className="num">{pct(it.count, totEstadoOferta.count)}</td>
-                          <td className="num">{fmtMoney(it.mrc)}</td>
-                          <td className="num">{fmtMoney(it.otc)}</td>
-                        </tr>
-                      ))}
-
-                      <tr className="wr-total">
-                        <td><b>Total</b></td>
-                        <td className="num"><b>{totEstadoOferta.count}</b></td>
-                        <td className="num"><b>100,00%</b></td>
-                        <td className="num"><b>{fmtMoney(totEstadoOferta.mrc)}</b></td>
-                        <td className="num"><b>{fmtMoney(totEstadoOferta.otc)}</b></td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </Modal>
         </main>
+
+        <aside className="dashboard-filtros">
+          <div className="filters-head">
+            <div className="filters-title">Filtros</div>
+          </div>
+
+          <div className="filtro-item">
+            <label>Año / Mes</label>
+            <div className="two-col">
+              <Select
+                {...selectCommon}
+                placeholder="Año"
+                options={opciones.anios}
+                value={filtros.anios}
+                onChange={(v) => setFiltros((p) => ({ ...p, anios: v || [] }))}
+              />
+              <Select
+                {...selectCommon}
+                placeholder="Mes"
+                options={opciones.meses}
+                value={filtros.meses}
+                onChange={(v) => setFiltros((p) => ({ ...p, meses: v || [] }))}
+              />
+            </div>
+          </div>
+
+          <div className="filtro-item">
+            <label>Tipo</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todos"
+              options={opciones.tipos}
+              value={filtros.tipos}
+              onChange={(v) => setFiltros((p) => ({ ...p, tipos: v || [] }))}
+            />
+          </div>
+
+          <div className="filtro-item">
+            <label>Dirección Comercial</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todas"
+              options={opciones.direccionComercial}
+              value={filtros.direccionComercial}
+              onChange={(v) => setFiltros((p) => ({ ...p, direccionComercial: v || [] }))}
+            />
+          </div>
+
+          <div className="filtro-item">
+            <label>Gerencia Comercial</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todas"
+              options={opciones.gerenciaComercial}
+              value={filtros.gerenciaComercial}
+              onChange={(v) => setFiltros((p) => ({ ...p, gerenciaComercial: v || [] }))}
+            />
+          </div>
+
+          <div className="filtro-item">
+            <label>Nombre Cliente</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todos"
+              options={opciones.cliente}
+              value={filtros.cliente}
+              onChange={(v) => setFiltros((p) => ({ ...p, cliente: v || [] }))}
+            />
+          </div>
+
+          <div className="filtro-item">
+            <label>Estado Oferta</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todos"
+              options={opciones.estadoOferta}
+              value={filtros.estadoOferta}
+              onChange={(v) => setFiltros((p) => ({ ...p, estadoOferta: v || [] }))}
+            />
+          </div>
+
+          <div className="filtro-item">
+            <label>Resultado Oferta</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todos"
+              options={opciones.resultadoOferta}
+              value={filtros.resultadoOferta}
+              onChange={(v) => setFiltros((p) => ({ ...p, resultadoOferta: v || [] }))}
+            />
+          </div>
+
+          <div className="filtro-item">
+            <label>Fecha Acta Cierre OT</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todas"
+              options={opciones.fechaActaCierreOT}
+              value={filtros.fechaActaCierreOT}
+              onChange={(v) => setFiltros((p) => ({ ...p, fechaActaCierreOT: v || [] }))}
+            />
+          </div>
+
+          <div className="filtro-item">
+            <label>Fecha Cierre Oportunidad</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todas"
+              options={opciones.fechaCierreOportunidad}
+              value={filtros.fechaCierreOportunidad}
+              onChange={(v) => setFiltros((p) => ({ ...p, fechaCierreOportunidad: v || [] }))}
+            />
+          </div>
+
+          <div className="filtro-item">
+            <label>Estado OT</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todos"
+              options={opciones.estadoOT}
+              value={filtros.estadoOT}
+              onChange={(v) => setFiltros((p) => ({ ...p, estadoOT: v || [] }))}
+            />
+          </div>
+
+          <div className="filtro-item">
+            <label>Último Mes</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todos"
+              options={opciones.ultimoMes}
+              value={filtros.ultimoMes}
+              onChange={(v) => setFiltros((p) => ({ ...p, ultimoMes: v || [] }))}
+            />
+          </div>
+
+          <div className="filtro-item">
+            <label>Calificación Oportunidad</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todas"
+              options={opciones.calificacion}
+              value={filtros.calificacion}
+              onChange={(v) => setFiltros((p) => ({ ...p, calificacion: v || [] }))}
+            />
+          </div>
+        </aside>
       </div>
     </div>
   );
