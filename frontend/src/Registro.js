@@ -733,8 +733,13 @@ const Registro = ({ userData }) => {
       });
     }
 
+    const fechaCambioEnEdicion =
+      modoEdicion && original && String(original.fecha) !== String(registro.fecha);
+
     if (registro.fecha > CUTOFF_FREE_DATE_ISO) {
-      if (!isDateInRangeISO(registro.fecha, weekMinISO, weekMaxISO)) {
+      const debeRestringirSemana = !modoEdicion || fechaCambioEnEdicion;
+
+      if (debeRestringirSemana && !isDateInRangeISO(registro.fecha, weekMinISO, weekMaxISO)) {
         return Swal.fire({
           icon: "warning",
           title: "Fecha fuera de la semana vigente",
@@ -1102,6 +1107,8 @@ const Registro = ({ userData }) => {
     const moduloSel = pool.length === 1 ? pool[0] : (moduloPref || "");
     setModuloElegido(moduloSel);
 
+    const { minISO: weekMinISO, maxISO: weekMaxISO, todayISO: todayCopyISO } = getWeekBoundsISO(new Date());
+
     const tareaId =
       reg?.tarea_id ??
       reg?.tarea?.id ??
@@ -1150,11 +1157,16 @@ const Registro = ({ userData }) => {
       (fases.length ? fases[0] : null);
 
     const newHoraInicio = reg?.horaFin || "";
+    const minFechaUI = (todayCopyISO > CUTOFF_FREE_DATE_ISO) ? weekMinISO : "";
+    const maxFechaUI = (todayCopyISO > CUTOFF_FREE_DATE_ISO) ? weekMaxISO : todayCopyISO;
 
     setRegistro({
       ...initRegistro(),
       id: null,
-      fecha: reg.fecha,
+      fecha: todayCopyISO,
+      _uiMinFecha: minFechaUI,
+      _uiMaxFecha: maxFechaUI,
+
       cliente: reg.cliente,
       nroCasoCliente: reg.nroCasoCliente,
       nroCasoInterno: reg.nroCasoInterno,
@@ -1642,6 +1654,8 @@ const Registro = ({ userData }) => {
                   max={todayISO}
                   onChange={(e) => setRegistro({ ...registro, fecha: e.target.value })}
                   required
+                  disabled={modoEdicion}
+                  title={modoEdicion ? "En edición no puedes modificar la fecha" : ""}
                 />
 
                 <select
