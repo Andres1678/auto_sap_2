@@ -839,16 +839,6 @@ export default function Graficos() {
               title="Hasta (YYYY-MM-DD)"
             />
           </div>
-
-          {/* ✅ acción rápida */}
-          <button
-            type="button"
-            className="btn btn-outline btn-range-clear"
-            onClick={() => { setFiltroDesde(""); setFiltroHasta(""); }}
-            title="Limpiar rango"
-          >
-            Limpiar rango
-          </button>
         </div>
 
         <MultiFiltro
@@ -944,6 +934,16 @@ export default function Graficos() {
         >
           Limpiar
         </button>
+
+        {/* ✅ acción rápida */}
+          <button
+            type="button"
+            className="btn btn-outline btn-range-clear"
+            onClick={() => { setFiltroDesde(""); setFiltroHasta(""); }}
+            title="Limpiar rango"
+          >
+            Limpiar rango
+          </button>
       </div>
 
       <div className="pg-grid pg-grid--stack">
