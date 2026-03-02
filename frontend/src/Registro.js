@@ -45,7 +45,6 @@ const CLIENTE_RESTRINGIDO = 'HITSS/CLARO';
 const CODES_NEED_CASE = new Set(['01','02','03']);
 const CODES_RESTRICTED_CLIENT_9H = new Set(['09','13','14','15']);
 const CODE_SUPERVISION_EQUIPO = '06';
-const USERS_PUEDE_SEMANAS_ANTERIORES = new Set([]);
 const CUTOFF_FREE_DATE_ISO = "2026-02-20";
 
 const parseHHMM = (s) => {
@@ -161,6 +160,16 @@ const isDateInRangeISO = (iso, minISO, maxISO) => {
   if (!iso) return false;
   return iso >= minISO && iso <= maxISO;
 };
+
+const normText = (v) =>
+  String(v ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+
+const proyectoClienteNombre = (p) =>
+  String(p?.cliente?.nombre_cliente ?? p?.cliente?.nombre ?? "").trim();
 
 const findOverlapRegistro = ({
   registros,
@@ -384,9 +393,51 @@ const Registro = ({ userData }) => {
   const forceProyectoMode = useMemo(() => {
     return !!String(registro?.proyecto_id || "").trim();
   }, [registro?.proyecto_id]);
-
   
   const showProyectoUI = isProyectoMode || forceProyectoMode;
+
+  const proyectosFiltradosPorCliente = useMemo(() => {
+    const clienteSel = String(registro?.cliente || "").trim();
+    if (!clienteSel) return [];
+
+    const key = normText(clienteSel);
+
+    return (proyectos || []).filter((p) => {
+      const cName = proyectoClienteNombre(p);
+      if (!cName) return false; 
+      return normText(cName) === key;
+    });
+  }, [proyectos, registro?.cliente]);
+
+  useEffect(() => {
+    if (!showProyectoUI) return;
+    if (!registro?.cliente) return;
+    if (!registro?.proyecto_id) return;
+    if (loadingProyectos) return;
+    if (!Array.isArray(proyectos) || proyectos.length === 0) return;
+
+    const pid = String(registro.proyecto_id);
+    const ok = proyectosFiltradosPorCliente.some(p => String(p.id) === pid);
+
+    if (!ok) {
+      setRegistro((r) => ({
+        ...r,
+        proyecto_id: "",
+        proyecto_codigo: "",
+        proyecto_nombre: "",
+        proyecto_fase: "",
+        fase_proyecto_id: "",
+      }));
+      setFasesProyecto([]);
+    }
+  }, [
+    showProyectoUI,
+    registro?.cliente,
+    registro?.proyecto_id,
+    proyectosFiltradosPorCliente,
+    proyectos,
+    loadingProyectos
+  ]);
 
   
   useEffect(() => {
@@ -710,6 +761,8 @@ const Registro = ({ userData }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    const original = editOriginalRef.current;
+
     if (!isAdmin && !consultorActivo) {
       return Swal.fire({
         icon: "warning",
@@ -771,8 +824,6 @@ const Registro = ({ userData }) => {
 
     const nombreConsultor =
       userData?.nombre || userData?.user?.nombre || userData?.consultor?.nombre || "";
-
-    const original = editOriginalRef.current;
 
     const cambioRangoEnEdicion =
       modoEdicion &&
@@ -1660,7 +1711,27 @@ const Registro = ({ userData }) => {
 
                 <select
                   value={registro.cliente}
-                  onChange={(e) => setRegistro({ ...registro, cliente: e.target.value })}
+                  onChange={(e) => {
+                    const nextCliente = e.target.value;
+
+                    setRegistro((r) => {
+                      const next = { ...r, cliente: nextCliente };
+
+                      if (showProyectoUI) {
+                        next.proyecto_id = "";
+                        next.proyecto_codigo = "";
+                        next.proyecto_nombre = "";
+                        next.proyecto_fase = "";
+                        next.fase_proyecto_id = "";
+                      }
+
+                      return next;
+                    });
+
+                    if (showProyectoUI) {
+                      setFasesProyecto([]);
+                    }
+                  }}
                   required
                 >
                   <option value="">Seleccionar Cliente</option>
@@ -1730,33 +1801,35 @@ const Registro = ({ userData }) => {
                       value={registro.proyecto_id || ""}
                       onChange={(e) => {
                         const pid = e.target.value;
-                        const p = proyectos.find(x => String(x.id) === String(pid));
+                        const p = proyectosFiltradosPorCliente.find(x => String(x.id) === String(pid));
 
                         const fases = Array.isArray(p?.fases) ? p.fases : [];
                         setFasesProyecto(fases);
 
-                        // si el proyecto tiene fases, dejamos la primera por defecto (opcional)
                         const firstFase = fases.length ? fases[0] : null;
 
-                        setRegistro(r => ({
+                        setRegistro((r) => ({
                           ...r,
                           proyecto_id: pid,
                           proyecto_codigo: p?.codigo || "",
                           proyecto_nombre: p?.nombre || "",
                           nroCasoCliente: p?.codigo ? String(p.codigo) : r.nroCasoCliente,
-
-                          // importante: usar fase_proyecto_id (no proyecto_fase_id)
                           fase_proyecto_id: firstFase ? String(firstFase.id) : "",
                           proyecto_fase: firstFase ? String(firstFase.nombre) : "",
                         }));
                       }}
                       required
-                      disabled={loadingProyectos || proyectos.length === 0}
+                      disabled={loadingProyectos || !registro.cliente || proyectosFiltradosPorCliente.length === 0}
                     >
                       <option value="">
-                        {loadingProyectos ? "Cargando proyectos..." : "Seleccionar Proyecto"}
+                        {loadingProyectos
+                          ? "Cargando proyectos..."
+                          : !registro.cliente
+                            ? "Selecciona un cliente primero"
+                            : (proyectosFiltradosPorCliente.length === 0 ? "No hay proyectos para este cliente" : "Seleccionar Proyecto")}
                       </option>
-                      {proyectos.map(p => (
+
+                      {proyectosFiltradosPorCliente.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.codigo} - {p.nombre}
                         </option>
