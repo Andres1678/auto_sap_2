@@ -556,6 +556,10 @@ class Proyecto(db.Model):
     nombre = db.Column(db.String(180), nullable=False)
     activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
 
+    # ✅ FK correcto (tabla: clientes)
+    cliente_id = db.Column(db.Integer, db.ForeignKey("clientes.id", ondelete="SET NULL"), nullable=True)
+    cliente = relationship("Cliente", lazy="joined")
+
     fase_id = db.Column(db.Integer, db.ForeignKey("proyecto_fase.id", ondelete="SET NULL"), nullable=True)
     fase = relationship("ProyectoFase", back_populates="proyectos")
 
@@ -574,7 +578,7 @@ class Proyecto(db.Model):
     )
 
     def __repr__(self):
-        return f"<Proyecto id={self.id} codigo={self.codigo!r} activo={self.activo}>"
+        return f"<Proyecto id={self.id} codigo={self.codigo!r} activo={self.activo} cliente_id={self.cliente_id}>"
     
 class ProyectoModulo(db.Model):
     __tablename__ = "proyecto_modulo"

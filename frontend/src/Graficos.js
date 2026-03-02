@@ -23,6 +23,20 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const isISO = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+const inRangeISO = (fechaISO, desdeISO, hastaISO) => {
+  if (!isISO(fechaISO)) return false;
+
+  const d = isISO(desdeISO) ? desdeISO : null;
+  const h = isISO(hastaISO) ? hastaISO : null;
+
+  if (!d && !h) return true;
+  if (d && !h) return fechaISO >= d;
+  if (!d && h) return fechaISO <= h;
+  return fechaISO >= d && fechaISO <= h;
+};
+
 const coincideMes = (fechaISO, mesYYYYMM) => {
   if (!mesYYYYMM) return true;
   const [y, m] = mesYYYYMM.split('-');
@@ -270,6 +284,10 @@ export default function Graficos() {
   const [filtroNroCliente, setFiltroNroCliente] = useState([]);
   const [filtroNroEscalado, setFiltroNroEscalado] = useState([]);
   const [filtroEquipo, setFiltroEquipo] = useState([]);
+  const [ocupacionesCatalogo, setOcupacionesCatalogo] = useState([]); 
+  const [filtroOcupacion, setFiltroOcupacion] = useState([]);         
+  const [filtroDesde, setFiltroDesde] = useState("");                 
+  const [filtroHasta, setFiltroHasta] = useState("");                 
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -354,6 +372,34 @@ export default function Graficos() {
 
     fetchRegistros();
   }, [rol, usuario, nombreUser, equipoUser]);
+
+  useEffect(() => {
+    const fetchCatalogoOcupaciones = async () => {
+      try {
+        const res = await jfetch("/ocupaciones", { method: "GET" });
+        const json = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
+
+        const ocus = Array.isArray(json) ? json : [];
+        const labels = ocus
+          .map((o) => {
+            const codigo = String(o?.codigo ?? "").trim();
+            const nombre = String(o?.nombre ?? "").trim();
+            const label = [codigo, nombre].filter(Boolean).join(" - ");
+            return label || null;
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
+
+        setOcupacionesCatalogo(labels);
+      } catch (err) {
+        console.error("❌ Error cargando /ocupaciones:", err);
+        setOcupacionesCatalogo([]);
+      }
+    };
+
+    fetchCatalogoOcupaciones();
+  }, []);
 
   useEffect(() => {
     const fetchOcupaciones = async () => {
@@ -482,6 +528,16 @@ export default function Graficos() {
 
       
       if (!coincideMes(r.fecha, filtroMes)) return false;
+      if (!inRangeISO(r.fecha, filtroDesde, filtroHasta)) return false;
+
+      if (filtroOcupacion.length > 0) {
+        const occLabel =
+          (r.ocupacion_codigo && r.ocupacion_nombre)
+            ? `${String(r.ocupacion_codigo).trim()} - ${String(r.ocupacion_nombre).trim()}`
+            : (r.ocupacion_nombre ? String(r.ocupacion_nombre).trim() : "SIN OCUPACIÓN");
+
+        if (!filtroOcupacion.includes(occLabel)) return false;
+      }
 
       if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultor)) return false;
       if (filtroTarea.length > 0 && !filtroTarea.includes(r.tipoTarea)) return false;
@@ -505,7 +561,8 @@ export default function Graficos() {
   }, [
     registros, filtroMes, filtroConsultor, filtroTarea, filtroCliente,
     filtroModulo, filtroEquipo, filtroNroCliente, filtroNroEscalado,
-    scope, usuario, equipoUser
+    scope, usuario, equipoUser,
+    filtroOcupacion, filtroDesde, filtroHasta   
   ]);
 
 
@@ -755,6 +812,46 @@ export default function Graficos() {
         />
 
         <MultiFiltro
+          titulo="OCUPACIONES"
+          opciones={ocupacionesCatalogo}     
+          seleccion={filtroOcupacion}
+          onChange={setFiltroOcupacion}
+          placeholder="Todas las ocupaciones"
+        />
+
+        {/* ✅ Rango de días */}
+        <div className="range-days">
+          <span className="mf-label">RANGO DE DÍAS</span>
+          <div className="range-days-row">
+            <input
+              className="filtro-date"
+              type="date"
+              value={filtroDesde}
+              onChange={(e) => { setFiltroDesde(e.target.value); setFiltroMes(""); }}
+              title="Desde (YYYY-MM-DD)"
+            />
+            <span className="range-sep">a</span>
+            <input
+              className="filtro-date"
+              type="date"
+              value={filtroHasta}
+              onChange={(e) => setFiltroHasta(e.target.value)}
+              title="Hasta (YYYY-MM-DD)"
+            />
+          </div>
+
+          {/* ✅ acción rápida */}
+          <button
+            type="button"
+            className="btn btn-outline btn-range-clear"
+            onClick={() => { setFiltroDesde(""); setFiltroHasta(""); }}
+            title="Limpiar rango"
+          >
+            Limpiar rango
+          </button>
+        </div>
+
+        <MultiFiltro
           titulo="Nro. CASO CLIENTE"
           opciones={nroClienteUnicos}
           seleccion={filtroNroCliente}
@@ -829,13 +926,16 @@ export default function Graficos() {
             setFiltroMes('');
             setFiltroNroCliente([]);
             setFiltroNroEscalado([]);
+            setFiltroOcupacion([]);
+            setFiltroDesde("");
+            setFiltroHasta("");
 
             if (scope === 'ALL') {
               setFiltroEquipo([]);
               setFiltroConsultor([]);
             } else if (scope === 'TEAM') {
               setFiltroEquipo(equipoUser ? [equipoUser] : []);
-              setFiltroConsultor([]); // deja ver todo el equipo
+              setFiltroConsultor([]);
             } else { // SELF
               setFiltroEquipo(equipoUser ? [equipoUser] : []);
               setFiltroConsultor(nombreUser ? [nombreUser] : []);

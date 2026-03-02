@@ -4422,6 +4422,9 @@ def me():
         }
     }), 200
 
+## -------------------------------
+##   PROYECTOS Y FASES
+
 def _to_bool2(v, default=False):
     if v is None:
         return default
@@ -4442,11 +4445,15 @@ def proyecto_fase_to_dict(f: ProyectoFase):
 
 def proyecto_to_dict(p: Proyecto, include_modulos=True, include_fases=True):
     fase = getattr(p, "fase", None)
+    cli = getattr(p, "cliente", None)
+
     out = {
         "id": p.id,
         "codigo": p.codigo,
         "nombre": p.nombre,
         "activo": bool(p.activo),
+        "cliente_id": p.cliente_id,
+        "cliente": cli.to_dict() if cli else None,
         "fase_id": p.fase_id,
         "fase": {
             "id": fase.id,

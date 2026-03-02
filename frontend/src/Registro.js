@@ -870,8 +870,8 @@ const Registro = ({ userData }) => {
     }
 
     if (code === CODE_SUPERVISION_EQUIPO) {
-      const poolModulos = [moduloElegido, moduloUser, ...(modulos || [])].map((v) =>
-        String(v || "").trim().toUpperCase()
+      const poolModulos = [moduloElegido, moduloUser, ...(modulos || [])].map((m) =>
+        String(m || "").trim().toUpperCase()
       );
       const canUseLider = poolModulos.includes("LIDER");
       if (!canUseLider) {

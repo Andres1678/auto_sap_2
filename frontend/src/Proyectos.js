@@ -19,6 +19,7 @@ const emptyForm = () => ({
   fases: [],
   activo: true,
   modulos: [],
+  cliente_id: "", 
 });
 
 const norm = (s) => String(s ?? "").trim();
@@ -51,6 +52,7 @@ export default function Proyectos() {
   const [proyectos, setProyectos] = useState([]);
   const [modulos, setModulos] = useState([]);
   const [fases, setFases] = useState([]);
+  const [clientes, setClientes] = useState([]); 
 
   const [q, setQ] = useState("");
   const [soloActivos, setSoloActivos] = useState(false);
@@ -61,22 +63,26 @@ export default function Proyectos() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [pRes, mRes, fRes] = await Promise.all([
+      const [pRes, mRes, fRes, cRes] = await Promise.all([
         jfetch("/proyectos?include_modulos=1&include_fases=1"),
         jfetch("/modulos"),
         jfetch("/proyecto-fases"),
+        jfetch("/clientes"), // ✅
       ]);
 
       const pData = await pRes.json().catch(() => []);
       const mData = await mRes.json().catch(() => []);
       const fData = await fRes.json().catch(() => []);
+      const cData = await cRes.json().catch(() => []);
 
       if (!pRes.ok) throw new Error(pData?.mensaje || `HTTP ${pRes.status}`);
       if (!mRes.ok) throw new Error(mData?.mensaje || `HTTP ${mRes.status}`);
       if (!fRes.ok) throw new Error(fData?.mensaje || `HTTP ${fRes.status}`);
+      if (!cRes.ok) throw new Error(cData?.mensaje || `HTTP ${cRes.status}`);
 
       setProyectos(Array.isArray(pData) ? pData : []);
       setModulos(Array.isArray(mData) ? mData : []);
+      setClientes(Array.isArray(cData) ? cData : []);
 
       const backendFases = Array.isArray(fData) ? fData : [];
       const byName = new Map();
@@ -101,6 +107,7 @@ export default function Proyectos() {
       setProyectos([]);
       setModulos([]);
       setFases(DEFAULT_FASES);
+      setClientes([]);
     } finally {
       setLoading(false);
     }
@@ -124,20 +131,41 @@ export default function Proyectos() {
     return m;
   }, [fases]);
 
+  const clientesMap = useMemo(() => {
+    const m = new Map();
+    (clientes || []).forEach((c) => {
+      const id = Number(c?.id);
+      const name = c?.nombre_cliente ?? c?.nombre ?? "";
+      if (Number.isFinite(id)) m.set(id, String(name));
+    });
+    return m;
+  }, [clientes]);
+
   const proyectosFiltrados = useMemo(() => {
     const needle = norm(q).toLowerCase();
+
     return (proyectos || []).filter((p) => {
       if (soloActivos && !p.activo) return false;
       if (!needle) return true;
 
       const fasesTxt = getProyectoFasesNames(p, fasesMap).join(" ");
+
+      const clienteTxt =
+        String(
+          p?.cliente?.nombre_cliente ??
+            p?.cliente?.nombre ??
+            (p?.cliente_id != null ? clientesMap.get(Number(p?.cliente_id)) : "") ??
+            ""
+        ).toLowerCase();
+
       return (
         String(p.codigo || "").toLowerCase().includes(needle) ||
         String(p.nombre || "").toLowerCase().includes(needle) ||
-        fasesTxt.toLowerCase().includes(needle)
+        fasesTxt.toLowerCase().includes(needle) ||
+        clienteTxt.includes(needle)
       );
     });
-  }, [proyectos, q, soloActivos, fasesMap]);
+  }, [proyectos, q, soloActivos, fasesMap, clientesMap]);
 
   const toggleModulo = (id) => {
     const mid = Number(id);
@@ -163,6 +191,7 @@ export default function Proyectos() {
 
   const startEdit = (p) => {
     const fasesIds = getProyectoFasesIds(p);
+
     setForm({
       id: p.id,
       codigo: p.codigo || "",
@@ -170,7 +199,11 @@ export default function Proyectos() {
       activo: !!p.activo,
       modulos: Array.isArray(p.modulos) ? p.modulos.map((x) => Number(x.id)) : [],
       fases: fasesIds,
+
+      // ✅ cliente_id robusto
+      cliente_id: p?.cliente_id != null ? String(p.cliente_id) : "",
     });
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -219,6 +252,10 @@ export default function Proyectos() {
     if (!norm(form.codigo)) return "El código es obligatorio";
     if (!norm(form.nombre)) return "El nombre es obligatorio";
     if (!Array.isArray(form.modulos) || form.modulos.length === 0) return "Debes seleccionar al menos 1 módulo";
+
+    // ✅ si lo quieres obligatorio:
+    // if (!String(form.cliente_id || "").trim()) return "Debes seleccionar un cliente";
+
     return null;
   };
 
@@ -234,12 +271,17 @@ export default function Proyectos() {
       .map((x) => Number(x))
       .filter((n) => Number.isFinite(n) && n > 0);
 
+    const clienteIdClean = String(form.cliente_id || "").trim();
+
     const payload = {
       codigo: norm(form.codigo).toUpperCase(),
       nombre: norm(form.nombre),
       activo: !!form.activo,
       modulos: (form.modulos || []).map(Number),
       fases: fasesIds,
+
+      // ✅ cliente_id
+      cliente_id: clienteIdClean ? Number(clienteIdClean) : null,
     };
 
     try {
@@ -274,7 +316,7 @@ export default function Proyectos() {
         <div>
           <h2 className="proj-title">Gestión de Proyectos</h2>
           <p className="proj-subtitle">
-            Crear / editar proyectos, asignar módulos permitidos, múltiples fases y estado activo.
+            Crear / editar proyectos, asignar cliente, módulos permitidos, múltiples fases y estado activo.
           </p>
         </div>
 
@@ -313,6 +355,32 @@ export default function Proyectos() {
                 onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
                 placeholder="Ej: Proyecto Migración"
               />
+            </div>
+          </div>
+
+          {/* ✅ Cliente */}
+          <div className="grid-1">
+            <div className="field">
+              <label>Cliente</label>
+              <select
+                value={form.cliente_id ?? ""}
+                onChange={(e) => setForm((f) => ({ ...f, cliente_id: e.target.value }))}
+              >
+                <option value="">— Sin cliente —</option>
+                {(clientes || []).map((c) => {
+                  const id = c?.id;
+                  const name = c?.nombre_cliente ?? c?.nombre ?? "";
+                  return (
+                    <option key={id} value={id}>
+                      {name}
+                    </option>
+                  );
+                })}
+              </select>
+
+              <div className="muted" style={{ marginTop: 6 }}>
+                Si seleccionas un cliente, el proyecto queda ligado para reportes y filtros.
+              </div>
             </div>
           </div>
 
@@ -388,7 +456,7 @@ export default function Proyectos() {
           <div className="proj-list-filters">
             <input
               className="search"
-              placeholder="Buscar por código, nombre o fases…"
+              placeholder="Buscar por código, nombre, cliente o fases…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -406,6 +474,7 @@ export default function Proyectos() {
                 <th>ID</th>
                 <th>Código</th>
                 <th>Nombre</th>
+                <th>Cliente</th>
                 <th>Fases</th>
                 <th>Activo</th>
                 <th>Módulos</th>
@@ -417,11 +486,18 @@ export default function Proyectos() {
                 const fasesNames = getProyectoFasesNames(p, fasesMap);
                 const fasesTxt = fasesNames.length ? fasesNames.join(", ") : "—";
 
+                const clienteTxt =
+                  p?.cliente?.nombre_cliente ??
+                  p?.cliente?.nombre ??
+                  (p?.cliente_id != null ? clientesMap.get(Number(p.cliente_id)) : "") ??
+                  "";
+
                 return (
                   <tr key={p.id}>
                     <td className="num">{p.id}</td>
                     <td className="mono">{p.codigo}</td>
                     <td>{p.nombre}</td>
+                    <td>{clienteTxt || "—"}</td>
                     <td>{fasesTxt}</td>
                     <td>
                       <span className={`badge ${p.activo ? "ok" : "off"}`}>{p.activo ? "Activo" : "Inactivo"}</span>
@@ -438,7 +514,9 @@ export default function Proyectos() {
                             </span>
                           );
                         })}
-                      {(Array.isArray(p.modulos) ? p.modulos : []).length > 6 && <span className="pill more">+ más…</span>}
+                      {(Array.isArray(p.modulos) ? p.modulos : []).length > 6 && (
+                        <span className="pill more">+ más…</span>
+                      )}
                     </td>
                     <td className="actions">
                       <button className="icon-btn" onClick={() => startEdit(p)} disabled={saving}>
@@ -457,7 +535,7 @@ export default function Proyectos() {
 
               {proyectosFiltrados.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted" style={{ padding: 14 }}>
+                  <td colSpan={8} className="muted" style={{ padding: 14 }}>
                     Sin proyectos
                   </td>
                 </tr>
