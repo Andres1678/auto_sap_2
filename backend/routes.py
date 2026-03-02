@@ -4452,8 +4452,10 @@ def proyecto_to_dict(p: Proyecto, include_modulos=True, include_fases=True):
         "codigo": p.codigo,
         "nombre": p.nombre,
         "activo": bool(p.activo),
+
         "cliente_id": p.cliente_id,
         "cliente": cli.to_dict() if cli else None,
+
         "fase_id": p.fase_id,
         "fase": {
             "id": fase.id,
@@ -4585,6 +4587,9 @@ def listar_proyectos():
 
     opts = []
 
+    # ✅ cliente
+    opts.append(joinedload(Proyecto.cliente))
+
     if include_modulos:
         opts.append(joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo))
 
@@ -4614,10 +4619,7 @@ def listar_proyectos():
         )
 
     proyectos = query.order_by(Proyecto.activo.desc(), Proyecto.codigo.asc()).all()
-    return jsonify([
-        proyecto_to_dict(p, include_modulos=include_modulos, include_fases=include_fases)
-        for p in proyectos
-    ]), 200
+    return jsonify([proyecto_to_dict(p, include_modulos=include_modulos, include_fases=include_fases) for p in proyectos]), 200
 
 @bp.route("/proyectos/<int:id>", methods=["GET"])
 @permission_required("PROYECTOS_VER")
@@ -4640,6 +4642,9 @@ def crear_proyecto():
     nombre = (data.get("nombre") or "").strip()
     activo = _to_bool2(data.get("activo"), default=True)
 
+    # ✅ NUEVO: cliente_id
+    cliente_id = data.get("cliente_id", None)
+
     fase_id = data.get("fase_id")
     modulos_ids = data.get("modulos") or []
     fases_ids = data.get("fases") or data.get("fases_ids") or []
@@ -4653,6 +4658,27 @@ def crear_proyecto():
     if dupe:
         return jsonify({"mensaje": "Ya existe un proyecto con ese código"}), 400
 
+    # -----------------------
+    # ✅ validar cliente_id
+    # -----------------------
+    if cliente_id in ("", "null", None):
+        cliente_id = None
+    else:
+        try:
+            cliente_id = int(cliente_id)
+        except Exception:
+            return jsonify({"mensaje": "cliente_id inválido"}), 400
+
+        if cliente_id > 0:
+            exists_cli = Cliente.query.get(cliente_id)
+            if not exists_cli:
+                return jsonify({"mensaje": "cliente_id no existe"}), 400
+        else:
+            cliente_id = None
+
+    # -----------------------
+    # fase_id (si lo usas)
+    # -----------------------
     if fase_id is not None and fase_id not in ("", "null"):
         try:
             fase_id = int(fase_id)
@@ -4669,6 +4695,7 @@ def crear_proyecto():
     if not isinstance(fases_ids, list):
         return jsonify({"mensaje": "fases debe ser una lista de ids"}), 400
 
+    # validar modulos
     if modulos_ids:
         mods = Modulo.query.filter(Modulo.id.in_(modulos_ids)).all()
         found_ids = {int(m.id) for m in mods}
@@ -4676,6 +4703,7 @@ def crear_proyecto():
         if missing:
             return jsonify({"mensaje": f"Módulos no encontrados: {missing}"}), 400
 
+    # validar fases
     if fases_ids:
         fases_db = ProyectoFase.query.filter(ProyectoFase.id.in_([int(x) for x in fases_ids])).all()
         found_ids = {int(fx.id) for fx in fases_db}
@@ -4683,66 +4711,115 @@ def crear_proyecto():
         if missing:
             return jsonify({"mensaje": f"Fases no encontradas: {missing}"}), 400
 
+    # -----------------------
+    # ✅ crear proyecto
+    # -----------------------
     p = Proyecto(
         codigo=codigo,
         nombre=nombre,
         activo=activo,
-        fase_id=fase_id
+        fase_id=fase_id,
+        cliente_id=cliente_id,  # ✅ GUARDA
     )
     db.session.add(p)
     db.session.flush()
 
+    # modulos
     if modulos_ids:
         mods = Modulo.query.filter(Modulo.id.in_(modulos_ids)).all()
         for m in mods:
             db.session.add(ProyectoModulo(proyecto_id=p.id, modulo_id=m.id, activo=True))
 
+    # fases multi
     if fases_ids:
         for fid in fases_ids:
             db.session.add(ProyectoFaseProyecto(proyecto_id=p.id, fase_id=int(fid), activo=True))
 
     db.session.commit()
 
-    opts = [joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo)]
-    if hasattr(Proyecto, "fase"):
-        opts.append(joinedload(Proyecto.fase))
-    if hasattr(Proyecto, "fases"):
-        opts.append(joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase))
-
+    # ✅ recargar con cliente + modulos + fases
+    opts = [
+        joinedload(Proyecto.cliente),
+        joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo),
+        joinedload(Proyecto.fase),
+        joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase),
+    ]
     p = Proyecto.query.options(*opts).get(p.id)
-    return jsonify({"mensaje": "Proyecto creado", "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True)}), 201
+
+    return jsonify({
+        "mensaje": "Proyecto creado",
+        "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True)
+    }), 201
 
 @bp.route("/proyectos/<int:id>", methods=["PUT"])
 @permission_required("PROYECTOS_EDITAR")
 def editar_proyecto(id):
-    opts = [joinedload(Proyecto.modulos)]
-    if hasattr(Proyecto, "fases"):
-        opts.append(joinedload(Proyecto.fases))
-
+    opts = [
+        joinedload(Proyecto.cliente),
+        joinedload(Proyecto.modulos),
+        joinedload(Proyecto.fase),
+        joinedload(Proyecto.fases),
+    ]
     p = Proyecto.query.options(*opts).get_or_404(id)
     data = request.get_json(silent=True) or {}
 
+    # -----------------------
+    # codigo
+    # -----------------------
     if "codigo" in data:
         codigo = (data.get("codigo") or "").strip()
         if not codigo:
             return jsonify({"mensaje": "codigo inválido"}), 400
+
         dupe = Proyecto.query.filter(
             Proyecto.id != id,
             func.lower(Proyecto.codigo) == codigo.lower()
         ).first()
         if dupe:
             return jsonify({"mensaje": "Ya existe otro proyecto con ese código"}), 400
+
         p.codigo = codigo
 
+    # -----------------------
+    # nombre
+    # -----------------------
     if "nombre" in data:
         nombre = (data.get("nombre") or "").strip()
         if not nombre:
             return jsonify({"mensaje": "nombre inválido"}), 400
         p.nombre = nombre
 
+    # -----------------------
+    # activo
+    # -----------------------
     if "activo" in data:
         p.activo = _to_bool2(data.get("activo"), default=True)
 
+    # -----------------------
+    # ✅ cliente_id
+    # -----------------------
+    if "cliente_id" in data:
+        cliente_id = data.get("cliente_id", None)
+
+        if cliente_id in ("", "null", None):
+            p.cliente_id = None
+        else:
+            try:
+                cliente_id = int(cliente_id)
+            except Exception:
+                return jsonify({"mensaje": "cliente_id inválido"}), 400
+
+            if cliente_id > 0:
+                exists_cli = Cliente.query.get(cliente_id)
+                if not exists_cli:
+                    return jsonify({"mensaje": "cliente_id no existe"}), 400
+                p.cliente_id = cliente_id
+            else:
+                p.cliente_id = None
+
+    # -----------------------
+    # fase_id (si lo usas)
+    # -----------------------
     if "fase_id" in data:
         fase_id = data.get("fase_id")
         if fase_id in (None, "", "null"):
@@ -4756,6 +4833,9 @@ def editar_proyecto(id):
                 return jsonify({"mensaje": "fase_id no existe"}), 400
             p.fase_id = fase_id
 
+    # -----------------------
+    # modulos
+    # -----------------------
     if "modulos" in data:
         modulos_ids = data.get("modulos") or []
         if not isinstance(modulos_ids, list):
@@ -4771,6 +4851,9 @@ def editar_proyecto(id):
         for m in mods:
             db.session.add(ProyectoModulo(proyecto_id=p.id, modulo_id=m.id, activo=True))
 
+    # -----------------------
+    # fases multi
+    # -----------------------
     if "fases" in data or "fases_ids" in data:
         fases_ids = data.get("fases") or data.get("fases_ids") or []
         if not isinstance(fases_ids, list):
@@ -4790,14 +4873,19 @@ def editar_proyecto(id):
 
     db.session.commit()
 
-    opts2 = [joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo)]
-    if hasattr(Proyecto, "fase"):
-        opts2.append(joinedload(Proyecto.fase))
-    if hasattr(Proyecto, "fases"):
-        opts2.append(joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase))
-
+    # ✅ recargar con cliente + relaciones (para devolverlo bien al front)
+    opts2 = [
+        joinedload(Proyecto.cliente),
+        joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo),
+        joinedload(Proyecto.fase),
+        joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase),
+    ]
     p = Proyecto.query.options(*opts2).get(p.id)
-    return jsonify({"mensaje": "Proyecto actualizado", "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True)}), 200
+
+    return jsonify({
+        "mensaje": "Proyecto actualizado",
+        "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True)
+    }), 200
 
 @bp.route("/proyectos/<int:id>/toggle-activo", methods=["PUT"])
 @permission_required("PROYECTOS_EDITAR")
