@@ -3,6 +3,7 @@ import Swal from "sweetalert2";
 import Select from "react-select";
 import "./Oportunidades.css";
 import { jfetch } from "./lib/api";
+import { exportOportunidadesExcel } from "./lib/exportExcelOportunidades";
 
 const NUMERIC_COLS = new Set(["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"]);
 
@@ -293,67 +294,96 @@ export default function Oportunidades() {
   const [loading, setLoading] = useState(false);
   const [editValue, setEditValue] = useState("");
 
-  const baseColumnOrder = useMemo(
-    () => [
-      "nombre_cliente",
-      "servicio",
-      "fecha_creacion",
-      "semestre",
-      "tipo_cliente",
-      "tipo_solicitud",
-      "caso_sm",
-      "fecha_cierre_sm",
-      "salesforce",
-      "ultimos_6_meses",
-      "ultimo_mes",
-      "retraso",
-      "estado_oferta",
-      "resultado_oferta",
-      "calificacion_oportunidad",
-      "origen_oportunidad",
-      "direccion_comercial",
-      "gerencia_comercial",
-      "comercial_asignado",
-      "consultor_comercial",
-      "comercial_asignado_hitss",
-      "observaciones",
-      "categoria_perdida",
-      "subcategoria_perdida",
-      "fecha_entrega_oferta_final",
-      "vigencia_propuesta",
-      "fecha_aceptacion_oferta",
-      "tipo_moneda",
-      "otc",
-      "mrc",
-      "mrc_normalizado",
-      "valor_oferta_claro",
-      "duracion",
-      "pais",
-      "fecha_cierre_oportunidad",
-      "codigo_prc",
-      "fecha_firma_aos",
-      "pm_asignado_claro",
-      "pm_asignado_hitss",
-      "descripcion_ot",
-      "num_enlace",
-      "num_incidente",
-      "num_ot",
-      "estado_ot",
-      "proyeccion_ingreso",
-      "fecha_compromiso",
-      "fecha_cierre",
-      "estado_proyecto",
-      "anio_creacion_ot",
-      "fecha_acta_cierre_ot",
-      "seguimiento_ot",
-      "tipo_servicio",
-      "semestre_ejecucion",
-      "publicacion_sharepoint",
-    ],
-    []
-  );
+    const baseColumnOrder = useMemo(
+      () => [
+        "nombre_cliente",
+        "servicio",
+        "fecha_creacion",
+        "semestre",
+        "tipo_cliente",
+        "tipo_solicitud",
+        "caso_sm",
+        "fecha_cierre_sm",
+        "salesforce",
+        "ultimos_6_meses",
+        "ultimo_mes",
+        "retraso",
+        "estado_oferta",
+        "resultado_oferta",
+        "calificacion_oportunidad",
+        "origen_oportunidad",
+        "direccion_comercial",
+        "gerencia_comercial",
+        "comercial_asignado",
+        "consultor_comercial",
+        "comercial_asignado_hitss",
+        "observaciones",
+        "categoria_perdida",
+        "subcategoria_perdida",
+        "fecha_entrega_oferta_final",
+        "vigencia_propuesta",
+        "fecha_aceptacion_oferta",
+        "tipo_moneda",
+        "otc",
+        "mrc",
+        "mrc_normalizado",
+        "valor_oferta_claro",
+        "duracion",
+        "pais",
+        "fecha_cierre_oportunidad",
+        "codigo_prc",
+        "fecha_firma_aos",
+        "pm_asignado_claro",
+        "pm_asignado_hitss",
+        "descripcion_ot",
+        "num_enlace",
+        "num_incidente",
+        "num_ot",
+        "estado_ot",
+        "proyeccion_ingreso",
+        "fecha_compromiso",
+        "fecha_cierre",
+        "estado_proyecto",
+        "anio_creacion_ot",
+        "fecha_acta_cierre_ot",
+        "seguimiento_ot",
+        "tipo_servicio",
+        "semestre_ejecucion",
+        "publicacion_sharepoint",
+      ],
+      []
+    );
 
-  const columnOrder = useMemo(() => baseColumnOrder.filter((c) => !REMOVE_COLS.has(c)), [baseColumnOrder]);
+    const columnOrder = useMemo(() => baseColumnOrder.filter((c) => !REMOVE_COLS.has(c)), [baseColumnOrder]);
+
+    const handleExportAll = () => {
+    if (!data?.length) {
+      return Swal.fire("Info", "No hay datos para exportar.", "info");
+    }
+
+    exportOportunidadesExcel(
+      data,                 
+      columnOrder,
+      `oportunidades_completo_${todayStamp()}.xlsx`,
+      {
+        Fuente: "Gestión de Oportunidades",
+        Nota: "Exportado desde pantalla",
+      }
+    );
+  };
+
+  const handleExportFiltered = () => {
+    if (!filteredData?.length) {
+      return Swal.fire("Info", "No hay datos filtrados para exportar.", "info");
+    }
+
+    exportOportunidadesExcel(
+      filteredData,         
+      columnOrder,
+      `oportunidades_filtrado_${todayStamp()}.xlsx`,
+      { Filtros: JSON.stringify(filters) }
+    );
+  };
 
   function normalizeRowFromApi(r) {
     const obj = r || {};
@@ -1115,6 +1145,16 @@ export default function Oportunidades() {
         <button className="upload-btn" onClick={handleUpload} disabled={loading}>
           {loading ? "Cargando..." : "Subir Excel"}
         </button>
+
+        <div style={{ display: "flex", gap: 10, margin: "10px 0" }}>
+          <button className="upload-btn" onClick={handleExportAll} disabled={loading || !data.length}>
+            Descargar Excel (Completo)
+          </button>
+
+          <button className="upload-btn" onClick={handleExportFiltered} disabled={loading || !filteredData.length}>
+            Descargar Excel (Filtrado)
+          </button>
+        </div>
       </div>
 
       {editingContext && (

@@ -119,7 +119,6 @@ function toNumberSmart(v) {
   const lastComma = s.lastIndexOf(",");
   const lastDot = s.lastIndexOf(".");
 
-  
   if (commaCount > 0 && dotCount > 0) {
     const decimalSep = lastComma > lastDot ? "," : ".";
     const thousandSep = decimalSep === "," ? "." : ",";
@@ -127,11 +126,9 @@ function toNumberSmart(v) {
     s = s.split(thousandSep).join("");
     if (decimalSep === ",") s = s.replace(",", ".");
   } else if (commaCount > 0 && dotCount === 0) {
-   
     if (commaCount === 1) {
       const after = s.slice(lastComma + 1);
       const before = s.slice(0, lastComma).replace(/^[+-]/, "");
-      
       if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
       else s = s.replace(",", ".");
     } else {
@@ -144,7 +141,6 @@ function toNumberSmart(v) {
 
       if (after.length === 3 && before.length <= 3) {
         s = s.replace(".", "");
-      } else {
       }
     } else {
       const parts = s.split(".");
@@ -152,15 +148,13 @@ function toNumberSmart(v) {
       const mid = parts.slice(1, -1);
 
       const midAll3 = mid.every((p) => p.length === 3);
-      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3; 
+      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3;
       const looksLikeGrouped = midAll3 && firstOk;
 
-      
       if (looksLikeGrouped && last.length !== 3) {
         const intPart = parts.slice(0, -1).join("");
         s = intPart + "." + last;
       } else {
-        
         s = s.replace(/\./g, "");
       }
     }
@@ -174,7 +168,6 @@ function toNumberSmart(v) {
 function fmtMoney(n) {
   return nfMoney.format(n || 0);
 }
-
 
 function readMoney(row, keys) {
   for (const k of keys) {
@@ -282,6 +275,74 @@ const ESTADOS_CERRADOS_N = new Set(
   )
 );
 
+/* ===================== Observaciones: separar por fechas ===================== */
+const OBS_DATE_TOKEN = /(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})/g;
+
+function normObsText(v) {
+  return String(v ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\u00A0/g, " ")
+    .trim();
+}
+
+function splitObservacionesByDate(raw) {
+  const text = normObsText(raw);
+  if (!text) return [];
+
+  const prepared = text.replace(OBS_DATE_TOKEN, "\n$1");
+
+  const lines = prepared
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const out = [];
+  for (const line of lines) {
+    const m = line.match(
+      /^(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*(.*)$/
+    );
+    if (m) {
+      out.push({ date: m[1], text: (m[2] || "").trim() || "-" });
+    } else {
+      out.push({ date: null, text: line });
+    }
+  }
+
+  // Si hay líneas sin fecha después de una fechada, se pegan como continuación
+  const merged = [];
+  for (const it of out) {
+    const last = merged[merged.length - 1];
+    if (!it.date && last && last.date) {
+      last.text = `${last.text}\n${it.text}`.trim();
+    } else {
+      merged.push({ ...it });
+    }
+  }
+
+  return merged;
+}
+
+function renderObservacionesCell(value) {
+  const items = splitObservacionesByDate(value);
+  if (!items.length) return "-";
+
+  return (
+    <div className="obs-box">
+      {items.map((it, idx) => (
+        <div key={idx} className={`obs-item ${it.date ? "has-date" : "no-date"}`}>
+          <div className="obs-date">{it.date ? it.date : "SIN FECHA"}</div>
+          <div className="obs-text">
+            {it.text.split("\n").map((p, i) => (
+              <div key={i}>{p}</div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ===================== Component ===================== */
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
@@ -324,14 +385,13 @@ export default function DashboardOportunidades() {
   const dataBase = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
   const dataFiltrada = useMemo(() => {
-    return dataBase.filter((op) =>
-      !isExcludedLabel(op?.estado_oferta ?? "") &&
-      !isExcludedLabel(op?.resultado_oferta ?? "")
+    return dataBase.filter(
+      (op) => !isExcludedLabel(op?.estado_oferta ?? "") && !isExcludedLabel(op?.resultado_oferta ?? "")
     );
   }, [dataBase]);
 
   const fetchFilters = async () => {
-    const res = await jfetch(`/oportunidades/filters`); 
+    const res = await jfetch(`/oportunidades/filters`);
     if (!res.ok) throw new Error("filters");
     const json = await res.json();
 
@@ -370,19 +430,18 @@ export default function DashboardOportunidades() {
   useEffect(() => {
     (async () => {
       try {
-        await fetchFilters();      
-        await fetchData(filtros);  
+        await fetchFilters();
+        await fetchData(filtros);
       } catch (e) {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
   }, []);
 
-
   useEffect(() => {
     (async () => {
       try {
-        await fetchData(filtrosDebounced); 
+        await fetchData(filtrosDebounced);
       } catch (e) {}
     })();
   }, [filtrosDebounced]);
@@ -395,8 +454,7 @@ export default function DashboardOportunidades() {
 
   const tablaResultadoOferta = useMemo(() => {
     return buildPivot(dataBase, "resultado_oferta", {
-      excludeKeyFn: (_key, raw, row) =>
-        isExcludedLabel(row?.estado_oferta ?? "") || isExcludedLabel(raw),
+      excludeKeyFn: (_key, raw, row) => isExcludedLabel(row?.estado_oferta ?? "") || isExcludedLabel(raw),
     });
   }, [dataBase]);
 
@@ -507,7 +565,6 @@ export default function DashboardOportunidades() {
 
           <section className="main-grid">
             <div className="main-col">
-              {/* ===================== ESTADO DE OFERTA ===================== */}
               <div className="card">
                 <div className="card-title">Estado de Oferta</div>
                 <div className="table-scroll">
@@ -530,10 +587,7 @@ export default function DashboardOportunidades() {
                           <td>{fmtMoney(it.otc)}</td>
                           <td>{fmtMoney(it.mrc)}</td>
                           <td>
-                            {totEstadoOferta.count
-                              ? ((it.count / totEstadoOferta.count) * 100).toFixed(2)
-                              : "0.00"}
-                            %
+                            {totEstadoOferta.count ? ((it.count / totEstadoOferta.count) * 100).toFixed(2) : "0.00"}%
                           </td>
                         </tr>
                       ))}
@@ -550,7 +604,6 @@ export default function DashboardOportunidades() {
                 </div>
               </div>
 
-              {/* ===================== RESULTADO DE OFERTA ===================== */}
               <div className="card">
                 <div className="card-title">Resultado de Oferta</div>
                 <div className="table-scroll">
@@ -645,7 +698,7 @@ export default function DashboardOportunidades() {
                       <td>{fmtMoney(readMoney(row, ["mrc", "MRC"]))}</td>
                       <td>{row.gerencia_comercial ?? "-"}</td>
                       <td>{row.comercial_asignado ?? "-"}</td>
-                      <td className="td-wrap">{row.observaciones ?? "-"}</td>
+                      <td className="td-wrap">{renderObservacionesCell(row.observaciones)}</td>
                     </tr>
                   ))}
                 </tbody>
