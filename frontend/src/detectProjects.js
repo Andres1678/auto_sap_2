@@ -1,9 +1,11 @@
+import { ACTIVE_PROJECTS } from "./activeProjects";
+
 function normalize(text) {
   return String(text || "")
     .toUpperCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Z0-9 ]/g, " ")  
+    .replace(/[^A-Z0-9 ]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -46,7 +48,7 @@ export function detectProjects(text) {
 
     if (match) hits.push(project);
   }
-  
+
   const uniq = new Map(hits.map(p => [p.id, p]));
   return Array.from(uniq.values());
 }
