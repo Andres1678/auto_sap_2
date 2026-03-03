@@ -1081,6 +1081,10 @@ def obtener_registros_graficos():
                 joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
                 joinedload(Registro.tarea),
                 joinedload(Registro.ocupacion),
+
+                # ✅ PROYECTOS (NUEVO en /graficos)
+                joinedload(Registro.proyecto),
+                joinedload(Registro.fase_proyecto),
             )
             .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
             .outerjoin(E, C.equipo_id == E.id)
@@ -1100,7 +1104,6 @@ def obtener_registros_graficos():
             pass
 
         # ✅ filtro opcional de equipo (para el filtro de EQUIPOS en frontend)
-        # en ALL puede filtrar cualquiera, en TEAM solo su equipo, en SELF solo su equipo
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
         if equipo_filter:
             if scope in ("TEAM", "SELF"):
@@ -1127,6 +1130,10 @@ def obtener_registros_graficos():
             if r.consultor and r.consultor.equipo_obj:
                 equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
 
+            # ✅ PROYECTOS (NUEVO en /graficos)
+            proyecto = getattr(r, "proyecto", None)
+            fase_proyecto = getattr(r, "fase_proyecto", None)
+
             data.append({
                 "id": r.id,
                 "fecha": r.fecha,
@@ -1136,9 +1143,11 @@ def obtener_registros_graficos():
                 "nroCasoCliente": r.nro_caso_cliente,
                 "nroCasoInterno": r.nro_caso_interno,
                 "nroCasoEscaladoSap": r.nro_caso_escalado,
+
                 "ocupacion_id": r.ocupacion_id,
                 "ocupacion_codigo": ocup.codigo if ocup else None,
                 "ocupacion_nombre": ocup.nombre if ocup else None,
+
                 "tarea_id": r.tarea_id,
                 "tipoTarea": tipo_tarea_str,
                 "tarea": {
@@ -1146,6 +1155,7 @@ def obtener_registros_graficos():
                     "codigo": getattr(tarea, "codigo", None),
                     "nombre": getattr(tarea, "nombre", None),
                 } if tarea else None,
+
                 "consultor": r.consultor.nombre if r.consultor else None,
                 "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
                 "horaInicio": r.hora_inicio,
@@ -1158,7 +1168,24 @@ def obtener_registros_graficos():
                 "bloqueado": bool(r.bloqueado),
                 "oncall": r.oncall,
                 "desborde": r.desborde,
-                "actividadMalla": r.actividad_malla
+                "actividadMalla": r.actividad_malla,
+
+                # ✅ PROYECTOS (NUEVO en /graficos)
+                "proyecto_id": r.proyecto_id,
+                "fase_proyecto_id": r.fase_proyecto_id,
+                "proyecto": {
+                    "id": proyecto.id,
+                    "codigo": proyecto.codigo,
+                    "nombre": proyecto.nombre,
+                    "activo": bool(getattr(proyecto, "activo", True)),
+                } if proyecto else None,
+                "fase_proyecto": {
+                    "id": fase_proyecto.id,
+                    "nombre": fase_proyecto.nombre,
+                } if fase_proyecto else None,
+                "proyecto_codigo": proyecto.codigo if proyecto else None,
+                "proyecto_nombre": proyecto.nombre if proyecto else None,
+                "proyecto_fase": fase_proyecto.nombre if fase_proyecto else None,
             })
 
         return jsonify(data), 200
@@ -1172,7 +1199,6 @@ def obtener_registros_graficos():
         }), 500
 
 USUARIOS_PUEDE_SEMANAS_ANTERIORES = {
-    "johngaravito",
 }
 
 @bp.route('/registros', methods=['GET'])

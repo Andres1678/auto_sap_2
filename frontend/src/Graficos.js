@@ -401,6 +401,8 @@ export default function Graficos() {
     fetchCatalogoOcupaciones();
   }, []);
 
+  const [horariosBackend, setHorariosBackend] = useState([]);
+
   useEffect(() => {
     const fetchOcupaciones = async () => {
       try {
@@ -611,6 +613,26 @@ export default function Graficos() {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
+  const horasPorProyecto = useMemo(() => {
+    const acc = new Map();
+
+    (datosFiltrados ?? []).forEach(r => {
+      const codigo = (r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
+      const nombre = (r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
+
+      const label = codigo
+        ? `${codigo} - ${nombre || "SIN NOMBRE"}`
+        : "SIN PROYECTO";
+
+      acc.set(label, (acc.get(label) || 0) + toNum(r.tiempoInvertido));
+    });
+
+    return Array.from(acc, ([proyecto, horas]) => ({
+      proyecto,
+      horas: +horas.toFixed(2),
+    })).sort((a, b) => b.horas - a.horas);
+  }, [datosFiltrados]);
+
   const horasPorDia = useMemo(() => {
     const acc = new Map();
     (datosFiltrados ?? []).forEach(r => {
@@ -693,8 +715,6 @@ export default function Graficos() {
       limite: wd * 9
     };
   }, [filtroMes]);
-
-  const [horariosBackend, setHorariosBackend] = useState([]);
 
   /* Horas por Ocupación */
   const horasPorOcupacion = useMemo(() => {
@@ -1138,6 +1158,54 @@ export default function Graficos() {
                         onClick={() => openDetail('modulo', entry.modulo, 'Módulo')}
                         onMouseEnter={() => { if (OPEN_ON_HOVER) openDetail('modulo', entry.modulo, 'Módulo'); }}
                         style={{ cursor: 'pointer' }}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
+        {/* Horas por Proyecto */}
+        <div className="grafico-box">
+          <h3>
+            {isAdmin ? 'Horas por Proyecto' : 'Tus horas por Proyecto'}
+            {filtroMes && ` (${filtroMes})`}
+            {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
+          </h3>
+
+          {horasPorProyecto.length === 0 ? (
+            <div className="empty">Sin datos para los filtros seleccionados.</div>
+          ) : (
+            <div className="chart-scroll">
+              <ResponsiveContainer width="100%" height={Math.max(320, horasPorProyecto.length * 30)}>
+                <BarChart
+                  data={horasPorProyecto}
+                  layout="vertical"
+                  margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
+                  barCategoryGap={12}
+                  barSize={20}
+                >
+                  <BrandDefs id="gradProyecto" />
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" tickLine={false} axisLine={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="proyecto"
+                    width={360}
+                    tick={<WrapTickPx maxWidth={340} fontSize={12} />}
+                  />
+                  <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
+
+                  <Bar dataKey="horas" name="Horas">
+                    {horasPorProyecto.map((entry, idx) => (
+                      <Cell
+                        key={`p-${idx}`}
+                        fill="url(#gradProyecto)"
+                        style={{ cursor: 'pointer' }}
+                        // si quieres modal detalle por proyecto:
+                        // onClick={() => openDetail('proyecto', entry.proyecto, 'Proyecto')}
                       />
                     ))}
                   </Bar>

@@ -14,9 +14,6 @@ import {
 import { jfetch } from "./lib/api";
 import "./ModalProyectosHoras.css";
 
-import { ACTIVE_PROJECTS } from "./activeProjects";
-import { buildProjectIndex, matchProject } from "./projectMatch";
-
 Modal.setAppElement("#root");
 
 /* =========================
@@ -50,17 +47,14 @@ const groupSum = (rows, keyFn) => {
 
 /* =========================
    ✅ Tick custom: WRAP en YAxis
-   - Permite mostrar nombres largos (2-3 líneas)
 ========================= */
 function YAxisTickWrap(props) {
   const { x, y, payload, width = 520 } = props;
   const text = String(payload?.value ?? "");
 
-  // Ajusta estos 2 valores si quieres:
-  const maxCharsPerLine = Math.max(18, Math.floor(width / 10)); // aprox
+  const maxCharsPerLine = Math.max(18, Math.floor(width / 10));
   const maxLines = 3;
 
-  // dividir en palabras y armar líneas
   const words = text.split(" ");
   const lines = [];
   let line = "";
@@ -77,7 +71,6 @@ function YAxisTickWrap(props) {
   }
   if (line && lines.length < maxLines) lines.push(line);
 
-  // si quedó cortado, agrega "…"
   const joined = lines.join(" ");
   const wasCut = joined.length < text.length;
   if (wasCut && lines.length) {
@@ -264,26 +257,20 @@ export default function ModalProyectosHoras({
   const isAdminTeam = !isAdminAll && rolUpper.startsWith("ADMIN_") && !!equipoUser;
   const scope = isAdminAll ? "ALL" : isAdminTeam ? "TEAM" : "SELF";
 
-  // índice proyectos
-  const projectIndex = useMemo(() => buildProjectIndex(ACTIVE_PROJECTS), []);
-
-  const getProjectMatch = (r) => {
-    const raw = r?.nroCasoCliente;
-    const m = matchProject(raw, projectIndex);
-
-    if (m.status === "MATCH" && m.proyecto?.display) {
-      return { status: "MATCH", official: m.proyecto.display, raw: String(raw ?? "").trim() };
-    }
-
-    const rawText = String(raw ?? "").trim();
-    if (!rawText || rawText === "0" || rawText.toUpperCase() === "NA" || rawText.toUpperCase() === "N/A") {
-      return { status: "EMPTY", official: "SIN PROYECTO", raw: rawText };
-    }
-
-    return { status: "NO_MATCH", official: "NO MAPEADO", raw: rawText };
+  // ✅ PROYECTO OFICIAL: viene de BD (por /registros/graficos)
+  const projectOfficial = (r) => {
+    const codigo = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
+    const nombre = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
+    if (!codigo) return "SIN PROYECTO";
+    return `${codigo} - ${nombre || "SIN NOMBRE"}`;
   };
 
-  const projectOfficial = (r) => getProjectMatch(r).official;
+  // ✅ PROYECTO DIGITADO: lo dejamos como auditoría (Nro caso cliente)
+  const projectDigitado = (r) => {
+    const raw = String(r?.nroCasoCliente ?? "").trim();
+    if (!raw || raw === "0" || raw.toUpperCase() === "NA" || raw.toUpperCase() === "N/A") return "";
+    return raw;
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -393,7 +380,7 @@ export default function ModalProyectosHoras({
         .map((r) => projectOfficial(r))
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes, projectIndex]);
+  }, [registros, filtroMes]);
 
   const datosFiltrados = useMemo(() => {
     return (registros ?? []).filter((r) => {
@@ -437,16 +424,21 @@ export default function ModalProyectosHoras({
     scope,
     usuario,
     equipoUser,
-    projectIndex,
   ]);
 
-  const horasPorProyecto = useMemo(() => groupSum(datosFiltrados, (r) => projectOfficial(r)), [datosFiltrados, projectIndex]);
+  const horasPorProyecto = useMemo(
+    () => groupSum(datosFiltrados, (r) => projectOfficial(r)),
+    [datosFiltrados]
+  );
   const horasPorModulo = useMemo(() => groupSum(datosFiltrados, (r) => r.modulo || "—"), [datosFiltrados]);
   const horasPorConsultor = useMemo(() => groupSum(datosFiltrados, (r) => r.consultor || "—"), [datosFiltrados]);
   const horasPorTarea = useMemo(() => groupSum(datosFiltrados, (r) => r.tipoTarea || "—"), [datosFiltrados]);
   const horasPorOcupacion = useMemo(() => groupSum(datosFiltrados, (r) => r.ocupacion_nombre || "SIN OCUPACIÓN"), [datosFiltrados]);
 
-  const totalHoras = useMemo(() => datosFiltrados.reduce((s, r) => s + toNum(r.tiempoInvertido), 0), [datosFiltrados]);
+  const totalHoras = useMemo(
+    () => datosFiltrados.reduce((s, r) => s + toNum(r.tiempoInvertido), 0),
+    [datosFiltrados]
+  );
 
   const openDetail = (kind, value) => {
     let rows = [];
@@ -464,8 +456,6 @@ export default function ModalProyectosHoras({
     setDetailOpen(true);
   };
 
-  const closeDetail = () => setDetailOpen(false);
-
   const TOP = 20;
   const topProyectos = horasPorProyecto.slice(0, TOP);
 
@@ -479,9 +469,7 @@ export default function ModalProyectosHoras({
       );
     }
 
-    const height = Math.max(320, data.length * 34); // ✅ un poco más alto por el wrap
-
-    // ✅ ancho del eje Y: más grande (y se ve mejor en full modal)
+    const height = Math.max(320, data.length * 34);
     const yAxisWidth = 560;
 
     return (
@@ -535,7 +523,7 @@ export default function ModalProyectosHoras({
       >
         <div className="mph-header">
           <div>
-            <h3 className="mph-title">Horas por Proyecto (mapeo por Nro. Caso Cliente)</h3>
+            <h3 className="mph-title">Horas por Proyecto (OFICIAL desde BD)</h3>
             <div className="mph-sub">
               Total filtrado: <b>{totalHoras.toFixed(2)} h</b> · Registros: <b>{datosFiltrados.length}</b>
             </div>
@@ -652,24 +640,21 @@ export default function ModalProyectosHoras({
                   </tr>
                 </thead>
                 <tbody>
-                  {detailRows.map((r, i) => {
-                    const pm = getProjectMatch(r);
-                    return (
-                      <tr key={i}>
-                        <td className="num">{r.id ?? "—"}</td>
-                        <td>{r.fecha}</td>
-                        <td className="truncate" title={r.consultor}>{r.consultor}</td>
-                        <td className="truncate" title={r.cliente}>{r.cliente}</td>
-                        <td className="truncate" title={pm.official}>{pm.official}</td>
-                        <td className="truncate" title={pm.raw || ""}>{pm.raw || "—"}</td>
-                        <td className="truncate" title={r.modulo}>{r.modulo}</td>
-                        <td className="truncate" title={r.ocupacion_nombre || ""}>{r.ocupacion_nombre || "SIN OCUPACIÓN"}</td>
-                        <td className="truncate" title={r.tipoTarea || ""}>{r.tipoTarea || "—"}</td>
-                        <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
-                        <td className="truncate" title={r.descripcion || ""}>{r.descripcion || ""}</td>
-                      </tr>
-                    );
-                  })}
+                  {detailRows.map((r, i) => (
+                    <tr key={i}>
+                      <td className="num">{r.id ?? "—"}</td>
+                      <td>{r.fecha}</td>
+                      <td className="truncate" title={r.consultor}>{r.consultor}</td>
+                      <td className="truncate" title={r.cliente}>{r.cliente}</td>
+                      <td className="truncate" title={projectOfficial(r)}>{projectOfficial(r)}</td>
+                      <td className="truncate" title={projectDigitado(r) || ""}>{projectDigitado(r) || "—"}</td>
+                      <td className="truncate" title={r.modulo}>{r.modulo}</td>
+                      <td className="truncate" title={r.ocupacion_nombre || ""}>{r.ocupacion_nombre || "SIN OCUPACIÓN"}</td>
+                      <td className="truncate" title={r.tipoTarea || ""}>{r.tipoTarea || "—"}</td>
+                      <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
+                      <td className="truncate" title={r.descripcion || ""}>{r.descripcion || ""}</td>
+                    </tr>
+                  ))}
                   {detailRows.length === 0 && (
                     <tr>
                       <td colSpan={11} className="mph-empty">Sin filas.</td>
