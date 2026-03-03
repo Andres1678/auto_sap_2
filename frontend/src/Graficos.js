@@ -8,6 +8,7 @@ import './PanelGraficos.css';
 import { jfetch } from './lib/api';
 import ModalProyectosHoras from "./ModalProyectosHoras";
 import Swal from "sweetalert2";
+import { detectProjects } from "./detectProjects"; 
 
 /* ======== config ======== */
 const OPEN_ON_HOVER = false;
@@ -18,6 +19,23 @@ const HOLIDAYS = [
 ];
 
 /* ======== Helpers ======== */
+const projectOfficial = (r) => {
+  const codigo = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
+  const nombre = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
+  if (codigo) return `${codigo} - ${nombre || "SIN NOMBRE"}`;
+
+  const txt =
+    String(r?.nroCasoCliente || "").trim() ||
+    String(r?.descripcion || "").trim() ||
+    "";
+
+  const matches = detectProjects(txt);
+  if (matches.length > 0) return matches[0].display;
+
+  if (!txt || txt === "0" || ["NA","N/A"].includes(txt.toUpperCase())) return "SIN PROYECTO";
+  return "NO MAPEADO";
+};
+
 const toNum = (v) => {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
@@ -615,16 +633,9 @@ export default function Graficos() {
 
   const horasPorProyecto = useMemo(() => {
     const acc = new Map();
-
-    (datosFiltrados ?? []).forEach(r => {
-      const codigo = (r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
-      const nombre = (r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
-
-      const label = codigo
-        ? `${codigo} - ${nombre || "SIN NOMBRE"}`
-        : "SIN PROYECTO";
-
-      acc.set(label, (acc.get(label) || 0) + toNum(r.tiempoInvertido));
+    (datosFiltrados ?? []).forEach((r) => {
+      const key = projectOfficial(r);
+      acc.set(key, (acc.get(key) || 0) + toNum(r.tiempoInvertido));
     });
 
     return Array.from(acc, ([proyecto, horas]) => ({

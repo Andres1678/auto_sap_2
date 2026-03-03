@@ -3,16 +3,17 @@ function normalize(text) {
     .toUpperCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Z0-9 ]/g, " ")   // deja espacios para buscar frases
+    .replace(/[^A-Z0-9 ]/g, " ")  
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function extractProjectCodes(text) {
   const normalized = normalize(text);
-  // incluye OT numérica larga y PRC, P, etc.
-  const matches = normalized.match(/\bPRC\s*\d+\b|\bPRC\d+\b|\bP\d+\b|\b\d{7,10}\b/g);
-  return (matches || []).map(m => normalize(m).replace(/\s+/g, "")); // PRC 2455 -> PRC2455
+
+  const matches = normalized.match(/\bPRC\s*\d+\b|\bPRC-\s*\d+\b|\bPRC\d+\b|\bP\d+\b|\b\d{7,10}\b/g);
+
+  return (matches || []).map(m => normalize(m).replace(/\s+/g, "").replace(/-/g, ""));
 }
 
 export function detectProjects(text) {
@@ -21,35 +22,31 @@ export function detectProjects(text) {
   const normText = normalize(text);
   const detectedCodes = new Set(extractProjectCodes(text));
 
-  const matches = [];
+  const hits = [];
 
   for (const project of ACTIVE_PROJECTS) {
-    const projectCodes = (project.codes || []).map(c => normalize(c));
-    let hit = false;
+    const codes = (project.codes || []).map(c => normalize(c));
+    let match = false;
 
-    for (const rawCode of projectCodes) {
-      const codeNoSpaces = rawCode.replace(/\s+/g, "");
+    for (const c of codes) {
+      const cNoSpaces = c.replace(/\s+/g, "").replace(/-/g, "");
 
-      // 1) match por código extraído (PRC2455, P53, 17568104...)
-      if (detectedCodes.has(codeNoSpaces)) {
-        hit = true;
+      if (detectedCodes.has(cNoSpaces)) {
+        match = true;
         break;
       }
 
-      // 2) match por “contains” (keywords / frases)
-      //    - si el code es corto tipo "WF" o "BPC" evita falsos positivos con palabra completa
-      if (rawCode.length <= 3) {
-        const re = new RegExp(`\\b${rawCode}\\b`, "i");
-        if (re.test(normText)) { hit = true; break; }
+      if (c.length <= 3) {
+        const re = new RegExp(`\\b${c}\\b`, "i");
+        if (re.test(normText)) { match = true; break; }
       } else {
-        if (normText.includes(rawCode)) { hit = true; break; }
+        if (normText.includes(c)) { match = true; break; }
       }
     }
 
-    if (hit) matches.push(project);
+    if (match) hits.push(project);
   }
-
-  // opcional: evitar duplicados
-  const uniq = new Map(matches.map(p => [p.id, p]));
+  
+  const uniq = new Map(hits.map(p => [p.id, p]));
   return Array.from(uniq.values());
 }
