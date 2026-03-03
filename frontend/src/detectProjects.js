@@ -5,7 +5,7 @@ function normalize(text) {
     .toUpperCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Z0-9 ]/g, " ")
+    .replace(/[^A-Z0-9 ]/g, " ")  
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -13,9 +13,13 @@ function normalize(text) {
 function extractProjectCodes(text) {
   const normalized = normalize(text);
 
-  const matches = normalized.match(/\bPRC\s*\d+\b|\bPRC-\s*\d+\b|\bPRC\d+\b|\bP\d+\b|\b\d{7,10}\b/g);
+  const matches = normalized.match(
+    /\bPRC\s*\d+\b|\bPRC-\s*\d+\b|\bPRC\d+\b|\bP\d+\b|\b\d{7,10}\b/g
+  );
 
-  return (matches || []).map(m => normalize(m).replace(/\s+/g, "").replace(/-/g, ""));
+  return (matches || []).map((m) =>
+    normalize(m).replace(/\s+/g, "").replace(/-/g, "")
+  );
 }
 
 export function detectProjects(text) {
@@ -27,7 +31,7 @@ export function detectProjects(text) {
   const hits = [];
 
   for (const project of ACTIVE_PROJECTS) {
-    const codes = (project.codes || []).map(c => normalize(c));
+    const codes = (project.codes || []).map((c) => normalize(c));
     let match = false;
 
     for (const c of codes) {
@@ -49,6 +53,6 @@ export function detectProjects(text) {
     if (match) hits.push(project);
   }
 
-  const uniq = new Map(hits.map(p => [p.id, p]));
+  const uniq = new Map(hits.map((p) => [p.id, p]));
   return Array.from(uniq.values());
 }
