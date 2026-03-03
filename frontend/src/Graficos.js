@@ -819,28 +819,6 @@ export default function Graficos() {
           placeholder="Todas las ocupaciones"
         />
 
-        {/* ✅ Rango de días */}
-        <div className="range-days">
-          <span className="mf-label">RANGO DE DÍAS</span>
-          <div className="range-days-row">
-            <input
-              className="filtro-date"
-              type="date"
-              value={filtroDesde}
-              onChange={(e) => { setFiltroDesde(e.target.value); setFiltroMes(""); }}
-              title="Desde (YYYY-MM-DD)"
-            />
-            <span className="range-sep">a</span>
-            <input
-              className="filtro-date"
-              type="date"
-              value={filtroHasta}
-              onChange={(e) => setFiltroHasta(e.target.value)}
-              title="Hasta (YYYY-MM-DD)"
-            />
-          </div>
-        </div>
-
         <MultiFiltro
           titulo="Nro. CASO CLIENTE"
           opciones={nroClienteUnicos}
@@ -876,6 +854,28 @@ export default function Graficos() {
             onChange={(e) => setFiltroMes(e.target.value)}
             title="Mes (YYYY-MM)"
           />
+        </div>
+
+        {/* ✅ Rango de días */}
+        <div className="range-days">
+          <span className="mf-label">RANGO DE DÍAS</span>
+          <div className="range-days-row">
+            <input
+              className="filtro-date"
+              type="date"
+              value={filtroDesde}
+              onChange={(e) => { setFiltroDesde(e.target.value); setFiltroMes(""); }}
+              title="Desde (YYYY-MM-DD)"
+            />
+            <span className="range-sep">a</span>
+            <input
+              className="filtro-date"
+              type="date"
+              value={filtroHasta}
+              onChange={(e) => setFiltroHasta(e.target.value)}
+              title="Hasta (YYYY-MM-DD)"
+            />
+          </div>
         </div>
 
         <button
