@@ -75,6 +75,12 @@ export default function Configuracion() {
             <p>Crear proyectos, asignar módulos, definir fase y activar/inactivar.</p>
           </Link>
         )}
+
+            <Link to="/configuracion/modulos" className="config-card">
+              <div className="config-icon">📌</div>
+              <h3>Gestión de Módulos</h3>
+              <p>Crear y gestionar los módulos del sistema.</p>
+            </Link>
       </div>
     </div>
   );

@@ -20,6 +20,7 @@ import EquiposPage from "./EquiposPage";
 import ReporteHorasConsultorCliente from './Reportes/ReporteHorasConsultorCliente';
 import PresupuestoConsultorImport from './PresupuestoConsultorImport';
 import Proyectos from "./Proyectos";
+import ModalMapeoProyecto from "./ModalMapeoProyecto";
 
 function App() {
   const [userData, setUserData] = useState(null);
@@ -216,6 +217,15 @@ function App() {
               element={
                 <AdminRoute allow={['ADMIN']} requirePermiso="PROYECTOS_ADMIN">
                   <Proyectos />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/ModulosAdmin"
+              element={
+                <AdminRoute allow={['ADMIN']} requirePermiso="MODULOS_ADMIN">
+                  <ModulosAdmin />
                 </AdminRoute>
               }
             />

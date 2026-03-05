@@ -8,7 +8,7 @@ import './PanelGraficos.css';
 import { jfetch } from './lib/api';
 import ModalProyectosHoras from "./ModalProyectosHoras";
 import Swal from "sweetalert2";
-import { detectProjects } from "./detectProjects"; 
+
 
 /* ======== config ======== */
 const OPEN_ON_HOVER = false;
