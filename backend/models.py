@@ -620,7 +620,7 @@ class ProyectoFaseProyecto(db.Model):
     )
 
 class ProyectoMapeo(db.Model):
-    __tablename__ = "proyecto_mapeo"
+    __tablename__ = "proyecto_mapeos"
 
     id = db.Column(db.Integer, primary_key=True)
     proyecto_id = db.Column(db.Integer, db.ForeignKey("proyecto.id", ondelete="CASCADE"), nullable=False)
