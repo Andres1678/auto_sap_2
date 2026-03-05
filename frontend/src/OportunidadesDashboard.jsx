@@ -76,6 +76,7 @@ const EXCLUDE_SET = new Set(
     "0TP",
     "0TE",
     "0TL",
+    "OT"
   ].map(normKeyForMatch)
 );
 

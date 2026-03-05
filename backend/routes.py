@@ -2092,6 +2092,7 @@ EXCLUDE_LIST = [
     "0TP",
     "0TE",
     "0TL",
+    "OT"
 ]
 
 
