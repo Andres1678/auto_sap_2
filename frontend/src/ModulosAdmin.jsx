@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Modal from "react-modal";
 import Swal from "sweetalert2";
-import { jfetch } from "./lib/api"; 
+import { jfetch } from "./lib/api";
 import "./ModulosAdmin.css";
 
 Modal.setAppElement("#root");
@@ -23,12 +23,10 @@ function getAuthHeaders() {
 
 export default function ModulosAdmin() {
   const [loading, setLoading] = useState(false);
-
   const [modulos, setModulos] = useState([]);
-  const [consultores, setConsultores] = useState([]); // opcional
+  const [consultores, setConsultores] = useState([]);
 
   const [q, setQ] = useState("");
-
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState({ id: null, nombre: "" });
 
@@ -36,13 +34,10 @@ export default function ModulosAdmin() {
     setLoading(true);
     try {
       const headers = getAuthHeaders();
-
-      // Si NO quieres cargar consultores, deja solo el GET modulos
       const [mods, cons] = await Promise.all([
         jfetch(API.modulos, { headers }),
         jfetch(API.consultores, { headers }),
       ]);
-
       setModulos(Array.isArray(mods) ? mods : []);
       setConsultores(Array.isArray(cons) ? cons : []);
     } catch (e) {
@@ -63,9 +58,8 @@ export default function ModulosAdmin() {
     return modulos.filter((m) => (m.nombre || "").toLowerCase().includes(t));
   }, [modulos, q]);
 
-  // ===== asignados (opcional)
   const assignedCountByModuloId = useMemo(() => {
-    const map = new Map(); // moduloId -> count
+    const map = new Map();
     consultores.forEach((c) => {
       (c.modulos || []).forEach((m) => {
         const k = String(m.id);
@@ -92,14 +86,9 @@ export default function ModulosAdmin() {
           .join("<br/>")}</div>`
       : "No hay consultores asignados a este módulo.";
 
-    await Swal.fire({
-      title: `Asignados a: ${m.nombre}`,
-      html,
-      icon: "info",
-    });
+    await Swal.fire({ title: `Asignados a: ${m.nombre}`, html, icon: "info" });
   }
 
-  // ===== modal actions
   function openCreate() {
     setEditing({ id: null, nombre: "" });
     setOpen(true);
@@ -112,7 +101,6 @@ export default function ModulosAdmin() {
 
   async function save(e) {
     e.preventDefault();
-
     const nombre = (editing.nombre || "").trim();
     if (!nombre) {
       Swal.fire("Validación", "El nombre es obligatorio", "warning");
@@ -181,33 +169,33 @@ export default function ModulosAdmin() {
   }
 
   return (
-    <div className="mod-admin">
-      <div className="mod-admin__header">
-        <h2 className="mod-admin__title">Administración — Módulos</h2>
-        {loading ? <span className="mod-admin__loading">⏳ Procesando...</span> : null}
+    <div className="ma-wrap">
+      <div className="ma-header">
+        <h2 className="ma-title">Administración — Módulos</h2>
+        {loading ? <span className="ma-loading">⏳ Procesando...</span> : null}
       </div>
 
-      <div className="card">
-        <div className="card__toolbar">
+      <div className="ma-card">
+        <div className="ma-toolbar">
           <input
-            className="input"
+            className="ma-input"
             placeholder="Buscar módulo..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
 
-          <button className="btn btn-primary" onClick={openCreate} disabled={loading}>
+          <button className="ma-btn ma-btnPrimary" onClick={openCreate} disabled={loading}>
             + Crear
           </button>
 
-          <button className="btn btn-light" onClick={load} disabled={loading}>
+          <button className="ma-btn ma-btnLight" onClick={load} disabled={loading}>
             Recargar
           </button>
         </div>
 
-        <div className="card__body">
-          <div className="table-wrap">
-            <table className="table">
+        <div className="ma-body">
+          <div className="ma-tableWrap">
+            <table className="ma-table">
               <thead>
                 <tr>
                   <th>ID</th>
@@ -223,14 +211,13 @@ export default function ModulosAdmin() {
 
                   return (
                     <tr key={m.id}>
-                      <td className="cell-muted">{m.id}</td>
+                      <td className="ma-muted">{m.id}</td>
                       <td>{m.nombre}</td>
                       <td>
-                        <span className="badge">{cnt} asignados</span>
+                        <span className="ma-badge">{cnt} asignados</span>
                         {cnt > 0 ? (
                           <button
-                            className="btn btn-ghost"
-                            style={{ marginLeft: 10 }}
+                            className="ma-btn ma-btnGhost"
                             onClick={() => showAssigned(m)}
                             disabled={loading}
                           >
@@ -239,9 +226,9 @@ export default function ModulosAdmin() {
                         ) : null}
                       </td>
                       <td>
-                        <div className="actions">
+                        <div className="ma-actions">
                           <button
-                            className="btn btn-ghost"
+                            className="ma-btn ma-btnGhost"
                             onClick={() => openEdit(m)}
                             disabled={loading}
                           >
@@ -249,7 +236,7 @@ export default function ModulosAdmin() {
                           </button>
 
                           <button
-                            className="btn btn-danger"
+                            className="ma-btn ma-btnDanger"
                             onClick={() => remove(m)}
                             disabled={loading}
                           >
@@ -263,7 +250,7 @@ export default function ModulosAdmin() {
 
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan="4" className="cell-muted">
+                    <td colSpan="4" className="ma-muted">
                       No hay módulos.
                     </td>
                   </tr>
@@ -274,31 +261,30 @@ export default function ModulosAdmin() {
         </div>
       </div>
 
-      {/* ===== Modal Crear/Editar ===== */}
       <Modal
         isOpen={open}
         onRequestClose={() => setOpen(false)}
-        className="modal"
-        overlayClassName="modal__overlay"
+        className="ma-modal"
+        overlayClassName="ma-overlay"
       >
-        <h3 className="modal__title">{editing.id ? "Editar Módulo" : "Crear Módulo"}</h3>
+        <h3 className="ma-modalTitle">{editing.id ? "Editar Módulo" : "Crear Módulo"}</h3>
 
         <form onSubmit={save}>
-          <div className="form-group">
-            <label className="label">Nombre</label>
+          <div className="ma-group">
+            <label className="ma-label">Nombre</label>
             <input
-              className="input"
+              className="ma-input"
               value={editing.nombre}
               onChange={(e) => setEditing((p) => ({ ...p, nombre: e.target.value }))}
               autoFocus
             />
           </div>
 
-          <div className="modal__footer">
-            <button type="button" className="btn btn-light" onClick={() => setOpen(false)}>
+          <div className="ma-footer">
+            <button type="button" className="ma-btn ma-btnLight" onClick={() => setOpen(false)}>
               Cancelar
             </button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
+            <button type="submit" className="ma-btn ma-btnPrimary" disabled={loading}>
               Guardar
             </button>
           </div>

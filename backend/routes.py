@@ -5069,6 +5069,17 @@ def eliminar_proyecto_mapeo(id):
     db.session.commit()
     return jsonify({"mensaje": "Mapeo eliminado"}), 200
 
+@bp.route("/proyectos/<int:proyecto_id>/mapeos", methods=["GET"])
+@permission_required("PROYECTOS_VER")
+def listar_mapeos_por_proyecto(proyecto_id):
+    rows = (
+        ProyectoMapeo.query
+        .filter(ProyectoMapeo.proyecto_id == proyecto_id)
+        .order_by(ProyectoMapeo.valor_origen.asc())
+        .all()
+    )
+    return jsonify([pm_to_dict(x) for x in rows]), 200
+
 ## -------------------------------
 ## Modulos (para categorizar proyectos y reportes)
 @bp.route('/modulos', methods=['POST'])
