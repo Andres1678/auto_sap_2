@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie, Legend, ReferenceLine
@@ -489,43 +489,40 @@ export default function Graficos() {
     return { mapExacto: exacto, rulesContiene: contiene };
   }, [mapeosProyecto]);
 
-  const projectOfficialResolved = useCallback((r) => {
-    // 1) Si backend ya trae el proyecto
+  const projectOfficialResolved = (r) => {
+    // 1) Si backend ya trae proyecto oficial (mejor caso)
     const codigo = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
     const nombre = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
     if (codigo) return `${codigo} - ${nombre || "SIN NOMBRE"}`;
 
-    // 2) proyecto_id + texto origen
+    // 2) proyecto_id (debe venir en el registro)
     const proyectoId = Number(r?.proyecto_id || r?.proyecto?.id || 0);
 
-    const raw =
-      String(r?.nroCasoCliente || "").trim() ||
+    // 3) origen: aquí usas DESCRIPCIÓN como pediste (y si no, el nroCasoCliente)
+    const origenRaw =
       String(r?.descripcion || "").trim() ||
+      String(r?.nroCasoCliente || "").trim() ||
       "";
 
-    const txt = normTxt(raw);
+    const origen = normTxt(origenRaw);
 
-    // si no hay nada para mapear
-    if (!proyectoId || !txt) {
-      if (!raw || raw === "0" || ["NA", "N/A"].includes(String(raw).toUpperCase())) return "SIN PROYECTO";
-      return "NO MAPEADO";
+    // 4) mapeo en tabla: (proyecto_id + descripcion normalizada)
+    if (proyectoId && origen) {
+      const key = `${proyectoId}__${origen}`;
+      const agrupado = mapeoProyectoMap.get(key);
+      if (agrupado) {
+        // etiqueta final (si no tienes código, generas uno)
+        return `PRY-${proyectoId} - ${agrupado}`;
+      }
     }
 
-    // 2.1) EXACTO
-    const key = `${proyectoId}__${txt}`;
-    const exact = mapExacto.get(key);
-    if (exact) return `PRY-${proyectoId} - ${exact}`;
-
-    // 2.2) CONTIENE (la descripción contiene el origen)
-    const rule = rulesContiene.find((x) => x.proyectoId === proyectoId && txt.includes(x.origen));
-    if (rule) return `PRY-${proyectoId} - ${rule.agrupado}`;
-
-    // 3) fallback detectProjects
-    const matches = detectProjects(raw);
-    if (matches.length > 0) return matches[0].display;
+    // 6) sin proyecto
+    if (!origenRaw || origenRaw === "0" || ["NA", "N/A"].includes(origenRaw.toUpperCase())) {
+      return "SIN PROYECTO";
+    }
 
     return "NO MAPEADO";
-  }, [mapExacto, rulesContiene]);
+  };
 
 
   /* Opciones filtros */

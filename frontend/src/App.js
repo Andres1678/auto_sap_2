@@ -20,7 +20,7 @@ import EquiposPage from "./EquiposPage";
 import ReporteHorasConsultorCliente from './Reportes/ReporteHorasConsultorCliente';
 import PresupuestoConsultorImport from './PresupuestoConsultorImport';
 import Proyectos from "./Proyectos";
-import ModalMapeoProyecto from "./ModalMapeoProyecto";
+import ModulosAdmin from "./ModulosAdmin";
 
 function App() {
   const [userData, setUserData] = useState(null);
