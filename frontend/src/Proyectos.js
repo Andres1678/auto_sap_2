@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { jfetch } from "./lib/api";
+import ModalMapeoProyecto from "./ModalMapeoProyecto";
 import "./Proyectos.css";
 
 const DEFAULT_FASES = [
@@ -19,10 +20,11 @@ const emptyForm = () => ({
   fases: [],
   activo: true,
   modulos: [],
-  cliente_id: "", 
+  cliente_id: "",
 });
 
 const norm = (s) => String(s ?? "").trim();
+
 const normKey = (s) =>
   String(s ?? "")
     .trim()
@@ -41,6 +43,7 @@ const getProyectoFasesNames = (p, fasesMap) => {
     const names = p.fases.map((f) => String(f?.nombre || "").trim()).filter(Boolean);
     if (names.length) return names;
   }
+
   const ids = getProyectoFasesIds(p);
   return ids.map((id) => fasesMap.get(String(id))).filter(Boolean);
 };
@@ -52,7 +55,7 @@ export default function Proyectos() {
   const [proyectos, setProyectos] = useState([]);
   const [modulos, setModulos] = useState([]);
   const [fases, setFases] = useState([]);
-  const [clientes, setClientes] = useState([]); 
+  const [clientes, setClientes] = useState([]);
 
   const [q, setQ] = useState("");
   const [soloActivos, setSoloActivos] = useState(false);
@@ -60,14 +63,28 @@ export default function Proyectos() {
   const [form, setForm] = useState(emptyForm());
   const isEdit = !!form.id;
 
+  const [mapeoOpen, setMapeoOpen] = useState(false);
+  const [proyectoMapeo, setProyectoMapeo] = useState(null);
+
+  const openMapeoModal = (p) => {
+    setProyectoMapeo(p);
+    setMapeoOpen(true);
+  };
+
+  const closeMapeoModal = () => {
+    setMapeoOpen(false);
+    setProyectoMapeo(null);
+  };
+
   const fetchAll = async () => {
     setLoading(true);
+
     try {
       const [pRes, mRes, fRes, cRes] = await Promise.all([
         jfetch("/proyectos?include_modulos=1&include_fases=1"),
         jfetch("/modulos"),
         jfetch("/proyecto-fases"),
-        jfetch("/clientes"), // ✅
+        jfetch("/clientes"),
       ]);
 
       const pData = await pRes.json().catch(() => []);
@@ -86,12 +103,21 @@ export default function Proyectos() {
 
       const backendFases = Array.isArray(fData) ? fData : [];
       const byName = new Map();
-      backendFases.forEach((x) => byName.set(normKey(x?.nombre), x));
+
+      backendFases.forEach((x) => {
+        byName.set(normKey(x?.nombre), x);
+      });
 
       const merged = [...backendFases];
+
       DEFAULT_FASES.forEach((df) => {
         if (!byName.has(normKey(df.nombre))) {
-          merged.push({ id: df.id, nombre: df.nombre, activo: true, orden: 0 });
+          merged.push({
+            id: df.id,
+            nombre: df.nombre,
+            activo: true,
+            orden: 0,
+          });
         }
       });
 
@@ -99,11 +125,13 @@ export default function Proyectos() {
       setFases(merged);
     } catch (e) {
       console.error(e);
+
       Swal.fire({
         icon: "error",
         title: "Error cargando datos",
         text: String(e.message || e),
       });
+
       setProyectos([]);
       setModulos([]);
       setFases(DEFAULT_FASES);
@@ -133,11 +161,13 @@ export default function Proyectos() {
 
   const clientesMap = useMemo(() => {
     const m = new Map();
+
     (clientes || []).forEach((c) => {
       const id = Number(c?.id);
       const name = c?.nombre_cliente ?? c?.nombre ?? "";
       if (Number.isFinite(id)) m.set(id, String(name));
     });
+
     return m;
   }, [clientes]);
 
@@ -150,13 +180,12 @@ export default function Proyectos() {
 
       const fasesTxt = getProyectoFasesNames(p, fasesMap).join(" ");
 
-      const clienteTxt =
-        String(
-          p?.cliente?.nombre_cliente ??
-            p?.cliente?.nombre ??
-            (p?.cliente_id != null ? clientesMap.get(Number(p?.cliente_id)) : "") ??
-            ""
-        ).toLowerCase();
+      const clienteTxt = String(
+        p?.cliente?.nombre_cliente ??
+          p?.cliente?.nombre ??
+          (p?.cliente_id != null ? clientesMap.get(Number(p?.cliente_id)) : "") ??
+          ""
+      ).toLowerCase();
 
       return (
         String(p.codigo || "").toLowerCase().includes(needle) ||
@@ -169,21 +198,31 @@ export default function Proyectos() {
 
   const toggleModulo = (id) => {
     const mid = Number(id);
+
     setForm((f) => {
       const set = new Set((f.modulos || []).map(Number));
       if (set.has(mid)) set.delete(mid);
       else set.add(mid);
-      return { ...f, modulos: Array.from(set) };
+
+      return {
+        ...f,
+        modulos: Array.from(set),
+      };
     });
   };
 
   const toggleFase = (faseId) => {
     const fid = String(faseId);
+
     setForm((f) => {
       const set = new Set((f.fases || []).map(String));
       if (set.has(fid)) set.delete(fid);
       else set.add(fid);
-      return { ...f, fases: Array.from(set) };
+
+      return {
+        ...f,
+        fases: Array.from(set),
+      };
     });
   };
 
@@ -199,8 +238,6 @@ export default function Proyectos() {
       activo: !!p.activo,
       modulos: Array.isArray(p.modulos) ? p.modulos.map((x) => Number(x.id)) : [],
       fases: fasesIds,
-
-      // ✅ cliente_id robusto
       cliente_id: p?.cliente_id != null ? String(p.cliente_id) : "",
     });
 
@@ -217,18 +254,28 @@ export default function Proyectos() {
       cancelButtonText: "Cancelar",
       reverseButtons: true,
     });
+
     if (!res.isConfirmed) return;
 
     try {
       setSaving(true);
+
       const r = await jfetch(`/proyectos/${p.id}`, { method: "DELETE" });
       const j = await r.json().catch(() => ({}));
+
       if (!r.ok) throw new Error(j?.mensaje || `HTTP ${r.status}`);
+
       Swal.fire({ icon: "success", title: "Eliminado" });
-      fetchAll();
+
+      await fetchAll();
+
       if (form.id === p.id) resetForm();
     } catch (e) {
-      Swal.fire({ icon: "error", title: "No se pudo eliminar", text: String(e.message || e) });
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo eliminar",
+        text: String(e.message || e),
+      });
     } finally {
       setSaving(false);
     }
@@ -237,12 +284,19 @@ export default function Proyectos() {
   const toggleActivo = async (p) => {
     try {
       setSaving(true);
+
       const r = await jfetch(`/proyectos/${p.id}/toggle-activo`, { method: "PUT" });
       const j = await r.json().catch(() => ({}));
+
       if (!r.ok) throw new Error(j?.mensaje || `HTTP ${r.status}`);
-      fetchAll();
+
+      await fetchAll();
     } catch (e) {
-      Swal.fire({ icon: "error", title: "No se pudo cambiar estado", text: String(e.message || e) });
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo cambiar estado",
+        text: String(e.message || e),
+      });
     } finally {
       setSaving(false);
     }
@@ -251,10 +305,9 @@ export default function Proyectos() {
   const validateForm = () => {
     if (!norm(form.codigo)) return "El código es obligatorio";
     if (!norm(form.nombre)) return "El nombre es obligatorio";
-    if (!Array.isArray(form.modulos) || form.modulos.length === 0) return "Debes seleccionar al menos 1 módulo";
-
-    // ✅ si lo quieres obligatorio:
-    // if (!String(form.cliente_id || "").trim()) return "Debes seleccionar un cliente";
+    if (!Array.isArray(form.modulos) || form.modulos.length === 0) {
+      return "Debes seleccionar al menos 1 módulo";
+    }
 
     return null;
   };
@@ -263,7 +316,12 @@ export default function Proyectos() {
     e.preventDefault();
 
     const err = validateForm();
-    if (err) return Swal.fire({ icon: "warning", title: err });
+    if (err) {
+      return Swal.fire({
+        icon: "warning",
+        title: err,
+      });
+    }
 
     const fasesIds = (form.fases || [])
       .map(String)
@@ -279,8 +337,6 @@ export default function Proyectos() {
       activo: !!form.activo,
       modulos: (form.modulos || []).map(Number),
       fases: fasesIds,
-
-      // ✅ cliente_id
       cliente_id: clienteIdClean ? Number(clienteIdClean) : null,
     };
 
@@ -299,12 +355,19 @@ export default function Proyectos() {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.mensaje || `HTTP ${r.status}`);
 
-      Swal.fire({ icon: "success", title: isEdit ? "Proyecto actualizado" : "Proyecto creado" });
+      Swal.fire({
+        icon: "success",
+        title: isEdit ? "Proyecto actualizado" : "Proyecto creado",
+      });
 
       resetForm();
-      fetchAll();
+      await fetchAll();
     } catch (e2) {
-      Swal.fire({ icon: "error", title: "Error guardando", text: String(e2.message || e2) });
+      Swal.fire({
+        icon: "error",
+        title: "Error guardando",
+        text: String(e2.message || e2),
+      });
     } finally {
       setSaving(false);
     }
@@ -330,6 +393,7 @@ export default function Proyectos() {
       <div className="proj-card">
         <div className="proj-card-head">
           <h3>{isEdit ? "Editar proyecto" : "Nuevo proyecto"}</h3>
+
           {isEdit && (
             <button className="btn btn-ghost" type="button" onClick={resetForm} disabled={saving}>
               Cancelar edición
@@ -358,7 +422,6 @@ export default function Proyectos() {
             </div>
           </div>
 
-          {/* ✅ Cliente */}
           <div className="grid-1">
             <div className="field">
               <label>Cliente</label>
@@ -370,6 +433,7 @@ export default function Proyectos() {
                 {(clientes || []).map((c) => {
                   const id = c?.id;
                   const name = c?.nombre_cliente ?? c?.nombre ?? "";
+
                   return (
                     <option key={id} value={id}>
                       {name}
@@ -387,6 +451,7 @@ export default function Proyectos() {
           <div className="grid-2">
             <div className="field">
               <label>Fases permitidas (multi)</label>
+
               <div className="mods-box">
                 {(fases || []).length === 0 ? (
                   <div className="muted">No hay fases cargadas</div>
@@ -394,9 +459,14 @@ export default function Proyectos() {
                   (fases || []).map((fx) => {
                     const fid = String(fx.id);
                     const checked = (form.fases || []).map(String).includes(fid);
+
                     return (
                       <label key={fid} className={`mod-chip ${checked ? "is-on" : ""}`}>
-                        <input type="checkbox" checked={checked} onChange={() => toggleFase(fid)} />
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleFase(fid)}
+                        />
                         <span>{fx.nombre}</span>
                       </label>
                     );
@@ -407,6 +477,7 @@ export default function Proyectos() {
 
             <div className="field">
               <label>Estado</label>
+
               <div className="inline">
                 <label className="switch">
                   <input
@@ -416,6 +487,7 @@ export default function Proyectos() {
                   />
                   <span className="slider" />
                 </label>
+
                 <span className="muted">{form.activo ? "Activo" : "Inactivo"}</span>
               </div>
 
@@ -430,15 +502,21 @@ export default function Proyectos() {
           <div className="grid-1">
             <div className="field">
               <label>Módulos permitidos</label>
+
               <div className="mods-box">
                 {modulos.length === 0 ? (
                   <div className="muted">No hay módulos cargados</div>
                 ) : (
                   modulos.map((m) => {
                     const checked = (form.modulos || []).map(Number).includes(Number(m.id));
+
                     return (
                       <label key={m.id} className={`mod-chip ${checked ? "is-on" : ""}`}>
-                        <input type="checkbox" checked={checked} onChange={() => toggleModulo(m.id)} />
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleModulo(m.id)}
+                        />
                         <span>{m.nombre}</span>
                       </label>
                     );
@@ -453,6 +531,7 @@ export default function Proyectos() {
       <div className="proj-card">
         <div className="proj-list-head">
           <h3>Proyectos</h3>
+
           <div className="proj-list-filters">
             <input
               className="search"
@@ -460,8 +539,13 @@ export default function Proyectos() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
+
             <label className="check">
-              <input type="checkbox" checked={soloActivos} onChange={(e) => setSoloActivos(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={soloActivos}
+                onChange={(e) => setSoloActivos(e.target.checked)}
+              />
               <span>Solo activos</span>
             </label>
           </div>
@@ -481,6 +565,7 @@ export default function Proyectos() {
                 <th className="actions">Acciones</th>
               </tr>
             </thead>
+
             <tbody>
               {proyectosFiltrados.map((p) => {
                 const fasesNames = getProyectoFasesNames(p, fasesMap);
@@ -499,34 +584,67 @@ export default function Proyectos() {
                     <td>{p.nombre}</td>
                     <td>{clienteTxt || "—"}</td>
                     <td>{fasesTxt}</td>
+
                     <td>
-                      <span className={`badge ${p.activo ? "ok" : "off"}`}>{p.activo ? "Activo" : "Inactivo"}</span>
+                      <span className={`badge ${p.activo ? "ok" : "off"}`}>
+                        {p.activo ? "Activo" : "Inactivo"}
+                      </span>
                     </td>
+
                     <td className="mods-cell">
                       {(Array.isArray(p.modulos) ? p.modulos : [])
                         .slice(0, 6)
                         .map((x, idx) => {
                           const id = Number(x?.id ?? x);
                           const label = x?.nombre ?? modulosMap.get(id) ?? String(id);
+
                           return (
                             <span key={`${p.id}-${id}-${idx}`} className="pill">
                               {label}
                             </span>
                           );
                         })}
+
                       {(Array.isArray(p.modulos) ? p.modulos : []).length > 6 && (
                         <span className="pill more">+ más…</span>
                       )}
                     </td>
+
                     <td className="actions">
-                      <button className="icon-btn" onClick={() => startEdit(p)} disabled={saving}>
+                      <button
+                        className="icon-btn"
+                        onClick={() => startEdit(p)}
+                        disabled={saving}
+                        title="Editar"
+                      >
                         ✏️
                       </button>
-                      <button className="icon-btn" onClick={() => toggleActivo(p)} disabled={saving}>
+
+                      <button
+                        className="icon-btn"
+                        onClick={() => toggleActivo(p)}
+                        disabled={saving}
+                        title="Activar / desactivar"
+                      >
                         {p.activo ? "⛔" : "✅"}
                       </button>
-                      <button className="icon-btn danger" onClick={() => confirmDelete(p)} disabled={saving}>
+
+                      <button
+                        className="icon-btn danger"
+                        onClick={() => confirmDelete(p)}
+                        disabled={saving}
+                        title="Eliminar"
+                      >
                         🗑️
+                      </button>
+
+                      <button
+                        className="icon-btn"
+                        onClick={() => openMapeoModal(p)}
+                        disabled={saving}
+                        title="Mapeos"
+                      >
+                        🧩
                       </button>
                     </td>
                   </tr>
@@ -548,6 +666,14 @@ export default function Proyectos() {
           Total: <b>{proyectosFiltrados.length}</b>
         </div>
       </div>
+
+      {mapeoOpen && proyectoMapeo && (
+        <ModalMapeoProyecto
+          isOpen={mapeoOpen}
+          onClose={closeMapeoModal}
+          proyecto={proyectoMapeo}
+        />
+      )}
     </div>
   );
 }

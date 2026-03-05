@@ -109,8 +109,8 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
         <Link to="/">Inicio</Link>
         <Link to="/grafico">Panel Gráfico</Link>
 
-        {can("BASE_REGISTROS_VER") && <Link to="/BaseRegistros">Base Registros</Link>}
-        {can("GRAFICO_BASE_VER") && <Link to="/GraficoBase">Gráfico Base</Link>}
+        {/*{can("BASE_REGISTROS_VER") && <Link to="/BaseRegistros">Base Registros</Link>}
+        {can("GRAFICO_BASE_VER") && <Link to="/GraficoBase">Gráfico Base</Link>}*/}
 
         {can("OPORTUNIDADES_VER") && <Link to="/Oportunidades">Oportunidades</Link>}
 
@@ -122,9 +122,9 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
           <Link to="/reportes/horas-consultor-cliente">Reporte Horas</Link>
         )}
 
-        {can("PRESUPUESTO_CONSULTOR_IMPORTAR") && (
+        {/* {can("PRESUPUESTO_CONSULTOR_IMPORTAR") && (
           <Link to="/configuracion/importar-presupuesto">Importar Excel</Link>
-        )}
+        )} */}
 
         {can("CONFIGURACION_VER") && (
           <Link to="/configuracion" className="navc-settings">⚙️</Link>

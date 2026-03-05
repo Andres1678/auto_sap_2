@@ -3,7 +3,8 @@ from backend.models import (
     db, Modulo, Consultor, Registro, BaseRegistro, Login,
     Rol, Equipo, Horario, Oportunidad, Cliente,
     Permiso, RolPermiso, EquipoPermiso, ConsultorPermiso, 
-    Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel, ConsultorPresupuesto, Proyecto, ProyectoFase, ProyectoModulo, ProyectoFaseProyecto
+    Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel, ConsultorPresupuesto, Proyecto, ProyectoFase, ProyectoModulo, ProyectoFaseProyecto,
+    ProyectoMapeo
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
@@ -4973,3 +4974,158 @@ def proyectos_activos_por_modulo():
         "fases": [{"id": x["id"], "nombre": x["nombre"], "orden": x["orden"], "activo": x["activo"]} for x in (proyecto_to_dict(p, include_modulos=False, include_fases=True).get("fases") or [])],
         "fases_ids": proyecto_to_dict(p, include_modulos=False, include_fases=True).get("fases_ids") or [],
     } for p in proyectos]), 200
+
+def pm_to_dict(x: ProyectoMapeo):
+    return {
+        "id": x.id,
+        "proyecto_id": x.proyecto_id,
+        "valor_origen": x.valor_origen,
+        "valor_agrupado": x.valor_agrupado,
+        "activo": bool(x.activo),
+    }
+
+@bp.route("/proyecto-mapeos", methods=["GET"])
+@permission_required("PROYECTOS_VER")
+def listar_proyecto_mapeos():
+    proyecto_id = request.args.get("proyecto_id")
+    q = ProyectoMapeo.query
+    if proyecto_id:
+        try:
+            pid = int(proyecto_id)
+            q = q.filter(ProyectoMapeo.proyecto_id == pid)
+        except:
+            pass
+    rows = q.order_by(ProyectoMapeo.proyecto_id.asc(), ProyectoMapeo.valor_origen.asc()).all()
+    return jsonify([pm_to_dict(x) for x in rows]), 200
+
+## -------------------------------
+##  Proyectos Mapeos (para agrupar valores en reportes)
+@bp.route("/proyecto-mapeos", methods=["POST"])
+@permission_required("PROYECTOS_EDITAR")
+def crear_proyecto_mapeo():
+    data = request.get_json(silent=True) or {}
+    proyecto_id = data.get("proyecto_id")
+    valor_origen = (data.get("valor_origen") or "").strip().upper()
+    valor_agrupado = (data.get("valor_agrupado") or "").strip()
+
+    if not proyecto_id:
+        return jsonify({"mensaje": "proyecto_id requerido"}), 400
+    if not valor_origen:
+        return jsonify({"mensaje": "valor_origen requerido"}), 400
+    if not valor_agrupado:
+        return jsonify({"mensaje": "valor_agrupado requerido"}), 400
+
+    try:
+        proyecto_id = int(proyecto_id)
+    except:
+        return jsonify({"mensaje": "proyecto_id inválido"}), 400
+
+    if not Proyecto.query.get(proyecto_id):
+        return jsonify({"mensaje": "Proyecto no existe"}), 400
+
+    x = ProyectoMapeo(
+        proyecto_id=proyecto_id,
+        valor_origen=valor_origen,
+        valor_agrupado=valor_agrupado,
+        activo=_to_bool2(data.get("activo"), default=True)
+    )
+    db.session.add(x)
+    try:
+        db.session.commit()
+        return jsonify({"mensaje": "Mapeo creado", "mapeo": pm_to_dict(x)}), 201
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"mensaje": "Ya existe ese valor_origen para ese proyecto"}), 400
+
+
+@bp.route("/proyecto-mapeos/<int:id>", methods=["PUT"])
+@permission_required("PROYECTOS_EDITAR")
+def editar_proyecto_mapeo(id):
+    x = ProyectoMapeo.query.get_or_404(id)
+    data = request.get_json(silent=True) or {}
+
+    if "valor_origen" in data:
+        x.valor_origen = (data.get("valor_origen") or "").strip().upper()
+
+    if "valor_agrupado" in data:
+        x.valor_agrupado = (data.get("valor_agrupado") or "").strip()
+
+    if "activo" in data:
+        x.activo = _to_bool2(data.get("activo"), default=True)
+
+    try:
+        db.session.commit()
+        return jsonify({"mensaje": "Mapeo actualizado", "mapeo": pm_to_dict(x)}), 200
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"mensaje": "Duplicado: ya existe ese valor_origen para el proyecto"}), 400
+
+
+@bp.route("/proyecto-mapeos/<int:id>", methods=["DELETE"])
+@permission_required("PROYECTOS_EDITAR")
+def eliminar_proyecto_mapeo(id):
+    x = ProyectoMapeo.query.get_or_404(id)
+    db.session.delete(x)
+    db.session.commit()
+    return jsonify({"mensaje": "Mapeo eliminado"}), 200
+
+## -------------------------------
+## Modulos (para categorizar proyectos y reportes)
+@bp.route('/modulos', methods=['POST'])
+@permission_required("MODULOS_CREAR")
+def crear_modulo():
+    data = request.get_json(silent=True) or {}
+    nombre = (data.get("nombre") or "").strip()
+
+    if not nombre:
+        return jsonify({"mensaje": "nombre requerido"}), 400
+
+    dupe = Modulo.query.filter(func.lower(Modulo.nombre) == nombre.lower()).first()
+    if dupe:
+        return jsonify({"mensaje": "El módulo ya existe"}), 400
+
+    m = Modulo(nombre=nombre)
+    db.session.add(m)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Módulo creado", "modulo": {"id": m.id, "nombre": m.nombre}}), 201
+
+
+@bp.route('/modulos/<int:id>', methods=['PUT'])
+@permission_required("MODULOS_EDITAR")
+def editar_modulo(id):
+    m = Modulo.query.get_or_404(id)
+    data = request.get_json(silent=True) or {}
+    nombre = (data.get("nombre") or "").strip()
+
+    if not nombre:
+        return jsonify({"mensaje": "nombre requerido"}), 400
+
+    dupe = (
+        Modulo.query
+        .filter(Modulo.id != id)
+        .filter(func.lower(Modulo.nombre) == nombre.lower())
+        .first()
+    )
+    if dupe:
+        return jsonify({"mensaje": "Ya existe otro módulo con ese nombre"}), 400
+
+    m.nombre = nombre
+    db.session.commit()
+
+    return jsonify({"mensaje": "Módulo actualizado", "modulo": {"id": m.id, "nombre": m.nombre}}), 200
+
+
+@bp.route('/modulos/<int:id>', methods=['DELETE'])
+@permission_required("MODULOS_ELIMINAR")
+def eliminar_modulo(id):
+    m = Modulo.query.get_or_404(id)
+
+    # Opcional: bloquear si está asignado a consultores
+    # if m.consultores and len(m.consultores) > 0:
+    #     return jsonify({"mensaje": "No se puede eliminar: hay consultores con este módulo"}), 400
+
+    db.session.delete(m)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Módulo eliminado"}), 200

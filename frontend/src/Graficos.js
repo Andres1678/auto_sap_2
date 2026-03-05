@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie, Legend, ReferenceLine
@@ -19,22 +19,6 @@ const HOLIDAYS = [
 ];
 
 /* ======== Helpers ======== */
-const projectOfficial = (r) => {
-  const codigo = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
-  const nombre = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
-  if (codigo) return `${codigo} - ${nombre || "SIN NOMBRE"}`;
-
-  const txt =
-    String(r?.nroCasoCliente || "").trim() ||
-    String(r?.descripcion || "").trim() ||
-    "";
-
-  const matches = detectProjects(txt);
-  if (matches.length > 0) return matches[0].display;
-
-  if (!txt || txt === "0" || ["NA","N/A"].includes(txt.toUpperCase())) return "SIN PROYECTO";
-  return "NO MAPEADO";
-};
 
 const toNum = (v) => {
   const n = parseFloat(v);
@@ -42,6 +26,14 @@ const toNum = (v) => {
 };
 
 const isISO = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+const normTxt = (s) =>
+  String(s ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\s+/g, " "); 
 
 const inRangeISO = (fechaISO, desdeISO, hastaISO) => {
   if (!isISO(fechaISO)) return false;
@@ -312,6 +304,7 @@ export default function Graficos() {
   const [modalRows, setModalRows] = useState([]);
   const [modalTitle, setModalTitle] = useState('');
   const [modalProyectosOpen, setModalProyectosOpen] = useState(false);
+  const [mapeosProyecto, setMapeosProyecto] = useState([]);
 
   /* Usuario / rol */
   const user = useMemo(() => {
@@ -427,8 +420,6 @@ export default function Graficos() {
         const res = await jfetch('/horas-ocupacion', { method: 'GET' });
         const json = await res.json();
 
-        console.log("📌 Datos crudos de /horas-ocupacion:", json);
-
         // ✅ tu endpoint devuelve Array plano: [{ horas, ocupacion }]
         const arr = Array.isArray(json)
           ? json
@@ -441,8 +432,6 @@ export default function Graficos() {
           horas: Number(o.horas ?? 0),
         }));
 
-        console.log("📌 Normalizado ocupaciones:", normalizados);
-
         // si lo quieres guardar para usarlo en una gráfica aparte:
         setHorariosBackend(normalizados);
 
@@ -454,6 +443,90 @@ export default function Graficos() {
 
     fetchOcupaciones();
   }, []);
+
+  useEffect(() => {
+    const fetchMapeos = async () => {
+      try {
+        const res = await jfetch("/proyecto-mapeos");
+        const json = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
+        setMapeosProyecto(Array.isArray(json) ? json : []);
+      } catch (err) {
+        console.error("Error cargando mapeos:", err);
+        setMapeosProyecto([]);
+      }
+    };
+
+    fetchMapeos();
+  }, []);
+
+  const { mapExacto, rulesContiene } = useMemo(() => {
+    const exacto = new Map();
+    const contiene = []; // reglas por proyecto_id
+
+    (mapeosProyecto || []).forEach((m) => {
+      if (!m?.activo) return;
+
+      const proyectoId = Number(m.proyecto_id);
+      const origen = normTxt(m.valor_origen);
+      const agrupado = String(m.valor_agrupado || "").trim();
+
+      if (!proyectoId || !origen || !agrupado) return;
+
+      const tipo = String(m.tipo_match || "EXACT").toUpperCase(); 
+      // si NO tienes tipo_match en BD, quedará "EXACT"
+
+      if (tipo === "CONTAINS" || tipo === "INCLUDES") {
+        contiene.push({ proyectoId, origen, agrupado });
+      } else {
+        exacto.set(`${proyectoId}__${origen}`, agrupado);
+      }
+    });
+
+    // opcional: reglas largas primero para que ganen
+    contiene.sort((a, b) => b.origen.length - a.origen.length);
+
+    return { mapExacto: exacto, rulesContiene: contiene };
+  }, [mapeosProyecto]);
+
+  const projectOfficialResolved = useCallback((r) => {
+    // 1) Si backend ya trae el proyecto
+    const codigo = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
+    const nombre = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
+    if (codigo) return `${codigo} - ${nombre || "SIN NOMBRE"}`;
+
+    // 2) proyecto_id + texto origen
+    const proyectoId = Number(r?.proyecto_id || r?.proyecto?.id || 0);
+
+    const raw =
+      String(r?.nroCasoCliente || "").trim() ||
+      String(r?.descripcion || "").trim() ||
+      "";
+
+    const txt = normTxt(raw);
+
+    // si no hay nada para mapear
+    if (!proyectoId || !txt) {
+      if (!raw || raw === "0" || ["NA", "N/A"].includes(String(raw).toUpperCase())) return "SIN PROYECTO";
+      return "NO MAPEADO";
+    }
+
+    // 2.1) EXACTO
+    const key = `${proyectoId}__${txt}`;
+    const exact = mapExacto.get(key);
+    if (exact) return `PRY-${proyectoId} - ${exact}`;
+
+    // 2.2) CONTIENE (la descripción contiene el origen)
+    const rule = rulesContiene.find((x) => x.proyectoId === proyectoId && txt.includes(x.origen));
+    if (rule) return `PRY-${proyectoId} - ${rule.agrupado}`;
+
+    // 3) fallback detectProjects
+    const matches = detectProjects(raw);
+    if (matches.length > 0) return matches[0].display;
+
+    return "NO MAPEADO";
+  }, [mapExacto, rulesContiene]);
+
 
   /* Opciones filtros */
   const consultoresUnicos = useMemo(() => {
@@ -585,7 +658,6 @@ export default function Graficos() {
     filtroOcupacion, filtroDesde, filtroHasta   
   ]);
 
-
   /* Agrupaciones */
   const horasPorConsultor = useMemo(() => {
     const acc = new Map();
@@ -633,8 +705,9 @@ export default function Graficos() {
 
   const horasPorProyecto = useMemo(() => {
     const acc = new Map();
+
     (datosFiltrados ?? []).forEach((r) => {
-      const key = projectOfficial(r);
+      const key = projectOfficialResolved(r);
       acc.set(key, (acc.get(key) || 0) + toNum(r.tiempoInvertido));
     });
 
@@ -642,7 +715,7 @@ export default function Graficos() {
       proyecto,
       horas: +horas.toFixed(2),
     })).sort((a, b) => b.horas - a.horas);
-  }, [datosFiltrados]);
+  }, [datosFiltrados, mapeoProyectoMap]);
 
   const horasPorDia = useMemo(() => {
     const acc = new Map();
