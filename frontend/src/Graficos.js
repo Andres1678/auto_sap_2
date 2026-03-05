@@ -456,9 +456,25 @@ export default function Graficos() {
         setMapeosProyecto([]);
       }
     };
-
     fetchMapeos();
   }, []);
+
+  const mapeoProyectoMap = useMemo(() => {
+    const map = new Map();
+
+    (mapeosProyecto || []).forEach((m) => {
+      if (!m?.activo) return;
+
+      const proyectoId = Number(m.proyecto_id);
+      const origen = normTxt(m.valor_origen);
+
+      if (!proyectoId || !origen) return;
+
+      map.set(`${proyectoId}__${origen}`, String(m.valor_agrupado || "").trim());
+    });
+
+    return map;
+  }, [mapeosProyecto]);
 
   const { mapExacto, rulesContiene } = useMemo(() => {
     const exacto = new Map();
@@ -490,15 +506,15 @@ export default function Graficos() {
   }, [mapeosProyecto]);
 
   const projectOfficialResolved = (r) => {
-    // 1) Si backend ya trae proyecto oficial (mejor caso)
+    // 1) Si backend ya trae proyecto oficial
     const codigo = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
     const nombre = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
     if (codigo) return `${codigo} - ${nombre || "SIN NOMBRE"}`;
 
-    // 2) proyecto_id (debe venir en el registro)
+    // 2) proyecto_id (debe venir)
     const proyectoId = Number(r?.proyecto_id || r?.proyecto?.id || 0);
 
-    // 3) origen: aquí usas DESCRIPCIÓN como pediste (y si no, el nroCasoCliente)
+    // 3) origen: usar DESCRIPCIÓN (como pediste) y si no, nroCasoCliente
     const origenRaw =
       String(r?.descripcion || "").trim() ||
       String(r?.nroCasoCliente || "").trim() ||
@@ -506,17 +522,16 @@ export default function Graficos() {
 
     const origen = normTxt(origenRaw);
 
-    // 4) mapeo en tabla: (proyecto_id + descripcion normalizada)
+    // 4) Buscar en tabla por (proyecto_id + descripcion)
     if (proyectoId && origen) {
       const key = `${proyectoId}__${origen}`;
       const agrupado = mapeoProyectoMap.get(key);
       if (agrupado) {
-        // etiqueta final (si no tienes código, generas uno)
         return `PRY-${proyectoId} - ${agrupado}`;
       }
     }
 
-    // 6) sin proyecto
+    // 5) Sin mapeo -> controlado
     if (!origenRaw || origenRaw === "0" || ["NA", "N/A"].includes(origenRaw.toUpperCase())) {
       return "SIN PROYECTO";
     }
