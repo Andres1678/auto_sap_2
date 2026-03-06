@@ -93,6 +93,10 @@ const CATEGORIA_SUBCATEGORIA = {
   SEGUIMIENTO: ["COMERCIAL", "CLIENTE NO RESPONDE"],
 };
 
+const COLUMN_LABELS = {
+  fecha_creacion: "FECHA ASIGNACIÓN",
+};
+
 const nf = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 
 function isNumericCol(col) {
@@ -1234,7 +1238,7 @@ export default function Oportunidades() {
           <thead>
             <tr>
               {columnOrder.map((col) => (
-                <th key={col}>{col.replace(/_/g, " ").toUpperCase()}</th>
+                <th key={col}>{COLUMN_LABELS[col] || col.replace(/_/g, " ").toUpperCase()}</th>
               ))}
               <th>ACCIONES</th>
             </tr>
