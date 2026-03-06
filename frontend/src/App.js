@@ -224,7 +224,7 @@ function App() {
             <Route
               path="/ModulosAdmin"
               element={
-                <AdminRoute allow={['ADMIN']} requirePermiso="MODULOS_ADMIN">
+                <AdminRoute allow={['ADMIN']} requirePermiso="MODULOS_ADMIN_GESTION">
                   <ModulosAdmin />
                 </AdminRoute>
               }

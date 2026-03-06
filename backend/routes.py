@@ -9,19 +9,17 @@ from backend.models import (
 from datetime import datetime, timedelta, time, date
 from functools import wraps
 from sqlalchemy import or_, text, func, extract, and_, cast, Integer
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import relationship, backref, joinedload, aliased
 import unicodedata, re
 from collections import defaultdict
 import pandas as pd
 from io import BytesIO
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 import logging
 import traceback
 import math
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from openpyxl import load_workbook
-from flask import current_app
 
 
 
