@@ -58,6 +58,7 @@ const ESTADO_RESULTADO_BASE = {
   REGISTRO: ["OPORTUNIDAD EN PROCESO"],
   PROSPECCION: ["OPORTUNIDAD EN PROCESO"],
   "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACIÓN": ["OPORTUNIDAD EN PROCESO"],
+  "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION": ["OPORTUNIDAD EN PROCESO"],
   "PENDIENTE APROBACION SAP": ["PENDIENTE APROBACION SAP"],
   "EN ELABORACION": ["OPORTUNIDAD EN PROCESO"],
   "RFI PRESENTADO": ["A LA ESPERA DEL RFP"],
@@ -107,7 +108,11 @@ function isObservationsCol(col) {
 }
 
 function normalizeText(value) {
-  return String(value ?? "").trim();
+  return String(value ?? "").replace(/\u00A0/g, " ").trim();
+}
+
+function normalizeForCompare(value) {
+  return normalizeText(value).toUpperCase();
 }
 
 function toIsoDate(v) {
@@ -216,13 +221,18 @@ function buildEstadoResultadoMap(rows) {
     const resultado = normalizeText(row?.resultado_oferta);
 
     if (!estado) return;
+
     if (!map[estado]) map[estado] = [];
     if (resultado && !map[estado].includes(resultado)) {
       map[estado].push(resultado);
     }
   });
 
-  return map;
+  return Object.fromEntries(
+    Object.entries(map).sort((a, b) =>
+      a[0].localeCompare(b[0], "es", { sensitivity: "base" })
+    )
+  );
 }
 
 function buildSelectOptionsFromRows(rows, col) {
@@ -240,10 +250,6 @@ function buildSelectOptionsFromRows(rows, col) {
   }));
 }
 
-/* ===========================
-   Observaciones: split por fecha
-   =========================== */
-
 const DATE_AT_START = /^\s*(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*/;
 const DATE_ANYWHERE = /(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]\s*/g;
 
@@ -259,12 +265,11 @@ function splitDatedEntries(raw) {
   if (!text) return [];
 
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-
   const out = [];
+
   for (const line of lines) {
     const parts = [];
     let lastIndex = 0;
-
     const matches = [...line.matchAll(DATE_ANYWHERE)];
 
     if (matches.length <= 1) {
@@ -439,6 +444,8 @@ export default function Oportunidades() {
     return {
       ...rest,
       otc: otcValue,
+      nombre_cliente: normalizeText(rest.nombre_cliente),
+      servicio: normalizeText(rest.servicio),
       estado_oferta: normalizeText(rest.estado_oferta),
       resultado_oferta: normalizeText(rest.resultado_oferta),
       categoria_perdida: normalizeText(rest.categoria_perdida),
@@ -448,11 +455,9 @@ export default function Oportunidades() {
 
   const computeUniqueValues = (rows) => {
     const uniq = {};
-
     columnOrder.forEach((col) => {
       uniq[col] = buildSelectOptionsFromRows(rows, col);
     });
-
     setUniqueValues(uniq);
     setEstadoResultadoMap(buildEstadoResultadoMap(rows));
   };
@@ -464,7 +469,7 @@ export default function Oportunidades() {
       if (Array.isArray(selectedValues) && selectedValues.length > 0) {
         result = result.filter((r) => {
           const cell = isDateCol(col) ? toIsoDate(r?.[col]) : normalizeText(r?.[col]);
-          return selectedValues.some((val) => normalizeText(val) === normalizeText(cell));
+          return selectedValues.some((val) => normalizeForCompare(val) === normalizeForCompare(cell));
         });
       }
     });
@@ -524,7 +529,6 @@ export default function Oportunidades() {
 
   useEffect(() => {
     fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleUpload = async () => {
@@ -553,10 +557,7 @@ export default function Oportunidades() {
   };
 
   const handleFilterChange = (column, selectedOptions) => {
-    const values = Array.isArray(selectedOptions)
-      ? selectedOptions.map((opt) => opt.value)
-      : [];
-
+    const values = Array.isArray(selectedOptions) ? selectedOptions.map((opt) => opt.value) : [];
     const newFilters = { ...filters, [column]: values };
     setFilters(newFilters);
     setFilteredData(applyFilters(data, newFilters));
@@ -1213,11 +1214,7 @@ export default function Oportunidades() {
             Descargar Excel (Completo)
           </button>
 
-          <button
-            className="upload-btn"
-            onClick={handleExportFiltered}
-            disabled={loading || !filteredData.length}
-          >
+          <button className="upload-btn" onClick={handleExportFiltered} disabled={loading || !filteredData.length}>
             Descargar Excel (Filtrado)
           </button>
         </div>
@@ -1257,6 +1254,10 @@ export default function Oportunidades() {
                     closeMenuOnSelect={false}
                     hideSelectedOptions={false}
                     noOptionsMessage={() => "Sin opciones"}
+                    menuPortalTarget={document.body}
+                    styles={{
+                      menuPortal: (base) => ({ ...base, zIndex: 99999 }),
+                    }}
                   />
                 </th>
               ))}

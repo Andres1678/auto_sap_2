@@ -2696,8 +2696,8 @@ def importar_oportunidades():
 @permission_required("OPORTUNIDADES_VER")
 def oportunidades_filters():
     try:
+        # TABLA PRINCIPAL: sin exclusión
         base = Oportunidad.query
-        base = _apply_excluded_states(base)
 
         anios = (
             base.with_entities(extract("year", Oportunidad.fecha_creacion).label("y"))
@@ -2751,6 +2751,7 @@ def oportunidades_filters():
                 "direccion_comercial": distinct_col(Oportunidad.direccion_comercial),
                 "gerencia_comercial": distinct_col(Oportunidad.gerencia_comercial),
                 "nombre_cliente": distinct_col(Oportunidad.nombre_cliente),
+                "servicio": distinct_col(Oportunidad.servicio),
                 "estado_oferta": distinct_col(Oportunidad.estado_oferta),
                 "resultado_oferta": distinct_col(Oportunidad.resultado_oferta),
                 "estado_ot": distinct_col(Oportunidad.estado_ot),
@@ -2771,9 +2772,10 @@ def oportunidades_filters():
 def listar_oportunidades():
     try:
         query = Oportunidad.query
-        query = _apply_oportunidades_filters(query, apply_exclusion=True)
+        query = _apply_oportunidades_filters(query, apply_exclusion=False)
+
         query = query.order_by(Oportunidad.id.desc())
-        data = [o.to_dict() for o in query.limit(2000).all()]
+        data = [o.to_dict() for o in query.limit(5000).all()]
         return jsonify(data), 200
 
     except Exception:
