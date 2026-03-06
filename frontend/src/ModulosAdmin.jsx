@@ -7,8 +7,8 @@ import "./ModulosAdmin.css";
 Modal.setAppElement("#root");
 
 const API = {
-  modulos: "/api/modulos",
-  consultores: "/api/consultores", 
+  modulos: "/modulos",
+  consultores: "/consultores", 
 };
 
 function getAuthHeaders() {

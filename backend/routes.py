@@ -2070,7 +2070,7 @@ def get_datos_consultor():
     modulos = [m.nombre for m in consultor.modulos] if consultor.modulos else []
 
     return jsonify({
-        "usuario": consultor.usuario,
+        "usuario": consultor.usuario, 
         "nombre": consultor.nombre,
         "rol": rol,
         "equipo": equipo,
