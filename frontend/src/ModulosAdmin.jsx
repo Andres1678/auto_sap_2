@@ -6,9 +6,13 @@ import "./ModulosAdmin.css";
 
 Modal.setAppElement("#root");
 
+// ✅ Si tu jfetch ya pega a /api internamente, deja API_BASE = "".
+// ✅ Si tu jfetch NO lo pega, pon API_BASE = "/api".
+const API_BASE = ""; // prueba "" primero. Si en Network ves 404, cámbialo a "/api"
+
 const API = {
-  modulos: "/modulos",
-  consultores: "/consultores",
+  modulos: `${API_BASE}/modulos`,
+  consultores: `${API_BASE}/consultores`,
 };
 
 function getAuthHeaders() {
@@ -23,34 +27,57 @@ function getAuthHeaders() {
 
 export default function ModulosAdmin() {
   const [loading, setLoading] = useState(false);
-
   const [modulos, setModulos] = useState([]);
   const [consultores, setConsultores] = useState([]);
-
   const [q, setQ] = useState("");
 
-  // modal “ver módulos” por consultor
   const [openView, setOpenView] = useState(false);
   const [viewConsultor, setViewConsultor] = useState(null);
 
   async function load() {
     setLoading(true);
-    try {
-      const headers = getAuthHeaders();
+    const headers = getAuthHeaders();
 
-      const [mods, cons] = await Promise.all([
-        jfetch(API.modulos, { headers }),
-        jfetch(API.consultores, { headers }),
-      ]);
+    // ✅ clave: no dejar que un fallo mate todo
+    const results = await Promise.allSettled([
+      jfetch(API.modulos, { headers }),
+      jfetch(API.consultores, { headers }),
+    ]);
 
+    const [modsRes, consRes] = results;
+
+    // --- módulos ---
+    if (modsRes.status === "fulfilled") {
+      const mods = modsRes.value;
       setModulos(Array.isArray(mods) ? mods : []);
-      setConsultores(Array.isArray(cons) ? cons : []);
-    } catch (e) {
-      console.error(e);
-      Swal.fire("Error", e?.message || "No se pudo cargar la información", "error");
-    } finally {
-      setLoading(false);
+    } else {
+      console.error("❌ Error cargando modulos:", modsRes.reason);
+      setModulos([]); // no bloquea la pantalla
     }
+
+    // --- consultores ---
+    if (consRes.status === "fulfilled") {
+      const cons = consRes.value;
+      setConsultores(Array.isArray(cons) ? cons : []);
+    } else {
+      console.error("❌ Error cargando consultores:", consRes.reason);
+      setConsultores([]);
+    }
+
+    // ✅ si falló algo, muestro el motivo real
+    const errors = [];
+    if (modsRes.status === "rejected") errors.push("Módulos");
+    if (consRes.status === "rejected") errors.push("Consultores");
+
+    if (errors.length) {
+      Swal.fire(
+        "Atención",
+        `No se pudo cargar: ${errors.join(" y ")}. Revisa permisos o ruta (/api).`,
+        "warning"
+      );
+    }
+
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -86,14 +113,10 @@ export default function ModulosAdmin() {
     setOpenView(true);
   }
 
-  // Si un consultor no tiene modulos, muestro “SIN MODULO”
   function listModulos(c) {
     const arr = Array.isArray(c?.modulos) ? c.modulos : [];
     return arr.length ? arr : [{ id: "0", nombre: "SIN MODULO" }];
   }
-
-  // (Opcional) mapa para validar si un módulo existe en catálogo
-  const modulosSet = useMemo(() => new Set(modulos.map((m) => String(m.id))), [modulos]);
 
   return (
     <div className="ma-wrap">
@@ -110,7 +133,6 @@ export default function ModulosAdmin() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-
           <button className="ma-btn ma-btnLight" onClick={load} disabled={loading}>
             Recargar
           </button>
@@ -126,7 +148,7 @@ export default function ModulosAdmin() {
                   <th>Nombre</th>
                   <th>Rol</th>
                   <th>Equipo</th>
-                  <th>Activo</th>
+                  <th>Horario</th>
                   <th>Módulos asignados</th>
                   <th>Acciones</th>
                 </tr>
@@ -135,7 +157,7 @@ export default function ModulosAdmin() {
               <tbody>
                 {filteredConsultores.map((c) => {
                   const mods = listModulos(c);
-                  const showCompact = mods.length > 3; // si hay muchos, muestro 3 chips + “Ver”
+                  const showCompact = mods.length > 3;
 
                   return (
                     <tr key={c.id}>
@@ -144,33 +166,18 @@ export default function ModulosAdmin() {
                       <td>{c.nombre}</td>
                       <td>{c.rol || "—"}</td>
                       <td>{c.equipo || "—"}</td>
-                      <td>{String(c.activo ?? true)}</td>
+                      <td>{c.horario || "—"}</td>
 
                       <td>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {(showCompact ? mods.slice(0, 3) : mods).map((m) => {
-                            // Si quieres marcar “desconocidos” (por si un consultor tiene módulo que no está en catálogo)
-                            const unknown =
-                              m.id !== "0" && modulos.length > 0 && !modulosSet.has(String(m.id));
-
-                            return (
-                              <span
-                                key={`${c.id}-${m.id}-${m.nombre}`}
-                                className="ma-badge"
-                                title={unknown ? "Este módulo no está en el catálogo" : ""}
-                                style={unknown ? { background: "#fff7ed", borderColor: "#fed7aa", color: "#9a3412" } : undefined}
-                              >
-                                {m.nombre}
-                              </span>
-                            );
-                          })}
+                          {(showCompact ? mods.slice(0, 3) : mods).map((m) => (
+                            <span key={`${c.id}-${m.id}-${m.nombre}`} className="ma-badge">
+                              {m.nombre}
+                            </span>
+                          ))}
 
                           {showCompact ? (
-                            <button
-                              className="ma-btn ma-btnGhost"
-                              onClick={() => openVerModulos(c)}
-                              disabled={loading}
-                            >
+                            <button className="ma-btn ma-btnGhost" onClick={() => openVerModulos(c)}>
                               Ver
                             </button>
                           ) : null}
@@ -178,15 +185,9 @@ export default function ModulosAdmin() {
                       </td>
 
                       <td>
-                        <div className="ma-actions">
-                          <button
-                            className="ma-btn ma-btnGhost"
-                            onClick={() => openVerModulos(c)}
-                            disabled={loading}
-                          >
-                            Ver módulos
-                          </button>
-                        </div>
+                        <button className="ma-btn ma-btnGhost" onClick={() => openVerModulos(c)}>
+                          Ver módulos
+                        </button>
                       </td>
                     </tr>
                   );
@@ -205,7 +206,6 @@ export default function ModulosAdmin() {
         </div>
       </div>
 
-      {/* ===== Modal: ver todos los módulos de un consultor ===== */}
       <Modal
         isOpen={openView}
         onRequestClose={() => setOpenView(false)}
