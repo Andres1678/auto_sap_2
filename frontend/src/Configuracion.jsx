@@ -14,6 +14,7 @@ export default function Configuracion() {
   }, []);
 
   const canProyectos = permisos.includes("PROYECTOS_ADMIN");
+  const canModulos = permisos.includes("ADMIN_MODULOS_GESTION");
 
   return (
     <div className="config-wrapper">
