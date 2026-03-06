@@ -6,9 +6,7 @@ import "./ModulosAdmin.css";
 
 Modal.setAppElement("#root");
 
-// ✅ Si tu jfetch ya pega a /api internamente, deja API_BASE = "".
-// ✅ Si tu jfetch NO lo pega, pon API_BASE = "/api".
-const API_BASE = ""; // prueba "" primero. Si en Network ves 404, cámbialo a "/api"
+const API_BASE = ""; 
 
 const API = {
   modulos: `${API_BASE}/modulos`,

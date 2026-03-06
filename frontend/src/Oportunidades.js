@@ -54,7 +54,7 @@ const ESTADO_PROYECTO_OPTS = [
   "CANCELADO",
 ];
 
-const ESTADO_RESULTADO = {
+const ESTADO_RESULTADO_BASE = {
   REGISTRO: ["OPORTUNIDAD EN PROCESO"],
   PROSPECCION: ["OPORTUNIDAD EN PROCESO"],
   "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACIÓN": ["OPORTUNIDAD EN PROCESO"],
@@ -74,9 +74,7 @@ const ESTADO_RESULTADO = {
   "PERDIDA - SIN FEEDBACK": ["OPORTUNIDAD CERRADA"],
   DECLINADA: ["OPORTUNIDAD CERRADA"],
   SUSPENDIDA: ["OPORTUNIDAD CERRADA"],
-  "0TL": ["0TL"],
-  "0TP": ["0TP"],
-  "0TE": ["0TE"],
+  OT: ["OT"],
   "N/A": ["N/A"],
 };
 
@@ -106,6 +104,10 @@ function isDateCol(col) {
 
 function isObservationsCol(col) {
   return col === "observaciones" || col === "seguimiento_ot";
+}
+
+function normalizeText(value) {
+  return String(value ?? "").trim();
 }
 
 function toIsoDate(v) {
@@ -202,13 +204,47 @@ function todayStamp() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function buildEstadoResultadoMap(rows) {
+  const map = {};
+
+  Object.entries(ESTADO_RESULTADO_BASE).forEach(([estado, resultados]) => {
+    map[estado] = [...new Set((resultados || []).map(normalizeText).filter(Boolean))];
+  });
+
+  (rows || []).forEach((row) => {
+    const estado = normalizeText(row?.estado_oferta);
+    const resultado = normalizeText(row?.resultado_oferta);
+
+    if (!estado) return;
+    if (!map[estado]) map[estado] = [];
+    if (resultado && !map[estado].includes(resultado)) {
+      map[estado].push(resultado);
+    }
+  });
+
+  return map;
+}
+
+function buildSelectOptionsFromRows(rows, col) {
+  const values = rows
+    .map((r) => (isDateCol(col) ? toIsoDate(r?.[col]) : normalizeText(r?.[col])))
+    .filter((v) => v !== "");
+
+  const unique = [...new Set(values)].sort((a, b) =>
+    String(a).localeCompare(String(b), "es", { sensitivity: "base" })
+  );
+
+  return unique.map((v) => ({
+    label: v,
+    value: v,
+  }));
+}
+
 /* ===========================
    Observaciones: split por fecha
    =========================== */
 
-// Detecta fecha al inicio: 11.09.23 | 11/09/2023 | 2024-06-23
 const DATE_AT_START = /^\s*(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*/;
-// Detecta fecha dentro del texto para cortar entradas pegadas
 const DATE_ANYWHERE = /(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]\s*/g;
 
 function normalizeCommentText(v) {
@@ -293,76 +329,80 @@ export default function Oportunidades() {
   const [newRow, setNewRow] = useState(null);
   const [loading, setLoading] = useState(false);
   const [editValue, setEditValue] = useState("");
+  const [estadoResultadoMap, setEstadoResultadoMap] = useState(ESTADO_RESULTADO_BASE);
 
-    const baseColumnOrder = useMemo(
-      () => [
-        "nombre_cliente",
-        "servicio",
-        "fecha_creacion",
-        "semestre",
-        "tipo_cliente",
-        "tipo_solicitud",
-        "caso_sm",
-        "fecha_cierre_sm",
-        "salesforce",
-        "ultimos_6_meses",
-        "ultimo_mes",
-        "retraso",
-        "estado_oferta",
-        "resultado_oferta",
-        "calificacion_oportunidad",
-        "origen_oportunidad",
-        "direccion_comercial",
-        "gerencia_comercial",
-        "comercial_asignado",
-        "consultor_comercial",
-        "comercial_asignado_hitss",
-        "observaciones",
-        "categoria_perdida",
-        "subcategoria_perdida",
-        "fecha_entrega_oferta_final",
-        "vigencia_propuesta",
-        "fecha_aceptacion_oferta",
-        "tipo_moneda",
-        "otc",
-        "mrc",
-        "mrc_normalizado",
-        "valor_oferta_claro",
-        "duracion",
-        "pais",
-        "fecha_cierre_oportunidad",
-        "codigo_prc",
-        "fecha_firma_aos",
-        "pm_asignado_claro",
-        "pm_asignado_hitss",
-        "descripcion_ot",
-        "num_enlace",
-        "num_incidente",
-        "num_ot",
-        "estado_ot",
-        "proyeccion_ingreso",
-        "fecha_compromiso",
-        "fecha_cierre",
-        "estado_proyecto",
-        "anio_creacion_ot",
-        "fecha_acta_cierre_ot",
-        "seguimiento_ot",
-        "tipo_servicio",
-        "semestre_ejecucion",
-        "publicacion_sharepoint",
-      ],
-      []
-    );
+  const baseColumnOrder = useMemo(
+    () => [
+      "nombre_cliente",
+      "servicio",
+      "fecha_creacion",
+      "semestre",
+      "tipo_cliente",
+      "tipo_solicitud",
+      "caso_sm",
+      "fecha_cierre_sm",
+      "salesforce",
+      "ultimos_6_meses",
+      "ultimo_mes",
+      "retraso",
+      "estado_oferta",
+      "resultado_oferta",
+      "calificacion_oportunidad",
+      "origen_oportunidad",
+      "direccion_comercial",
+      "gerencia_comercial",
+      "comercial_asignado",
+      "consultor_comercial",
+      "comercial_asignado_hitss",
+      "observaciones",
+      "categoria_perdida",
+      "subcategoria_perdida",
+      "fecha_entrega_oferta_final",
+      "vigencia_propuesta",
+      "fecha_aceptacion_oferta",
+      "tipo_moneda",
+      "otc",
+      "mrc",
+      "mrc_normalizado",
+      "valor_oferta_claro",
+      "duracion",
+      "pais",
+      "fecha_cierre_oportunidad",
+      "codigo_prc",
+      "fecha_firma_aos",
+      "pm_asignado_claro",
+      "pm_asignado_hitss",
+      "descripcion_ot",
+      "num_enlace",
+      "num_incidente",
+      "num_ot",
+      "estado_ot",
+      "proyeccion_ingreso",
+      "fecha_compromiso",
+      "fecha_cierre",
+      "estado_proyecto",
+      "anio_creacion_ot",
+      "fecha_acta_cierre_ot",
+      "seguimiento_ot",
+      "tipo_servicio",
+      "semestre_ejecucion",
+      "publicacion_sharepoint",
+    ],
+    []
+  );
 
-    const columnOrder = useMemo(() => baseColumnOrder.filter((c) => !REMOVE_COLS.has(c)), [baseColumnOrder]);
+  const columnOrder = useMemo(
+    () => baseColumnOrder.filter((c) => !REMOVE_COLS.has(c)),
+    [baseColumnOrder]
+  );
 
-    const handleExportAll = () => {
+  const handleExportAll = () => {
     if (!data?.length) {
       return Swal.fire("Info", "No hay datos para exportar.", "info");
     }
 
     exportOportunidadesExcel(
-      data,                 
+      data,
       columnOrder,
       `oportunidades_completo_${todayStamp()}.xlsx`,
       {
@@ -378,10 +418,16 @@ export default function Oportunidades() {
     }
 
     exportOportunidadesExcel(
-      filteredData,         
+      filteredData,
       columnOrder,
       `oportunidades_filtrado_${todayStamp()}.xlsx`,
-      { Filtros: JSON.stringify(filters) }
+      {
+        Filtros: JSON.stringify(
+          Object.fromEntries(
+            Object.entries(filters).map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : v])
+          )
+        ),
+      }
     );
   };
 
@@ -389,22 +435,41 @@ export default function Oportunidades() {
     const obj = r || {};
     const otcValue = obj.otc ?? obj.otr ?? obj.OTR ?? "";
     const { otr, OTR, ...rest } = obj;
-    return { ...rest, otc: otcValue };
+
+    return {
+      ...rest,
+      otc: otcValue,
+      estado_oferta: normalizeText(rest.estado_oferta),
+      resultado_oferta: normalizeText(rest.resultado_oferta),
+      categoria_perdida: normalizeText(rest.categoria_perdida),
+      subcategoria_perdida: normalizeText(rest.subcategoria_perdida),
+    };
   }
 
   const computeUniqueValues = (rows) => {
     const uniq = {};
+
     columnOrder.forEach((col) => {
-      const rawValues = rows.map((r) => r?.[col] ?? "");
-      const values = [
-        ...new Set(rawValues.map((v) => (isDateCol(col) ? toIsoDate(v) : v ?? ""))),
-      ];
-      uniq[col] = values.map((v) => ({
-        label: v?.toString() || "-",
-        value: v ?? "",
-      }));
+      uniq[col] = buildSelectOptionsFromRows(rows, col);
     });
+
     setUniqueValues(uniq);
+    setEstadoResultadoMap(buildEstadoResultadoMap(rows));
+  };
+
+  const applyFilters = (rows, currentFilters) => {
+    let result = [...rows];
+
+    Object.entries(currentFilters).forEach(([col, selectedValues]) => {
+      if (Array.isArray(selectedValues) && selectedValues.length > 0) {
+        result = result.filter((r) => {
+          const cell = isDateCol(col) ? toIsoDate(r?.[col]) : normalizeText(r?.[col]);
+          return selectedValues.some((val) => normalizeText(val) === normalizeText(cell));
+        });
+      }
+    });
+
+    return result;
   };
 
   const fetchData = async () => {
@@ -417,12 +482,13 @@ export default function Oportunidades() {
         setData([]);
         setFilteredData([]);
         setUniqueValues({});
+        setEstadoResultadoMap(ESTADO_RESULTADO_BASE);
         return;
       }
 
       const normalized = json.map(normalizeRowFromApi);
       setData(normalized);
-      setFilteredData(normalized);
+      setFilteredData(applyFilters(normalized, filters));
       computeUniqueValues(normalized);
     } catch {
       Swal.fire("Error", "No se pudo cargar la información", "error");
@@ -458,6 +524,7 @@ export default function Oportunidades() {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleUpload = async () => {
@@ -485,23 +552,14 @@ export default function Oportunidades() {
     }
   };
 
-  const handleFilterChange = (column, option) => {
-    const value = option?.value || "";
-    const newFilters = { ...filters, [column]: value };
+  const handleFilterChange = (column, selectedOptions) => {
+    const values = Array.isArray(selectedOptions)
+      ? selectedOptions.map((opt) => opt.value)
+      : [];
+
+    const newFilters = { ...filters, [column]: values };
     setFilters(newFilters);
-
-    let result = [...data];
-
-    Object.entries(newFilters).forEach(([col, val]) => {
-      if (val !== "") {
-        result = result.filter((r) => {
-          const cell = isDateCol(col) ? toIsoDate(r?.[col]) : (r?.[col] ?? "").toString();
-          return cell.toString() === val.toString();
-        });
-      }
-    });
-
-    setFilteredData(result);
+    setFilteredData(applyFilters(data, newFilters));
   };
 
   const highlightRow = (index) => {
@@ -565,8 +623,10 @@ export default function Oportunidades() {
         return;
       }
 
-      setData((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...payload } : r)));
-      setFilteredData((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...payload } : r)));
+      const nextData = data.map((r) => (r.id === row.id ? { ...r, ...payload } : r));
+      setData(nextData);
+      setFilteredData(applyFilters(nextData, filters));
+      computeUniqueValues(nextData);
 
       highlightRow(rowIndex);
       setEditing({ row: null, col: null });
@@ -754,7 +814,7 @@ export default function Oportunidades() {
           value={editValue ?? ""}
           onChange={(e) => {
             const estado = e.target.value;
-            const allowed = ESTADO_RESULTADO[estado] || [];
+            const allowed = estadoResultadoMap[estado] || [];
             const autoRes = allowed.length === 1 ? allowed[0] : "";
             setEditValue(estado);
 
@@ -765,6 +825,7 @@ export default function Oportunidades() {
                   : r
               )
             );
+
             setData((prev) =>
               prev.map((r) =>
                 r.id === row.id
@@ -775,14 +836,14 @@ export default function Oportunidades() {
           }}
           onBlur={() => {
             const estado = editValue ?? "";
-            const allowed = ESTADO_RESULTADO[estado] || [];
+            const allowed = estadoResultadoMap[estado] || [];
             const autoRes = allowed.length === 1 ? allowed[0] : "";
             const nextResultado = autoRes || row.resultado_oferta || "";
             saveEditMulti(i, { estado_oferta: estado, resultado_oferta: nextResultado });
           }}
         >
           <option value="">-</option>
-          {Object.keys(ESTADO_RESULTADO).map((op) => (
+          {Object.keys(estadoResultadoMap).map((op) => (
             <option key={op} value={op}>
               {op}
             </option>
@@ -792,7 +853,7 @@ export default function Oportunidades() {
     }
 
     if (col === "resultado_oferta") {
-      const allowed = ESTADO_RESULTADO[row.estado_oferta] || [];
+      const allowed = estadoResultadoMap[row.estado_oferta] || [];
       return (
         <select
           className="cell-input"
@@ -830,6 +891,7 @@ export default function Oportunidades() {
                   : r
               )
             );
+
             setData((prev) =>
               prev.map((r) =>
                 r.id === row.id
@@ -1036,7 +1098,7 @@ export default function Oportunidades() {
           value={newRow[col] ?? ""}
           onChange={(e) => {
             const estado = e.target.value;
-            const allowed = ESTADO_RESULTADO[estado] || [];
+            const allowed = estadoResultadoMap[estado] || [];
             const auto = allowed.length === 1 ? allowed[0] : "";
             setNewRow((p) => ({
               ...p,
@@ -1046,7 +1108,7 @@ export default function Oportunidades() {
           }}
         >
           <option value="">-</option>
-          {Object.keys(ESTADO_RESULTADO).map((op) => (
+          {Object.keys(estadoResultadoMap).map((op) => (
             <option key={op} value={op}>
               {op}
             </option>
@@ -1063,7 +1125,7 @@ export default function Oportunidades() {
           onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
         >
           <option value="">-</option>
-          {(ESTADO_RESULTADO[newRow.estado_oferta] || []).map((op) => (
+          {(estadoResultadoMap[newRow.estado_oferta] || []).map((op) => (
             <option key={op} value={op}>
               {op}
             </option>
@@ -1146,12 +1208,16 @@ export default function Oportunidades() {
           {loading ? "Cargando..." : "Subir Excel"}
         </button>
 
-        <div style={{ display: "flex", gap: 10, margin: "10px 0" }}>
+        <div style={{ display: "flex", gap: 10, margin: "10px 0", flexWrap: "wrap" }}>
           <button className="upload-btn" onClick={handleExportAll} disabled={loading || !data.length}>
             Descargar Excel (Completo)
           </button>
 
-          <button className="upload-btn" onClick={handleExportFiltered} disabled={loading || !filteredData.length}>
+          <button
+            className="upload-btn"
+            onClick={handleExportFiltered}
+            disabled={loading || !filteredData.length}
+          >
             Descargar Excel (Filtrado)
           </button>
         </div>
@@ -1181,11 +1247,16 @@ export default function Oportunidades() {
                 <th key={col}>
                   <Select
                     options={uniqueValues[col] || []}
-                    onChange={(opt) => handleFilterChange(col, opt)}
+                    value={(filters[col] || []).map((v) => ({ label: v, value: v }))}
+                    onChange={(opts) => handleFilterChange(col, opts)}
                     placeholder="Filtrar..."
                     className="select-filter"
                     classNamePrefix="react-select"
+                    isMulti
                     isClearable
+                    closeMenuOnSelect={false}
+                    hideSelectedOptions={false}
+                    noOptionsMessage={() => "Sin opciones"}
                   />
                 </th>
               ))}
