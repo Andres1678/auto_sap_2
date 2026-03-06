@@ -2032,6 +2032,7 @@ def listar_consultores():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/modulos', methods=['GET'])
+@permission_required("ADMIN_MODULOS_GESTION")
 def listar_modulos():
     try:
         modulos = Modulo.query.order_by(Modulo.nombre.asc()).all()
@@ -2042,6 +2043,7 @@ def listar_modulos():
         return jsonify({'error': str(e)}), 500
     
 @bp.route('/consultores/datos', methods=['GET'])
+@permission_required("CONSULTORES_VER")
 def get_datos_consultor():
     usuario = request.args.get('usuario')
     if not usuario:
