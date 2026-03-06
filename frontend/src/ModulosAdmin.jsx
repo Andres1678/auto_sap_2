@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Modal from "react-modal";
 import Swal from "sweetalert2";
 import { jfetch } from "./lib/api";
@@ -6,26 +6,9 @@ import "./ModulosAdmin.css";
 
 Modal.setAppElement("#root");
 
-const API_BASE = "";
-
-const API = {
-  modulos: `${API_BASE}/modulos`,
-  consultores: `${API_BASE}/consultores`,
-};
-
-function getAuthHeaders() {
-  const raw = localStorage.getItem("user");
-  const user = raw ? JSON.parse(raw) : null;
-
-  return {
-    "Content-Type": "application/json",
-    "X-User-Usuario": user?.usuario || "",
-    "X-User-Rol": user?.rol || "",
-  };
-}
-
 export default function ModulosAdmin() {
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [modulos, setModulos] = useState([]);
   const [consultores, setConsultores] = useState([]);
@@ -33,68 +16,73 @@ export default function ModulosAdmin() {
   const [qModulo, setQModulo] = useState("");
   const [qConsultor, setQConsultor] = useState("");
 
-  const [openView, setOpenView] = useState(false);
-  const [viewConsultor, setViewConsultor] = useState(null);
-
   const [form, setForm] = useState({
     id: null,
     nombre: "",
   });
 
-  const [saving, setSaving] = useState(false);
+  const [openView, setOpenView] = useState(false);
+  const [viewConsultor, setViewConsultor] = useState(null);
 
-  async function load() {
-    setLoading(true);
-    const headers = getAuthHeaders();
+  const fetchModulos = useCallback(async () => {
+    try {
+      const res = await jfetch("/modulos");
+      const data = await res.json().catch(() => []);
 
-    const results = await Promise.allSettled([
-      jfetch(API.modulos, { headers }),
-      jfetch(API.consultores, { headers }),
-    ]);
+      if (!res.ok) {
+        throw new Error(data?.mensaje || `HTTP ${res.status}`);
+      }
 
-    const [modsRes, consRes] = results;
-
-    if (modsRes.status === "fulfilled") {
-      const mods = modsRes.value;
-      setModulos(Array.isArray(mods) ? mods : []);
-    } else {
-      console.error("❌ Error cargando módulos:", modsRes.reason);
+      setModulos(Array.isArray(data) ? data : []);
+    } catch (err) {
       setModulos([]);
+      Swal.fire({
+        icon: "error",
+        title: "Error cargando módulos",
+        text: String(err.message || err),
+      });
     }
+  }, []);
 
-    if (consRes.status === "fulfilled") {
-      const cons = consRes.value;
-      setConsultores(Array.isArray(cons) ? cons : []);
-    } else {
-      console.error("❌ Error cargando consultores:", consRes.reason);
+  const fetchConsultores = useCallback(async () => {
+    try {
+      const res = await jfetch("/consultores");
+      const data = await res.json().catch(() => []);
+
+      if (!res.ok) {
+        throw new Error(data?.mensaje || `HTTP ${res.status}`);
+      }
+
+      setConsultores(Array.isArray(data) ? data : []);
+    } catch (err) {
       setConsultores([]);
+      Swal.fire({
+        icon: "error",
+        title: "Error cargando consultores",
+        text: String(err.message || err),
+      });
     }
+  }, []);
 
-    const errors = [];
-    if (modsRes.status === "rejected") errors.push("Módulos");
-    if (consRes.status === "rejected") errors.push("Consultores");
-
-    if (errors.length) {
-      Swal.fire(
-        "Atención",
-        `No se pudo cargar: ${errors.join(" y ")}. Revisa permisos o rutas del backend.`,
-        "warning"
-      );
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      await Promise.all([fetchModulos(), fetchConsultores()]);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
-  }
+  }, [fetchModulos, fetchConsultores]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const filteredModulos = useMemo(() => {
     const t = qModulo.trim().toLowerCase();
     if (!t) return modulos;
 
     return modulos.filter((m) =>
-      (m.nombre || "").toLowerCase().includes(t)
+      String(m.nombre || "").toLowerCase().includes(t)
     );
   }, [modulos, qModulo]);
 
@@ -103,13 +91,12 @@ export default function ModulosAdmin() {
     if (!t) return consultores;
 
     return consultores.filter((c) => {
-      const usuario = (c.usuario || "").toLowerCase();
-      const nombre = (c.nombre || "").toLowerCase();
-      const rol = (c.rol || "").toLowerCase();
-      const equipo = (c.equipo || "").toLowerCase();
-
+      const usuario = String(c.usuario || "").toLowerCase();
+      const nombre = String(c.nombre || "").toLowerCase();
+      const rol = String(c.rol || "").toLowerCase();
+      const equipo = String(c.equipo || "").toLowerCase();
       const mods = (c.modulos || [])
-        .map((m) => (m.nombre || "").toLowerCase())
+        .map((m) => String(m.nombre || "").toLowerCase())
         .join(" ");
 
       return (
@@ -122,118 +109,120 @@ export default function ModulosAdmin() {
     });
   }, [consultores, qConsultor]);
 
-  function resetForm() {
+  const resetForm = () => {
     setForm({
       id: null,
       nombre: "",
     });
-  }
+  };
 
-  function handleChange(e) {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  }
-
-  function handleEdit(modulo) {
+  const handleEdit = (modulo) => {
     setForm({
       id: modulo.id,
       nombre: modulo.nombre || "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }
+  };
 
-  async function handleSubmit(e) {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     const nombre = form.nombre.trim();
     if (!nombre) {
-      Swal.fire("Validación", "El nombre del módulo es obligatorio.", "warning");
-      return;
+      return Swal.fire({
+        icon: "warning",
+        title: "El nombre del módulo es obligatorio",
+      });
     }
 
     setSaving(true);
 
     try {
-      const headers = getAuthHeaders();
+      const url = form.id ? `/modulos/${form.id}` : "/modulos";
+      const method = form.id ? "PUT" : "POST";
 
-      if (form.id) {
-        await jfetch(`${API.modulos}/${form.id}`, {
-          method: "PUT",
-          headers,
-          body: JSON.stringify({ nombre }),
-        });
+      const res = await jfetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre }),
+      });
 
-        Swal.fire("OK", "Módulo actualizado correctamente.", "success");
-      } else {
-        await jfetch(API.modulos, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ nombre }),
-        });
+      const data = await res.json().catch(() => ({}));
 
-        Swal.fire("OK", "Módulo creado correctamente.", "success");
+      if (!res.ok) {
+        throw new Error(data?.mensaje || `HTTP ${res.status}`);
       }
 
+      await Swal.fire({
+        icon: "success",
+        title: form.id ? "Módulo actualizado" : "Módulo creado",
+      });
+
       resetForm();
-      await load();
-    } catch (error) {
-      console.error("❌ Error guardando módulo:", error);
-      Swal.fire(
-        "Error",
-        error?.message || "No se pudo guardar el módulo.",
-        "error"
-      );
+      fetchModulos();
+    } catch (err) {
+      Swal.fire({
+        icon: "error",
+        title: "Error guardando módulo",
+        text: String(err.message || err),
+      });
     } finally {
       setSaving(false);
     }
-  }
+  };
 
-  async function handleDelete(modulo) {
-    const res = await Swal.fire({
+  const handleDelete = async (modulo) => {
+    const ok = await Swal.fire({
       title: "¿Eliminar módulo?",
       text: `Se eliminará el módulo "${modulo.nombre}".`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Sí, eliminar",
       cancelButtonText: "Cancelar",
+      reverseButtons: true,
     });
 
-    if (!res.isConfirmed) return;
+    if (!ok.isConfirmed) return;
 
     try {
-      const headers = getAuthHeaders();
-
-      await jfetch(`${API.modulos}/${modulo.id}`, {
+      const res = await jfetch(`/modulos/${modulo.id}`, {
         method: "DELETE",
-        headers,
       });
 
-      Swal.fire("OK", "Módulo eliminado correctamente.", "success");
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.mensaje || `HTTP ${res.status}`);
+      }
+
+      await Swal.fire({
+        icon: "success",
+        title: "Módulo eliminado",
+      });
 
       if (form.id === modulo.id) {
         resetForm();
       }
 
-      await load();
-    } catch (error) {
-      console.error("❌ Error eliminando módulo:", error);
-      Swal.fire(
-        "Error",
-        error?.message || "No se pudo eliminar el módulo.",
-        "error"
-      );
+      fetchModulos();
+    } catch (err) {
+      Swal.fire({
+        icon: "error",
+        title: "Error eliminando módulo",
+        text: String(err.message || err),
+      });
     }
-  }
+  };
 
-  function openVerModulos(c) {
-    setViewConsultor(c);
-    setOpenView(true);
-  }
-
-  function listModulos(c) {
+  const listModulos = (c) => {
     const arr = Array.isArray(c?.modulos) ? c.modulos : [];
     return arr.length ? arr : [{ id: "0", nombre: "SIN MODULO" }];
-  }
+  };
+
+  const openVerModulos = (c) => {
+    setViewConsultor(c);
+    setOpenView(true);
+  };
 
   return (
     <div className="ma-wrap">
@@ -242,7 +231,6 @@ export default function ModulosAdmin() {
         {loading ? <span className="ma-loading">⏳ Cargando...</span> : null}
       </div>
 
-      {/* FORMULARIO CRUD DE MODULOS */}
       <div className="ma-card">
         <div className="ma-cardTitle">
           {form.id ? "Editar módulo" : "Crear módulo"}
@@ -258,7 +246,9 @@ export default function ModulosAdmin() {
                 className="ma-input"
                 placeholder="Ej: FI, MM, BASIS..."
                 value={form.nombre}
-                onChange={handleChange}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, nombre: e.target.value }))
+                }
                 maxLength={100}
               />
             </div>
@@ -290,7 +280,6 @@ export default function ModulosAdmin() {
         </form>
       </div>
 
-      {/* TABLA DE MODULOS */}
       <div className="ma-card">
         <div className="ma-cardTitle">Módulos creados</div>
 
@@ -314,44 +303,44 @@ export default function ModulosAdmin() {
                 </tr>
               </thead>
               <tbody>
-                {filteredModulos.map((m) => (
-                  <tr key={m.id}>
-                    <td className="ma-muted">{m.id}</td>
-                    <td>{m.nombre}</td>
-                    <td>
-                      <div className="ma-inlineActions">
-                        <button
-                          className="ma-btn ma-btnGhost"
-                          onClick={() => handleEdit(m)}
-                        >
-                          Editar
-                        </button>
-
-                        <button
-                          className="ma-btn ma-btnDanger"
-                          onClick={() => handleDelete(m)}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-
-                {filteredModulos.length === 0 ? (
+                {filteredModulos.length ? (
+                  filteredModulos.map((m) => (
+                    <tr key={m.id}>
+                      <td>{m.id}</td>
+                      <td>{m.nombre}</td>
+                      <td>
+                        <div className="ma-inlineActions">
+                          <button
+                            className="ma-btn ma-btnGhost"
+                            onClick={() => handleEdit(m)}
+                            type="button"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            className="ma-btn ma-btnDanger"
+                            onClick={() => handleDelete(m)}
+                            type="button"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
                   <tr>
                     <td colSpan="3" className="ma-muted">
                       No hay módulos para mostrar.
                     </td>
                   </tr>
-                ) : null}
+                )}
               </tbody>
             </table>
           </div>
         </div>
       </div>
 
-      {/* TABLA DE CONSULTORES */}
       <div className="ma-card">
         <div className="ma-cardTitle">Consultores y módulos asignados</div>
 
@@ -381,57 +370,56 @@ export default function ModulosAdmin() {
               </thead>
 
               <tbody>
-                {filteredConsultores.map((c) => {
-                  const mods = listModulos(c);
-                  const showCompact = mods.length > 3;
+                {filteredConsultores.length ? (
+                  filteredConsultores.map((c) => {
+                    const mods = listModulos(c);
+                    const showCompact = mods.length > 3;
 
-                  return (
-                    <tr key={c.id}>
-                      <td className="ma-muted">{c.id}</td>
-                      <td>{c.usuario}</td>
-                      <td>{c.nombre}</td>
-                      <td>{c.rol || "—"}</td>
-                      <td>{c.equipo || "—"}</td>
-                      <td>{c.horario || "—"}</td>
-
-                      <td>
-                        <div className="ma-badgesWrap">
-                          {(showCompact ? mods.slice(0, 3) : mods).map((m) => (
-                            <span key={`${c.id}-${m.id}-${m.nombre}`} className="ma-badge">
-                              {m.nombre}
-                            </span>
-                          ))}
-
-                          {showCompact ? (
-                            <button
-                              className="ma-btn ma-btnGhost"
-                              onClick={() => openVerModulos(c)}
-                            >
-                              Ver
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-
-                      <td>
-                        <button
-                          className="ma-btn ma-btnGhost"
-                          onClick={() => openVerModulos(c)}
-                        >
-                          Ver módulos
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {filteredConsultores.length === 0 ? (
+                    return (
+                      <tr key={c.id}>
+                        <td>{c.id}</td>
+                        <td>{c.usuario}</td>
+                        <td>{c.nombre}</td>
+                        <td>{c.rol || "—"}</td>
+                        <td>{c.equipo || "—"}</td>
+                        <td>{c.horario || "—"}</td>
+                        <td>
+                          <div className="ma-badgesWrap">
+                            {(showCompact ? mods.slice(0, 3) : mods).map((m) => (
+                              <span key={`${c.id}-${m.id}-${m.nombre}`} className="ma-badge">
+                                {m.nombre}
+                              </span>
+                            ))}
+                            {showCompact ? (
+                              <button
+                                className="ma-btn ma-btnGhost"
+                                type="button"
+                                onClick={() => openVerModulos(c)}
+                              >
+                                Ver
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td>
+                          <button
+                            className="ma-btn ma-btnGhost"
+                            type="button"
+                            onClick={() => openVerModulos(c)}
+                          >
+                            Ver módulos
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
                   <tr>
                     <td colSpan="8" className="ma-muted">
                       No hay consultores para mostrar.
                     </td>
                   </tr>
-                ) : null}
+                )}
               </tbody>
             </table>
           </div>
