@@ -6,7 +6,7 @@ import "./ModulosAdmin.css";
 
 Modal.setAppElement("#root");
 
-const API_BASE = ""; 
+const API_BASE = "";
 
 const API = {
   modulos: `${API_BASE}/modulos`,
@@ -18,6 +18,7 @@ function getAuthHeaders() {
   const user = raw ? JSON.parse(raw) : null;
 
   return {
+    "Content-Type": "application/json",
     "X-User-Usuario": user?.usuario || "",
     "X-User-Rol": user?.rol || "",
   };
@@ -25,18 +26,27 @@ function getAuthHeaders() {
 
 export default function ModulosAdmin() {
   const [loading, setLoading] = useState(false);
+
   const [modulos, setModulos] = useState([]);
   const [consultores, setConsultores] = useState([]);
-  const [q, setQ] = useState("");
+
+  const [qModulo, setQModulo] = useState("");
+  const [qConsultor, setQConsultor] = useState("");
 
   const [openView, setOpenView] = useState(false);
   const [viewConsultor, setViewConsultor] = useState(null);
+
+  const [form, setForm] = useState({
+    id: null,
+    nombre: "",
+  });
+
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     setLoading(true);
     const headers = getAuthHeaders();
 
-    // ✅ clave: no dejar que un fallo mate todo
     const results = await Promise.allSettled([
       jfetch(API.modulos, { headers }),
       jfetch(API.consultores, { headers }),
@@ -44,16 +54,14 @@ export default function ModulosAdmin() {
 
     const [modsRes, consRes] = results;
 
-    // --- módulos ---
     if (modsRes.status === "fulfilled") {
       const mods = modsRes.value;
       setModulos(Array.isArray(mods) ? mods : []);
     } else {
-      console.error("❌ Error cargando modulos:", modsRes.reason);
-      setModulos([]); // no bloquea la pantalla
+      console.error("❌ Error cargando módulos:", modsRes.reason);
+      setModulos([]);
     }
 
-    // --- consultores ---
     if (consRes.status === "fulfilled") {
       const cons = consRes.value;
       setConsultores(Array.isArray(cons) ? cons : []);
@@ -62,7 +70,6 @@ export default function ModulosAdmin() {
       setConsultores([]);
     }
 
-    // ✅ si falló algo, muestro el motivo real
     const errors = [];
     if (modsRes.status === "rejected") errors.push("Módulos");
     if (consRes.status === "rejected") errors.push("Consultores");
@@ -70,7 +77,7 @@ export default function ModulosAdmin() {
     if (errors.length) {
       Swal.fire(
         "Atención",
-        `No se pudo cargar: ${errors.join(" y ")}. Revisa permisos o ruta (/api).`,
+        `No se pudo cargar: ${errors.join(" y ")}. Revisa permisos o rutas del backend.`,
         "warning"
       );
     }
@@ -82,8 +89,17 @@ export default function ModulosAdmin() {
     load();
   }, []);
 
+  const filteredModulos = useMemo(() => {
+    const t = qModulo.trim().toLowerCase();
+    if (!t) return modulos;
+
+    return modulos.filter((m) =>
+      (m.nombre || "").toLowerCase().includes(t)
+    );
+  }, [modulos, qModulo]);
+
   const filteredConsultores = useMemo(() => {
-    const t = q.trim().toLowerCase();
+    const t = qConsultor.trim().toLowerCase();
     if (!t) return consultores;
 
     return consultores.filter((c) => {
@@ -104,7 +120,110 @@ export default function ModulosAdmin() {
         mods.includes(t)
       );
     });
-  }, [consultores, q]);
+  }, [consultores, qConsultor]);
+
+  function resetForm() {
+    setForm({
+      id: null,
+      nombre: "",
+    });
+  }
+
+  function handleChange(e) {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function handleEdit(modulo) {
+    setForm({
+      id: modulo.id,
+      nombre: modulo.nombre || "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+
+    const nombre = form.nombre.trim();
+    if (!nombre) {
+      Swal.fire("Validación", "El nombre del módulo es obligatorio.", "warning");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const headers = getAuthHeaders();
+
+      if (form.id) {
+        await jfetch(`${API.modulos}/${form.id}`, {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({ nombre }),
+        });
+
+        Swal.fire("OK", "Módulo actualizado correctamente.", "success");
+      } else {
+        await jfetch(API.modulos, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ nombre }),
+        });
+
+        Swal.fire("OK", "Módulo creado correctamente.", "success");
+      }
+
+      resetForm();
+      await load();
+    } catch (error) {
+      console.error("❌ Error guardando módulo:", error);
+      Swal.fire(
+        "Error",
+        error?.message || "No se pudo guardar el módulo.",
+        "error"
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(modulo) {
+    const res = await Swal.fire({
+      title: "¿Eliminar módulo?",
+      text: `Se eliminará el módulo "${modulo.nombre}".`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Sí, eliminar",
+      cancelButtonText: "Cancelar",
+    });
+
+    if (!res.isConfirmed) return;
+
+    try {
+      const headers = getAuthHeaders();
+
+      await jfetch(`${API.modulos}/${modulo.id}`, {
+        method: "DELETE",
+        headers,
+      });
+
+      Swal.fire("OK", "Módulo eliminado correctamente.", "success");
+
+      if (form.id === modulo.id) {
+        resetForm();
+      }
+
+      await load();
+    } catch (error) {
+      console.error("❌ Error eliminando módulo:", error);
+      Swal.fire(
+        "Error",
+        error?.message || "No se pudo eliminar el módulo.",
+        "error"
+      );
+    }
+  }
 
   function openVerModulos(c) {
     setViewConsultor(c);
@@ -119,21 +238,130 @@ export default function ModulosAdmin() {
   return (
     <div className="ma-wrap">
       <div className="ma-header">
-        <h2 className="ma-title">Administración — Consultores y Módulos</h2>
+        <h2 className="ma-title">Administración de Módulos</h2>
         {loading ? <span className="ma-loading">⏳ Cargando...</span> : null}
       </div>
 
+      {/* FORMULARIO CRUD DE MODULOS */}
       <div className="ma-card">
+        <div className="ma-cardTitle">
+          {form.id ? "Editar módulo" : "Crear módulo"}
+        </div>
+
+        <form className="ma-form" onSubmit={handleSubmit}>
+          <div className="ma-formRow">
+            <div className="ma-field">
+              <label className="ma-label">Nombre del módulo</label>
+              <input
+                type="text"
+                name="nombre"
+                className="ma-input"
+                placeholder="Ej: FI, MM, BASIS..."
+                value={form.nombre}
+                onChange={handleChange}
+                maxLength={100}
+              />
+            </div>
+          </div>
+
+          <div className="ma-actions">
+            <button className="ma-btn ma-btnPrimary" type="submit" disabled={saving}>
+              {saving ? "Guardando..." : form.id ? "Actualizar" : "Crear"}
+            </button>
+
+            <button
+              className="ma-btn ma-btnLight"
+              type="button"
+              onClick={resetForm}
+              disabled={saving}
+            >
+              Limpiar
+            </button>
+
+            <button
+              className="ma-btn ma-btnLight"
+              type="button"
+              onClick={load}
+              disabled={loading || saving}
+            >
+              Recargar
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* TABLA DE MODULOS */}
+      <div className="ma-card">
+        <div className="ma-cardTitle">Módulos creados</div>
+
+        <div className="ma-toolbar">
+          <input
+            className="ma-input"
+            placeholder="Buscar módulo..."
+            value={qModulo}
+            onChange={(e) => setQModulo(e.target.value)}
+          />
+        </div>
+
+        <div className="ma-body">
+          <div className="ma-tableWrap">
+            <table className="ma-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Nombre</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredModulos.map((m) => (
+                  <tr key={m.id}>
+                    <td className="ma-muted">{m.id}</td>
+                    <td>{m.nombre}</td>
+                    <td>
+                      <div className="ma-inlineActions">
+                        <button
+                          className="ma-btn ma-btnGhost"
+                          onClick={() => handleEdit(m)}
+                        >
+                          Editar
+                        </button>
+
+                        <button
+                          className="ma-btn ma-btnDanger"
+                          onClick={() => handleDelete(m)}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+
+                {filteredModulos.length === 0 ? (
+                  <tr>
+                    <td colSpan="3" className="ma-muted">
+                      No hay módulos para mostrar.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* TABLA DE CONSULTORES */}
+      <div className="ma-card">
+        <div className="ma-cardTitle">Consultores y módulos asignados</div>
+
         <div className="ma-toolbar">
           <input
             className="ma-input"
             placeholder="Buscar consultor / módulo / equipo..."
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
+            value={qConsultor}
+            onChange={(e) => setQConsultor(e.target.value)}
           />
-          <button className="ma-btn ma-btnLight" onClick={load} disabled={loading}>
-            Recargar
-          </button>
         </div>
 
         <div className="ma-body">
@@ -167,7 +395,7 @@ export default function ModulosAdmin() {
                       <td>{c.horario || "—"}</td>
 
                       <td>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <div className="ma-badgesWrap">
                           {(showCompact ? mods.slice(0, 3) : mods).map((m) => (
                             <span key={`${c.id}-${m.id}-${m.nombre}`} className="ma-badge">
                               {m.nombre}
@@ -175,7 +403,10 @@ export default function ModulosAdmin() {
                           ))}
 
                           {showCompact ? (
-                            <button className="ma-btn ma-btnGhost" onClick={() => openVerModulos(c)}>
+                            <button
+                              className="ma-btn ma-btnGhost"
+                              onClick={() => openVerModulos(c)}
+                            >
                               Ver
                             </button>
                           ) : null}
@@ -183,7 +414,10 @@ export default function ModulosAdmin() {
                       </td>
 
                       <td>
-                        <button className="ma-btn ma-btnGhost" onClick={() => openVerModulos(c)}>
+                        <button
+                          className="ma-btn ma-btnGhost"
+                          onClick={() => openVerModulos(c)}
+                        >
                           Ver módulos
                         </button>
                       </td>
@@ -219,7 +453,7 @@ export default function ModulosAdmin() {
             Usuario: <b>{viewConsultor?.usuario}</b>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="ma-badgesWrap">
             {listModulos(viewConsultor).map((m) => (
               <span key={`view-${m.id}-${m.nombre}`} className="ma-badge">
                 {m.nombre}
