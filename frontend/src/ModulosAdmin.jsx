@@ -8,7 +8,7 @@ Modal.setAppElement("#root");
 
 const API = {
   modulos: "/modulos",
-  consultores: "/consultores", 
+  consultores: "/consultores",
 };
 
 function getAuthHeaders() {
@@ -23,26 +23,31 @@ function getAuthHeaders() {
 
 export default function ModulosAdmin() {
   const [loading, setLoading] = useState(false);
+
   const [modulos, setModulos] = useState([]);
   const [consultores, setConsultores] = useState([]);
 
   const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState({ id: null, nombre: "" });
+
+  // modal “ver módulos” por consultor
+  const [openView, setOpenView] = useState(false);
+  const [viewConsultor, setViewConsultor] = useState(null);
 
   async function load() {
     setLoading(true);
     try {
       const headers = getAuthHeaders();
+
       const [mods, cons] = await Promise.all([
         jfetch(API.modulos, { headers }),
         jfetch(API.consultores, { headers }),
       ]);
+
       setModulos(Array.isArray(mods) ? mods : []);
       setConsultores(Array.isArray(cons) ? cons : []);
     } catch (e) {
       console.error(e);
-      Swal.fire("Error", e?.message || "No se pudo cargar módulos", "error");
+      Swal.fire("Error", e?.message || "No se pudo cargar la información", "error");
     } finally {
       setLoading(false);
     }
@@ -52,141 +57,59 @@ export default function ModulosAdmin() {
     load();
   }, []);
 
-  const filtered = useMemo(() => {
+  const filteredConsultores = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return modulos;
-    return modulos.filter((m) => (m.nombre || "").toLowerCase().includes(t));
-  }, [modulos, q]);
+    if (!t) return consultores;
 
-  const assignedCountByModuloId = useMemo(() => {
-    const map = new Map();
-    consultores.forEach((c) => {
-      (c.modulos || []).forEach((m) => {
-        const k = String(m.id);
-        map.set(k, (map.get(k) || 0) + 1);
-      });
+    return consultores.filter((c) => {
+      const usuario = (c.usuario || "").toLowerCase();
+      const nombre = (c.nombre || "").toLowerCase();
+      const rol = (c.rol || "").toLowerCase();
+      const equipo = (c.equipo || "").toLowerCase();
+
+      const mods = (c.modulos || [])
+        .map((m) => (m.nombre || "").toLowerCase())
+        .join(" ");
+
+      return (
+        usuario.includes(t) ||
+        nombre.includes(t) ||
+        rol.includes(t) ||
+        equipo.includes(t) ||
+        mods.includes(t)
+      );
     });
-    return map;
-  }, [consultores]);
+  }, [consultores, q]);
 
-  function assignedNames(moduloId) {
-    const names = [];
-    consultores.forEach((c) => {
-      const has = (c.modulos || []).some((m) => String(m.id) === String(moduloId));
-      if (has) names.push(`${c.nombre} (${c.usuario})`);
-    });
-    return names;
+  function openVerModulos(c) {
+    setViewConsultor(c);
+    setOpenView(true);
   }
 
-  async function showAssigned(m) {
-    const list = assignedNames(m.id);
-    const html = list.length
-      ? `<div style="text-align:left;max-height:280px;overflow:auto">${list
-          .map((x) => `• ${x}`)
-          .join("<br/>")}</div>`
-      : "No hay consultores asignados a este módulo.";
-
-    await Swal.fire({ title: `Asignados a: ${m.nombre}`, html, icon: "info" });
+  // Si un consultor no tiene modulos, muestro “SIN MODULO”
+  function listModulos(c) {
+    const arr = Array.isArray(c?.modulos) ? c.modulos : [];
+    return arr.length ? arr : [{ id: "0", nombre: "SIN MODULO" }];
   }
 
-  function openCreate() {
-    setEditing({ id: null, nombre: "" });
-    setOpen(true);
-  }
-
-  function openEdit(m) {
-    setEditing({ id: m.id, nombre: m.nombre || "" });
-    setOpen(true);
-  }
-
-  async function save(e) {
-    e.preventDefault();
-    const nombre = (editing.nombre || "").trim();
-    if (!nombre) {
-      Swal.fire("Validación", "El nombre es obligatorio", "warning");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const headers = { ...getAuthHeaders(), "Content-Type": "application/json" };
-
-      if (editing.id) {
-        await jfetch(`${API.modulos}/${editing.id}`, {
-          method: "PUT",
-          headers,
-          body: JSON.stringify({ nombre }),
-        });
-        Swal.fire("OK", "Módulo actualizado", "success");
-      } else {
-        await jfetch(API.modulos, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ nombre }),
-        });
-        Swal.fire("OK", "Módulo creado", "success");
-      }
-
-      setOpen(false);
-      await load();
-    } catch (e2) {
-      console.error(e2);
-      Swal.fire("Error", e2?.message || "No se pudo guardar", "error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function remove(m) {
-    const cnt = assignedCountByModuloId.get(String(m.id)) || 0;
-
-    const ok = await Swal.fire({
-      title: "Eliminar módulo",
-      text:
-        cnt > 0
-          ? `Este módulo está asignado a ${cnt} consultor(es). ¿Deseas eliminarlo de todas formas?`
-          : `¿Seguro que deseas eliminar "${m.nombre}"?`,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Sí, eliminar",
-      cancelButtonText: "Cancelar",
-    });
-
-    if (!ok.isConfirmed) return;
-
-    setLoading(true);
-    try {
-      const headers = getAuthHeaders();
-      await jfetch(`${API.modulos}/${m.id}`, { method: "DELETE", headers });
-      Swal.fire("OK", "Módulo eliminado", "success");
-      await load();
-    } catch (e) {
-      console.error(e);
-      Swal.fire("Error", e?.message || "No se pudo eliminar", "error");
-    } finally {
-      setLoading(false);
-    }
-  }
+  // (Opcional) mapa para validar si un módulo existe en catálogo
+  const modulosSet = useMemo(() => new Set(modulos.map((m) => String(m.id))), [modulos]);
 
   return (
     <div className="ma-wrap">
       <div className="ma-header">
-        <h2 className="ma-title">Administración — Módulos</h2>
-        {loading ? <span className="ma-loading">⏳ Procesando...</span> : null}
+        <h2 className="ma-title">Administración — Consultores y Módulos</h2>
+        {loading ? <span className="ma-loading">⏳ Cargando...</span> : null}
       </div>
 
       <div className="ma-card">
         <div className="ma-toolbar">
           <input
             className="ma-input"
-            placeholder="Buscar módulo..."
+            placeholder="Buscar consultor / módulo / equipo..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-
-          <button className="ma-btn ma-btnPrimary" onClick={openCreate} disabled={loading}>
-            + Crear
-          </button>
 
           <button className="ma-btn ma-btnLight" onClick={load} disabled={loading}>
             Recargar
@@ -199,48 +122,69 @@ export default function ModulosAdmin() {
               <thead>
                 <tr>
                   <th>ID</th>
+                  <th>Usuario</th>
                   <th>Nombre</th>
-                  <th>Asignados</th>
+                  <th>Rol</th>
+                  <th>Equipo</th>
+                  <th>Activo</th>
+                  <th>Módulos asignados</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
 
               <tbody>
-                {filtered.map((m) => {
-                  const cnt = assignedCountByModuloId.get(String(m.id)) || 0;
+                {filteredConsultores.map((c) => {
+                  const mods = listModulos(c);
+                  const showCompact = mods.length > 3; // si hay muchos, muestro 3 chips + “Ver”
 
                   return (
-                    <tr key={m.id}>
-                      <td className="ma-muted">{m.id}</td>
-                      <td>{m.nombre}</td>
+                    <tr key={c.id}>
+                      <td className="ma-muted">{c.id}</td>
+                      <td>{c.usuario}</td>
+                      <td>{c.nombre}</td>
+                      <td>{c.rol || "—"}</td>
+                      <td>{c.equipo || "—"}</td>
+                      <td>{String(c.activo ?? true)}</td>
+
                       <td>
-                        <span className="ma-badge">{cnt} asignados</span>
-                        {cnt > 0 ? (
-                          <button
-                            className="ma-btn ma-btnGhost"
-                            onClick={() => showAssigned(m)}
-                            disabled={loading}
-                          >
-                            Ver
-                          </button>
-                        ) : null}
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {(showCompact ? mods.slice(0, 3) : mods).map((m) => {
+                            // Si quieres marcar “desconocidos” (por si un consultor tiene módulo que no está en catálogo)
+                            const unknown =
+                              m.id !== "0" && modulos.length > 0 && !modulosSet.has(String(m.id));
+
+                            return (
+                              <span
+                                key={`${c.id}-${m.id}-${m.nombre}`}
+                                className="ma-badge"
+                                title={unknown ? "Este módulo no está en el catálogo" : ""}
+                                style={unknown ? { background: "#fff7ed", borderColor: "#fed7aa", color: "#9a3412" } : undefined}
+                              >
+                                {m.nombre}
+                              </span>
+                            );
+                          })}
+
+                          {showCompact ? (
+                            <button
+                              className="ma-btn ma-btnGhost"
+                              onClick={() => openVerModulos(c)}
+                              disabled={loading}
+                            >
+                              Ver
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
+
                       <td>
                         <div className="ma-actions">
                           <button
                             className="ma-btn ma-btnGhost"
-                            onClick={() => openEdit(m)}
+                            onClick={() => openVerModulos(c)}
                             disabled={loading}
                           >
-                            Editar
-                          </button>
-
-                          <button
-                            className="ma-btn ma-btnDanger"
-                            onClick={() => remove(m)}
-                            disabled={loading}
-                          >
-                            Eliminar
+                            Ver módulos
                           </button>
                         </div>
                       </td>
@@ -248,10 +192,10 @@ export default function ModulosAdmin() {
                   );
                 })}
 
-                {filtered.length === 0 ? (
+                {filteredConsultores.length === 0 ? (
                   <tr>
-                    <td colSpan="4" className="ma-muted">
-                      No hay módulos.
+                    <td colSpan="8" className="ma-muted">
+                      No hay consultores para mostrar.
                     </td>
                   </tr>
                 ) : null}
@@ -261,34 +205,36 @@ export default function ModulosAdmin() {
         </div>
       </div>
 
+      {/* ===== Modal: ver todos los módulos de un consultor ===== */}
       <Modal
-        isOpen={open}
-        onRequestClose={() => setOpen(false)}
+        isOpen={openView}
+        onRequestClose={() => setOpenView(false)}
         className="ma-modal"
         overlayClassName="ma-overlay"
       >
-        <h3 className="ma-modalTitle">{editing.id ? "Editar Módulo" : "Crear Módulo"}</h3>
+        <h3 className="ma-modalTitle">
+          Módulos asignados — {viewConsultor?.nombre || ""}
+        </h3>
 
-        <form onSubmit={save}>
-          <div className="ma-group">
-            <label className="ma-label">Nombre</label>
-            <input
-              className="ma-input"
-              value={editing.nombre}
-              onChange={(e) => setEditing((p) => ({ ...p, nombre: e.target.value }))}
-              autoFocus
-            />
+        <div className="ma-group">
+          <div className="ma-muted" style={{ marginBottom: 8 }}>
+            Usuario: <b>{viewConsultor?.usuario}</b>
           </div>
 
-          <div className="ma-footer">
-            <button type="button" className="ma-btn ma-btnLight" onClick={() => setOpen(false)}>
-              Cancelar
-            </button>
-            <button type="submit" className="ma-btn ma-btnPrimary" disabled={loading}>
-              Guardar
-            </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {listModulos(viewConsultor).map((m) => (
+              <span key={`view-${m.id}-${m.nombre}`} className="ma-badge">
+                {m.nombre}
+              </span>
+            ))}
           </div>
-        </form>
+        </div>
+
+        <div className="ma-footer">
+          <button className="ma-btn ma-btnLight" onClick={() => setOpenView(false)}>
+            Cerrar
+          </button>
+        </div>
       </Modal>
     </div>
   );
