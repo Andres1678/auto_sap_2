@@ -1371,7 +1371,9 @@ const Registro = ({ userData }) => {
     }
   };
 
-  const handleAbrirModalRegistro = async () => {
+  const handleAbrirModalRegistro = async (e) => {
+    e?.currentTarget?.blur();
+
     try {
       const res = await jfetch(
         `/consultores/datos?usuario=${encodeURIComponent(usuarioLogin)}`
@@ -1470,7 +1472,7 @@ const Registro = ({ userData }) => {
             )}
 
             <button
-              className="btn btn-primary"
+              className="registro-page__btn registro-page__btn-primary"
               onClick={handleAbrirModalRegistro}
               disabled={!isAdmin && !consultorActivo}
               title={!isAdmin && !consultorActivo ? "Usuario inactivo" : "Agregar Registro"}
@@ -1646,9 +1648,12 @@ const Registro = ({ userData }) => {
         <Modal
           isOpen={modalIsOpen}
           onRequestClose={closeModal}
-          className="registro-modal-content"
-          overlayClassName="registro-modal-overlay"
+          className="registro-page__modal-content"
+          overlayClassName="registro-page__modal-overlay"
           contentLabel="Registro"
+          shouldReturnFocusAfterClose={true}
+          shouldFocusAfterRender={true}
+          ariaHideApp={true}
         >
           <div>
             <div className="modal-header">
