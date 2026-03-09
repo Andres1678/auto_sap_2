@@ -39,7 +39,7 @@ function initRegistro() {
 }
 
 const CLIENTE_RESTRINGIDO = 'HITSS/CLARO';
-const CODES_NEED_CASE = new Set(['01', '02', '03']);
+const OCCUPATIONS_FORBID_HITSS = new Set(['01', '02']);
 const CODES_RESTRICTED_CLIENT_9H = new Set(['09', '13', '14', '15']);
 const CODE_SUPERVISION_EQUIPO = '06';
 
@@ -958,13 +958,15 @@ const Registro = ({ userData }) => {
         }
       }
     }
-
-    if (CODES_NEED_CASE.has(code) && isInvalidCaseNumber(registro.nroCasoCliente)) {
+    
+    if (
+      OCCUPATIONS_FORBID_HITSS.has(occCode) &&
+      String(registro.cliente || "").trim().toUpperCase() === CLIENTE_RESTRINGIDO
+    ) {
       return Swal.fire({
         icon: "warning",
-        title: "Número de caso inválido",
-        text:
-          'Para las tareas 01, 02 o 03, el Nro. Caso Cliente no puede ser "0", "NA", estar vacío ni superar los 10 caracteres.',
+        title: "Cliente no permitido",
+        text: "Las ocupaciones 01 y 02 no pueden registrarse para el cliente HITSS/CLARO.",
       });
     }
 

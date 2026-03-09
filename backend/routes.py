@@ -952,6 +952,20 @@ def registrar_hora():
             else:
                 ocupacion_id = None
 
+    # --------------------------------------------------
+    # 10.1) Validación cliente restringido por ocupación
+    # --------------------------------------------------
+    cliente_upper = str(cliente or "").strip().upper()
+
+    if ocupacion_id:
+        occ_obj = Ocupacion.query.get(ocupacion_id)
+        occ_codigo = str(getattr(occ_obj, "codigo", "") or "").strip()
+
+        if occ_codigo in {"01", "02"} and cliente_upper == "HITSS/CLARO":
+            return jsonify({
+                "mensaje": "Las ocupaciones 01 y 02 no pueden registrarse para el cliente HITSS/CLARO"
+            }), 400
+
     # ------------------------------------------------------------------
     # 11) PROYECTOS
     # ------------------------------------------------------------------
@@ -1146,19 +1160,15 @@ def obtener_registros_graficos():
 
         scope, val = _scope_for_graficos(consultor_login, rol_req)
 
-        # ✅ Aliases para evitar joins repetidos / ambiguos (igual que /registros)
         C = aliased(Consultor)
         E = aliased(Equipo)
 
-        # ✅ Query base: igual que /registros (misma info para serializar)
         q = (
             Registro.query
             .options(
                 joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
                 joinedload(Registro.tarea),
                 joinedload(Registro.ocupacion),
-
-                # ✅ PROYECTOS (NUEVO en /graficos)
                 joinedload(Registro.proyecto),
                 joinedload(Registro.fase_proyecto),
             )
@@ -1166,7 +1176,9 @@ def obtener_registros_graficos():
             .outerjoin(E, C.equipo_id == E.id)
         )
 
-        # ✅ Aplicar scope SOLO para graficos
+        # ----------------------------------------------------------
+        # Scope
+        # ----------------------------------------------------------
         if scope == "SELF":
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
 
@@ -1176,11 +1188,16 @@ def obtener_registros_graficos():
             q = q.filter(C.equipo_id == int(val))
 
         elif scope == "ALL":
-            # ✅ no filtra nada
             pass
 
-        # ✅ filtro opcional de equipo (para el filtro de EQUIPOS en frontend)
+        # ----------------------------------------------------------
+        # Filtros opcionales
+        # ----------------------------------------------------------
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        mes_filter = (request.args.get("mes") or "").strip()          # formato esperado YYYY-MM
+        desde = (request.args.get("desde") or "").strip()            # YYYY-MM-DD
+        hasta = (request.args.get("hasta") or "").strip()            # YYYY-MM-DD
+
         if equipo_filter:
             if scope in ("TEAM", "SELF"):
                 eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper() if consultor_login.equipo_obj else ""
@@ -1188,10 +1205,38 @@ def obtener_registros_graficos():
                     return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
             q = q.filter(func.upper(E.nombre) == equipo_filter)
 
-        # ✅ OJO: en graficos usualmente hay más data; usa límite alto razonable
-        registros = q.order_by(Registro.fecha.desc(), Registro.id.desc()).limit(50000).all()
+        # Filtro por mes (prioridad si viene)
+        if mes_filter:
+            try:
+                partes = mes_filter.split("-")
+                if len(partes) == 2:
+                    anio = int(partes[0])
+                    mes_num = int(partes[1])
+                    q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == anio)
+                    q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == mes_num)
+            except Exception:
+                pass
 
-        # ---- serialización IGUAL que /registros ----
+        # Filtro por rango de fechas
+        if desde and hasta:
+            q = q.filter(Registro.fecha.between(desde, hasta))
+        elif desde:
+            q = q.filter(Registro.fecha >= desde)
+        elif hasta:
+            q = q.filter(Registro.fecha <= hasta)
+
+        # ----------------------------------------------------------
+        # Límite más razonable para gráficas
+        # ----------------------------------------------------------
+        registros = (
+            q.order_by(Registro.fecha.desc(), Registro.id.desc())
+             .limit(12000)
+             .all()
+        )
+
+        # ----------------------------------------------------------
+        # Serialización
+        # ----------------------------------------------------------
         data = []
         for r in registros:
             tarea = r.tarea
@@ -1206,7 +1251,6 @@ def obtener_registros_graficos():
             if r.consultor and r.consultor.equipo_obj:
                 equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
 
-            # ✅ PROYECTOS (NUEVO en /graficos)
             proyecto = getattr(r, "proyecto", None)
             fase_proyecto = getattr(r, "fase_proyecto", None)
 
@@ -1246,7 +1290,6 @@ def obtener_registros_graficos():
                 "desborde": r.desborde,
                 "actividadMalla": r.actividad_malla,
 
-                # ✅ PROYECTOS (NUEVO en /graficos)
                 "proyecto_id": r.proyecto_id,
                 "fase_proyecto_id": r.fase_proyecto_id,
                 "proyecto": {
@@ -1767,6 +1810,17 @@ def editar_registro(id):
             tarea_db = Tarea.query.options(db.joinedload(Tarea.ocupaciones)).get(registro.tarea_id)
             if tarea_db and getattr(tarea_db, "ocupaciones", None) and tarea_db.ocupaciones:
                 registro.ocupacion_id = tarea_db.ocupaciones[0].id
+
+        cliente_validar = pick(data, 'cliente', default=registro.cliente)
+        cliente_upper = str(cliente_validar or "").strip().upper()
+
+        occ_obj = Ocupacion.query.get(registro.ocupacion_id) if registro.ocupacion_id else None
+        occ_codigo = str(getattr(occ_obj, "codigo", "") or "").strip()
+
+        if occ_codigo in {"01", "02"} and cliente_upper == "HITSS/CLARO":
+            return jsonify({
+                'mensaje': 'Las ocupaciones 01 y 02 no pueden registrarse para el cliente HITSS/CLARO'
+            }), 400
 
         # ----------------------------------------------------------
         # 8) Fechas/horas y valores numéricos
