@@ -1,35 +1,47 @@
 .registro-page-scope{
-  --brand-red: #E30613;
-  --brand-red-700: #b00510;
-  --brand-blue: #0055B8;
-  --brand-blue-700: #024aa2;
+  --brand-red:#E30613;
+  --brand-red-700:#b00510;
+  --brand-blue:#0055B8;
+  --brand-blue-700:#024aa2;
 
-  --bg:#f6f8fb;
-  --card:#ffffff;
-  --text:#0b1220;
-  --muted:#6b7280;
+  --bg:#eef4fb;
+  --card:rgba(255,255,255,.86);
+  --card-strong:#ffffff;
+  --card-soft:#f8fbff;
+  --text:#0f172a;
+  --title:#081226;
+  --muted:#64748b;
 
-  --primary: var(--brand-red);
-  --primary-600: var(--brand-red-700);
-  --accent: var(--brand-blue);
-  --accent-700: var(--brand-blue-700);
+  --primary:var(--brand-red);
+  --primary-600:var(--brand-red-700);
+  --accent:var(--brand-blue);
+  --accent-700:var(--brand-blue-700);
 
   --success:#059669;
   --warning:#d97706;
   --danger:#dc2626;
 
-  --ring: rgba(227,6,19,.22);
-  --border:#e6ebf2;
-  --shadow:0 12px 28px rgba(2,6,23,.06);
+  --ring:rgba(0,85,184,.18);
+  --border:rgba(148,163,184,.20);
+  --border-strong:rgba(148,163,184,.28);
 
-  --radius:14px;
+  --shadow-sm:0 8px 18px rgba(15,23,42,.06);
+  --shadow-md:0 16px 34px rgba(15,23,42,.08);
+  --shadow-lg:0 26px 60px rgba(15,23,42,.12);
+  --shadow-xl:0 36px 90px rgba(15,23,42,.16);
 
-  --fs-base: 14px;
-  --fs-small: 13px;
-  --fs-title: 28px;
-  --fs-modal-title: 20px;
+  --radius-xs:10px;
+  --radius-sm:14px;
+  --radius-md:18px;
+  --radius-lg:24px;
+  --radius-xl:30px;
 
-  --control-h: 44px;
+  --fs-base:14px;
+  --fs-small:12px;
+  --fs-title:34px;
+  --fs-modal-title:22px;
+
+  --control-h:46px;
 }
 
 .registro-page-scope,
@@ -38,19 +50,24 @@
 }
 
 .registro-page-scope{
-  background:var(--bg);
+  min-height:100vh;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(0,85,184,.12), transparent 28%),
+    radial-gradient(circle at 100% 0%, rgba(227,6,19,.10), transparent 25%),
+    radial-gradient(circle at 50% 100%, rgba(14,165,233,.08), transparent 28%),
+    linear-gradient(180deg,#f8fbff 0%, #eef4fb 50%, #e9f1f9 100%);
   color:var(--text);
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  font-size: var(--fs-base);
-  line-height: 1.35;
+  font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size:var(--fs-base);
+  line-height:1.35;
 }
 
 .registro-page-scope button,
 .registro-page-scope input,
 .registro-page-scope select,
 .registro-page-scope textarea{
-  font: inherit;
-  font-size: var(--fs-base);
+  font:inherit;
+  font-size:var(--fs-base);
 }
 
 .registro-page-scope :focus-visible{
@@ -62,13 +79,26 @@
    CONTENEDOR PRINCIPAL
 ========================================================= */
 .registro-page-scope .container{
-  max-width: min(100vw - 32px, 1800px);
-  margin:28px auto;
-  background:var(--card);
+  max-width:min(100vw - 28px, 1820px);
+  margin:26px auto;
   padding:24px;
-  border-radius:18px;
-  border:1px solid var(--border);
-  box-shadow:var(--shadow);
+  border-radius:28px;
+  border:1px solid rgba(255,255,255,.50);
+  background:rgba(255,255,255,.62);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+  box-shadow:var(--shadow-xl);
+  position:relative;
+  overflow:hidden;
+}
+
+.registro-page-scope .container::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.22), transparent 18%);
 }
 
 /* =========================================================
@@ -78,21 +108,56 @@
   display:flex;
   justify-content:space-between;
   align-items:flex-end;
-  gap:16px;
-  margin-bottom:18px;
+  gap:18px;
+  margin-bottom:20px;
   flex-wrap:wrap;
+}
+
+.registro-page-scope .page-title{
+  position:relative;
+  z-index:1;
+}
+
+.registro-page-scope .page-kicker{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 14px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--accent);
+  background:linear-gradient(135deg, rgba(0,85,184,.10), rgba(14,165,233,.10));
+  border:1px solid rgba(0,85,184,.12);
+  margin-bottom:14px;
+}
+
+.registro-page-scope .page-kicker::before{
+  content:"";
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:linear-gradient(135deg, var(--accent), #0ea5e9);
 }
 
 .registro-page-scope .page-title h2{
   margin:0;
   font-size:var(--fs-title);
-  font-weight:800;
+  font-weight:950;
+  line-height:1.05;
+  letter-spacing:-.03em;
+  color:var(--title);
 }
 
 .registro-page-scope .page-title .subtitle{
-  margin-top:6px;
-  font-size:var(--fs-small);
+  margin-top:8px;
+  font-size:14px;
   color:var(--muted);
+  font-weight:600;
+  max-width:780px;
+  line-height:1.6;
 }
 
 .registro-page-scope .page-actions{
@@ -109,12 +174,13 @@
 
 .registro-page-scope .page-actions input[type="file"],
 .registro-page-scope .excel-input{
-  height: var(--control-h);
-  padding: 8px 10px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: #fff;
-  max-width: 260px;
+  height:var(--control-h);
+  padding:8px 10px;
+  border-radius:14px;
+  border:1px solid var(--border);
+  background:linear-gradient(180deg,#fff,#f8fbff);
+  max-width:260px;
+  box-shadow:var(--shadow-sm);
 }
 
 /* =========================================================
@@ -124,40 +190,55 @@
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  border-radius:12px;
-  font-weight:700;
+  gap:8px;
+  border-radius:14px;
+  font-weight:900;
   cursor:pointer;
-  transition:.25s;
+  transition:transform .16s ease, box-shadow .18s ease, filter .18s ease, background .18s ease;
   border:none;
-  height: var(--control-h);
-  padding: 0 18px;
+  height:var(--control-h);
+  padding:0 18px;
+  white-space:nowrap;
+}
+
+.registro-page-scope .btn:hover{
+  transform:translateY(-2px);
+}
+
+.registro-page-scope .btn:active{
+  transform:translateY(0);
 }
 
 .registro-page-scope .btn-primary{
-  background:linear-gradient(180deg,var(--primary),var(--primary-600));
+  background:linear-gradient(135deg,var(--primary),var(--primary-600));
   color:#fff;
-  box-shadow:0 6px 14px rgba(227,6,19,.35);
+  box-shadow:0 14px 26px rgba(227,6,19,.28);
 }
 
 .registro-page-scope .btn-primary:hover{
-  filter:brightness(1.05);
+  filter:brightness(1.04);
+  box-shadow:0 18px 34px rgba(227,6,19,.34);
 }
 
 .registro-page-scope .btn-outline{
-  background:#fff;
-  border:1px solid var(--accent);
+  background:linear-gradient(180deg,#fff,#f8fbff);
+  border:1px solid rgba(0,85,184,.18);
   color:var(--accent);
+  box-shadow:var(--shadow-sm);
 }
 
 .registro-page-scope .btn-outline:hover{
-  background:var(--accent);
+  background:linear-gradient(135deg,var(--accent),var(--accent-700));
   color:#fff;
+  border-color:transparent;
+  box-shadow:0 14px 28px rgba(0,85,184,.24);
 }
 
 .registro-page-scope .btn-ghost{
-  background:#fff;
+  background:linear-gradient(180deg,#fff,#f8fafc);
   border:1px solid var(--border);
   color:var(--text);
+  box-shadow:var(--shadow-sm);
 }
 
 .registro-page-scope .btn-ghost:hover{
@@ -168,6 +249,8 @@
 .registro-page-scope .icon-btn:disabled{
   opacity:.55;
   cursor:not-allowed;
+  transform:none;
+  box-shadow:none;
 }
 
 /* =========================================================
@@ -177,24 +260,25 @@
   display:flex;
   align-items:center;
   gap:12px;
-  margin:12px 0 18px;
-  flex-wrap: wrap;
+  margin:12px 0 20px;
+  flex-wrap:wrap;
 }
 
 .registro-page-scope .team-filter-label{
-  font-weight:800;
-  color: var(--text);
+  font-weight:900;
+  color:var(--title);
 }
 
 .registro-page-scope .team-toggle{
   display:inline-flex;
   gap:8px;
   padding:8px;
-  border:1px solid var(--border);
+  border:1px solid rgba(255,255,255,.48);
   border-radius:999px;
-  background:linear-gradient(180deg,#ffffff,#f5f7fb);
-  box-shadow:0 6px 16px rgba(2,6,23,.06);
-  flex-wrap: wrap;
+  background:rgba(255,255,255,.72);
+  backdrop-filter:blur(14px);
+  box-shadow:var(--shadow-md);
+  flex-wrap:wrap;
 }
 
 .registro-page-scope .team-btn{
@@ -202,19 +286,19 @@
   border:1px solid transparent;
   padding:8px 18px;
   border-radius:999px;
-  font-size: var(--fs-small);
-  font-weight:800;
+  font-size:13px;
+  font-weight:900;
   cursor:pointer;
   display:flex;
   align-items:center;
   gap:8px;
-  transition:.25s;
-  color: var(--text);
+  transition:.22s ease;
+  color:var(--text);
 }
 
 .registro-page-scope .team-btn:hover{
-  background:#eef3ff;
-  border-color:#d3ddf7;
+  background:#eef4ff;
+  border-color:#dbe6fb;
 }
 
 .registro-page-scope .team-btn .chip{
@@ -222,29 +306,49 @@
   color:#fff;
   font-size:11px;
   padding:4px 9px;
-  border-radius:14px;
-  font-weight:700;
+  border-radius:999px;
+  font-weight:800;
 }
 
 .registro-page-scope .team-btn.is-active{
   background:linear-gradient(135deg,var(--accent),var(--accent-700));
   color:#fff;
-  box-shadow:0 8px 18px rgba(0,85,184,.35);
+  box-shadow:0 12px 24px rgba(0,85,184,.28);
 }
 
 .registro-page-scope .team-btn.is-active .chip{
-  background:rgba(255,255,255,.22);
+  background:rgba(255,255,255,.20);
 }
 
 /* =========================================================
    FILTROS
 ========================================================= */
 .registro-page-scope .filters-card{
-  background:#fbfcfe;
-  border:1px solid var(--border);
-  border-radius:16px;
-  padding:16px;
+  background:rgba(255,255,255,.78);
+  backdrop-filter:blur(14px);
+  border:1px solid rgba(255,255,255,.48);
+  border-radius:22px;
+  padding:18px;
+  margin-bottom:16px;
+  box-shadow:var(--shadow-lg);
+}
+
+.registro-page-scope .filters-head{
   margin-bottom:14px;
+}
+
+.registro-page-scope .filters-head h3{
+  margin:0 0 4px;
+  font-size:18px;
+  font-weight:900;
+  color:var(--title);
+}
+
+.registro-page-scope .filters-head p{
+  margin:0;
+  color:var(--muted);
+  font-size:13px;
+  font-weight:600;
 }
 
 .registro-page-scope .filter-grid{
@@ -255,35 +359,42 @@
 
 .registro-page-scope .filters-card input,
 .registro-page-scope .filters-card select{
-  height: var(--control-h);
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: #fff;
-  width: 100%;
+  height:var(--control-h);
+  padding:10px 13px;
+  border-radius:14px;
+  border:1px solid rgba(148,163,184,.24);
+  background:linear-gradient(180deg,#fff,#f8fbff);
+  width:100%;
+  color:var(--text);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.70);
+  transition:border-color .16s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.registro-page-scope .filters-card input::placeholder{
+  color:#94a3b8;
 }
 
 .registro-page-scope .filters-card input[type="number"]{
-  appearance: textfield;
+  appearance:textfield;
 }
 
 .registro-page-scope .filters-card input[type="number"]::-webkit-outer-spin-button,
 .registro-page-scope .filters-card input[type="number"]::-webkit-inner-spin-button{
-  -webkit-appearance: none;
-  margin: 0;
+  -webkit-appearance:none;
+  margin:0;
 }
 
 .registro-page-scope .filters-card input:focus,
 .registro-page-scope .filters-card select:focus{
-  border-color:var(--accent);
-  box-shadow:0 0 0 3px rgba(0,85,184,.18);
-  outline: none;
+  border-color:rgba(0,85,184,.34);
+  box-shadow:0 0 0 4px rgba(0,85,184,.10);
+  outline:none;
 }
 
 .registro-page-scope .filter-actions{
   display:flex;
   justify-content:flex-end;
-  margin-top:12px;
+  margin-top:14px;
 }
 
 @media(max-width:1100px){
@@ -302,69 +413,75 @@
    TABLA
 ========================================================= */
 .registro-page-scope .table-wrap{
-  margin-top:16px;
-  border-radius:16px;
-  border:1px solid var(--border);
+  margin-top:18px;
+  border-radius:22px;
+  border:1px solid rgba(255,255,255,.48);
   overflow:hidden;
-  background:var(--card);
+  background:rgba(255,255,255,.82);
+  box-shadow:var(--shadow-lg);
 }
 
 .registro-page-scope .table-scroll{
   overflow:auto;
-  max-height: calc(100vh - 260px);
+  max-height:calc(100vh - 260px);
+  background:#fff;
 }
 
 .registro-page-scope table{
   width:100%;
-  min-width:1700px;
+  min-width:1750px;
   border-collapse:separate;
   border-spacing:0;
-  font-size: var(--fs-base);
+  font-size:var(--fs-base);
 }
 
 .registro-page-scope thead th{
   position:sticky;
   top:0;
-  background:linear-gradient(180deg,#fff6f7,#f6f9ff);
-  padding:12px 14px;
-  font-weight:800;
+  background:linear-gradient(180deg,#fdfefe,#eff5ff);
+  padding:13px 14px;
+  font-weight:900;
   z-index:3;
-  white-space: nowrap;
-  border-bottom:1px solid var(--border);
+  white-space:nowrap;
+  border-bottom:1px solid rgba(148,163,184,.20);
+  color:var(--title);
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  font-size:11px;
 }
 
 .registro-page-scope thead th:first-child,
 .registro-page-scope tbody td:first-child{
-  width: 90px;
+  width:90px;
 }
 
 .registro-page-scope tbody td{
-  padding:12px 14px;
-  border-bottom:1px solid var(--border);
-  vertical-align: top;
+  padding:13px 14px;
+  border-bottom:1px solid rgba(148,163,184,.14);
+  vertical-align:top;
   background:#fff;
 }
 
 .registro-page-scope tbody tr:nth-child(even) td{
-  background:#fbfcfe;
+  background:#fbfdff;
 }
 
 .registro-page-scope tbody tr:hover td{
-  background:#f6f9ff;
+  background:#f5f9ff;
 }
 
 .registro-page-scope td.num,
 .registro-page-scope th.num{
   text-align:right;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric:tabular-nums;
 }
 
 .registro-page-scope td.truncate,
 .registro-page-scope th.truncate{
-  max-width: 420px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width:420px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 
 .registro-page-scope th.actions,
@@ -372,39 +489,62 @@
   position:sticky;
   right:0;
   z-index:4;
-  background: #fff;
-  box-shadow:-10px 0 18px rgba(2,6,23,.06);
-  border-left:1px solid var(--border);
-  white-space: nowrap;
+  background:#fff;
+  box-shadow:-10px 0 20px rgba(15,23,42,.06);
+  border-left:1px solid rgba(148,163,184,.16);
+  white-space:nowrap;
 }
 
 .registro-page-scope .table-scroll.sticky-actions{
-  position: relative;
+  position:relative;
 }
 
 /* =========================================================
    ICON BUTTONS
 ========================================================= */
 .registro-page-scope .icon-btn{
-  width:34px;
-  height:34px;
-  border-radius:10px;
-  border:1px solid var(--border);
-  background:#fff;
+  width:36px;
+  height:36px;
+  border-radius:11px;
+  border:1px solid rgba(148,163,184,.18);
+  background:linear-gradient(180deg,#fff,#f8fbff);
   cursor:pointer;
-  transition:.2s;
+  transition:.18s ease;
   display:inline-flex;
   align-items:center;
   justify-content:center;
   margin-right:6px;
+  box-shadow:0 6px 12px rgba(15,23,42,.04);
 }
 
 .registro-page-scope .icon-btn:hover{
-  background:#f5f7fb;
+  background:#f4f8ff;
+  transform:translateY(-1px);
 }
 
 .registro-page-scope .icon-btn.danger:hover{
   background:rgba(220,38,38,.08);
+  border-color:rgba(220,38,38,.16);
+}
+
+/* =========================================================
+   PAGINACIÓN
+========================================================= */
+.registro-page-scope .registro-pagination{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  justify-content:flex-end;
+  margin:0;
+  padding:14px 16px;
+  flex-wrap:wrap;
+  background:linear-gradient(180deg,#fff,#f8fbff);
+  border-top:1px solid rgba(148,163,184,.14);
+}
+
+.registro-page-scope .registro-pagination-text{
+  font-weight:900;
+  color:var(--text);
 }
 
 /* =========================================================
@@ -412,44 +552,42 @@
 ========================================================= */
 .registro-page-scope .table-scroll::-webkit-scrollbar,
 .registro-modal-body::-webkit-scrollbar{
-  width: 12px;
-  height: 12px;
+  width:12px;
+  height:12px;
 }
 
 .registro-page-scope .table-scroll::-webkit-scrollbar-track,
 .registro-modal-body::-webkit-scrollbar-track{
-  background: #f1f4fa;
+  background:#f1f4fa;
 }
 
 .registro-page-scope .table-scroll::-webkit-scrollbar-thumb,
 .registro-modal-body::-webkit-scrollbar-thumb{
-  background: rgba(2,6,23,.22);
-  border-radius: 999px;
-  border: 3px solid #f1f4fa;
+  background:rgba(15,23,42,.22);
+  border-radius:999px;
+  border:3px solid #f1f4fa;
 }
 
 .registro-page-scope .table-scroll,
 .registro-modal-body{
-  scrollbar-width: thin;
-  scrollbar-color: rgba(2,6,23,.28) #f1f4fa;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(15,23,42,.28) #f1f4fa;
 }
 
 /* =========================================================
    MODAL REGISTRO
-   OJO: estas clases NO van scopeadas porque React Modal
-   renderiza en un portal fuera de .registro-page-scope
 ========================================================= */
 .registro-modal-html-open,
 .registro-modal-body-open{
-  overflow: hidden !important;
+  overflow:hidden !important;
 }
 
 .registro-modal-overlay{
-  position: fixed;
-  inset: 0;
-  background: rgba(10,15,30,.55) !important;
-  backdrop-filter: blur(4px);
-  z-index: 2000;
+  position:fixed;
+  inset:0;
+  background:rgba(10,15,30,.58) !important;
+  backdrop-filter:blur(7px);
+  z-index:2000;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -457,14 +595,14 @@
 }
 
 .registro-modal-content{
-  position: relative;
-  width:min(980px, 96vw);
-  max-width:980px;
-  max-height:90vh;
-  border-radius:20px;
-  border:1px solid #e6ebf2;
-  background:#ffffff;
-  box-shadow:0 30px 80px rgba(2,6,23,.35);
+  position:relative;
+  width:min(1080px, 96vw);
+  max-width:1080px;
+  max-height:92vh;
+  border-radius:26px;
+  border:1px solid rgba(255,255,255,.38);
+  background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,250,252,.98));
+  box-shadow:0 40px 100px rgba(2,6,23,.30);
   overflow:hidden;
   outline:none;
 }
@@ -472,47 +610,82 @@
 .registro-modal-shell{
   display:flex;
   flex-direction:column;
-  max-height:90vh;
+  max-height:92vh;
 }
 
 .registro-modal-header{
-  padding:18px 24px;
-  background:linear-gradient(90deg,#0055B8,#E30613);
+  padding:20px 24px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(255,255,255,.18), transparent 30%),
+    linear-gradient(135deg,#0055B8,#E30613);
   color:#fff;
   display:flex;
   justify-content:space-between;
   align-items:center;
 }
 
+.registro-modal-kicker{
+  font-size:11px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.10em;
+  opacity:.9;
+  margin-bottom:6px;
+}
+
 .registro-modal-title{
   margin:0;
-  font-size:20px;
-  font-weight:800;
+  font-size:var(--fs-modal-title);
+  font-weight:950;
+  letter-spacing:-.02em;
 }
 
 .registro-modal-close{
-  background:rgba(255,255,255,.2);
+  background:rgba(255,255,255,.18);
   border:none;
   color:#fff;
   font-size:18px;
-  width:38px;
-  height:38px;
+  width:40px;
+  height:40px;
   border-radius:50%;
   cursor:pointer;
   display:inline-flex;
   align-items:center;
   justify-content:center;
+  transition:.18s ease;
 }
 
 .registro-modal-close:hover{
   background:rgba(255,255,255,.28);
+  transform:scale(1.04);
 }
 
 .registro-modal-body{
-  padding:22px 24px;
+  padding:24px;
   overflow:auto;
-  background:#fff;
-  max-height: calc(90vh - 78px);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(0,85,184,.05), transparent 25%),
+    radial-gradient(circle at 100% 0%, rgba(227,6,19,.05), transparent 22%),
+    linear-gradient(180deg,#fff,#f8fbff);
+  max-height:calc(92vh - 82px);
+}
+
+.registro-section-title{
+  margin-bottom:16px;
+}
+
+.registro-section-title h4{
+  margin:0 0 4px;
+  font-size:18px;
+  font-weight:900;
+  color:var(--title);
+}
+
+.registro-section-title p{
+  margin:0;
+  font-size:13px;
+  color:var(--muted);
+  font-weight:600;
 }
 
 .registro-form-grid{
@@ -523,32 +696,41 @@
 }
 
 .registro-form-grid .span-2{
-  grid-column: span 2;
+  grid-column:span 2;
 }
 
 .registro-form-grid .span-3{
-  grid-column: 1 / -1;
+  grid-column:1 / -1;
 }
 
 .registro-modal-content input,
 .registro-modal-content select,
 .registro-modal-content textarea{
   width:100%;
-  height:44px;
-  background:#f7f9fc;
+  height:46px;
+  background:linear-gradient(180deg,#fff,#f8fbff);
   padding:12px 14px;
-  border-radius:12px;
-  border:1px solid #e6ebf2;
+  border-radius:14px;
+  border:1px solid rgba(148,163,184,.24);
   font-size:14px;
   line-height:1.2;
+  color:var(--text);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.70);
 }
 
 .registro-modal-content textarea{
   height:auto;
-  min-height:110px;
+  min-height:130px;
   resize:vertical;
-  padding-top:12px;
-  padding-bottom:12px;
+  padding-top:13px;
+  padding-bottom:13px;
+}
+
+.registro-modal-content input[readonly],
+.registro-modal-content select:disabled,
+.registro-page-scope input[readonly]{
+  background:linear-gradient(180deg,#f8fafc,#f1f5f9);
+  color:#475569;
 }
 
 .registro-modal-content input::placeholder,
@@ -561,8 +743,8 @@
 .registro-modal-content select:focus,
 .registro-modal-content textarea:focus{
   outline:none;
-  border-color:#E30613;
-  box-shadow:0 0 0 4px rgba(227,6,19,.22);
+  border-color:rgba(0,85,184,.34);
+  box-shadow:0 0 0 4px rgba(0,85,184,.10);
 }
 
 .registro-inline-2{
@@ -576,14 +758,73 @@
   justify-content:flex-end;
   gap:12px;
   padding:16px 0 0;
-  margin-top:16px;
-  border-top:1px solid #e6ebf2;
-  background:#fff;
+  margin-top:18px;
+  border-top:1px solid rgba(148,163,184,.16);
+  background:transparent;
+}
+
+/* =========================================================
+   UTILIDADES
+========================================================= */
+.registro-page-scope .muted{
+  color:var(--muted);
+  font-weight:800;
+  text-align:center;
+  padding:26px 0 !important;
+}
+
+.registro-page-scope .registro-error-box{
+  color:#b91c1c;
+  margin-top:14px;
+  padding:14px 16px;
+  border-radius:14px;
+  background:#fff1f2;
+  border:1px solid rgba(220,38,38,.16);
+  font-weight:800;
+  box-shadow:var(--shadow-sm);
+}
+
+.swal2-container{
+  z-index:30000 !important;
+}
+
+.swal2-backdrop-show{
+  z-index:29999 !important;
+}
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+@media(max-width:1100px){
+  .registro-page-scope .page-title h2{
+    font-size:28px;
+  }
 }
 
 @media(max-width:900px){
   .registro-form-grid{
     grid-template-columns:repeat(2,1fr);
+  }
+
+  .registro-page-scope .container{
+    padding:18px;
+    border-radius:22px;
+  }
+
+  .registro-page-scope .page-head{
+    align-items:stretch;
+  }
+
+  .registro-page-scope .page-actions{
+    width:100%;
+  }
+
+  .registro-page-scope .page-actions .btn{
+    flex:1 1 auto;
+  }
+
+  .registro-page-scope .registro-pagination{
+    justify-content:center;
   }
 }
 
@@ -603,37 +844,25 @@
   .registro-modal-body{
     padding:18px;
   }
-}
 
-/* =========================================================
-   UTILIDADES
-========================================================= */
-.registro-page-scope .muted{
-  color: var(--muted);
-  font-weight: 700;
-}
+  .registro-page-scope .container{
+    margin:14px auto;
+    padding:14px;
+    border-radius:18px;
+  }
 
-.registro-page-scope .registro-pagination{
-  display:flex;
-  gap:8px;
-  align-items:center;
-  margin:10px 0;
-  flex-wrap: wrap;
-}
+  .registro-page-scope .page-title h2{
+    font-size:24px;
+  }
 
-.registro-page-scope .registro-pagination-text{
-  font-weight: 800;
-}
+  .registro-page-scope .page-actions{
+    flex-direction:column;
+    align-items:stretch;
+  }
 
-.registro-page-scope .registro-error-box{
-  color:crimson;
-  margin-top:10px;
-}
-
-.swal2-container{
-  z-index:30000 !important;
-}
-
-.swal2-backdrop-show{
-  z-index:29999 !important;
+  .registro-page-scope .page-actions .btn,
+  .registro-page-scope .page-actions .excel-input{
+    width:100%;
+    max-width:none;
+  }
 }

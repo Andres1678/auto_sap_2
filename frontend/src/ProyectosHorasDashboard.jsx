@@ -129,15 +129,36 @@ function MultiFiltro({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [openUp, setOpenUp] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
     if (!open) return;
+
+    const calcPosition = () => {
+      const el = ref.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const estimatedDropdownHeight = 340;
+      setOpenUp(spaceBelow < estimatedDropdownHeight && rect.top > estimatedDropdownHeight / 2);
+    };
+
+    calcPosition();
+    window.addEventListener("resize", calcPosition);
+    window.addEventListener("scroll", calcPosition, true);
+
     const handler = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
+
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+
+    return () => {
+      window.removeEventListener("resize", calcPosition);
+      window.removeEventListener("scroll", calcPosition, true);
+      document.removeEventListener("mousedown", handler);
+    };
   }, [open]);
 
   const toggleValue = (val) => {
@@ -155,7 +176,14 @@ function MultiFiltro({
   const showPlaceholder = seleccion.length === 0;
 
   return (
-    <div className="phd-mf" ref={ref}>
+    <div
+      className={
+        "phd-mf" +
+        (open ? " is-layer-open" : "") +
+        (openUp ? " is-open-up" : "")
+      }
+      ref={ref}
+    >
       <span className="phd-mf-label">{titulo}</span>
 
       <button
@@ -808,7 +836,7 @@ export default function ProyectosHorasDashboard({
         ariaHideApp={false}
       >
         <div className="phd-modalHeader">
-          <div>
+          <div className="phd-modalHeaderText">
             <h3 className="phd-modalTitle">{detailTitle || "Detalle"}</h3>
             <div className="phd-modalSub">
               Filas: <b>{detailRows.length}</b> · Total:{" "}
@@ -830,7 +858,7 @@ export default function ProyectosHorasDashboard({
             <div className="phd-empty phd-empty-lg">Sin filas para mostrar.</div>
           ) : (
             <div className="phd-modalTableWrap">
-              <table className="phd-table">
+              <table className="phd-table phd-table-detail">
                 <thead>
                   <tr>
                     <th>ID</th>
@@ -873,7 +901,7 @@ export default function ProyectosHorasDashboard({
                         {r.tipoTarea || "—"}
                       </td>
                       <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
-                      <td className="phd-truncate" title={r.descripcion || ""}>
+                      <td className="phd-truncate phd-detail-desc" title={r.descripcion || ""}>
                         {r.descripcion || ""}
                       </td>
                     </tr>

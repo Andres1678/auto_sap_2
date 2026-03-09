@@ -32,7 +32,7 @@
   --phd-shadow-sm:0 8px 18px rgba(15,23,42,.06);
 
   --phd-max:1720px;
-  --phd-font: "Inter", "Segoe UI", "Poppins", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --phd-font:"Inter", "Segoe UI", "Poppins", ui-sans-serif, system-ui, -apple-system, sans-serif;
 
   min-height:100vh;
   background:
@@ -171,8 +171,7 @@
   overflow:hidden;
   border-radius:22px;
   padding:24px 22px;
-  background:
-    linear-gradient(145deg, rgba(255,255,255,.96), rgba(248,250,252,.90));
+  background:linear-gradient(145deg, rgba(255,255,255,.96), rgba(248,250,252,.90));
   border:1px solid var(--phd-border);
   box-shadow:var(--phd-shadow-sm);
   min-height:114px;
@@ -282,32 +281,30 @@
 }
 
 .phd-page .phd-kpi-blue{
-  background:
-    linear-gradient(145deg, rgba(255,255,255,.96), rgba(239,248,255,.90));
+  background:linear-gradient(145deg, rgba(255,255,255,.96), rgba(239,248,255,.90));
 }
 .phd-page .phd-kpi-blue::after{ background:radial-gradient(circle, var(--phd-blue), transparent 70%); }
 
 .phd-page .phd-kpi-red{
-  background:
-    linear-gradient(145deg, rgba(255,255,255,.96), rgba(255,242,243,.92));
+  background:linear-gradient(145deg, rgba(255,255,255,.96), rgba(255,242,243,.92));
 }
 .phd-page .phd-kpi-red::after{ background:radial-gradient(circle, var(--phd-red), transparent 70%); }
 
 .phd-page .phd-kpi-dark{
-  background:
-    linear-gradient(145deg, rgba(255,255,255,.96), rgba(241,245,249,.92));
+  background:linear-gradient(145deg, rgba(255,255,255,.96), rgba(241,245,249,.92));
 }
 .phd-page .phd-kpi-dark::after{ background:radial-gradient(circle, var(--phd-dark), transparent 70%); }
 
 .phd-page .phd-kpi-green{
-  background:
-    linear-gradient(145deg, rgba(255,255,255,.96), rgba(236,253,245,.92));
+  background:linear-gradient(145deg, rgba(255,255,255,.96), rgba(236,253,245,.92));
 }
 .phd-page .phd-kpi-green::after{ background:radial-gradient(circle, var(--phd-green), transparent 70%); }
 
 /* FILTROS */
 .phd-page .phd-filtros-card{
   position:relative;
+  z-index:60;
+  isolation:isolate;
   overflow:visible;
   background:rgba(255,255,255,.78);
   backdrop-filter:blur(18px);
@@ -346,6 +343,8 @@
   grid-template-columns:repeat(12, minmax(0,1fr));
   gap:14px;
   align-items:end;
+  position:relative;
+  z-index:2;
 }
 
 .phd-page .phd-month{
@@ -422,6 +421,11 @@
   display:flex;
   flex-direction:column;
   gap:7px;
+  z-index:1;
+}
+
+.phd-page .phd-mf.is-layer-open{
+  z-index:120;
 }
 
 .phd-page .phd-mf-label{
@@ -523,14 +527,19 @@
   top:calc(100% + 10px);
   left:0;
   right:0;
-  z-index:50;
-  background:rgba(255,255,255,.96);
+  z-index:999;
+  background:rgba(255,255,255,.98);
   backdrop-filter:blur(18px);
   border:1px solid rgba(148,163,184,.20);
   border-radius:18px;
-  box-shadow:0 24px 60px rgba(15,23,42,.16);
+  box-shadow:0 24px 60px rgba(15,23,42,.18);
   overflow:hidden;
   animation:phdFadeDown .18s ease;
+}
+
+.phd-page .phd-mf.is-open-up .phd-mf-dropdown{
+  top:auto;
+  bottom:calc(100% + 10px);
 }
 
 @keyframes phdFadeDown{
@@ -587,6 +596,7 @@
   width:16px;
   height:16px;
   accent-color:var(--phd-blue);
+  flex:0 0 auto;
 }
 
 .phd-page .phd-mf-option:hover{
@@ -605,10 +615,13 @@
   flex-direction:column;
   gap:20px;
   margin-bottom:24px;
+  position:relative;
+  z-index:1;
 }
 
 .phd-page .phd-card{
   position:relative;
+  z-index:1;
   overflow:hidden;
   background:rgba(255,255,255,.86);
   backdrop-filter:blur(16px);
@@ -702,7 +715,7 @@
   letter-spacing:.06em;
   text-transform:uppercase;
   font-size:11px;
-  z-index:2;
+  z-index:3;
   box-shadow:0 4px 10px rgba(15,23,42,.08);
 }
 
@@ -731,6 +744,11 @@
   text-overflow:ellipsis;
 }
 
+.phd-page .phd-detail-desc{
+  min-width:420px;
+  max-width:560px;
+}
+
 /* MODAL */
 .phd-modalOverlay{
   position:fixed;
@@ -745,9 +763,9 @@
 }
 
 .phd-modal{
-  width:min(96vw, 1620px);
-  height:min(92vh, 980px);
-  background:linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.96));
+  width:min(96vw, 1780px);
+  height:min(94vh, 1080px);
+  background:linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
   border-radius:28px;
   border:1px solid rgba(255,255,255,.44);
   box-shadow:0 40px 110px rgba(15,23,42,.26);
@@ -770,6 +788,7 @@
 }
 
 .phd-page .phd-modalHeader{
+  flex:0 0 auto;
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
@@ -782,12 +801,17 @@
     linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.92));
 }
 
+.phd-page .phd-modalHeaderText{
+  min-width:0;
+}
+
 .phd-page .phd-modalTitle{
   margin:0;
   font-size:22px;
   font-weight:1000;
   line-height:1.15;
   color:var(--phd-title);
+  word-break:break-word;
 }
 
 .phd-page .phd-modalSub{
@@ -814,6 +838,7 @@
   display:grid;
   place-items:center;
   transition:background .15s ease, transform .14s ease, box-shadow .15s ease;
+  flex:0 0 auto;
 }
 
 .phd-page .phd-modalClose:hover{
@@ -824,7 +849,8 @@
 }
 
 .phd-page .phd-modalBody{
-  flex:1;
+  flex:1 1 auto;
+  min-height:0;
   overflow:auto;
   padding:18px 20px 20px;
   background:
@@ -835,10 +861,16 @@
 
 .phd-page .phd-modalTableWrap{
   overflow:auto;
+  max-width:100%;
+  max-height:100%;
   border:1px solid rgba(148,163,184,.16);
   border-radius:20px;
   background:#fff;
   box-shadow:var(--phd-shadow-md);
+}
+
+.phd-page .phd-table-detail{
+  min-width:1650px;
 }
 
 /* SCROLL */
@@ -949,6 +981,10 @@
   .phd-page .phd-modalBody{
     padding:14px;
   }
+
+  .phd-page .phd-table-detail{
+    min-width:1450px;
+  }
 }
 
 @media (max-width: 640px){
@@ -975,5 +1011,9 @@
 
   .phd-page .phd-modalTitle{
     font-size:18px;
+  }
+
+  .phd-page .phd-table-detail{
+    min-width:1280px;
   }
 }

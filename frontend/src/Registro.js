@@ -373,7 +373,6 @@ const Registro = ({ userData }) => {
 
   useEffect(() => {
     const pendingId = pendingEditTareaIdRef.current;
-
     if (!pendingId) return;
     if (!Array.isArray(tareasBD) || tareasBD.length === 0) return;
 
@@ -1448,9 +1447,10 @@ const Registro = ({ userData }) => {
       <div className="container">
         <div className="page-head">
           <div className="page-title">
-            <h2>Registro de Horas</h2>
+            <div className="page-kicker">Gestión operativa</div>
+            <h2>Gestión de Registro de Horas</h2>
             <p className="subtitle">
-              Filtra por fecha, cliente, tarea, consultor, equipo, Nro. de caso y horas adicionales
+              Consulta, filtra y administra los registros de horas de forma clara, rápida y ordenada.
             </p>
           </div>
 
@@ -1493,7 +1493,7 @@ const Registro = ({ userData }) => {
               disabled={!isAdmin && !consultorActivo}
               title={!isAdmin && !consultorActivo ? "Usuario inactivo" : "Agregar Registro"}
             >
-              Agregar Registro
+              + Nuevo registro
             </button>
           </div>
         </div>
@@ -1518,6 +1518,11 @@ const Registro = ({ userData }) => {
         )}
 
         <div className="filters-card">
+          <div className="filters-head">
+            <h3>Filtros de búsqueda</h3>
+            <p>Usa uno o varios criterios para encontrar registros específicos.</p>
+          </div>
+
           <div className="filter-grid">
             <input
               type="text"
@@ -1658,7 +1663,7 @@ const Registro = ({ userData }) => {
                 }
               }}
             >
-              Limpiar
+              Limpiar filtros
             </button>
           </div>
         </div>
@@ -1678,7 +1683,13 @@ const Registro = ({ userData }) => {
         >
           <div className="registro-modal-shell">
             <div className="registro-modal-header">
-              <h3 className="registro-modal-title">{modoEdicion ? 'Editar Registro' : 'Nuevo Registro'}</h3>
+              <div>
+                <div className="registro-modal-kicker">Formulario</div>
+                <h3 className="registro-modal-title">
+                  {modoEdicion ? 'Editar Registro' : 'Nuevo Registro'}
+                </h3>
+              </div>
+
               <button
                 className="registro-modal-close"
                 onClick={closeModal}
@@ -1691,6 +1702,11 @@ const Registro = ({ userData }) => {
 
             <div className="registro-modal-body">
               <form onSubmit={handleSubmit}>
+                <div className="registro-section-title">
+                  <h4>Información general</h4>
+                  <p>Completa los datos principales del registro.</p>
+                </div>
+
                 <div className="registro-form-grid">
                   {modulos.length > 1 ? (
                     <select
