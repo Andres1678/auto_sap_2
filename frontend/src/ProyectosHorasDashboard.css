@@ -517,49 +517,6 @@
   min-width:1040px;
 }
 
-.phd-detail-section{
-  background:rgba(255,255,255,.88);
-  backdrop-filter: blur(8px);
-  border:1px solid rgba(255,255,255,.45);
-  border-radius:24px;
-  box-shadow:var(--phd-shadow-lg);
-  padding:20px;
-}
-
-.phd-detail-head{
-  display:flex;
-  align-items:flex-start;
-  justify-content:space-between;
-  gap:16px;
-  margin-bottom:16px;
-}
-
-.phd-detail-head h3{
-  margin:0 0 6px;
-  font-size:22px;
-  font-weight:950;
-}
-
-.phd-detail-head p{
-  margin:0;
-  color:var(--phd-muted);
-  font-weight:600;
-}
-
-.phd-detail-meta{
-  font-weight:950;
-  margin-bottom:12px;
-  color:rgba(15,23,42,.76);
-}
-
-.phd-tableWrap{
-  overflow:auto;
-  border:1px solid rgba(15,23,42,.10);
-  border-radius:18px;
-  background:#fff;
-  box-shadow:var(--phd-shadow-sm);
-}
-
 .phd-table{
   width:100%;
   min-width:1400px;
@@ -604,24 +561,122 @@
   text-overflow:ellipsis;
 }
 
+/* MODAL */
+.phd-modalOverlay{
+  position:fixed;
+  inset:0;
+  background:rgba(15,23,42,.58);
+  backdrop-filter:blur(6px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  z-index:99999;
+}
+
+.phd-modal{
+  width:min(96vw, 1600px);
+  height:min(92vh, 980px);
+  background:#fff;
+  border-radius:24px;
+  border:1px solid rgba(255,255,255,.35);
+  box-shadow:0 40px 100px rgba(15,23,42,.24);
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  outline:none;
+}
+
+.phd-modalHeader{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding:18px 20px;
+  border-bottom:1px solid rgba(15,23,42,.08);
+  background:
+    radial-gradient(1000px 240px at 0% 0%, rgba(0,85,184,.14), transparent 62%),
+    radial-gradient(1000px 240px at 100% 0%, rgba(227,6,19,.12), transparent 62%),
+    #fff;
+}
+
+.phd-modalTitle{
+  margin:0;
+  font-size:22px;
+  font-weight:950;
+  line-height:1.15;
+}
+
+.phd-modalSub{
+  margin-top:8px;
+  font-size:13px;
+  color:var(--phd-muted);
+  font-weight:800;
+}
+
+.phd-modalSub b{
+  color:var(--phd-dark);
+}
+
+.phd-modalClose{
+  width:42px;
+  height:42px;
+  border:none;
+  border-radius:12px;
+  background:rgba(15,23,42,.08);
+  color:var(--phd-dark);
+  cursor:pointer;
+  font-size:17px;
+  font-weight:900;
+  display:grid;
+  place-items:center;
+  transition:background .12s ease, transform .08s ease;
+}
+
+.phd-modalClose:hover{
+  background:rgba(15,23,42,.14);
+  transform:scale(1.02);
+}
+
+.phd-modalBody{
+  flex:1;
+  overflow:auto;
+  padding:16px 20px 20px;
+  background:
+    radial-gradient(900px 440px at 20% 0%, rgba(0,85,184,.05), transparent 60%),
+    radial-gradient(900px 440px at 90% 0%, rgba(227,6,19,.05), transparent 55%),
+    #f6f8fb;
+}
+
+.phd-modalTableWrap{
+  overflow:auto;
+  border:1px solid rgba(15,23,42,.10);
+  border-radius:18px;
+  background:#fff;
+  box-shadow:var(--phd-shadow-sm);
+}
+
 /* scrollbars */
 .phd-chartWrap::-webkit-scrollbar,
 .phd-mf-options::-webkit-scrollbar,
-.phd-tableWrap::-webkit-scrollbar{
+.phd-modalBody::-webkit-scrollbar,
+.phd-modalTableWrap::-webkit-scrollbar{
   width:10px;
   height:10px;
 }
 
 .phd-chartWrap::-webkit-scrollbar-thumb,
 .phd-mf-options::-webkit-scrollbar-thumb,
-.phd-tableWrap::-webkit-scrollbar-thumb{
+.phd-modalBody::-webkit-scrollbar-thumb,
+.phd-modalTableWrap::-webkit-scrollbar-thumb{
   background:rgba(15,23,42,.20);
   border-radius:999px;
 }
 
 .phd-chartWrap::-webkit-scrollbar-track,
 .phd-mf-options::-webkit-scrollbar-track,
-.phd-tableWrap::-webkit-scrollbar-track{
+.phd-modalBody::-webkit-scrollbar-track,
+.phd-modalTableWrap::-webkit-scrollbar-track{
   background:rgba(15,23,42,.06);
   border-radius:999px;
 }
@@ -665,8 +720,7 @@
   .phd-month{ grid-column: span 6; }
   .phd-mf{ grid-column: span 6; }
 
-  .phd-filtros-head,
-  .phd-detail-head{
+  .phd-filtros-head{
     flex-direction:column;
     align-items:stretch;
   }
@@ -677,6 +731,20 @@
 
   .phd-chartInner{
     min-width:920px;
+  }
+
+  .phd-modal{
+    width:98vw;
+    height:94vh;
+    border-radius:18px;
+  }
+
+  .phd-modalHeader{
+    padding:16px;
+  }
+
+  .phd-modalBody{
+    padding:14px 14px 16px;
   }
 }
 
@@ -700,5 +768,9 @@
 
   .truncate{
     max-width:280px;
+  }
+
+  .phd-modalTitle{
+    font-size:18px;
   }
 }

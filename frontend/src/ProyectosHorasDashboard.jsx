@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import Modal from "react-modal";
 import {
   BarChart,
   Bar,
@@ -12,6 +13,8 @@ import {
 } from "recharts";
 import { jfetch } from "./lib/api";
 import "./ProyectosHorasDashboard.css";
+
+Modal.setAppElement("#root");
 
 /* =========================
    Helpers
@@ -243,7 +246,7 @@ export default function ProyectosHorasDashboard({
 
   const [detailTitle, setDetailTitle] = useState("");
   const [detailRows, setDetailRows] = useState([]);
-  const [detailVisible, setDetailVisible] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const user = useMemo(() => {
     if (userData) return userData?.user ? userData.user : userData;
@@ -301,7 +304,6 @@ export default function ProyectosHorasDashboard({
   }, [mapeosProyecto, proyectos]);
 
   const projectOfficial = (r) => {
-    // 1) si el registro ya viene amarrado a proyecto
     const codigoDirecto = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
     const nombreDirecto = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
 
@@ -309,7 +311,6 @@ export default function ProyectosHorasDashboard({
       return `${codigoDirecto} - ${nombreDirecto || "SIN NOMBRE"}`;
     }
 
-    // 2) intentar por nroCasoCliente = código del proyecto
     const nroCaso = String(r?.nroCasoCliente || "").trim();
     const nroCasoNorm = normTxt(nroCaso);
 
@@ -318,13 +319,11 @@ export default function ProyectosHorasDashboard({
       return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
     }
 
-    // 3) intentar por mapeo usando nroCasoCliente
     if (nroCasoNorm && mapeoOrigenToProyecto.has(nroCasoNorm)) {
       const p = mapeoOrigenToProyecto.get(nroCasoNorm);
       return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
     }
 
-    // 4) intentar por mapeo usando descripción
     const descripcion = String(r?.descripcion || "").trim();
     const descripcionNorm = normTxt(descripcion);
 
@@ -334,7 +333,7 @@ export default function ProyectosHorasDashboard({
     }
 
     return "SIN PROYECTO";
-};
+  };
 
   const projectDigitado = (r) => {
     const raw = String(r?.nroCasoCliente ?? "").trim();
@@ -395,20 +394,20 @@ export default function ProyectosHorasDashboard({
   }, [registrosOverride, rolUpper, usuario, equipoUser, scope, nombreUser]);
 
   useEffect(() => {
-  const fetchProyectos = async () => {
-    try {
-      const res = await jfetch("/proyectos");
-      const json = await res.json().catch(() => []);
-      if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
-      setProyectos(Array.isArray(json) ? json : []);
-    } catch (e) {
-      console.error("Error cargando proyectos:", e);
-      setProyectos([]);
-    }
-  };
+    const fetchProyectos = async () => {
+      try {
+        const res = await jfetch("/proyectos");
+        const json = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
+        setProyectos(Array.isArray(json) ? json : []);
+      } catch (e) {
+        console.error("Error cargando proyectos:", e);
+        setProyectos([]);
+      }
+    };
 
-  fetchProyectos();
-}, []);
+    fetchProyectos();
+  }, []);
 
   useEffect(() => {
     const fetchMapeos = async () => {
@@ -479,7 +478,7 @@ export default function ProyectosHorasDashboard({
         .map((r) => projectOfficial(r))
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registros, filtroMes, proyectosByCodigo, mapeoOrigenToProyecto]);
 
   const datosFiltrados = useMemo(() => {
     return (registros ?? []).filter((r) => {
@@ -523,6 +522,8 @@ export default function ProyectosHorasDashboard({
     scope,
     usuario,
     equipoUser,
+    proyectosByCodigo,
+    mapeoOrigenToProyecto,
   ]);
 
   const horasPorProyecto = useMemo(
@@ -584,12 +585,7 @@ export default function ProyectosHorasDashboard({
 
     setDetailTitle(`${kind.toUpperCase()}: ${value} — Total: ${subtotal.toFixed(2)} h`);
     setDetailRows(rows);
-    setDetailVisible(true);
-
-    requestAnimationFrame(() => {
-      const node = document.getElementById("phd-detail-section");
-      if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    setDetailOpen(true);
   };
 
   const TOP = 20;
@@ -800,96 +796,94 @@ export default function ProyectosHorasDashboard({
           {renderChartCard("Horas por Tarea", horasPorTarea, "#0EA5E9", "tarea")}
           {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#10B981", "ocupacion")}
         </section>
+      </div>
 
-        <section id="phd-detail-section" className="phd-detail-section">
-          <div className="phd-detail-head">
-            <div>
-              <h3>Detalle</h3>
-              <p>
-                {detailVisible
-                  ? detailTitle
-                  : "Haz clic en cualquier barra para ver el detalle de registros."}
-              </p>
+      <Modal
+        isOpen={detailOpen}
+        onRequestClose={() => setDetailOpen(false)}
+        className="phd-modal"
+        overlayClassName="phd-modalOverlay"
+        contentLabel="Detalle de horas por proyecto"
+        shouldCloseOnOverlayClick
+        ariaHideApp={false}
+      >
+        <div className="phd-modalHeader">
+          <div>
+            <h3 className="phd-modalTitle">{detailTitle || "Detalle"}</h3>
+            <div className="phd-modalSub">
+              Filas: <b>{detailRows.length}</b> · Total:{" "}
+              <b>{detailRows.reduce((s, r) => s + toNum(r.tiempoInvertido), 0).toFixed(2)} h</b>
             </div>
-
-            {detailVisible && (
-              <button
-                className="phd-btn phd-btn-light"
-                onClick={() => {
-                  setDetailVisible(false);
-                  setDetailRows([]);
-                  setDetailTitle("");
-                }}
-              >
-                Cerrar detalle
-              </button>
-            )}
           </div>
 
-          {!detailVisible ? (
-            <div className="phd-empty phd-empty-lg">
-              Selecciona una barra en cualquiera de las gráficas para cargar el detalle aquí.
-            </div>
-          ) : (
-            <>
-              <div className="phd-detail-meta">
-                Filas: <b>{detailRows.length}</b> · Total:{" "}
-                <b>{detailRows.reduce((s, r) => s + toNum(r.tiempoInvertido), 0).toFixed(2)} h</b>
-              </div>
+          <button
+            className="phd-modalClose"
+            onClick={() => setDetailOpen(false)}
+            aria-label="Cerrar"
+          >
+            ✖
+          </button>
+        </div>
 
-              <div className="phd-tableWrap">
-                <table className="phd-table">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Fecha</th>
-                      <th>Consultor</th>
-                      <th>Cliente</th>
-                      <th>Proyecto (OFICIAL)</th>
-                      <th>Proyecto (Digitado)</th>
-                      <th>Módulo</th>
-                      <th>Ocupación</th>
-                      <th>Tarea</th>
-                      <th className="num">Horas</th>
-                      <th>Descripción</th>
+        <div className="phd-modalBody">
+          {detailRows.length === 0 ? (
+            <div className="phd-empty phd-empty-lg">Sin filas para mostrar.</div>
+          ) : (
+            <div className="phd-modalTableWrap">
+              <table className="phd-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Fecha</th>
+                    <th>Consultor</th>
+                    <th>Cliente</th>
+                    <th>Proyecto (OFICIAL)</th>
+                    <th>Proyecto (Digitado)</th>
+                    <th>Módulo</th>
+                    <th>Ocupación</th>
+                    <th>Tarea</th>
+                    <th className="num">Horas</th>
+                    <th>Descripción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detailRows.map((r, i) => (
+                    <tr key={i}>
+                      <td className="num">{r.id ?? "—"}</td>
+                      <td>{r.fecha}</td>
+                      <td className="truncate" title={r.consultor}>
+                        {r.consultor}
+                      </td>
+                      <td className="truncate" title={r.cliente}>
+                        {r.cliente}
+                      </td>
+                      <td className="truncate" title={projectOfficial(r)}>
+                        {projectOfficial(r)}
+                      </td>
+                      <td className="truncate" title={projectDigitado(r) || ""}>
+                        {projectDigitado(r) || "—"}
+                      </td>
+                      <td className="truncate" title={r.modulo}>
+                        {r.modulo}
+                      </td>
+                      <td className="truncate" title={r.ocupacion_nombre || ""}>
+                        {r.ocupacion_nombre || "SIN OCUPACIÓN"}
+                      </td>
+                      <td className="truncate" title={r.tipoTarea || ""}>
+                        {r.tipoTarea || "—"}
+                      </td>
+                      <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
+                      <td className="truncate" title={r.descripcion || ""}>
+                        {r.descripcion || ""}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {detailRows.map((r, i) => (
-                      <tr key={i}>
-                        <td className="num">{r.id ?? "—"}</td>
-                        <td>{r.fecha}</td>
-                        <td className="truncate" title={r.consultor}>{r.consultor}</td>
-                        <td className="truncate" title={r.cliente}>{r.cliente}</td>
-                        <td className="truncate" title={projectOfficial(r)}>{projectOfficial(r)}</td>
-                        <td className="truncate" title={projectDigitado(r) || ""}>
-                          {projectDigitado(r) || "—"}
-                        </td>
-                        <td className="truncate" title={r.modulo}>{r.modulo}</td>
-                        <td className="truncate" title={r.ocupacion_nombre || ""}>
-                          {r.ocupacion_nombre || "SIN OCUPACIÓN"}
-                        </td>
-                        <td className="truncate" title={r.tipoTarea || ""}>
-                          {r.tipoTarea || "—"}
-                        </td>
-                        <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
-                        <td className="truncate" title={r.descripcion || ""}>
-                          {r.descripcion || ""}
-                        </td>
-                      </tr>
-                    ))}
-                    {detailRows.length === 0 && (
-                      <tr>
-                        <td colSpan={11} className="phd-empty">Sin filas.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-        </section>
-      </div>
+        </div>
+      </Modal>
     </div>
   );
 }
