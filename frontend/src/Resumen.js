@@ -3,7 +3,7 @@ import "./ResumenHoras.css";
 import { jfetch } from "./lib/api";
 import { EXCEPCION_8H_USERS } from "./lib/visibility";
 
-const API_PATH = "/registros";
+const API_PATH = "/resumen-calendario";
 
 function extraerYMD(fechaStr) {
   if (!fechaStr) return null;
@@ -40,6 +40,13 @@ function normalizarNombreParaOrden(txt) {
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
+}
+
+function getMonthRange(year, month) {
+  const desde = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const hasta = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return { desde, hasta };
 }
 
 export default function Resumen({
@@ -117,13 +124,19 @@ export default function Resumen({
     return String(filtroEquipo || "").trim().toUpperCase();
   }, [isAdminEquipo, miEquipo, filtroEquipo]);
 
-  const fetchResumen = useCallback(async ({ rolActual, usuario, equipo }) => {
+  const fetchResumen = useCallback(async ({ rolActual, usuario, equipo, mesRef }) => {
     if (!usuario) return;
 
     try {
+      const fechaBase = mesRef instanceof Date ? mesRef : new Date();
+      const year = fechaBase.getFullYear();
+      const month = fechaBase.getMonth() + 1;
+      const { desde, hasta } = getMonthRange(year, month);
+
       const params = new URLSearchParams();
-      params.set("usuario", usuario);
       params.set("ts", Date.now().toString());
+      params.set("desde", desde);
+      params.set("hasta", hasta);
 
       const eq = equipoUpper(equipo);
       if (eq) params.set("equipo", eq);
@@ -143,51 +156,33 @@ export default function Resumen({
 
       const rows = Array.isArray(data) ? data : [];
 
-      const agrupado = Object.values(
-        rows.reduce((acc, r) => {
-          const usuarioKey = String(r.usuario_consultor || "").trim().toLowerCase();
-          const key = usuarioKey || String(r.consultor_id ?? r.consultor ?? "NA");
+      const agrupado = rows.map((c) => {
+        const registros = Array.isArray(c.registros) ? c.registros : [];
 
-          if (!acc[key]) {
-            acc[key] = {
-              consultor: r.consultor || r.nombre || usuarioKey || "—",
-              consultor_id: r.consultor_id ?? null,
-              usuario_consultor: usuarioKey || null,
-              _byDay: new Map(),
+        const registrosNormalizados = registros
+          .map((r) => {
+            const fechaNorm = normalizarFecha(r.fecha);
+            const fechaKey = fechaNorm ? keyYMDFromDate(fechaNorm) : extraerYMD(r.fecha);
+            return {
+              ...r,
+              fechaNorm,
+              fechaKey,
+              total_horas: Number(r.total_horas || 0) || 0,
             };
-          }
+          })
+          .filter((r) => !!r.fechaKey)
+          .sort((a, b) => {
+            const da = a.fechaNorm?.getTime?.() ?? 0;
+            const db = b.fechaNorm?.getTime?.() ?? 0;
+            return da - db;
+          });
 
-          const fechaNorm = normalizarFecha(r.fecha);
-          const fechaKey = fechaNorm ? keyYMDFromDate(fechaNorm) : extraerYMD(r.fecha);
-          if (!fechaKey) return acc;
-
-          const horas = Number(r.total_horas ?? r.totalHoras ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.totalHoras ?? r.total_horas ?? r.total_horas ?? r.totalHoras ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.totalHoras ?? r.total_horas ?? r.total_horas ?? r.totalHoras ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? r.total_horas ?? r.totalHoras ?? 0) || 0;
-
-          const prev = acc[key]._byDay.get(fechaKey) || {
-            fecha: r.fecha,
-            fechaNorm,
-            fechaKey,
-            total_horas: 0,
-            estado: r.estado,
-          };
-
-          prev.total_horas += horas;
-
-          if (r.estado && !prev.estado) prev.estado = r.estado;
-          if (!prev.fechaNorm && fechaNorm) prev.fechaNorm = fechaNorm;
-
-          acc[key]._byDay.set(fechaKey, prev);
-
-          return acc;
-        }, {})
-      ).map((c) => {
-        c.registros = Array.from(c._byDay.values()).sort((a, b) => {
-          const da = a.fechaNorm?.getTime?.() ?? 0;
-          const db = b.fechaNorm?.getTime?.() ?? 0;
-          return da - db;
-        });
-        delete c._byDay;
-        return c;
+        return {
+          consultor: c.consultor || c.usuario_consultor || "—",
+          consultor_id: c.consultor_id ?? null,
+          usuario_consultor: String(c.usuario_consultor || "").trim().toLowerCase() || null,
+          registros: registrosNormalizados,
+        };
       });
 
       setResumen(agrupado);
@@ -204,8 +199,9 @@ export default function Resumen({
       rolActual: rol,
       usuario: usuarioActual,
       equipo: equipoLocked,
+      mesRef: mesGlobal,
     });
-  }, [rol, usuarioActual, equipoLocked, fetchResumen]);
+  }, [rol, usuarioActual, equipoLocked, mesGlobal, fetchResumen]);
 
   useEffect(() => {
     if (!usuarioActual) return;
@@ -217,11 +213,12 @@ export default function Resumen({
         rolActual: rol,
         usuario: usuarioActual,
         equipo: equipoLocked,
+        mesRef: mesGlobal,
       });
     }, intervalMs);
 
     return () => clearInterval(id);
-  }, [rol, usuarioActual, equipoLocked, fetchResumen]);
+  }, [rol, usuarioActual, equipoLocked, mesGlobal, fetchResumen]);
 
   useEffect(() => {
     const onRefresh = () => {
@@ -230,12 +227,13 @@ export default function Resumen({
         rolActual: rol,
         usuario: usuarioActual,
         equipo: equipoLocked,
+        mesRef: mesGlobal,
       });
     };
 
     window.addEventListener("resumen-actualizar", onRefresh);
     return () => window.removeEventListener("resumen-actualizar", onRefresh);
-  }, [rol, usuarioActual, equipoLocked, fetchResumen]);
+  }, [rol, usuarioActual, equipoLocked, mesGlobal, fetchResumen]);
 
   const datosVisibles = useMemo(() => {
     const copy = Array.isArray(resumen) ? [...resumen] : [];
@@ -262,7 +260,7 @@ export default function Resumen({
         String(usuarioActual || "").toLowerCase()
     );
 
-    return me ? [me] : [datosVisibles[0]];
+    return me ? [me] : [];
   }, [isConsultor, datosVisibles, usuarioActual]);
 
   const CalendarioConsultor = ({ consultor }) => {

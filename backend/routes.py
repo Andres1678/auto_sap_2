@@ -4036,6 +4036,148 @@ def horarios_permitidos():
         "horarios": horarios
     }), 200
 
+@bp.route('/registros/filtros', methods=['GET'])
+def registros_filtros():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({'error': 'Usuario no enviado'}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+        if not consultor_login:
+            return jsonify({'error': 'Consultor no encontrado'}), 404
+
+        scope, val = scope_for(consultor_login, rol_req)
+
+        C = aliased(Consultor)
+        E = aliased(Equipo)
+
+        base = (
+            db.session.query(
+                Registro.id,
+                Registro.cliente,
+                C.nombre.label("consultor"),
+                E.nombre.label("equipo")
+            )
+            .select_from(Registro)
+            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .outerjoin(E, C.equipo_id == E.id)
+        )
+
+        if scope == "SELF":
+            base = base.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+        elif scope == "TEAM":
+            if not int(val or 0):
+                return jsonify({'error': 'Consultor sin equipo asignado'}), 403
+            base = base.filter(C.equipo_id == int(val))
+
+        rows = base.all()
+
+        consultores = sorted({str(r.consultor).strip() for r in rows if r.consultor})
+        clientes = sorted({str(r.cliente).strip() for r in rows if r.cliente})
+        equipos = sorted({str(r.equipo).strip().upper() for r in rows if r.equipo})
+
+        return jsonify({
+            "consultores": consultores,
+            "clientes": clientes,
+            "equipos": equipos,
+            "total": len(rows)
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("❌ Error en /registros/filtros")
+        return jsonify({'error': str(e)}), 500
+    
+@bp.route('/registros/conteos', methods=['GET'])
+def registros_conteos():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({'error': 'Usuario no enviado'}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+        if not consultor_login:
+            return jsonify({'error': 'Consultor no encontrado'}), 404
+
+        scope, val = scope_for(consultor_login, rol_req)
+
+        C = aliased(Consultor)
+        E = aliased(Equipo)
+
+        q = (
+            db.session.query(
+                E.nombre.label("equipo"),
+                func.count(Registro.id).label("count")
+            )
+            .select_from(Registro)
+            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .outerjoin(E, C.equipo_id == E.id)
+        )
+
+        if scope == "SELF":
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+        elif scope == "TEAM":
+            if not int(val or 0):
+                return jsonify({'error': 'Consultor sin equipo asignado'}), 403
+            q = q.filter(C.equipo_id == int(val))
+
+        rows = q.group_by(E.nombre).all()
+
+        total_q = (
+            db.session.query(func.count(Registro.id))
+            .select_from(Registro)
+            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+        )
+
+        if scope == "SELF":
+            total_q = total_q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+        elif scope == "TEAM":
+            total_q = total_q.filter(C.equipo_id == int(val))
+
+        total = int(total_q.scalar() or 0)
+
+        equipos = [
+            {
+                "equipo": (r.equipo or "SIN EQUIPO").strip().upper(),
+                "count": int(r.count or 0)
+            }
+            for r in rows
+        ]
+        equipos.sort(key=lambda x: x["equipo"])
+
+        return jsonify({
+            "total": total,
+            "equipos": equipos
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("❌ Error en /registros/conteos")
+        return jsonify({'error': str(e)}), 500
+    
+
+
 @bp.route("/resumen-calendario", methods=["GET"])
 def resumen_calendario():
     try:

@@ -136,15 +136,6 @@ const getModulosLocal = (u) => {
   return single ? normalizeModulos([single]) : [];
 };
 
-const normSiNo = (val) => {
-  if (val === null || val === undefined) return 'N/D';
-  const s = String(val).trim().toLowerCase()
-    .normalize('NFD').replace(/\p{Diacritic}/gu, '');
-  if (['si', 'sí', 's', 'true', '1'].includes(s)) return 'SI';
-  if (['no', 'n', 'false', '0'].includes(s)) return 'NO';
-  return 'N/D';
-};
-
 const pad2 = (n) => String(n).padStart(2, "0");
 const toISODate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
@@ -401,6 +392,8 @@ const Registro = ({ userData }) => {
   const [todasTareas, setTodasTareas] = useState([]);
   const [ocupacionSeleccionada, setOcupacionSeleccionada] = useState('');
   const [equiposDisponibles, setEquiposDisponibles] = useState([]);
+  const [consultoresGlobales, setConsultoresGlobales] = useState([]);
+  const [equiposConConteo, setEquiposConConteo] = useState([{ key: '', label: 'Todos', count: 0 }]);
 
   const filtroNroCasoCliDeb = useDebouncedValue(filtroNroCasoCli, 300);
   const filtroIdDeb = useDebouncedValue(filtroId, 250);
@@ -443,7 +436,6 @@ const Registro = ({ userData }) => {
   const proyectosFiltradosPorCliente = useMemo(() => {
     const clienteSel = String(registro?.cliente || "").trim();
     if (!clienteSel) return [];
-
     const key = normText(clienteSel);
 
     return (proyectos || []).filter((p) => {
@@ -565,7 +557,6 @@ const Registro = ({ userData }) => {
           setClientes(Array.isArray(parsed?.clientes) ? parsed.clientes : []);
           setOcupaciones(Array.isArray(parsed?.ocupaciones) ? parsed.ocupaciones : []);
           setTodasTareas(Array.isArray(parsed?.tareas) ? parsed.tareas : []);
-          return;
         }
 
         const [eqRes, cliRes, ocuRes] = await Promise.all([
@@ -585,7 +576,6 @@ const Registro = ({ userData }) => {
         if (!ocuRes.ok) throw new Error(ocuData?.mensaje || `HTTP ${ocuRes.status}`);
 
         const ocus = Array.isArray(ocuData) ? ocuData : [];
-
         const map = new Map();
         ocus.forEach(o => (o.tareas || []).forEach(t => {
           if (t && !map.has(t.id)) map.set(t.id, t);
@@ -612,6 +602,58 @@ const Registro = ({ userData }) => {
     };
     fetchCatalogos();
   }, []);
+
+  const fetchFiltrosGlobales = useCallback(async () => {
+    try {
+      const res = await jfetch('/registros/filtros', {
+        headers: {
+          "X-User-Usuario": usuarioLogin,
+          "X-User-Rol": rol,
+          "X-User-Equipo": String(equipoUser || ""),
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
+
+      setConsultoresGlobales(Array.isArray(data?.consultores) ? data.consultores : []);
+    } catch (e) {
+      console.error("Error cargando filtros globales:", e);
+      setConsultoresGlobales([]);
+    }
+  }, [usuarioLogin, rol, equipoUser]);
+
+  const fetchConteosGlobales = useCallback(async () => {
+    try {
+      const res = await jfetch('/registros/conteos', {
+        headers: {
+          "X-User-Usuario": usuarioLogin,
+          "X-User-Rol": rol,
+          "X-User-Equipo": String(equipoUser || ""),
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
+
+      const total = Number(data?.total || 0);
+      const equipos = Array.isArray(data?.equipos) ? data.equipos : [];
+
+      const mapped = [
+        { key: '', label: 'Todos', count: total },
+        ...equipos.map((x) => ({
+          key: normKey(x.equipo),
+          label: String(x.equipo || "SIN EQUIPO"),
+          count: Number(x.count || 0),
+        })),
+      ];
+
+      setEquiposConConteo(mapped);
+    } catch (e) {
+      console.error("Error cargando conteos globales:", e);
+      setEquiposConConteo([{ key: '', label: 'Todos', count: 0 }]);
+    }
+  }, [usuarioLogin, rol, equipoUser]);
 
   const fetchRegistros = useCallback(async () => {
     setError("");
@@ -725,8 +767,11 @@ const Registro = ({ userData }) => {
   useEffect(() => {
     const hasId = (userData && (userData.id || userData?.user?.id));
     if (!hasId || !usuarioLogin) return;
+
     fetchRegistros();
-  }, [userData, usuarioLogin, fetchRegistros]);
+    fetchFiltrosGlobales();
+    fetchConteosGlobales();
+  }, [userData, usuarioLogin, fetchRegistros, fetchFiltrosGlobales, fetchConteosGlobales]);
 
   const resolveModulosForEdit = useCallback((reg) => {
     const fromRegistro = reg?.modulo ? [reg.modulo] : [];
@@ -734,23 +779,6 @@ const Registro = ({ userData }) => {
     const fromUser = getModulosLocal(userData);
     return uniq([...fromRegistro, ...fromState, ...fromUser]);
   }, [modulos, userData]);
-
-  const consultoresUnicos = useMemo(() =>
-    Array.isArray(registros)
-      ? [...new Set(registros.map(r => r?.consultor).filter(Boolean))]
-      : []
-  , [registros]);
-
-  const equiposConConteo = useMemo(() => {
-    const map = new Map();
-    (registros || []).forEach(r => {
-      const k = equipoOf(r);
-      map.set(k, (map.get(k) || 0) + 1);
-    });
-    const total = totalRegistros || (registros || []).length;
-    const arr = Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-    return [{ key: '', label: 'Todos', count: total }, ...arr.map(([k, c]) => ({ key: k, label: k, count: c }))];
-  }, [registros, totalRegistros]);
 
   const ocupacionLabelByTareaId = useMemo(() => {
     const map = new Map();
@@ -1057,6 +1085,8 @@ const Registro = ({ userData }) => {
 
       window.dispatchEvent(new Event("resumen-actualizar"));
       fetchRegistros();
+      fetchFiltrosGlobales();
+      fetchConteosGlobales();
       closeModal();
     } catch (e) {
       Swal.fire({ icon: "error", title: String(e.message || e) });
@@ -1188,6 +1218,8 @@ const Registro = ({ userData }) => {
 
       Swal.fire({ icon: 'success', title: 'Eliminado' });
       fetchRegistros();
+      fetchFiltrosGlobales();
+      fetchConteosGlobales();
       window.dispatchEvent(new Event("resumen-actualizar"));
     }
   };
@@ -1292,6 +1324,7 @@ const Registro = ({ userData }) => {
       });
       if (!resp.ok) throw new Error((await resp.json().catch(() => ({})))?.mensaje || `HTTP ${resp.status}`);
       fetchRegistros();
+      fetchConteosGlobales();
     } catch {}
   };
 
@@ -1314,23 +1347,90 @@ const Registro = ({ userData }) => {
     { value: "12", label: "Diciembre" },
   ];
 
-  const handleExport = () => {
-    const visible = registrosFiltrados?.allRows || [];
-    exportRegistrosExcelXLSX_ALL(
-      visible,
-      `registros_${new Date().toISOString().slice(0, 10)}.xlsx`,
-      {
-        'Consultor filtro': filtroConsultor || 'Todos',
-        'Tarea filtro': filtroTarea || 'Todas',
-        'Cliente filtro': filtroCliente || 'Todos',
-        'Equipo filtro': filtroEquipo || 'Todos',
-        'Nro Caso Cliente filtro': filtroNroCasoCli || 'Todos',
-        'Horas Adicionales filtro': filtroHorasAdic || 'Todas',
-        'Fecha filtro': filtroFecha || 'Todas',
-        'Página': page,
-        'Generado': new Date().toLocaleString()
-      }
-    );
+  const buildCurrentFilterParams = useCallback(() => {
+    const params = new URLSearchParams();
+
+    if (equipoLocked) params.set("equipo", equipoLocked);
+    if (filtroMes) params.set("mes", filtroMes);
+    if (filtroAnio) params.set("anio", filtroAnio);
+    if (filtroConsultor) params.set("consultor", filtroConsultor);
+    if (filtroCliente) params.set("cliente", filtroCliente);
+    if (filtroFecha) params.set("fecha", filtroFecha);
+    if (filtroIdDeb) params.set("id", filtroIdDeb);
+    if (filtroNroCasoCliDeb) params.set("nroCasoCliente", filtroNroCasoCliDeb);
+    if (filtroHorasAdic) params.set("horasAdicionales", filtroHorasAdic);
+
+    if (filtroTarea) {
+      const tareaObj = (todasTareas || []).find(
+        t => `${t.codigo} - ${t.nombre}` === filtroTarea
+      );
+      if (tareaObj?.id) params.set("tarea_id", tareaObj.id);
+    }
+
+    if (filtroOcupacion) {
+      const occObj = (ocupaciones || []).find(
+        o => `${o.codigo} - ${o.nombre}` === filtroOcupacion
+      );
+      if (occObj?.id) params.set("ocupacion_id", occObj.id);
+    }
+
+    return params;
+  }, [
+    equipoLocked,
+    filtroMes,
+    filtroAnio,
+    filtroConsultor,
+    filtroCliente,
+    filtroFecha,
+    filtroIdDeb,
+    filtroNroCasoCliDeb,
+    filtroHorasAdic,
+    filtroTarea,
+    filtroOcupacion,
+    todasTareas,
+    ocupaciones,
+  ]);
+
+  const handleExport = async () => {
+    try {
+      const params = buildCurrentFilterParams();
+      const res = await jfetch(`/registros/export?${params.toString()}`, {
+        headers: {
+          "X-User-Usuario": usuarioLogin,
+          "X-User-Rol": rol,
+          "X-User-Equipo": String(equipoUser || ""),
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
+
+      const rows = Array.isArray(data?.data) ? data.data : [];
+
+      exportRegistrosExcelXLSX_ALL(
+        rows,
+        `registros_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        {
+          'Consultor filtro': filtroConsultor || 'Todos',
+          'Tarea filtro': filtroTarea || 'Todas',
+          'Cliente filtro': filtroCliente || 'Todos',
+          'Equipo filtro': filtroEquipo || 'Todos',
+          'Nro Caso Cliente filtro': filtroNroCasoCli || 'Todos',
+          'Horas Adicionales filtro': filtroHorasAdic || 'Todas',
+          'Fecha filtro': filtroFecha || 'Todas',
+          'Mes filtro': filtroMes || 'Todos',
+          'Año filtro': filtroAnio || 'Todos',
+          'Total exportado': rows.length,
+          'Generado': new Date().toLocaleString()
+        }
+      );
+    } catch (e) {
+      Swal.fire({
+        icon: "error",
+        title: "Error exportando",
+        text: String(e.message || e),
+      });
+    }
   };
 
   useEffect(() => {
@@ -1390,6 +1490,9 @@ const Registro = ({ userData }) => {
         text: `Registros cargados: ${data?.total_registros ?? "N/D"}`
       });
 
+      fetchRegistros();
+      fetchFiltrosGlobales();
+      fetchConteosGlobales();
     } catch (e) {
       Swal.fire({
         icon: "error",
@@ -1534,7 +1637,10 @@ const Registro = ({ userData }) => {
                   key={opt.key || "ALL"}
                   type="button"
                   className={`team-btn ${filtroEquipo === opt.key ? "is-active" : ""}`}
-                  onClick={() => setFiltroEquipo(normKey(opt.key))}
+                  onClick={() => {
+                    setFiltroEquipo(normKey(opt.key));
+                    setPage(1);
+                  }}
                 >
                   {opt.label}
                   <span className="chip">{opt.count}</span>
@@ -1629,7 +1735,7 @@ const Registro = ({ userData }) => {
               <option value="">
                 {isAdmin ? 'Todos los consultores' : (nombreUser || 'Consultor')}
               </option>
-              {consultoresUnicos.map((c, idx) => (
+              {consultoresGlobales.map((c, idx) => (
                 <option key={idx} value={c}>{c}</option>
               ))}
             </select>
