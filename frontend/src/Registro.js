@@ -32,7 +32,7 @@ function initRegistro() {
     proyecto_codigo: '',
     proyecto_nombre: '',
     proyecto_fase: '',
-    fase_proyecto_id: '', 
+    fase_proyecto_id: '',
   };
 }
 
@@ -357,7 +357,6 @@ const Registro = ({ userData }) => {
     if (v !== undefined) setConsultorActivo(isActiveValue(v));
   }, [userData]);
 
-  
   useEffect(() => {
     const pendingId = pendingEditTareaIdRef.current;
 
@@ -376,17 +375,15 @@ const Registro = ({ userData }) => {
     pendingEditTareaIdRef.current = null;
   }, [tareasBD]);
 
-
   const isProyectoMode = useMemo(() => {
     const occ = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
-    return occ === "02"; 
+    return occ === "02";
   }, [ocupacionSeleccionada, ocupaciones]);
 
-  
   const forceProyectoMode = useMemo(() => {
     return !!String(registro?.proyecto_id || "").trim();
   }, [registro?.proyecto_id]);
-  
+
   const showProyectoUI = isProyectoMode || forceProyectoMode;
 
   const proyectosFiltradosPorCliente = useMemo(() => {
@@ -397,7 +394,7 @@ const Registro = ({ userData }) => {
 
     return (proyectos || []).filter((p) => {
       const cName = proyectoClienteNombre(p);
-      if (!cName) return false; 
+      if (!cName) return false;
       return normText(cName) === key;
     });
   }, [proyectos, registro?.cliente]);
@@ -432,7 +429,6 @@ const Registro = ({ userData }) => {
     loadingProyectos
   ]);
 
-  
   useEffect(() => {
     const prev = prevIsProyectoModeRef.current;
     prevIsProyectoModeRef.current = showProyectoUI;
@@ -1417,631 +1413,633 @@ const Registro = ({ userData }) => {
   }, [isBASISTable, isAdmin]);
 
   return (
-    <div className="container">
-      <div className="page-head">
-        <div className="page-title">
-          <h2>Registro de Horas</h2>
-          <p className="subtitle">
-            Filtra por fecha, cliente, tarea, consultor, equipo, Nro. de caso y horas adicionales
-          </p>
-        </div>
-        <div className="page-actions">
-          {canDownload && (
-            <button
-              className="btn btn-outline"
-              onClick={handleExport}
-              title="Descargar Excel"
-            >
-              Descargar Excel
-            </button>
-          )}
-
-          {canImportExcel && (
-            <>
-              <input
-                ref={excelInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="excel-input"
-              />
-
+    <div className="registro-page-scope">
+      <div className="container">
+        <div className="page-head">
+          <div className="page-title">
+            <h2>Registro de Horas</h2>
+            <p className="subtitle">
+              Filtra por fecha, cliente, tarea, consultor, equipo, Nro. de caso y horas adicionales
+            </p>
+          </div>
+          <div className="page-actions">
+            {canDownload && (
               <button
-                type="button"
                 className="btn btn-outline"
-                onClick={handleImportExcel}
-                disabled={importingExcel}
+                onClick={handleExport}
+                title="Descargar Excel"
               >
-                {importingExcel ? "Importando…" : "Importar Excel"}
+                Descargar Excel
               </button>
-            </>
-          )}
+            )}
 
-          <button
-            className="btn btn-primary"
-            onClick={handleAbrirModalRegistro}
-            disabled={!isAdmin && !consultorActivo}
-            title={!isAdmin && !consultorActivo ? "Usuario inactivo" : "Agregar Registro"}
-          >
-            Agregar Registro
-          </button>
-        </div>
-      </div>
+            {canImportExcel && (
+              <>
+                <input
+                  ref={excelInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="excel-input"
+                />
 
-      {isAdminGlobal && (
-        <div className="team-filter-row">
-          <span className="team-filter-label">Equipo:</span>
-          <div className="team-toggle">
-            {equiposConConteo.map((opt) => (
-              <button
-                key={opt.key || "ALL"}
-                className={`team-btn ${filtroEquipo === opt.key ? "is-active" : ""}`}
-                onClick={() => setFiltroEquipo(normKey(opt.key))}
-              >
-                {opt.label}
-                <span className="chip">{opt.count}</span>
-              </button>
-            ))}
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={handleImportExcel}
+                  disabled={importingExcel}
+                >
+                  {importingExcel ? "Importando…" : "Importar Excel"}
+                </button>
+              </>
+            )}
+
+            <button
+              className="btn btn-primary"
+              onClick={handleAbrirModalRegistro}
+              disabled={!isAdmin && !consultorActivo}
+              title={!isAdmin && !consultorActivo ? "Usuario inactivo" : "Agregar Registro"}
+            >
+              Agregar Registro
+            </button>
           </div>
         </div>
-      )}
 
-      <div className="filters-card">
-        <div className="filter-grid">
-          <input
-            type="text"
-            value={filtroId}
-            onChange={(e) => setFiltroId(e.target.value)}
-            placeholder="ID..."
-          />
+        {isAdminGlobal && (
+          <div className="team-filter-row">
+            <span className="team-filter-label">Equipo:</span>
+            <div className="team-toggle">
+              {equiposConConteo.map((opt) => (
+                <button
+                  key={opt.key || "ALL"}
+                  className={`team-btn ${filtroEquipo === opt.key ? "is-active" : ""}`}
+                  onClick={() => setFiltroEquipo(normKey(opt.key))}
+                >
+                  {opt.label}
+                  <span className="chip">{opt.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-          <input
-            type="date"
-            value={filtroFecha}
-            onChange={(e) => setFiltroFecha(e.target.value)}
-          />
+        <div className="filters-card">
+          <div className="filter-grid">
+            <input
+              type="text"
+              value={filtroId}
+              onChange={(e) => setFiltroId(e.target.value)}
+              placeholder="ID..."
+            />
 
-          <select
-            value={filtroCliente}
-            onChange={(e) => setFiltroCliente(e.target.value)}
-          >
-            <option value="">Todos los clientes</option>
-            {clientes.map((c) => (
-              <option key={c.id} value={c.nombre_cliente}>
-                {c.nombre_cliente}
-              </option>
-            ))}
-          </select>
+            <input
+              type="date"
+              value={filtroFecha}
+              onChange={(e) => setFiltroFecha(e.target.value)}
+            />
 
-          <select
-            value={filtroOcupacion}
-            onChange={(e) => setFiltroOcupacion(e.target.value)}
-          >
-            <option value="">Todas las ocupaciones</option>
-            {ocupaciones.map((o) => (
-              <option key={o.id} value={`${o.codigo} - ${o.nombre}`}>
-                {o.codigo} - {o.nombre}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={filtroTarea}
-            onChange={(e) => setFiltroTarea(e.target.value)}
-          >
-            <option value="">Todas las tareas</option>
-            {todasTareas.map((t) => (
-              <option key={t.id} value={`${t.codigo} - ${t.nombre}`}>
-                {t.codigo} - {t.nombre}
-              </option>
-            ))}
-          </select>
-
-          {isAdminGlobal ? (
             <select
-              value={filtroEquipo}
-              onChange={(e) => setFiltroEquipo(normKey(e.target.value))}
+              value={filtroCliente}
+              onChange={(e) => setFiltroCliente(e.target.value)}
             >
-              <option value="">Todos los equipos</option>
-              {equiposDisponibles.map((eq) => (
-                <option key={eq.id} value={eq.nombre}>
-                  {eq.nombre}
+              <option value="">Todos los clientes</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.nombre_cliente}>
+                  {c.nombre_cliente}
                 </option>
               ))}
             </select>
-          ) : (
+
+            <select
+              value={filtroOcupacion}
+              onChange={(e) => setFiltroOcupacion(e.target.value)}
+            >
+              <option value="">Todas las ocupaciones</option>
+              {ocupaciones.map((o) => (
+                <option key={o.id} value={`${o.codigo} - ${o.nombre}`}>
+                  {o.codigo} - {o.nombre}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={filtroTarea}
+              onChange={(e) => setFiltroTarea(e.target.value)}
+            >
+              <option value="">Todas las tareas</option>
+              {todasTareas.map((t) => (
+                <option key={t.id} value={`${t.codigo} - ${t.nombre}`}>
+                  {t.codigo} - {t.nombre}
+                </option>
+              ))}
+            </select>
+
+            {isAdminGlobal ? (
+              <select
+                value={filtroEquipo}
+                onChange={(e) => setFiltroEquipo(normKey(e.target.value))}
+              >
+                <option value="">Todos los equipos</option>
+                {equiposDisponibles.map((eq) => (
+                  <option key={eq.id} value={eq.nombre}>
+                    {eq.nombre}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={equipoUser}
+                readOnly
+                placeholder="Equipo"
+              />
+            )}
+
+            <select
+              value={filtroConsultor}
+              onChange={(e) => setFiltroConsultor(e.target.value)}
+              disabled={!isAdmin}
+            >
+              <option value="">
+                {isAdmin ? 'Todos los consultores' : (nombreUser || 'Consultor')}
+              </option>
+              {consultoresUnicos.map((c, idx) => (
+                <option key={idx} value={c}>{c}</option>
+              ))}
+            </select>
+
             <input
               type="text"
-              value={equipoUser}
-              readOnly
-              placeholder="Equipo"
+              placeholder="Nro. Caso Cliente..."
+              value={filtroNroCasoCli}
+              onChange={(e) => setFiltroNroCasoCli(e.target.value)}
             />
-          )}
 
-          <select
-            value={filtroConsultor}
-            onChange={(e) => setFiltroConsultor(e.target.value)}
-            disabled={!isAdmin}
-          >
-            <option value="">
-              {isAdmin ? 'Todos los consultores' : (nombreUser || 'Consultor')}
-            </option>
-            {consultoresUnicos.map((c, idx) => (
-              <option key={idx} value={c}>{c}</option>
-            ))}
-          </select>
+            <select
+              value={filtroHorasAdic}
+              onChange={(e) => setFiltroHorasAdic(e.target.value)}
+            >
+              <option value="">Horas Adicionales (todas)</option>
+              <option value="SI">Sí</option>
+              <option value="NO">No</option>
+            </select>
 
-          <input
-            type="text"
-            placeholder="Nro. Caso Cliente..."
-            value={filtroNroCasoCli}
-            onChange={(e) => setFiltroNroCasoCli(e.target.value)}
-          />
+            <select value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}>
+              <option value="">Todos los meses</option>
+              {MESES.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
 
-          <select
-            value={filtroHorasAdic}
-            onChange={(e) => setFiltroHorasAdic(e.target.value)}
-          >
-            <option value="">Horas Adicionales (todas)</option>
-            <option value="SI">Sí</option>
-            <option value="NO">No</option>
-          </select>
-
-          <select value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}>
-            <option value="">Todos los meses</option>
-            {MESES.map(m => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-
-          <input
-            type="number"
-            placeholder="Año (ej: 2026)"
-            value={filtroAnio}
-            onChange={(e) => setFiltroAnio(e.target.value)}
-            min="2000"
-            max="2100"
-          />
-        </div>
-
-        <div className="filter-actions">
-          <button
-            className="btn btn-outline"
-            onClick={() => {
-              setFiltroId('');
-              setFiltroFecha('');
-              setFiltroCliente('');
-              setFiltroTarea('');
-              setFiltroOcupacion('');
-              setFiltroNroCasoCli('');
-              setFiltroHorasAdic('');
-              if (isAdmin) {
-                setFiltroConsultor('');
-                setFiltroEquipo('');
-              } else {
-                setFiltroConsultor(nombreUser);
-                setFiltroEquipo(normKey(equipoUser));
-              }
-            }}
-          >
-            Limpiar
-          </button>
-        </div>
-      </div>
-
-      <Modal
-        isOpen={modalIsOpen}
-        onRequestClose={closeModal}
-        className="modal-content"
-        overlayClassName="modal-overlay"
-        contentLabel="Registro"
-      >
-        <div>
-          <div className="modal-header">
-            <h3 className="modal-title">{modoEdicion ? 'Editar Registro' : 'Nuevo Registro'}</h3>
-            <button className="close-button" onClick={closeModal} aria-label="Cerrar">✖</button>
+            <input
+              type="number"
+              placeholder="Año (ej: 2026)"
+              value={filtroAnio}
+              onChange={(e) => setFiltroAnio(e.target.value)}
+              min="2000"
+              max="2100"
+            />
           </div>
-          <div className="modal-body">
-            <form onSubmit={handleSubmit}>
-              <div className="form-grid">
-                {modulos.length > 1 ? (
+
+          <div className="filter-actions">
+            <button
+              className="btn btn-outline"
+              onClick={() => {
+                setFiltroId('');
+                setFiltroFecha('');
+                setFiltroCliente('');
+                setFiltroTarea('');
+                setFiltroOcupacion('');
+                setFiltroNroCasoCli('');
+                setFiltroHorasAdic('');
+                setFiltroMes('');
+                setFiltroAnio('');
+                if (isAdmin) {
+                  setFiltroConsultor('');
+                  setFiltroEquipo('');
+                } else {
+                  setFiltroConsultor(nombreUser);
+                  setFiltroEquipo(normKey(equipoUser));
+                }
+              }}
+            >
+              Limpiar
+            </button>
+          </div>
+        </div>
+
+        <Modal
+          isOpen={modalIsOpen}
+          onRequestClose={closeModal}
+          className="registro-modal-content"
+          overlayClassName="registro-modal-overlay"
+          contentLabel="Registro"
+        >
+          <div>
+            <div className="modal-header">
+              <h3 className="modal-title">{modoEdicion ? 'Editar Registro' : 'Nuevo Registro'}</h3>
+              <button className="close-button" onClick={closeModal} aria-label="Cerrar">✖</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSubmit}>
+                <div className="form-grid">
+                  {modulos.length > 1 ? (
+                    <select
+                      value={moduloElegido}
+                      onChange={(e) => {
+                        setModuloElegido(e.target.value);
+                        setRegistro(r => ({ ...r, modulo: e.target.value }));
+                      }}
+                      required
+                    >
+                      <option value="">Seleccionar Módulo</option>
+                      {modulos.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={modulos[0] || ''}
+                      readOnly
+                      placeholder="Módulo"
+                    />
+                  )}
+
+                  <input
+                    type="text"
+                    value={registro.equipo || userEquipoUpper}
+                    readOnly
+                    placeholder="Equipo"
+                  />
+
+                  <input
+                    type="date"
+                    value={registro.fecha}
+                    max={todayISO}
+                    onChange={(e) => setRegistro({ ...registro, fecha: e.target.value })}
+                    required
+                    disabled={modoEdicion}
+                    title={modoEdicion ? "En edición no puedes modificar la fecha" : ""}
+                  />
+
                   <select
-                    value={moduloElegido}
+                    value={registro.cliente}
                     onChange={(e) => {
-                      setModuloElegido(e.target.value);
-                      setRegistro(r => ({ ...r, modulo: e.target.value }));
+                      const nextCliente = e.target.value;
+
+                      setRegistro((r) => {
+                        const next = { ...r, cliente: nextCliente };
+
+                        if (showProyectoUI) {
+                          next.proyecto_id = "";
+                          next.proyecto_codigo = "";
+                          next.proyecto_nombre = "";
+                          next.proyecto_fase = "";
+                          next.fase_proyecto_id = "";
+                        }
+
+                        return next;
+                      });
+
+                      if (showProyectoUI) {
+                        setFasesProyecto([]);
+                      }
                     }}
                     required
                   >
-                    <option value="">Seleccionar Módulo</option>
-                    {modulos.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    value={modulos[0] || ''}
-                    readOnly
-                    placeholder="Módulo"
-                  />
-                )}
-
-                <input
-                  type="text"
-                  value={registro.equipo || userEquipoUpper}
-                  readOnly
-                  placeholder="Equipo"
-                />
-
-                <input
-                  type="date"
-                  value={registro.fecha}
-                  max={todayISO}
-                  onChange={(e) => setRegistro({ ...registro, fecha: e.target.value })}
-                  required
-                  disabled={modoEdicion}
-                  title={modoEdicion ? "En edición no puedes modificar la fecha" : ""}
-                />
-
-                <select
-                  value={registro.cliente}
-                  onChange={(e) => {
-                    const nextCliente = e.target.value;
-
-                    setRegistro((r) => {
-                      const next = { ...r, cliente: nextCliente };
-
-                      if (showProyectoUI) {
-                        next.proyecto_id = "";
-                        next.proyecto_codigo = "";
-                        next.proyecto_nombre = "";
-                        next.proyecto_fase = "";
-                        next.fase_proyecto_id = "";
-                      }
-
-                      return next;
-                    });
-
-                    if (showProyectoUI) {
-                      setFasesProyecto([]);
-                    }
-                  }}
-                  required
-                >
-                  <option value="">Seleccionar Cliente</option>
-                  {clientes.map((c) => (
-                    <option key={c.id} value={c.nombre_cliente}>
-                      {c.nombre_cliente}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={ocupacionSeleccionada}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setOcupacionSeleccionada(value);
-                    setRegistro(r => ({
-                      ...r,
-                      ocupacion_id: value ? parseInt(value, 10) : '',
-                      tarea_id: '',
-                      tipoTarea: '',
-                      proyecto_id: '',
-                      proyecto_codigo: '',
-                      proyecto_nombre: '',
-                      proyecto_fase: '',
-                      fase_proyecto_id: '',
-                    }));
-                    setFasesProyecto([]);
-                    pendingEditTareaIdRef.current = null;
-                  }}
-                  required
-                >
-                  <option value="">Seleccionar Ocupación</option>
-                  {ocupaciones.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.codigo} - {o.nombre}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={registro.tarea_id || ""}
-                  onChange={(e) => {
-                    const tareaId = Number(e.target.value);
-                    const tareaObj = tareasBD.find(t => Number(t.id) === Number(tareaId));
-
-                    setRegistro(r => ({
-                      ...r,
-                      tarea_id: tareaId,
-                      tipoTarea: tareaObj ? `${tareaObj.codigo} - ${tareaObj.nombre}` : ""
-                    }));
-                  }}
-                  required
-                  disabled={!ocupacionSeleccionada || tareasBD.length === 0}
-                >
-                  <option value="">Seleccionar Tarea</option>
-                  {tareasBD.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.codigo} - {t.nombre}
-                    </option>
-                  ))}
-                </select>
-
-                {showProyectoUI && (
-                  <>
-                    {/* PROYECTO */}
-                    <select
-                      value={registro.proyecto_id || ""}
-                      onChange={(e) => {
-                        const pid = e.target.value;
-                        const p = proyectosFiltradosPorCliente.find(x => String(x.id) === String(pid));
-
-                        const fases = Array.isArray(p?.fases) ? p.fases : [];
-                        setFasesProyecto(fases);
-
-                        const firstFase = fases.length ? fases[0] : null;
-
-                        setRegistro((r) => ({
-                          ...r,
-                          proyecto_id: pid,
-                          proyecto_codigo: p?.codigo || "",
-                          proyecto_nombre: p?.nombre || "",
-                          nroCasoCliente: p?.codigo ? String(p.codigo) : r.nroCasoCliente,
-                          fase_proyecto_id: firstFase ? String(firstFase.id) : "",
-                          proyecto_fase: firstFase ? String(firstFase.nombre) : "",
-                        }));
-                      }}
-                      required
-                      disabled={loadingProyectos || !registro.cliente || proyectosFiltradosPorCliente.length === 0}
-                    >
-                      <option value="">
-                        {loadingProyectos
-                          ? "Cargando proyectos..."
-                          : !registro.cliente
-                            ? "Selecciona un cliente primero"
-                            : (proyectosFiltradosPorCliente.length === 0 ? "No hay proyectos para este cliente" : "Seleccionar Proyecto")}
+                    <option value="">Seleccionar Cliente</option>
+                    {clientes.map((c) => (
+                      <option key={c.id} value={c.nombre_cliente}>
+                        {c.nombre_cliente}
                       </option>
+                    ))}
+                  </select>
 
-                      {proyectosFiltradosPorCliente.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.codigo} - {p.nombre}
-                        </option>
-                      ))}
-                    </select>
+                  <select
+                    value={ocupacionSeleccionada}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setOcupacionSeleccionada(value);
+                      setRegistro(r => ({
+                        ...r,
+                        ocupacion_id: value ? parseInt(value, 10) : '',
+                        tarea_id: '',
+                        tipoTarea: '',
+                        proyecto_id: '',
+                        proyecto_codigo: '',
+                        proyecto_nombre: '',
+                        proyecto_fase: '',
+                        fase_proyecto_id: '',
+                      }));
+                      setFasesProyecto([]);
+                      pendingEditTareaIdRef.current = null;
+                    }}
+                    required
+                  >
+                    <option value="">Seleccionar Ocupación</option>
+                    {ocupaciones.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.codigo} - {o.nombre}
+                      </option>
+                    ))}
+                  </select>
 
-                    {/* FASE */}
-                    {Array.isArray(fasesProyecto) && fasesProyecto.length > 0 && (
+                  <select
+                    value={registro.tarea_id || ""}
+                    onChange={(e) => {
+                      const tareaId = Number(e.target.value);
+                      const tareaObj = tareasBD.find(t => Number(t.id) === Number(tareaId));
+
+                      setRegistro(r => ({
+                        ...r,
+                        tarea_id: tareaId,
+                        tipoTarea: tareaObj ? `${tareaObj.codigo} - ${tareaObj.nombre}` : ""
+                      }));
+                    }}
+                    required
+                    disabled={!ocupacionSeleccionada || tareasBD.length === 0}
+                  >
+                    <option value="">Seleccionar Tarea</option>
+                    {tareasBD.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.codigo} - {t.nombre}
+                      </option>
+                    ))}
+                  </select>
+
+                  {showProyectoUI && (
+                    <>
                       <select
-                        value={registro.fase_proyecto_id || ""}
+                        value={registro.proyecto_id || ""}
                         onChange={(e) => {
-                          const faseId = e.target.value;
-                          const faseObj = fasesProyecto.find(f => String(f.id) === String(faseId));
+                          const pid = e.target.value;
+                          const p = proyectosFiltradosPorCliente.find(x => String(x.id) === String(pid));
 
-                          setRegistro(r => ({
+                          const fases = Array.isArray(p?.fases) ? p.fases : [];
+                          setFasesProyecto(fases);
+
+                          const firstFase = fases.length ? fases[0] : null;
+
+                          setRegistro((r) => ({
                             ...r,
-                            fase_proyecto_id: faseId,
-                            proyecto_fase: faseObj?.nombre || "",
+                            proyecto_id: pid,
+                            proyecto_codigo: p?.codigo || "",
+                            proyecto_nombre: p?.nombre || "",
+                            nroCasoCliente: p?.codigo ? String(p.codigo) : r.nroCasoCliente,
+                            fase_proyecto_id: firstFase ? String(firstFase.id) : "",
+                            proyecto_fase: firstFase ? String(firstFase.nombre) : "",
                           }));
                         }}
                         required
+                        disabled={loadingProyectos || !registro.cliente || proyectosFiltradosPorCliente.length === 0}
                       >
-                        <option value="">Seleccionar Fase</option>
-                        {fasesProyecto.map((fx) => (
-                          <option key={fx.id} value={fx.id}>
-                            {fx.nombre}
+                        <option value="">
+                          {loadingProyectos
+                            ? "Cargando proyectos..."
+                            : !registro.cliente
+                              ? "Selecciona un cliente primero"
+                              : (proyectosFiltradosPorCliente.length === 0 ? "No hay proyectos para este cliente" : "Seleccionar Proyecto")}
+                        </option>
+
+                        {proyectosFiltradosPorCliente.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.codigo} - {p.nombre}
                           </option>
                         ))}
                       </select>
-                    )}
 
-                    <input
-                      type="text"
-                      value={registro.proyecto_fase || ""}
-                      readOnly
-                      placeholder="Fase seleccionada"
-                    />
-                  </>
-                )}
+                      {Array.isArray(fasesProyecto) && fasesProyecto.length > 0 && (
+                        <select
+                          value={registro.fase_proyecto_id || ""}
+                          onChange={(e) => {
+                            const faseId = e.target.value;
+                            const faseObj = fasesProyecto.find(f => String(f.id) === String(faseId));
 
-                <input
-                  type="text"
-                  placeholder="Nro Caso Cliente"
-                  value={registro.nroCasoCliente}
-                  onChange={(e) => setRegistro({ ...registro, nroCasoCliente: e.target.value })}
-                />
+                            setRegistro(r => ({
+                              ...r,
+                              fase_proyecto_id: faseId,
+                              proyecto_fase: faseObj?.nombre || "",
+                            }));
+                          }}
+                          required
+                        >
+                          <option value="">Seleccionar Fase</option>
+                          {fasesProyecto.map((fx) => (
+                            <option key={fx.id} value={fx.id}>
+                              {fx.nombre}
+                            </option>
+                          ))}
+                        </select>
+                      )}
 
-                <input
-                  type="text"
-                  placeholder="Nro Caso Interno"
-                  value={registro.nroCasoInterno}
-                  onChange={(e) => setRegistro({ ...registro, nroCasoInterno: e.target.value })}
-                />
+                      <input
+                        type="text"
+                        value={registro.proyecto_fase || ""}
+                        readOnly
+                        placeholder="Fase seleccionada"
+                      />
+                    </>
+                  )}
 
-                <input
-                  type="text"
-                  placeholder="Nro Caso Escalado SAP"
-                  value={registro.nroCasoEscaladoSap}
-                  onChange={(e) => setRegistro({ ...registro, nroCasoEscaladoSap: e.target.value })}
-                />
-
-                <div className="inline-2">
                   <input
-                    type="time"
-                    value={registro.horaInicio}
-                    onChange={(e) => setRegistro({ ...registro, horaInicio: e.target.value })}
-                    required
+                    type="text"
+                    placeholder="Nro Caso Cliente"
+                    value={registro.nroCasoCliente}
+                    onChange={(e) => setRegistro({ ...registro, nroCasoCliente: e.target.value })}
                   />
+
                   <input
-                    type="time"
-                    value={registro.horaFin}
-                    onChange={(e) => setRegistro({ ...registro, horaFin: e.target.value })}
-                    required
+                    type="text"
+                    placeholder="Nro Caso Interno"
+                    value={registro.nroCasoInterno}
+                    onChange={(e) => setRegistro({ ...registro, nroCasoInterno: e.target.value })}
+                  />
+
+                  <input
+                    type="text"
+                    placeholder="Nro Caso Escalado SAP"
+                    value={registro.nroCasoEscaladoSap}
+                    onChange={(e) => setRegistro({ ...registro, nroCasoEscaladoSap: e.target.value })}
+                  />
+
+                  <div className="inline-2">
+                    <input
+                      type="time"
+                      value={registro.horaInicio}
+                      onChange={(e) => setRegistro({ ...registro, horaInicio: e.target.value })}
+                      required
+                    />
+                    <input
+                      type="time"
+                      value={registro.horaFin}
+                      onChange={(e) => setRegistro({ ...registro, horaFin: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Tiempo Facturable"
+                    value={registro.tiempoFacturable}
+                    onChange={(e) => setRegistro({ ...registro, tiempoFacturable: e.target.value })}
+                    className="span-2"
+                  />
+
+                  {equipoFormulario === 'BASIS' && (
+                    <>
+                      <select
+                        value={registro.actividadMalla}
+                        onChange={(e) => setRegistro({ ...registro, actividadMalla: e.target.value })}
+                      >
+                        <option value="">Seleccionar Actividad de Malla</option>
+                        {actividadMalla.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
+                      </select>
+                      <select
+                        value={registro.oncall}
+                        onChange={(e) => setRegistro({ ...registro, oncall: e.target.value })}
+                      >
+                        <option value="">ONCALL</option>
+                        {oncall.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
+                      </select>
+                      <select
+                        value={registro.desborde}
+                        onChange={(e) => setRegistro({ ...registro, desborde: e.target.value })}
+                      >
+                        <option value="">Desborde</option>
+                        {desborde.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
+                      </select>
+                    </>
+                  )}
+
+                  <textarea
+                    placeholder="Descripción"
+                    value={registro.descripcion}
+                    onChange={(e) =>
+                      setRegistro({ ...registro, descripcion: e.target.value })
+                    }
+                    className="span-2"
                   />
                 </div>
-
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Tiempo Facturable"
-                  value={registro.tiempoFacturable}
-                  onChange={(e) => setRegistro({ ...registro, tiempoFacturable: e.target.value })}
-                  className="span-2"
-                />
-
-                {equipoFormulario === 'BASIS' && (
-                  <>
-                    <select
-                      value={registro.actividadMalla}
-                      onChange={(e) => setRegistro({ ...registro, actividadMalla: e.target.value })}
-                    >
-                      <option value="">Seleccionar Actividad de Malla</option>
-                      {actividadMalla.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
-                    </select>
-                    <select
-                      value={registro.oncall}
-                      onChange={(e) => setRegistro({ ...registro, oncall: e.target.value })}
-                    >
-                      <option value="">ONCALL</option>
-                      {oncall.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
-                    </select>
-                    <select
-                      value={registro.desborde}
-                      onChange={(e) => setRegistro({ ...registro, desborde: e.target.value })}
-                    >
-                      <option value="">Desborde</option>
-                      {desborde.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
-                    </select>
-                  </>
-                )}
-
-                <textarea
-                  placeholder="Descripción"
-                  value={registro.descripcion}
-                  onChange={(e) =>
-                    setRegistro({ ...registro, descripcion: e.target.value })
-                  }
-                  className="span-2"
-                />
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-ghost" onClick={closeModal}>Cancelar</button>
-                <button type="submit" className="btn btn-primary">
-                  {modoEdicion ? 'Actualizar' : 'Guardar'}
-                </button>
-              </div>
-            </form>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-ghost" onClick={closeModal}>Cancelar</button>
+                  <button type="submit" className="btn btn-primary">
+                    {modoEdicion ? 'Actualizar' : 'Guardar'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      </Modal>
+        </Modal>
 
-      <div className="table-wrap">
-        <div className="table-scroll sticky-actions">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Fecha</th>
-                <th>Módulo</th>
-                <th>Equipo</th>
-                <th>Cliente</th>
-                <th>Nro. Caso Cliente</th>
-                <th>Nro. Caso Interno</th>
-                <th>Nro. Caso Escalado SAP</th>
-                <th>Ocupacion</th>
-                <th>Tipo Tarea Azure</th>
-                <th>Consultor</th>
-                <th>Hora Inicio</th>
-                <th>Hora Fin</th>
-                <th className="num">Tiempo Invertido</th>
-                <th className="num">Tiempo Facturable</th>
-                {isBASISTable && <th>ONCALL</th>}
-                {isBASISTable && <th>Desborde</th>}
-                <th>Horas Adicionales</th>
-                <th className="truncate">Descripción</th>
-                <th className="actions">Acciones</th>
-                {isAdmin && <th>Bloqueado</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {registrosFiltrados.pageRows.map((r) => (
-                <tr key={r.id}>
-                  <td className="num">{r.id}</td>
-                  <td>{r.fecha}</td>
-                  <td>{r.modulo ?? moduloUser}</td>
-                  <td>{equipoOf(r)}</td>
-                  <td>{r.cliente}</td>
-                  <td>{r.nroCasoCliente}</td>
-                  <td>{r.nroCasoInterno}</td>
-                  <td>{r.nroCasoEscaladoSap}</td>
-                  <td>{obtenerOcupacionDeRegistro(r)}</td>
-                  <td>{r.tipoTarea || (r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—")}</td>
-                  <td>{r.consultor ?? nombreUser}</td>
-                  <td>{r.horaInicio}</td>
-                  <td>{r.horaFin}</td>
-                  <td className="num">{r.tiempoInvertido}</td>
-                  <td className="num">{r.tiempoFacturable}</td>
-                  {isBASISTable && <td>{r.oncall}</td>}
-                  {isBASISTable && <td>{r.desborde}</td>}
-                  <td>{r.horasAdicionales}</td>
-                  <td className="truncate" title={r.descripcion}>{r.descripcion}</td>
-                  <td className="actions">
-                    <button className="icon-btn" onClick={() => handleEditar(r)} disabled={r.bloqueado} title="Editar">✏️</button>
-                    <button className="icon-btn danger" onClick={() => handleEliminar(r.id)} disabled={r.bloqueado} title="Eliminar">🗑️</button>
-                    <button className="icon-btn" onClick={() => handleCopiar(r)} title="Copiar">📋</button>
-                  </td>
-                  {isAdmin && (
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={!!r.bloqueado}
-                        onChange={() => toggleBloqueado(r.id)}
-                        aria-label="Bloquear/Desbloquear fila"
-                      />
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {registrosFiltrados.total === 0 && (
+        <div className="table-wrap">
+          <div className="table-scroll sticky-actions">
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={colSpanTabla} className="muted">Sin registros</td>
+                  <th>ID</th>
+                  <th>Fecha</th>
+                  <th>Módulo</th>
+                  <th>Equipo</th>
+                  <th>Cliente</th>
+                  <th>Nro. Caso Cliente</th>
+                  <th>Nro. Caso Interno</th>
+                  <th>Nro. Caso Escalado SAP</th>
+                  <th>Ocupacion</th>
+                  <th>Tipo Tarea Azure</th>
+                  <th>Consultor</th>
+                  <th>Hora Inicio</th>
+                  <th>Hora Fin</th>
+                  <th className="num">Tiempo Invertido</th>
+                  <th className="num">Tiempo Facturable</th>
+                  {isBASISTable && <th>ONCALL</th>}
+                  {isBASISTable && <th>Desborde</th>}
+                  <th>Horas Adicionales</th>
+                  <th className="truncate">Descripción</th>
+                  <th className="actions">Acciones</th>
+                  {isAdmin && <th>Bloqueado</th>}
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {registrosFiltrados.pageRows.map((r) => (
+                  <tr key={r.id}>
+                    <td className="num">{r.id}</td>
+                    <td>{r.fecha}</td>
+                    <td>{r.modulo ?? moduloUser}</td>
+                    <td>{equipoOf(r)}</td>
+                    <td>{r.cliente}</td>
+                    <td>{r.nroCasoCliente}</td>
+                    <td>{r.nroCasoInterno}</td>
+                    <td>{r.nroCasoEscaladoSap}</td>
+                    <td>{obtenerOcupacionDeRegistro(r)}</td>
+                    <td>{r.tipoTarea || (r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—")}</td>
+                    <td>{r.consultor ?? nombreUser}</td>
+                    <td>{r.horaInicio}</td>
+                    <td>{r.horaFin}</td>
+                    <td className="num">{r.tiempoInvertido}</td>
+                    <td className="num">{r.tiempoFacturable}</td>
+                    {isBASISTable && <td>{r.oncall}</td>}
+                    {isBASISTable && <td>{r.desborde}</td>}
+                    <td>{r.horasAdicionales}</td>
+                    <td className="truncate" title={r.descripcion}>{r.descripcion}</td>
+                    <td className="actions">
+                      <button className="icon-btn" onClick={() => handleEditar(r)} disabled={r.bloqueado} title="Editar">✏️</button>
+                      <button className="icon-btn danger" onClick={() => handleEliminar(r.id)} disabled={r.bloqueado} title="Eliminar">🗑️</button>
+                      <button className="icon-btn" onClick={() => handleCopiar(r)} title="Copiar">📋</button>
+                    </td>
+                    {isAdmin && (
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={!!r.bloqueado}
+                          onChange={() => toggleBloqueado(r.id)}
+                          aria-label="Bloquear/Desbloquear fila"
+                        />
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {registrosFiltrados.total === 0 && (
+                  <tr>
+                    <td colSpan={colSpanTabla} className="muted">Sin registros</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
 
-          <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "10px 0" }}>
-            <button
-              className="btn btn-outline"
-              disabled={registrosFiltrados.page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              ◀
-            </button>
+            <div className="registro-pagination">
+              <button
+                className="btn btn-outline"
+                disabled={registrosFiltrados.page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                ◀
+              </button>
 
-            <span style={{ fontWeight: 800 }}>
-              Página {registrosFiltrados.page} / {registrosFiltrados.totalPages} —{" "}
-              {registrosFiltrados.total} registros
-            </span>
+              <span className="registro-pagination-text">
+                Página {registrosFiltrados.page} / {registrosFiltrados.totalPages} —{" "}
+                {registrosFiltrados.total} registros
+              </span>
 
-            <button
-              className="btn btn-outline"
-              disabled={registrosFiltrados.page >= registrosFiltrados.totalPages}
-              onClick={() => setPage((p) => Math.min(registrosFiltrados.totalPages, p + 1))}
-            >
-              ▶
-            </button>
+              <button
+                className="btn btn-outline"
+                disabled={registrosFiltrados.page >= registrosFiltrados.totalPages}
+                onClick={() => setPage((p) => Math.min(registrosFiltrados.totalPages, p + 1))}
+              >
+                ▶
+              </button>
+            </div>
           </div>
         </div>
+
+        {error && <div className="registro-error-box">Error: {error}</div>}
+
+        <Resumen
+          userData={userData}
+          filtroEquipo={filtroEquipo}
+          filtroConsultor={filtroConsultor}
+          filtroMes={filtroMes}
+          filtroAnio={filtroAnio}
+        />
       </div>
-
-      {error && <div style={{color:'crimson', marginTop:10}}>Error: {error}</div>}
-
-      <Resumen
-        userData={userData}
-        filtroEquipo={filtroEquipo}
-        filtroConsultor={filtroConsultor}
-        filtroMes={filtroMes}
-        filtroAnio={filtroAnio}
-      />
     </div>
   );
 };
