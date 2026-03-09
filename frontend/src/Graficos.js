@@ -460,8 +460,8 @@ export default function Graficos() {
     fetchMapeos();
   }, []);
 
-  const mapeoProyectoMap = useMemo(() => {
-    const map = new Map();
+  const mapeoProyectoSet = useMemo(() => {
+    const set = new Set();
 
     (mapeosProyecto || []).forEach((m) => {
       if (!m?.activo) return;
@@ -471,10 +471,10 @@ export default function Graficos() {
 
       if (!proyectoId || !origen) return;
 
-      map.set(`${proyectoId}__${origen}`, String(m.valor_agrupado || "").trim());
+      set.add(`${proyectoId}__${origen}`);
     });
 
-    return map;
+    return set;
   }, [mapeosProyecto]);
 
   const { mapExacto, rulesContiene } = useMemo(() => {
@@ -507,15 +507,15 @@ export default function Graficos() {
   }, [mapeosProyecto]);
 
   const projectOfficialResolved = (r) => {
-    // 1) Si backend ya trae proyecto oficial
     const codigo = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
     const nombre = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
-    if (codigo) return `${codigo} - ${nombre || "SIN NOMBRE"}`;
 
-    // 2) proyecto_id (debe venir)
+    if (codigo) {
+      return `${codigo} - ${nombre || "SIN NOMBRE"}`;
+    }
+
     const proyectoId = Number(r?.proyecto_id || r?.proyecto?.id || 0);
 
-    // 3) origen: usar DESCRIPCIÓN (como pediste) y si no, nroCasoCliente
     const origenRaw =
       String(r?.descripcion || "").trim() ||
       String(r?.nroCasoCliente || "").trim() ||
@@ -523,23 +523,22 @@ export default function Graficos() {
 
     const origen = normTxt(origenRaw);
 
-    // 4) Buscar en tabla por (proyecto_id + descripcion)
     if (proyectoId && origen) {
       const key = `${proyectoId}__${origen}`;
-      const agrupado = mapeoProyectoMap.get(key);
-      if (agrupado) {
-        return `PRY-${proyectoId} - ${agrupado}`;
+
+      if (mapeoProyectoSet.has(key)) {
+        return nombre
+          ? `${codigo || `PRY-${proyectoId}`} - ${nombre}`
+          : `${codigo || `PRY-${proyectoId}`}`;
       }
     }
 
-    // 5) Sin mapeo -> controlado
     if (!origenRaw || origenRaw === "0" || ["NA", "N/A"].includes(origenRaw.toUpperCase())) {
       return "SIN PROYECTO";
     }
 
     return "NO MAPEADO";
   };
-
 
   /* Opciones filtros */
   const consultoresUnicos = useMemo(() => {
@@ -728,7 +727,7 @@ export default function Graficos() {
       proyecto,
       horas: +horas.toFixed(2),
     })).sort((a, b) => b.horas - a.horas);
-  }, [datosFiltrados, mapeoProyectoMap]);
+  }, [datosFiltrados, mapeoProyectoSet]);
 
   const horasPorDia = useMemo(() => {
     const acc = new Map();

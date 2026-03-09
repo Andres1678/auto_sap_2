@@ -4983,7 +4983,6 @@ def pm_to_dict(x: ProyectoMapeo):
         "id": x.id,
         "proyecto_id": x.proyecto_id,
         "valor_origen": x.valor_origen,
-        "valor_agrupado": x.valor_agrupado,
         "activo": bool(x.activo),
     }
 
@@ -5009,14 +5008,11 @@ def crear_proyecto_mapeo():
     data = request.get_json(silent=True) or {}
     proyecto_id = data.get("proyecto_id")
     valor_origen = (data.get("valor_origen") or "").strip().upper()
-    valor_agrupado = (data.get("valor_agrupado") or "").strip()
 
     if not proyecto_id:
         return jsonify({"mensaje": "proyecto_id requerido"}), 400
     if not valor_origen:
         return jsonify({"mensaje": "valor_origen requerido"}), 400
-    if not valor_agrupado:
-        return jsonify({"mensaje": "valor_agrupado requerido"}), 400
 
     try:
         proyecto_id = int(proyecto_id)
@@ -5029,10 +5025,10 @@ def crear_proyecto_mapeo():
     x = ProyectoMapeo(
         proyecto_id=proyecto_id,
         valor_origen=valor_origen,
-        valor_agrupado=valor_agrupado,
         activo=_to_bool2(data.get("activo"), default=True)
     )
     db.session.add(x)
+
     try:
         db.session.commit()
         return jsonify({"mensaje": "Mapeo creado", "mapeo": pm_to_dict(x)}), 201
@@ -5049,9 +5045,6 @@ def editar_proyecto_mapeo(id):
 
     if "valor_origen" in data:
         x.valor_origen = (data.get("valor_origen") or "").strip().upper()
-
-    if "valor_agrupado" in data:
-        x.valor_agrupado = (data.get("valor_agrupado") or "").strip()
 
     if "activo" in data:
         x.activo = _to_bool2(data.get("activo"), default=True)
@@ -5082,6 +5075,33 @@ def listar_mapeos_por_proyecto(proyecto_id):
         .all()
     )
     return jsonify([pm_to_dict(x) for x in rows]), 200
+
+@bp.route("/proyectos/<int:proyecto_id>/mapeos", methods=["POST"])
+@permission_required("PROYECTOS_EDITAR")
+def crear_mapeo_por_proyecto(proyecto_id):
+    data = request.get_json(silent=True) or {}
+    valor_origen = (data.get("valor_origen") or "").strip().upper()
+
+    if not valor_origen:
+        return jsonify({"mensaje": "valor_origen requerido"}), 400
+
+    proyecto = Proyecto.query.get(proyecto_id)
+    if not proyecto:
+        return jsonify({"mensaje": "Proyecto no existe"}), 404
+
+    x = ProyectoMapeo(
+        proyecto_id=proyecto_id,
+        valor_origen=valor_origen,
+        activo=_to_bool2(data.get("activo"), default=True)
+    )
+    db.session.add(x)
+
+    try:
+        db.session.commit()
+        return jsonify({"mensaje": "Mapeo creado", "mapeo": pm_to_dict(x)}), 201
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"mensaje": "Ya existe ese valor_origen para ese proyecto"}), 400
 
 ## -------------------------------
 ## Modulos (para categorizar proyectos y reportes)

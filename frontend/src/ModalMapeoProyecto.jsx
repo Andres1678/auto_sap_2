@@ -8,7 +8,6 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
   const [form, setForm] = useState({
     id: null,
     valor_origen: "",
-    valor_agrupado: "",
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -34,14 +33,14 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
   }, [isOpen, proyecto?.id]);
 
   const resetForm = () => {
-    setForm({ id: null, valor_origen: "", valor_agrupado: "" });
+    setForm({ id: null, valor_origen: "" });
   };
 
   const onSubmit = async (e) => {
     e.preventDefault();
 
-    if (!form.valor_origen.trim() || !form.valor_agrupado.trim()) {
-      return Swal.fire({ icon: "warning", title: "Completa los campos" });
+    if (!form.valor_origen.trim()) {
+      return Swal.fire({ icon: "warning", title: "Completa el valor origen" });
     }
 
     try {
@@ -58,7 +57,6 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           valor_origen: form.valor_origen.trim(),
-          valor_agrupado: form.valor_agrupado.trim(),
         }),
       });
 
@@ -67,6 +65,13 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
 
       resetForm();
       fetchRows();
+
+      Swal.fire({
+        icon: "success",
+        title: form.id ? "Mapeo actualizado" : "Mapeo agregado",
+        timer: 1200,
+        showConfirmButton: false,
+      });
     } catch (e2) {
       Swal.fire({ icon: "error", title: "Error guardando", text: String(e2.message || e2) });
     } finally {
@@ -78,7 +83,6 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
     setForm({
       id: row.id,
       valor_origen: row.valor_origen || "",
-      valor_agrupado: row.valor_agrupado || "",
     });
   };
 
@@ -106,7 +110,12 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onRequestClose={onClose} className="modal-content" overlayClassName="modal-overlay">
+    <Modal
+      isOpen={isOpen}
+      onRequestClose={onClose}
+      className="modal-content"
+      overlayClassName="modal-overlay"
+    >
       <div className="modal-header">
         <h3>Mapeos — {proyecto?.codigo} - {proyecto?.nombre}</h3>
         <button onClick={onClose}>✖</button>
@@ -118,14 +127,11 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
           onChange={(e) => setForm((f) => ({ ...f, valor_origen: e.target.value }))}
           placeholder="Valor origen"
         />
-        <input
-          value={form.valor_agrupado}
-          onChange={(e) => setForm((f) => ({ ...f, valor_agrupado: e.target.value }))}
-          placeholder="Valor agrupado"
-        />
+
         <button type="submit" disabled={saving}>
           {form.id ? "Actualizar" : "Agregar"}
         </button>
+
         {form.id && (
           <button type="button" onClick={resetForm}>
             Cancelar
@@ -140,7 +146,6 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
           <thead>
             <tr>
               <th>Origen</th>
-              <th>Agrupado</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -148,13 +153,17 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
             {rows.map((r) => (
               <tr key={r.id}>
                 <td>{r.valor_origen}</td>
-                <td>{r.valor_agrupado}</td>
                 <td>
-                  <button onClick={() => startEdit(r)}>✏️</button>
-                  <button onClick={() => removeRow(r)}>🗑️</button>
+                  <button type="button" onClick={() => startEdit(r)}>✏️</button>
+                  <button type="button" onClick={() => removeRow(r)}>🗑️</button>
                 </td>
               </tr>
             ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan="2">Sin mapeos</td>
+              </tr>
+            )}
           </tbody>
         </table>
       )}

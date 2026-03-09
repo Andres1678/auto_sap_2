@@ -623,11 +623,13 @@ class ProyectoMapeo(db.Model):
     __tablename__ = "proyecto_mapeos"
 
     id = db.Column(db.Integer, primary_key=True)
-    proyecto_id = db.Column(db.Integer, db.ForeignKey("proyecto.id", ondelete="CASCADE"), nullable=False)
+    proyecto_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto.id", ondelete="CASCADE"),
+        nullable=False
+    )
 
     valor_origen = db.Column(db.String(255), nullable=False)
-    valor_agrupado = db.Column(db.String(255), nullable=False)
-
     activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
 
     __table_args__ = (
