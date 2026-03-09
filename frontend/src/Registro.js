@@ -92,14 +92,17 @@ const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
   const fin = parseHHMM(horaFin);
   const rango = parseRange(horarioUsuario);
   if (!ini || !fin || !rango) return 'N/D';
+
   let start = toMinutes(ini);
-  let end   = toMinutes(fin);
+  let end = toMinutes(fin);
   if (end <= start) end += 24 * 60;
+
   let inWorkStart = toMinutes(rango.ini);
-  let inWorkEnd   = toMinutes(rango.fin);
+  let inWorkEnd = toMinutes(rango.fin);
   if (inWorkEnd <= inWorkStart) inWorkEnd += 24 * 60;
+
   const fueraInicio = start < inWorkStart;
-  const fueraFin    = end   > inWorkEnd;
+  const fueraFin = end > inWorkEnd;
   return (fueraInicio || fueraFin) ? 'Sí' : 'No';
 };
 
@@ -203,10 +206,11 @@ const findOverlapRegistro = ({
   return null;
 };
 
-function taskCode(value){
+function taskCode(value) {
   return (String(value || '').match(/^\d+/)?.[0] ?? '');
 }
-function isInvalidCaseNumber(nro){
+
+function isInvalidCaseNumber(nro) {
   const s = String(nro ?? '').trim().toUpperCase();
   return !s || s === '0' || s === 'NA' || s === 'N/A' || s.length > 10;
 }
@@ -253,6 +257,8 @@ const Registro = ({ userData }) => {
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState('');
   const excelInputRef = useRef(null);
+  const openButtonRef = useRef(null);
+  const firstFieldRef = useRef(null);
   const { todayISO } = getWeekBoundsISO(new Date());
 
   const [registro, setRegistro] = useState(initRegistro());
@@ -356,6 +362,14 @@ const Registro = ({ userData }) => {
     const v = userData?.activo ?? userData?.user?.activo;
     if (v !== undefined) setConsultorActivo(isActiveValue(v));
   }, [userData]);
+
+  useEffect(() => {
+    if (!modalIsOpen) return;
+    const id = setTimeout(() => {
+      firstFieldRef.current?.focus?.();
+    }, 50);
+    return () => clearTimeout(id);
+  }, [modalIsOpen]);
 
   useEffect(() => {
     const pendingId = pendingEditTareaIdRef.current;
@@ -753,7 +767,7 @@ const Registro = ({ userData }) => {
     page,
   ]);
 
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
     setModalIsOpen(false);
     setModoEdicion(false);
     setOcupacionSeleccionada("");
@@ -761,7 +775,11 @@ const Registro = ({ userData }) => {
     setFasesProyecto([]);
     setRegistro(initRegistro());
     setModuloElegido(modulos.length === 1 ? modulos[0] : "");
-  };
+
+    setTimeout(() => {
+      openButtonRef.current?.focus?.();
+    }, 50);
+  }, [modulos]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -1097,9 +1115,8 @@ const Registro = ({ userData }) => {
     });
 
     setOcupacionSeleccionada(ocupacionId);
-
     setModoEdicion(true);
-    setModalIsOpen(true);
+    setTimeout(() => setModalIsOpen(true), 0);
   };
 
   const handleEliminar = async (id) => {
@@ -1192,33 +1209,24 @@ const Registro = ({ userData }) => {
       (fases.length ? fases[0] : null);
 
     const newHoraInicio = reg?.horaFin || "";
-    const minFechaUI = "";
-    const maxFechaUI = todayCopyISO;
 
     setRegistro({
       ...initRegistro(),
       id: null,
       fecha: todayCopyISO,
-      _uiMinFecha: minFechaUI,
-      _uiMaxFecha: maxFechaUI,
-
       cliente: reg.cliente,
       nroCasoCliente: reg.nroCasoCliente,
       nroCasoInterno: reg.nroCasoInterno,
       nroCasoEscaladoSap: reg.nroCasoEscaladoSap,
       tarea_id: tareaId ? Number(tareaId) : "",
       tipoTarea: reg?.tarea ? `${reg.tarea.codigo} - ${reg.tarea.nombre}` : (reg?.tipoTarea || ""),
-
       ocupacion_id: ocupacionId,
-
       horaInicio: newHoraInicio,
       horaFin: "",
       tiempoFacturable: reg.tiempoFacturable,
       descripcion: reg.descripcion,
-
       modulo: moduloSel,
       equipo: equipoOf(reg, userEquipoUpper),
-
       proyecto_id: pid,
       proyecto_codigo: reg?.proyecto_codigo ?? reg?.proyecto?.codigo ?? "",
       proyecto_nombre: reg?.proyecto_nombre ?? reg?.proyecto?.nombre ?? "",
@@ -1227,9 +1235,8 @@ const Registro = ({ userData }) => {
     });
 
     setOcupacionSeleccionada(ocupacionId);
-
     setModoEdicion(false);
-    setModalIsOpen(true);
+    setTimeout(() => setModalIsOpen(true), 0);
   };
 
   const toggleBloqueado = async (id) => {
@@ -1372,7 +1379,10 @@ const Registro = ({ userData }) => {
   };
 
   const handleAbrirModalRegistro = async (e) => {
-    e?.currentTarget?.blur();
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    e?.currentTarget?.blur?.();
+    document.activeElement?.blur?.();
 
     try {
       const res = await jfetch(
@@ -1412,7 +1422,10 @@ const Registro = ({ userData }) => {
       setFasesProyecto([]);
       setOcupacionSeleccionada("");
       setModoEdicion(false);
-      setModalIsOpen(true);
+
+      setTimeout(() => {
+        setModalIsOpen(true);
+      }, 0);
     } catch (err) {
       console.error("Error cargando datos del consultor:", err);
       Swal.fire({
@@ -1440,6 +1453,7 @@ const Registro = ({ userData }) => {
               Filtra por fecha, cliente, tarea, consultor, equipo, Nro. de caso y horas adicionales
             </p>
           </div>
+
           <div className="page-actions">
             {canDownload && (
               <button
@@ -1472,7 +1486,9 @@ const Registro = ({ userData }) => {
             )}
 
             <button
-              className="registro-page__btn registro-page__btn-primary"
+              ref={openButtonRef}
+              type="button"
+              className="btn btn-primary"
               onClick={handleAbrirModalRegistro}
               disabled={!isAdmin && !consultorActivo}
               title={!isAdmin && !consultorActivo ? "Usuario inactivo" : "Agregar Registro"}
@@ -1489,6 +1505,7 @@ const Registro = ({ userData }) => {
               {equiposConConteo.map((opt) => (
                 <button
                   key={opt.key || "ALL"}
+                  type="button"
                   className={`team-btn ${filtroEquipo === opt.key ? "is-active" : ""}`}
                   onClick={() => setFiltroEquipo(normKey(opt.key))}
                 >
@@ -1621,6 +1638,7 @@ const Registro = ({ userData }) => {
           <div className="filter-actions">
             <button
               className="btn btn-outline"
+              type="button"
               onClick={() => {
                 setFiltroId('');
                 setFiltroFecha('');
@@ -1648,23 +1666,35 @@ const Registro = ({ userData }) => {
         <Modal
           isOpen={modalIsOpen}
           onRequestClose={closeModal}
-          className="registro-page__modal-content"
-          overlayClassName="registro-page__modal-overlay"
+          className="registro-modal-content"
+          overlayClassName="registro-modal-overlay"
+          bodyOpenClassName="registro-modal-body-open"
+          htmlOpenClassName="registro-modal-html-open"
           contentLabel="Registro"
-          shouldReturnFocusAfterClose={true}
-          shouldFocusAfterRender={true}
-          ariaHideApp={true}
+          shouldCloseOnOverlayClick={true}
+          shouldCloseOnEsc={true}
+          shouldFocusAfterRender={false}
+          shouldReturnFocusAfterClose={false}
         >
-          <div>
-            <div className="modal-header">
-              <h3 className="modal-title">{modoEdicion ? 'Editar Registro' : 'Nuevo Registro'}</h3>
-              <button className="close-button" onClick={closeModal} aria-label="Cerrar">✖</button>
+          <div className="registro-modal-shell">
+            <div className="registro-modal-header">
+              <h3 className="registro-modal-title">{modoEdicion ? 'Editar Registro' : 'Nuevo Registro'}</h3>
+              <button
+                className="registro-modal-close"
+                onClick={closeModal}
+                aria-label="Cerrar"
+                type="button"
+              >
+                ✖
+              </button>
             </div>
-            <div className="modal-body">
+
+            <div className="registro-modal-body">
               <form onSubmit={handleSubmit}>
-                <div className="form-grid">
+                <div className="registro-form-grid">
                   {modulos.length > 1 ? (
                     <select
+                      ref={firstFieldRef}
                       value={moduloElegido}
                       onChange={(e) => {
                         setModuloElegido(e.target.value);
@@ -1677,6 +1707,7 @@ const Registro = ({ userData }) => {
                     </select>
                   ) : (
                     <input
+                      ref={firstFieldRef}
                       type="text"
                       value={modulos[0] || ''}
                       readOnly
@@ -1881,7 +1912,7 @@ const Registro = ({ userData }) => {
                     onChange={(e) => setRegistro({ ...registro, nroCasoEscaladoSap: e.target.value })}
                   />
 
-                  <div className="inline-2">
+                  <div className="registro-inline-2">
                     <input
                       type="time"
                       value={registro.horaInicio}
@@ -1940,8 +1971,11 @@ const Registro = ({ userData }) => {
                     className="span-2"
                   />
                 </div>
-                <div className="modal-footer">
-                  <button type="button" className="btn btn-ghost" onClick={closeModal}>Cancelar</button>
+
+                <div className="registro-modal-footer">
+                  <button type="button" className="btn btn-ghost" onClick={closeModal}>
+                    Cancelar
+                  </button>
                   <button type="submit" className="btn btn-primary">
                     {modoEdicion ? 'Actualizar' : 'Guardar'}
                   </button>
@@ -2002,9 +2036,9 @@ const Registro = ({ userData }) => {
                     <td>{r.horasAdicionales}</td>
                     <td className="truncate" title={r.descripcion}>{r.descripcion}</td>
                     <td className="actions">
-                      <button className="icon-btn" onClick={() => handleEditar(r)} disabled={r.bloqueado} title="Editar">✏️</button>
-                      <button className="icon-btn danger" onClick={() => handleEliminar(r.id)} disabled={r.bloqueado} title="Eliminar">🗑️</button>
-                      <button className="icon-btn" onClick={() => handleCopiar(r)} title="Copiar">📋</button>
+                      <button type="button" className="icon-btn" onClick={() => handleEditar(r)} disabled={r.bloqueado} title="Editar">✏️</button>
+                      <button type="button" className="icon-btn danger" onClick={() => handleEliminar(r.id)} disabled={r.bloqueado} title="Eliminar">🗑️</button>
+                      <button type="button" className="icon-btn" onClick={() => handleCopiar(r)} title="Copiar">📋</button>
                     </td>
                     {isAdmin && (
                       <td>
@@ -2036,8 +2070,7 @@ const Registro = ({ userData }) => {
               </button>
 
               <span className="registro-pagination-text">
-                Página {registrosFiltrados.page} / {registrosFiltrados.totalPages} —{" "}
-                {registrosFiltrados.total} registros
+                Página {registrosFiltrados.page} / {registrosFiltrados.totalPages} — {registrosFiltrados.total} registros
               </span>
 
               <button

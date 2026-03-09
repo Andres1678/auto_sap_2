@@ -138,13 +138,17 @@
   color:#fff;
   box-shadow:0 6px 14px rgba(227,6,19,.35);
 }
-.registro-page-scope .btn-primary:hover{ filter:brightness(1.05); }
+
+.registro-page-scope .btn-primary:hover{
+  filter:brightness(1.05);
+}
 
 .registro-page-scope .btn-outline{
   background:#fff;
   border:1px solid var(--accent);
   color:var(--accent);
 }
+
 .registro-page-scope .btn-outline:hover{
   background:var(--accent);
   color:#fff;
@@ -155,6 +159,7 @@
   border:1px solid var(--border);
   color:var(--text);
 }
+
 .registro-page-scope .btn-ghost:hover{
   background:#f5f7fb;
 }
@@ -166,7 +171,7 @@
 }
 
 /* =========================================================
-   FILTRO DE EQUIPOS (ADMIN)
+   FILTRO DE EQUIPOS
 ========================================================= */
 .registro-page-scope .team-filter-row{
   display:flex;
@@ -232,7 +237,7 @@
 }
 
 /* =========================================================
-   TARJETA DE FILTROS
+   FILTROS
 ========================================================= */
 .registro-page-scope .filters-card{
   background:#fbfcfe;
@@ -261,6 +266,7 @@
 .registro-page-scope .filters-card input[type="number"]{
   appearance: textfield;
 }
+
 .registro-page-scope .filters-card input[type="number"]::-webkit-outer-spin-button,
 .registro-page-scope .filters-card input[type="number"]::-webkit-inner-spin-button{
   -webkit-appearance: none;
@@ -281,10 +287,15 @@
 }
 
 @media(max-width:1100px){
-  .registro-page-scope .filter-grid{ grid-template-columns:repeat(2,1fr); }
+  .registro-page-scope .filter-grid{
+    grid-template-columns:repeat(2,1fr);
+  }
 }
+
 @media(max-width:560px){
-  .registro-page-scope .filter-grid{ grid-template-columns:1fr; }
+  .registro-page-scope .filter-grid{
+    grid-template-columns:1fr;
+  }
 }
 
 /* =========================================================
@@ -387,157 +398,211 @@
   justify-content:center;
   margin-right:6px;
 }
-.registro-page-scope .icon-btn:hover{ background:#f5f7fb; }
-.registro-page-scope .icon-btn.danger:hover{ background:rgba(220,38,38,.08); }
+
+.registro-page-scope .icon-btn:hover{
+  background:#f5f7fb;
+}
+
+.registro-page-scope .icon-btn.danger:hover{
+  background:rgba(220,38,38,.08);
+}
 
 /* =========================================================
    SCROLLBARS
 ========================================================= */
-.registro-page-scope .table-scroll::-webkit-scrollbar{ width: 12px; height: 12px; }
-.registro-page-scope .table-scroll::-webkit-scrollbar-track{ background: #f1f4fa; }
-.registro-page-scope .table-scroll::-webkit-scrollbar-thumb{
+.registro-page-scope .table-scroll::-webkit-scrollbar,
+.registro-modal-body::-webkit-scrollbar{
+  width: 12px;
+  height: 12px;
+}
+
+.registro-page-scope .table-scroll::-webkit-scrollbar-track,
+.registro-modal-body::-webkit-scrollbar-track{
+  background: #f1f4fa;
+}
+
+.registro-page-scope .table-scroll::-webkit-scrollbar-thumb,
+.registro-modal-body::-webkit-scrollbar-thumb{
   background: rgba(2,6,23,.22);
   border-radius: 999px;
   border: 3px solid #f1f4fa;
 }
-.registro-page-scope .table-scroll{
+
+.registro-page-scope .table-scroll,
+.registro-modal-body{
   scrollbar-width: thin;
   scrollbar-color: rgba(2,6,23,.28) #f1f4fa;
 }
 
 /* =========================================================
    MODAL REGISTRO
+   OJO: estas clases NO van scopeadas porque React Modal
+   renderiza en un portal fuera de .registro-page-scope
 ========================================================= */
+.registro-modal-html-open,
+.registro-modal-body-open{
+  overflow: hidden !important;
+}
+
 .registro-modal-overlay{
-  background:rgba(10,15,30,.55) !important;
+  position: fixed;
+  inset: 0;
+  background: rgba(10,15,30,.55) !important;
   backdrop-filter: blur(4px);
-  z-index:1000;
+  z-index: 2000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
 }
 
 .registro-modal-content{
-  width:min(900px,95vw) !important;
-  max-width:900px !important;
-  margin:6vh auto !important;
-  inset:unset !important;
-
+  position: relative;
+  width:min(980px, 96vw);
+  max-width:980px;
+  max-height:90vh;
   border-radius:20px;
-  border:1px solid var(--border);
-  background:var(--card);
+  border:1px solid #e6ebf2;
+  background:#ffffff;
   box-shadow:0 30px 80px rgba(2,6,23,.35);
-  padding:0;
-  overflow: hidden;
+  overflow:hidden;
+  outline:none;
 }
 
-.registro-page-scope .modal-header{
+.registro-modal-shell{
+  display:flex;
+  flex-direction:column;
+  max-height:90vh;
+}
+
+.registro-modal-header{
   padding:18px 24px;
-  background:linear-gradient(90deg,var(--accent),var(--primary));
+  background:linear-gradient(90deg,#0055B8,#E30613);
   color:#fff;
   display:flex;
   justify-content:space-between;
   align-items:center;
 }
 
-.registro-page-scope .modal-title{
+.registro-modal-title{
   margin:0;
-  font-size: var(--fs-modal-title);
+  font-size:20px;
   font-weight:800;
 }
 
-.registro-page-scope .close-button{
+.registro-modal-close{
   background:rgba(255,255,255,.2);
   border:none;
   color:#fff;
   font-size:18px;
-  width:34px;
-  height:34px;
+  width:38px;
+  height:38px;
   border-radius:50%;
   cursor:pointer;
   display:inline-flex;
   align-items:center;
   justify-content:center;
 }
-.registro-page-scope .close-button:hover{ background:rgba(255,255,255,.28); }
 
-.registro-page-scope .modal-body{
-  padding:22px 24px;
-  max-height:70vh;
-  overflow:auto;
-  background: #fff;
+.registro-modal-close:hover{
+  background:rgba(255,255,255,.28);
 }
 
-.registro-page-scope .form-grid{
+.registro-modal-body{
+  padding:22px 24px;
+  overflow:auto;
+  background:#fff;
+  max-height: calc(90vh - 78px);
+}
+
+.registro-form-grid{
   display:grid;
   grid-template-columns:repeat(3, minmax(0,1fr));
   gap:14px;
-  align-items: start;
+  align-items:start;
 }
 
-.registro-page-scope .form-grid .span-2{ grid-column: span 2; }
-.registro-page-scope .form-grid .span-3{ grid-column: 1 / -1; }
+.registro-form-grid .span-2{
+  grid-column: span 2;
+}
 
-.registro-page-scope .registro-modal-content input,
-.registro-page-scope .registro-modal-content select,
-.registro-page-scope .registro-modal-content textarea{
+.registro-form-grid .span-3{
+  grid-column: 1 / -1;
+}
+
+.registro-modal-content input,
+.registro-modal-content select,
+.registro-modal-content textarea{
   width:100%;
-  height: var(--control-h);
+  height:44px;
   background:#f7f9fc;
-  padding: 12px 14px;
+  padding:12px 14px;
   border-radius:12px;
-  border:1px solid var(--border);
-  font-size: var(--fs-base);
-  line-height: 1.2;
+  border:1px solid #e6ebf2;
+  font-size:14px;
+  line-height:1.2;
 }
 
-.registro-page-scope .registro-modal-content textarea{
+.registro-modal-content textarea{
   height:auto;
-  min-height: 110px;
+  min-height:110px;
   resize:vertical;
-  padding-top: 12px;
-  padding-bottom: 12px;
+  padding-top:12px;
+  padding-bottom:12px;
 }
 
-.registro-page-scope .registro-modal-content input::placeholder,
-.registro-page-scope .registro-modal-content textarea::placeholder{
-  color: #8a94a6;
-  opacity: 1;
+.registro-modal-content input::placeholder,
+.registro-modal-content textarea::placeholder{
+  color:#8a94a6;
+  opacity:1;
 }
 
-.registro-page-scope .registro-modal-content input:focus,
-.registro-page-scope .registro-modal-content select:focus,
-.registro-page-scope .registro-modal-content textarea:focus{
-  outline: none;
-  border-color:var(--primary);
-  box-shadow:0 0 0 4px var(--ring);
+.registro-modal-content input:focus,
+.registro-modal-content select:focus,
+.registro-modal-content textarea:focus{
+  outline:none;
+  border-color:#E30613;
+  box-shadow:0 0 0 4px rgba(227,6,19,.22);
 }
 
-.registro-page-scope .inline-2{
+.registro-inline-2{
   display:grid;
   grid-template-columns:1fr 1fr;
   gap:14px;
 }
 
-.registro-page-scope .modal-footer{
+.registro-modal-footer{
   display:flex;
   justify-content:flex-end;
   gap:12px;
-  padding:16px 24px;
-  border-top:1px solid var(--border);
-  background:#fafbfd;
-}
-
-.registro-page-scope .modal-footer .btn{
-  height: 44px;
-  padding: 0 20px;
-  font-size: var(--fs-base);
+  padding:16px 0 0;
+  margin-top:16px;
+  border-top:1px solid #e6ebf2;
+  background:#fff;
 }
 
 @media(max-width:900px){
-  .registro-page-scope .form-grid{ grid-template-columns:repeat(2,1fr); }
+  .registro-form-grid{
+    grid-template-columns:repeat(2,1fr);
+  }
 }
+
 @media(max-width:600px){
-  .registro-page-scope .form-grid{ grid-template-columns:1fr; }
-  .registro-page-scope .inline-2{ grid-template-columns:1fr; }
-  .registro-page-scope .modal-body{ padding: 18px; }
+  .registro-modal-overlay{
+    padding:12px;
+  }
+
+  .registro-form-grid{
+    grid-template-columns:1fr;
+  }
+
+  .registro-inline-2{
+    grid-template-columns:1fr;
+  }
+
+  .registro-modal-body{
+    padding:18px;
+  }
 }
 
 /* =========================================================
@@ -566,8 +631,9 @@
 }
 
 .swal2-container{
-  z-index: 30000 !important;
+  z-index:30000 !important;
 }
+
 .swal2-backdrop-show{
-  z-index: 29999 !important;
+  z-index:29999 !important;
 }
