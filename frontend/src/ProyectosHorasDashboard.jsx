@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import Modal from "react-modal";
 import {
   BarChart,
   Bar,
@@ -12,9 +11,7 @@ import {
   Legend,
 } from "recharts";
 import { jfetch } from "./lib/api";
-import "./ModalProyectosHoras.css";
-
-Modal.setAppElement("#root");
+import "./ProyectosHorasDashboard.css";
 
 /* =========================
    Helpers
@@ -45,11 +42,20 @@ const groupSum = (rows, keyFn) => {
   })).sort((a, b) => b.horas - a.horas);
 };
 
+const uniqueCount = (rows, keyFn) => {
+  const s = new Set();
+  for (const r of rows) {
+    const k = keyFn(r);
+    if (k) s.add(String(k));
+  }
+  return s.size;
+};
+
 /* =========================
-   ✅ Tick custom: WRAP en YAxis
+   Tick custom: WRAP en YAxis
 ========================= */
 function YAxisTickWrap(props) {
-  const { x, y, payload, width = 520 } = props;
+  const { x, y, payload, width = 420 } = props;
   const text = String(payload?.value ?? "");
 
   const maxCharsPerLine = Math.max(18, Math.floor(width / 10));
@@ -100,14 +106,14 @@ function YAxisTickWrap(props) {
 }
 
 /* =========================
-   MultiFiltro (chips)
+   MultiFiltro
 ========================= */
 function MultiFiltro({
   titulo,
   opciones,
   seleccion,
   onChange,
-  placeholder = "Todas",
+  placeholder = "Todos",
   disabled = false,
 }) {
   const [open, setOpen] = useState(false);
@@ -138,13 +144,13 @@ function MultiFiltro({
   const showPlaceholder = seleccion.length === 0;
 
   return (
-    <div className="pmf" ref={ref}>
-      <span className="pmf-label">{titulo}</span>
+    <div className="phd-mf" ref={ref}>
+      <span className="phd-mf-label">{titulo}</span>
 
       <button
         type="button"
         className={
-          "pmf-control" +
+          "phd-mf-control" +
           (open ? " is-open" : "") +
           (disabled ? " is-disabled" : "")
         }
@@ -153,11 +159,11 @@ function MultiFiltro({
         }}
       >
         {showPlaceholder ? (
-          <span className="pmf-placeholder">{placeholder}</span>
+          <span className="phd-mf-placeholder">{placeholder}</span>
         ) : (
-          <div className="pmf-chips">
+          <div className="phd-mf-chips">
             {seleccion.map((val) => (
-              <span key={val} className="pmf-chip">
+              <span key={val} className="phd-mf-chip">
                 <span>{val}</span>
                 {!disabled && (
                   <button
@@ -175,22 +181,22 @@ function MultiFiltro({
             ))}
           </div>
         )}
-        <span className="pmf-arrow">▾</span>
+        <span className="phd-mf-arrow">▾</span>
       </button>
 
       {open && !disabled && (
-        <div className="pmf-dropdown" onClick={(e) => e.stopPropagation()}>
-          <div className="pmf-search">
+        <div className="phd-mf-dropdown" onClick={(e) => e.stopPropagation()}>
+          <div className="phd-mf-search">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar..."
             />
           </div>
-          <div className="pmf-options">
-            {filtered.length === 0 && <div className="pmf-empty">Sin resultados</div>}
+          <div className="phd-mf-options">
+            {filtered.length === 0 && <div className="phd-mf-empty">Sin resultados</div>}
             {filtered.map((val) => (
-              <label key={val} className="pmf-option">
+              <label key={val} className="phd-mf-option">
                 <input
                   type="checkbox"
                   checked={seleccion.includes(val)}
@@ -207,11 +213,9 @@ function MultiFiltro({
 }
 
 /* =========================
-   Componente principal (Modal)
+   Componente principal dashboard
 ========================= */
-export default function ModalProyectosHoras({
-  isOpen,
-  onClose,
+export default function ProyectosHorasDashboard({
   userData,
   defaultMonth = "",
   registrosOverride = null,
@@ -219,7 +223,6 @@ export default function ModalProyectosHoras({
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState("");
 
-  // filtros
   const [filtroMes, setFiltroMes] = useState(defaultMonth || "");
   const [filtroEquipo, setFiltroEquipo] = useState([]);
   const [filtroConsultor, setFiltroConsultor] = useState([]);
@@ -228,12 +231,10 @@ export default function ModalProyectosHoras({
   const [filtroTarea, setFiltroTarea] = useState([]);
   const [filtroProyecto, setFiltroProyecto] = useState([]);
 
-  // detalle
-  const [detailOpen, setDetailOpen] = useState(false);
   const [detailTitle, setDetailTitle] = useState("");
   const [detailRows, setDetailRows] = useState([]);
+  const [detailVisible, setDetailVisible] = useState(false);
 
-  // user
   const user = useMemo(() => {
     if (userData) return userData?.user ? userData.user : userData;
     try {
@@ -257,7 +258,6 @@ export default function ModalProyectosHoras({
   const isAdminTeam = !isAdminAll && rolUpper.startsWith("ADMIN_") && !!equipoUser;
   const scope = isAdminAll ? "ALL" : isAdminTeam ? "TEAM" : "SELF";
 
-  // ✅ PROYECTO OFICIAL: viene de BD (por /registros/graficos)
   const projectOfficial = (r) => {
     const codigo = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
     const nombre = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
@@ -265,7 +265,6 @@ export default function ModalProyectosHoras({
     return `${codigo} - ${nombre || "SIN NOMBRE"}`;
   };
 
-  // ✅ PROYECTO DIGITADO: lo dejamos como auditoría (Nro caso cliente)
   const projectDigitado = (r) => {
     const raw = String(r?.nroCasoCliente ?? "").trim();
     if (!raw || raw === "0" || raw.toUpperCase() === "NA" || raw.toUpperCase() === "N/A") return "";
@@ -273,13 +272,10 @@ export default function ModalProyectosHoras({
   };
 
   useEffect(() => {
-    if (!isOpen) return;
     setFiltroMes(defaultMonth || "");
-  }, [isOpen, defaultMonth]);
+  }, [defaultMonth]);
 
   useEffect(() => {
-    if (!isOpen) return;
-
     const initFiltrosPorScope = () => {
       if (scope === "SELF") {
         setFiltroConsultor(nombreUser ? [nombreUser] : []);
@@ -325,7 +321,7 @@ export default function ModalProyectosHoras({
     };
 
     fetchData();
-  }, [isOpen, registrosOverride, rolUpper, usuario, equipoUser, scope, nombreUser]);
+  }, [registrosOverride, rolUpper, usuario, equipoUser, scope, nombreUser]);
 
   const equiposUnicos = useMemo(() => {
     const set = new Set(
@@ -392,12 +388,12 @@ export default function ModalProyectosHoras({
         if (u && ru && ru !== u) return false;
         if (equipoUser && eq !== equipoUser) return false;
       }
+
       if (scope === "TEAM") {
         if (equipoUser && eq !== equipoUser) return false;
       }
 
       if (!coincideMes(r.fecha, filtroMes)) return false;
-
       if (filtroEquipo.length > 0 && !filtroEquipo.includes(eq)) return false;
       if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultor)) return false;
       if (filtroModulo.length > 0 && !filtroModulo.includes(r.modulo)) return false;
@@ -430,13 +426,45 @@ export default function ModalProyectosHoras({
     () => groupSum(datosFiltrados, (r) => projectOfficial(r)),
     [datosFiltrados]
   );
-  const horasPorModulo = useMemo(() => groupSum(datosFiltrados, (r) => r.modulo || "—"), [datosFiltrados]);
-  const horasPorConsultor = useMemo(() => groupSum(datosFiltrados, (r) => r.consultor || "—"), [datosFiltrados]);
-  const horasPorTarea = useMemo(() => groupSum(datosFiltrados, (r) => r.tipoTarea || "—"), [datosFiltrados]);
-  const horasPorOcupacion = useMemo(() => groupSum(datosFiltrados, (r) => r.ocupacion_nombre || "SIN OCUPACIÓN"), [datosFiltrados]);
+  const horasPorModulo = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.modulo || "—"),
+    [datosFiltrados]
+  );
+  const horasPorConsultor = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.consultor || "—"),
+    [datosFiltrados]
+  );
+  const horasPorTarea = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.tipoTarea || "—"),
+    [datosFiltrados]
+  );
+  const horasPorOcupacion = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.ocupacion_nombre || "SIN OCUPACIÓN"),
+    [datosFiltrados]
+  );
 
   const totalHoras = useMemo(
     () => datosFiltrados.reduce((s, r) => s + toNum(r.tiempoInvertido), 0),
+    [datosFiltrados]
+  );
+
+  const totalProyectos = useMemo(
+    () => uniqueCount(datosFiltrados, (r) => projectOfficial(r)),
+    [datosFiltrados]
+  );
+
+  const totalConsultores = useMemo(
+    () => uniqueCount(datosFiltrados, (r) => r.consultor),
+    [datosFiltrados]
+  );
+
+  const totalModulos = useMemo(
+    () => uniqueCount(datosFiltrados, (r) => r.modulo),
+    [datosFiltrados]
+  );
+
+  const totalTareas = useMemo(
+    () => uniqueCount(datosFiltrados, (r) => r.tipoTarea),
     [datosFiltrados]
   );
 
@@ -453,7 +481,12 @@ export default function ModalProyectosHoras({
 
     setDetailTitle(`${kind.toUpperCase()}: ${value} — Total: ${subtotal.toFixed(2)} h`);
     setDetailRows(rows);
-    setDetailOpen(true);
+    setDetailVisible(true);
+
+    requestAnimationFrame(() => {
+      const node = document.getElementById("phd-detail-section");
+      if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   const TOP = 20;
@@ -462,23 +495,33 @@ export default function ModalProyectosHoras({
   const renderChartCard = (title, data, color, kind) => {
     if (!data || data.length === 0) {
       return (
-        <div className="mph-card">
-          <h4>{title}</h4>
-          <div className="mph-empty">Sin datos con los filtros.</div>
+        <div className="phd-card phd-card-chart">
+          <div className="phd-card-head">
+            <h4>{title}</h4>
+          </div>
+          <div className="phd-empty">Sin datos con los filtros.</div>
         </div>
       );
     }
 
     const height = Math.max(320, data.length * 34);
-    const yAxisWidth = 560;
+    const yAxisWidth = 460;
 
     return (
-      <div className="mph-card">
-        <h4>{title}</h4>
-        <div className="mph-chartWrap">
-          <div className="mph-chartInner">
+      <div className="phd-card phd-card-chart">
+        <div className="phd-card-head">
+          <h4>{title}</h4>
+          <span className="phd-card-badge">{data.length} ítems</span>
+        </div>
+
+        <div className="phd-chartWrap">
+          <div className="phd-chartInner">
             <ResponsiveContainer width="100%" height={height}>
-              <BarChart data={data} layout="vertical" margin={{ top: 10, right: 24, left: 10, bottom: 10 }}>
+              <BarChart
+                data={data}
+                layout="vertical"
+                margin={{ top: 10, right: 24, left: 10, bottom: 10 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" />
                 <YAxis
@@ -510,42 +553,122 @@ export default function ModalProyectosHoras({
     );
   };
 
+  const limpiarFiltros = () => {
+    setFiltroModulo([]);
+    setFiltroOcupacion([]);
+    setFiltroTarea([]);
+    setFiltroProyecto([]);
+
+    if (scope === "ALL") {
+      setFiltroEquipo([]);
+      setFiltroConsultor([]);
+    } else if (scope === "TEAM") {
+      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+      setFiltroConsultor([]);
+    } else {
+      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+      setFiltroConsultor(nombreUser ? [nombreUser] : []);
+    }
+  };
+
   return (
-    <>
-      <Modal
-        isOpen={isOpen}
-        onRequestClose={onClose}
-        className="mph-modal"
-        overlayClassName="mph-overlay"
-        contentLabel="Horas por Proyecto"
-        shouldCloseOnOverlayClick
-        ariaHideApp={false}
-      >
-        <div className="mph-header">
-          <div>
-            <h3 className="mph-title">Horas por Proyecto (OFICIAL desde BD)</h3>
-            <div className="mph-sub">
-              Total filtrado: <b>{totalHoras.toFixed(2)} h</b> · Registros: <b>{datosFiltrados.length}</b>
+    <div className="phd-page">
+      <div className="phd-shell">
+        <section className="phd-hero">
+          <div className="phd-hero-left">
+            <span className="phd-kicker">Dashboard</span>
+            <h1>Horas por Proyecto</h1>
+            <p>
+              Visualiza horas registradas por proyecto, módulo, consultor, tarea y ocupación
+              con filtros avanzados y detalle de registros.
+            </p>
+          </div>
+
+          <div className="phd-hero-right">
+            <div className="phd-hero-stat">
+              <span>Total horas</span>
+              <strong>{totalHoras.toFixed(2)} h</strong>
+            </div>
+            <div className="phd-hero-stat">
+              <span>Registros</span>
+              <strong>{datosFiltrados.length}</strong>
             </div>
           </div>
-          <button className="mph-close" onClick={onClose} aria-label="Cerrar">
-            ✖
-          </button>
-        </div>
+        </section>
 
-        {error && <div className="mph-error">Error: {error}</div>}
+        {error && <div className="phd-error">Error: {error}</div>}
 
-        <div className="mph-body">
-          <div className="mph-filtros">
-            <div className="mph-month">
-              <span className="mph-label">MES</span>
-              <input type="month" value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)} />
+        <section className="phd-kpis">
+          <div className="phd-kpi phd-kpi-blue">
+            <span>Proyectos</span>
+            <strong>{totalProyectos}</strong>
+          </div>
+          <div className="phd-kpi phd-kpi-red">
+            <span>Consultores</span>
+            <strong>{totalConsultores}</strong>
+          </div>
+          <div className="phd-kpi phd-kpi-dark">
+            <span>Módulos</span>
+            <strong>{totalModulos}</strong>
+          </div>
+          <div className="phd-kpi phd-kpi-green">
+            <span>Tareas</span>
+            <strong>{totalTareas}</strong>
+          </div>
+        </section>
+
+        <section className="phd-filtros-card">
+          <div className="phd-filtros-head">
+            <div>
+              <h3>Filtros</h3>
+              <p>Aplica filtros para refinar las gráficas y el detalle.</p>
+            </div>
+            <button className="phd-btn phd-btn-dark" onClick={limpiarFiltros}>
+              Limpiar filtros
+            </button>
+          </div>
+
+          <div className="phd-filtros-grid">
+            <div className="phd-month">
+              <span className="phd-label">MES</span>
+              <input
+                type="month"
+                value={filtroMes}
+                onChange={(e) => setFiltroMes(e.target.value)}
+              />
             </div>
 
-            <MultiFiltro titulo="PROYECTOS (OFICIAL)" opciones={proyectosUnicos} seleccion={filtroProyecto} onChange={setFiltroProyecto} placeholder="Todos los proyectos" />
-            <MultiFiltro titulo="MÓDULOS" opciones={modulosUnicos} seleccion={filtroModulo} onChange={setFiltroModulo} placeholder="Todos los módulos" />
-            <MultiFiltro titulo="OCUPACIÓN" opciones={ocupacionesUnicas} seleccion={filtroOcupacion} onChange={setFiltroOcupacion} placeholder="Todas las ocupaciones" />
-            <MultiFiltro titulo="TAREAS" opciones={tareasUnicas} seleccion={filtroTarea} onChange={setFiltroTarea} placeholder="Todas las tareas" />
+            <MultiFiltro
+              titulo="PROYECTOS (OFICIAL)"
+              opciones={proyectosUnicos}
+              seleccion={filtroProyecto}
+              onChange={setFiltroProyecto}
+              placeholder="Todos los proyectos"
+            />
+
+            <MultiFiltro
+              titulo="MÓDULOS"
+              opciones={modulosUnicos}
+              seleccion={filtroModulo}
+              onChange={setFiltroModulo}
+              placeholder="Todos los módulos"
+            />
+
+            <MultiFiltro
+              titulo="OCUPACIÓN"
+              opciones={ocupacionesUnicas}
+              seleccion={filtroOcupacion}
+              onChange={setFiltroOcupacion}
+              placeholder="Todas las ocupaciones"
+            />
+
+            <MultiFiltro
+              titulo="TAREAS"
+              opciones={tareasUnicas}
+              seleccion={filtroTarea}
+              onChange={setFiltroTarea}
+              placeholder="Todas las tareas"
+            />
 
             <MultiFiltro
               titulo="CONSULTORES"
@@ -564,108 +687,106 @@ export default function ModalProyectosHoras({
               disabled={scope !== "ALL"}
               placeholder={scope === "ALL" ? "Todos" : "Tu equipo"}
             />
-
-            <button
-              className="mph-btn"
-              onClick={() => {
-                setFiltroModulo([]);
-                setFiltroOcupacion([]);
-                setFiltroTarea([]);
-                setFiltroProyecto([]);
-
-                if (scope === "ALL") {
-                  setFiltroEquipo([]);
-                  setFiltroConsultor([]);
-                } else if (scope === "TEAM") {
-                  setFiltroEquipo(equipoUser ? [equipoUser] : []);
-                  setFiltroConsultor([]);
-                } else {
-                  setFiltroEquipo(equipoUser ? [equipoUser] : []);
-                  setFiltroConsultor(nombreUser ? [nombreUser] : []);
-                }
-              }}
-            >
-              Limpiar
-            </button>
           </div>
+        </section>
 
-          <div className="mph-grid">
-            {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#0055B8", "proyecto")}
-            {renderChartCard("Horas por Módulo", horasPorModulo, "#E30613", "modulo")}
-            {renderChartCard("Horas por Consultor", horasPorConsultor, "#111827", "consultor")}
-            {renderChartCard("Horas por Tarea", horasPorTarea, "#0EA5E9", "tarea")}
-            {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#10B981", "ocupacion")}
-          </div>
-        </div>
-      </Modal>
+        <section className="phd-grid">
+          {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#0055B8", "proyecto")}
+          {renderChartCard("Horas por Módulo", horasPorModulo, "#E30613", "modulo")}
+          {renderChartCard("Horas por Consultor", horasPorConsultor, "#111827", "consultor")}
+          {renderChartCard("Horas por Tarea", horasPorTarea, "#0EA5E9", "tarea")}
+          {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#10B981", "ocupacion")}
+        </section>
 
-      {detailOpen && (
-        <Modal
-          isOpen={detailOpen}
-          onRequestClose={() => setDetailOpen(false)}
-          className="mph-modalDetail"
-          overlayClassName="mph-overlayDetail"
-          contentLabel="Detalle"
-          shouldCloseOnOverlayClick
-          ariaHideApp={false}
-        >
-          <div className="mph-header">
-            <h3 className="mph-title">{detailTitle}</h3>
-            <button className="mph-close" onClick={() => setDetailOpen(false)} aria-label="Cerrar">
-              ✖
-            </button>
-          </div>
-
-          <div className="mph-detailBody">
-            <div className="mph-detailMeta">
-              Filas: <b>{detailRows.length}</b> · Total:{" "}
-              <b>{detailRows.reduce((s, r) => s + toNum(r.tiempoInvertido), 0).toFixed(2)} h</b>
+        <section id="phd-detail-section" className="phd-detail-section">
+          <div className="phd-detail-head">
+            <div>
+              <h3>Detalle</h3>
+              <p>
+                {detailVisible
+                  ? detailTitle
+                  : "Haz clic en cualquier barra para ver el detalle de registros."}
+              </p>
             </div>
 
-            <div className="mph-tableWrap">
-              <table className="mph-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Fecha</th>
-                    <th>Consultor</th>
-                    <th>Cliente</th>
-                    <th>Proyecto (OFICIAL)</th>
-                    <th>Proyecto (Digitado)</th>
-                    <th>Módulo</th>
-                    <th>Ocupación</th>
-                    <th>Tarea</th>
-                    <th className="num">Horas</th>
-                    <th>Descripción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detailRows.map((r, i) => (
-                    <tr key={i}>
-                      <td className="num">{r.id ?? "—"}</td>
-                      <td>{r.fecha}</td>
-                      <td className="truncate" title={r.consultor}>{r.consultor}</td>
-                      <td className="truncate" title={r.cliente}>{r.cliente}</td>
-                      <td className="truncate" title={projectOfficial(r)}>{projectOfficial(r)}</td>
-                      <td className="truncate" title={projectDigitado(r) || ""}>{projectDigitado(r) || "—"}</td>
-                      <td className="truncate" title={r.modulo}>{r.modulo}</td>
-                      <td className="truncate" title={r.ocupacion_nombre || ""}>{r.ocupacion_nombre || "SIN OCUPACIÓN"}</td>
-                      <td className="truncate" title={r.tipoTarea || ""}>{r.tipoTarea || "—"}</td>
-                      <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
-                      <td className="truncate" title={r.descripcion || ""}>{r.descripcion || ""}</td>
-                    </tr>
-                  ))}
-                  {detailRows.length === 0 && (
+            {detailVisible && (
+              <button
+                className="phd-btn phd-btn-light"
+                onClick={() => {
+                  setDetailVisible(false);
+                  setDetailRows([]);
+                  setDetailTitle("");
+                }}
+              >
+                Cerrar detalle
+              </button>
+            )}
+          </div>
+
+          {!detailVisible ? (
+            <div className="phd-empty phd-empty-lg">
+              Selecciona una barra en cualquiera de las gráficas para cargar el detalle aquí.
+            </div>
+          ) : (
+            <>
+              <div className="phd-detail-meta">
+                Filas: <b>{detailRows.length}</b> · Total:{" "}
+                <b>{detailRows.reduce((s, r) => s + toNum(r.tiempoInvertido), 0).toFixed(2)} h</b>
+              </div>
+
+              <div className="phd-tableWrap">
+                <table className="phd-table">
+                  <thead>
                     <tr>
-                      <td colSpan={11} className="mph-empty">Sin filas.</td>
+                      <th>ID</th>
+                      <th>Fecha</th>
+                      <th>Consultor</th>
+                      <th>Cliente</th>
+                      <th>Proyecto (OFICIAL)</th>
+                      <th>Proyecto (Digitado)</th>
+                      <th>Módulo</th>
+                      <th>Ocupación</th>
+                      <th>Tarea</th>
+                      <th className="num">Horas</th>
+                      <th>Descripción</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </Modal>
-      )}
-    </>
+                  </thead>
+                  <tbody>
+                    {detailRows.map((r, i) => (
+                      <tr key={i}>
+                        <td className="num">{r.id ?? "—"}</td>
+                        <td>{r.fecha}</td>
+                        <td className="truncate" title={r.consultor}>{r.consultor}</td>
+                        <td className="truncate" title={r.cliente}>{r.cliente}</td>
+                        <td className="truncate" title={projectOfficial(r)}>{projectOfficial(r)}</td>
+                        <td className="truncate" title={projectDigitado(r) || ""}>
+                          {projectDigitado(r) || "—"}
+                        </td>
+                        <td className="truncate" title={r.modulo}>{r.modulo}</td>
+                        <td className="truncate" title={r.ocupacion_nombre || ""}>
+                          {r.ocupacion_nombre || "SIN OCUPACIÓN"}
+                        </td>
+                        <td className="truncate" title={r.tipoTarea || ""}>
+                          {r.tipoTarea || "—"}
+                        </td>
+                        <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
+                        <td className="truncate" title={r.descripcion || ""}>
+                          {r.descripcion || ""}
+                        </td>
+                      </tr>
+                    ))}
+                    {detailRows.length === 0 && (
+                      <tr>
+                        <td colSpan={11} className="phd-empty">Sin filas.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
+      </div>
+    </div>
   );
 }

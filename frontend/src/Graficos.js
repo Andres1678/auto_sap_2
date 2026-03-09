@@ -6,7 +6,7 @@ import {
 import Modal from 'react-modal';
 import './PanelGraficos.css';
 import { jfetch } from './lib/api';
-import ModalProyectosHoras from "./ModalProyectosHoras";
+import ProyectosHorasDashboard from './ProyectosHorasDashboard';
 import Swal from "sweetalert2";
 
 
@@ -1535,12 +1535,9 @@ export default function Graficos() {
       )}
 
       {canOpenProyectos && (
-        <ModalProyectosHoras
-          isOpen={modalProyectosOpen}
-          onClose={() => setModalProyectosOpen(false)}
-          userData={user}
-          defaultMonth={filtroMes}
-          registrosOverride={registros}
+        <ProyectosHorasDashboard
+          userData={userData}
+          defaultMonth={mes}
         />
       )}
     </div>

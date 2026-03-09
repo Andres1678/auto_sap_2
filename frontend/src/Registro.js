@@ -45,7 +45,6 @@ const CLIENTE_RESTRINGIDO = 'HITSS/CLARO';
 const CODES_NEED_CASE = new Set(['01','02','03']);
 const CODES_RESTRICTED_CLIENT_9H = new Set(['09','13','14','15']);
 const CODE_SUPERVISION_EQUIPO = '06';
-const CUTOFF_FREE_DATE_ISO = "2026-02-20";
 
 const parseHHMM = (s) => {
   if (!s || typeof s !== "string") return null;
@@ -154,11 +153,6 @@ const getWeekBoundsISO = (now = new Date()) => {
   end.setDate(start.getDate() + 6);
 
   return { minISO: toISODate(start), maxISO: toISODate(end), todayISO: toISODate(d) };
-};
-
-const isDateInRangeISO = (iso, minISO, maxISO) => {
-  if (!iso) return false;
-  return iso >= minISO && iso <= maxISO;
 };
 
 const normText = (v) =>
@@ -352,7 +346,7 @@ const Registro = ({ userData }) => {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 250;
 
-  const pendingEditTareaIdRef = useRef(null);
+  const pendingTareaIdRef = useRef(null);
   const editOriginalRef = useRef(null);
 
   const [fasesProyecto, setFasesProyecto] = useState([]);
@@ -367,7 +361,6 @@ const Registro = ({ userData }) => {
   useEffect(() => {
     const pendingId = pendingEditTareaIdRef.current;
 
-    if (!modoEdicion) return;
     if (!pendingId) return;
     if (!Array.isArray(tareasBD) || tareasBD.length === 0) return;
 
@@ -381,7 +374,7 @@ const Registro = ({ userData }) => {
     }));
 
     pendingEditTareaIdRef.current = null;
-  }, [tareasBD, modoEdicion]);
+  }, [tareasBD]);
 
 
   const isProyectoMode = useMemo(() => {
@@ -771,7 +764,6 @@ const Registro = ({ userData }) => {
       });
     }
 
-    const { minISO: weekMinISO, maxISO: weekMaxISO } = getWeekBoundsISO(new Date());
     const code = taskCode(registro.tipoTarea);
 
     if (!registro.fecha) {
@@ -784,26 +776,6 @@ const Registro = ({ userData }) => {
         title: "Fecha futura no permitida",
         text: "No puedes registrar fechas futuras.",
       });
-    }
-
-    const fechaCambioEnEdicion =
-      modoEdicion && original && String(original.fecha) !== String(registro.fecha);
-
-    if (registro.fecha > CUTOFF_FREE_DATE_ISO) {
-      const debeRestringirSemana = !modoEdicion || fechaCambioEnEdicion;
-
-      if (debeRestringirSemana && !isDateInRangeISO(registro.fecha, weekMinISO, weekMaxISO)) {
-        return Swal.fire({
-          icon: "warning",
-          title: "Fecha fuera de la semana vigente",
-          html: `
-              Desde el <b>21-Feb-2026</b> solo puedes registrar en la <b>semana vigente</b>.
-              <br/><br/>
-              Semana actual permitida:
-              <br/>• <b>${weekMinISO}</b> a <b>${weekMaxISO}</b>
-            `,
-        });
-      }
     }
 
     if (!registro.horaInicio || !registro.horaFin) {
@@ -1158,7 +1130,7 @@ const Registro = ({ userData }) => {
     const moduloSel = pool.length === 1 ? pool[0] : (moduloPref || "");
     setModuloElegido(moduloSel);
 
-    const { minISO: weekMinISO, maxISO: weekMaxISO, todayISO: todayCopyISO } = getWeekBoundsISO(new Date());
+    const { todayISO: todayCopyISO } = getWeekBoundsISO(new Date());
 
     const tareaId =
       reg?.tarea_id ??
@@ -1208,8 +1180,8 @@ const Registro = ({ userData }) => {
       (fases.length ? fases[0] : null);
 
     const newHoraInicio = reg?.horaFin || "";
-    const minFechaUI = (todayCopyISO > CUTOFF_FREE_DATE_ISO) ? weekMinISO : "";
-    const maxFechaUI = (todayCopyISO > CUTOFF_FREE_DATE_ISO) ? weekMaxISO : todayCopyISO;
+    const minFechaUI = "";
+    const maxFechaUI = todayCopyISO;
 
     setRegistro({
       ...initRegistro(),
@@ -1222,7 +1194,7 @@ const Registro = ({ userData }) => {
       nroCasoCliente: reg.nroCasoCliente,
       nroCasoInterno: reg.nroCasoInterno,
       nroCasoEscaladoSap: reg.nroCasoEscaladoSap,
-      tarea_id: "",
+      tarea_id: tareaId ? Number(tareaId) : "",
       tipoTarea: reg?.tarea ? `${reg.tarea.codigo} - ${reg.tarea.nombre}` : (reg?.tipoTarea || ""),
 
       ocupacion_id: ocupacionId,
