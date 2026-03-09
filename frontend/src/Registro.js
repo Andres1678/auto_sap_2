@@ -543,16 +543,24 @@ const Registro = ({ userData }) => {
     setError("");
 
     if (registrosAbortRef.current) {
-      try { registrosAbortRef.current.abort(); } catch {}
+      try {
+        registrosAbortRef.current.abort();
+      } catch {}
     }
+
     const controller = new AbortController();
     registrosAbortRef.current = controller;
 
     try {
       const params = new URLSearchParams();
-      if (equipoLocked) params.set("equipo", equipoLocked);
 
-      const url = `/registros?${params.toString()}`;
+      if (equipoLocked) params.set("equipo", equipoLocked);
+      if (filtroMes) params.set("mes", filtroMes);
+      if (filtroAnio) params.set("anio", filtroAnio);
+      if (filtroConsultor) params.set("consultor", filtroConsultor);
+
+      const query = params.toString();
+      const url = query ? `/registros?${query}` : "/registros";
 
       const res = await jfetch(url, {
         method: "GET",
@@ -573,7 +581,15 @@ const Registro = ({ userData }) => {
       setRegistros([]);
       setError(String(e.message || e));
     }
-  }, [usuarioLogin, rol, equipoUser, equipoLocked]);
+  }, [
+    equipoLocked,
+    filtroMes,
+    filtroAnio,
+    filtroConsultor,
+    usuarioLogin,
+    rol,
+    equipoUser,
+  ]);
 
   const normMod = (v) => String(v || "").trim();
   const uniq = (arr) => Array.from(new Set((arr || []).map(normMod).filter(Boolean)));
