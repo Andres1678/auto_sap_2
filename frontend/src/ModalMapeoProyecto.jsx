@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import Modal from "react-modal";
 import Swal from "sweetalert2";
 import { jfetch } from "./lib/api";
+import "./ModalMapeoProyecto.css";
 
 export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
   const [rows, setRows] = useState([]);
