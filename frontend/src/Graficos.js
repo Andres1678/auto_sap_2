@@ -303,7 +303,6 @@ export default function Graficos() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRows, setModalRows] = useState([]);
   const [modalTitle, setModalTitle] = useState('');
-  const [modalProyectosOpen, setModalProyectosOpen] = useState(false);
   const [mapeosProyecto, setMapeosProyecto] = useState([]);
   const navigate = useNavigate();
 
@@ -498,8 +497,20 @@ export default function Graficos() {
     return map;
   }, [proyectos]);
 
-  const mapeoProyectoSet = useMemo(() => {
-    const set = new Set();
+  const proyectosById = useMemo(() => {
+    const map = new Map();
+
+    (proyectos || []).forEach((p) => {
+      const id = Number(p.id);
+      if (!id) return;
+      map.set(id, p);
+    });
+
+    return map;
+  }, [proyectos]);
+
+  const mapeoOrigenToProyecto = useMemo(() => {
+    const map = new Map();
 
     (mapeosProyecto || []).forEach((m) => {
       if (!m?.activo) return;
@@ -509,14 +520,17 @@ export default function Graficos() {
 
       if (!proyectoId || !origen) return;
 
-      set.add(`${proyectoId}__${origen}`);
+      const proyecto = proyectosById.get(proyectoId);
+      if (!proyecto) return;
+
+      map.set(origen, proyecto);
     });
 
-    return set;
-  }, [mapeosProyecto]);
+    return map;
+  }, [mapeosProyecto, proyectosById]);
 
   const projectOfficialResolved = (r) => {
-    // 1) Proyecto ya resuelto desde backend
+    // 1) Si el backend ya trae proyecto oficial
     const codigoDirecto = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
     const nombreDirecto = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
 
@@ -524,7 +538,7 @@ export default function Graficos() {
       return `${codigoDirecto} - ${nombreDirecto || "SIN NOMBRE"}`;
     }
 
-    // 2) Buscar por nroCasoCliente exacto contra proyecto.codigo
+    // 2) Intentar por código exacto del proyecto usando nroCasoCliente
     const nroCaso = String(r?.nroCasoCliente || "").trim();
     const nroCasoNorm = normTxt(nroCaso);
 
@@ -533,39 +547,23 @@ export default function Graficos() {
       return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
     }
 
-    // 3) Buscar por mapeo usando nroCasoCliente
-    const proyectoId = Number(r?.proyecto_id || r?.proyecto?.id || 0);
-
-    if (proyectoId && nroCasoNorm) {
-      const key = `${proyectoId}__${nroCasoNorm}`;
-      if (mapeoProyectoSet.has(key)) {
-        const p = r?.proyecto;
-        if (p?.codigo) {
-          return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
-        }
-        return `PRY-${proyectoId}`;
-      }
+    // 3) Intentar por mapeo usando nroCasoCliente
+    if (nroCasoNorm && mapeoOrigenToProyecto.has(nroCasoNorm)) {
+      const p = mapeoOrigenToProyecto.get(nroCasoNorm);
+      return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
     }
 
-    // 4) Buscar por mapeo usando descripción
-    const descripcionNorm = normTxt(String(r?.descripcion || "").trim());
+    // 4) Intentar por mapeo usando descripción
+    const descripcion = String(r?.descripcion || "").trim();
+    const descripcionNorm = normTxt(descripcion);
 
-    if (proyectoId && descripcionNorm) {
-      const key = `${proyectoId}__${descripcionNorm}`;
-      if (mapeoProyectoSet.has(key)) {
-        const p = r?.proyecto;
-        if (p?.codigo) {
-          return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
-        }
-        return `PRY-${proyectoId}`;
-      }
+    if (descripcionNorm && mapeoOrigenToProyecto.has(descripcionNorm)) {
+      const p = mapeoOrigenToProyecto.get(descripcionNorm);
+      return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
     }
 
     // 5) Sin proyecto
-    if (
-      (!nroCaso || nroCaso === "0" || ["NA", "N/A"].includes(nroCaso.toUpperCase())) &&
-      !descripcionNorm
-    ) {
+    if (!nroCaso && !descripcion) {
       return "SIN PROYECTO";
     }
 
@@ -759,7 +757,7 @@ export default function Graficos() {
       proyecto,
       horas: +horas.toFixed(2),
     })).sort((a, b) => b.horas - a.horas);
-  }, [datosFiltrados, mapeoProyectoSet, proyectosByCodigo]);
+  }, [datosFiltrados, proyectosByCodigo, mapeoOrigenToProyecto]);
 
   const horasPorDia = useMemo(() => {
     const acc = new Map();
