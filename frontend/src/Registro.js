@@ -33,17 +33,14 @@ function initRegistro() {
     proyecto_nombre: '',
     proyecto_fase: '',
     fase_proyecto_id: '',
+    tarea_id: '',
+    ocupacion_id: '',
   };
 }
 
-const EXCEPCION_8H_USERS = new Set([
-  'serranoel','chaburg','torresfaa','jose.raigosa','camargoje',
-  'duqueb','diazstef','castronay','sierrag','tarquinojm','celyfl'
-]);
-
 const CLIENTE_RESTRINGIDO = 'HITSS/CLARO';
-const CODES_NEED_CASE = new Set(['01','02','03']);
-const CODES_RESTRICTED_CLIENT_9H = new Set(['09','13','14','15']);
+const CODES_NEED_CASE = new Set(['01', '02', '03']);
+const CODES_RESTRICTED_CLIENT_9H = new Set(['09', '13', '14', '15']);
 const CODE_SUPERVISION_EQUIPO = '06';
 
 const parseHHMM = (s) => {
@@ -59,8 +56,8 @@ const parseHHMM = (s) => {
 const toMinutes = ({ h, m }) => h * 60 + m;
 
 const parseRange = (range) => {
-  if (!range || typeof range !== 'string' || !/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(range)) return null;
-  const [ini, fin] = range.split('-');
+  if (!range || typeof range !== 'string' || !/^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(range)) return null;
+  const [ini, fin] = range.split('-').map(x => x.trim());
   const a = parseHHMM(ini);
   const b = parseHHMM(fin);
   if (!a || !b) return null;
@@ -113,6 +110,13 @@ const normKey = (v) =>
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '');
 
+const normText = (v) =>
+  String(v ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+
 const equipoOf = (r, fallback = 'SIN EQUIPO') => {
   const raw = (r?.equipo ?? r?.EQUIPO ?? r?.equipo_nombre ?? r?.equipoName ?? '');
   const n = normKey(raw);
@@ -136,8 +140,8 @@ const normSiNo = (val) => {
   if (val === null || val === undefined) return 'N/D';
   const s = String(val).trim().toLowerCase()
     .normalize('NFD').replace(/\p{Diacritic}/gu, '');
-  if (['si','sí','s','true','1'].includes(s)) return 'SI';
-  if (['no','n','false','0'].includes(s)) return 'NO';
+  if (['si', 'sí', 's', 'true', '1'].includes(s)) return 'SI';
+  if (['no', 'n', 'false', '0'].includes(s)) return 'NO';
   return 'N/D';
 };
 
@@ -156,54 +160,6 @@ const getWeekBoundsISO = (now = new Date()) => {
   end.setDate(start.getDate() + 6);
 
   return { minISO: toISODate(start), maxISO: toISODate(end), todayISO: toISODate(d) };
-};
-
-const normText = (v) =>
-  String(v ?? "")
-    .trim()
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "");
-
-const proyectoClienteNombre = (p) =>
-  String(p?.cliente?.nombre_cliente ?? p?.cliente?.nombre ?? "").trim();
-
-const findOverlapRegistro = ({
-  registros,
-  fecha,
-  consultorId,
-  usuarioLogin,
-  nombreConsultor,
-  excludeId,
-  horaInicio,
-  horaFin
-}) => {
-  const nuevo = toRangeMinutes(horaInicio, horaFin);
-  if (!nuevo) return null;
-
-  const cid = consultorId ? String(consultorId) : null;
-  const exId = excludeId ? String(excludeId) : null;
-
-  const sameOwner = (r) => {
-    if (cid && r?.consultor_id != null) return String(r.consultor_id) === cid;
-    if (r?.usuario) return String(r.usuario).trim().toLowerCase() === String(usuarioLogin).trim().toLowerCase();
-    if (r?.consultor) return String(r.consultor).trim() === String(nombreConsultor || "").trim();
-    return false;
-  };
-
-  for (const r of Array.isArray(registros) ? registros : []) {
-    if (!r) continue;
-    if (String(r?.fecha || "") !== String(fecha || "")) continue;
-    if (exId && String(r?.id) === exId) continue;
-    if (!sameOwner(r)) continue;
-
-    const oldRange = toRangeMinutes(r?.horaInicio, r?.horaFin);
-    if (!oldRange) continue;
-
-    if (rangesOverlap(nuevo, oldRange)) return r;
-  }
-
-  return null;
 };
 
 function taskCode(value) {
@@ -252,6 +208,102 @@ const isActiveValue = (v) => {
   return s === "1" || s === "true" || s === "si" || s === "sí";
 };
 
+const uniq = (arr) => Array.from(new Set((arr || []).map(v => String(v || "").trim()).filter(Boolean)));
+
+const proyectoClienteNombre = (p) =>
+  String(p?.cliente?.nombre_cliente ?? p?.cliente?.nombre ?? "").trim();
+
+const findOverlapRegistro = ({
+  registros,
+  fecha,
+  consultorId,
+  usuarioLogin,
+  nombreConsultor,
+  excludeId,
+  horaInicio,
+  horaFin
+}) => {
+  const nuevo = toRangeMinutes(horaInicio, horaFin);
+  if (!nuevo) return null;
+
+  const cid = consultorId ? String(consultorId) : null;
+  const exId = excludeId ? String(excludeId) : null;
+
+  const sameOwner = (r) => {
+    if (cid && r?.consultor_id != null) return String(r.consultor_id) === cid;
+    if (r?.usuario || r?.usuario_consultor) {
+      return String(r.usuario ?? r.usuario_consultor).trim().toLowerCase() === String(usuarioLogin).trim().toLowerCase();
+    }
+    if (r?.consultor) return String(r.consultor).trim() === String(nombreConsultor || "").trim();
+    return false;
+  };
+
+  for (const r of Array.isArray(registros) ? registros : []) {
+    if (!r) continue;
+    if (String(r?.fecha || "") !== String(fecha || "")) continue;
+    if (exId && String(r?.id) === exId) continue;
+    if (!sameOwner(r)) continue;
+
+    const oldRange = toRangeMinutes(r?.horaInicio, r?.horaFin);
+    if (!oldRange) continue;
+
+    if (rangesOverlap(nuevo, oldRange)) return r;
+  }
+
+  return null;
+};
+
+const RegistroRow = React.memo(function RegistroRow({
+  r,
+  isBASISTable,
+  isAdmin,
+  moduloUser,
+  nombreUser,
+  onEditar,
+  onEliminar,
+  onCopiar,
+  onToggleBloqueado,
+}) {
+  return (
+    <tr>
+      <td className="num">{r.id}</td>
+      <td>{r.fecha}</td>
+      <td>{r.modulo ?? moduloUser}</td>
+      <td>{r.equipoNormalizado}</td>
+      <td>{r.cliente}</td>
+      <td>{r.nroCasoCliente}</td>
+      <td>{r.nroCasoInterno}</td>
+      <td>{r.nroCasoEscaladoSap}</td>
+      <td>{r.ocupacionTexto}</td>
+      <td>{r.tipoTareaTexto}</td>
+      <td>{r.consultor ?? nombreUser}</td>
+      <td>{r.horaInicio}</td>
+      <td>{r.horaFin}</td>
+      <td className="num">{r.tiempoInvertido}</td>
+      <td className="num">{r.tiempoFacturable}</td>
+      {isBASISTable && <td>{r.oncall}</td>}
+      {isBASISTable && <td>{r.desborde}</td>}
+      <td>{r.horasAdicionales}</td>
+      <td className="truncate" title={r.descripcion}>{r.descripcion}</td>
+      <td className="actions">
+        <button type="button" className="icon-btn" onClick={() => onEditar(r)} disabled={r.bloqueado} title="Editar">✏️</button>
+        <button type="button" className="icon-btn danger" onClick={() => onEliminar(r.id)} disabled={r.bloqueado} title="Eliminar">🗑️</button>
+        <button type="button" className="icon-btn" onClick={() => onCopiar(r)} title="Copiar">📋</button>
+      </td>
+      {isAdmin && (
+        <td>
+          <input
+            type="checkbox"
+            checked={!!r.bloqueado}
+            onChange={() => onToggleBloqueado(r.id)}
+            aria-label="Bloquear/Desbloquear fila"
+          />
+        </td>
+      )}
+    </tr>
+  );
+});
+
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros] = useState([]);
@@ -274,6 +326,7 @@ const Registro = ({ userData }) => {
   const [filtroHorasAdic, setFiltroHorasAdic] = useState('');
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroAnio, setFiltroAnio] = useState("");
+
   const [consultorActivo, setConsultorActivo] = useState(
     isActiveValue(userData?.activo ?? userData?.user?.activo ?? localStorage.getItem("consultorActivo"))
   );
@@ -310,7 +363,7 @@ const Registro = ({ userData }) => {
 
   const userEquipoUpper = String(equipoUser || '').toUpperCase();
 
-  const canDownload = ['rodriguezso','valdezjl', 'gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
+  const canDownload = ['rodriguezso', 'valdezjl', 'gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
   const [importingExcel, setImportingExcel] = useState(false);
   const canImportExcel = ['gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
 
@@ -329,12 +382,14 @@ const Registro = ({ userData }) => {
 
   const adminBloqueadoPorEquipo =
     isAdmin && (userEquipoUpper === 'BASIS' || userEquipoUpper === 'FUNCIONAL');
+
   const equipoFormulario = adminBloqueadoPorEquipo
     ? userEquipoUpper
     : (isAdmin ? vistaEquipo : (userEquipoUpper === 'BASIS' ? 'BASIS' : 'FUNCIONAL'));
 
   const [modulos, setModulos] = useState(getModulosLocal(userData));
   const [moduloElegido, setModuloElegido] = useState('');
+
   useEffect(() => {
     const locals = getModulosLocal(userData);
     setModulos(locals);
@@ -346,14 +401,17 @@ const Registro = ({ userData }) => {
   const [todasTareas, setTodasTareas] = useState([]);
   const [ocupacionSeleccionada, setOcupacionSeleccionada] = useState('');
   const [equiposDisponibles, setEquiposDisponibles] = useState([]);
-  const [tareasBD, setTareasBD] = useState([]);
+
   const filtroNroCasoCliDeb = useDebouncedValue(filtroNroCasoCli, 300);
+  const filtroIdDeb = useDebouncedValue(filtroId, 250);
 
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 250;
+  const [perPage] = useState(50);
+  const [totalRegistros, setTotalRegistros] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
-  const pendingEditTareaIdRef = useRef(null);
   const editOriginalRef = useRef(null);
+  const registrosAbortRef = useRef(null);
 
   const [fasesProyecto, setFasesProyecto] = useState([]);
   const prevIsProyectoModeRef = useRef(false);
@@ -371,26 +429,9 @@ const Registro = ({ userData }) => {
     return () => clearTimeout(id);
   }, [modalIsOpen]);
 
-  useEffect(() => {
-    const pendingId = pendingEditTareaIdRef.current;
-    if (!pendingId) return;
-    if (!Array.isArray(tareasBD) || tareasBD.length === 0) return;
-
-    const tareaObj = tareasBD.find((t) => Number(t.id) === Number(pendingId));
-    if (!tareaObj) return;
-
-    setRegistro((r) => ({
-      ...r,
-      tarea_id: Number(pendingId),
-      tipoTarea: r.tipoTarea || `${tareaObj.codigo} - ${tareaObj.nombre}`,
-    }));
-
-    pendingEditTareaIdRef.current = null;
-  }, [tareasBD]);
-
   const isProyectoMode = useMemo(() => {
-    const occ = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
-    return occ === "02";
+    const occCode = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
+    return occCode === "02";
   }, [ocupacionSeleccionada, ocupaciones]);
 
   const forceProyectoMode = useMemo(() => {
@@ -411,6 +452,11 @@ const Registro = ({ userData }) => {
       return normText(cName) === key;
     });
   }, [proyectos, registro?.cliente]);
+
+  const tareasDeOcupacion = useMemo(() => {
+    const occ = (ocupaciones || []).find(o => String(o.id) === String(ocupacionSeleccionada));
+    return Array.isArray(occ?.tareas) ? occ.tareas : [];
+  }, [ocupaciones, ocupacionSeleccionada]);
 
   useEffect(() => {
     if (!showProyectoUI) return;
@@ -496,7 +542,7 @@ const Registro = ({ userData }) => {
   useEffect(() => {
     setPage(1);
   }, [
-    filtroId,
+    filtroIdDeb,
     filtroEquipo,
     filtroFecha,
     filtroCliente,
@@ -512,9 +558,19 @@ const Registro = ({ userData }) => {
   useEffect(() => {
     const fetchCatalogos = async () => {
       try {
+        const cached = sessionStorage.getItem("catalogos_registro");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          setEquiposDisponibles(Array.isArray(parsed?.equipos) ? parsed.equipos : []);
+          setClientes(Array.isArray(parsed?.clientes) ? parsed.clientes : []);
+          setOcupaciones(Array.isArray(parsed?.ocupaciones) ? parsed.ocupaciones : []);
+          setTodasTareas(Array.isArray(parsed?.tareas) ? parsed.tareas : []);
+          return;
+        }
+
         const [eqRes, cliRes, ocuRes] = await Promise.all([
           jfetch('/equipos'),
-          jfetch('/clientes'),
+          jfetch('/clientes?limit=500'),
           jfetch('/ocupaciones')
         ]);
 
@@ -528,17 +584,24 @@ const Registro = ({ userData }) => {
         if (!cliRes.ok) throw new Error(cliData?.mensaje || `HTTP ${cliRes.status}`);
         if (!ocuRes.ok) throw new Error(ocuData?.mensaje || `HTTP ${ocuRes.status}`);
 
-        setEquiposDisponibles(Array.isArray(eqData) ? eqData : []);
-        setClientes(Array.isArray(cliData) ? cliData : []);
-
         const ocus = Array.isArray(ocuData) ? ocuData : [];
-        setOcupaciones(ocus);
 
         const map = new Map();
         ocus.forEach(o => (o.tareas || []).forEach(t => {
           if (t && !map.has(t.id)) map.set(t.id, t);
         }));
+
+        setEquiposDisponibles(Array.isArray(eqData) ? eqData : []);
+        setClientes(Array.isArray(cliData) ? cliData : []);
+        setOcupaciones(ocus);
         setTodasTareas(Array.from(map.values()));
+
+        sessionStorage.setItem("catalogos_registro", JSON.stringify({
+          equipos: Array.isArray(eqData) ? eqData : [],
+          clientes: Array.isArray(cliData) ? cliData : [],
+          ocupaciones: ocus,
+          tareas: Array.from(map.values()),
+        }));
       } catch (err) {
         console.error('Error cargando catálogos:', err);
         setEquiposDisponibles([]);
@@ -549,8 +612,6 @@ const Registro = ({ userData }) => {
     };
     fetchCatalogos();
   }, []);
-
-  const registrosAbortRef = useRef(null);
 
   const fetchRegistros = useCallback(async () => {
     setError("");
@@ -571,9 +632,30 @@ const Registro = ({ userData }) => {
       if (filtroMes) params.set("mes", filtroMes);
       if (filtroAnio) params.set("anio", filtroAnio);
       if (filtroConsultor) params.set("consultor", filtroConsultor);
+      if (filtroCliente) params.set("cliente", filtroCliente);
+      if (filtroFecha) params.set("fecha", filtroFecha);
+      if (filtroIdDeb) params.set("id", filtroIdDeb);
+      if (filtroNroCasoCliDeb) params.set("nroCasoCliente", filtroNroCasoCliDeb);
+      if (filtroHorasAdic) params.set("horasAdicionales", filtroHorasAdic);
 
-      const query = params.toString();
-      const url = query ? `/registros?${query}` : "/registros";
+      if (filtroTarea) {
+        const tareaObj = (todasTareas || []).find(
+          t => `${t.codigo} - ${t.nombre}` === filtroTarea
+        );
+        if (tareaObj?.id) params.set("tarea_id", tareaObj.id);
+      }
+
+      if (filtroOcupacion) {
+        const occObj = (ocupaciones || []).find(
+          o => `${o.codigo} - ${o.nombre}` === filtroOcupacion
+        );
+        if (occObj?.id) params.set("ocupacion_id", occObj.id);
+      }
+
+      params.set("page", page);
+      params.set("per_page", perPage);
+
+      const url = `/registros?${params.toString()}`;
 
       const res = await jfetch(url, {
         method: "GET",
@@ -585,13 +667,17 @@ const Registro = ({ userData }) => {
         },
       });
 
-      const data = await res.json().catch(() => []);
-      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
 
-      setRegistros(Array.isArray(data) ? data : []);
+      setRegistros(Array.isArray(data?.data) ? data.data : []);
+      setTotalRegistros(Number(data?.total || 0));
+      setTotalPages(Number(data?.total_pages || 1));
     } catch (e) {
       if (e?.name === "AbortError") return;
       setRegistros([]);
+      setTotalRegistros(0);
+      setTotalPages(1);
       setError(String(e.message || e));
     }
   }, [
@@ -599,13 +685,21 @@ const Registro = ({ userData }) => {
     filtroMes,
     filtroAnio,
     filtroConsultor,
+    filtroCliente,
+    filtroFecha,
+    filtroIdDeb,
+    filtroNroCasoCliDeb,
+    filtroHorasAdic,
+    filtroTarea,
+    filtroOcupacion,
+    page,
+    perPage,
     usuarioLogin,
     rol,
     equipoUser,
+    todasTareas,
+    ocupaciones,
   ]);
-
-  const normMod = (v) => String(v || "").trim();
-  const uniq = (arr) => Array.from(new Set((arr || []).map(normMod).filter(Boolean)));
 
   useEffect(() => {
     if (!usuarioLogin) return;
@@ -653,10 +747,10 @@ const Registro = ({ userData }) => {
       const k = equipoOf(r);
       map.set(k, (map.get(k) || 0) + 1);
     });
-    const total = (registros || []).length;
-    const arr = Array.from(map.entries()).sort((a,b)=>a[0].localeCompare(b[0]));
-    return [{ key:'', label:'Todos', count: total }, ...arr.map(([k,c])=>({ key:k, label:k, count:c }))];
-  }, [registros]);
+    const total = totalRegistros || (registros || []).length;
+    const arr = Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    return [{ key: '', label: 'Todos', count: total }, ...arr.map(([k, c]) => ({ key: k, label: k, count: c }))];
+  }, [registros, totalRegistros]);
 
   const ocupacionLabelByTareaId = useMemo(() => {
     const map = new Map();
@@ -689,82 +783,24 @@ const Registro = ({ userData }) => {
     return ocupacionLabelByTareaId.get(tareaId) || "—";
   }, [tareaIdByCodigoNombre, ocupacionLabelByTareaId]);
 
+  const registrosProcesados = useMemo(() => {
+    return (registros || []).map((r) => ({
+      ...r,
+      equipoNormalizado: equipoOf(r),
+      ocupacionTexto: obtenerOcupacionDeRegistro(r),
+      tipoTareaTexto: r.tipoTarea || (r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—"),
+    }));
+  }, [registros, obtenerOcupacionDeRegistro]);
+
   const registrosFiltrados = useMemo(() => {
-    const base = Array.isArray(registros) ? registros : [];
-
-    const rows = base.filter((r) => {
-      if (String(filtroId || '').trim() !== '') {
-        const idBuscado = String(filtroId).trim();
-        const idRegistro = String(r.id ?? r.registro_id ?? r.id_registro ?? '').trim();
-        if (!idRegistro.includes(idBuscado)) return false;
-      }
-      if (filtroEquipo && equipoOf(r) !== normKey(filtroEquipo)) return false;
-      if (filtroFecha && r.fecha !== filtroFecha) return false;
-      if (filtroCliente && r.cliente !== filtroCliente) return false;
-      if (filtroOcupacion && obtenerOcupacionDeRegistro(r) !== filtroOcupacion) return false;
-      if (filtroTarea && r.tipoTarea !== filtroTarea) return false;
-      if (filtroConsultor && r.consultor !== filtroConsultor) return false;
-
-      if (filtroNroCasoCliDeb) {
-        const val = String(r.nroCasoCliente || "").toLowerCase();
-        const needle = String(filtroNroCasoCliDeb || "").toLowerCase();
-        if (!val.includes(needle)) return false;
-      }
-
-      if (filtroHorasAdic) {
-        if (normSiNo(r.horasAdicionales) !== filtroHorasAdic) return false;
-      }
-
-      if (filtroMes || filtroAnio) {
-        const f = String(r.fecha || "");
-        const [yyyy, mm] = f.split("-");
-        if (filtroAnio && yyyy !== String(filtroAnio)) return false;
-        if (filtroMes && mm !== String(filtroMes)) return false;
-      }
-
-      return true;
-    });
-
-    const sorted = rows.slice().sort((a, b) => {
-      const ia = Number(a?.id ?? a?.registro_id ?? a?.id_registro ?? 0);
-      const ib = Number(b?.id ?? b?.registro_id ?? b?.id_registro ?? 0);
-      if (ia !== ib) return ia - ib;
-
-      const da = new Date(a?.fecha || "1970-01-01");
-      const db = new Date(b?.fecha || "1970-01-01");
-      return da - db;
-    });
-
-    const total = sorted.length;
-    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-    const safePage = Math.min(Math.max(1, page), totalPages);
-
-    const start = (safePage - 1) * PAGE_SIZE;
-    const end = start + PAGE_SIZE;
-
     return {
-      total,
+      total: totalRegistros,
       totalPages,
-      page: safePage,
-      pageRows: sorted.slice(start, end),
-      allRows: sorted,
+      page,
+      pageRows: registrosProcesados,
+      allRows: registrosProcesados,
     };
-  }, [
-    registros,
-    filtroId,
-    filtroEquipo,
-    filtroFecha,
-    filtroCliente,
-    filtroOcupacion,
-    filtroTarea,
-    filtroConsultor,
-    filtroNroCasoCliDeb,
-    filtroHorasAdic,
-    filtroMes,
-    filtroAnio,
-    obtenerOcupacionDeRegistro,
-    page,
-  ]);
+  }, [registrosProcesados, totalRegistros, totalPages, page]);
 
   const closeModal = useCallback(() => {
     setModalIsOpen(false);
@@ -859,7 +895,7 @@ const Registro = ({ userData }) => {
     }
 
     const occCode = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
-    const tareaCode = tareaCodeFromRegistro(registro, tareasBD);
+    const tareaCode = tareaCodeFromRegistro(registro, tareasDeOcupacion);
 
     if (occCode === "02") {
       const badCliente = isNAValue(registro.nroCasoCliente);
@@ -943,7 +979,7 @@ const Registro = ({ userData }) => {
     const horasAdic = calcularHorasAdicionales(
       registro.horaInicio,
       registro.horaFin,
-      /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
+      /^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
     );
 
     const moduloFinal = (moduloElegido || modulos[0] || moduloUser || "").trim();
@@ -988,12 +1024,13 @@ const Registro = ({ userData }) => {
       nombre: nombreConsultor,
       consultor: nombreConsultor,
       modulo: moduloFinal,
+      tipoTarea: registro.tipoTarea,
     };
 
-    if (equipoFormulario !== "BASIS") {
-      delete payload.actividadMalla;
-      delete payload.oncall;
-      delete payload.desborde;
+    if (equipoFormulario === "BASIS") {
+      payload.actividadMalla = registro.actividadMalla;
+      payload.oncall = registro.oncall;
+      payload.desborde = registro.desborde;
     }
 
     try {
@@ -1002,7 +1039,11 @@ const Registro = ({ userData }) => {
 
       const resp = await jfetch(path, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Usuario": usuarioLogin,
+          "X-User-Rol": rol,
+        },
         body: JSON.stringify(payload),
       });
 
@@ -1041,8 +1082,6 @@ const Registro = ({ userData }) => {
       const occ = ocupaciones.find(o => (o.tareas || []).some(t => Number(t.id) === Number(tareaId)));
       if (occ?.id) ocupacionId = String(occ.id);
     }
-
-    pendingEditTareaIdRef.current = tareaId ? Number(tareaId) : null;
 
     const pool = resolveModulosForEdit(reg);
     setModulos(pool);
@@ -1097,7 +1136,7 @@ const Registro = ({ userData }) => {
       nroCasoCliente: reg.nroCasoCliente,
       nroCasoInterno: reg.nroCasoInterno,
       nroCasoEscaladoSap: reg.nroCasoEscaladoSap,
-      tarea_id: "",
+      tarea_id: tareaId ? Number(tareaId) : "",
       tipoTarea: reg?.tarea ? `${reg.tarea.codigo} - ${reg.tarea.nombre}` : (reg?.tipoTarea || ""),
       ocupacion_id: ocupacionId,
       horaInicio: reg.horaInicio,
@@ -1106,6 +1145,9 @@ const Registro = ({ userData }) => {
       descripcion: reg.descripcion,
       modulo: moduloSel,
       equipo: equipoOf(reg, userEquipoUpper),
+      actividadMalla: reg.actividadMalla || "",
+      oncall: reg.oncall || "",
+      desborde: reg.desborde || "",
       proyecto_id: pid,
       proyecto_codigo: reg?.proyecto_codigo ?? reg?.proyecto?.codigo ?? (proyectoObj?.codigo ?? ""),
       proyecto_nombre: reg?.proyecto_nombre ?? reg?.proyecto?.nombre ?? (proyectoObj?.nombre ?? ""),
@@ -1127,6 +1169,7 @@ const Registro = ({ userData }) => {
       confirmButtonText: 'Sí, eliminar',
       cancelButtonText: 'Cancelar',
     });
+
     if (res.isConfirmed) {
       const resp = await jfetch(`/eliminar-registro/${id}`, {
         method: 'DELETE',
@@ -1139,10 +1182,11 @@ const Registro = ({ userData }) => {
       });
 
       if (!resp.ok) {
-        const j = await resp.json().catch(()=> ({}));
-        return Swal.fire({ icon:'error', title: j?.mensaje || `HTTP ${resp.status}` });
+        const j = await resp.json().catch(() => ({}));
+        return Swal.fire({ icon: 'error', title: j?.mensaje || `HTTP ${resp.status}` });
       }
-      Swal.fire({ icon:'success', title:'Eliminado' });
+
+      Swal.fire({ icon: 'success', title: 'Eliminado' });
       fetchRegistros();
       window.dispatchEvent(new Event("resumen-actualizar"));
     }
@@ -1170,8 +1214,6 @@ const Registro = ({ userData }) => {
       const occ = ocupaciones.find(o => (o.tareas || []).some(t => Number(t.id) === Number(tareaId)));
       if (occ?.id) ocupacionId = String(occ.id);
     }
-
-    pendingEditTareaIdRef.current = tareaId ? Number(tareaId) : null;
 
     const pid = reg?.proyecto_id ? String(reg.proyecto_id) : "";
 
@@ -1226,6 +1268,9 @@ const Registro = ({ userData }) => {
       descripcion: reg.descripcion,
       modulo: moduloSel,
       equipo: equipoOf(reg, userEquipoUpper),
+      actividadMalla: reg.actividadMalla || "",
+      oncall: reg.oncall || "",
+      desborde: reg.desborde || "",
       proyecto_id: pid,
       proyecto_codigo: reg?.proyecto_codigo ?? reg?.proyecto?.codigo ?? "",
       proyecto_nombre: reg?.proyecto_nombre ?? reg?.proyecto?.nombre ?? "",
@@ -1245,14 +1290,14 @@ const Registro = ({ userData }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rol: isAdmin ? 'ADMIN' : (rol || '') })
       });
-      if (!resp.ok) throw new Error((await resp.json().catch(()=>({})))?.mensaje || `HTTP ${resp.status}`);
+      if (!resp.ok) throw new Error((await resp.json().catch(() => ({})))?.mensaje || `HTTP ${resp.status}`);
       fetchRegistros();
-    } catch (e) {}
+    } catch {}
   };
 
-  const actividadMalla = ['AC','CRU1','CRU2','CRU3','DC','DE','DF','IN','ON','T1E','T1I','T1X','T2E','T2I','T2X','T3','VC', 'SAT', 'N/APLICA'];
-  const oncall = ['SI','NO','N/A'];
-  const desborde = ['SI','NO','N/A'];
+  const actividadMalla = ['AC', 'CRU1', 'CRU2', 'CRU3', 'DC', 'DE', 'DF', 'IN', 'ON', 'T1E', 'T1I', 'T1X', 'T2E', 'T2I', 'T2X', 'T3', 'VC', 'SAT', 'N/APLICA'];
+  const oncall = ['SI', 'NO', 'N/A'];
+  const desborde = ['SI', 'NO', 'N/A'];
 
   const MESES = [
     { value: "01", label: "Enero" },
@@ -1273,7 +1318,7 @@ const Registro = ({ userData }) => {
     const visible = registrosFiltrados?.allRows || [];
     exportRegistrosExcelXLSX_ALL(
       visible,
-      `registros_${new Date().toISOString().slice(0,10)}.xlsx`,
+      `registros_${new Date().toISOString().slice(0, 10)}.xlsx`,
       {
         'Consultor filtro': filtroConsultor || 'Todos',
         'Tarea filtro': filtroTarea || 'Todas',
@@ -1282,6 +1327,7 @@ const Registro = ({ userData }) => {
         'Nro Caso Cliente filtro': filtroNroCasoCli || 'Todos',
         'Horas Adicionales filtro': filtroHorasAdic || 'Todas',
         'Fecha filtro': filtroFecha || 'Todas',
+        'Página': page,
         'Generado': new Date().toLocaleString()
       }
     );
@@ -1297,25 +1343,6 @@ const Registro = ({ userData }) => {
       setFiltroEquipo('');
     }
   }, [isAdmin, nombreUser, equipoUser, userData]);
-
-  useEffect(() => {
-    if (!ocupacionSeleccionada) {
-      setTareasBD([]);
-      return;
-    }
-
-    const cargarTareas = async () => {
-      try {
-        const res = await jfetch(`/ocupaciones/${ocupacionSeleccionada}/tareas`);
-        const data = await res.json();
-        setTareasBD(Array.isArray(data) ? data : []);
-      } catch (err) {
-        setTareasBD([]);
-      }
-    };
-
-    cargarTareas();
-  }, [ocupacionSeleccionada]);
 
   const handleImportExcel = async () => {
     const file = excelInputRef.current?.files?.[0];
@@ -1654,6 +1681,7 @@ const Registro = ({ userData }) => {
                 setFiltroHorasAdic('');
                 setFiltroMes('');
                 setFiltroAnio('');
+                setPage(1);
                 if (isAdmin) {
                   setFiltroConsultor('');
                   setFiltroEquipo('');
@@ -1798,7 +1826,6 @@ const Registro = ({ userData }) => {
                         fase_proyecto_id: '',
                       }));
                       setFasesProyecto([]);
-                      pendingEditTareaIdRef.current = null;
                     }}
                     required
                   >
@@ -1814,7 +1841,7 @@ const Registro = ({ userData }) => {
                     value={registro.tarea_id || ""}
                     onChange={(e) => {
                       const tareaId = Number(e.target.value);
-                      const tareaObj = tareasBD.find(t => Number(t.id) === Number(tareaId));
+                      const tareaObj = tareasDeOcupacion.find(t => Number(t.id) === Number(tareaId));
 
                       setRegistro(r => ({
                         ...r,
@@ -1823,10 +1850,10 @@ const Registro = ({ userData }) => {
                       }));
                     }}
                     required
-                    disabled={!ocupacionSeleccionada || tareasBD.length === 0}
+                    disabled={!ocupacionSeleccionada || tareasDeOcupacion.length === 0}
                   >
                     <option value="">Seleccionar Tarea</option>
-                    {tareasBD.map((t) => (
+                    {tareasDeOcupacion.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.codigo} - {t.nombre}
                       </option>
@@ -2031,42 +2058,18 @@ const Registro = ({ userData }) => {
               </thead>
               <tbody>
                 {registrosFiltrados.pageRows.map((r) => (
-                  <tr key={r.id}>
-                    <td className="num">{r.id}</td>
-                    <td>{r.fecha}</td>
-                    <td>{r.modulo ?? moduloUser}</td>
-                    <td>{equipoOf(r)}</td>
-                    <td>{r.cliente}</td>
-                    <td>{r.nroCasoCliente}</td>
-                    <td>{r.nroCasoInterno}</td>
-                    <td>{r.nroCasoEscaladoSap}</td>
-                    <td>{obtenerOcupacionDeRegistro(r)}</td>
-                    <td>{r.tipoTarea || (r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—")}</td>
-                    <td>{r.consultor ?? nombreUser}</td>
-                    <td>{r.horaInicio}</td>
-                    <td>{r.horaFin}</td>
-                    <td className="num">{r.tiempoInvertido}</td>
-                    <td className="num">{r.tiempoFacturable}</td>
-                    {isBASISTable && <td>{r.oncall}</td>}
-                    {isBASISTable && <td>{r.desborde}</td>}
-                    <td>{r.horasAdicionales}</td>
-                    <td className="truncate" title={r.descripcion}>{r.descripcion}</td>
-                    <td className="actions">
-                      <button type="button" className="icon-btn" onClick={() => handleEditar(r)} disabled={r.bloqueado} title="Editar">✏️</button>
-                      <button type="button" className="icon-btn danger" onClick={() => handleEliminar(r.id)} disabled={r.bloqueado} title="Eliminar">🗑️</button>
-                      <button type="button" className="icon-btn" onClick={() => handleCopiar(r)} title="Copiar">📋</button>
-                    </td>
-                    {isAdmin && (
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={!!r.bloqueado}
-                          onChange={() => toggleBloqueado(r.id)}
-                          aria-label="Bloquear/Desbloquear fila"
-                        />
-                      </td>
-                    )}
-                  </tr>
+                  <RegistroRow
+                    key={r.id}
+                    r={r}
+                    isBASISTable={isBASISTable}
+                    isAdmin={isAdmin}
+                    moduloUser={moduloUser}
+                    nombreUser={nombreUser}
+                    onEditar={handleEditar}
+                    onEliminar={handleEliminar}
+                    onCopiar={handleCopiar}
+                    onToggleBloqueado={toggleBloqueado}
+                  />
                 ))}
                 {registrosFiltrados.total === 0 && (
                   <tr>

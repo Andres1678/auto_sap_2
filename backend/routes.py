@@ -742,6 +742,63 @@ def horario_consultor():
         h_actual = hh.rango if hh else None
     return jsonify({'horario': h_actual, 'opciones': opciones})
 
+def _parse_hhmm_to_minutes(value):
+    s = str(value or "").strip()
+    if not re.match(r"^\d{2}:\d{2}$", s):
+        return None
+    try:
+        h, m = s.split(":")
+        h = int(h)
+        m = int(m)
+        if h < 0 or h > 23 or m < 0 or m > 59:
+            return None
+        return h * 60 + m
+    except Exception:
+        return None
+
+
+def _ranges_overlap(start_a, end_a, start_b, end_b):
+    return max(start_a, end_a) != min(start_a, end_a) and max(start_a, start_b) < min(end_a, end_b)
+
+
+def _calcular_tiempo_horas(hora_inicio, hora_fin):
+    ini = _parse_hhmm_to_minutes(hora_inicio)
+    fin = _parse_hhmm_to_minutes(hora_fin)
+    if ini is None or fin is None or fin <= ini:
+        return 0
+    mins = fin - ini
+    return round(mins / 60.0, 2)
+
+
+def _buscar_registro_traslapado(fecha, usuario_consultor, hora_inicio, hora_fin, exclude_id=None):
+    nuevo_ini = _parse_hhmm_to_minutes(hora_inicio)
+    nuevo_fin = _parse_hhmm_to_minutes(hora_fin)
+
+    if nuevo_ini is None or nuevo_fin is None or nuevo_fin <= nuevo_ini:
+        return None
+
+    q = Registro.query.filter(
+        Registro.fecha == fecha,
+        func.lower(Registro.usuario_consultor) == func.lower(str(usuario_consultor).strip())
+    )
+
+    if exclude_id:
+        q = q.filter(Registro.id != int(exclude_id))
+
+    existentes = q.all()
+
+    for r in existentes:
+        old_ini = _parse_hhmm_to_minutes(r.hora_inicio)
+        old_fin = _parse_hhmm_to_minutes(r.hora_fin)
+
+        if old_ini is None or old_fin is None or old_fin <= old_ini:
+            continue
+
+        if max(nuevo_ini, old_ini) < min(nuevo_fin, old_fin):
+            return r
+
+    return None
+
 @bp.route('/registrar-hora', methods=['POST'])
 def registrar_hora():
     data = request.get_json(force=True, silent=True) or {}
@@ -785,13 +842,31 @@ def registrar_hora():
     if not fecha or not cliente or not hora_inicio or not hora_fin:
         return jsonify({'mensaje': 'Campos obligatorios faltantes'}), 400
 
+    tiempo_calculado = _calcular_tiempo_horas(hora_inicio, hora_fin)
+    if tiempo_calculado <= 0:
+        return jsonify({'mensaje': 'Hora fin debe ser mayor a hora inicio'}), 400
+
     # ------------------------------------------------------------------
-    # 3) DETERMINAR TAREA (CORREGIDO)
+    # 3) VALIDAR TRASLAPE EN BACKEND
+    # ------------------------------------------------------------------
+    conflicto = _buscar_registro_traslapado(
+        fecha=fecha,
+        usuario_consultor=consultor.usuario,
+        hora_inicio=hora_inicio,
+        hora_fin=hora_fin,
+        exclude_id=None
+    )
+    if conflicto:
+        return jsonify({
+            'mensaje': f'Ya existe un registro que se cruza con este rango: {conflicto.hora_inicio} - {conflicto.hora_fin} (ID: {conflicto.id})'
+        }), 409
+
+    # ------------------------------------------------------------------
+    # 4) DETERMINAR TAREA
     # ------------------------------------------------------------------
     tarea_id = pick(data, "tarea_id")
     tarea_obj = None
 
-    # A) Si viene tarea_id → se usa directamente
     if tarea_id:
         try:
             tarea_id = int(tarea_id)
@@ -801,7 +876,6 @@ def registrar_hora():
         except Exception:
             return jsonify({'mensaje': 'Tarea inválida'}), 400
     else:
-        # B) Compatibilidad → detectar desde tipoTarea si existe ("03 - Nombre")
         tipoTareaRaw = pick(data, "tipoTarea", "tipo_tarea")
         if tipoTareaRaw:
             codigo = str(tipoTareaRaw).split("-", 1)[0].strip()
@@ -810,14 +884,14 @@ def registrar_hora():
                 tarea_id = tarea_obj.id
 
     # ------------------------------------------------------------------
-    # 4) VALORES NUMÉRICOS
+    # 5) VALORES NUMÉRICOS
     # ------------------------------------------------------------------
-    tiempo_invertido = float(pick(data, 'tiempoInvertido', 'tiempo_invertido', default=0) or 0)
+    tiempo_invertido = float(pick(data, 'tiempoInvertido', 'tiempo_invertido', default=tiempo_calculado) or tiempo_calculado)
     tiempo_facturable = float(pick(data, 'tiempoFacturable', 'tiempo_facturable', default=0) or 0)
-    total_horas = float(pick(data, 'totalHoras', 'total_horas', default=tiempo_invertido) or 0)
+    total_horas = float(pick(data, 'totalHoras', 'total_horas', default=tiempo_calculado) or tiempo_calculado)
 
     # ------------------------------------------------------------------
-    # 5) MÓDULO
+    # 6) MÓDULO
     # ------------------------------------------------------------------
     modulo_final = pick(data, "modulo")
     if modulo_final:
@@ -826,7 +900,7 @@ def registrar_hora():
         modulo_final = consultor.modulos[0].nombre if consultor.modulos else "SIN MODULO"
 
     # ------------------------------------------------------------------
-    # 6) HORARIO DE TRABAJO
+    # 7) HORARIO DE TRABAJO
     # ------------------------------------------------------------------
     horario_trabajo = (
         pick(data, 'horario_trabajo', 'horarioTrabajo')
@@ -834,7 +908,7 @@ def registrar_hora():
     )
 
     # ------------------------------------------------------------------
-    # 7) EQUIPO
+    # 8) EQUIPO
     # ------------------------------------------------------------------
     equipo_final = pick(data, 'equipo')
     if not equipo_final and consultor.equipo_id:
@@ -845,7 +919,7 @@ def registrar_hora():
         equipo_final = equipo_final.strip().upper()
 
     # ------------------------------------------------------------------
-    # 8) CAMPOS BASIS
+    # 9) CAMPOS BASIS
     # ------------------------------------------------------------------
     es_basis = (equipo_final == "BASIS")
 
@@ -857,7 +931,7 @@ def registrar_hora():
     }
 
     # ------------------------------------------------------------------
-    # 9) OCUPACIÓN (CORREGIDO)
+    # 10) OCUPACIÓN
     # ------------------------------------------------------------------
     ocupacion_id = pick(data, "ocupacion_id")
 
@@ -871,7 +945,6 @@ def registrar_hora():
         if not occ:
             return jsonify({'mensaje': 'Ocupación inválida'}), 400
     else:
-        # si no viene → inferir desde tarea
         if tarea_id:
             t = Tarea.query.options(db.joinedload(Tarea.ocupaciones)).get(tarea_id)
             if t and t.ocupaciones:
@@ -880,12 +953,11 @@ def registrar_hora():
                 ocupacion_id = None
 
     # ------------------------------------------------------------------
-    # 9.1) ✅ PROYECTOS (NUEVO)
+    # 11) PROYECTOS
     # ------------------------------------------------------------------
     proyecto_id = pick(data, "proyecto_id")
     fase_proyecto_id = pick(data, "fase_proyecto_id", "faseProyectoId")
 
-    # normalizar a int / None
     try:
         proyecto_id = int(proyecto_id) if proyecto_id not in (None, "", "null", "None") else None
     except Exception:
@@ -896,7 +968,6 @@ def registrar_hora():
     except Exception:
         return jsonify({'mensaje': 'fase_proyecto_id inválido'}), 400
 
-    # validar que existan (si vienen)
     if proyecto_id:
         if not Proyecto.query.get(proyecto_id):
             return jsonify({'mensaje': 'Proyecto no existe'}), 400
@@ -905,13 +976,12 @@ def registrar_hora():
         if not ProyectoFase.query.get(fase_proyecto_id):
             return jsonify({'mensaje': 'Fase de proyecto no existe'}), 400
 
-    # Si viene proyecto y NO viene fase_proyecto_id, intenta inferirla del proyecto.fase_id
     if proyecto_id and not fase_proyecto_id:
         p = Proyecto.query.get(proyecto_id)
         fase_proyecto_id = getattr(p, "fase_id", None) if p else None
 
     # ------------------------------------------------------------------
-    # 10) CREAR REGISTRO
+    # 12) CREAR REGISTRO
     # ------------------------------------------------------------------
     try:
         nuevo = Registro(
@@ -924,7 +994,6 @@ def registrar_hora():
             tarea_id=tarea_id,
             ocupacion_id=ocupacion_id,
 
-            # ✅ Proyectos (NUEVO)
             proyecto_id=proyecto_id,
             fase_proyecto_id=fase_proyecto_id,
 
@@ -950,7 +1019,15 @@ def registrar_hora():
         db.session.add(nuevo)
         db.session.commit()
 
-        return jsonify({'mensaje': 'Registro guardado correctamente'}), 201
+        return jsonify({
+            'mensaje': 'Registro guardado correctamente',
+            'registro': {
+                'id': nuevo.id,
+                'fecha': nuevo.fecha,
+                'horaInicio': nuevo.hora_inicio,
+                'horaFin': nuevo.hora_fin
+            }
+        }), 201
 
     except IntegrityError as e:
         db.session.rollback()
@@ -1240,6 +1317,9 @@ def obtener_registros():
             .outerjoin(E, C.equipo_id == E.id)
         )
 
+        # -----------------------------
+        # Scope
+        # -----------------------------
         if scope == "SELF":
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
 
@@ -1248,16 +1328,85 @@ def obtener_registros():
                 return jsonify({'error': 'Consultor sin equipo asignado'}), 403
             q = q.filter(C.equipo_id == int(val))
 
-        equipo_filter = (request.args.get("equipo") or "").strip().upper()
-        if equipo_filter:
+        # -----------------------------
+        # Filtros backend
+        # -----------------------------
+        filtro_id = (request.args.get("id") or "").strip()
+        filtro_fecha = (request.args.get("fecha") or "").strip()
+        filtro_cliente = (request.args.get("cliente") or "").strip()
+        filtro_consultor = (request.args.get("consultor") or "").strip()
+        filtro_equipo = (request.args.get("equipo") or "").strip().upper()
+        filtro_mes = (request.args.get("mes") or "").strip()
+        filtro_anio = (request.args.get("anio") or "").strip()
+        filtro_nro_caso = (request.args.get("nroCasoCliente") or "").strip()
+        filtro_horas_adic = (request.args.get("horasAdicionales") or "").strip().upper()
+        filtro_tarea_id = (request.args.get("tarea_id") or "").strip()
+        filtro_ocupacion_id = (request.args.get("ocupacion_id") or "").strip()
+
+        if filtro_id:
+            if filtro_id.isdigit():
+                q = q.filter(Registro.id == int(filtro_id))
+
+        if filtro_fecha:
+            q = q.filter(Registro.fecha == filtro_fecha)
+
+        if filtro_cliente:
+            q = q.filter(Registro.cliente == filtro_cliente)
+
+        if filtro_consultor:
+            q = q.filter(C.nombre == filtro_consultor)
+
+        if filtro_equipo:
             if scope == "TEAM":
                 eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper() if consultor_login.equipo_obj else ""
-                if equipo_filter != eq_login:
+                if filtro_equipo != eq_login:
                     return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
+            q = q.filter(func.upper(E.nombre) == filtro_equipo)
 
-            q = q.filter(func.upper(E.nombre) == equipo_filter)
+        if filtro_mes:
+            try:
+                q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
+            except Exception:
+                pass
 
-        registros = q.order_by(Registro.fecha.desc(), Registro.id.desc()).all()
+        if filtro_anio:
+            try:
+                q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == int(filtro_anio))
+            except Exception:
+                pass
+
+        if filtro_nro_caso:
+            q = q.filter(Registro.nro_caso_cliente.ilike(f"%{filtro_nro_caso}%"))
+
+        if filtro_horas_adic:
+            q = q.filter(func.upper(Registro.horas_adicionales) == filtro_horas_adic)
+
+        if filtro_tarea_id:
+            try:
+                q = q.filter(Registro.tarea_id == int(filtro_tarea_id))
+            except Exception:
+                pass
+
+        if filtro_ocupacion_id:
+            try:
+                q = q.filter(Registro.ocupacion_id == int(filtro_ocupacion_id))
+            except Exception:
+                pass
+
+        # -----------------------------
+        # Paginación
+        # -----------------------------
+        page = max(int(request.args.get("page", 1)), 1)
+        per_page = min(max(int(request.args.get("per_page", 50)), 1), 200)
+
+        total = q.count()
+
+        registros = (
+            q.order_by(Registro.fecha.desc(), Registro.id.desc())
+             .offset((page - 1) * per_page)
+             .limit(per_page)
+             .all()
+        )
 
         data = []
         for r in registros:
@@ -1308,7 +1457,6 @@ def obtener_registros():
                 "oncall": r.oncall,
                 "desborde": r.desborde,
                 "actividadMalla": r.actividad_malla,
-
                 "proyecto_id": r.proyecto_id,
                 "fase_proyecto_id": r.fase_proyecto_id,
                 "proyecto": {
@@ -1326,7 +1474,13 @@ def obtener_registros():
                 "proyecto_fase": fase_proyecto.nombre if fase_proyecto else None,
             })
 
-        return jsonify(data), 200
+        return jsonify({
+            "data": data,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": math.ceil(total / per_page) if per_page else 1
+        }), 200
 
     except Exception as e:
         app.logger.exception("❌ Error en obtener_registros (/registros)")
@@ -1513,7 +1667,7 @@ def editar_registro(id):
     es_admin = _is_admin_request(rol_real, consultor_login)
 
     # ----------------------------------------------------------
-    # 2) Registro + autorización (dueño o admin)
+    # 2) Registro + autorización
     # ----------------------------------------------------------
     registro = Registro.query.get(id)
     if not registro:
@@ -1523,32 +1677,54 @@ def editar_registro(id):
     if not es_admin and dueno and dueno != usuario_header:
         return jsonify({'mensaje': 'No autorizado'}), 403
 
-    # ✅ EXCEPCIÓN: permitir semanas anteriores solo a ciertos usuarios (y admins)
     puede_semanas_anteriores = es_admin or (usuario_header in USUARIOS_PUEDE_SEMANAS_ANTERIORES)
 
     fecha_nueva = data.get("fecha")
     if fecha_nueva and not puede_semanas_anteriores:
-        # si tienes validación de semana actual, aplícala aquí
-        # if not _is_in_current_week(fecha_nueva): return jsonify(...), 400
         pass
 
     try:
         # ----------------------------------------------------------
-        # 3) Campos básicos
+        # 3) Tomar valores finales antes de guardar
         # ----------------------------------------------------------
-        registro.fecha = pick(data, 'fecha', default=registro.fecha)
+        nueva_fecha = pick(data, 'fecha', default=registro.fecha)
+        nuevo_hora_inicio = pick(data, 'horaInicio', 'hora_inicio', default=registro.hora_inicio)
+        nuevo_hora_fin = pick(data, 'horaFin', 'hora_fin', default=registro.hora_fin)
+
+        tiempo_calculado = _calcular_tiempo_horas(nuevo_hora_inicio, nuevo_hora_fin)
+        if tiempo_calculado <= 0:
+            return jsonify({'mensaje': 'Hora fin debe ser mayor a hora inicio'}), 400
+
+        # ----------------------------------------------------------
+        # 4) Validar traslape en backend
+        # ----------------------------------------------------------
+        conflicto = _buscar_registro_traslapado(
+            fecha=nueva_fecha,
+            usuario_consultor=registro.usuario_consultor,
+            hora_inicio=nuevo_hora_inicio,
+            hora_fin=nuevo_hora_fin,
+            exclude_id=registro.id
+        )
+        if conflicto:
+            return jsonify({
+                'mensaje': f'Ya existe un registro que se cruza con este rango: {conflicto.hora_inicio} - {conflicto.hora_fin} (ID: {conflicto.id})'
+            }), 409
+
+        # ----------------------------------------------------------
+        # 5) Campos básicos
+        # ----------------------------------------------------------
+        registro.fecha = nueva_fecha
         registro.cliente = pick(data, 'cliente', default=registro.cliente)
 
         registro.nro_caso_cliente = pick(data, 'nroCasoCliente', 'nro_caso_cliente', default=registro.nro_caso_cliente)
         registro.nro_caso_interno = pick(data, 'nroCasoInterno', 'nro_caso_interno', default=registro.nro_caso_interno)
 
-        # OJO: en DB se llama nro_caso_escalado
         nro_escalado = pick(data, 'nroCasoEscaladoSap', 'nro_caso_escalado')
         if nro_escalado is not None:
             registro.nro_caso_escalado = nro_escalado
 
         # ----------------------------------------------------------
-        # 4) Tarea
+        # 6) Tarea
         # ----------------------------------------------------------
         tarea_id = pick(data, "tarea_id")
         tipoTareaTexto = pick(data, "tipoTarea", "tipo_tarea")
@@ -1572,7 +1748,7 @@ def editar_registro(id):
             registro.tipo_tarea = str(tipoTareaTexto).strip()
 
         # ----------------------------------------------------------
-        # 5) Ocupación
+        # 7) Ocupación
         # ----------------------------------------------------------
         ocupacion_id = pick(data, "ocupacion_id")
         if ocupacion_id not in (None, "", "null", "None"):
@@ -1587,26 +1763,25 @@ def editar_registro(id):
 
             registro.ocupacion_id = ocupacion_id_int
 
-        # si no viene ocupacion pero sí tarea, inferir
         if (ocupacion_id in (None, "", "null", "None")) and registro.tarea_id:
             tarea_db = Tarea.query.options(db.joinedload(Tarea.ocupaciones)).get(registro.tarea_id)
             if tarea_db and getattr(tarea_db, "ocupaciones", None) and tarea_db.ocupaciones:
                 registro.ocupacion_id = tarea_db.ocupaciones[0].id
 
         # ----------------------------------------------------------
-        # 6) Fechas/horas y valores numéricos
+        # 8) Fechas/horas y valores numéricos
         # ----------------------------------------------------------
-        registro.hora_inicio = pick(data, 'horaInicio', 'hora_inicio', default=registro.hora_inicio)
-        registro.hora_fin = pick(data, 'horaFin', 'hora_fin', default=registro.hora_fin)
+        registro.hora_inicio = nuevo_hora_inicio
+        registro.hora_fin = nuevo_hora_fin
 
-        registro.tiempo_invertido = pick(data, 'tiempoInvertido', 'tiempo_invertido', default=registro.tiempo_invertido)
+        registro.tiempo_invertido = pick(data, 'tiempoInvertido', 'tiempo_invertido', default=tiempo_calculado)
         registro.tiempo_facturable = pick(data, 'tiempoFacturable', 'tiempo_facturable', default=registro.tiempo_facturable)
         registro.horas_adicionales = pick(data, 'horasAdicionales', 'horas_adicionales', default=registro.horas_adicionales)
         registro.descripcion = pick(data, 'descripcion', default=registro.descripcion)
-        registro.total_horas = pick(data, 'totalHoras', 'total_horas', default=registro.total_horas)
+        registro.total_horas = pick(data, 'totalHoras', 'total_horas', default=tiempo_calculado)
 
         # ----------------------------------------------------------
-        # 7) Módulo / Equipo (si los mandan)
+        # 9) Módulo / Equipo
         # ----------------------------------------------------------
         modulo_in = pick(data, 'modulo')
         if modulo_in is not None:
@@ -1617,12 +1792,11 @@ def editar_registro(id):
             registro.equipo = str(equipo_in).strip().upper() if isinstance(equipo_in, str) else equipo_in
 
         # ----------------------------------------------------------
-        # 8) ✅ Proyectos (NUEVO) — guarda proyecto y fase
+        # 10) Proyectos
         # ----------------------------------------------------------
         proyecto_id = pick(data, "proyecto_id")
         fase_proyecto_id = pick(data, "fase_proyecto_id", "faseProyectoId")
 
-        # normalizar int / None
         if proyecto_id in ("", "null", "None"):
             proyecto_id = None
         if fase_proyecto_id in ("", "null", "None"):
@@ -1650,14 +1824,13 @@ def editar_registro(id):
 
             registro.fase_proyecto_id = fase_proyecto_id
 
-        # si hay proyecto y no fase_proyecto_id, inferirla del proyecto (si aplica)
         if registro.proyecto_id and not registro.fase_proyecto_id:
             p = Proyecto.query.get(registro.proyecto_id)
             if p and getattr(p, "fase_id", None):
                 registro.fase_proyecto_id = p.fase_id
 
         # ----------------------------------------------------------
-        # 9) Campos BASIS (si se envían)
+        # 11) Campos BASIS
         # ----------------------------------------------------------
         bd = _basis_defaults_from_payload(data)
 
@@ -1668,7 +1841,6 @@ def editar_registro(id):
         if 'desborde' in data:
             registro.desborde = bd["desborde"]
 
-        # defaults
         if not registro.actividad_malla:
             registro.actividad_malla = "N/APLICA"
         if not registro.oncall:
@@ -1677,7 +1849,15 @@ def editar_registro(id):
             registro.desborde = "N/A"
 
         db.session.commit()
-        return jsonify({'mensaje': 'Registro actualizado'}), 200
+        return jsonify({
+            'mensaje': 'Registro actualizado',
+            'registro': {
+                'id': registro.id,
+                'fecha': registro.fecha,
+                'horaInicio': registro.hora_inicio,
+                'horaFin': registro.hora_fin
+            }
+        }), 200
 
     except Exception as e:
         db.session.rollback()
