@@ -414,6 +414,7 @@ export default function Graficos() {
   }, []);
 
   const [horariosBackend, setHorariosBackend] = useState([]);
+  const [proyectos, setProyectos] = useState([]);
 
   useEffect(() => {
     const fetchOcupaciones = async () => {
@@ -460,6 +461,43 @@ export default function Graficos() {
     fetchMapeos();
   }, []);
 
+  useEffect(() => {
+    const fetchProyectos = async () => {
+      try {
+        const res = await jfetch("/proyectos", {
+          method: "GET",
+          headers: {
+            "X-User-Rol": rolUpper,
+            "X-User-Usuario": usuario,
+            "X-User-Equipo": equipoUser,
+          }
+        });
+
+        const json = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
+
+        setProyectos(Array.isArray(json) ? json : []);
+      } catch (e) {
+        console.error("Error cargando proyectos:", e);
+        setProyectos([]);
+      }
+    };
+
+    fetchProyectos();
+  }, [rolUpper, usuario, equipoUser]);
+
+  const proyectosByCodigo = useMemo(() => {
+    const map = new Map();
+
+    (proyectos || []).forEach((p) => {
+      const codigo = normTxt(p.codigo);
+      if (!codigo) return;
+      map.set(codigo, p);
+    });
+
+    return map;
+  }, [proyectos]);
+
   const mapeoProyectoSet = useMemo(() => {
     const set = new Set();
 
@@ -477,63 +515,57 @@ export default function Graficos() {
     return set;
   }, [mapeosProyecto]);
 
-  const { mapExacto, rulesContiene } = useMemo(() => {
-    const exacto = new Map();
-    const contiene = []; // reglas por proyecto_id
-
-    (mapeosProyecto || []).forEach((m) => {
-      if (!m?.activo) return;
-
-      const proyectoId = Number(m.proyecto_id);
-      const origen = normTxt(m.valor_origen);
-      const agrupado = String(m.valor_agrupado || "").trim();
-
-      if (!proyectoId || !origen || !agrupado) return;
-
-      const tipo = String(m.tipo_match || "EXACT").toUpperCase(); 
-      // si NO tienes tipo_match en BD, quedará "EXACT"
-
-      if (tipo === "CONTAINS" || tipo === "INCLUDES") {
-        contiene.push({ proyectoId, origen, agrupado });
-      } else {
-        exacto.set(`${proyectoId}__${origen}`, agrupado);
-      }
-    });
-
-    // opcional: reglas largas primero para que ganen
-    contiene.sort((a, b) => b.origen.length - a.origen.length);
-
-    return { mapExacto: exacto, rulesContiene: contiene };
-  }, [mapeosProyecto]);
-
   const projectOfficialResolved = (r) => {
-    const codigo = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
-    const nombre = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
+    // 1) Proyecto ya resuelto desde backend
+    const codigoDirecto = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
+    const nombreDirecto = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
 
-    if (codigo) {
-      return `${codigo} - ${nombre || "SIN NOMBRE"}`;
+    if (codigoDirecto) {
+      return `${codigoDirecto} - ${nombreDirecto || "SIN NOMBRE"}`;
     }
 
+    // 2) Buscar por nroCasoCliente exacto contra proyecto.codigo
+    const nroCaso = String(r?.nroCasoCliente || "").trim();
+    const nroCasoNorm = normTxt(nroCaso);
+
+    if (nroCasoNorm && proyectosByCodigo.has(nroCasoNorm)) {
+      const p = proyectosByCodigo.get(nroCasoNorm);
+      return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
+    }
+
+    // 3) Buscar por mapeo usando nroCasoCliente
     const proyectoId = Number(r?.proyecto_id || r?.proyecto?.id || 0);
 
-    const origenRaw =
-      String(r?.descripcion || "").trim() ||
-      String(r?.nroCasoCliente || "").trim() ||
-      "";
-
-    const origen = normTxt(origenRaw);
-
-    if (proyectoId && origen) {
-      const key = `${proyectoId}__${origen}`;
-
+    if (proyectoId && nroCasoNorm) {
+      const key = `${proyectoId}__${nroCasoNorm}`;
       if (mapeoProyectoSet.has(key)) {
-        return nombre
-          ? `${codigo || `PRY-${proyectoId}`} - ${nombre}`
-          : `${codigo || `PRY-${proyectoId}`}`;
+        const p = r?.proyecto;
+        if (p?.codigo) {
+          return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
+        }
+        return `PRY-${proyectoId}`;
       }
     }
 
-    if (!origenRaw || origenRaw === "0" || ["NA", "N/A"].includes(origenRaw.toUpperCase())) {
+    // 4) Buscar por mapeo usando descripción
+    const descripcionNorm = normTxt(String(r?.descripcion || "").trim());
+
+    if (proyectoId && descripcionNorm) {
+      const key = `${proyectoId}__${descripcionNorm}`;
+      if (mapeoProyectoSet.has(key)) {
+        const p = r?.proyecto;
+        if (p?.codigo) {
+          return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
+        }
+        return `PRY-${proyectoId}`;
+      }
+    }
+
+    // 5) Sin proyecto
+    if (
+      (!nroCaso || nroCaso === "0" || ["NA", "N/A"].includes(nroCaso.toUpperCase())) &&
+      !descripcionNorm
+    ) {
       return "SIN PROYECTO";
     }
 
@@ -727,7 +759,7 @@ export default function Graficos() {
       proyecto,
       horas: +horas.toFixed(2),
     })).sort((a, b) => b.horas - a.horas);
-  }, [datosFiltrados, mapeoProyectoSet]);
+  }, [datosFiltrados, mapeoProyectoSet, proyectosByCodigo]);
 
   const horasPorDia = useMemo(() => {
     const acc = new Map();

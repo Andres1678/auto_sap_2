@@ -118,7 +118,7 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
     >
       <div className="modal-header">
         <h3>Mapeos — {proyecto?.codigo} - {proyecto?.nombre}</h3>
-        <button onClick={onClose}>✖</button>
+        <button type="button" onClick={onClose} aria-label="Cerrar modal">✖</button>
       </div>
 
       <form onSubmit={onSubmit}>
