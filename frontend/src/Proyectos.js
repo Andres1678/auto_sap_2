@@ -374,306 +374,308 @@ export default function Proyectos() {
   };
 
   return (
-    <div className="proj-page">
-      <div className="proj-head">
-        <div>
-          <h2 className="proj-title">Gestión de Proyectos</h2>
-          <p className="proj-subtitle">
-            Crear / editar proyectos, asignar cliente, módulos permitidos, múltiples fases y estado activo.
-          </p>
-        </div>
+    <div className="proyectos-page-scope">
+      <div className="proj-page">
+        <div className="proj-head">
+          <div>
+            <h2 className="proj-title">Gestión de Proyectos</h2>
+            <p className="proj-subtitle">
+              Crear / editar proyectos, asignar cliente, módulos permitidos, múltiples fases y estado activo.
+            </p>
+          </div>
 
-        <div className="proj-head-actions">
-          <button className="btn btn-outline" onClick={fetchAll} disabled={loading || saving}>
-            {loading ? "Cargando…" : "Refrescar"}
-          </button>
-        </div>
-      </div>
-
-      <div className="proj-card">
-        <div className="proj-card-head">
-          <h3>{isEdit ? "Editar proyecto" : "Nuevo proyecto"}</h3>
-
-          {isEdit && (
-            <button className="btn btn-ghost" type="button" onClick={resetForm} disabled={saving}>
-              Cancelar edición
+          <div className="proj-head-actions">
+            <button className="btn btn-outline" onClick={fetchAll} disabled={loading || saving}>
+              {loading ? "Cargando…" : "Refrescar"}
             </button>
-          )}
+          </div>
         </div>
 
-        <form onSubmit={onSubmit} className="proj-form">
-          <div className="grid-2">
-            <div className="field">
-              <label>Código</label>
-              <input
-                value={form.codigo}
-                onChange={(e) => setForm((f) => ({ ...f, codigo: e.target.value }))}
-                placeholder="Ej: PRY-001"
-              />
+        <div className="proj-card">
+          <div className="proj-card-head">
+            <h3>{isEdit ? "Editar proyecto" : "Nuevo proyecto"}</h3>
+
+            {isEdit && (
+              <button className="btn btn-ghost" type="button" onClick={resetForm} disabled={saving}>
+                Cancelar edición
+              </button>
+            )}
+          </div>
+
+          <form onSubmit={onSubmit} className="proj-form">
+            <div className="grid-2">
+              <div className="field">
+                <label>Código</label>
+                <input
+                  value={form.codigo}
+                  onChange={(e) => setForm((f) => ({ ...f, codigo: e.target.value }))}
+                  placeholder="Ej: PRY-001"
+                />
+              </div>
+
+              <div className="field">
+                <label>Nombre</label>
+                <input
+                  value={form.nombre}
+                  onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
+                  placeholder="Ej: Proyecto Migración"
+                />
+              </div>
             </div>
 
-            <div className="field">
-              <label>Nombre</label>
+            <div className="grid-1">
+              <div className="field field--cliente">
+                <label>Cliente</label>
+                <select
+                  value={form.cliente_id ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, cliente_id: e.target.value }))}
+                >
+                  <option value="">— Sin cliente —</option>
+                  {(clientes || []).map((c) => {
+                    const id = c?.id;
+                    const name = c?.nombre_cliente ?? c?.nombre ?? "";
+
+                    return (
+                      <option key={id} value={id}>
+                        {name}
+                      </option>
+                    );
+                  })}
+                </select>
+
+                <div className="muted">
+                  Si seleccionas un cliente, el proyecto queda ligado para reportes y filtros.
+                </div>
+              </div>
+            </div>
+
+            <div className="grid-2">
+              <div className="field">
+                <label>Fases permitidas (multi)</label>
+
+                <div className="mods-box">
+                  {(fases || []).length === 0 ? (
+                    <div className="muted">No hay fases cargadas</div>
+                  ) : (
+                    (fases || []).map((fx) => {
+                      const fid = String(fx.id);
+                      const checked = (form.fases || []).map(String).includes(fid);
+
+                      return (
+                        <label key={fid} className={`mod-chip ${checked ? "is-on" : ""}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleFase(fid)}
+                          />
+                          <span>{fx.nombre}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div className="field">
+                <label>Estado</label>
+
+                <div className="inline">
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={!!form.activo}
+                      onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))}
+                    />
+                    <span className="slider" />
+                  </label>
+
+                  <span className="muted">{form.activo ? "Activo" : "Inactivo"}</span>
+                </div>
+
+                <div className="proj-actions">
+                  <button className="btn btn-primary" type="submit" disabled={saving}>
+                    {saving ? "Guardando…" : isEdit ? "Actualizar" : "Crear"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid-1">
+              <div className="field">
+                <label>Módulos permitidos</label>
+
+                <div className="mods-box">
+                  {modulos.length === 0 ? (
+                    <div className="muted">No hay módulos cargados</div>
+                  ) : (
+                    modulos.map((m) => {
+                      const checked = (form.modulos || []).map(Number).includes(Number(m.id));
+
+                      return (
+                        <label key={m.id} className={`mod-chip ${checked ? "is-on" : ""}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleModulo(m.id)}
+                          />
+                          <span>{m.nombre}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div className="proj-card">
+          <div className="proj-list-head">
+            <h3>Proyectos</h3>
+
+            <div className="proj-list-filters">
               <input
-                value={form.nombre}
-                onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
-                placeholder="Ej: Proyecto Migración"
+                className="search"
+                placeholder="Buscar por código, nombre, cliente o fases…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
               />
+
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={soloActivos}
+                  onChange={(e) => setSoloActivos(e.target.checked)}
+                />
+                <span>Solo activos</span>
+              </label>
             </div>
           </div>
 
-          <div className="grid-1">
-            <div className="field">
-              <label>Cliente</label>
-              <select
-                value={form.cliente_id ?? ""}
-                onChange={(e) => setForm((f) => ({ ...f, cliente_id: e.target.value }))}
-              >
-                <option value="">— Sin cliente —</option>
-                {(clientes || []).map((c) => {
-                  const id = c?.id;
-                  const name = c?.nombre_cliente ?? c?.nombre ?? "";
+          <div className="proj-table-wrap">
+            <table className="proj-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Código</th>
+                  <th>Nombre</th>
+                  <th className="cliente">Cliente</th>
+                  <th>Fases</th>
+                  <th>Activo</th>
+                  <th>Módulos</th>
+                  <th className="actions">Acciones</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {proyectosFiltrados.map((p) => {
+                  const fasesNames = getProyectoFasesNames(p, fasesMap);
+                  const fasesTxt = fasesNames.length ? fasesNames.join(", ") : "—";
+
+                  const clienteTxt =
+                    p?.cliente?.nombre_cliente ??
+                    p?.cliente?.nombre ??
+                    (p?.cliente_id != null ? clientesMap.get(Number(p.cliente_id)) : "") ??
+                    "";
 
                   return (
-                    <option key={id} value={id}>
-                      {name}
-                    </option>
+                    <tr key={p.id}>
+                      <td className="num">{p.id}</td>
+                      <td className="mono">{p.codigo}</td>
+                      <td>{p.nombre}</td>
+                      <td className="cliente">{clienteTxt || "—"}</td>
+                      <td>{fasesTxt}</td>
+
+                      <td>
+                        <span className={`badge ${p.activo ? "ok" : "off"}`}>
+                          {p.activo ? "Activo" : "Inactivo"}
+                        </span>
+                      </td>
+
+                      <td className="mods-cell">
+                        {(Array.isArray(p.modulos) ? p.modulos : [])
+                          .slice(0, 6)
+                          .map((x, idx) => {
+                            const id = Number(x?.id ?? x);
+                            const label = x?.nombre ?? modulosMap.get(id) ?? String(id);
+
+                            return (
+                              <span key={`${p.id}-${id}-${idx}`} className="pill">
+                                {label}
+                              </span>
+                            );
+                          })}
+
+                        {(Array.isArray(p.modulos) ? p.modulos : []).length > 6 && (
+                          <span className="pill more">+ más…</span>
+                        )}
+                      </td>
+
+                      <td className="actions">
+                        <button
+                          className="icon-btn"
+                          onClick={() => startEdit(p)}
+                          disabled={saving}
+                          title="Editar"
+                        >
+                          ✏️
+                        </button>
+
+                        <button
+                          className="icon-btn"
+                          onClick={() => toggleActivo(p)}
+                          disabled={saving}
+                          title="Activar / desactivar"
+                        >
+                          {p.activo ? "⛔" : "✅"}
+                        </button>
+
+                        <button
+                          className="icon-btn danger"
+                          onClick={() => confirmDelete(p)}
+                          disabled={saving}
+                          title="Eliminar"
+                        >
+                          🗑️
+                        </button>
+
+                        <button
+                          className="icon-btn"
+                          onClick={() => openMapeoModal(p)}
+                          disabled={saving}
+                          title="Mapeos"
+                        >
+                          🧩
+                        </button>
+                      </td>
+                    </tr>
                   );
                 })}
-              </select>
 
-              <div className="muted" style={{ marginTop: 6 }}>
-                Si seleccionas un cliente, el proyecto queda ligado para reportes y filtros.
-              </div>
-            </div>
-          </div>
-
-          <div className="grid-2">
-            <div className="field">
-              <label>Fases permitidas (multi)</label>
-
-              <div className="mods-box">
-                {(fases || []).length === 0 ? (
-                  <div className="muted">No hay fases cargadas</div>
-                ) : (
-                  (fases || []).map((fx) => {
-                    const fid = String(fx.id);
-                    const checked = (form.fases || []).map(String).includes(fid);
-
-                    return (
-                      <label key={fid} className={`mod-chip ${checked ? "is-on" : ""}`}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleFase(fid)}
-                        />
-                        <span>{fx.nombre}</span>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            <div className="field">
-              <label>Estado</label>
-
-              <div className="inline">
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={!!form.activo}
-                    onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))}
-                  />
-                  <span className="slider" />
-                </label>
-
-                <span className="muted">{form.activo ? "Activo" : "Inactivo"}</span>
-              </div>
-
-              <div className="proj-actions">
-                <button className="btn btn-primary" type="submit" disabled={saving}>
-                  {saving ? "Guardando…" : isEdit ? "Actualizar" : "Crear"}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid-1">
-            <div className="field">
-              <label>Módulos permitidos</label>
-
-              <div className="mods-box">
-                {modulos.length === 0 ? (
-                  <div className="muted">No hay módulos cargados</div>
-                ) : (
-                  modulos.map((m) => {
-                    const checked = (form.modulos || []).map(Number).includes(Number(m.id));
-
-                    return (
-                      <label key={m.id} className={`mod-chip ${checked ? "is-on" : ""}`}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleModulo(m.id)}
-                        />
-                        <span>{m.nombre}</span>
-                      </label>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-        </form>
-      </div>
-
-      <div className="proj-card">
-        <div className="proj-list-head">
-          <h3>Proyectos</h3>
-
-          <div className="proj-list-filters">
-            <input
-              className="search"
-              placeholder="Buscar por código, nombre, cliente o fases…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={soloActivos}
-                onChange={(e) => setSoloActivos(e.target.checked)}
-              />
-              <span>Solo activos</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="proj-table-wrap">
-          <table className="proj-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Código</th>
-                <th>Nombre</th>
-                <th>Cliente</th>
-                <th>Fases</th>
-                <th>Activo</th>
-                <th>Módulos</th>
-                <th className="actions">Acciones</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {proyectosFiltrados.map((p) => {
-                const fasesNames = getProyectoFasesNames(p, fasesMap);
-                const fasesTxt = fasesNames.length ? fasesNames.join(", ") : "—";
-
-                const clienteTxt =
-                  p?.cliente?.nombre_cliente ??
-                  p?.cliente?.nombre ??
-                  (p?.cliente_id != null ? clientesMap.get(Number(p.cliente_id)) : "") ??
-                  "";
-
-                return (
-                  <tr key={p.id}>
-                    <td className="num">{p.id}</td>
-                    <td className="mono">{p.codigo}</td>
-                    <td>{p.nombre}</td>
-                    <td>{clienteTxt || "—"}</td>
-                    <td>{fasesTxt}</td>
-
-                    <td>
-                      <span className={`badge ${p.activo ? "ok" : "off"}`}>
-                        {p.activo ? "Activo" : "Inactivo"}
-                      </span>
-                    </td>
-
-                    <td className="mods-cell">
-                      {(Array.isArray(p.modulos) ? p.modulos : [])
-                        .slice(0, 6)
-                        .map((x, idx) => {
-                          const id = Number(x?.id ?? x);
-                          const label = x?.nombre ?? modulosMap.get(id) ?? String(id);
-
-                          return (
-                            <span key={`${p.id}-${id}-${idx}`} className="pill">
-                              {label}
-                            </span>
-                          );
-                        })}
-
-                      {(Array.isArray(p.modulos) ? p.modulos : []).length > 6 && (
-                        <span className="pill more">+ más…</span>
-                      )}
-                    </td>
-
-                    <td className="actions">
-                      <button
-                        className="icon-btn"
-                        onClick={() => startEdit(p)}
-                        disabled={saving}
-                        title="Editar"
-                      >
-                        ✏️
-                      </button>
-
-                      <button
-                        className="icon-btn"
-                        onClick={() => toggleActivo(p)}
-                        disabled={saving}
-                        title="Activar / desactivar"
-                      >
-                        {p.activo ? "⛔" : "✅"}
-                      </button>
-
-                      <button
-                        className="icon-btn danger"
-                        onClick={() => confirmDelete(p)}
-                        disabled={saving}
-                        title="Eliminar"
-                      >
-                        🗑️
-                      </button>
-
-                      <button
-                        className="icon-btn"
-                        onClick={() => openMapeoModal(p)}
-                        disabled={saving}
-                        title="Mapeos"
-                      >
-                        🧩
-                      </button>
+                {proyectosFiltrados.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="muted" style={{ padding: 14 }}>
+                      Sin proyectos
                     </td>
                   </tr>
-                );
-              })}
+                )}
+              </tbody>
+            </table>
+          </div>
 
-              {proyectosFiltrados.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="muted" style={{ padding: 14 }}>
-                    Sin proyectos
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          <div className="muted" style={{ marginTop: 10 }}>
+            Total: <b>{proyectosFiltrados.length}</b>
+          </div>
         </div>
 
-        <div className="muted" style={{ marginTop: 10 }}>
-          Total: <b>{proyectosFiltrados.length}</b>
-        </div>
+        {mapeoOpen && proyectoMapeo && (
+          <ModalMapeoProyecto
+            isOpen={mapeoOpen}
+            onClose={closeMapeoModal}
+            proyecto={proyectoMapeo}
+          />
+        )}
       </div>
-
-      {mapeoOpen && proyectoMapeo && (
-        <ModalMapeoProyecto
-          isOpen={mapeoOpen}
-          onClose={closeMapeoModal}
-          proyecto={proyectoMapeo}
-        />
-      )}
     </div>
   );
 }
