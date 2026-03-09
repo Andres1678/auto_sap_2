@@ -51,6 +51,14 @@ const uniqueCount = (rows, keyFn) => {
   return s.size;
 };
 
+const normTxt = (s) =>
+  String(s ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\s+/g, " ");
+
 /* =========================
    Tick custom: WRAP en YAxis
 ========================= */
@@ -222,6 +230,8 @@ export default function ProyectosHorasDashboard({
 }) {
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState("");
+  const [proyectos, setProyectos] = useState([]);
+  const [mapeosProyecto, setMapeosProyecto] = useState([]);
 
   const [filtroMes, setFiltroMes] = useState(defaultMonth || "");
   const [filtroEquipo, setFiltroEquipo] = useState([]);
@@ -258,12 +268,73 @@ export default function ProyectosHorasDashboard({
   const isAdminTeam = !isAdminAll && rolUpper.startsWith("ADMIN_") && !!equipoUser;
   const scope = isAdminAll ? "ALL" : isAdminTeam ? "TEAM" : "SELF";
 
+  const proyectosByCodigo = useMemo(() => {
+    const map = new Map();
+
+    (proyectos || []).forEach((p) => {
+      const codigo = normTxt(p?.codigo);
+      if (!codigo) return;
+      map.set(codigo, p);
+    });
+
+    return map;
+  }, [proyectos]);
+
+  const mapeoOrigenToProyecto = useMemo(() => {
+    const map = new Map();
+
+    (mapeosProyecto || []).forEach((m) => {
+      if (!m?.activo) return;
+
+      const proyectoId = Number(m.proyecto_id);
+      const origen = normTxt(m.valor_origen);
+
+      if (!proyectoId || !origen) return;
+
+      const proyecto = (proyectos || []).find((p) => Number(p.id) === proyectoId);
+      if (!proyecto) return;
+
+      map.set(origen, proyecto);
+    });
+
+    return map;
+  }, [mapeosProyecto, proyectos]);
+
   const projectOfficial = (r) => {
-    const codigo = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
-    const nombre = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
-    if (!codigo) return "SIN PROYECTO";
-    return `${codigo} - ${nombre || "SIN NOMBRE"}`;
-  };
+    // 1) si el registro ya viene amarrado a proyecto
+    const codigoDirecto = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
+    const nombreDirecto = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
+
+    if (codigoDirecto) {
+      return `${codigoDirecto} - ${nombreDirecto || "SIN NOMBRE"}`;
+    }
+
+    // 2) intentar por nroCasoCliente = código del proyecto
+    const nroCaso = String(r?.nroCasoCliente || "").trim();
+    const nroCasoNorm = normTxt(nroCaso);
+
+    if (nroCasoNorm && proyectosByCodigo.has(nroCasoNorm)) {
+      const p = proyectosByCodigo.get(nroCasoNorm);
+      return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
+    }
+
+    // 3) intentar por mapeo usando nroCasoCliente
+    if (nroCasoNorm && mapeoOrigenToProyecto.has(nroCasoNorm)) {
+      const p = mapeoOrigenToProyecto.get(nroCasoNorm);
+      return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
+    }
+
+    // 4) intentar por mapeo usando descripción
+    const descripcion = String(r?.descripcion || "").trim();
+    const descripcionNorm = normTxt(descripcion);
+
+    if (descripcionNorm && mapeoOrigenToProyecto.has(descripcionNorm)) {
+      const p = mapeoOrigenToProyecto.get(descripcionNorm);
+      return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
+    }
+
+    return "SIN PROYECTO";
+};
 
   const projectDigitado = (r) => {
     const raw = String(r?.nroCasoCliente ?? "").trim();
@@ -322,6 +393,38 @@ export default function ProyectosHorasDashboard({
 
     fetchData();
   }, [registrosOverride, rolUpper, usuario, equipoUser, scope, nombreUser]);
+
+  useEffect(() => {
+  const fetchProyectos = async () => {
+    try {
+      const res = await jfetch("/proyectos");
+      const json = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
+      setProyectos(Array.isArray(json) ? json : []);
+    } catch (e) {
+      console.error("Error cargando proyectos:", e);
+      setProyectos([]);
+    }
+  };
+
+  fetchProyectos();
+}, []);
+
+  useEffect(() => {
+    const fetchMapeos = async () => {
+      try {
+        const res = await jfetch("/proyecto-mapeos");
+        const json = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
+        setMapeosProyecto(Array.isArray(json) ? json : []);
+      } catch (e) {
+        console.error("Error cargando mapeos:", e);
+        setMapeosProyecto([]);
+      }
+    };
+
+    fetchMapeos();
+  }, []);
 
   const equiposUnicos = useMemo(() => {
     const set = new Set(
