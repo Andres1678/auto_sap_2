@@ -851,29 +851,29 @@ export default function ProyectosHorasDashboard({
                     <tr key={i}>
                       <td className="num">{r.id ?? "—"}</td>
                       <td>{r.fecha}</td>
-                      <td className="truncate" title={r.consultor}>
+                      <td className="phd-truncate" title={r.consultor}>
                         {r.consultor}
                       </td>
-                      <td className="truncate" title={r.cliente}>
+                      <td className="phd-truncate" title={r.cliente}>
                         {r.cliente}
                       </td>
-                      <td className="truncate" title={projectOfficial(r)}>
+                      <td className="phd-truncate" title={projectOfficial(r)}>
                         {projectOfficial(r)}
                       </td>
-                      <td className="truncate" title={projectDigitado(r) || ""}>
+                      <td className="phd-truncate" title={projectDigitado(r) || ""}>
                         {projectDigitado(r) || "—"}
                       </td>
-                      <td className="truncate" title={r.modulo}>
+                      <td className="phd-truncate" title={r.modulo}>
                         {r.modulo}
                       </td>
-                      <td className="truncate" title={r.ocupacion_nombre || ""}>
+                      <td className="phd-truncate" title={r.ocupacion_nombre || ""}>
                         {r.ocupacion_nombre || "SIN OCUPACIÓN"}
                       </td>
-                      <td className="truncate" title={r.tipoTarea || ""}>
+                      <td className="phd-truncate" title={r.tipoTarea || ""}>
                         {r.tipoTarea || "—"}
                       </td>
                       <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
-                      <td className="truncate" title={r.descripcion || ""}>
+                      <td className="phd-truncate" title={r.descripcion || ""}>
                         {r.descripcion || ""}
                       </td>
                     </tr>
