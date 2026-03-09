@@ -6,7 +6,7 @@ import {
 import Modal from 'react-modal';
 import './PanelGraficos.css';
 import { jfetch } from './lib/api';
-import ProyectosHorasDashboard from './ProyectosHorasDashboard';
+import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 
 
@@ -305,6 +305,7 @@ export default function Graficos() {
   const [modalTitle, setModalTitle] = useState('');
   const [modalProyectosOpen, setModalProyectosOpen] = useState(false);
   const [mapeosProyecto, setMapeosProyecto] = useState([]);
+  const navigate = useNavigate();
 
   /* Usuario / rol */
   const user = useMemo(() => {
@@ -995,33 +996,38 @@ export default function Graficos() {
         </div>
 
         <button
-            type="button"
-            className={"btn btn-outline" + (!canOpenProyectos ? " is-disabled" : "")}
-            disabled={!canOpenProyectos}
-            title={
-              canOpenProyectos
-                ? "Ver reporte de proyectos"
-                : "No tienes permisos para ver Proyectos"
+          type="button"
+          className={"btn btn-outline" + (!canOpenProyectos ? " is-disabled" : "")}
+          disabled={!canOpenProyectos}
+          title={
+            canOpenProyectos
+              ? "Ver reporte de proyectos"
+              : "No tienes permisos para ver Proyectos"
+          }
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.blur();
+
+            if (!canOpenProyectos) {
+              Swal.fire({
+                icon: "warning",
+                title: "Acceso restringido",
+                text: "Solo ADMIN o ADMIN por equipo pueden abrir el reporte de Proyectos.",
+              });
+              return;
             }
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              e.currentTarget.blur();
 
-              if (!canOpenProyectos) {
-                Swal.fire({
-                  icon: "warning",
-                  title: "Acceso restringido",
-                  text: "Solo ADMIN o ADMIN por equipo pueden abrir el reporte de Proyectos.",
-                });
-                return;
-              }
-
-              setModalProyectosOpen(true);
-            }}
-          >
-            Proyectos
-          </button>
+            navigate("/proyectos-horas", {
+              state: {
+                userData: user,
+                defaultMonth: filtroMes,
+              },
+            });
+          }}
+        >
+          Proyectos
+        </button>
 
         <button
           className="btn btn-outline"
@@ -1532,13 +1538,6 @@ export default function Graficos() {
             </strong>
           </div>
         </Modal>
-      )}
-
-      {canOpenProyectos && (
-        <ProyectosHorasDashboard
-          userData={userData}
-          defaultMonth={mes}
-        />
       )}
     </div>
   );

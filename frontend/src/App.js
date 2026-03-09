@@ -21,6 +21,7 @@ import ReporteHorasConsultorCliente from './Reportes/ReporteHorasConsultorClient
 import PresupuestoConsultorImport from './PresupuestoConsultorImport';
 import Proyectos from "./Proyectos";
 import ModulosAdmin from "./ModulosAdmin";
+import ProyectosHorasDashboard from './ProyectosHorasDashboard';
 
 function App() {
   const [userData, setUserData] = useState(null);
@@ -136,6 +137,15 @@ function App() {
               element={
                 <AdminRoute allow={['ADMIN', 'CONSULTOR']} requirePermiso="GRAFICOS_VER">
                   <PanelGraficos />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/proyectos-horas"
+              element={
+                <AdminRoute allow={['ADMIN', 'CONSULTOR']} requirePermiso="GRAFICOS_VER">
+                  <ProyectosHorasDashboard userData={userData} />
                 </AdminRoute>
               }
             />

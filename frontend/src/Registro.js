@@ -346,7 +346,7 @@ const Registro = ({ userData }) => {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 250;
 
-  const pendingTareaIdRef = useRef(null);
+  const pendingEditTareaIdRef = useRef(null);
   const editOriginalRef = useRef(null);
 
   const [fasesProyecto, setFasesProyecto] = useState([]);
