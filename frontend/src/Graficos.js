@@ -153,6 +153,45 @@ const PIE_COLORS = [
   '#0ea5e9', '#e11d48', '#16a34a', '#ca8a04', '#6d28d9'
 ];
 
+const darkenHex = (hex, factor = 0.35) => {
+  const clean = String(hex || "").replace("#", "");
+  if (clean.length !== 6) return hex;
+
+  const num = parseInt(clean, 16);
+  let r = (num >> 16) & 255;
+  let g = (num >> 8) & 255;
+  let b = num & 255;
+
+  r = Math.max(0, Math.floor(r * (1 - factor)));
+  g = Math.max(0, Math.floor(g * (1 - factor)));
+  b = Math.max(0, Math.floor(b * (1 - factor)));
+
+  return `#${[r, g, b].map(v => v.toString(16).padStart(2, "0")).join("")}`;
+};
+
+const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent, name }) => {
+  if (!percent || percent < 0.03) return null; 
+
+  const RADIAN = Math.PI / 180;
+  const radius = outerRadius + 26;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="#374151"
+      textAnchor={x > cx ? "start" : "end"}
+      dominantBaseline="central"
+      fontSize={12}
+      fontWeight={700}
+    >
+      {`${name} ${Math.round(percent * 100)}%`}
+    </text>
+  );
+};
+
 function MultiFiltro({
   titulo,
   opciones,
@@ -1223,22 +1262,70 @@ export default function Graficos() {
             {pieOcupacion.length === 0 ? (
               <div className="pgx-empty">Sin datos para los filtros seleccionados.</div>
             ) : (
-              <ResponsiveContainer width="100%" height={420}>
-                <PieChart>
+              <ResponsiveContainer width="100%" height={500}>
+                <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 40 }}>
                   <Tooltip
                     formatter={(v, n, p) => [
-                      `${v}% — ${Number(p.payload.horas).toFixed(2)} h`,
-                      p.payload.name
+                      `${Number(v).toFixed(2)}% — ${Number(p.payload.horas).toFixed(2)} h`,
+                      p.payload.name,
                     ]}
                   />
+
                   <Legend
+                    verticalAlign="bottom"
+                    height={80}
                     formatter={(value, entry) =>
                       `${entry.payload.name} (${Number(entry.payload.horas).toFixed(2)} h)`
                     }
                   />
-                  <Pie data={pieOcupacion} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={70} outerRadius={120} paddingAngle={2}>
+
+                  {[...Array(14)].map((_, layerIndex) => (
+                    <Pie
+                      key={`depth-${layerIndex}`}
+                      data={pieOcupacion}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy={220 + (14 - layerIndex)}
+                      startAngle={210}
+                      endAngle={-30}
+                      innerRadius={0}
+                      outerRadius={125}
+                      paddingAngle={1}
+                      isAnimationActive={false}
+                      stroke="none"
+                      legendType="none"
+                    >
+                      {pieOcupacion.map((entry, i) => (
+                        <Cell
+                          key={`depth-cell-${layerIndex}-${i}`}
+                          fill={darkenHex(PIE_COLORS[i % PIE_COLORS.length], 0.42)}
+                        />
+                      ))}
+                    </Pie>
+                  ))}
+
+                  <Pie
+                    data={pieOcupacion}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy={220}
+                    startAngle={210}
+                    endAngle={-30}
+                    innerRadius={0}
+                    outerRadius={125}
+                    paddingAngle={1}
+                    stroke="#ffffff"
+                    strokeWidth={1.5}
+                    labelLine={false}
+                    label={renderPieLabel}
+                  >
                     {pieOcupacion.map((entry, i) => (
-                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                      <Cell
+                        key={`top-cell-${i}`}
+                        fill={PIE_COLORS[i % PIE_COLORS.length]}
+                      />
                     ))}
                   </Pie>
                 </PieChart>

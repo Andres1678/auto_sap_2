@@ -2119,7 +2119,7 @@ const Registro = ({ userData }) => {
                     onChange={(e) =>
                       setRegistro({ ...registro, descripcion: e.target.value })
                     }
-                    className="span-2"
+                    className="span-3"
                   />
                 </div>
 
