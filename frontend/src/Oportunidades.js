@@ -567,6 +567,13 @@ export default function Oportunidades() {
     setFilteredData(applyFilters(data, newFilters));
   };
 
+  const handleClearFilters = () => {
+    setFilters({});
+    setFilteredData([...data]);
+    setEditing({ row: null, col: null });
+    setEditingContext(null);
+  };
+
   const highlightRow = (index) => {
     setTimeout(() => {
       const rows = document.querySelectorAll("tbody tr");
@@ -1213,13 +1220,32 @@ export default function Oportunidades() {
           {loading ? "Cargando..." : "Subir Excel"}
         </button>
 
-        <div style={{ display: "flex", gap: 10, margin: "10px 0", flexWrap: "wrap" }}>
-          <button className="upload-btn" onClick={handleExportAll} disabled={loading || !data.length}>
+        <div className="acciones-exportacion">
+          <button
+            className="upload-btn"
+            onClick={handleExportAll}
+            disabled={loading || !data.length}
+          >
             Descargar Excel (Completo)
           </button>
 
-          <button className="upload-btn" onClick={handleExportFiltered} disabled={loading || !filteredData.length}>
+          <button
+            className="upload-btn"
+            onClick={handleExportFiltered}
+            disabled={loading || !filteredData.length}
+          >
             Descargar Excel (Filtrado)
+          </button>
+
+          <button
+            className="clear-filters-btn"
+            onClick={handleClearFilters}
+            disabled={
+              loading ||
+              !Object.values(filters).some((vals) => Array.isArray(vals) && vals.length > 0)
+            }
+          >
+            Limpiar filtros
           </button>
         </div>
       </div>

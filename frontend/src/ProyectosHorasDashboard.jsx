@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Modal from "react-modal";
 import {
   BarChart,
@@ -37,7 +37,7 @@ const groupSum = (rows, keyFn) => {
   const acc = new Map();
   for (const r of rows) {
     const k = String(keyFn(r) || "—");
-    acc.set(k, (acc.get(k) || 0) + toNum(r?.tiempoInvertido));
+    acc.set(k, (acc.get(k) || 0) + toNum(r?.horasNum ?? r?.tiempoInvertido));
   }
   return Array.from(acc, ([name, horas]) => ({
     name,
@@ -77,7 +77,7 @@ function YAxisTickWrap(props) {
   let line = "";
 
   for (const w of words) {
-    const test = (line ? line + " " : "") + w;
+    const test = (line ? `${line} ${w}` : w);
     if (test.length <= maxCharsPerLine) {
       line = test;
     } else {
@@ -91,7 +91,7 @@ function YAxisTickWrap(props) {
   const joined = lines.join(" ");
   const wasCut = joined.length < text.length;
   if (wasCut && lines.length) {
-    lines[lines.length - 1] = lines[lines.length - 1].replace(/\s*$/, "") + "…";
+    lines[lines.length - 1] = `${lines[lines.length - 1].replace(/\s*$/, "")}…`;
   }
 
   return (
@@ -263,6 +263,7 @@ export default function ProyectosHorasDashboard({
   const [error, setError] = useState("");
   const [proyectos, setProyectos] = useState([]);
   const [mapeosProyecto, setMapeosProyecto] = useState([]);
+  const [loadingMain, setLoadingMain] = useState(false);
 
   const [filtroMes, setFiltroMes] = useState(defaultMonth || "");
   const [filtroEquipo, setFiltroEquipo] = useState([]);
@@ -275,6 +276,8 @@ export default function ProyectosHorasDashboard({
   const [detailTitle, setDetailTitle] = useState("");
   const [detailRows, setDetailRows] = useState([]);
   const [detailOpen, setDetailOpen] = useState(false);
+
+  const abortMainRef = useRef(null);
 
   const user = useMemo(() => {
     if (userData) return userData?.user ? userData.user : userData;
@@ -299,6 +302,124 @@ export default function ProyectosHorasDashboard({
   const isAdminTeam = !isAdminAll && rolUpper.startsWith("ADMIN_") && !!equipoUser;
   const scope = isAdminAll ? "ALL" : isAdminTeam ? "TEAM" : "SELF";
 
+  const initFiltrosPorScope = useCallback(() => {
+    if (scope === "SELF") {
+      setFiltroConsultor(nombreUser ? [nombreUser] : []);
+      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+    } else if (scope === "TEAM") {
+      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+      setFiltroConsultor([]);
+    } else {
+      setFiltroEquipo([]);
+      setFiltroConsultor([]);
+    }
+  }, [scope, nombreUser, equipoUser]);
+
+  const fetchGraficos = useCallback(async () => {
+    if (Array.isArray(registrosOverride)) {
+      setError("");
+      setRegistros(registrosOverride);
+      initFiltrosPorScope();
+      return;
+    }
+
+    if (!usuario) return;
+
+    if (abortMainRef.current) {
+      try {
+        abortMainRef.current.abort();
+      } catch {}
+    }
+
+    const controller = new AbortController();
+    abortMainRef.current = controller;
+
+    setLoadingMain(true);
+    setError("");
+
+    try {
+      const qs = new URLSearchParams();
+
+      if (filtroMes) {
+        const [anio, mes] = filtroMes.split("-");
+        if (anio) qs.set("anio", anio);
+        if (mes) qs.set("mes", mes);
+      }
+
+      const url = `/registros/graficos${qs.toString() ? `?${qs.toString()}` : ""}`;
+
+      const res = await jfetch(url, {
+        method: "GET",
+        signal: controller.signal,
+        headers: {
+          "X-User-Rol": rolUpper,
+          "X-User-Usuario": usuario,
+          "X-User-Equipo": equipoUser,
+        },
+      });
+
+      const json = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
+
+      const arr = Array.isArray(json) ? json : [];
+      setRegistros(arr);
+      initFiltrosPorScope();
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      setRegistros([]);
+      setError(String(e?.message || e));
+    } finally {
+      setLoadingMain(false);
+    }
+  }, [registrosOverride, usuario, rolUpper, equipoUser, filtroMes, initFiltrosPorScope]);
+
+  useEffect(() => {
+    fetchGraficos();
+    return () => {
+      if (abortMainRef.current) {
+        try {
+          abortMainRef.current.abort();
+        } catch {}
+      }
+    };
+  }, [fetchGraficos]);
+
+  useEffect(() => {
+    const fetchCatalogosProyecto = async () => {
+      try {
+        const [resProyectos, resMapeos] = await Promise.all([
+          jfetch("/proyectos?include_modulos=0&include_fases=0"),
+          jfetch("/proyecto-mapeos"),
+        ]);
+
+        const [jsonProyectos, jsonMapeos] = await Promise.all([
+          resProyectos.json().catch(() => []),
+          resMapeos.json().catch(() => []),
+        ]);
+
+        if (!resProyectos.ok) {
+          throw new Error(jsonProyectos?.mensaje || `HTTP ${resProyectos.status}`);
+        }
+        if (!resMapeos.ok) {
+          throw new Error(jsonMapeos?.mensaje || `HTTP ${resMapeos.status}`);
+        }
+
+        setProyectos(Array.isArray(jsonProyectos) ? jsonProyectos : []);
+        setMapeosProyecto(Array.isArray(jsonMapeos) ? jsonMapeos : []);
+      } catch (e) {
+        console.error("Error cargando catálogo de proyectos:", e);
+        setProyectos([]);
+        setMapeosProyecto([]);
+      }
+    };
+
+    fetchCatalogosProyecto();
+  }, []);
+
+  useEffect(() => {
+    setFiltroMes(defaultMonth || "");
+  }, [defaultMonth]);
+
   const proyectosByCodigo = useMemo(() => {
     const map = new Map();
 
@@ -306,6 +427,18 @@ export default function ProyectosHorasDashboard({
       const codigo = normTxt(p?.codigo);
       if (!codigo) return;
       map.set(codigo, p);
+    });
+
+    return map;
+  }, [proyectos]);
+
+  const proyectosById = useMemo(() => {
+    const map = new Map();
+
+    (proyectos || []).forEach((p) => {
+      const id = Number(p?.id);
+      if (!id) return;
+      map.set(id, p);
     });
 
     return map;
@@ -322,224 +455,148 @@ export default function ProyectosHorasDashboard({
 
       if (!proyectoId || !origen) return;
 
-      const proyecto = (proyectos || []).find((p) => Number(p.id) === proyectoId);
+      const proyecto = proyectosById.get(proyectoId);
       if (!proyecto) return;
 
       map.set(origen, proyecto);
     });
 
     return map;
-  }, [mapeosProyecto, proyectos]);
+  }, [mapeosProyecto, proyectosById]);
 
-  const projectOfficial = (r) => {
-    const codigoDirecto = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
-    const nombreDirecto = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
+  const registrosEnriquecidos = useMemo(() => {
+    return (registros || []).map((r) => {
+      const codigoDirecto = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
+      const nombreDirecto = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
 
-    if (codigoDirecto) {
-      return `${codigoDirecto} - ${nombreDirecto || "SIN NOMBRE"}`;
-    }
+      let proyectoOficial = "SIN PROYECTO";
 
-    const nroCaso = String(r?.nroCasoCliente || "").trim();
-    const nroCasoNorm = normTxt(nroCaso);
-
-    if (nroCasoNorm && proyectosByCodigo.has(nroCasoNorm)) {
-      const p = proyectosByCodigo.get(nroCasoNorm);
-      return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
-    }
-
-    if (nroCasoNorm && mapeoOrigenToProyecto.has(nroCasoNorm)) {
-      const p = mapeoOrigenToProyecto.get(nroCasoNorm);
-      return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
-    }
-
-    const descripcion = String(r?.descripcion || "").trim();
-    const descripcionNorm = normTxt(descripcion);
-
-    if (descripcionNorm && mapeoOrigenToProyecto.has(descripcionNorm)) {
-      const p = mapeoOrigenToProyecto.get(descripcionNorm);
-      return `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
-    }
-
-    return "SIN PROYECTO";
-  };
-
-  const projectDigitado = (r) => {
-    const raw = String(r?.nroCasoCliente ?? "").trim();
-    if (!raw || raw === "0" || raw.toUpperCase() === "NA" || raw.toUpperCase() === "N/A") return "";
-    return raw;
-  };
-
-  useEffect(() => {
-    setFiltroMes(defaultMonth || "");
-  }, [defaultMonth]);
-
-  useEffect(() => {
-    const initFiltrosPorScope = () => {
-      if (scope === "SELF") {
-        setFiltroConsultor(nombreUser ? [nombreUser] : []);
-        setFiltroEquipo(equipoUser ? [equipoUser] : []);
-      } else if (scope === "TEAM") {
-        setFiltroEquipo(equipoUser ? [equipoUser] : []);
-        setFiltroConsultor([]);
+      if (codigoDirecto) {
+        proyectoOficial = `${codigoDirecto} - ${nombreDirecto || "SIN NOMBRE"}`;
       } else {
-        setFiltroEquipo([]);
-        setFiltroConsultor([]);
+        const nroCaso = String(r?.nroCasoCliente || "").trim();
+        const nroCasoNorm = normTxt(nroCaso);
+
+        if (nroCasoNorm && proyectosByCodigo.has(nroCasoNorm)) {
+          const p = proyectosByCodigo.get(nroCasoNorm);
+          proyectoOficial = `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
+        } else if (nroCasoNorm && mapeoOrigenToProyecto.has(nroCasoNorm)) {
+          const p = mapeoOrigenToProyecto.get(nroCasoNorm);
+          proyectoOficial = `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
+        } else {
+          const descripcion = String(r?.descripcion || "").trim();
+          const descripcionNorm = normTxt(descripcion);
+
+          if (descripcionNorm && mapeoOrigenToProyecto.has(descripcionNorm)) {
+            const p = mapeoOrigenToProyecto.get(descripcionNorm);
+            proyectoOficial = `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
+          }
+        }
       }
-    };
 
-    if (Array.isArray(registrosOverride)) {
-      setError("");
-      setRegistros(registrosOverride);
-      initFiltrosPorScope();
-      return;
-    }
+      const proyectoDigitadoRaw = String(r?.nroCasoCliente ?? "").trim();
+      const proyectoDigitado =
+        !proyectoDigitadoRaw ||
+        proyectoDigitadoRaw === "0" ||
+        proyectoDigitadoRaw.toUpperCase() === "NA" ||
+        proyectoDigitadoRaw.toUpperCase() === "N/A"
+          ? ""
+          : proyectoDigitadoRaw;
 
-    const fetchData = async () => {
-      setError("");
-      try {
-        const res = await jfetch("/registros/graficos", {
-          method: "GET",
-          headers: {
-            "X-User-Rol": rolUpper,
-            "X-User-Usuario": usuario,
-            "X-User-Equipo": equipoUser,
-          },
-        });
-
-        const json = await res.json().catch(() => []);
-        if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
-
-        const arr = Array.isArray(json) ? json : [];
-        setRegistros(arr);
-        initFiltrosPorScope();
-      } catch (e) {
-        setRegistros([]);
-        setError(String(e?.message || e));
-      }
-    };
-
-    fetchData();
-  }, [registrosOverride, rolUpper, usuario, equipoUser, scope, nombreUser]);
-
-  useEffect(() => {
-    const fetchProyectos = async () => {
-      try {
-        const res = await jfetch("/proyectos");
-        const json = await res.json().catch(() => []);
-        if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
-        setProyectos(Array.isArray(json) ? json : []);
-      } catch (e) {
-        console.error("Error cargando proyectos:", e);
-        setProyectos([]);
-      }
-    };
-
-    fetchProyectos();
-  }, []);
-
-  useEffect(() => {
-    const fetchMapeos = async () => {
-      try {
-        const res = await jfetch("/proyecto-mapeos");
-        const json = await res.json().catch(() => []);
-        if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
-        setMapeosProyecto(Array.isArray(json) ? json : []);
-      } catch (e) {
-        console.error("Error cargando mapeos:", e);
-        setMapeosProyecto([]);
-      }
-    };
-
-    fetchMapeos();
-  }, []);
+      return {
+        ...r,
+        equipoNormalizado: equipoOf(r),
+        ocupacionNormalizada: r?.ocupacion_nombre || "SIN OCUPACIÓN",
+        moduloNormalizado: r?.modulo || "—",
+        consultorNormalizado: r?.consultor || "—",
+        tareaNormalizada: r?.tipoTarea || "—",
+        proyectoOficial,
+        proyectoDigitado,
+        horasNum: toNum(r?.tiempoInvertido),
+      };
+    });
+  }, [registros, proyectosByCodigo, mapeoOrigenToProyecto]);
 
   const equiposUnicos = useMemo(() => {
     const set = new Set(
-      (registros ?? [])
+      (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
-        .map((r) => equipoOf(r))
+        .map((r) => r.equipoNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registrosEnriquecidos, filtroMes]);
 
   const consultoresUnicos = useMemo(() => {
     const set = new Set(
-      (registros ?? [])
+      (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
-        .filter((r) => (scope !== "TEAM" ? true : !equipoUser || equipoOf(r) === equipoUser))
-        .map((r) => r.consultor)
+        .filter((r) => (scope !== "TEAM" ? true : !equipoUser || r.equipoNormalizado === equipoUser))
+        .map((r) => r.consultorNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes, scope, equipoUser]);
+  }, [registrosEnriquecidos, filtroMes, scope, equipoUser]);
 
   const modulosUnicos = useMemo(() => {
     const set = new Set(
-      (registros ?? [])
+      (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
-        .map((r) => r.modulo)
+        .map((r) => r.moduloNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registrosEnriquecidos, filtroMes]);
 
   const ocupacionesUnicas = useMemo(() => {
     const set = new Set(
-      (registros ?? [])
+      (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
-        .map((r) => r.ocupacion_nombre || "SIN OCUPACIÓN")
+        .map((r) => r.ocupacionNormalizada)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registrosEnriquecidos, filtroMes]);
 
   const tareasUnicas = useMemo(() => {
     const set = new Set(
-      (registros ?? [])
+      (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
-        .map((r) => r.tipoTarea)
+        .map((r) => r.tareaNormalizada)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registrosEnriquecidos, filtroMes]);
 
   const proyectosUnicos = useMemo(() => {
     const set = new Set(
-      (registros ?? [])
+      (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
-        .map((r) => projectOfficial(r))
+        .map((r) => r.proyectoOficial)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes, proyectosByCodigo, mapeoOrigenToProyecto]);
+  }, [registrosEnriquecidos, filtroMes]);
 
   const datosFiltrados = useMemo(() => {
-    return (registros ?? []).filter((r) => {
-      const eq = equipoOf(r);
-
+    return (registrosEnriquecidos ?? []).filter((r) => {
       if (scope === "SELF") {
         const u = String(usuario || "").trim().toLowerCase();
         const ru = String(r.usuario_consultor || "").trim().toLowerCase();
         if (u && ru && ru !== u) return false;
-        if (equipoUser && eq !== equipoUser) return false;
+        if (equipoUser && r.equipoNormalizado !== equipoUser) return false;
       }
 
       if (scope === "TEAM") {
-        if (equipoUser && eq !== equipoUser) return false;
+        if (equipoUser && r.equipoNormalizado !== equipoUser) return false;
       }
 
       if (!coincideMes(r.fecha, filtroMes)) return false;
-      if (filtroEquipo.length > 0 && !filtroEquipo.includes(eq)) return false;
-      if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultor)) return false;
-      if (filtroModulo.length > 0 && !filtroModulo.includes(r.modulo)) return false;
-
-      const ocup = r.ocupacion_nombre || "SIN OCUPACIÓN";
-      if (filtroOcupacion.length > 0 && !filtroOcupacion.includes(ocup)) return false;
-
-      if (filtroTarea.length > 0 && !filtroTarea.includes(r.tipoTarea)) return false;
-
-      const prjOfficial = projectOfficial(r);
-      if (filtroProyecto.length > 0 && !filtroProyecto.includes(prjOfficial)) return false;
+      if (filtroEquipo.length > 0 && !filtroEquipo.includes(r.equipoNormalizado)) return false;
+      if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultorNormalizado)) return false;
+      if (filtroModulo.length > 0 && !filtroModulo.includes(r.moduloNormalizado)) return false;
+      if (filtroOcupacion.length > 0 && !filtroOcupacion.includes(r.ocupacionNormalizada)) return false;
+      if (filtroTarea.length > 0 && !filtroTarea.includes(r.tareaNormalizada)) return false;
+      if (filtroProyecto.length > 0 && !filtroProyecto.includes(r.proyectoOficial)) return false;
 
       return true;
     });
   }, [
-    registros,
+    registrosEnriquecidos,
     filtroMes,
     filtroEquipo,
     filtroConsultor,
@@ -550,74 +607,95 @@ export default function ProyectosHorasDashboard({
     scope,
     usuario,
     equipoUser,
-    proyectosByCodigo,
-    mapeoOrigenToProyecto,
   ]);
 
   const horasPorProyecto = useMemo(
-    () => groupSum(datosFiltrados, (r) => projectOfficial(r)),
+    () => groupSum(datosFiltrados, (r) => r.proyectoOficial),
     [datosFiltrados]
   );
+
   const horasPorModulo = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.modulo || "—"),
+    () => groupSum(datosFiltrados, (r) => r.moduloNormalizado),
     [datosFiltrados]
   );
+
   const horasPorConsultor = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.consultor || "—"),
+    () => groupSum(datosFiltrados, (r) => r.consultorNormalizado),
     [datosFiltrados]
   );
+
   const horasPorTarea = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.tipoTarea || "—"),
+    () => groupSum(datosFiltrados, (r) => r.tareaNormalizada),
     [datosFiltrados]
   );
+
   const horasPorOcupacion = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.ocupacion_nombre || "SIN OCUPACIÓN"),
+    () => groupSum(datosFiltrados, (r) => r.ocupacionNormalizada),
     [datosFiltrados]
   );
 
   const totalHoras = useMemo(
-    () => datosFiltrados.reduce((s, r) => s + toNum(r.tiempoInvertido), 0),
+    () => datosFiltrados.reduce((s, r) => s + r.horasNum, 0),
     [datosFiltrados]
   );
 
   const totalProyectos = useMemo(
-    () => uniqueCount(datosFiltrados, (r) => projectOfficial(r)),
+    () => uniqueCount(datosFiltrados, (r) => r.proyectoOficial),
     [datosFiltrados]
   );
 
   const totalConsultores = useMemo(
-    () => uniqueCount(datosFiltrados, (r) => r.consultor),
+    () => uniqueCount(datosFiltrados, (r) => r.consultorNormalizado),
     [datosFiltrados]
   );
 
   const totalModulos = useMemo(
-    () => uniqueCount(datosFiltrados, (r) => r.modulo),
+    () => uniqueCount(datosFiltrados, (r) => r.moduloNormalizado),
     [datosFiltrados]
   );
 
   const totalTareas = useMemo(
-    () => uniqueCount(datosFiltrados, (r) => r.tipoTarea),
+    () => uniqueCount(datosFiltrados, (r) => r.tareaNormalizada),
     [datosFiltrados]
   );
 
-  const openDetail = (kind, value) => {
+  const openDetail = useCallback((kind, value) => {
     let rows = [];
-    if (kind === "proyecto") rows = datosFiltrados.filter((r) => projectOfficial(r) === value);
-    if (kind === "modulo") rows = datosFiltrados.filter((r) => (r.modulo || "—") === value);
-    if (kind === "consultor") rows = datosFiltrados.filter((r) => (r.consultor || "—") === value);
-    if (kind === "tarea") rows = datosFiltrados.filter((r) => (r.tipoTarea || "—") === value);
-    if (kind === "ocupacion") rows = datosFiltrados.filter((r) => (r.ocupacion_nombre || "SIN OCUPACIÓN") === value);
+
+    if (kind === "proyecto") rows = datosFiltrados.filter((r) => r.proyectoOficial === value);
+    if (kind === "modulo") rows = datosFiltrados.filter((r) => r.moduloNormalizado === value);
+    if (kind === "consultor") rows = datosFiltrados.filter((r) => r.consultorNormalizado === value);
+    if (kind === "tarea") rows = datosFiltrados.filter((r) => r.tareaNormalizada === value);
+    if (kind === "ocupacion") rows = datosFiltrados.filter((r) => r.ocupacionNormalizada === value);
 
     rows = rows.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-    const subtotal = rows.reduce((s, r) => s + toNum(r.tiempoInvertido), 0);
+    const subtotal = rows.reduce((s, r) => s + r.horasNum, 0);
 
     setDetailTitle(`${kind.toUpperCase()}: ${value} — Total: ${subtotal.toFixed(2)} h`);
     setDetailRows(rows);
     setDetailOpen(true);
-  };
+  }, [datosFiltrados]);
 
   const TOP = 20;
-  const topProyectos = horasPorProyecto.slice(0, TOP);
+  const topProyectos = useMemo(() => horasPorProyecto.slice(0, TOP), [horasPorProyecto]);
+
+  const limpiarFiltros = () => {
+    setFiltroModulo([]);
+    setFiltroOcupacion([]);
+    setFiltroTarea([]);
+    setFiltroProyecto([]);
+
+    if (scope === "ALL") {
+      setFiltroEquipo([]);
+      setFiltroConsultor([]);
+    } else if (scope === "TEAM") {
+      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+      setFiltroConsultor([]);
+    } else {
+      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+      setFiltroConsultor(nombreUser ? [nombreUser] : []);
+    }
+  };
 
   const renderChartCard = (title, data, color, kind) => {
     if (!data || data.length === 0) {
@@ -680,24 +758,6 @@ export default function ProyectosHorasDashboard({
     );
   };
 
-  const limpiarFiltros = () => {
-    setFiltroModulo([]);
-    setFiltroOcupacion([]);
-    setFiltroTarea([]);
-    setFiltroProyecto([]);
-
-    if (scope === "ALL") {
-      setFiltroEquipo([]);
-      setFiltroConsultor([]);
-    } else if (scope === "TEAM") {
-      setFiltroEquipo(equipoUser ? [equipoUser] : []);
-      setFiltroConsultor([]);
-    } else {
-      setFiltroEquipo(equipoUser ? [equipoUser] : []);
-      setFiltroConsultor(nombreUser ? [nombreUser] : []);
-    }
-  };
-
   return (
     <div className="phd-page">
       <div className="phd-shell">
@@ -722,6 +782,12 @@ export default function ProyectosHorasDashboard({
             </div>
           </div>
         </section>
+
+        {loadingMain && (
+          <div className="phd-loading-box">
+            Cargando información...
+          </div>
+        )}
 
         {error && <div className="phd-error">Error: {error}</div>}
 
@@ -840,7 +906,7 @@ export default function ProyectosHorasDashboard({
             <h3 className="phd-modalTitle">{detailTitle || "Detalle"}</h3>
             <div className="phd-modalSub">
               Filas: <b>{detailRows.length}</b> · Total:{" "}
-              <b>{detailRows.reduce((s, r) => s + toNum(r.tiempoInvertido), 0).toFixed(2)} h</b>
+              <b>{detailRows.reduce((s, r) => s + r.horasNum, 0).toFixed(2)} h</b>
             </div>
           </div>
 
@@ -879,28 +945,28 @@ export default function ProyectosHorasDashboard({
                     <tr key={i}>
                       <td className="num">{r.id ?? "—"}</td>
                       <td>{r.fecha}</td>
-                      <td className="phd-truncate" title={r.consultor}>
-                        {r.consultor}
+                      <td className="phd-truncate" title={r.consultorNormalizado}>
+                        {r.consultorNormalizado}
                       </td>
                       <td className="phd-truncate" title={r.cliente}>
                         {r.cliente}
                       </td>
-                      <td className="phd-truncate" title={projectOfficial(r)}>
-                        {projectOfficial(r)}
+                      <td className="phd-truncate" title={r.proyectoOficial}>
+                        {r.proyectoOficial}
                       </td>
-                      <td className="phd-truncate" title={projectDigitado(r) || ""}>
-                        {projectDigitado(r) || "—"}
+                      <td className="phd-truncate" title={r.proyectoDigitado || ""}>
+                        {r.proyectoDigitado || "—"}
                       </td>
-                      <td className="phd-truncate" title={r.modulo}>
-                        {r.modulo}
+                      <td className="phd-truncate" title={r.moduloNormalizado}>
+                        {r.moduloNormalizado}
                       </td>
-                      <td className="phd-truncate" title={r.ocupacion_nombre || ""}>
-                        {r.ocupacion_nombre || "SIN OCUPACIÓN"}
+                      <td className="phd-truncate" title={r.ocupacionNormalizada}>
+                        {r.ocupacionNormalizada}
                       </td>
-                      <td className="phd-truncate" title={r.tipoTarea || ""}>
-                        {r.tipoTarea || "—"}
+                      <td className="phd-truncate" title={r.tareaNormalizada}>
+                        {r.tareaNormalizada}
                       </td>
-                      <td className="num">{toNum(r.tiempoInvertido).toFixed(2)}</td>
+                      <td className="num">{r.horasNum.toFixed(2)}</td>
                       <td className="phd-truncate phd-detail-desc" title={r.descripcion || ""}>
                         {r.descripcion || ""}
                       </td>

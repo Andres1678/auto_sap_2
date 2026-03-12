@@ -1225,6 +1225,21 @@ def obtener_registros_graficos():
         elif hasta:
             q = q.filter(Registro.fecha <= hasta)
 
+        filtro_mes = (request.args.get("mes") or "").strip()
+        filtro_anio = (request.args.get("anio") or "").strip()
+
+        if filtro_mes:
+            try:
+                q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
+            except Exception:
+                pass
+
+        if filtro_anio:
+            try:
+                q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == int(filtro_anio))
+            except Exception:
+                pass
+
         # ----------------------------------------------------------
         # Límite más razonable para gráficas
         # ----------------------------------------------------------
