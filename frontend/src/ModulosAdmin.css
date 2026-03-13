@@ -1,83 +1,120 @@
 .ma-wrap {
-  --ma-bg: #f3f6fb;
+  --ma-bg: #f4f7fb;
   --ma-surface: #ffffff;
-  --ma-surface-soft: #f8fafc;
+  --ma-surface-soft: #f8fbff;
   --ma-border: #e2e8f0;
   --ma-border-strong: #cbd5e1;
   --ma-text: #0f172a;
   --ma-text-soft: #475569;
+  --ma-title: #0b1220;
+
   --ma-primary: #2563eb;
   --ma-primary-dark: #1d4ed8;
-  --ma-primary-soft: #e8f0ff;
+  --ma-primary-soft: #eaf2ff;
+
+  --ma-violet: #7c3aed;
+  --ma-violet-soft: #f3e8ff;
+
+  --ma-emerald: #059669;
+  --ma-emerald-soft: #ecfdf5;
+
   --ma-danger: #dc2626;
   --ma-danger-soft: #fee2e2;
-  --ma-success: #059669;
-  --ma-shadow-sm: 0 6px 18px rgba(15, 23, 42, 0.06);
+
+  --ma-shadow-sm: 0 6px 16px rgba(15, 23, 42, 0.06);
   --ma-shadow-md: 0 14px 34px rgba(15, 23, 42, 0.08);
-  --ma-radius: 18px;
+  --ma-shadow-lg: 0 24px 60px rgba(15, 23, 42, 0.14);
+
+  --ma-radius: 20px;
+  --ma-radius-md: 16px;
   --ma-radius-sm: 12px;
 
   min-height: 100vh;
   padding: 28px;
   background:
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 22%),
-    linear-gradient(180deg, #f8fbff 0%, var(--ma-bg) 100%);
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 24%),
+    radial-gradient(circle at top right, rgba(124, 58, 237, 0.07), transparent 18%),
+    linear-gradient(180deg, #f9fbff 0%, var(--ma-bg) 100%);
   color: var(--ma-text);
   font-family: "Segoe UI", Roboto, Arial, sans-serif;
 }
 
 /* =========================
-   Header
+   Header principal
 ========================= */
 .ma-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 22px;
-  padding: 4px 2px;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 24px;
+  padding: 8px 2px 2px;
 }
 
 .ma-title {
   margin: 0;
-  font-size: clamp(1.7rem, 2vw, 2.2rem);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--ma-text);
+  font-size: clamp(1.8rem, 2vw, 2.4rem);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--ma-title);
+  line-height: 1.05;
 }
 
 .ma-loading {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-height: 42px;
   padding: 10px 14px;
   border-radius: 999px;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.9);
   border: 1px solid var(--ma-border);
   color: var(--ma-text-soft);
   font-size: 0.92rem;
   font-weight: 700;
   box-shadow: var(--ma-shadow-sm);
+  white-space: nowrap;
 }
 
 /* =========================
-   Cards
+   Cards base
 ========================= */
 .ma-card {
+  position: relative;
   background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  border: 1px solid rgba(226, 232, 240, 0.95);
   border-radius: var(--ma-radius);
-  padding: 20px;
-  margin-bottom: 20px;
+  padding: 22px;
+  margin-bottom: 22px;
   box-shadow: var(--ma-shadow-md);
   overflow: hidden;
 }
 
+.ma-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 5px;
+  background: linear-gradient(90deg, var(--ma-primary) 0%, #60a5fa 100%);
+}
+
+.ma-wrap > .ma-card:nth-child(2)::before {
+  background: linear-gradient(90deg, var(--ma-primary) 0%, #60a5fa 100%);
+}
+
+.ma-wrap > .ma-card:nth-child(3)::before {
+  background: linear-gradient(90deg, var(--ma-violet) 0%, #a78bfa 100%);
+}
+
+.ma-wrap > .ma-card:nth-child(4)::before {
+  background: linear-gradient(90deg, var(--ma-emerald) 0%, #34d399 100%);
+}
+
 .ma-cardTitle {
-  font-size: 1.05rem;
-  font-weight: 800;
+  font-size: 1.08rem;
+  font-weight: 900;
   margin-bottom: 16px;
-  color: var(--ma-text);
+  color: var(--ma-title);
   letter-spacing: -0.01em;
 }
 
@@ -104,22 +141,22 @@
 
 .ma-label {
   font-size: 0.9rem;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--ma-text-soft);
 }
 
 .ma-toolbar {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 14px;
 }
 
 .ma-input {
   width: 100%;
-  min-height: 46px;
+  min-height: 48px;
   border: 1px solid var(--ma-border);
-  border-radius: 12px;
-  padding: 0 14px;
+  border-radius: 14px;
+  padding: 0 16px;
   background: #fff;
   color: var(--ma-text);
   outline: none;
@@ -127,7 +164,8 @@
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease,
-    background-color 0.18s ease;
+    background-color 0.18s ease,
+    transform 0.18s ease;
 }
 
 .ma-input::placeholder {
@@ -157,7 +195,7 @@
 }
 
 .ma-actions {
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .ma-btn {
@@ -165,13 +203,15 @@
   border-radius: 12px;
   padding: 10px 16px;
   cursor: pointer;
-  font-weight: 700;
+  font-weight: 800;
   font-size: 0.92rem;
+  line-height: 1;
   transition:
     transform 0.15s ease,
     box-shadow 0.18s ease,
     opacity 0.18s ease,
-    background-color 0.18s ease;
+    background-color 0.18s ease,
+    border-color 0.18s ease;
 }
 
 .ma-btn:hover:not(:disabled) {
@@ -187,11 +227,11 @@
 .ma-btnPrimary {
   background: linear-gradient(135deg, var(--ma-primary) 0%, var(--ma-primary-dark) 100%);
   color: white;
-  box-shadow: 0 10px 18px rgba(37, 99, 235, 0.22);
+  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.22);
 }
 
 .ma-btnPrimary:hover:not(:disabled) {
-  box-shadow: 0 14px 24px rgba(37, 99, 235, 0.28);
+  box-shadow: 0 16px 28px rgba(37, 99, 235, 0.28);
 }
 
 .ma-btnLight {
@@ -211,7 +251,7 @@
 }
 
 .ma-btnGhost:hover:not(:disabled) {
-  background: #e2e8ff;
+  background: #e3e9ff;
 }
 
 .ma-btnDanger {
@@ -225,7 +265,7 @@
 }
 
 /* =========================
-   Tables
+   Área de tablas
 ========================= */
 .ma-body {
   width: 100%;
@@ -235,13 +275,14 @@
   width: 100%;
   overflow: auto;
   border: 1px solid var(--ma-border);
-  border-radius: 16px;
+  border-radius: 18px;
   background: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .ma-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 860px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -250,19 +291,27 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  background: linear-gradient(180deg, #1e293b 0%, #334155 100%);
+  background: linear-gradient(180deg, #162133 0%, #25364d 100%);
   color: #fff;
-  padding: 13px 14px;
+  padding: 14px 15px;
   text-align: left;
-  font-size: 0.83rem;
-  font-weight: 800;
-  letter-spacing: 0.03em;
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
   white-space: nowrap;
-  border-bottom: 1px solid #243243;
+  border-bottom: 1px solid #31455f;
+}
+
+.ma-table thead th:first-child {
+  border-top-left-radius: 14px;
+}
+
+.ma-table thead th:last-child {
+  border-top-right-radius: 14px;
 }
 
 .ma-table tbody td {
-  padding: 13px 14px;
+  padding: 13px 15px;
   border-bottom: 1px solid #edf2f7;
   text-align: left;
   vertical-align: middle;
@@ -276,13 +325,22 @@
 }
 
 .ma-table tbody tr:hover td {
-  background: #f1f6ff;
+  background: #f2f7ff;
 }
 
 .ma-table tbody tr:last-child td {
   border-bottom: none;
 }
 
+/* primera columna más jerárquica */
+.ma-table tbody td:first-child {
+  font-weight: 800;
+  color: #1e293b;
+}
+
+/* =========================
+   Texto auxiliar
+========================= */
 .ma-muted {
   color: var(--ma-text-soft);
   font-size: 0.92rem;
@@ -290,11 +348,11 @@
 
 .ma-table .ma-muted {
   text-align: center;
-  padding: 18px 14px;
+  padding: 22px 14px;
 }
 
 /* =========================
-   Badges
+   Badges de módulos
 ========================= */
 .ma-badgesWrap {
   align-items: center;
@@ -303,15 +361,22 @@
 .ma-badge {
   display: inline-flex;
   align-items: center;
-  background: linear-gradient(180deg, #eef4ff 0%, #e3edff 100%);
+  background: linear-gradient(180deg, #eef4ff 0%, #e4eeff 100%);
   color: #22407d;
-  border: 1px solid #d5e3ff;
+  border: 1px solid #d6e3ff;
   border-radius: 999px;
   padding: 7px 11px;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* badges dentro de la card de consultores con leve diversidad */
+.ma-wrap > .ma-card:nth-child(4) .ma-badge {
+  background: linear-gradient(180deg, #ecfdf5 0%, #dff8ec 100%);
+  color: #166534;
+  border-color: #b7ebcf;
 }
 
 /* =========================
@@ -320,42 +385,48 @@
 .ma-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(4px);
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(5px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 999;
-  padding: 18px;
+  padding: 20px;
 }
 
 .ma-modal {
   background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
-  width: min(640px, 96vw);
-  border-radius: 20px;
+  width: min(680px, 96vw);
+  border-radius: 22px;
   padding: 24px;
   outline: none;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: var(--ma-shadow-lg);
+  border: 1px solid rgba(226, 232, 240, 0.95);
 }
 
 .ma-modalTitle {
   margin-top: 0;
   margin-bottom: 16px;
-  font-size: 1.2rem;
-  font-weight: 800;
-  color: var(--ma-text);
+  font-size: 1.22rem;
+  font-weight: 900;
+  color: var(--ma-title);
+  letter-spacing: -0.02em;
 }
 
 .ma-group {
-  background: #f8fafc;
+  background: linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
   border: 1px solid var(--ma-border);
-  border-radius: 16px;
+  border-radius: 18px;
   padding: 16px;
 }
 
+.ma-footer {
+  margin-top: 18px;
+  justify-content: flex-end;
+}
+
 /* =========================
-   Scrollbar suave
+   Scrollbars
 ========================= */
 .ma-tableWrap::-webkit-scrollbar {
   height: 10px;
@@ -374,9 +445,9 @@
 /* =========================
    Responsive
 ========================= */
-@media (max-width: 900px) {
+@media (max-width: 980px) {
   .ma-wrap {
-    padding: 18px;
+    padding: 20px;
   }
 
   .ma-header {
@@ -385,7 +456,7 @@
   }
 
   .ma-card {
-    padding: 16px;
+    padding: 18px;
   }
 
   .ma-toolbar {
@@ -408,16 +479,25 @@
   }
 
   .ma-title {
-    font-size: 1.5rem;
+    font-size: 1.55rem;
+  }
+
+  .ma-card {
+    padding: 16px;
+    border-radius: 16px;
   }
 
   .ma-cardTitle {
     font-size: 1rem;
   }
 
+  .ma-table {
+    min-width: 760px;
+  }
+
   .ma-modal {
     padding: 18px;
-    border-radius: 16px;
+    border-radius: 18px;
   }
 
   .ma-inlineActions,

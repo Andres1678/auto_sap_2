@@ -228,8 +228,8 @@ export default function ModulosAdmin() {
     <div className="ma-wrap">
       <div className="ma-header">
         <div>
-          <div className="ma-loading" style={{ marginBottom: 10, visibility: "hidden", padding: 0, border: 0, boxShadow: "none", background: "transparent" }}>
-            .
+          <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#64748b", marginBottom: 6 }}>
+            Panel administrativo
           </div>
           <h2 className="ma-title">Administración de Módulos</h2>
         </div>

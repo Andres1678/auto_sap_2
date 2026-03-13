@@ -284,6 +284,8 @@ const RegistroRow = React.memo(function RegistroRow({
   onCopiar,
   onToggleBloqueado,
 }) {
+  const editableSemana = isDateInCurrentWeek(String(r?.fecha || ""));
+
   return (
     <tr>
       <td className="num">{r.id}</td>
@@ -315,9 +317,27 @@ const RegistroRow = React.memo(function RegistroRow({
         >
           ✏️
         </button>
-        <button type="button" className="icon-btn danger" onClick={() => onEliminar(r.id)} disabled={r.bloqueado} title="Eliminar">🗑️</button>
-        <button type="button" className="icon-btn" onClick={() => onCopiar(r)} title="Copiar">📋</button>
+
+        <button
+          type="button"
+          className="icon-btn danger"
+          onClick={() => onEliminar(r.id)}
+          disabled={r.bloqueado}
+          title="Eliminar"
+        >
+          🗑️
+        </button>
+
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={() => onCopiar(r)}
+          title="Copiar"
+        >
+          📋
+        </button>
       </td>
+
       {isAdmin && (
         <td>
           <input
@@ -442,7 +462,6 @@ const Registro = ({ userData }) => {
 
   const editOriginalRef = useRef(null);
   const registrosAbortRef = useRef(null);
-  const editableSemana = isDateInCurrentWeek(String(registro?.fecha || ""));  
 
   const [fasesProyecto, setFasesProyecto] = useState([]);
   const prevIsProyectoModeRef = useRef(false);
