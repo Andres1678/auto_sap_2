@@ -276,6 +276,35 @@ const ESTADOS_CERRADOS_N = new Set(
   )
 );
 
+const ESTADOS_TOTAL_KPI_N = new Set([...ESTADOS_ACTIVOS_N, ...ESTADOS_CERRADOS_N]);
+
+function buildEstadoBreakdown(rows, allowedStates) {
+  const map = new Map();
+
+  for (const op of Array.isArray(rows) ? rows : []) {
+    const raw = op?.estado_oferta ?? "";
+    if (isExcludedLabel(raw)) continue;
+
+    const estadoN = normKeyForMatch(raw);
+    if (allowedStates && !allowedStates.has(estadoN)) continue;
+
+    const prev = map.get(estadoN) || {
+      key: estadoN,
+      label: displayLabel(raw),
+      count: 0,
+    };
+
+    prev.count += 1;
+    map.set(estadoN, prev);
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) =>
+      b.count - a.count ||
+      a.label.localeCompare(b.label, "es", { sensitivity: "base" })
+  );
+}
+
 /* ===================== Observaciones: separar por fechas ===================== */
 const OBS_DATE_TOKEN = /(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})/g;
 
@@ -492,6 +521,14 @@ export default function DashboardOportunidades() {
     };
   }, [dataBase]);
 
+  const kpiEstadosInfo = useMemo(() => {
+    return {
+      total: buildEstadoBreakdown(dataBase, ESTADOS_TOTAL_KPI_N),
+      activas: buildEstadoBreakdown(dataBase, ESTADOS_ACTIVOS_N),
+      cerradas: buildEstadoBreakdown(dataBase, ESTADOS_CERRADOS_N),
+    };
+  }, [dataBase]);
+
   const limpiar = () => {
     setFiltros({
       anios: [],
@@ -522,6 +559,25 @@ export default function DashboardOportunidades() {
     classNamePrefix: "rs",
   };
 
+  const renderKpiTooltip = (titulo, items) => (
+    <div className="kpi-tooltip">
+      <div className="kpi-tooltip-title">{titulo}</div>
+
+      {items?.length ? (
+        <ul className="kpi-tooltip-list">
+          {items.map((it) => (
+            <li key={it.key} className="kpi-tooltip-item">
+              <span className="kpi-tooltip-state">{it.label}</span>
+              <strong className="kpi-tooltip-count">{it.count}</strong>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="kpi-tooltip-empty">Sin estados disponibles</div>
+      )}
+    </div>
+  );
+
   return (
     <div className="oport-dash-wrapper">
       <div className="oport-topbar">
@@ -540,19 +596,22 @@ export default function DashboardOportunidades() {
           {loading && <div className="oport-loading">Cargando...</div>}
 
           <section className="kpi-grid">
-            <div className="kpi-card">
+            <div className="kpi-card has-tooltip" tabIndex={0}>
               <div className="kpi-label">Cantidad</div>
               <div className="kpi-value">{kpis.total}</div>
+              {renderKpiTooltip("Estados incluidos en cantidad", kpiEstadosInfo.total)}
             </div>
 
-            <div className="kpi-card">
+            <div className="kpi-card has-tooltip" tabIndex={0}>
               <div className="kpi-label">Activas</div>
               <div className="kpi-value">{kpis.activas}</div>
+              {renderKpiTooltip("Estados incluidos en activas", kpiEstadosInfo.activas)}
             </div>
 
-            <div className="kpi-card">
+            <div className="kpi-card has-tooltip" tabIndex={0}>
               <div className="kpi-label">Cerradas</div>
               <div className="kpi-value">{kpis.cerradas}</div>
+              {renderKpiTooltip("Estados incluidos en cerradas", kpiEstadosInfo.cerradas)}
             </div>
 
             <div className="kpi-card">

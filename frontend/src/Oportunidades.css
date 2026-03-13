@@ -261,54 +261,46 @@
   background: #f8fafc;
 }
 
-/* columna 1 fija */
-.oportunidades-wrapper .tabla-oportunidades th:nth-child(1),
-.oportunidades-wrapper .tabla-oportunidades td:nth-child(1) {
+/* ==========================================
+   COLUMNA ID FIJA A LA IZQUIERDA
+========================================== */
+
+.oportunidades-wrapper .sticky-id-col {
   position: sticky;
   left: 0;
-  z-index: 40;
-  min-width: 250px;
-  max-width: 250px;
-  width: 250px;
-  background: #fff;
+  min-width: 110px !important;
+  max-width: 110px !important;
+  width: 110px !important;
   box-shadow: 2px 0 0 #e2e8f0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-/* columna 2 fija, un poco más ancha */
-.oportunidades-wrapper .tabla-oportunidades th:nth-child(2),
-.oportunidades-wrapper .tabla-oportunidades td:nth-child(2) {
-  position: sticky;
-  left: 250px;
-  z-index: 39;
-  min-width: 210px;
-  max-width: 210px;
-  width: 210px;
-  background: #fff;
-  box-shadow: 2px 0 0 #e2e8f0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.oportunidades-wrapper .tabla-oportunidades thead tr:first-child th:nth-child(1),
-.oportunidades-wrapper .tabla-oportunidades thead tr:first-child th:nth-child(2) {
+.oportunidades-wrapper .tabla-oportunidades thead tr:first-child .sticky-id-col {
   background: var(--gray-dark);
+  color: #fff;
   z-index: 80;
 }
 
-.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas th:nth-child(1),
-.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas th:nth-child(2) {
+.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas .sticky-id-col,
+.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas .sticky-id-filter {
   background: #e2e8f0;
   z-index: 79;
 }
 
-.oportunidades-wrapper .tabla-oportunidades tbody tr:hover td:nth-child(1),
-.oportunidades-wrapper .tabla-oportunidades tbody tr:hover td:nth-child(2) {
+.oportunidades-wrapper .tabla-oportunidades tbody .sticky-id-cell {
+  background: #fff;
+  font-weight: 700;
+  z-index: 40;
+  text-align: center;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr:hover .sticky-id-cell {
   background: #f8fafc;
 }
+
+/* ==========================================
+   SEGUNDA COLUMNA NORMAL
+   (ya no se deja sticky por nth-child para evitar choques con ID)
+========================================== */
 
 .oportunidades-wrapper .editing {
   background: #e0f2fe !important;
@@ -467,6 +459,12 @@
   .oportunidades-wrapper .tabla-oportunidades {
     min-width: 2200px;
   }
+
+  .oportunidades-wrapper .sticky-id-col {
+    min-width: 90px !important;
+    max-width: 90px !important;
+    width: 90px !important;
+  }
 }
 
 .oportunidades-wrapper .acciones-exportacion {
@@ -494,4 +492,8 @@
 .oportunidades-wrapper .clear-filters-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.oportunidades-wrapper .new-row .sticky-id-cell {
+  background: #ecfdf5 !important;
 }

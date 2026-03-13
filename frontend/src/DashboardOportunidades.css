@@ -19,7 +19,7 @@
   --radius: 10px;
   --radius-sm: 8px;
 
-  /* ✅ alturas consistentes como dashboard referencia */
+  /* alturas consistentes */
   --card-min: 230px;
   --card-min-small: 210px;
 }
@@ -40,7 +40,7 @@
 }
 
 /* ===========================================================
-   TOPBAR (título centrado)
+   TOPBAR
 =========================================================== */
 .oport-topbar{
   display:flex;
@@ -71,7 +71,7 @@
   font-weight: 700;
 }
 
-/* Botón limpiar (arriba) */
+/* Botón limpiar */
 .oport-btn{
   border:1px solid var(--border);
   background:#fff;
@@ -84,15 +84,22 @@
   align-self: center;
   white-space: nowrap;
 }
-.oport-btn:hover{ background:#f9fafb; }
-.oport-btn:disabled{ opacity:.6; cursor:not-allowed; }
+
+.oport-btn:hover{
+  background:#f9fafb;
+}
+
+.oport-btn:disabled{
+  opacity:.6;
+  cursor:not-allowed;
+}
 
 /* ===========================================================
    LAYOUT PRINCIPAL
 =========================================================== */
 .dashboard-layout{
   display:grid;
-  grid-template-columns: 1fr 320px; /* sidebar como imagen */
+  grid-template-columns: 1fr 320px;
   gap: 12px;
   align-items:start;
 }
@@ -160,7 +167,106 @@
 }
 
 /* ===========================================================
-   GRID MEDIO (tablas + graficas)
+   TOOLTIP KPIs A LA DERECHA
+=========================================================== */
+.kpi-card.has-tooltip{
+  position: relative;
+  cursor: default;
+  overflow: visible;
+  z-index: 1;
+}
+
+.kpi-card.has-tooltip:hover,
+.kpi-card.has-tooltip:focus,
+.kpi-card.has-tooltip:focus-within{
+  z-index: 20;
+}
+
+.kpi-tooltip{
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 10px);
+  min-width: 240px;
+  max-width: 320px;
+  background: #0f172a;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.28);
+  z-index: 50;
+
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-50%) translateX(-6px);
+  transition: opacity .18s ease, transform .18s ease, visibility .18s ease;
+  pointer-events: none;
+}
+
+.kpi-tooltip::before{
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -6px;
+  width: 12px;
+  height: 12px;
+  background: #0f172a;
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.kpi-card.has-tooltip:hover .kpi-tooltip,
+.kpi-card.has-tooltip:focus-within .kpi-tooltip,
+.kpi-card.has-tooltip:focus .kpi-tooltip{
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
+}
+
+.kpi-tooltip-title{
+  font-size: 0.78rem;
+  font-weight: 900;
+  margin-bottom: 8px;
+  color: #cbd5e1;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.kpi-tooltip-list{
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kpi-tooltip-item{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.85rem;
+}
+
+.kpi-tooltip-state{
+  color: #f8fafc;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.kpi-tooltip-count{
+  color: #93c5fd;
+  font-weight: 900;
+  flex: 0 0 auto;
+}
+
+.kpi-tooltip-empty{
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  font-weight: 700;
+}
+
+/* ===========================================================
+   GRID MEDIO
 =========================================================== */
 .main-grid{
   display:grid;
@@ -178,25 +284,19 @@
 }
 
 /* ===========================================================
-   CARDS (✅ CORRECCIÓN PRINCIPAL)
-   - Se fuerza altura mínima
-   - Se hace flex column
-   - Se asegura que el contenido tome el espacio
+   CARDS
 =========================================================== */
 .card{
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow:hidden;
-
-  /* ✅ evita cards "mini" que se ven vacías */
   min-height: var(--card-min);
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
 
-/* Cards tipo tabla izquierda (un poco más pequeñas) */
 .main-col .card{
   min-height: var(--card-min-small);
 }
@@ -210,19 +310,18 @@
   background: #ffffff;
 }
 
-/* ✅ el contenido dentro de la card crece y permite scroll interno */
 .card > :not(.card-title){
   flex: 1 1 auto;
   min-height: 0;
 }
 
 /* ===========================================================
-   TABLAS (header azul oscuro)
+   TABLAS
 =========================================================== */
 .table-scroll{
   padding: 0;
-  overflow: auto; /* ✅ scroll X + Y dentro del recuadro */
-  max-height: 280px; /* ✅ como la referencia */
+  overflow: auto;
+  max-height: 280px;
 }
 
 .table{
@@ -239,8 +338,6 @@
   text-align:left;
   font-weight: 900;
   white-space: nowrap;
-
-  /* ✅ sticky para que quede elegante si hay scroll vertical */
   position: sticky;
   top: 0;
   z-index: 2;
@@ -263,10 +360,10 @@
 }
 
 /* ===========================================================
-   DETALLE (tabla grande abajo)
+   DETALLE
 =========================================================== */
 .detalle-scroll{
-  overflow:auto;            /* ✅ scroll X + Y */
+  overflow:auto;
   max-height: 360px;
   border-top: 1px solid var(--border-soft);
 }
@@ -289,26 +386,17 @@
 }
 
 /* ===========================================================
-   ✅ FIX: ResumenCalificacion se veía “vacío”
-   Tu componente usa:
-   <div className="calificacion-card">
-     <h3 className="estado-title">...</h3>
-     <table className="estado-table calificacion-table">...</table>
-   </div>
-
-   Estas clases no estaban bien dimensionadas dentro de card.
+   RESUMEN CALIFICACION
 =========================================================== */
 .calificacion-card{
   width: 100%;
   height: 100%;
   min-height: 0;
-
   display: flex;
   flex-direction: column;
   gap: 10px;
-
   padding: 10px 12px;
-  overflow: auto; /* ✅ por si en pantallas pequeñas se aprieta */
+  overflow: auto;
 }
 
 .estado-title{
@@ -318,7 +406,6 @@
   color: #111827;
 }
 
-/* tabla de calificación */
 .estado-table{
   width: 100%;
   border-collapse: collapse;
@@ -345,16 +432,18 @@
 .calificacion-table thead th{
   text-align: center;
 }
+
 .calificacion-table tbody td{
   text-align: center;
 }
+
 .calificacion-table tbody td:first-child{
   text-align: left;
   font-weight: 900;
 }
 
 /* ===========================================================
-   SIDEBAR FILTROS (gris, como imagen)
+   SIDEBAR FILTROS
 =========================================================== */
 .dashboard-filtros{
   background: var(--sidebar);
@@ -383,7 +472,6 @@
   padding: 4px 2px 0;
 }
 
-/* Cada bloque de filtro en blanco */
 .filtro-item{
   background:#fff;
   border: 1px solid var(--border);
@@ -408,7 +496,7 @@
 }
 
 /* ===========================================================
-   REACT-SELECT (solo pulido, tu rsStyles manda)
+   REACT-SELECT
 =========================================================== */
 .react-select__control{
   border-radius: 10px !important;
@@ -447,33 +535,81 @@
    RESPONSIVE
 =========================================================== */
 @media (max-width: 1250px){
-  .dashboard-layout{ grid-template-columns: 1fr 300px; }
-  .main-grid{ grid-template-columns: 1fr; }
+  .dashboard-layout{
+    grid-template-columns: 1fr 300px;
+  }
+
+  .main-grid{
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 1100px){
-  .dashboard-layout{ grid-template-columns: 1fr; }
+  .dashboard-layout{
+    grid-template-columns: 1fr;
+  }
+
   .dashboard-filtros{
     position: relative;
     top:auto;
     max-height:none;
     order:-1;
   }
-  .kpi-grid{ grid-template-columns: repeat(2, 1fr); }
+
+  .kpi-grid{
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .kpi-tooltip{
+    top: calc(100% + 8px);
+    left: 12px;
+    transform: translateY(6px);
+    max-width: 92vw;
+  }
+
+  .kpi-tooltip::before{
+    top: -6px;
+    left: 18px;
+    transform: rotate(45deg);
+  }
+
+  .kpi-card.has-tooltip:hover .kpi-tooltip,
+  .kpi-card.has-tooltip:focus-within .kpi-tooltip,
+  .kpi-card.has-tooltip:focus .kpi-tooltip{
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 650px){
-  .kpi-grid{ grid-template-columns: 1fr; }
-  .two-col{ grid-template-columns: 1fr; }
-  .oport-dash-title{ font-size: 1.55rem; }
+  .kpi-grid{
+    grid-template-columns: 1fr;
+  }
 
-  /* ✅ en móvil reduce mínimos */
-  .card{ min-height: 200px; }
-  .table-scroll{ max-height: 240px; }
+  .two-col{
+    grid-template-columns: 1fr;
+  }
+
+  .oport-dash-title{
+    font-size: 1.55rem;
+  }
+
+  .card{
+    min-height: 200px;
+  }
+
+  .table-scroll{
+    max-height: 240px;
+  }
+
+  .kpi-tooltip{
+    min-width: 220px;
+    max-width: calc(100vw - 50px);
+    left: 8px;
+  }
 }
 
 /* ===========================================================
-   Scrollbars discretas
+   SCROLLBARS
 =========================================================== */
 .dashboard-filtros::-webkit-scrollbar,
 .detalle-scroll::-webkit-scrollbar,
@@ -482,6 +618,7 @@
   width: 10px;
   height: 10px;
 }
+
 .dashboard-filtros::-webkit-scrollbar-thumb,
 .detalle-scroll::-webkit-scrollbar-thumb,
 .table-scroll::-webkit-scrollbar-thumb,
@@ -491,6 +628,9 @@
   border: 2px solid rgba(243,244,246,.65);
 }
 
+/* ===========================================================
+   CHECKBOX OPTION
+=========================================================== */
 .rs-check{
   width:16px;
   height:16px;

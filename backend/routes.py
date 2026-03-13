@@ -20,7 +20,7 @@ import traceback
 import math
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from openpyxl import load_workbook
-
+from zoneinfo import ZoneInfo
 
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
@@ -1698,6 +1698,37 @@ def eliminar_registro(id):
     db.session.commit()
     return jsonify({'mensaje': 'Registro eliminado'}), 200
 
+def _week_bounds_bogota(ref_dt=None):
+    tz = ZoneInfo("America/Bogota")
+    now = ref_dt.astimezone(tz) if ref_dt else datetime.now(tz)
+
+    today = now.date()
+    # lunes = 0, domingo = 6
+    start = today - timedelta(days=today.weekday())
+    end = start + timedelta(days=6)
+
+    return start, end
+
+
+def _parse_iso_date_safe(value):
+    s = str(value or "").strip()
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _fecha_en_semana_vigente(fecha_value):
+    fecha = _parse_iso_date_safe(fecha_value)
+    if not fecha:
+        return False
+
+    start, end = _week_bounds_bogota()
+    return start <= fecha <= end
+
+
 @bp.route('/editar-registro/<int:id>', methods=['PUT'])
 @permission_required("REGISTROS_EDITAR")
 def editar_registro(id):
@@ -1735,11 +1766,16 @@ def editar_registro(id):
     if not es_admin and dueno and dueno != usuario_header:
         return jsonify({'mensaje': 'No autorizado'}), 403
 
-    puede_semanas_anteriores = es_admin or (usuario_header in USUARIOS_PUEDE_SEMANAS_ANTERIORES)
-
-    fecha_nueva = data.get("fecha")
-    if fecha_nueva and not puede_semanas_anteriores:
-        pass
+    # ----------------------------------------------------------
+    # 2.1) Bloquear edición fuera de semana vigente
+    #     Si quieres que ADMIN sí pueda editar semanas anteriores,
+    #     cambia este if por:
+    #     if not es_admin and not _fecha_en_semana_vigente(registro.fecha):
+    # ----------------------------------------------------------
+    if not _fecha_en_semana_vigente(registro.fecha):
+        return jsonify({
+            'mensaje': 'Solo se pueden actualizar registros de la semana vigente (lunes a domingo).'
+        }), 403
 
     try:
         # ----------------------------------------------------------
@@ -1752,6 +1788,14 @@ def editar_registro(id):
         tiempo_calculado = _calcular_tiempo_horas(nuevo_hora_inicio, nuevo_hora_fin)
         if tiempo_calculado <= 0:
             return jsonify({'mensaje': 'Hora fin debe ser mayor a hora inicio'}), 400
+
+        # ----------------------------------------------------------
+        # 3.1) No permitir mover la edición a una fecha fuera de la semana vigente
+        # ----------------------------------------------------------
+        if not _fecha_en_semana_vigente(nueva_fecha):
+            return jsonify({
+                'mensaje': 'Solo puedes actualizar registros cuya fecha quede dentro de la semana vigente.'
+            }), 403
 
         # ----------------------------------------------------------
         # 4) Validar traslape en backend

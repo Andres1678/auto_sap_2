@@ -227,7 +227,12 @@ export default function ModulosAdmin() {
   return (
     <div className="ma-wrap">
       <div className="ma-header">
-        <h2 className="ma-title">Administración de Módulos</h2>
+        <div>
+          <div className="ma-loading" style={{ marginBottom: 10, visibility: "hidden", padding: 0, border: 0, boxShadow: "none", background: "transparent" }}>
+            .
+          </div>
+          <h2 className="ma-title">Administración de Módulos</h2>
+        </div>
         {loading ? <span className="ma-loading">⏳ Cargando...</span> : null}
       </div>
 

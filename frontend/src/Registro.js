@@ -153,6 +153,35 @@ const getWeekBoundsISO = (now = new Date()) => {
   return { minISO: toISODate(start), maxISO: toISODate(end), todayISO: toISODate(d) };
 };
 
+function getWeekBoundsFromDateISO(dateLike) {
+  const base = dateLike ? new Date(`${dateLike}T00:00:00`) : new Date();
+
+  if (Number.isNaN(base.getTime())) {
+    return { minISO: "", maxISO: "" };
+  }
+
+  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  const day = d.getDay(); // 0 domingo, 1 lunes...
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+
+  const start = new Date(d);
+  start.setDate(d.getDate() + diffToMonday);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+
+  return {
+    minISO: toISODate(start),
+    maxISO: toISODate(end),
+  };
+}
+
+function isDateInCurrentWeek(fechaISO, now = new Date()) {
+  if (!fechaISO) return false;
+  const { minISO, maxISO } = getWeekBoundsISO(now);
+  return fechaISO >= minISO && fechaISO <= maxISO;
+}
+
 function taskCode(value) {
   return (String(value || '').match(/^\d+/)?.[0] ?? '');
 }
@@ -277,7 +306,15 @@ const RegistroRow = React.memo(function RegistroRow({
       <td>{r.horasAdicionales}</td>
       <td className="truncate" title={r.descripcion}>{r.descripcion}</td>
       <td className="actions">
-        <button type="button" className="icon-btn" onClick={() => onEditar(r)} disabled={r.bloqueado} title="Editar">✏️</button>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={() => onEditar(r)}
+          disabled={r.bloqueado || !editableSemana}
+          title={!editableSemana ? "Solo puedes editar registros de la semana vigente" : "Editar"}
+        >
+          ✏️
+        </button>
         <button type="button" className="icon-btn danger" onClick={() => onEliminar(r.id)} disabled={r.bloqueado} title="Eliminar">🗑️</button>
         <button type="button" className="icon-btn" onClick={() => onCopiar(r)} title="Copiar">📋</button>
       </td>
@@ -405,6 +442,7 @@ const Registro = ({ userData }) => {
 
   const editOriginalRef = useRef(null);
   const registrosAbortRef = useRef(null);
+  const editableSemana = isDateInCurrentWeek(String(registro?.fecha || ""));  
 
   const [fasesProyecto, setFasesProyecto] = useState([]);
   const prevIsProyectoModeRef = useRef(false);
@@ -862,6 +900,19 @@ const Registro = ({ userData }) => {
     if (!registro.fecha) {
       return Swal.fire({ icon: "warning", title: "Selecciona una fecha" });
     }
+    
+    if (modoEdicion) {
+      const fechaEdicion = String(registro?.fecha || "");
+      const esSemanaVigente = isDateInCurrentWeek(fechaEdicion);
+
+      if (!esSemanaVigente) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Edición no permitida",
+          text: "Solo puedes actualizar registros de la semana vigente.",
+        });
+      }
+    }
 
     if (registro.fecha > todayISO) {
       return Swal.fire({
@@ -1096,6 +1147,16 @@ const Registro = ({ userData }) => {
   };
 
   const handleEditar = async (reg) => {
+    const esSemanaVigente = isDateInCurrentWeek(String(reg?.fecha || ""));
+
+    if (!esSemanaVigente) {
+      return Swal.fire({
+        icon: "warning",
+        title: "Edición no permitida",
+        text: "Solo puedes editar registros de la semana vigente (lunes a domingo).",
+      });
+    }
+
     editOriginalRef.current = {
       id: reg.id,
       fecha: reg.fecha,
@@ -1236,8 +1297,6 @@ const Registro = ({ userData }) => {
     const moduloSel = pool.length === 1 ? pool[0] : (moduloPref || "");
     setModuloElegido(moduloSel);
 
-    const { todayISO: todayCopyISO } = getWeekBoundsISO(new Date());
-
     const tareaId =
       reg?.tarea_id ??
       reg?.tarea?.id ??
@@ -1251,7 +1310,9 @@ const Registro = ({ userData }) => {
 
     const pid = reg?.proyecto_id ? String(reg.proyecto_id) : "";
 
-    if (pid && (!Array.isArray(proyectos) || proyectos.length === 0)) {
+    let proyectosData = Array.isArray(proyectos) ? proyectos : [];
+
+    if (pid && proyectosData.length === 0) {
       const mod = (reg?.modulo || moduloSel || moduloUser || "").trim();
       if (mod) {
         try {
@@ -1260,7 +1321,10 @@ const Registro = ({ userData }) => {
             { headers: { "X-User-Usuario": usuarioLogin, "X-User-Rol": rol } }
           );
           const data = await res.json().catch(() => []);
-          if (res.ok) setProyectos(Array.isArray(data) ? data : []);
+          if (res.ok) {
+            proyectosData = Array.isArray(data) ? data : [];
+            setProyectos(proyectosData);
+          }
         } catch {}
       }
     }
@@ -1269,7 +1333,7 @@ const Registro = ({ userData }) => {
     if (Array.isArray(reg?.proyecto?.fases)) {
       fases = reg.proyecto.fases;
     } else {
-      const p = pid ? (proyectos || []).find(x => String(x.id) === pid) : null;
+      const p = pid ? proyectosData.find(x => String(x.id) === pid) : null;
       fases = Array.isArray(p?.fases) ? p.fases : [];
     }
     setFasesProyecto(fases);
@@ -1283,12 +1347,10 @@ const Registro = ({ userData }) => {
       (faseIdFromReg && fases.find(f => String(f.id) === String(faseIdFromReg))) ||
       (fases.length ? fases[0] : null);
 
-    const newHoraInicio = reg?.horaFin || "";
-
     setRegistro({
       ...initRegistro(),
       id: null,
-      fecha: todayCopyISO,
+      fecha: reg?.fecha || "",
       cliente: reg.cliente,
       nroCasoCliente: reg.nroCasoCliente,
       nroCasoInterno: reg.nroCasoInterno,
@@ -1296,8 +1358,8 @@ const Registro = ({ userData }) => {
       tarea_id: tareaId ? Number(tareaId) : "",
       tipoTarea: reg?.tarea ? `${reg.tarea.codigo} - ${reg.tarea.nombre}` : (reg?.tipoTarea || ""),
       ocupacion_id: ocupacionId,
-      horaInicio: newHoraInicio,
-      horaFin: "",
+      horaInicio: reg?.horaInicio || "",
+      horaFin: reg?.horaFin || "",
       tiempoFacturable: reg.tiempoFacturable,
       descripcion: reg.descripcion,
       modulo: moduloSel,

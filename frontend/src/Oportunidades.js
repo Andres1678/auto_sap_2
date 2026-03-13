@@ -94,6 +94,7 @@ const CATEGORIA_SUBCATEGORIA = {
 };
 
 const COLUMN_LABELS = {
+  id: "ID OPORTUNIDAD",
   fecha_creacion: "FECHA ASIGNACIÓN",
 };
 
@@ -264,6 +265,15 @@ function normalizeCommentText(v) {
     .trim();
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function splitDatedEntries(raw) {
   const text = normalizeCommentText(raw);
   if (!text) return [];
@@ -403,6 +413,11 @@ export default function Oportunidades() {
   const columnOrder = useMemo(
     () => baseColumnOrder.filter((c) => !REMOVE_COLS.has(c)),
     [baseColumnOrder]
+  );
+
+  const tableColumnOrder = useMemo(
+    () => ["id", ...columnOrder],
+    [columnOrder]
   );
 
   const handleExportAll = () => {
@@ -679,15 +694,34 @@ export default function Oportunidades() {
 
     const cliente = row?.nombre_cliente ?? "-";
     const servicio = row?.servicio ?? "-";
+    const estadoOferta = row?.estado_oferta ?? "-";
     const current = row?.[col] ?? "";
     const stamp = todayStamp();
 
     const res = await Swal.fire({
       title: col === "observaciones" ? "Observaciones" : "Seguimiento OT",
-      html: `<div style="text-align:left;font-size:13px;margin-bottom:8px;">
-              <b>Cliente:</b> ${cliente}<br/>
-              <b>Servicio:</b> ${servicio}
-            </div>`,
+      html: `
+        <div style="text-align:left;font-size:13px;margin-bottom:8px;line-height:1.5;">
+          <b>Cliente:</b> ${escapeHtml(cliente)}<br/>
+          <b>Servicio:</b> ${escapeHtml(servicio)}
+          ${
+            col === "observaciones"
+              ? `<br/><b>Estado oferta:</b> 
+                <span style="
+                  display:inline-block;
+                  margin-top:4px;
+                  padding:2px 8px;
+                  border-radius:10px;
+                  background:#eef2ff;
+                  color:#3730a3;
+                  font-weight:600;
+                ">
+                  ${escapeHtml(estadoOferta)}
+                </span>`
+              : ""
+          }
+        </div>
+      `,
       input: "textarea",
       inputValue: current,
       inputAttributes: { style: "min-height:220px" },
@@ -1263,32 +1297,42 @@ export default function Oportunidades() {
         <table className="tabla-oportunidades">
           <thead>
             <tr>
-              {columnOrder.map((col) => (
-                <th key={col}>{COLUMN_LABELS[col] || col.replace(/_/g, " ").toUpperCase()}</th>
+              {tableColumnOrder.map((col) => (
+                <th
+                  key={col}
+                  className={col === "id" ? "sticky-id-col" : ""}
+                >
+                  {COLUMN_LABELS[col] || col.replace(/_/g, " ").toUpperCase()}
+                </th>
               ))}
               <th>ACCIONES</th>
             </tr>
 
             <tr className="filtros-columnas">
-              {columnOrder.map((col) => (
-                <th key={col}>
-                  <Select
-                    options={uniqueValues[col] || []}
-                    value={(filters[col] || []).map((v) => ({ label: v, value: v }))}
-                    onChange={(opts) => handleFilterChange(col, opts)}
-                    placeholder="Filtrar..."
-                    className="select-filter"
-                    classNamePrefix="react-select"
-                    isMulti
-                    isClearable
-                    closeMenuOnSelect={false}
-                    hideSelectedOptions={false}
-                    noOptionsMessage={() => "Sin opciones"}
-                    menuPortalTarget={document.body}
-                    styles={{
-                      menuPortal: (base) => ({ ...base, zIndex: 99999 }),
-                    }}
-                  />
+              {tableColumnOrder.map((col) => (
+                <th
+                  key={col}
+                  className={col === "id" ? "sticky-id-col sticky-id-filter" : ""}
+                >
+                  {col === "id" ? null : (
+                    <Select
+                      options={uniqueValues[col] || []}
+                      value={(filters[col] || []).map((v) => ({ label: v, value: v }))}
+                      onChange={(opts) => handleFilterChange(col, opts)}
+                      placeholder="Filtrar..."
+                      className="select-filter"
+                      classNamePrefix="react-select"
+                      isMulti
+                      isClearable
+                      closeMenuOnSelect={false}
+                      hideSelectedOptions={false}
+                      noOptionsMessage={() => "Sin opciones"}
+                      menuPortalTarget={document.body}
+                      styles={{
+                        menuPortal: (base) => ({ ...base, zIndex: 99999 }),
+                      }}
+                    />
+                  )}
                 </th>
               ))}
               <th></th>
@@ -1298,9 +1342,12 @@ export default function Oportunidades() {
           <tbody>
             {newRow && (
               <tr className="new-row">
+                <td className="sticky-id-col sticky-id-cell">-</td>
+
                 {columnOrder.map((col) => (
                   <td key={col}>{renderNewRowCell(col)}</td>
                 ))}
+
                 <td className="acciones">
                   <button className="btn-save" onClick={saveNewRow} disabled={loading}>
                     Guardar
@@ -1314,7 +1361,19 @@ export default function Oportunidades() {
 
             {filteredData.map((row, i) => (
               <tr key={row.id ?? i}>
-                {columnOrder.map((col) => {
+                {tableColumnOrder.map((col) => {
+                  if (col === "id") {
+                    return (
+                      <td
+                        key={col}
+                        className="sticky-id-col sticky-id-cell"
+                        title={String(row?.id ?? "")}
+                      >
+                        {row?.id ?? "-"}
+                      </td>
+                    );
+                  }
+
                   const isLong = isObservationsCol(col);
 
                   return (
