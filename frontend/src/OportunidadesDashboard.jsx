@@ -265,16 +265,32 @@ function useDebouncedValue(value, delay = 350) {
 
 /* ===================== sets de KPIs ===================== */
 const ESTADOS_ACTIVOS_N = new Set(
-  ["EN PROCESO", "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION", "EN ELABORACION", "ENTREGA COMERCIAL"].map(
-    normKeyForMatch
-  )
+  [
+    "EN PROCESO",
+    "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
+    "EN ELABORACION",
+    "ENTREGA COMERCIAL",
+    "EN ESPERA DEL RFI / RFP",
+    "RFI PRESENTADO",
+    "SUSPENDIDA",
+  ].map(normKeyForMatch)
 );
 
 const ESTADOS_CERRADOS_N = new Set(
-  ["GANADA", "PERDIDA", "DECLINADA", "SUSPENDIDA", "PERDIDA - SIN FEEDBACK", "RFI PRESENTADO", "RFP PRESENTADO"].map(
-    normKeyForMatch
-  )
+  [
+    "GANADA",
+    "PERDIDA",
+    "DECLINADA",
+    "PERDIDA - SIN FEEDBACK",
+    "RFP PRESENTADO",
+  ].map(normKeyForMatch)
 );
+
+const ESTADO_RESULTADO_FORZADO = {
+  "EN ESPERA DEL RFI / RFP": "EN ESPERA DEL CLIENTE",
+  "RFI PRESENTADO": "EN ESPERA DEL CLIENTE",
+  "SUSPENDIDA": "EN ESPERA DEL CLIENTE",
+};
 
 const ESTADOS_TOTAL_KPI_N = new Set([...ESTADOS_ACTIVOS_N, ...ESTADOS_CERRADOS_N]);
 
@@ -420,6 +436,34 @@ export default function DashboardOportunidades() {
     );
   }, [dataBase]);
 
+  function normalizeOportunidadRow(row) {
+    const estado = displayLabel(row?.estado_oferta ?? "");
+    const resultadoOriginal = displayLabel(row?.resultado_oferta ?? "");
+    const resultadoForzado = ESTADO_RESULTADO_FORZADO[estado];
+
+    return {
+      ...row,
+      estado_oferta: estado || row?.estado_oferta || "",
+      resultado_oferta: resultadoForzado || resultadoOriginal || row?.resultado_oferta || "",
+    };
+  }
+
+  function mergeOptions(base, extras) {
+    const map = new Map();
+
+    [...(base || []), ...(extras || []).map((v) => ({ value: v, label: v }))].forEach((opt) => {
+      const key = String(opt?.value ?? "").trim();
+      if (!key) return;
+      if (!map.has(key)) {
+        map.set(key, { value: key, label: String(opt?.label ?? key) });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) =>
+      a.label.localeCompare(b.label, "es", { sensitivity: "base" })
+    );
+  }
+
   const fetchFilters = async () => {
     const res = await jfetch(`/oportunidades/filters`);
     if (!res.ok) throw new Error("filters");
@@ -432,8 +476,14 @@ export default function DashboardOportunidades() {
       direccionComercial: toOptions(json.direccion_comercial),
       gerenciaComercial: toOptions(json.gerencia_comercial),
       cliente: toOptions(json.nombre_cliente),
-      estadoOferta: toOptions(json.estado_oferta),
-      resultadoOferta: toOptions(json.resultado_oferta),
+      estadoOferta: mergeOptions(toOptions(json.estado_oferta), [
+        "EN ESPERA DEL RFI / RFP",
+        "RFI PRESENTADO",
+        "SUSPENDIDA",
+      ]),
+      resultadoOferta: mergeOptions(toOptions(json.resultado_oferta), [
+        "EN ESPERA DEL CLIENTE",
+      ]),
       fechaActaCierreOT: toOptions(json.fecha_acta_cierre_ot),
       fechaCierreOportunidad: toOptions(json.fecha_cierre_oportunidad),
       estadoOT: toOptions(json.estado_ot),
@@ -448,7 +498,12 @@ export default function DashboardOportunidades() {
       const res = await jfetch(`/oportunidades${toQuery(current)}`);
       if (!res.ok) throw new Error("data");
       const json = await res.json();
-      setData(Array.isArray(json) ? json : []);
+
+      const rows = Array.isArray(json)
+        ? json.map(normalizeOportunidadRow)
+        : [];
+
+      setData(rows);
     } catch (e) {
       Swal.fire("Error", "No se pudo consultar oportunidades", "error");
       setData([]);

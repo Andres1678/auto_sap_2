@@ -61,7 +61,8 @@ const ESTADO_RESULTADO_BASE = {
   "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION": ["OPORTUNIDAD EN PROCESO"],
   "PENDIENTE APROBACION SAP": ["PENDIENTE APROBACION SAP"],
   "EN ELABORACION": ["OPORTUNIDAD EN PROCESO"],
-  "RFI PRESENTADO": ["A LA ESPERA DEL RFP"],
+  "EN ESPERA DEL RFI / RFP": ["EN ESPERA DEL CLIENTE"],
+  "RFI PRESENTADO": ["EN ESPERA DEL CLIENTE"],
   "ENTREGA COMERCIAL": ["OPORTUNIDAD EN PROCESO"],
   GANADA: [
     "BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN",
@@ -74,7 +75,7 @@ const ESTADO_RESULTADO_BASE = {
   PERDIDA: ["OPORTUNIDAD PERDIDA"],
   "PERDIDA - SIN FEEDBACK": ["OPORTUNIDAD CERRADA"],
   DECLINADA: ["OPORTUNIDAD CERRADA"],
-  SUSPENDIDA: ["OPORTUNIDAD CERRADA"],
+  SUSPENDIDA: ["EN ESPERA DEL CLIENTE"],
   OT: ["OT"],
   "N/A": ["N/A"],
 };
@@ -103,6 +104,8 @@ const SERVICIO_COL = "servicio";
 const PRC_START_COL = "codigo_prc";
 
 const nf = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
+
+const EMPTY_FILTER_VALUE = "__EMPTY__";
 
 function isNumericCol(col) {
   return NUMERIC_COLS.has(col);
@@ -225,6 +228,12 @@ function buildEstadoResultadoMap(rows) {
     map[estado] = [...new Set((resultados || []).map(normalizeText).filter(Boolean))];
   });
 
+  const estadosForzados = new Set([
+    "EN ESPERA DEL RFI / RFP",
+    "RFI PRESENTADO",
+    "SUSPENDIDA",
+  ]);
+
   (rows || []).forEach((row) => {
     const estado = normalizeText(row?.estado_oferta);
     const resultado = normalizeText(row?.resultado_oferta);
@@ -232,6 +241,9 @@ function buildEstadoResultadoMap(rows) {
     if (!estado) return;
 
     if (!map[estado]) map[estado] = [];
+
+    if (estadosForzados.has(estado)) return;
+
     if (resultado && !map[estado].includes(resultado)) {
       map[estado].push(resultado);
     }
@@ -245,18 +257,29 @@ function buildEstadoResultadoMap(rows) {
 }
 
 function buildSelectOptionsFromRows(rows, col) {
-  const values = rows
-    .map((r) => (isDateCol(col) ? toIsoDate(r?.[col]) : normalizeText(r?.[col])))
-    .filter((v) => v !== "");
+  const mappedValues = rows.map((r) =>
+    isDateCol(col) ? toIsoDate(r?.[col]) : normalizeText(r?.[col])
+  );
 
-  const unique = [...new Set(values)].sort((a, b) =>
+  const hasEmpty = mappedValues.some((v) => v === "");
+
+  const uniqueNonEmpty = [...new Set(mappedValues.filter((v) => v !== ""))].sort((a, b) =>
     String(a).localeCompare(String(b), "es", { sensitivity: "base" })
   );
 
-  return unique.map((v) => ({
+  const options = uniqueNonEmpty.map((v) => ({
     label: v,
     value: v,
   }));
+
+  if (hasEmpty && col === "caso_sm") {
+    options.unshift({
+      label: "(Vacío)",
+      value: EMPTY_FILTER_VALUE,
+    });
+  }
+
+  return options;
 }
 
 const DATE_AT_START = /^\s*(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*/;
@@ -353,6 +376,7 @@ export default function Oportunidades() {
   const [loading, setLoading] = useState(false);
   const [editValue, setEditValue] = useState("");
   const [estadoResultadoMap, setEstadoResultadoMap] = useState(ESTADO_RESULTADO_BASE);
+  const [clientesCatalogo, setClientesCatalogo] = useState([]);
 
   const baseColumnOrder = useMemo(
     () => [
@@ -414,6 +438,26 @@ export default function Oportunidades() {
     []
   );
 
+  const fetchClientesCatalogo = async () => {
+    try {
+      const res = await jfetch("/clientes");
+      const json = await res.json().catch(() => []);
+
+      if (!res.ok || !Array.isArray(json)) {
+        setClientesCatalogo([]);
+        return;
+      }
+
+      setClientesCatalogo(
+        json
+          .map((c) => normalizeText(c?.nombre_cliente))
+          .filter(Boolean)
+      );
+    } catch {
+      setClientesCatalogo([]);
+    }
+  };
+
   const columnOrder = useMemo(
     () => baseColumnOrder.filter((c) => !REMOVE_COLS.has(c)),
     [baseColumnOrder]
@@ -424,10 +468,10 @@ export default function Oportunidades() {
   const portalTarget = typeof document !== "undefined" ? document.body : null;
 
   const clienteSuggestions = useMemo(() => {
-    return [...new Set((data || []).map((r) => normalizeText(r?.nombre_cliente)).filter(Boolean))].sort(
-      (a, b) => a.localeCompare(b, "es", { sensitivity: "base" })
+    return [...new Set((clientesCatalogo || []).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b, "es", { sensitivity: "base" })
     );
-  }, [data]);
+  }, [clientesCatalogo]);
 
   const prcStartIndex = useMemo(
     () => tableColumnOrder.indexOf(PRC_START_COL),
@@ -520,7 +564,14 @@ export default function Oportunidades() {
       if (Array.isArray(selectedValues) && selectedValues.length > 0) {
         result = result.filter((r) => {
           const cell = isDateCol(col) ? toIsoDate(r?.[col]) : normalizeText(r?.[col]);
-          return selectedValues.some((val) => normalizeForCompare(val) === normalizeForCompare(cell));
+          const isEmptyCell = cell === "";
+
+          return selectedValues.some((val) => {
+            if (val === EMPTY_FILTER_VALUE) {
+              return isEmptyCell;
+            }
+            return normalizeForCompare(val) === normalizeForCompare(cell);
+          });
         });
       }
     });
@@ -580,6 +631,7 @@ export default function Oportunidades() {
 
   useEffect(() => {
     fetchData();
+    fetchClientesCatalogo();
   }, []);
 
   const handleUpload = async () => {
