@@ -21,6 +21,7 @@ import math
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from openpyxl import load_workbook
 from zoneinfo import ZoneInfo
+import bcrypt
 
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
@@ -2546,6 +2547,9 @@ def _apply_oportunidades_filters(query, apply_exclusion: bool = True):
             "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACIÓN",
             "EN ELABORACION",
             "ENTREGA COMERCIAL",
+            "EN ESPERA DEL RFI / RFP",
+            "RFI PRESENTADO",
+            "SUSPENDIDA",
         }
         ESTADOS_CERRADOS = {
             "CERRADO",
@@ -2555,10 +2559,8 @@ def _apply_oportunidades_filters(query, apply_exclusion: bool = True):
             "PERDIDO",
             "DECLINADA",
             "DECLINADO",
-            "SUSPENDIDA",
             "SUSPENDIDO",
             "PERDIDA - SIN FEEDBACK",
-            "RFI PRESENTADO",
             "RFP PRESENTADO",
         }
 
@@ -2590,7 +2592,8 @@ ESTADO_RESULTADO = {
     "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION": {"OPORTUNIDAD EN PROCESO"},
     "PENDIENTE APROBACION SAP": {"PENDIENTE APROBACION SAP"},
     "EN ELABORACION": {"OPORTUNIDAD EN PROCESO"},
-    "RFI PRESENTADO": {"A LA ESPERA DEL RFP"},
+    "EN ESPERA DEL RFI / RFP": {"EN ESPERA DEL CLIENTE"},
+    "RFI PRESENTADO": {"EN ESPERA DEL CLIENTE"},
     "ENTREGA COMERCIAL": {"OPORTUNIDAD EN PROCESO"},
     "GANADA": {
         "BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN",
@@ -2603,7 +2606,7 @@ ESTADO_RESULTADO = {
     "PERDIDA": {"OPORTUNIDAD PERDIDA"},
     "PERDIDA - SIN FEEDBACK": {"OPORTUNIDAD CERRADA"},
     "DECLINADA": {"OPORTUNIDAD CERRADA"},
-    "SUSPENDIDA": {"OPORTUNIDAD CERRADA"},
+    "SUSPENDIDA": {"EN ESPERA DEL CLIENTE"},
     "0TL": {"0TL"},
     "0TP": {"0TP"},
     "0TE": {"0TE"},
@@ -2793,6 +2796,29 @@ def clean_payload(data: dict) -> dict:
     out["mrc_normalizado"] = _to_int_round(mrc_norm)
 
     return out
+
+ESTADO_RESULTADO_FORZADO = {
+    "EN ESPERA DEL RFI / RFP": "EN ESPERA DEL CLIENTE",
+    "RFI PRESENTADO": "EN ESPERA DEL CLIENTE",
+    "SUSPENDIDA": "EN ESPERA DEL CLIENTE",
+}
+
+def normalize_oportunidad_dict(row: dict) -> dict:
+    row = dict(row or {})
+
+    estado = _upper(row.get("estado_oferta"))
+    resultado = _upper(row.get("resultado_oferta"))
+
+    if estado in ESTADO_RESULTADO_FORZADO:
+        row["resultado_oferta"] = ESTADO_RESULTADO_FORZADO[estado]
+
+    if estado:
+        row["estado_oferta"] = estado
+
+    if resultado and estado not in ESTADO_RESULTADO_FORZADO:
+        row["resultado_oferta"] = resultado
+
+    return row
 
 
 @bp.route("/oportunidades/import", methods=["POST"])
@@ -3013,6 +3039,31 @@ def importar_oportunidades():
         db.session.rollback()
         return jsonify({"mensaje": f"Error al guardar: {str(e)}"}), 500
 
+def _merge_unique_sorted(values, extra_values=None):
+    vals = set()
+
+    for v in values or []:
+        s = str(v).strip()
+        if s:
+            vals.add(s)
+
+    for v in extra_values or []:
+        s = str(v).strip()
+        if s:
+            vals.add(s)
+
+    return sorted(vals, key=lambda x: x.upper())
+
+def distinct_clientes_model():
+    rows = (
+        Cliente.query.with_entities(Cliente.nombre_cliente)
+        .filter(Cliente.nombre_cliente.isnot(None))
+        .filter(func.trim(Cliente.nombre_cliente) != "")
+        .order_by(Cliente.nombre_cliente.asc())
+        .all()
+    )
+    return [r[0] for r in rows]
+
 
 @bp.route("/oportunidades/filters", methods=["GET"])
 @permission_required("OPORTUNIDADES_VER")
@@ -3028,6 +3079,7 @@ def oportunidades_filters():
             .order_by("y")
             .all()
         )
+
         meses = (
             base.with_entities(extract("month", Oportunidad.fecha_creacion).label("m"))
             .filter(Oportunidad.fecha_creacion.isnot(None))
@@ -3072,10 +3124,28 @@ def oportunidades_filters():
                 "meses": [int(r.m) for r in meses if r.m is not None],
                 "direccion_comercial": distinct_col(Oportunidad.direccion_comercial),
                 "gerencia_comercial": distinct_col(Oportunidad.gerencia_comercial),
-                "nombre_cliente": distinct_col(Oportunidad.nombre_cliente),
+                "nombre_cliente": _merge_unique_sorted(
+                    distinct_clientes_model(),
+                    distinct_col(Oportunidad.nombre_cliente)
+                ),
                 "servicio": distinct_col(Oportunidad.servicio),
-                "estado_oferta": distinct_col(Oportunidad.estado_oferta),
-                "resultado_oferta": distinct_col(Oportunidad.resultado_oferta),
+
+                "estado_oferta": _merge_unique_sorted(
+                    distinct_col(Oportunidad.estado_oferta),
+                    [
+                        "EN ESPERA DEL RFI / RFP",
+                        "RFI PRESENTADO",
+                        "SUSPENDIDA",
+                    ],
+                ),
+
+                "resultado_oferta": _merge_unique_sorted(
+                    distinct_col(Oportunidad.resultado_oferta),
+                    [
+                        "EN ESPERA DEL CLIENTE",
+                    ],
+                ),
+
                 "estado_ot": distinct_col(Oportunidad.estado_ot),
                 "ultimo_mes": distinct_col(Oportunidad.ultimo_mes),
                 "calificacion_oportunidad": distinct_col(Oportunidad.calificacion_oportunidad),
@@ -3086,7 +3156,10 @@ def oportunidades_filters():
         ), 200
 
     except Exception:
-        return jsonify({"mensaje": "Error interno en /oportunidades/filters", "trace": traceback.format_exc()}), 500
+        return jsonify({
+            "mensaje": "Error interno en /oportunidades/filters",
+            "trace": traceback.format_exc()
+        }), 500
 
 
 @bp.route("/oportunidades", methods=["GET"])
@@ -3097,12 +3170,11 @@ def listar_oportunidades():
         query = _apply_oportunidades_filters(query, apply_exclusion=False)
 
         query = query.order_by(Oportunidad.id.desc())
-        data = [o.to_dict() for o in query.limit(5000).all()]
+        data = [normalize_oportunidad_dict(o.to_dict()) for o in query.limit(5000).all()]
         return jsonify(data), 200
 
     except Exception:
         return jsonify({"mensaje": "Error interno en /oportunidades", "trace": traceback.format_exc()}), 500
-
 
 @bp.route("/oportunidades", methods=["POST"])
 @permission_required("OPORTUNIDADES_CREAR")
