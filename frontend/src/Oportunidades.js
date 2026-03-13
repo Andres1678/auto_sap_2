@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Swal from "sweetalert2";
 import Select from "react-select";
 import "./Oportunidades.css";
@@ -97,6 +97,10 @@ const COLUMN_LABELS = {
   id: "ID OPORTUNIDAD",
   fecha_creacion: "FECHA ASIGNACIÓN",
 };
+
+const CLIENTE_COL = "nombre_cliente";
+const SERVICIO_COL = "servicio";
+const PRC_START_COL = "codigo_prc";
 
 const nf = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 
@@ -415,9 +419,37 @@ export default function Oportunidades() {
     [baseColumnOrder]
   );
 
-  const tableColumnOrder = useMemo(
-    () => ["id", ...columnOrder],
-    [columnOrder]
+  const tableColumnOrder = useMemo(() => ["id", ...columnOrder], [columnOrder]);
+
+  const portalTarget = typeof document !== "undefined" ? document.body : null;
+
+  const clienteSuggestions = useMemo(() => {
+    return [...new Set((data || []).map((r) => normalizeText(r?.nombre_cliente)).filter(Boolean))].sort(
+      (a, b) => a.localeCompare(b, "es", { sensitivity: "base" })
+    );
+  }, [data]);
+
+  const prcStartIndex = useMemo(
+    () => tableColumnOrder.indexOf(PRC_START_COL),
+    [tableColumnOrder]
+  );
+
+  const getColumnClassNames = useCallback(
+    (col) => {
+      const classes = [];
+
+      if (col === "id") classes.push("sticky-col", "sticky-col-1", "id-col");
+      if (col === CLIENTE_COL) classes.push("sticky-col", "sticky-col-2", "cliente-col");
+      if (col === SERVICIO_COL) classes.push("sticky-col", "sticky-col-3", "servicio-col", "servicio-wrap-cell");
+
+      const idx = tableColumnOrder.indexOf(col);
+      if (prcStartIndex !== -1 && idx >= prcStartIndex) {
+        classes.push("post-prc-col");
+      }
+
+      return classes.join(" ");
+    },
+    [prcStartIndex, tableColumnOrder]
   );
 
   const handleExportAll = () => {
@@ -706,7 +738,7 @@ export default function Oportunidades() {
           <b>Servicio:</b> ${escapeHtml(servicio)}
           ${
             col === "observaciones"
-              ? `<br/><b>Estado oferta:</b> 
+              ? `<br/><b>Estado oferta:</b>
                 <span style="
                   display:inline-block;
                   margin-top:4px;
@@ -820,6 +852,31 @@ export default function Oportunidades() {
             }
           }}
           onBlur={() => saveEdit(i, col, toIsoDate(editValue))}
+        />
+      );
+    }
+
+    if (col === CLIENTE_COL) {
+      return (
+        <input
+          className="cell-input"
+          list="clientes-oportunidades-list"
+          autoFocus
+          value={editValue ?? ""}
+          placeholder="Selecciona o escribe cliente"
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setEditing({ row: null, col: null });
+              setEditingContext(null);
+            }
+          }}
+          onBlur={() => saveEdit(i, col, editValue)}
         />
       );
     }
@@ -1009,6 +1066,18 @@ export default function Oportunidades() {
 
   const renderNewRowCell = (col) => {
     if (col === "mrc_normalizado") return <span>-</span>;
+
+    if (col === CLIENTE_COL) {
+      return (
+        <input
+          className="cell-input"
+          list="clientes-oportunidades-list"
+          value={newRow[col] ?? ""}
+          placeholder="Selecciona o escribe cliente"
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        />
+      );
+    }
 
     if (isDateCol(col)) {
       return (
@@ -1242,6 +1311,12 @@ export default function Oportunidades() {
     <div className="oportunidades-wrapper">
       <h2>Gestión de Oportunidades</h2>
 
+      <datalist id="clientes-oportunidades-list">
+        {clienteSuggestions.map((cliente) => (
+          <option key={cliente} value={cliente} />
+        ))}
+      </datalist>
+
       <div className="upload-section">
         <label className="custom-file-upload">
           <i className="fa fa-file-excel"></i> Seleccionar Archivo
@@ -1298,10 +1373,7 @@ export default function Oportunidades() {
           <thead>
             <tr>
               {tableColumnOrder.map((col) => (
-                <th
-                  key={col}
-                  className={col === "id" ? "sticky-id-col" : ""}
-                >
+                <th key={col} className={getColumnClassNames(col)}>
                   {COLUMN_LABELS[col] || col.replace(/_/g, " ").toUpperCase()}
                 </th>
               ))}
@@ -1310,10 +1382,7 @@ export default function Oportunidades() {
 
             <tr className="filtros-columnas">
               {tableColumnOrder.map((col) => (
-                <th
-                  key={col}
-                  className={col === "id" ? "sticky-id-col sticky-id-filter" : ""}
-                >
+                <th key={col} className={getColumnClassNames(col)}>
                   {col === "id" ? null : (
                     <Select
                       options={uniqueValues[col] || []}
@@ -1327,7 +1396,7 @@ export default function Oportunidades() {
                       closeMenuOnSelect={false}
                       hideSelectedOptions={false}
                       noOptionsMessage={() => "Sin opciones"}
-                      menuPortalTarget={document.body}
+                      menuPortalTarget={portalTarget}
                       styles={{
                         menuPortal: (base) => ({ ...base, zIndex: 99999 }),
                       }}
@@ -1342,10 +1411,18 @@ export default function Oportunidades() {
           <tbody>
             {newRow && (
               <tr className="new-row">
-                <td className="sticky-id-col sticky-id-cell">-</td>
+                <td className={getColumnClassNames("id")}>-</td>
 
                 {columnOrder.map((col) => (
-                  <td key={col}>{renderNewRowCell(col)}</td>
+                  <td
+                    key={col}
+                    className={[
+                      getColumnClassNames(col),
+                      col === SERVICIO_COL ? "servicio-wrap-cell" : "",
+                    ].join(" ").trim()}
+                  >
+                    {renderNewRowCell(col)}
+                  </td>
                 ))}
 
                 <td className="acciones">
@@ -1362,34 +1439,27 @@ export default function Oportunidades() {
             {filteredData.map((row, i) => (
               <tr key={row.id ?? i}>
                 {tableColumnOrder.map((col) => {
-                  if (col === "id") {
-                    return (
-                      <td
-                        key={col}
-                        className="sticky-id-col sticky-id-cell"
-                        title={String(row?.id ?? "")}
-                      >
-                        {row?.id ?? "-"}
-                      </td>
-                    );
-                  }
-
                   const isLong = isObservationsCol(col);
 
                   return (
                     <td
                       key={col}
                       onDoubleClick={() => {
+                        if (col === "id") return;
                         if (isLong) return editLongText(i, col);
                         startEdit(i, col);
                       }}
                       className={[
+                        getColumnClassNames(col),
                         editing.row === i && editing.col === col ? "editing" : "",
                         isLong ? "obs-col" : "",
-                      ].join(" ")}
-                      title={isLong ? undefined : (row?.[col] ?? "").toString()}
+                        col === SERVICIO_COL ? "servicio-wrap-cell" : "",
+                      ].join(" ").trim()}
+                      title={isLong ? undefined : String(row?.[col] ?? "")}
                     >
-                      {editing.row === i && editing.col === col
+                      {col === "id"
+                        ? row?.id ?? "-"
+                        : editing.row === i && editing.col === col
                         ? renderEditorCell(row, i, col)
                         : isLong
                         ? renderLongTextCell(row?.[col])

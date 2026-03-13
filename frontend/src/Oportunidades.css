@@ -1,6 +1,9 @@
 .oportunidades-wrapper {
   --brand-blue: #2563eb;
   --brand-blue-dark: #1d4ed8;
+  --brand-blue-soft: #eff6ff;
+  --brand-blue-soft-2: #dbeafe;
+  --brand-blue-soft-3: #bfdbfe;
   --brand-green: #10b981;
   --brand-green-dark: #059669;
   --brand-red: #ef4444;
@@ -11,6 +14,10 @@
   --gray-dark: #1e293b;
   --text-dark: #1e293b;
   --thead-row-1: 48px;
+
+  --col-id-w: 110px;
+  --col-cliente-w: 250px;
+  --col-servicio-w: 320px;
 }
 
 .oportunidades-wrapper {
@@ -101,7 +108,7 @@
 .oportunidades-wrapper .edit-context-bar {
   position: sticky;
   top: 0;
-  z-index: 90;
+  z-index: 120;
   background: #fff3cd;
   border: 1px solid #ffeeba;
   padding: 8px 12px;
@@ -134,7 +141,7 @@
 
 .oportunidades-wrapper .tabla-oportunidades {
   width: max-content;
-  min-width: 2800px;
+  min-width: 3200px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.82rem;
@@ -261,46 +268,131 @@
   background: #f8fafc;
 }
 
-/* ==========================================
-   COLUMNA ID FIJA A LA IZQUIERDA
-========================================== */
-
-.oportunidades-wrapper .sticky-id-col {
+/* =========================
+   3 columnas fijas
+========================= */
+.oportunidades-wrapper .sticky-col {
   position: sticky;
-  left: 0;
-  min-width: 110px !important;
-  max-width: 110px !important;
-  width: 110px !important;
   box-shadow: 2px 0 0 #e2e8f0;
 }
 
-.oportunidades-wrapper .tabla-oportunidades thead tr:first-child .sticky-id-col {
+.oportunidades-wrapper .sticky-col-1 {
+  left: 0;
+  min-width: var(--col-id-w) !important;
+  max-width: var(--col-id-w) !important;
+  width: var(--col-id-w) !important;
+}
+
+.oportunidades-wrapper .sticky-col-2 {
+  left: var(--col-id-w);
+  min-width: var(--col-cliente-w) !important;
+  max-width: var(--col-cliente-w) !important;
+  width: var(--col-cliente-w) !important;
+}
+
+.oportunidades-wrapper .sticky-col-3 {
+  left: calc(var(--col-id-w) + var(--col-cliente-w));
+  min-width: var(--col-servicio-w) !important;
+  max-width: var(--col-servicio-w) !important;
+  width: var(--col-servicio-w) !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades thead tr:first-child .sticky-col-1 {
+  z-index: 90;
   background: var(--gray-dark);
-  color: #fff;
-  z-index: 80;
 }
 
-.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas .sticky-id-col,
-.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas .sticky-id-filter {
+.oportunidades-wrapper .tabla-oportunidades thead tr:first-child .sticky-col-2 {
+  z-index: 89;
+  background: var(--gray-dark);
+}
+
+.oportunidades-wrapper .tabla-oportunidades thead tr:first-child .sticky-col-3 {
+  z-index: 88;
+  background: var(--gray-dark);
+}
+
+.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas .sticky-col-1 {
+  z-index: 87;
   background: #e2e8f0;
-  z-index: 79;
 }
 
-.oportunidades-wrapper .tabla-oportunidades tbody .sticky-id-cell {
+.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas .sticky-col-2 {
+  z-index: 86;
+  background: #e2e8f0;
+}
+
+.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas .sticky-col-3 {
+  z-index: 85;
+  background: #e2e8f0;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody .sticky-col-1 {
+  z-index: 44;
   background: #fff;
-  font-weight: 700;
-  z-index: 40;
-  text-align: center;
 }
 
-.oportunidades-wrapper .tabla-oportunidades tbody tr:hover .sticky-id-cell {
+.oportunidades-wrapper .tabla-oportunidades tbody .sticky-col-2 {
+  z-index: 43;
+  background: #fff;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody .sticky-col-3 {
+  z-index: 42;
+  background: #fff;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr:hover .sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody tr:hover .sticky-col-2,
+.oportunidades-wrapper .tabla-oportunidades tbody tr:hover .sticky-col-3 {
   background: #f8fafc;
 }
 
-/* ==========================================
-   SEGUNDA COLUMNA NORMAL
-   (ya no se deja sticky por nth-child para evitar choques con ID)
-========================================== */
+/* =========================
+   SERVICIO ajustado
+========================= */
+.oportunidades-wrapper .tabla-oportunidades th.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades td.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades td.servicio-wrap-cell {
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+  vertical-align: top;
+}
+
+.oportunidades-wrapper .tabla-oportunidades td.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades td.servicio-wrap-cell {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+/* =========================
+   Bloque azul desde CODIGO PRC
+========================= */
+.oportunidades-wrapper .tabla-oportunidades thead tr:first-child th.post-prc-col {
+  background: var(--brand-blue-soft-2);
+  color: #1e3a8a;
+  border-bottom: 3px solid #93c5fd;
+}
+
+.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas th.post-prc-col {
+  background: var(--brand-blue-soft);
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody td.post-prc-col {
+  background: #f7fbff;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr:hover td.post-prc-col {
+  background: #edf6ff;
+}
+
+.oportunidades-wrapper .new-row td.post-prc-col {
+  background: #eef7ff !important;
+}
+
+/* ========================= */
 
 .oportunidades-wrapper .editing {
   background: #e0f2fe !important;
@@ -325,6 +417,12 @@
 
 .oportunidades-wrapper .new-row td {
   background: #ecfdf5;
+}
+
+.oportunidades-wrapper .new-row .sticky-col-1,
+.oportunidades-wrapper .new-row .sticky-col-2,
+.oportunidades-wrapper .new-row .sticky-col-3 {
+  background: #ecfdf5 !important;
 }
 
 .oportunidades-wrapper .acciones {
@@ -446,27 +544,6 @@
   color: #0f172a;
 }
 
-@media (max-width: 768px) {
-  .oportunidades-wrapper .upload-section {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .oportunidades-wrapper .file-name {
-    max-width: 100%;
-  }
-
-  .oportunidades-wrapper .tabla-oportunidades {
-    min-width: 2200px;
-  }
-
-  .oportunidades-wrapper .sticky-id-col {
-    min-width: 90px !important;
-    max-width: 90px !important;
-    width: 90px !important;
-  }
-}
-
 .oportunidades-wrapper .acciones-exportacion {
   display: flex;
   gap: 10px;
@@ -494,6 +571,23 @@
   cursor: not-allowed;
 }
 
-.oportunidades-wrapper .new-row .sticky-id-cell {
-  background: #ecfdf5 !important;
+@media (max-width: 768px) {
+  .oportunidades-wrapper {
+    --col-id-w: 90px;
+    --col-cliente-w: 220px;
+    --col-servicio-w: 260px;
+  }
+
+  .oportunidades-wrapper .upload-section {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .oportunidades-wrapper .file-name {
+    max-width: 100%;
+  }
+
+  .oportunidades-wrapper .tabla-oportunidades {
+    min-width: 2600px;
+  }
 }

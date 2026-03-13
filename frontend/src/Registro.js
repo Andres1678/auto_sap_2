@@ -284,8 +284,6 @@ const RegistroRow = React.memo(function RegistroRow({
   onCopiar,
   onToggleBloqueado,
 }) {
-  const editableSemana = isDateInCurrentWeek(String(r?.fecha || ""));
-
   return (
     <tr>
       <td className="num">{r.id}</td>
@@ -312,8 +310,8 @@ const RegistroRow = React.memo(function RegistroRow({
           type="button"
           className="icon-btn"
           onClick={() => onEditar(r)}
-          disabled={r.bloqueado || !editableSemana}
-          title={!editableSemana ? "Solo puedes editar registros de la semana vigente" : "Editar"}
+          disabled={r.bloqueado}
+          title={r.bloqueado ? "Registro bloqueado" : "Editar"}
         >
           ✏️
         </button>
@@ -919,19 +917,6 @@ const Registro = ({ userData }) => {
     if (!registro.fecha) {
       return Swal.fire({ icon: "warning", title: "Selecciona una fecha" });
     }
-    
-    if (modoEdicion) {
-      const fechaEdicion = String(registro?.fecha || "");
-      const esSemanaVigente = isDateInCurrentWeek(fechaEdicion);
-
-      if (!esSemanaVigente) {
-        return Swal.fire({
-          icon: "warning",
-          title: "Edición no permitida",
-          text: "Solo puedes actualizar registros de la semana vigente.",
-        });
-      }
-    }
 
     if (registro.fecha > todayISO) {
       return Swal.fire({
@@ -1166,16 +1151,6 @@ const Registro = ({ userData }) => {
   };
 
   const handleEditar = async (reg) => {
-    const esSemanaVigente = isDateInCurrentWeek(String(reg?.fecha || ""));
-
-    if (!esSemanaVigente) {
-      return Swal.fire({
-        icon: "warning",
-        title: "Edición no permitida",
-        text: "Solo puedes editar registros de la semana vigente (lunes a domingo).",
-      });
-    }
-
     editOriginalRef.current = {
       id: reg.id,
       fecha: reg.fecha,
@@ -1961,8 +1936,7 @@ const Registro = ({ userData }) => {
                     max={todayISO}
                     onChange={(e) => setRegistro({ ...registro, fecha: e.target.value })}
                     required
-                    disabled={modoEdicion}
-                    title={modoEdicion ? "En edición no puedes modificar la fecha" : ""}
+                    title="Puedes editar fechas pasadas o de hoy, pero no fechas futuras"
                   />
 
                   <select

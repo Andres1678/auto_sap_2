@@ -1729,6 +1729,16 @@ def _fecha_en_semana_vigente(fecha_value):
     return start <= fecha <= end
 
 
+def _fecha_no_futura(fecha_value):
+    fecha = _parse_iso_date_safe(fecha_value)
+    if not fecha:
+        return False
+
+    tz = ZoneInfo("America/Bogota")
+    hoy = datetime.now(tz).date()
+    return fecha <= hoy
+
+
 @bp.route('/editar-registro/<int:id>', methods=['PUT'])
 @permission_required("REGISTROS_EDITAR")
 def editar_registro(id):
@@ -1766,17 +1776,6 @@ def editar_registro(id):
     if not es_admin and dueno and dueno != usuario_header:
         return jsonify({'mensaje': 'No autorizado'}), 403
 
-    # ----------------------------------------------------------
-    # 2.1) Bloquear edición fuera de semana vigente
-    #     Si quieres que ADMIN sí pueda editar semanas anteriores,
-    #     cambia este if por:
-    #     if not es_admin and not _fecha_en_semana_vigente(registro.fecha):
-    # ----------------------------------------------------------
-    if not _fecha_en_semana_vigente(registro.fecha):
-        return jsonify({
-            'mensaje': 'Solo se pueden actualizar registros de la semana vigente (lunes a domingo).'
-        }), 403
-
     try:
         # ----------------------------------------------------------
         # 3) Tomar valores finales antes de guardar
@@ -1790,11 +1789,11 @@ def editar_registro(id):
             return jsonify({'mensaje': 'Hora fin debe ser mayor a hora inicio'}), 400
 
         # ----------------------------------------------------------
-        # 3.1) No permitir mover la edición a una fecha fuera de la semana vigente
+        # 3.1) No permitir fechas futuras
         # ----------------------------------------------------------
-        if not _fecha_en_semana_vigente(nueva_fecha):
+        if not _fecha_no_futura(nueva_fecha):
             return jsonify({
-                'mensaje': 'Solo puedes actualizar registros cuya fecha quede dentro de la semana vigente.'
+                'mensaje': 'No puedes actualizar el registro con una fecha futura.'
             }), 403
 
         # ----------------------------------------------------------
@@ -1818,8 +1817,18 @@ def editar_registro(id):
         registro.fecha = nueva_fecha
         registro.cliente = pick(data, 'cliente', default=registro.cliente)
 
-        registro.nro_caso_cliente = pick(data, 'nroCasoCliente', 'nro_caso_cliente', default=registro.nro_caso_cliente)
-        registro.nro_caso_interno = pick(data, 'nroCasoInterno', 'nro_caso_interno', default=registro.nro_caso_interno)
+        registro.nro_caso_cliente = pick(
+            data,
+            'nroCasoCliente',
+            'nro_caso_cliente',
+            default=registro.nro_caso_cliente
+        )
+        registro.nro_caso_interno = pick(
+            data,
+            'nroCasoInterno',
+            'nro_caso_interno',
+            default=registro.nro_caso_interno
+        )
 
         nro_escalado = pick(data, 'nroCasoEscaladoSap', 'nro_caso_escalado')
         if nro_escalado is not None:
@@ -1887,11 +1896,31 @@ def editar_registro(id):
         registro.hora_inicio = nuevo_hora_inicio
         registro.hora_fin = nuevo_hora_fin
 
-        registro.tiempo_invertido = pick(data, 'tiempoInvertido', 'tiempo_invertido', default=tiempo_calculado)
-        registro.tiempo_facturable = pick(data, 'tiempoFacturable', 'tiempo_facturable', default=registro.tiempo_facturable)
-        registro.horas_adicionales = pick(data, 'horasAdicionales', 'horas_adicionales', default=registro.horas_adicionales)
+        registro.tiempo_invertido = pick(
+            data,
+            'tiempoInvertido',
+            'tiempo_invertido',
+            default=tiempo_calculado
+        )
+        registro.tiempo_facturable = pick(
+            data,
+            'tiempoFacturable',
+            'tiempo_facturable',
+            default=registro.tiempo_facturable
+        )
+        registro.horas_adicionales = pick(
+            data,
+            'horasAdicionales',
+            'horas_adicionales',
+            default=registro.horas_adicionales
+        )
         registro.descripcion = pick(data, 'descripcion', default=registro.descripcion)
-        registro.total_horas = pick(data, 'totalHoras', 'total_horas', default=tiempo_calculado)
+        registro.total_horas = pick(
+            data,
+            'totalHoras',
+            'total_horas',
+            default=tiempo_calculado
+        )
 
         # ----------------------------------------------------------
         # 9) Módulo / Equipo
