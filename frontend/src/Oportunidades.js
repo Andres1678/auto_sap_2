@@ -4,6 +4,7 @@ import Select from "react-select";
 import "./Oportunidades.css";
 import { jfetch } from "./lib/api";
 import { exportOportunidadesExcel } from "./lib/exportExcelOportunidades";
+import ModalCategoriaPerdida from "./ModalCategoriaPerdida";
 
 const NUMERIC_COLS = new Set(["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"]);
 
@@ -97,6 +98,7 @@ const CATEGORIA_SUBCATEGORIA = {
 const COLUMN_LABELS = {
   id: "ID OPORTUNIDAD",
   fecha_creacion: "FECHA ASIGNACIÓN",
+  anio_creacion_ot: "AÑO CREACIÓN OT",
 };
 
 const CLIENTE_COL = "nombre_cliente";
@@ -377,6 +379,7 @@ export default function Oportunidades() {
   const [editValue, setEditValue] = useState("");
   const [estadoResultadoMap, setEstadoResultadoMap] = useState(ESTADO_RESULTADO_BASE);
   const [clientesCatalogo, setClientesCatalogo] = useState([]);
+  const [openCategoriaModal, setOpenCategoriaModal] = useState(false);
 
   const baseColumnOrder = useMemo(
     () => [
@@ -1399,6 +1402,15 @@ export default function Oportunidades() {
           </button>
 
           <button
+            className="upload-btn"
+            type="button"
+            onClick={() => setOpenCategoriaModal(true)}
+            disabled={loading}
+          >
+            Ver Categoría Perdida
+          </button>
+
+          <button
             className="clear-filters-btn"
             onClick={handleClearFilters}
             disabled={
@@ -1529,6 +1541,12 @@ export default function Oportunidades() {
       <button className="floating-add-btn" onClick={addRow} disabled={loading}>
         +
       </button>
+
+      <ModalCategoriaPerdida
+        isOpen={openCategoriaModal}
+        onClose={() => setOpenCategoriaModal(false)}
+        categoriesMap={CATEGORIA_SUBCATEGORIA}
+      />
     </div>
   );
 }
