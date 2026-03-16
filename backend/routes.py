@@ -904,17 +904,18 @@ def registrar_hora():
             if tarea_obj:
                 tarea_id = tarea_obj.id
 
-    if occ_codigo == "03" and cliente_upper != "HITSS/CLARO":
-        return jsonify({
-            "mensaje": "La ocupación 03 solo puede registrarse para el cliente HITSS/CLARO"
-        }), 400
-
     # ------------------------------------------------------------------
     # 5) VALORES NUMÉRICOS
     # ------------------------------------------------------------------
-    tiempo_invertido = float(pick(data, 'tiempoInvertido', 'tiempo_invertido', default=tiempo_calculado) or tiempo_calculado)
-    tiempo_facturable = float(pick(data, 'tiempoFacturable', 'tiempo_facturable', default=0) or 0)
-    total_horas = float(pick(data, 'totalHoras', 'total_horas', default=tiempo_calculado) or tiempo_calculado)
+    tiempo_invertido = float(
+        pick(data, 'tiempoInvertido', 'tiempo_invertido', default=tiempo_calculado) or tiempo_calculado
+    )
+    tiempo_facturable = float(
+        pick(data, 'tiempoFacturable', 'tiempo_facturable', default=0) or 0
+    )
+    total_horas = float(
+        pick(data, 'totalHoras', 'total_horas', default=tiempo_calculado) or tiempo_calculado
+    )
 
     # ------------------------------------------------------------------
     # 6) MÓDULO
@@ -982,14 +983,22 @@ def registrar_hora():
     # 10.1) Validación cliente restringido por ocupación
     # --------------------------------------------------
     cliente_upper = str(cliente or "").strip().upper()
+    occ_codigo = ""
 
     if ocupacion_id:
         occ_obj = Ocupacion.query.get(ocupacion_id)
         occ_codigo = str(getattr(occ_obj, "codigo", "") or "").strip()
 
+        # Ocupaciones que NO pueden usar HITSS/CLARO
         if occ_codigo in {"01", "02"} and cliente_upper == "HITSS/CLARO":
             return jsonify({
                 "mensaje": "Las ocupaciones 01 y 02 no pueden registrarse para el cliente HITSS/CLARO"
+            }), 400
+
+        # Ocupación 03 SOLO puede usar HITSS/CLARO
+        if occ_codigo == "03" and cliente_upper != "HITSS/CLARO":
+            return jsonify({
+                "mensaje": "La ocupación 03 solo puede registrarse para el cliente HITSS/CLARO"
             }), 400
 
     # ------------------------------------------------------------------
@@ -1076,7 +1085,7 @@ def registrar_hora():
     except Exception as e:
         db.session.rollback()
         return jsonify({'mensaje': f'No se pudo guardar el registro: {e}'}), 500
-
+    
 # ============================================================
 #  ✅ HELPERS 
 # ============================================================
@@ -1892,11 +1901,6 @@ def editar_registro(id):
         if tipoTareaTexto:
             registro.tipo_tarea = str(tipoTareaTexto).strip()
 
-        if occ_codigo == "03" and cliente_upper != "HITSS/CLARO":
-            return jsonify({
-                "mensaje": "La ocupación 03 solo puede registrarse para el cliente HITSS/CLARO"
-            }), 400
-
         # ----------------------------------------------------------
         # 7) Ocupación
         # ----------------------------------------------------------
@@ -1918,15 +1922,25 @@ def editar_registro(id):
             if tarea_db and getattr(tarea_db, "ocupaciones", None) and tarea_db.ocupaciones:
                 registro.ocupacion_id = tarea_db.ocupaciones[0].id
 
+        # ----------------------------------------------------------
+        # 7.1) Validación cliente restringido por ocupación
+        # ----------------------------------------------------------
         cliente_validar = pick(data, 'cliente', default=registro.cliente)
         cliente_upper = str(cliente_validar or "").strip().upper()
 
         occ_obj = Ocupacion.query.get(registro.ocupacion_id) if registro.ocupacion_id else None
         occ_codigo = str(getattr(occ_obj, "codigo", "") or "").strip()
 
+        # Ocupaciones que NO pueden usar HITSS/CLARO
         if occ_codigo in {"01", "02"} and cliente_upper == "HITSS/CLARO":
             return jsonify({
                 'mensaje': 'Las ocupaciones 01 y 02 no pueden registrarse para el cliente HITSS/CLARO'
+            }), 400
+
+        # Ocupación 03 SOLO puede usar HITSS/CLARO
+        if occ_codigo == "03" and cliente_upper != "HITSS/CLARO":
+            return jsonify({
+                "mensaje": "La ocupación 03 solo puede registrarse para el cliente HITSS/CLARO"
             }), 400
 
         # ----------------------------------------------------------
