@@ -407,6 +407,7 @@ const Registro = ({ userData }) => {
 
   const REGISTRO_ROLE_POOL_ROLES = new Set([
     "ADMIN_GESTION_PREVENTA",
+    "ADMIN_OPORTUNIDADES",
   ]);
 
   const isAdmin = rolUpper.startsWith("ADMIN");

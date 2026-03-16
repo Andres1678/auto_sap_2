@@ -115,6 +115,7 @@ export default function Resumen({
   ]);
   const RESUMEN_ROLE_POOL_ROLES = new Set([
     "ADMIN_GESTION_PREVENTA",
+    "ADMIN_OPORTUNIDADES",
   ]);
   const isConsultor = useMemo(() => rolUpper === "CONSULTOR", [rolUpper]);
   const isAdmin = useMemo(() => rolUpper.startsWith("ADMIN"), [rolUpper]);

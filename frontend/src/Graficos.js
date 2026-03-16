@@ -358,6 +358,7 @@ export default function Graficos() {
     'ADMIN',
     'ADMIN_GERENTES',
     'ADMIN_GESTION_PREVENTA',
+    'ADMIN_OPORTUNIDADES',
   ]);
 
   const PROYECTOS_ALLOWED_ROLES = new Set([
