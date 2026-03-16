@@ -502,26 +502,30 @@ export default function ModalWinRate({
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
+                  <tr className="wr-summary-row wr-summary-row-ganada">
                     <td>TOTAL GANADAS</td>
                     <td>{baseSummary.ganadas}</td>
                     <td>{filteredSummary.ganadas}</td>
                   </tr>
-                  <tr>
+
+                  <tr className="wr-summary-row wr-summary-row-perdida">
                     <td>TOTAL OFERTAS PERDIDAS</td>
                     <td>{baseSummary.perdidas}</td>
                     <td>{filteredSummary.perdidas}</td>
                   </tr>
-                  <tr>
+
+                  <tr className="wr-summary-row wr-summary-row-proceso">
                     <td>TOTAL OFERTAS EN PROCESO</td>
                     <td>{baseSummary.enProceso}</td>
                     <td>{filteredSummary.enProceso}</td>
                   </tr>
+
                   <tr className="is-total">
                     <td>TOTAL</td>
                     <td>{baseSummary.total}</td>
                     <td>{filteredSummary.total}</td>
                   </tr>
+
                   <tr className="is-indicator">
                     <td>Indicador Win Rate</td>
                     <td>{baseSummary.indicador.toFixed(2)}%</td>

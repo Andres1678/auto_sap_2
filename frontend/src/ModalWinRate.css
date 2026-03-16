@@ -148,6 +148,25 @@
   font-weight: 700;
 }
 
+/* ===================== SOLO resumen comparativo ===================== */
+.wr-summary-table .wr-summary-row-ganada td {
+  background: #ecfdf5;
+  color: #166534;
+  font-weight: 800;
+}
+
+.wr-summary-table .wr-summary-row-perdida td {
+  background: #fef2f2;
+  color: #b91c1c;
+  font-weight: 800;
+}
+
+.wr-summary-table .wr-summary-row-proceso td {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 800;
+}
+
 .wr-summary-table .is-total td,
 .wr-breakdown-table .table-total td {
   background: #f8fafc;
@@ -160,6 +179,7 @@
   color: #0f172a;
 }
 
+/* ===================== tabla breakdown ===================== */
 .row-ganada td {
   background: #ecfdf5;
 }
