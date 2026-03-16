@@ -50,16 +50,6 @@ function isExcludedLabel(raw) {
   return false;
 }
 
-function sumPivotRows(rows) {
-  return (rows || []).reduce(
-    (acc, r) => {
-      acc.count += r.count || 0;
-      return acc;
-    },
-    { count: 0 }
-  );
-}
-
 function uniqueOptions(values) {
   const map = new Map();
 
@@ -236,36 +226,15 @@ function buildWinRateSummary(rows) {
   let perdidas = 0;
   let enProceso = 0;
 
-  const map = new Map();
-
   cleanRows.forEach((r) => {
-    const rawEstado = r?.estado_oferta ?? "";
-    const estadoN = normKeyForMatch(rawEstado);
+    const estadoN = normKeyForMatch(r?.estado_oferta ?? "");
     const bucket = bucketByEstado(estadoN);
 
     if (bucket === "ganada") ganadas += 1;
     if (bucket === "perdida") perdidas += 1;
     if (bucket === "proceso") enProceso += 1;
-
-    const prev = map.get(estadoN) || {
-      key: estadoN,
-      label: displayLabel(rawEstado),
-      count: 0,
-      bucket,
-    };
-
-    prev.count += 1;
-    map.set(estadoN, prev);
   });
 
-  const rowsBreakdown = Array.from(map.values()).sort((a, b) => {
-    return (
-      b.count - a.count ||
-      a.label.localeCompare(b.label, "es", { sensitivity: "base" })
-    );
-  });
-
-  const totalsBreakdown = sumPivotRows(rowsBreakdown);
   const total = ganadas + perdidas + enProceso;
   const indicador = total ? (ganadas / total) * 100 : 0;
 
@@ -275,8 +244,6 @@ function buildWinRateSummary(rows) {
     enProceso,
     total,
     indicador,
-    rowsBreakdown,
-    totalsBreakdown,
     recordsUsed: cleanRows.length,
   };
 }
@@ -480,7 +447,7 @@ export default function ModalWinRate({
         </div>
 
         <div className="wr-content-grid">
-          <div className="wr-card">
+          <div className="wr-card wr-card-single">
             <div className="wr-card-title">Resumen comparativo</div>
 
             <div className="wr-meta-line">
