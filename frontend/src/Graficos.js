@@ -354,14 +354,24 @@ export default function Graficos() {
   const equipoUser = String(user?.equipo || user?.user?.equipo || '').toUpperCase();
   const usuario = String(user?.usuario || user?.user?.usuario || '').trim();
 
-  const ADMIN_ALL_ROLES = new Set(['ADMIN', 'ADMIN_GERENTES']);
-  const isAdminAll = ADMIN_ALL_ROLES.has(rolUpper);
+  const GRAFICOS_ALL_ROLES = new Set([
+    'ADMIN',
+    'ADMIN_GERENTES',
+    'ADMIN_GESTION_PREVENTA',
+  ]);
+
+  const PROYECTOS_ALLOWED_ROLES = new Set([
+    'ADMIN',
+    'ADMIN_GERENTES',
+  ]);
+
+  const isAdminAll = GRAFICOS_ALL_ROLES.has(rolUpper);
   const isAdminLike = rolUpper.startsWith('ADMIN_');
   const isAdminTeam = !isAdminAll && isAdminLike && !!equipoUser;
 
   const scope = isAdminAll ? 'ALL' : (isAdminTeam ? 'TEAM' : 'SELF');
   const isAdmin = scope !== 'SELF';
-  const canOpenProyectos = scope === 'ALL' || scope === 'TEAM';
+  const canOpenProyectos = PROYECTOS_ALLOWED_ROLES.has(rolUpper) || scope === 'TEAM';
 
   const fetchRegistros = useCallback(async () => {
     if (fetchAbortRef.current) {

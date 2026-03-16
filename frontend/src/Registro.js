@@ -400,9 +400,19 @@ const Registro = ({ userData }) => {
   useEffect(() => { localStorage.setItem('filtroEquipo', filtroEquipo); }, [filtroEquipo]);
 
   const rolUpper = String(rol || "").toUpperCase();
+
+  const REGISTRO_GLOBAL_ROLES = new Set([
+    "ADMIN",
+  ]);
+
+  const REGISTRO_ROLE_POOL_ROLES = new Set([
+    "ADMIN_GESTION_PREVENTA",
+  ]);
+
   const isAdmin = rolUpper.startsWith("ADMIN");
-  const isAdminGlobal = rolUpper === "ADMIN";
-  const isAdminEquipo = isAdmin && !isAdminGlobal;
+  const isAdminGlobal = REGISTRO_GLOBAL_ROLES.has(rolUpper);
+  const isAdminRolePool = REGISTRO_ROLE_POOL_ROLES.has(rolUpper);
+  const isAdminEquipo = isAdmin && !isAdminGlobal && !isAdminRolePool;
 
   const miEquipo = String(equipoUser || "").trim().toUpperCase();
   const equipoLocked = isAdminEquipo ? miEquipo : filtroEquipo;
@@ -1493,14 +1503,30 @@ const Registro = ({ userData }) => {
 
   useEffect(() => {
     if (!userData) return;
+
     if (!isAdmin) {
       setFiltroConsultor(nombreUser);
       setFiltroEquipo(normKey(equipoUser));
-    } else {
+      return;
+    }
+
+    if (isAdminEquipo) {
+      setFiltroConsultor('');
+      setFiltroEquipo(normKey(equipoUser));
+      return;
+    }
+
+    if (isAdminRolePool) {
+      setFiltroConsultor('');
+      setFiltroEquipo('');
+      return;
+    }
+
+    if (isAdminGlobal) {
       setFiltroConsultor('');
       setFiltroEquipo('');
     }
-  }, [isAdmin, nombreUser, equipoUser, userData]);
+  }, [isAdmin, isAdminEquipo, isAdminRolePool, isAdminGlobal, nombreUser, equipoUser, userData]);
 
   const handleImportExcel = async () => {
     const file = excelInputRef.current?.files?.[0];
@@ -1776,6 +1802,13 @@ const Registro = ({ userData }) => {
                   </option>
                 ))}
               </select>
+            ) : isAdminRolePool ? (
+              <input
+                type="text"
+                value="Consultores asignados al rol"
+                readOnly
+                placeholder="Alcance por rol"
+              />
             ) : (
               <input
                 type="text"
@@ -1791,8 +1824,13 @@ const Registro = ({ userData }) => {
               disabled={!isAdmin}
             >
               <option value="">
-                {isAdmin ? 'Todos los consultores' : (nombreUser || 'Consultor')}
+                {!isAdmin
+                  ? (nombreUser || 'Consultor')
+                  : isAdminRolePool
+                    ? 'Consultores asignados al rol'
+                    : 'Todos los consultores'}
               </option>
+
               {consultoresGlobales.map((c, idx) => (
                 <option key={idx} value={c}>{c}</option>
               ))}
@@ -1846,12 +1884,18 @@ const Registro = ({ userData }) => {
                 setFiltroMes('');
                 setFiltroAnio('');
                 setPage(1);
-                if (isAdmin) {
+                if (!isAdmin) {
+                  setFiltroConsultor(nombreUser);
+                  setFiltroEquipo(normKey(equipoUser));
+                } else if (isAdminEquipo) {
+                  setFiltroConsultor('');
+                  setFiltroEquipo(normKey(equipoUser));
+                } else if (isAdminRolePool) {
                   setFiltroConsultor('');
                   setFiltroEquipo('');
                 } else {
-                  setFiltroConsultor(nombreUser);
-                  setFiltroEquipo(normKey(equipoUser));
+                  setFiltroConsultor('');
+                  setFiltroEquipo('');
                 }
               }}
             >

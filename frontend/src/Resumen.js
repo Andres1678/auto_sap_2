@@ -110,10 +110,20 @@ export default function Resumen({
   }, [userData]);
 
   const rolUpper = useMemo(() => String(rol || "").trim().toUpperCase(), [rol]);
+  const RESUMEN_GLOBAL_ROLES = new Set([
+    "ADMIN",
+  ]);
+  const RESUMEN_ROLE_POOL_ROLES = new Set([
+    "ADMIN_GESTION_PREVENTA",
+  ]);
   const isConsultor = useMemo(() => rolUpper === "CONSULTOR", [rolUpper]);
   const isAdmin = useMemo(() => rolUpper.startsWith("ADMIN"), [rolUpper]);
-  const isAdminGlobal = useMemo(() => rolUpper === "ADMIN", [rolUpper]);
-  const isAdminEquipo = useMemo(() => isAdmin && !isAdminGlobal, [isAdmin, isAdminGlobal]);
+  const isAdminGlobal = useMemo(() => RESUMEN_GLOBAL_ROLES.has(rolUpper), [rolUpper]);
+  const isAdminRolePool = useMemo(() => RESUMEN_ROLE_POOL_ROLES.has(rolUpper), [rolUpper]);
+  const isAdminEquipo = useMemo(
+    () => isAdmin && !isAdminGlobal && !isAdminRolePool,
+    [isAdmin, isAdminGlobal, isAdminRolePool]
+  );
 
   const miEquipo = useMemo(() => {
     return String(userData?.equipo || userData?.user?.equipo || "").trim().toUpperCase();

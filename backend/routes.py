@@ -37,6 +37,25 @@ ROLE_TEAM_MAP = {
     "ADMIN_GESTION_DE_PROYECTOS": "GESTION_DE_PROYECTOS",
 }
 
+ROLE_POOL_ROLES = {
+    "ADMIN_GESTION_PREVENTA",
+}
+
+GRAFICOS_ALL_ROLES = {
+    "ADMIN",
+    "ADMIN_GERENTES",
+    "ADMIN_GESTION_PREVENTA",
+}
+
+def _consultor_role_id(consultor_login):
+    rid = getattr(consultor_login, "rol_id", None)
+    if rid:
+        return int(rid)
+
+    rol_obj = getattr(consultor_login, "rol_obj", None)
+    rid = getattr(rol_obj, "id", None)
+    return int(rid or 0)
+
 def apply_scope(query, rol, usuario_login):
     if rol == "ADMIN":
         return query  # sin filtro
@@ -1087,9 +1106,10 @@ def _is_admin_equipo(role: str) -> bool:
 
 def scope_for(consultor_login, rol_req: str):
     """
-    ADMIN            -> ("ALL", None)
-    ADMIN_*          -> ("TEAM", consultor_login.equipo_id)
-    CONSULTOR/otros  -> ("SELF", usuario_norm)
+    ADMIN                       -> ("ALL", None)
+    ADMIN_GESTION_PREVENTA      -> ("ROLE_POOL", rol_id)
+    ADMIN_*                     -> ("TEAM", equipo_id)
+    CONSULTOR / otros           -> ("SELF", usuario_norm)
     """
     rol = (rol_req or (consultor_login.rol_obj.nombre if consultor_login.rol_obj else "") or "").strip().upper()
     usuario_norm = (consultor_login.usuario or "").strip().lower()
@@ -1097,8 +1117,11 @@ def scope_for(consultor_login, rol_req: str):
     if rol == "ADMIN":
         return "ALL", None
 
+    if rol in ROLE_POOL_ROLES:
+        role_id = _consultor_role_id(consultor_login)
+        return "ROLE_POOL", role_id
+
     if rol.startswith("ADMIN_"):
-        # el admin de equipo SOLO ve su equipo real
         return "TEAM", int(consultor_login.equipo_id) if consultor_login.equipo_id else 0
 
     return "SELF", usuario_norm
@@ -1111,25 +1134,21 @@ def scope_for(consultor_login, rol_req: str):
 def _scope_for_graficos(consultor_login, rol_req: str):
     """
     Reglas:
-      - ADMIN y ADMIN_GERENTES -> ALL (pueden ver TODO en graficos)
-      - ADMIN_* (ej. ADMIN_BASIS, ADMIN_FUNCIONAL) -> TEAM
-      - resto -> usa scope_for normal (SELF/TEAM según tu lógica)
+      - ADMIN, ADMIN_GERENTES, ADMIN_GESTION_PREVENTA -> ALL
+      - ADMIN_* (BASIS/FUNCIONAL/...)                 -> TEAM
+      - resto                                         -> scope_for normal
     """
     rol = (rol_req or "").strip().upper()
 
-    if rol in ("ADMIN", "ADMIN_GERENTES"):
+    if rol in GRAFICOS_ALL_ROLES:
         return "ALL", None
 
-    # si es admin por equipo (ADMIN_BASIS, ADMIN_FUNCIONAL, etc.)
     if rol.startswith("ADMIN_"):
-        # TEAM por su equipo (si existe)
         equipo_id = consultor_login.equipo_id if consultor_login else None
         if equipo_id:
             return "TEAM", int(equipo_id)
-        # si no tiene equipo, cae a SELF
         return "SELF", None
 
-    # para roles no admin, conserva tu lógica normal
     return scope_for(consultor_login, rol_req)
 
 
@@ -1387,6 +1406,11 @@ def obtener_registros():
                 return jsonify({'error': 'Consultor sin equipo asignado'}), 403
             q = q.filter(C.equipo_id == int(val))
 
+        elif scope == "ROLE_POOL":
+            if not int(val or 0):
+                return jsonify({'error': 'Consultor sin rol asignado'}), 403
+            q = q.filter(C.rol_id == int(val))
+
         # -----------------------------
         # Filtros backend
         # -----------------------------
@@ -1605,7 +1629,8 @@ def resumen_horas():
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
         elif scope == "TEAM":
             q = q.filter(Consultor.equipo_id == int(val))
-        # ALL: sin filtro
+        elif scope == "ROLE_POOL":
+            q = q.filter(Consultor.rol_id == int(val))
 
         # ----------------------------------------------------------
         # 7) Filtro por fecha (si viene)
@@ -1641,6 +1666,8 @@ def resumen_horas():
             qt = qt.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
         elif scope == "TEAM":
             qt = qt.filter(Consultor.equipo_id == int(val))
+        elif scope == "ROLE_POOL":
+            qt = qt.filter(Consultor.rol_id == int(val))
 
         if desde and hasta:
             qt = qt.filter(Registro.fecha.between(desde, hasta))
@@ -4291,10 +4318,16 @@ def registros_filtros():
 
         if scope == "SELF":
             base = base.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+
         elif scope == "TEAM":
             if not int(val or 0):
                 return jsonify({'error': 'Consultor sin equipo asignado'}), 403
             base = base.filter(C.equipo_id == int(val))
+
+        elif scope == "ROLE_POOL":
+            if not int(val or 0):
+                return jsonify({'error': 'Consultor sin rol asignado'}), 403
+            base = base.filter(C.rol_id == int(val))
 
         rows = base.all()
 
@@ -4352,10 +4385,16 @@ def registros_conteos():
 
         if scope == "SELF":
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+
         elif scope == "TEAM":
             if not int(val or 0):
                 return jsonify({'error': 'Consultor sin equipo asignado'}), 403
             q = q.filter(C.equipo_id == int(val))
+
+        elif scope == "ROLE_POOL":
+            if not int(val or 0):
+                return jsonify({'error': 'Consultor sin rol asignado'}), 403
+            q = q.filter(C.rol_id == int(val))
 
         rows = q.group_by(E.nombre).all()
 
@@ -4367,8 +4406,12 @@ def registros_conteos():
 
         if scope == "SELF":
             total_q = total_q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+
         elif scope == "TEAM":
             total_q = total_q.filter(C.equipo_id == int(val))
+
+        elif scope == "ROLE_POOL":
+            total_q = total_q.filter(C.rol_id == int(val))
 
         total = int(total_q.scalar() or 0)
 
@@ -4443,6 +4486,8 @@ def resumen_calendario():
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
         elif scope == "TEAM":
             q = q.filter(Consultor.equipo_id == int(val))
+        elif scope == "ROLE_POOL":
+            q = q.filter(Consultor.rol_id == int(val))
 
         # aplicar equipo_filter si viene (solo realmente útil en ADMIN global)
         if equipo_filter:
