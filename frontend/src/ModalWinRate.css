@@ -236,3 +236,20 @@
     margin-right: 14px;
   }
 }
+
+.wr-meta-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.wr-empty-cell {
+  text-align: center;
+  padding: 18px 12px;
+  color: #64748b;
+  font-weight: 600;
+}

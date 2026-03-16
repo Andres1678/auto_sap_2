@@ -50,94 +50,13 @@ function isExcludedLabel(raw) {
   return false;
 }
 
-const nfMoney = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 });
-
-function toNumberSmart(v) {
-  if (v === null || v === undefined || v === "") return 0;
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-
-  let s = String(v).trim();
-  if (!s) return 0;
-
-  s = s
-    .replace(/\u00A0/g, " ")
-    .replace(/\s/g, "")
-    .replace(/COP/gi, "")
-    .replace(/[$€£]/g, "")
-    .replace(/%/g, "");
-
-  if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s)) {
-    const n = Number(s);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  const commaCount = (s.match(/,/g) || []).length;
-  const dotCount = (s.match(/\./g) || []).length;
-  const lastComma = s.lastIndexOf(",");
-  const lastDot = s.lastIndexOf(".");
-
-  if (commaCount > 0 && dotCount > 0) {
-    const decimalSep = lastComma > lastDot ? "," : ".";
-    const thousandSep = decimalSep === "," ? "." : ",";
-    s = s.split(thousandSep).join("");
-    if (decimalSep === ",") s = s.replace(",", ".");
-  } else if (commaCount > 0 && dotCount === 0) {
-    if (commaCount === 1) {
-      const after = s.slice(lastComma + 1);
-      const before = s.slice(0, lastComma).replace(/^[+-]/, "");
-      if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
-      else s = s.replace(",", ".");
-    } else {
-      s = s.replace(/,/g, "");
-    }
-  } else if (dotCount > 0 && commaCount === 0) {
-    if (dotCount === 1) {
-      const after = s.slice(lastDot + 1);
-      const before = s.slice(0, lastDot).replace(/^[+-]/, "");
-      if (after.length === 3 && before.length <= 3) s = s.replace(".", "");
-    } else {
-      const parts = s.split(".");
-      const last = parts[parts.length - 1];
-      const mid = parts.slice(1, -1);
-      const midAll3 = mid.every((p) => p.length === 3);
-      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3;
-      const looksLikeGrouped = midAll3 && firstOk;
-
-      if (looksLikeGrouped && last.length !== 3) {
-        const intPart = parts.slice(0, -1).join("");
-        s = intPart + "." + last;
-      } else {
-        s = s.replace(/\./g, "");
-      }
-    }
-  }
-
-  s = s.replace(/[^\d.+-eE]/g, "");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function fmtMoney(n) {
-  return nfMoney.format(n || 0);
-}
-
-function readMoney(row, keys) {
-  for (const k of keys) {
-    const v = row?.[k];
-    if (v !== null && v !== undefined && String(v).trim() !== "") return toNumberSmart(v);
-  }
-  return 0;
-}
-
 function sumPivotRows(rows) {
   return (rows || []).reduce(
     (acc, r) => {
       acc.count += r.count || 0;
-      acc.otc += r.otc || 0;
-      acc.mrc += r.mrc || 0;
       return acc;
     },
-    { count: 0, otc: 0, mrc: 0 }
+    { count: 0 }
   );
 }
 
@@ -168,8 +87,42 @@ function matchMulti(value, selected) {
   return selected.some((opt) => normKeyForMatch(opt?.value) === current);
 }
 
-function getRowYear(row) {
-  if (row?.anio) return String(row.anio).trim();
+/* ===================== Año / Mes robustos ===================== */
+const MONTH_NAMES = {
+  "01": "ENERO",
+  "02": "FEBRERO",
+  "03": "MARZO",
+  "04": "ABRIL",
+  "05": "MAYO",
+  "06": "JUNIO",
+  "07": "JULIO",
+  "08": "AGOSTO",
+  "09": "SEPTIEMBRE",
+  "10": "OCTUBRE",
+  "11": "NOVIEMBRE",
+  "12": "DICIEMBRE",
+};
+
+const MONTH_NAME_TO_NUM = {
+  ENERO: "01",
+  FEBRERO: "02",
+  MARZO: "03",
+  ABRIL: "04",
+  MAYO: "05",
+  JUNIO: "06",
+  JULIO: "07",
+  AGOSTO: "08",
+  SEPTIEMBRE: "09",
+  SETIEMBRE: "09",
+  OCTUBRE: "10",
+  NOVIEMBRE: "11",
+  DICIEMBRE: "12",
+};
+
+function extractYearFromRow(row) {
+  if (row?.anio !== null && row?.anio !== undefined && String(row.anio).trim() !== "") {
+    return String(row.anio).trim();
+  }
 
   const raw = String(row?.fecha_creacion ?? "").trim();
   const m = raw.match(/^(\d{4})[-/]/);
@@ -181,21 +134,88 @@ function getRowYear(row) {
   return "";
 }
 
-function getRowMonth(row) {
-  if (row?.mes) return String(row.mes).trim();
+function normalizeMonthNumber(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
 
-  const raw = String(row?.fecha_creacion ?? "").trim();
-  const d = new Date(raw);
-  if (!Number.isNaN(d.getTime())) return String(d.getMonth() + 1).padStart(2, "0");
+  if (/^\d{1,2}$/.test(s)) {
+    const n = Number(s);
+    if (n >= 1 && n <= 12) return String(n).padStart(2, "0");
+  }
+
+  const normalized = normKeyForMatch(s);
+  if (MONTH_NAME_TO_NUM[normalized]) return MONTH_NAME_TO_NUM[normalized];
 
   return "";
 }
 
+function getMonthAliasesFromValue(value) {
+  const aliases = new Set();
+  const raw = String(value ?? "").trim();
+  if (!raw) return aliases;
+
+  aliases.add(normKeyForMatch(raw));
+
+  const num = normalizeMonthNumber(raw);
+  if (num) {
+    aliases.add(num);
+    aliases.add(normKeyForMatch(MONTH_NAMES[num]));
+  }
+
+  return aliases;
+}
+
+function getMonthAliasesFromRow(row) {
+  const aliases = new Set();
+
+  if (row?.mes !== null && row?.mes !== undefined && String(row.mes).trim() !== "") {
+    getMonthAliasesFromValue(row.mes).forEach((x) => aliases.add(x));
+  }
+
+  const rawFecha = String(row?.fecha_creacion ?? "").trim();
+  const d = new Date(rawFecha);
+  if (!Number.isNaN(d.getTime())) {
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    aliases.add(mm);
+    aliases.add(normKeyForMatch(MONTH_NAMES[mm]));
+  } else {
+    const m = rawFecha.match(/^\d{4}-(\d{2})-\d{2}$/);
+    if (m?.[1]) {
+      aliases.add(m[1]);
+      aliases.add(normKeyForMatch(MONTH_NAMES[m[1]]));
+    }
+  }
+
+  return aliases;
+}
+
+function matchMonthMulti(row, selected) {
+  if (!Array.isArray(selected) || !selected.length) return true;
+
+  const rowAliases = getMonthAliasesFromRow(row);
+  if (!rowAliases.size) return false;
+
+  return selected.some((opt) => {
+    const selectedAliases = getMonthAliasesFromValue(opt?.value);
+    for (const a of selectedAliases) {
+      if (rowAliases.has(a)) return true;
+    }
+    return false;
+  });
+}
+
 /* ===================== Configuración del indicador ===================== */
-/* Ajusta aquí si luego quieres incluir más estados */
 const WIN_RATE_GANADAS = new Set(["GANADA"].map(normKeyForMatch));
 const WIN_RATE_PERDIDAS = new Set(["PERDIDA"].map(normKeyForMatch));
 const WIN_RATE_EN_PROCESO = new Set(["ENTREGA COMERCIAL"].map(normKeyForMatch));
+
+function isWinRateEstado(estadoN) {
+  return (
+    WIN_RATE_GANADAS.has(estadoN) ||
+    WIN_RATE_PERDIDAS.has(estadoN) ||
+    WIN_RATE_EN_PROCESO.has(estadoN)
+  );
+}
 
 function bucketByEstado(estadoN) {
   if (WIN_RATE_GANADAS.has(estadoN)) return "ganada";
@@ -205,9 +225,12 @@ function bucketByEstado(estadoN) {
 }
 
 function buildWinRateSummary(rows) {
-  const cleanRows = (Array.isArray(rows) ? rows : []).filter(
-    (r) => !isExcludedLabel(r?.estado_oferta ?? "")
-  );
+  const cleanRows = (Array.isArray(rows) ? rows : []).filter((r) => {
+    const estadoRaw = r?.estado_oferta ?? "";
+    const estadoN = normKeyForMatch(estadoRaw);
+
+    return !isExcludedLabel(estadoRaw) && isWinRateEstado(estadoN);
+  });
 
   let ganadas = 0;
   let perdidas = 0;
@@ -228,21 +251,21 @@ function buildWinRateSummary(rows) {
       key: estadoN,
       label: displayLabel(rawEstado),
       count: 0,
-      otc: 0,
-      mrc: 0,
       bucket,
     };
 
     prev.count += 1;
-    prev.otc += readMoney(r, ["otc", "otr", "OTC", "OTR"]);
-    prev.mrc += readMoney(r, ["mrc", "MRC"]);
-
     map.set(estadoN, prev);
   });
 
-  const rowsBreakdown = Array.from(map.values()).sort((a, b) => b.count - a.count);
-  const totalsBreakdown = sumPivotRows(rowsBreakdown);
+  const rowsBreakdown = Array.from(map.values()).sort((a, b) => {
+    return (
+      b.count - a.count ||
+      a.label.localeCompare(b.label, "es", { sensitivity: "base" })
+    );
+  });
 
+  const totalsBreakdown = sumPivotRows(rowsBreakdown);
   const total = ganadas + perdidas + enProceso;
   const indicador = total ? (ganadas / total) * 100 : 0;
 
@@ -254,6 +277,7 @@ function buildWinRateSummary(rows) {
     indicador,
     rowsBreakdown,
     totalsBreakdown,
+    recordsUsed: cleanRows.length,
   };
 }
 
@@ -261,23 +285,23 @@ function buildScopeLabel(filters) {
   const chunks = [];
 
   if (filters.gerenciaComercial?.length) {
-    chunks.push(filters.gerenciaComercial.map((x) => x.label).join(", "));
+    chunks.push(`Gerencia: ${filters.gerenciaComercial.map((x) => x.label).join(", ")}`);
   } else if (filters.direccionComercial?.length) {
-    chunks.push(filters.direccionComercial.map((x) => x.label).join(", "));
+    chunks.push(`Dirección: ${filters.direccionComercial.map((x) => x.label).join(", ")}`);
   }
 
   if (filters.cliente?.length) {
-    chunks.push(filters.cliente.map((x) => x.label).join(", "));
+    chunks.push(`Cliente: ${filters.cliente.map((x) => x.label).join(", ")}`);
   }
 
   if (filters.comercial?.length) {
-    chunks.push(filters.comercial.map((x) => x.label).join(", "));
+    chunks.push(`Comercial: ${filters.comercial.map((x) => x.label).join(", ")}`);
   }
 
   const periodo = [];
   if (filters.anios?.length) periodo.push(filters.anios.map((x) => x.label).join(", "));
   if (filters.meses?.length) periodo.push(filters.meses.map((x) => x.label).join(", "));
-  if (periodo.length) chunks.push(periodo.join(" / "));
+  if (periodo.length) chunks.push(`Periodo: ${periodo.join(" / ")}`);
 
   return chunks.length ? chunks.join(" · ") : "Segmento filtrado";
 }
@@ -302,7 +326,7 @@ export default function ModalWinRate({
   useEffect(() => {
     if (!isOpen) return;
 
-    const prev = document.body.style.overflow;
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     const handleEsc = (e) => {
@@ -312,7 +336,7 @@ export default function ModalWinRate({
     window.addEventListener("keydown", handleEsc);
 
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleEsc);
     };
   }, [isOpen, onClose]);
@@ -325,8 +349,8 @@ export default function ModalWinRate({
   const filteredRows = useMemo(() => {
     return (Array.isArray(rows) ? rows : []).filter((row) => {
       return (
-        matchMulti(getRowYear(row), filters.anios) &&
-        matchMulti(getRowMonth(row), filters.meses) &&
+        matchMulti(extractYearFromRow(row), filters.anios) &&
+        matchMonthMulti(row, filters.meses) &&
         matchMulti(row?.direccion_comercial, filters.direccionComercial) &&
         matchMulti(row?.gerencia_comercial, filters.gerenciaComercial) &&
         matchMulti(row?.nombre_cliente, filters.cliente) &&
@@ -364,10 +388,20 @@ export default function ModalWinRate({
           </div>
 
           <div className="wr-header-actions">
-            <button className="wr-btn wr-btn-light" onClick={clearFilters}>
+            <button
+              type="button"
+              className="wr-btn wr-btn-light"
+              onClick={clearFilters}
+            >
               Limpiar filtros internos
             </button>
-            <button className="wr-btn wr-btn-close" onClick={onClose}>
+
+            <button
+              type="button"
+              className="wr-btn wr-btn-close"
+              onClick={onClose}
+              aria-label="Cerrar modal"
+            >
               ✕
             </button>
           </div>
@@ -449,6 +483,15 @@ export default function ModalWinRate({
           <div className="wr-card">
             <div className="wr-card-title">Resumen comparativo</div>
 
+            <div className="wr-meta-line">
+              <span>
+                <strong>Base izquierda:</strong> {baseSummary.recordsUsed} registros evaluados
+              </span>
+              <span>
+                <strong>Base derecha:</strong> {filteredSummary.recordsUsed} registros evaluados
+              </span>
+            </div>
+
             <div className="wr-table-scroll">
               <table className="wr-summary-table">
                 <thead>
@@ -499,43 +542,49 @@ export default function ModalWinRate({
                     <th>ESTADO_OFERTA</th>
                     <th>Cantidad</th>
                     <th>%Part</th>
-                    <th>MRC</th>
-                    <th>OTC</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSummary.rowsBreakdown.map((it) => {
-                    const pct = filteredSummary.totalsBreakdown.count
-                      ? ((it.count / filteredSummary.totalsBreakdown.count) * 100).toFixed(2)
-                      : "0.00";
+                  {filteredSummary.rowsBreakdown.length ? (
+                    <>
+                      {filteredSummary.rowsBreakdown.map((it) => {
+                        const pct = filteredSummary.totalsBreakdown.count
+                          ? ((it.count / filteredSummary.totalsBreakdown.count) * 100).toFixed(2)
+                          : "0.00";
 
-                    return (
-                      <tr
-                        key={it.key}
-                        className={[
-                          it.bucket === "ganada" ? "row-ganada" : "",
-                          it.bucket === "proceso" ? "row-proceso" : "",
-                          it.bucket === "perdida" ? "row-perdida" : "",
-                        ]
-                          .join(" ")
-                          .trim()}
-                      >
-                        <td>{it.label}</td>
-                        <td>{it.count}</td>
-                        <td>{pct}%</td>
-                        <td>{fmtMoney(it.mrc)}</td>
-                        <td>{fmtMoney(it.otc)}</td>
+                        return (
+                          <tr
+                            key={it.key}
+                            className={[
+                              it.bucket === "ganada" ? "row-ganada" : "",
+                              it.bucket === "proceso" ? "row-proceso" : "",
+                              it.bucket === "perdida" ? "row-perdida" : "",
+                            ]
+                              .join(" ")
+                              .trim()}
+                          >
+                            <td>{it.label}</td>
+                            <td>{it.count}</td>
+                            <td>{pct}%</td>
+                          </tr>
+                        );
+                      })}
+
+                      <tr className="table-total">
+                        <td>Total</td>
+                        <td>{filteredSummary.totalsBreakdown.count}</td>
+                        <td>
+                          {filteredSummary.totalsBreakdown.count ? "100.00%" : "0.00%"}
+                        </td>
                       </tr>
-                    );
-                  })}
-
-                  <tr className="table-total">
-                    <td>Total</td>
-                    <td>{filteredSummary.totalsBreakdown.count}</td>
-                    <td>{filteredSummary.totalsBreakdown.count ? "100.00%" : "0.00%"}</td>
-                    <td>{fmtMoney(filteredSummary.totalsBreakdown.mrc)}</td>
-                    <td>{fmtMoney(filteredSummary.totalsBreakdown.otc)}</td>
-                  </tr>
+                    </>
+                  ) : (
+                    <tr>
+                      <td colSpan={3} className="wr-empty-cell">
+                        No hay registros para calcular el Win Rate con los filtros actuales.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -543,7 +592,7 @@ export default function ModalWinRate({
             <div className="wr-legend">
               <span className="wr-tag wr-tag-ganada">Ganada</span>
               <span className="wr-tag wr-tag-proceso">En proceso</span>
-              <span className="wr-tag wr-tag-perdida">Perdida</span>
+              <span className="wr-tag wr-tag-perdida">Pérdida</span>
             </div>
           </div>
         </div>

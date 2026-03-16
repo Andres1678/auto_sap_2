@@ -1021,7 +1021,7 @@ const Registro = ({ userData }) => {
       return Swal.fire({
         icon: "warning",
         title: "Cliente no permitido",
-        text: "Las ocupaciones 01 y 02 no pueden registrarse para el cliente HITSS/CLARO.",
+        text: "Las ocupaciones no se pueden registrar con el cliente HITSS/CLARO.",
       });
     }
 

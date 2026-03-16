@@ -616,6 +616,32 @@ export default function DashboardOportunidades() {
     classNamePrefix: "rs",
   };
 
+  const dashboardBaseTitle = useMemo(() => {
+    const parts = [];
+
+    if (filtros.gerenciaComercial?.length) {
+      parts.push(`Gerencia: ${filtros.gerenciaComercial.map((x) => x.label).join(", ")}`);
+    } else if (filtros.direccionComercial?.length) {
+      parts.push(`Dirección: ${filtros.direccionComercial.map((x) => x.label).join(", ")}`);
+    } else {
+      parts.push("Base actual");
+    }
+
+    if (filtros.cliente?.length) {
+      parts.push(`Cliente: ${filtros.cliente.map((x) => x.label).join(", ")}`);
+    }
+
+    const periodo = [];
+    if (filtros.anios?.length) periodo.push(filtros.anios.map((x) => x.label).join(", "));
+    if (filtros.meses?.length) periodo.push(filtros.meses.map((x) => x.label).join(", "));
+
+    if (periodo.length) {
+      parts.push(`Periodo: ${periodo.join(" / ")}`);
+    }
+
+    return parts.join(" · ");
+  }, [filtros]);
+
   const renderKpiTooltip = (titulo, items) => (
     <div className="kpi-tooltip">
       <div className="kpi-tooltip-title">{titulo}</div>
@@ -988,7 +1014,7 @@ export default function DashboardOportunidades() {
         rows={dataBase}
         options={opciones}
         selectCommon={selectCommon}
-        baseTitle="1ER SEMESTRE 2025"
+        baseTitle={dashboardBaseTitle}
       />
     </div>
   );
