@@ -6,6 +6,7 @@ import GraficoActivasCerradas from "./GraficoActivasCerradas";
 import ResumenCalificacion from "./ResumenCalificacion";
 import "./DashboardOportunidades.css";
 import { jfetch } from "./lib/api";
+import ModalWinRate from "./ModalWinRate";
 
 /* ===================== React-Select styles ===================== */
 const rsStyles = {
@@ -393,6 +394,7 @@ function renderObservacionesCell(value) {
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState([]);
+  const [openWinRateModal, setOpenWinRateModal] = useState(false);
 
   const [filtros, setFiltros] = useState({
     anios: [],
@@ -641,9 +643,20 @@ export default function DashboardOportunidades() {
           <div className="oport-dash-subtitle">KPIs, filtros y detalle consolidado</div>
         </div>
 
-        <button className="oport-btn" onClick={limpiar} disabled={loading}>
-          Limpiar filtros
-        </button>
+        <div className="oport-topbar-actions">
+          <button
+            className="oport-btn"
+            type="button"
+            onClick={() => setOpenWinRateModal(true)}
+            disabled={loading}
+          >
+            Ver Win Rate
+          </button>
+
+          <button className="oport-btn" onClick={limpiar} disabled={loading}>
+            Limpiar filtros
+          </button>
+        </div>
       </div>
 
       <div className="dashboard-layout">
@@ -969,6 +982,14 @@ export default function DashboardOportunidades() {
           </div>
         </aside>
       </div>
+      <ModalWinRate
+        isOpen={openWinRateModal}
+        onClose={() => setOpenWinRateModal(false)}
+        rows={dataBase}
+        options={opciones}
+        selectCommon={selectCommon}
+        baseTitle="1ER SEMESTRE 2025"
+      />
     </div>
   );
 }
