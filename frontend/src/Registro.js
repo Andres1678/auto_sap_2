@@ -42,6 +42,7 @@ const CLIENTE_RESTRINGIDO = 'HITSS/CLARO';
 const OCCUPATIONS_FORBID_HITSS = new Set(['01', '02', '06']);
 const CODES_RESTRICTED_CLIENT_9H = new Set(['09', '13', '14', '15']);
 const CODE_SUPERVISION_EQUIPO = '06';
+const OCCUPATIONS_ONLY_HITSS = new Set(['03']);
 
 const parseHHMM = (s) => {
   if (!s || typeof s !== "string") return null;
@@ -515,6 +516,53 @@ const Registro = ({ userData }) => {
     const occ = (ocupaciones || []).find(o => String(o.id) === String(ocupacionSeleccionada));
     return Array.isArray(occ?.tareas) ? occ.tareas : [];
   }, [ocupaciones, ocupacionSeleccionada]);
+
+  const occCodeSeleccionada = useMemo(() => {
+    return ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
+  }, [ocupacionSeleccionada, ocupaciones]);
+
+  const clientesDisponibles = useMemo(() => {
+    const lista = Array.isArray(clientes) ? clientes : [];
+
+    if (OCCUPATIONS_ONLY_HITSS.has(occCodeSeleccionada)) {
+      return lista.filter(
+        (c) => normText(c.nombre_cliente) === normText(CLIENTE_RESTRINGIDO)
+      );
+    }
+
+    return lista;
+  }, [clientes, occCodeSeleccionada]);
+
+  useEffect(() => {
+    if (!OCCUPATIONS_ONLY_HITSS.has(occCodeSeleccionada)) return;
+
+    const clienteHitss = (clientes || []).find(
+      (c) => normText(c.nombre_cliente) === normText(CLIENTE_RESTRINGIDO)
+    );
+
+    if (!clienteHitss) return;
+
+    setRegistro((prev) => {
+      const clienteActual = String(prev.cliente || "").trim();
+      const clienteObjetivo = String(clienteHitss.nombre_cliente || "").trim();
+
+      if (normText(clienteActual) === normText(clienteObjetivo)) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        cliente: clienteObjetivo,
+        proyecto_id: "",
+        proyecto_codigo: "",
+        proyecto_nombre: "",
+        proyecto_fase: "",
+        fase_proyecto_id: "",
+      };
+    });
+
+    setFasesProyecto([]);
+  }, [occCodeSeleccionada, clientes]);
 
   useEffect(() => {
     if (!showProyectoUI) return;
@@ -990,6 +1038,17 @@ const Registro = ({ userData }) => {
 
     const occCode = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
     const tareaCode = tareaCodeFromRegistro(registro, tareasDeOcupacion);
+
+    if (
+      OCCUPATIONS_ONLY_HITSS.has(occCode) &&
+      normText(registro.cliente) !== normText(CLIENTE_RESTRINGIDO)
+    ) {
+      return Swal.fire({
+        icon: "warning",
+        title: "Cliente no permitido",
+        text: "La ocupación 03 solo puede registrarse con el cliente HITSS/CLARO.",
+      });
+    }
 
     if (occCode === "02") {
       const badCliente = isNAValue(registro.nroCasoCliente);
@@ -2008,9 +2067,13 @@ const Registro = ({ userData }) => {
                       }
                     }}
                     required
+                    disabled={
+                      OCCUPATIONS_ONLY_HITSS.has(occCodeSeleccionada) &&
+                      clientesDisponibles.length <= 1
+                    }
                   >
                     <option value="">Seleccionar Cliente</option>
-                    {clientes.map((c) => (
+                    {clientesDisponibles.map((c) => (
                       <option key={c.id} value={c.nombre_cliente}>
                         {c.nombre_cliente}
                       </option>

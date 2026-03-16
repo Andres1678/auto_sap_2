@@ -904,6 +904,11 @@ def registrar_hora():
             if tarea_obj:
                 tarea_id = tarea_obj.id
 
+    if occ_codigo == "03" and cliente_upper != "HITSS/CLARO":
+        return jsonify({
+            "mensaje": "La ocupación 03 solo puede registrarse para el cliente HITSS/CLARO"
+        }), 400
+
     # ------------------------------------------------------------------
     # 5) VALORES NUMÉRICOS
     # ------------------------------------------------------------------
@@ -1886,6 +1891,11 @@ def editar_registro(id):
 
         if tipoTareaTexto:
             registro.tipo_tarea = str(tipoTareaTexto).strip()
+
+        if occ_codigo == "03" and cliente_upper != "HITSS/CLARO":
+            return jsonify({
+                "mensaje": "La ocupación 03 solo puede registrarse para el cliente HITSS/CLARO"
+            }), 400
 
         # ----------------------------------------------------------
         # 7) Ocupación
