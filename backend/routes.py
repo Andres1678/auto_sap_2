@@ -1274,7 +1274,7 @@ def obtener_registros_graficos():
 
             data.append({
                 "id": r.id,
-                "fecha": r.fecha,
+                "fecha": r.fecha.isoformat() if r.fecha else None,
                 "modulo": r.modulo,
                 "cliente": r.cliente,
                 "equipo": equipo_nombre or (r.equipo or "").strip().upper() or "SIN EQUIPO",
@@ -1329,7 +1329,7 @@ def obtener_registros_graficos():
 
     except Exception as e:
         err = traceback.format_exc()
-        current_app.logger.error(f"❌ Error en /registros/graficos: {e}\n{err}")
+        app.logger.error(f"❌ Error en /registros/graficos: {e}\n{err}")
         return jsonify({
             "error": "Error interno del servidor",
             "detalle": str(e)
