@@ -1,1021 +1,1436 @@
-import React, { useEffect, useMemo, useState } from "react";
-import Swal from "sweetalert2";
-import Select, { components } from "react-select";
-import GraficoCantidadGanadas from "./GraficoCantidadGanadas";
-import GraficoActivasCerradas from "./GraficoActivasCerradas";
-import ResumenCalificacion from "./ResumenCalificacion";
-import "./DashboardOportunidades.css";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import Modal from "react-modal";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+  Legend,
+} from "recharts";
 import { jfetch } from "./lib/api";
-import ModalWinRate from "./ModalWinRate";
+import "./ProyectosHorasDashboard.css";
 
-/* ===================== React-Select styles ===================== */
-const rsStyles = {
-  control: (base, state) => ({
-    ...base,
-    minHeight: 38,
-    borderRadius: 10,
-    borderColor: state.isFocused ? "#cbd5e1" : "#e2e8f0",
-    boxShadow: state.isFocused ? "0 0 0 3px rgba(148,163,184,.25)" : "none",
-    ":hover": { borderColor: "#cbd5e1" },
-    fontSize: 13,
-  }),
-  valueContainer: (base) => ({ ...base, padding: "0 10px" }),
-  multiValue: (base) => ({ ...base, borderRadius: 999 }),
-  multiValueLabel: (base) => ({ ...base, fontWeight: 800, fontSize: 12 }),
-  placeholder: (base) => ({ ...base, color: "#64748b", fontWeight: 700 }),
-  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-  menu: (base) => ({ ...base, zIndex: 9999 }),
-  option: (base) => ({ ...base, display: "flex", alignItems: "center", gap: 10 }),
-};
-
-const portalTarget = typeof document !== "undefined" ? document.body : null;
-
-function CheckboxOption(props) {
-  const selected = props.isSelected;
-  const disabled = props.isDisabled;
-  return (
-    <components.Option {...props}>
-      <span className={`rs-check ${selected ? "is-on" : ""} ${disabled ? "is-disabled" : ""}`}>
-        {selected ? "✓" : ""}
-      </span>
-      <span className="rs-label">{props.label}</span>
-    </components.Option>
-  );
+if (typeof document !== "undefined") {
+  const rootEl = document.querySelector("#root");
+  if (rootEl) {
+    Modal.setAppElement(rootEl);
+  }
 }
 
-/* ===================== Normalizadores de texto ===================== */
-function normKeyForMatch(v) {
-  let s = String(v ?? "")
-    .replace(/\u00A0/g, " ")
+/* =========================
+   Helpers
+========================= */
+const toNum = (v) => {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const toArrayResponse = (json) => {
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.items)) return json.items;
+  if (Array.isArray(json?.data)) return json.data;
+  return [];
+};
+
+const asBool = (v) => {
+  const s = String(v ?? "").trim().toLowerCase();
+  return v === true || v === 1 || s === "1" || s === "true";
+};
+
+const normalizeDateOnly = (value) => {
+  if (!value) return "";
+
+  if (typeof value === "string") {
+    if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+      return value.slice(0, 10);
+    }
+
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      const y = parsed.getFullYear();
+      const m = String(parsed.getMonth() + 1).padStart(2, "0");
+      const d = String(parsed.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    return "";
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    const d = String(value.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  return "";
+};
+
+const coincideMes = (fechaISO, mesYYYYMM) => {
+  if (!mesYYYYMM) return true;
+  const fecha = normalizeDateOnly(fechaISO);
+  if (!fecha) return false;
+  const [y, m] = mesYYYYMM.split("-");
+  return fecha.startsWith(`${y}-${m}`);
+};
+
+const monthToDateStart = (monthStr) => {
+  if (!monthStr) return "";
+  return `${monthStr}-01`;
+};
+
+const monthToDateEnd = (monthStr) => {
+  if (!monthStr) return "";
+  const [y, m] = monthStr.split("-").map(Number);
+  if (!y || !m) return "";
+  const lastDay = new Date(y, m, 0).getDate();
+  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+};
+
+const estaEnRangoFecha = (fechaISO, desde, hasta) => {
+  const fecha = normalizeDateOnly(fechaISO);
+  if (!fecha) return false;
+  if (desde && fecha < desde) return false;
+  if (hasta && fecha > hasta) return false;
+  return true;
+};
+
+const hasRangeActivo = (
+  tipoRango,
+  filtroRangoMesDesde,
+  filtroRangoMesHasta,
+  filtroFechaDesde,
+  filtroFechaHasta
+) => {
+  if (tipoRango === "mes") {
+    return !!(filtroRangoMesDesde || filtroRangoMesHasta);
+  }
+  return !!(filtroFechaDesde || filtroFechaHasta);
+};
+
+const cumpleFiltroFechaPrincipal = ({
+  fechaISO,
+  filtroMes,
+  rangoActivo,
+  rangoDesde,
+  rangoHasta,
+}) => {
+  if (rangoActivo) {
+    return estaEnRangoFecha(fechaISO, rangoDesde, rangoHasta);
+  }
+
+  if (filtroMes) {
+    return coincideMes(fechaISO, filtroMes);
+  }
+
+  return true;
+};
+
+const equipoOf = (r, fallback = "SIN EQUIPO") =>
+  String(r?.equipo || r?.equipoNormalizado || "").trim().toUpperCase() || fallback;
+
+const uniqueCount = (rows, keyFn) => {
+  const s = new Set();
+  for (const r of rows) {
+    const k = keyFn(r);
+    if (k) s.add(String(k));
+  }
+  return s.size;
+};
+
+const normTxt = (s) =>
+  String(s ?? "")
     .trim()
     .toUpperCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\p{Diacritic}/gu, "")
     .replace(/\s+/g, " ");
 
-  s = s.replace(/\b0TP\b/g, "OTP").replace(/\b0TE\b/g, "OTE").replace(/\b0TL\b/g, "OTL");
+const cleanProjectInput = (v) => {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  const up = s.toUpperCase();
+  if (up === "0" || up === "NA" || up === "N/A") return "";
   return s;
-}
-
-function displayLabel(v) {
-  return String(v ?? "")
-    .replace(/\u00A0/g, " ")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, " ");
-}
-
-/* ===================== Exclusiones (no deben salir en tablas/pivots) ===================== */
-const EXCLUDE_SET = new Set(
-  [
-    "OTP",
-    "OTE",
-    "OTL",
-    "PROSPECCION",
-    "REGISTRO",
-    "PENDIENTE APROBACION SAP",
-    "0TP",
-    "0TE",
-    "0TL",
-    "OT"
-  ].map(normKeyForMatch)
-);
-
-function isExcludedLabel(raw) {
-  const k = normKeyForMatch(raw);
-  if (!k) return false;
-  if (EXCLUDE_SET.has(k)) return true;
-
-  for (const x of EXCLUDE_SET) {
-    if (k.includes(x)) return true;
-  }
-  return false;
-}
-
-/* ===================== Money helpers (SIN BigInt) ===================== */
-const nfMoney = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 });
-
-function toNumberSmart(v) {
-  if (v === null || v === undefined || v === "") return 0;
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-
-  let s = String(v).trim();
-  if (!s) return 0;
-
-  // limpia moneda/espacios/%/COP
-  s = s
-    .replace(/\u00A0/g, " ")
-    .replace(/\s/g, "")
-    .replace(/COP/gi, "")
-    .replace(/[$€£]/g, "")
-    .replace(/%/g, "");
-
-  if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s)) {
-    const n = Number(s);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  const commaCount = (s.match(/,/g) || []).length;
-  const dotCount = (s.match(/\./g) || []).length;
-
-  const lastComma = s.lastIndexOf(",");
-  const lastDot = s.lastIndexOf(".");
-
-  if (commaCount > 0 && dotCount > 0) {
-    const decimalSep = lastComma > lastDot ? "," : ".";
-    const thousandSep = decimalSep === "," ? "." : ",";
-
-    s = s.split(thousandSep).join("");
-    if (decimalSep === ",") s = s.replace(",", ".");
-  } else if (commaCount > 0 && dotCount === 0) {
-    if (commaCount === 1) {
-      const after = s.slice(lastComma + 1);
-      const before = s.slice(0, lastComma).replace(/^[+-]/, "");
-      if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
-      else s = s.replace(",", ".");
-    } else {
-      s = s.replace(/,/g, "");
-    }
-  } else if (dotCount > 0 && commaCount === 0) {
-    if (dotCount === 1) {
-      const after = s.slice(lastDot + 1);
-      const before = s.slice(0, lastDot).replace(/^[+-]/, "");
-
-      if (after.length === 3 && before.length <= 3) {
-        s = s.replace(".", "");
-      }
-    } else {
-      const parts = s.split(".");
-      const last = parts[parts.length - 1];
-      const mid = parts.slice(1, -1);
-
-      const midAll3 = mid.every((p) => p.length === 3);
-      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3;
-      const looksLikeGrouped = midAll3 && firstOk;
-
-      if (looksLikeGrouped && last.length !== 3) {
-        const intPart = parts.slice(0, -1).join("");
-        s = intPart + "." + last;
-      } else {
-        s = s.replace(/\./g, "");
-      }
-    }
-  }
-
-  s = s.replace(/[^\d.+-eE]/g, "");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function fmtMoney(n) {
-  return nfMoney.format(n || 0);
-}
-
-function readMoney(row, keys) {
-  for (const k of keys) {
-    const v = row?.[k];
-    if (v !== null && v !== undefined && String(v).trim() !== "") return toNumberSmart(v);
-  }
-  return 0;
-}
-
-/* ===================== Pivot helpers ===================== */
-function sumPivotRows(rows) {
-  return (rows || []).reduce(
-    (acc, r) => {
-      acc.count += r.count || 0;
-      acc.otc += r.otc || 0;
-      acc.mrc += r.mrc || 0;
-      return acc;
-    },
-    { count: 0, otc: 0, mrc: 0 }
-  );
-}
-
-function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {}) {
-  const m = new Map();
-
-  (Array.isArray(rows) ? rows : []).forEach((r) => {
-    const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
-    if (skipBlank && !raw) return;
-
-    const key = normKeyForMatch(raw);
-    if (!key) return;
-
-    if (excludeKeyFn && excludeKeyFn(key, raw, r)) return;
-
-    const prev = m.get(key) || { label: displayLabel(raw), count: 0, otc: 0, mrc: 0 };
-
-    prev.count += 1;
-
-    prev.otc += readMoney(r, ["otc", "otr", "OTC", "OTR"]);
-    prev.mrc += readMoney(r, ["mrc", "MRC"]);
-
-    m.set(key, prev);
-  });
-
-  const pivotRows = Array.from(m.values()).sort((a, b) => b.count - a.count);
-  return { rows: pivotRows };
-}
-
-/* ===================== filtros/query ===================== */
-function toOptions(arr) {
-  return (Array.isArray(arr) ? arr : [])
-    .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
-    .map((v) => ({ value: v, label: String(v) }));
-}
-
-function valuesOf(sel) {
-  return Array.isArray(sel) ? sel.map((o) => o.value) : [];
-}
-
-function toQuery(f) {
-  const p = new URLSearchParams();
-  const add = (k, arr) => (arr || []).forEach((v) => p.append(`${k}[]`, v));
-
-  add("anio", valuesOf(f.anios));
-  add("mes", valuesOf(f.meses));
-  add("tipo", valuesOf(f.tipos));
-
-  add("direccion_comercial", valuesOf(f.direccionComercial));
-  add("gerencia_comercial", valuesOf(f.gerenciaComercial));
-  add("nombre_cliente", valuesOf(f.cliente));
-
-  add("estado_oferta", valuesOf(f.estadoOferta));
-  add("resultado_oferta", valuesOf(f.resultadoOferta));
-
-  add("fecha_acta_cierre_ot", valuesOf(f.fechaActaCierreOT));
-  add("fecha_cierre_oportunidad", valuesOf(f.fechaCierreOportunidad));
-
-  add("estado_ot", valuesOf(f.estadoOT));
-  add("ultimo_mes", valuesOf(f.ultimoMes));
-  add("calificacion_oportunidad", valuesOf(f.calificacion));
-
-  const qs = p.toString();
-  return qs ? `?${qs}` : "";
-}
-
-function useDebouncedValue(value, delay = 350) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return debounced;
-}
-
-/* ===================== sets de KPIs ===================== */
-const ESTADOS_ACTIVOS_N = new Set(
-  [
-    "EN PROCESO",
-    "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
-    "EN ELABORACION",
-    "ENTREGA COMERCIAL",
-    "EN ESPERA DEL RFI / RFP",
-    "RFI PRESENTADO",
-    "SUSPENDIDA",
-  ].map(normKeyForMatch)
-);
-
-const ESTADOS_CERRADOS_N = new Set(
-  [
-    "GANADA",
-    "PERDIDA",
-    "DECLINADA",
-    "PERDIDA - SIN FEEDBACK",
-    "RFP PRESENTADO",
-  ].map(normKeyForMatch)
-);
-
-const ESTADO_RESULTADO_FORZADO = {
-  "EN ESPERA DEL RFI / RFP": "EN ESPERA DEL CLIENTE",
-  "RFI PRESENTADO": "EN ESPERA DEL CLIENTE",
-  "SUSPENDIDA": "EN ESPERA DEL CLIENTE",
 };
 
-const ESTADOS_TOTAL_KPI_N = new Set([...ESTADOS_ACTIVOS_N, ...ESTADOS_CERRADOS_N]);
+const getHorasRegistro = (r) =>
+  toNum(
+    r?.horasNum ??
+      r?.total_horas ??
+      r?.totalHoras ??
+      r?.tiempoInvertido ??
+      r?.tiempo_invertido ??
+      0
+  );
 
-function buildEstadoBreakdown(rows, allowedStates) {
-  const map = new Map();
+const buildProyectoLabel = (p) => {
+  const codigo = String(p?.codigo || "").trim();
+  const nombre = String(p?.nombre || "").trim();
 
-  for (const op of Array.isArray(rows) ? rows : []) {
-    const raw = op?.estado_oferta ?? "";
-    if (isExcludedLabel(raw)) continue;
+  if (codigo && nombre) return `${codigo} - ${nombre}`;
+  if (codigo) return codigo;
+  if (nombre) return nombre;
+  return "SIN PROYECTO";
+};
 
-    const estadoN = normKeyForMatch(raw);
-    if (allowedStates && !allowedStates.has(estadoN)) continue;
+const groupSum = (rows, keyFn, labelFn) => {
+  const acc = new Map();
 
-    const prev = map.get(estadoN) || {
-      key: estadoN,
-      label: displayLabel(raw),
-      count: 0,
+  for (const r of rows) {
+    const key = String(keyFn(r) || "SIN_PROYECTO");
+    const label = String(labelFn(r) || "SIN PROYECTO");
+
+    const prev = acc.get(key) || {
+      key,
+      name: label,
+      horas: 0,
     };
 
-    prev.count += 1;
-    map.set(estadoN, prev);
+    prev.horas += getHorasRegistro(r);
+    acc.set(key, prev);
   }
 
-  return Array.from(map.values()).sort(
-    (a, b) =>
-      b.count - a.count ||
-      a.label.localeCompare(b.label, "es", { sensitivity: "base" })
+  return Array.from(acc.values())
+    .map((x) => ({
+      ...x,
+      horas: +x.horas.toFixed(2),
+    }))
+    .sort((a, b) => b.horas - a.horas);
+};
+
+const recordMatchesSelfScope = (r, usuario, nombreUser, equipoUser) => {
+  if (equipoUser && equipoOf(r) !== equipoUser) return false;
+
+  const userLogin = String(usuario || "").trim().toLowerCase();
+  const rowLogin = String(r?.usuario_consultor || r?.usuario || "")
+    .trim()
+    .toLowerCase();
+
+  if (userLogin && rowLogin) {
+    return userLogin === rowLogin;
+  }
+
+  const userName = normTxt(nombreUser);
+  const rowName = normTxt(r?.consultor || r?.consultorNormalizado || "");
+
+  if (userName && rowName) {
+    return userName === rowName;
+  }
+
+  return true;
+};
+
+/* =========================
+   Tick custom: WRAP en YAxis
+========================= */
+function YAxisTickWrap(props) {
+  const { x, y, payload, width = 420 } = props;
+  const text = String(payload?.value ?? "");
+
+  const maxCharsPerLine = Math.max(18, Math.floor(width / 10));
+  const maxLines = 3;
+
+  const words = text.split(" ");
+  const lines = [];
+  let line = "";
+
+  for (const w of words) {
+    const test = line ? `${line} ${w}` : w;
+    if (test.length <= maxCharsPerLine) {
+      line = test;
+    } else {
+      if (line) lines.push(line);
+      line = w;
+      if (lines.length >= maxLines - 1) break;
+    }
+  }
+
+  if (line && lines.length < maxLines) lines.push(line);
+
+  const joined = lines.join(" ");
+  const wasCut = joined.length < text.length;
+  if (wasCut && lines.length) {
+    lines[lines.length - 1] = `${lines[lines.length - 1].replace(/\s*$/, "")}…`;
+  }
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <title>{text}</title>
+      <text
+        x={0}
+        y={0}
+        dy={4}
+        textAnchor="end"
+        fill="#475569"
+        fontSize={12}
+        fontWeight={700}
+      >
+        {lines.map((ln, i) => (
+          <tspan key={i} x={0} dy={i === 0 ? 0 : 14}>
+            {ln}
+          </tspan>
+        ))}
+      </text>
+    </g>
   );
 }
 
-/* ===================== Observaciones: separar por fechas ===================== */
-const OBS_DATE_TOKEN = /(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})/g;
+/* =========================
+   MultiFiltro
+========================= */
+function MultiFiltro({
+  titulo,
+  opciones,
+  seleccion,
+  onChange,
+  placeholder = "Todos",
+  disabled = false,
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [openUp, setOpenUp] = useState(false);
+  const ref = useRef(null);
 
-function normObsText(v) {
-  return String(v ?? "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/\u00A0/g, " ")
-    .trim();
-}
+  useEffect(() => {
+    if (!open) return;
 
-function splitObservacionesByDate(raw) {
-  const text = normObsText(raw);
-  if (!text) return [];
+    const calcPosition = () => {
+      const el = ref.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const estimatedDropdownHeight = 340;
+      setOpenUp(spaceBelow < estimatedDropdownHeight && rect.top > estimatedDropdownHeight / 2);
+    };
 
-  const prepared = text.replace(OBS_DATE_TOKEN, "\n$1");
+    calcPosition();
+    window.addEventListener("resize", calcPosition);
+    window.addEventListener("scroll", calcPosition, true);
 
-  const lines = prepared
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
 
-  const out = [];
-  for (const line of lines) {
-    const m = line.match(
-      /^(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*(.*)$/
-    );
-    if (m) {
-      out.push({ date: m[1], text: (m[2] || "").trim() || "-" });
-    } else {
-      out.push({ date: null, text: line });
-    }
-  }
+    document.addEventListener("mousedown", handler);
 
-  // Si hay líneas sin fecha después de una fechada, se pegan como continuación
-  const merged = [];
-  for (const it of out) {
-    const last = merged[merged.length - 1];
-    if (!it.date && last && last.date) {
-      last.text = `${last.text}\n${it.text}`.trim();
-    } else {
-      merged.push({ ...it });
-    }
-  }
+    return () => {
+      window.removeEventListener("resize", calcPosition);
+      window.removeEventListener("scroll", calcPosition, true);
+      document.removeEventListener("mousedown", handler);
+    };
+  }, [open]);
 
-  return merged;
-}
+  const toggleValue = (val) => {
+    if (disabled) return;
+    const exists = seleccion.includes(val);
+    const next = exists ? seleccion.filter((v) => v !== val) : [...seleccion, val];
+    onChange(next);
+  };
 
-function renderObservacionesCell(value) {
-  const items = splitObservacionesByDate(value);
-  if (!items.length) return "-";
+  const lower = search.toLowerCase();
+  const filtered = (opciones || []).filter((o) =>
+    String(o || "").toLowerCase().includes(lower)
+  );
+
+  const showPlaceholder = seleccion.length === 0;
 
   return (
-    <div className="obs-box">
-      {items.map((it, idx) => (
-        <div key={idx} className={`obs-item ${it.date ? "has-date" : "no-date"}`}>
-          <div className="obs-date">{it.date ? it.date : "SIN FECHA"}</div>
-          <div className="obs-text">
-            {it.text.split("\n").map((p, i) => (
-              <div key={i}>{p}</div>
+    <div
+      className={
+        "phd-mf" +
+        (open ? " is-layer-open" : "") +
+        (openUp ? " is-open-up" : "")
+      }
+      ref={ref}
+    >
+      <span className="phd-mf-label">{titulo}</span>
+
+      <button
+        type="button"
+        className={
+          "phd-mf-control" +
+          (open ? " is-open" : "") +
+          (disabled ? " is-disabled" : "")
+        }
+        onClick={() => {
+          if (!disabled) setOpen((o) => !o);
+        }}
+      >
+        {showPlaceholder ? (
+          <span className="phd-mf-placeholder">{placeholder}</span>
+        ) : (
+          <div className="phd-mf-chips">
+            {seleccion.map((val) => (
+              <span key={val} className="phd-mf-chip">
+                <span>{val}</span>
+                {!disabled && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChange(seleccion.filter((v) => v !== val));
+                    }}
+                    aria-label={`Quitar ${val}`}
+                  >
+                    ✕
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+        <span className="phd-mf-arrow">▾</span>
+      </button>
+
+      {open && !disabled && (
+        <div className="phd-mf-dropdown" onClick={(e) => e.stopPropagation()}>
+          <div className="phd-mf-search">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar..."
+            />
+          </div>
+          <div className="phd-mf-options">
+            {filtered.length === 0 && <div className="phd-mf-empty">Sin resultados</div>}
+            {filtered.map((val) => (
+              <label key={val} className="phd-mf-option">
+                <input
+                  type="checkbox"
+                  checked={seleccion.includes(val)}
+                  onChange={() => toggleValue(val)}
+                />
+                <span>{val}</span>
+              </label>
             ))}
           </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
 
-/* ===================== Component ===================== */
-export default function DashboardOportunidades() {
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState([]);
-  const [openWinRateModal, setOpenWinRateModal] = useState(false);
+/* =========================
+   Componente principal
+========================= */
+export default function ProyectosHorasDashboard({
+  userData,
+  defaultMonth = "",
+  registrosOverride = null,
+}) {
+  const initialMonth = useMemo(() => defaultMonth || "", [defaultMonth]);
 
-  const [filtros, setFiltros] = useState({
-    anios: [],
-    meses: [],
-    tipos: [],
-    direccionComercial: [],
-    gerenciaComercial: [],
-    cliente: [],
-    estadoOferta: [],
-    resultadoOferta: [],
-    fechaActaCierreOT: [],
-    fechaCierreOportunidad: [],
-    estadoOT: [],
-    ultimoMes: [],
-    calificacion: [],
-  });
+  const [registros, setRegistros] = useState([]);
+  const [error, setError] = useState("");
+  const [proyectos, setProyectos] = useState([]);
+  const [mapeosProyecto, setMapeosProyecto] = useState([]);
+  const [loadingMain, setLoadingMain] = useState(false);
 
-  const [opciones, setOpciones] = useState({
-    anios: [],
-    meses: [],
-    tipos: [],
-    direccionComercial: [],
-    gerenciaComercial: [],
-    cliente: [],
-    estadoOferta: [],
-    resultadoOferta: [],
-    fechaActaCierreOT: [],
-    fechaCierreOportunidad: [],
-    estadoOT: [],
-    ultimoMes: [],
-    calificacion: [],
-  });
+  const [filtroMes, setFiltroMes] = useState(initialMonth);
 
-  const filtrosDebounced = useDebouncedValue(filtros, 400);
+  const [tipoRango, setTipoRango] = useState("mes");
+  const [filtroRangoMesDesde, setFiltroRangoMesDesde] = useState("");
+  const [filtroRangoMesHasta, setFiltroRangoMesHasta] = useState("");
+  const [filtroFechaDesde, setFiltroFechaDesde] = useState("");
+  const [filtroFechaHasta, setFiltroFechaHasta] = useState("");
 
-  const dataBase = useMemo(() => (Array.isArray(data) ? data : []), [data]);
+  const [filtroEquipo, setFiltroEquipo] = useState([]);
+  const [filtroConsultor, setFiltroConsultor] = useState([]);
+  const [filtroModulo, setFiltroModulo] = useState([]);
+  const [filtroOcupacion, setFiltroOcupacion] = useState([]);
+  const [filtroTarea, setFiltroTarea] = useState([]);
+  const [filtroProyecto, setFiltroProyecto] = useState([]);
 
-  const dataFiltrada = useMemo(() => {
-    return dataBase.filter(
-      (op) => !isExcludedLabel(op?.estado_oferta ?? "") && !isExcludedLabel(op?.resultado_oferta ?? "")
-    );
-  }, [dataBase]);
+  const [detailTitle, setDetailTitle] = useState("");
+  const [detailRows, setDetailRows] = useState([]);
+  const [detailOpen, setDetailOpen] = useState(false);
 
-  function normalizeOportunidadRow(row) {
-    const estado = displayLabel(row?.estado_oferta ?? "");
-    const resultadoOriginal = displayLabel(row?.resultado_oferta ?? "");
-    const resultadoForzado = ESTADO_RESULTADO_FORZADO[estado];
+  const abortMainRef = useRef(null);
 
-    return {
-      ...row,
-      estado_oferta: estado || row?.estado_oferta || "",
-      resultado_oferta: resultadoForzado || resultadoOriginal || row?.resultado_oferta || "",
-    };
-  }
-
-  function mergeOptions(base, extras) {
-    const map = new Map();
-
-    [...(base || []), ...(extras || []).map((v) => ({ value: v, label: v }))].forEach((opt) => {
-      const key = String(opt?.value ?? "").trim();
-      if (!key) return;
-      if (!map.has(key)) {
-        map.set(key, { value: key, label: String(opt?.label ?? key) });
-      }
-    });
-
-    return Array.from(map.values()).sort((a, b) =>
-      a.label.localeCompare(b.label, "es", { sensitivity: "base" })
-    );
-  }
-
-  const fetchFilters = async () => {
-    const res = await jfetch(`/oportunidades/filters`);
-    if (!res.ok) throw new Error("filters");
-    const json = await res.json();
-
-    setOpciones({
-      anios: toOptions(json.anios),
-      meses: toOptions(json.meses),
-      tipos: toOptions(json.tipos),
-      direccionComercial: toOptions(json.direccion_comercial),
-      gerenciaComercial: toOptions(json.gerencia_comercial),
-      cliente: toOptions(json.nombre_cliente),
-      estadoOferta: mergeOptions(toOptions(json.estado_oferta), [
-        "EN ESPERA DEL RFI / RFP",
-        "RFI PRESENTADO",
-        "SUSPENDIDA",
-      ]),
-      resultadoOferta: mergeOptions(toOptions(json.resultado_oferta), [
-        "EN ESPERA DEL CLIENTE",
-      ]),
-      fechaActaCierreOT: toOptions(json.fecha_acta_cierre_ot),
-      fechaCierreOportunidad: toOptions(json.fecha_cierre_oportunidad),
-      estadoOT: toOptions(json.estado_ot),
-      ultimoMes: toOptions(json.ultimo_mes),
-      calificacion: toOptions(json.calificacion_oportunidad),
-    });
-  };
-
-  const fetchData = async (current) => {
-    setLoading(true);
+  const user = useMemo(() => {
+    if (userData) return userData?.user ? userData.user : userData;
     try {
-      const res = await jfetch(`/oportunidades${toQuery(current)}`);
-      if (!res.ok) throw new Error("data");
-      const json = await res.json();
-
-      const rows = Array.isArray(json)
-        ? json.map(normalizeOportunidadRow)
-        : [];
-
-      setData(rows);
-    } catch (e) {
-      Swal.fire("Error", "No se pudo consultar oportunidades", "error");
-      setData([]);
-    } finally {
-      setLoading(false);
+      return (
+        JSON.parse(localStorage.getItem("userData") || "null") ||
+        JSON.parse(localStorage.getItem("user") || "null") ||
+        {}
+      );
+    } catch {
+      return {};
     }
-  };
+  }, [userData]);
+
+  const rolUpper = String(user?.rol || user?.user?.rol || "").toUpperCase();
+  const equipoUser = String(user?.equipo || user?.user?.equipo || "").toUpperCase();
+  const usuario = String(user?.usuario || user?.user?.usuario || "").trim();
+  const nombreUser = String(user?.nombre || user?.user?.nombre || "").trim();
+
+  const ADMIN_ALL_ROLES = new Set(["ADMIN", "ADMIN_GERENTES"]);
+  const isAdminAll = ADMIN_ALL_ROLES.has(rolUpper);
+  const isAdminTeam = !isAdminAll && rolUpper.startsWith("ADMIN_") && !!equipoUser;
+  const scope = isAdminAll ? "ALL" : isAdminTeam ? "TEAM" : "SELF";
+
+  const initFiltrosPorScope = useCallback(() => {
+    if (scope === "SELF") {
+      setFiltroConsultor(nombreUser ? [nombreUser] : []);
+      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+    } else if (scope === "TEAM") {
+      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+      setFiltroConsultor([]);
+    } else {
+      setFiltroEquipo([]);
+      setFiltroConsultor([]);
+    }
+  }, [scope, nombreUser, equipoUser]);
 
   useEffect(() => {
-    (async () => {
+    initFiltrosPorScope();
+  }, [initFiltrosPorScope]);
+
+  const rangoDesde = useMemo(() => {
+    if (tipoRango === "mes") return monthToDateStart(filtroRangoMesDesde);
+    return filtroFechaDesde || "";
+  }, [tipoRango, filtroRangoMesDesde, filtroFechaDesde]);
+
+  const rangoHasta = useMemo(() => {
+    if (tipoRango === "mes") return monthToDateEnd(filtroRangoMesHasta);
+    return filtroFechaHasta || "";
+  }, [tipoRango, filtroRangoMesHasta, filtroFechaHasta]);
+
+  const rangoActivo = useMemo(() => {
+    return hasRangeActivo(
+      tipoRango,
+      filtroRangoMesDesde,
+      filtroRangoMesHasta,
+      filtroFechaDesde,
+      filtroFechaHasta
+    );
+  }, [
+    tipoRango,
+    filtroRangoMesDesde,
+    filtroRangoMesHasta,
+    filtroFechaDesde,
+    filtroFechaHasta,
+  ]);
+
+  useEffect(() => {
+    const fetchCatalogosProyecto = async () => {
       try {
-        await fetchFilters();
-        await fetchData(filtros);
+        const [resProyectos, resMapeos] = await Promise.all([
+          jfetch("/proyectos?include_modulos=0&include_fases=0"),
+          jfetch("/proyecto-mapeos"),
+        ]);
+
+        const [jsonProyectos, jsonMapeos] = await Promise.all([
+          resProyectos.json().catch(() => []),
+          resMapeos.json().catch(() => []),
+        ]);
+
+        if (!resProyectos.ok) {
+          throw new Error(jsonProyectos?.mensaje || `HTTP ${resProyectos.status}`);
+        }
+        if (!resMapeos.ok) {
+          throw new Error(jsonMapeos?.mensaje || `HTTP ${resMapeos.status}`);
+        }
+
+        setProyectos(
+          toArrayResponse(jsonProyectos).map((p) => ({
+            ...p,
+            activo: asBool(p?.activo),
+          }))
+        );
+
+        setMapeosProyecto(
+          toArrayResponse(jsonMapeos).map((m) => ({
+            ...m,
+            activo: asBool(m?.activo),
+          }))
+        );
       } catch (e) {
-        Swal.fire("Error", "No se pudo inicializar", "error");
+        console.error("Error cargando catálogo de proyectos:", e);
+        setProyectos([]);
+        setMapeosProyecto([]);
       }
-    })();
+    };
+
+    fetchCatalogosProyecto();
   }, []);
 
   useEffect(() => {
-    (async () => {
+    setFiltroMes(defaultMonth || "");
+  }, [defaultMonth]);
+
+  const proyectosByCodigo = useMemo(() => {
+    const map = new Map();
+
+    (proyectos || []).forEach((p) => {
+      const codigo = normTxt(p?.codigo);
+      if (!codigo) return;
+      map.set(codigo, p);
+    });
+
+    return map;
+  }, [proyectos]);
+
+  const proyectosById = useMemo(() => {
+    const map = new Map();
+
+    (proyectos || []).forEach((p) => {
+      const id = Number(p?.id);
+      if (!id) return;
+      map.set(id, p);
+    });
+
+    return map;
+  }, [proyectos]);
+
+  const proyectoLabelToId = useMemo(() => {
+    const map = new Map();
+
+    (proyectos || []).forEach((p) => {
+      const label = buildProyectoLabel(p);
+      const id = Number(p?.id);
+
+      if (label && Number.isFinite(id) && id > 0) {
+        map.set(label, id);
+      }
+    });
+
+    return map;
+  }, [proyectos]);
+
+  const mapeosProyectoPreparados = useMemo(() => {
+    const exactMap = new Map();
+    const containsRules = [];
+    const regexRules = [];
+
+    (mapeosProyecto || []).forEach((m) => {
+      if (!asBool(m?.activo)) return;
+
+      const proyecto = proyectosById.get(Number(m.proyecto_id));
+      if (!proyecto) return;
+
+      const valor = normTxt(m.valor_origen);
+      const tipo = String(m.tipo_match || "EXACT").toUpperCase();
+
+      if (!valor) return;
+
+      if (tipo === "EXACT") {
+        exactMap.set(valor, proyecto);
+      } else if (tipo === "CONTAINS") {
+        containsRules.push({ valor, proyecto });
+      } else if (tipo === "REGEX") {
+        try {
+          regexRules.push({
+            regex: new RegExp(String(m.valor_origen), "i"),
+            proyecto,
+          });
+        } catch {
+          // ignorar regex inválido
+        }
+      }
+    });
+
+    containsRules.sort((a, b) => b.valor.length - a.valor.length);
+
+    return { exactMap, containsRules, regexRules };
+  }, [mapeosProyecto, proyectosById]);
+
+  const fetchGraficos = useCallback(async () => {
+    if (Array.isArray(registrosOverride)) {
+      setError("");
+      setRegistros(registrosOverride);
+      return;
+    }
+
+    if (!usuario) return;
+
+    if (abortMainRef.current) {
       try {
-        await fetchData(filtrosDebounced);
-      } catch (e) {}
-    })();
-  }, [filtrosDebounced]);
-
-  const tablaEstadoOferta = useMemo(() => {
-    return buildPivot(dataBase, "estado_oferta", { excludeKeyFn: (_key, raw) => isExcludedLabel(raw) });
-  }, [dataBase]);
-
-  const totEstadoOferta = useMemo(() => sumPivotRows(tablaEstadoOferta.rows), [tablaEstadoOferta.rows]);
-
-  const tablaResultadoOferta = useMemo(() => {
-    return buildPivot(dataBase, "resultado_oferta", {
-      excludeKeyFn: (_key, raw, row) => isExcludedLabel(row?.estado_oferta ?? "") || isExcludedLabel(raw),
-    });
-  }, [dataBase]);
-
-  const totResultadoOferta = useMemo(() => sumPivotRows(tablaResultadoOferta.rows), [tablaResultadoOferta.rows]);
-
-  const kpis = useMemo(() => {
-    const rows = Array.isArray(dataBase) ? dataBase : [];
-    let activas = 0;
-    let cerradas = 0;
-    let ganadas = 0;
-
-    const GANADA_N = normKeyForMatch("GANADA");
-
-    for (const op of rows) {
-      const estadoRaw = op?.estado_oferta ?? "";
-      if (isExcludedLabel(estadoRaw)) continue;
-
-      const estadoN = normKeyForMatch(estadoRaw);
-
-      if (ESTADOS_ACTIVOS_N.has(estadoN)) activas++;
-      else if (ESTADOS_CERRADOS_N.has(estadoN)) cerradas++;
-
-      if (estadoN === GANADA_N) ganadas++;
+        abortMainRef.current.abort();
+      } catch {}
     }
 
-    const total = activas + cerradas;
+    const controller = new AbortController();
+    abortMainRef.current = controller;
 
-    return {
-      total,
-      activas,
-      cerradas,
-      ganadas,
-      porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
+    setLoadingMain(true);
+    setError("");
+
+    try {
+      const params = new URLSearchParams();
+
+      if (rangoActivo) {
+        if (rangoDesde) params.set("desde", rangoDesde);
+        if (rangoHasta) params.set("hasta", rangoHasta);
+      } else if (filtroMes) {
+        params.set("mes", filtroMes);
+      }
+
+      if (scope === "ALL" && filtroEquipo.length === 1) {
+        params.set("equipo", filtroEquipo[0]);
+      }
+
+      if (scope !== "SELF" && filtroConsultor.length === 1) {
+        params.set("consultor", filtroConsultor[0]);
+      }
+
+      if (filtroModulo.length === 1) {
+        params.set("modulo", filtroModulo[0]);
+      }
+
+      if (filtroProyecto.length === 1) {
+        const proyectoId = proyectoLabelToId.get(filtroProyecto[0]);
+        if (proyectoId) {
+          params.set("proyecto_id", String(proyectoId));
+        }
+      }
+
+      const qs = params.toString();
+      const url = qs ? `/registros/graficos?${qs}` : "/registros/graficos";
+
+      const res = await jfetch(url, {
+        method: "GET",
+        signal: controller.signal,
+        headers: {
+          "X-User-Rol": rolUpper,
+          "X-User-Usuario": usuario,
+          "X-User-Equipo": equipoUser,
+        },
+      });
+
+      const json = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(json?.mensaje || json?.error || `HTTP ${res.status}`);
+
+      setRegistros(toArrayResponse(json));
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      setRegistros([]);
+      setError(String(e?.message || e));
+    } finally {
+      setLoadingMain(false);
+    }
+  }, [
+    registrosOverride,
+    usuario,
+    rolUpper,
+    equipoUser,
+    filtroMes,
+    rangoActivo,
+    rangoDesde,
+    rangoHasta,
+    filtroEquipo,
+    filtroConsultor,
+    filtroModulo,
+    filtroProyecto,
+    proyectoLabelToId,
+    scope,
+  ]);
+
+  useEffect(() => {
+    fetchGraficos();
+
+    return () => {
+      if (abortMainRef.current) {
+        try {
+          abortMainRef.current.abort();
+        } catch {}
+      }
     };
-  }, [dataBase]);
+  }, [fetchGraficos]);
 
-  const kpiEstadosInfo = useMemo(() => {
-    return {
-      total: buildEstadoBreakdown(dataBase, ESTADOS_TOTAL_KPI_N),
-      activas: buildEstadoBreakdown(dataBase, ESTADOS_ACTIVOS_N),
-      cerradas: buildEstadoBreakdown(dataBase, ESTADOS_CERRADOS_N),
-    };
-  }, [dataBase]);
+  const resolveProyecto = useCallback(
+    (r) => {
+      const pid = Number(r?.proyecto_id || r?.proyecto?.id || 0);
+      if (pid && proyectosById.has(pid)) {
+        return proyectosById.get(pid);
+      }
 
-  const limpiar = () => {
-    setFiltros({
-      anios: [],
-      meses: [],
-      tipos: [],
-      direccionComercial: [],
-      gerenciaComercial: [],
-      cliente: [],
-      estadoOferta: [],
-      resultadoOferta: [],
-      fechaActaCierreOT: [],
-      fechaCierreOportunidad: [],
-      estadoOT: [],
-      ultimoMes: [],
-      calificacion: [],
-    });
-  };
+      const codigoDirecto = normTxt(r?.proyecto_codigo || r?.proyecto?.codigo || "");
+      if (codigoDirecto && proyectosByCodigo.has(codigoDirecto)) {
+        return proyectosByCodigo.get(codigoDirecto);
+      }
 
-  const selectCommon = {
-    isMulti: true,
-    closeMenuOnSelect: false,
-    hideSelectedOptions: false,
-    styles: rsStyles,
-    menuPortalTarget: portalTarget,
-    getOptionValue: (o) => String(o.value),
-    getOptionLabel: (o) => String(o.label),
-    components: { Option: CheckboxOption },
-    classNamePrefix: "rs",
-  };
+      const candidatos = [
+        cleanProjectInput(r?.proyecto_codigo),
+        cleanProjectInput(r?.proyecto?.codigo),
+        cleanProjectInput(r?.nroCasoCliente),
+        cleanProjectInput(r?.nro_caso_cliente),
+        cleanProjectInput(r?.descripcion),
+      ].filter(Boolean);
 
-  const dashboardBaseTitle = useMemo(() => {
-    const parts = [];
+      for (const raw of candidatos) {
+        const val = normTxt(raw);
+        if (!val) continue;
 
-    if (filtros.gerenciaComercial?.length) {
-      parts.push(`Gerencia: ${filtros.gerenciaComercial.map((x) => x.label).join(", ")}`);
-    } else if (filtros.direccionComercial?.length) {
-      parts.push(`Dirección: ${filtros.direccionComercial.map((x) => x.label).join(", ")}`);
-    } else {
-      parts.push("Base actual");
-    }
+        if (proyectosByCodigo.has(val)) {
+          return proyectosByCodigo.get(val);
+        }
 
-    if (filtros.cliente?.length) {
-      parts.push(`Cliente: ${filtros.cliente.map((x) => x.label).join(", ")}`);
-    }
+        if (mapeosProyectoPreparados.exactMap.has(val)) {
+          return mapeosProyectoPreparados.exactMap.get(val);
+        }
 
-    const periodo = [];
-    if (filtros.anios?.length) periodo.push(filtros.anios.map((x) => x.label).join(", "));
-    if (filtros.meses?.length) periodo.push(filtros.meses.map((x) => x.label).join(", "));
+        for (const rule of mapeosProyectoPreparados.containsRules) {
+          if (val.includes(rule.valor)) {
+            return rule.proyecto;
+          }
+        }
 
-    if (periodo.length) {
-      parts.push(`Periodo: ${periodo.join(" / ")}`);
-    }
+        for (const rule of mapeosProyectoPreparados.regexRules) {
+          if (rule.regex.test(String(raw))) {
+            return rule.proyecto;
+          }
+        }
+      }
 
-    return parts.join(" · ");
-  }, [filtros]);
-
-  const renderKpiTooltip = (titulo, items) => (
-    <div className="kpi-tooltip">
-      <div className="kpi-tooltip-title">{titulo}</div>
-
-      {items?.length ? (
-        <ul className="kpi-tooltip-list">
-          {items.map((it) => (
-            <li key={it.key} className="kpi-tooltip-item">
-              <span className="kpi-tooltip-state">{it.label}</span>
-              <strong className="kpi-tooltip-count">{it.count}</strong>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="kpi-tooltip-empty">Sin estados disponibles</div>
-      )}
-    </div>
+      return null;
+    },
+    [proyectosById, proyectosByCodigo, mapeosProyectoPreparados]
   );
 
-  return (
-    <div className="oport-dash-wrapper">
-      <div className="oport-topbar">
-        <div>
-          <h2 className="oport-dash-title">Consultorías y oportunidades comerciales CoE SAP</h2>
-          <div className="oport-dash-subtitle">KPIs, filtros y detalle consolidado</div>
+  const registrosEnriquecidos = useMemo(() => {
+    return (registros || []).map((r) => {
+      const proyectoResuelto = resolveProyecto(r);
+
+      const proyectoKey = proyectoResuelto ? `PROY_${proyectoResuelto.id}` : "SIN_PROYECTO";
+
+      const proyectoOficial = proyectoResuelto
+        ? buildProyectoLabel(proyectoResuelto)
+        : "SIN PROYECTO";
+
+      const proyectoDigitadoRaw = cleanProjectInput(
+        r?.proyecto_codigo ||
+          r?.proyecto?.codigo ||
+          r?.nroCasoCliente ||
+          r?.nro_caso_cliente
+      );
+
+      return {
+        ...r,
+        equipoNormalizado: equipoOf(r),
+        ocupacionNormalizada: String(
+          r?.ocupacion_nombre || r?.ocupacion || "SIN OCUPACIÓN"
+        ).trim(),
+        moduloNormalizado: String(r?.modulo || "—").trim(),
+        consultorNormalizado: String(r?.consultor || r?.usuario_consultor || "—").trim(),
+        tareaNormalizada: String(
+          r?.tipoTarea || r?.tipo_tarea || r?.tarea?.nombre || "—"
+        ).trim(),
+        proyectoKey,
+        proyectoOficial,
+        proyectoDigitado: proyectoDigitadoRaw || "",
+        horasNum: getHorasRegistro(r),
+      };
+    });
+  }, [registros, resolveProyecto]);
+
+  const equiposUnicos = useMemo(() => {
+    const set = new Set(
+      (registrosEnriquecidos ?? [])
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
+        .map((r) => r.equipoNormalizado)
+    );
+
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
+
+  const consultoresUnicos = useMemo(() => {
+    const set = new Set(
+      (registrosEnriquecidos ?? [])
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
+        .filter((r) => (scope !== "TEAM" ? true : !equipoUser || r.equipoNormalizado === equipoUser))
+        .map((r) => r.consultorNormalizado)
+    );
+
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta, scope, equipoUser]);
+
+  const modulosUnicos = useMemo(() => {
+    const set = new Set(
+      (registrosEnriquecidos ?? [])
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
+        .map((r) => r.moduloNormalizado)
+    );
+
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
+
+  const ocupacionesUnicas = useMemo(() => {
+    const set = new Set(
+      (registrosEnriquecidos ?? [])
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
+        .map((r) => r.ocupacionNormalizada)
+    );
+
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
+
+  const tareasUnicas = useMemo(() => {
+    const set = new Set(
+      (registrosEnriquecidos ?? [])
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
+        .map((r) => r.tareaNormalizada)
+    );
+
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
+
+  const proyectosUnicos = useMemo(() => {
+    const set = new Set(
+      (registrosEnriquecidos ?? [])
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
+        .map((r) => r.proyectoOficial)
+        .filter((x) => x && x !== "SIN PROYECTO")
+    );
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
+
+  const datosFiltrados = useMemo(() => {
+    return (registrosEnriquecidos ?? []).filter((r) => {
+      if (scope === "SELF") {
+        if (!recordMatchesSelfScope(r, usuario, nombreUser, equipoUser)) return false;
+      }
+
+      if (scope === "TEAM") {
+        if (equipoUser && r.equipoNormalizado !== equipoUser) return false;
+      }
+
+      if (
+        !cumpleFiltroFechaPrincipal({
+          fechaISO: r.fecha,
+          filtroMes,
+          rangoActivo,
+          rangoDesde,
+          rangoHasta,
+        })
+      ) {
+        return false;
+      }
+
+      if (filtroEquipo.length > 0 && !filtroEquipo.includes(r.equipoNormalizado)) return false;
+      if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultorNormalizado)) return false;
+      if (filtroModulo.length > 0 && !filtroModulo.includes(r.moduloNormalizado)) return false;
+      if (filtroOcupacion.length > 0 && !filtroOcupacion.includes(r.ocupacionNormalizada)) return false;
+      if (filtroTarea.length > 0 && !filtroTarea.includes(r.tareaNormalizada)) return false;
+      if (filtroProyecto.length > 0 && !filtroProyecto.includes(r.proyectoOficial)) return false;
+
+      return true;
+    });
+  }, [
+    registrosEnriquecidos,
+    filtroMes,
+    rangoActivo,
+    rangoDesde,
+    rangoHasta,
+    filtroEquipo,
+    filtroConsultor,
+    filtroModulo,
+    filtroOcupacion,
+    filtroTarea,
+    filtroProyecto,
+    scope,
+    usuario,
+    nombreUser,
+    equipoUser,
+  ]);
+
+  const horasPorProyecto = useMemo(
+    () =>
+      groupSum(
+        datosFiltrados,
+        (r) => r.proyectoKey,
+        (r) => r.proyectoOficial
+      ),
+    [datosFiltrados]
+  );
+
+  const horasPorModulo = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.moduloNormalizado, (r) => r.moduloNormalizado),
+    [datosFiltrados]
+  );
+
+  const horasPorConsultor = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.consultorNormalizado, (r) => r.consultorNormalizado),
+    [datosFiltrados]
+  );
+
+  const horasPorTarea = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.tareaNormalizada, (r) => r.tareaNormalizada),
+    [datosFiltrados]
+  );
+
+  const horasPorOcupacion = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.ocupacionNormalizada, (r) => r.ocupacionNormalizada),
+    [datosFiltrados]
+  );
+
+  const totalHoras = useMemo(
+    () => datosFiltrados.reduce((s, r) => s + r.horasNum, 0),
+    [datosFiltrados]
+  );
+
+  const totalProyectos = useMemo(
+    () =>
+      uniqueCount(
+        datosFiltrados.filter((r) => r.proyectoKey !== "SIN_PROYECTO"),
+        (r) => r.proyectoKey
+      ),
+    [datosFiltrados]
+  );
+
+  const totalConsultores = useMemo(
+    () => uniqueCount(datosFiltrados, (r) => r.consultorNormalizado),
+    [datosFiltrados]
+  );
+
+  const totalModulos = useMemo(
+    () => uniqueCount(datosFiltrados, (r) => r.moduloNormalizado),
+    [datosFiltrados]
+  );
+
+  const totalTareas = useMemo(
+    () => uniqueCount(datosFiltrados, (r) => r.tareaNormalizada),
+    [datosFiltrados]
+  );
+
+  const openDetail = useCallback(
+    (kind, value) => {
+      let rows = [];
+
+      if (kind === "proyecto") rows = datosFiltrados.filter((r) => r.proyectoKey === value);
+      if (kind === "modulo") rows = datosFiltrados.filter((r) => r.moduloNormalizado === value);
+      if (kind === "consultor") rows = datosFiltrados.filter((r) => r.consultorNormalizado === value);
+      if (kind === "tarea") rows = datosFiltrados.filter((r) => r.tareaNormalizada === value);
+      if (kind === "ocupacion") rows = datosFiltrados.filter((r) => r.ocupacionNormalizada === value);
+
+      rows = rows.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+      const subtotal = rows.reduce((s, r) => s + r.horasNum, 0);
+
+      const label =
+        kind === "proyecto"
+          ? rows[0]?.proyectoOficial || "SIN PROYECTO"
+          : value;
+
+      setDetailTitle(`${kind.toUpperCase()}: ${label} — Total: ${subtotal.toFixed(2)} h`);
+      setDetailRows(rows);
+      setDetailOpen(true);
+    },
+    [datosFiltrados]
+  );
+
+  const TOP = 20;
+  const topProyectos = useMemo(() => horasPorProyecto.slice(0, TOP), [horasPorProyecto]);
+
+  const limpiarFiltros = () => {
+    setFiltroMes(defaultMonth || "");
+    setTipoRango("mes");
+    setFiltroRangoMesDesde("");
+    setFiltroRangoMesHasta("");
+    setFiltroFechaDesde("");
+    setFiltroFechaHasta("");
+
+    setFiltroModulo([]);
+    setFiltroOcupacion([]);
+    setFiltroTarea([]);
+    setFiltroProyecto([]);
+
+    if (scope === "ALL") {
+      setFiltroEquipo([]);
+      setFiltroConsultor([]);
+    } else if (scope === "TEAM") {
+      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+      setFiltroConsultor([]);
+    } else {
+      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+      setFiltroConsultor(nombreUser ? [nombreUser] : []);
+    }
+  };
+
+  const renderChartCard = (title, data, color, kind) => {
+    if (!data || data.length === 0) {
+      return (
+        <div className="phd-card phd-card-chart">
+          <div className="phd-card-head">
+            <h4>{title}</h4>
+          </div>
+          <div className="phd-empty">Sin datos con los filtros.</div>
+        </div>
+      );
+    }
+
+    const height = Math.max(320, data.length * 34);
+    const yAxisWidth = 460;
+
+    return (
+      <div className="phd-card phd-card-chart">
+        <div className="phd-card-head">
+          <h4>{title}</h4>
+          <span className="phd-card-badge">{data.length} ítems</span>
         </div>
 
-        <div className="oport-topbar-actions">
-          <button
-            className="oport-btn"
-            type="button"
-            onClick={() => setOpenWinRateModal(true)}
-            disabled={loading}
-          >
-            Ver Win Rate
-          </button>
-
-          <button className="oport-btn" onClick={limpiar} disabled={loading}>
-            Limpiar filtros
-          </button>
+        <div className="phd-chartWrap">
+          <div className="phd-chartInner">
+            <ResponsiveContainer width="100%" height={height}>
+              <BarChart
+                data={data}
+                layout="vertical"
+                margin={{ top: 10, right: 24, left: 10, bottom: 10 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={yAxisWidth}
+                  tick={<YAxisTickWrap width={yAxisWidth} />}
+                />
+                <Tooltip
+                  formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]}
+                  labelFormatter={(label) => `Nombre: ${label}`}
+                />
+                {kind === "proyecto" && <Legend />}
+                <Bar dataKey="horas" name="Horas">
+                  {data.map((entry, idx) => (
+                    <Cell
+                      key={idx}
+                      fill={color}
+                      onClick={() => openDetail(kind, entry.key ?? entry.name)}
+                      style={{ cursor: "pointer" }}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
+    );
+  };
 
-      <div className="dashboard-layout">
-        <main className="dashboard-main">
-          {loading && <div className="oport-loading">Cargando...</div>}
+  return (
+    <div className="phd-page">
+      <div className="phd-shell">
+        <section className="phd-hero">
+          <div className="phd-hero-left">
+            <span className="phd-kicker">Dashboard</span>
+            <h1>Horas por Proyecto</h1>
+            <p>
+              Visualiza horas registradas por proyecto, módulo, consultor, tarea y ocupación
+              con filtros avanzados y detalle de registros.
+            </p>
+          </div>
 
-          <section className="kpi-grid">
-            <div className="kpi-card has-tooltip" tabIndex={0}>
-              <div className="kpi-label">Cantidad</div>
-              <div className="kpi-value">{kpis.total}</div>
-              {renderKpiTooltip("Estados incluidos en cantidad", kpiEstadosInfo.total)}
+          <div className="phd-hero-right">
+            <div className="phd-hero-stat">
+              <span>Total horas</span>
+              <strong>{totalHoras.toFixed(2)} h</strong>
+            </div>
+            <div className="phd-hero-stat">
+              <span>Registros</span>
+              <strong>{datosFiltrados.length}</strong>
+            </div>
+          </div>
+        </section>
+
+        {loadingMain && <div className="phd-loading-box">Cargando información...</div>}
+        {error && <div className="phd-error">Error: {error}</div>}
+
+        <section className="phd-kpis">
+          <div className="phd-kpi phd-kpi-blue">
+            <span>Proyectos</span>
+            <strong>{totalProyectos}</strong>
+          </div>
+          <div className="phd-kpi phd-kpi-red">
+            <span>Consultores</span>
+            <strong>{totalConsultores}</strong>
+          </div>
+          <div className="phd-kpi phd-kpi-dark">
+            <span>Módulos</span>
+            <strong>{totalModulos}</strong>
+          </div>
+          <div className="phd-kpi phd-kpi-green">
+            <span>Tareas</span>
+            <strong>{totalTareas}</strong>
+          </div>
+        </section>
+
+        <section className="phd-filtros-card">
+          <div className="phd-filtros-head">
+            <div>
+              <h3>Filtros</h3>
+              <p>Aplica filtros para refinar las gráficas y el detalle.</p>
+            </div>
+            <button className="phd-btn phd-btn-dark" onClick={limpiarFiltros} type="button">
+              Limpiar filtros
+            </button>
+          </div>
+
+          <div className="phd-filtros-grid">
+            <div className="phd-month">
+              <span className="phd-label">MES</span>
+              <input
+                type="month"
+                value={filtroMes}
+                onChange={(e) => setFiltroMes(e.target.value)}
+              />
             </div>
 
-            <div className="kpi-card has-tooltip" tabIndex={0}>
-              <div className="kpi-label">Activas</div>
-              <div className="kpi-value">{kpis.activas}</div>
-              {renderKpiTooltip("Estados incluidos en activas", kpiEstadosInfo.activas)}
+            <div className="phd-month">
+              <span className="phd-label">TIPO DE RANGO</span>
+              <select
+                value={tipoRango}
+                onChange={(e) => setTipoRango(e.target.value)}
+              >
+                <option value="mes">Rango por meses</option>
+                <option value="dia">Rango por días</option>
+              </select>
             </div>
 
-            <div className="kpi-card has-tooltip" tabIndex={0}>
-              <div className="kpi-label">Cerradas</div>
-              <div className="kpi-value">{kpis.cerradas}</div>
-              {renderKpiTooltip("Estados incluidos en cerradas", kpiEstadosInfo.cerradas)}
-            </div>
-
-            <div className="kpi-card">
-              <div className="kpi-label">% Ganadas</div>
-              <div className="kpi-value">{kpis.porcentajeGanadas.toFixed(2)}%</div>
-              <div className="kpi-sub">
-                {kpis.ganadas} de {kpis.total}
-              </div>
-            </div>
-          </section>
-
-          <section className="main-grid">
-            <div className="main-col">
-              <div className="card">
-                <div className="card-title">Estado de Oferta</div>
-                <div className="table-scroll">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>ESTADO</th>
-                        <th>Cant</th>
-                        <th>OTC</th>
-                        <th>MRC</th>
-                        <th>%</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {tablaEstadoOferta.rows.map((it) => (
-                        <tr key={it.label}>
-                          <td>{it.label}</td>
-                          <td>{it.count}</td>
-                          <td>{fmtMoney(it.otc)}</td>
-                          <td>{fmtMoney(it.mrc)}</td>
-                          <td>
-                            {totEstadoOferta.count ? ((it.count / totEstadoOferta.count) * 100).toFixed(2) : "0.00"}%
-                          </td>
-                        </tr>
-                      ))}
-
-                      <tr className="table-total">
-                        <td>Total</td>
-                        <td>{totEstadoOferta.count}</td>
-                        <td>{fmtMoney(totEstadoOferta.otc)}</td>
-                        <td>{fmtMoney(totEstadoOferta.mrc)}</td>
-                        <td>{totEstadoOferta.count ? "100%" : "0%"}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+            {tipoRango === "mes" ? (
+              <>
+                <div className="phd-month">
+                  <span className="phd-label">RANGO MES DESDE</span>
+                  <input
+                    type="month"
+                    value={filtroRangoMesDesde}
+                    onChange={(e) => setFiltroRangoMesDesde(e.target.value)}
+                  />
                 </div>
-              </div>
 
-              <div className="card">
-                <div className="card-title">Resultado de Oferta</div>
-                <div className="table-scroll">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>RESULTADO</th>
-                        <th>Cant</th>
-                        <th>OTC</th>
-                        <th>MRC</th>
-                        <th>%</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {tablaResultadoOferta.rows.map((it) => (
-                        <tr key={it.label}>
-                          <td>{it.label}</td>
-                          <td>{it.count}</td>
-                          <td>{fmtMoney(it.otc)}</td>
-                          <td>{fmtMoney(it.mrc)}</td>
-                          <td>
-                            {totResultadoOferta.count
-                              ? ((it.count / totResultadoOferta.count) * 100).toFixed(2)
-                              : "0.00"}
-                            %
-                          </td>
-                        </tr>
-                      ))}
-
-                      <tr className="table-total">
-                        <td>Total</td>
-                        <td>{totResultadoOferta.count}</td>
-                        <td>{fmtMoney(totResultadoOferta.otc)}</td>
-                        <td>{fmtMoney(totResultadoOferta.mrc)}</td>
-                        <td>{totResultadoOferta.count ? "100%" : "0%"}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <div className="phd-month">
+                  <span className="phd-label">RANGO MES HASTA</span>
+                  <input
+                    type="month"
+                    value={filtroRangoMesHasta}
+                    onChange={(e) => setFiltroRangoMesHasta(e.target.value)}
+                  />
                 </div>
-              </div>
+              </>
+            ) : (
+              <>
+                <div className="phd-month">
+                  <span className="phd-label">FECHA DESDE</span>
+                  <input
+                    type="date"
+                    value={filtroFechaDesde}
+                    onChange={(e) => setFiltroFechaDesde(e.target.value)}
+                  />
+                </div>
+
+                <div className="phd-month">
+                  <span className="phd-label">FECHA HASTA</span>
+                  <input
+                    type="date"
+                    value={filtroFechaHasta}
+                    onChange={(e) => setFiltroFechaHasta(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+
+            <MultiFiltro
+              titulo="PROYECTOS (OFICIAL)"
+              opciones={proyectosUnicos}
+              seleccion={filtroProyecto}
+              onChange={setFiltroProyecto}
+              placeholder="Todos los proyectos"
+            />
+
+            <MultiFiltro
+              titulo="MÓDULOS"
+              opciones={modulosUnicos}
+              seleccion={filtroModulo}
+              onChange={setFiltroModulo}
+              placeholder="Todos los módulos"
+            />
+
+            <MultiFiltro
+              titulo="OCUPACIÓN"
+              opciones={ocupacionesUnicas}
+              seleccion={filtroOcupacion}
+              onChange={setFiltroOcupacion}
+              placeholder="Todas las ocupaciones"
+            />
+
+            <MultiFiltro
+              titulo="TAREAS"
+              opciones={tareasUnicas}
+              seleccion={filtroTarea}
+              onChange={setFiltroTarea}
+              placeholder="Todas las tareas"
+            />
+
+            <MultiFiltro
+              titulo="CONSULTORES"
+              opciones={scope === "SELF" ? (nombreUser ? [nombreUser] : []) : consultoresUnicos}
+              seleccion={filtroConsultor}
+              onChange={scope === "SELF" ? () => {} : setFiltroConsultor}
+              disabled={scope === "SELF"}
+              placeholder={scope === "SELF" ? nombreUser || "Tu usuario" : "Todos"}
+            />
+
+            <MultiFiltro
+              titulo="EQUIPOS"
+              opciones={scope === "ALL" ? equiposUnicos : equipoUser ? [equipoUser] : []}
+              seleccion={filtroEquipo}
+              onChange={scope === "ALL" ? setFiltroEquipo : () => {}}
+              disabled={scope !== "ALL"}
+              placeholder={scope === "ALL" ? "Todos" : "Tu equipo"}
+            />
+          </div>
+        </section>
+
+        <section className="phd-grid">
+          {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#0055B8", "proyecto")}
+          {renderChartCard("Horas por Módulo", horasPorModulo, "#E30613", "modulo")}
+          {renderChartCard("Horas por Consultor", horasPorConsultor, "#111827", "consultor")}
+          {renderChartCard("Horas por Tarea", horasPorTarea, "#0EA5E9", "tarea")}
+          {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#10B981", "ocupacion")}
+        </section>
+      </div>
+
+      <Modal
+        isOpen={detailOpen}
+        onRequestClose={() => setDetailOpen(false)}
+        className="phd-modal"
+        overlayClassName="phd-modalOverlay"
+        contentLabel="Detalle de horas por proyecto"
+        shouldCloseOnOverlayClick
+        ariaHideApp={false}
+      >
+        <div className="phd-modalHeader">
+          <div className="phd-modalHeaderText">
+            <h3 className="phd-modalTitle">{detailTitle || "Detalle"}</h3>
+            <div className="phd-modalSub">
+              Filas: <b>{detailRows.length}</b> · Total:{" "}
+              <b>{detailRows.reduce((s, r) => s + r.horasNum, 0).toFixed(2)} h</b>
             </div>
+          </div>
 
-            <div className="side-col">
-              <div className="card">
-                <div className="card-title">Cantidad y Ganadas/Adjudicadas por Año y Mes</div>
-                <GraficoCantidadGanadas data={dataFiltrada} />
-              </div>
+          <button
+            className="phd-modalClose"
+            onClick={() => setDetailOpen(false)}
+            aria-label="Cerrar"
+            type="button"
+          >
+            ✖
+          </button>
+        </div>
 
-              <div className="card">
-                <div className="card-title">Activas y Cerradas por Año y Mes</div>
-                <GraficoActivasCerradas data={dataFiltrada} />
-              </div>
-
-              <div className="card">
-                <div className="card-title">Resumen Calificación</div>
-                <ResumenCalificacion data={dataBase} />
-              </div>
-            </div>
-          </section>
-
-          <section className="card">
-            <div className="card-title">Detalle de Oportunidades</div>
-
-            <div className="detalle-scroll">
-              <table className="table table-detalle">
+        <div className="phd-modalBody">
+          {detailRows.length === 0 ? (
+            <div className="phd-empty phd-empty-lg">Sin filas para mostrar.</div>
+          ) : (
+            <div className="phd-modalTableWrap">
+              <table className="phd-table phd-table-detail">
                 <thead>
                   <tr>
-                    <th>NOMBRE CLIENTE</th>
-                    <th>SERVICIO</th>
-                    <th>FECHA</th>
-                    <th>CALIFICACION</th>
-                    <th>ESTADO OFERTA</th>
-                    <th>RESULTADO OFERTA</th>
-                    <th>OTC</th>
-                    <th>MRC</th>
-                    <th>GERENCIA</th>
-                    <th>COMERCIAL</th>
-                    <th>OBSERVACIONES</th>
+                    <th>ID</th>
+                    <th>Fecha</th>
+                    <th>Consultor</th>
+                    <th>Cliente</th>
+                    <th>Proyecto (OFICIAL)</th>
+                    <th>Proyecto (Digitado)</th>
+                    <th>Módulo</th>
+                    <th>Ocupación</th>
+                    <th>Tarea</th>
+                    <th className="num">Horas</th>
+                    <th>Descripción</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {dataFiltrada.map((row, i) => (
-                    <tr key={row.id ?? i}>
-                      <td>{row.nombre_cliente ?? "-"}</td>
-                      <td>{row.servicio ?? "-"}</td>
-                      <td>{row.fecha_creacion ?? "-"}</td>
-                      <td>{row.calificacion_oportunidad ?? "-"}</td>
-                      <td>{row.estado_oferta ?? "-"}</td>
-                      <td>{row.resultado_oferta ?? "-"}</td>
-                      <td>{fmtMoney(readMoney(row, ["otc", "otr", "OTC", "OTR"]))}</td>
-                      <td>{fmtMoney(readMoney(row, ["mrc", "MRC"]))}</td>
-                      <td>{row.gerencia_comercial ?? "-"}</td>
-                      <td>{row.comercial_asignado ?? "-"}</td>
-                      <td className="td-wrap">{renderObservacionesCell(row.observaciones)}</td>
+                  {detailRows.map((r, i) => (
+                    <tr key={r.id ?? i}>
+                      <td className="num">{r.id ?? "—"}</td>
+                      <td>{r.fecha}</td>
+                      <td className="phd-truncate" title={r.consultorNormalizado}>
+                        {r.consultorNormalizado}
+                      </td>
+                      <td className="phd-truncate" title={r.cliente}>
+                        {r.cliente}
+                      </td>
+                      <td className="phd-truncate" title={r.proyectoOficial}>
+                        {r.proyectoOficial}
+                      </td>
+                      <td className="phd-truncate" title={r.proyectoDigitado || ""}>
+                        {r.proyectoDigitado || "—"}
+                      </td>
+                      <td className="phd-truncate" title={r.moduloNormalizado}>
+                        {r.moduloNormalizado}
+                      </td>
+                      <td className="phd-truncate" title={r.ocupacionNormalizada}>
+                        {r.ocupacionNormalizada}
+                      </td>
+                      <td className="phd-truncate" title={r.tareaNormalizada}>
+                        {r.tareaNormalizada}
+                      </td>
+                      <td className="num">{r.horasNum.toFixed(2)}</td>
+                      <td className="phd-truncate phd-detail-desc" title={r.descripcion || ""}>
+                        {r.descripcion || ""}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </section>
-        </main>
-
-        <aside className="dashboard-filtros">
-          <div className="filters-head">
-            <div className="filters-title">Filtros</div>
-          </div>
-
-          <div className="filtro-item">
-            <label>Año / Mes</label>
-            <div className="two-col">
-              <Select
-                {...selectCommon}
-                placeholder="Año"
-                options={opciones.anios}
-                value={filtros.anios}
-                onChange={(v) => setFiltros((p) => ({ ...p, anios: v || [] }))}
-              />
-              <Select
-                {...selectCommon}
-                placeholder="Mes"
-                options={opciones.meses}
-                value={filtros.meses}
-                onChange={(v) => setFiltros((p) => ({ ...p, meses: v || [] }))}
-              />
-            </div>
-          </div>
-
-          <div className="filtro-item">
-            <label>Tipo</label>
-            <Select
-              {...selectCommon}
-              placeholder="Todos"
-              options={opciones.tipos}
-              value={filtros.tipos}
-              onChange={(v) => setFiltros((p) => ({ ...p, tipos: v || [] }))}
-            />
-          </div>
-
-          <div className="filtro-item">
-            <label>Dirección Comercial</label>
-            <Select
-              {...selectCommon}
-              placeholder="Todas"
-              options={opciones.direccionComercial}
-              value={filtros.direccionComercial}
-              onChange={(v) => setFiltros((p) => ({ ...p, direccionComercial: v || [] }))}
-            />
-          </div>
-
-          <div className="filtro-item">
-            <label>Gerencia Comercial</label>
-            <Select
-              {...selectCommon}
-              placeholder="Todas"
-              options={opciones.gerenciaComercial}
-              value={filtros.gerenciaComercial}
-              onChange={(v) => setFiltros((p) => ({ ...p, gerenciaComercial: v || [] }))}
-            />
-          </div>
-
-          <div className="filtro-item">
-            <label>Nombre Cliente</label>
-            <Select
-              {...selectCommon}
-              placeholder="Todos"
-              options={opciones.cliente}
-              value={filtros.cliente}
-              onChange={(v) => setFiltros((p) => ({ ...p, cliente: v || [] }))}
-            />
-          </div>
-
-          <div className="filtro-item">
-            <label>Estado Oferta</label>
-            <Select
-              {...selectCommon}
-              placeholder="Todos"
-              options={opciones.estadoOferta}
-              value={filtros.estadoOferta}
-              onChange={(v) => setFiltros((p) => ({ ...p, estadoOferta: v || [] }))}
-            />
-          </div>
-
-          <div className="filtro-item">
-            <label>Resultado Oferta</label>
-            <Select
-              {...selectCommon}
-              placeholder="Todos"
-              options={opciones.resultadoOferta}
-              value={filtros.resultadoOferta}
-              onChange={(v) => setFiltros((p) => ({ ...p, resultadoOferta: v || [] }))}
-            />
-          </div>
-
-          <div className="filtro-item">
-            <label>Fecha Acta Cierre OT</label>
-            <Select
-              {...selectCommon}
-              placeholder="Todas"
-              options={opciones.fechaActaCierreOT}
-              value={filtros.fechaActaCierreOT}
-              onChange={(v) => setFiltros((p) => ({ ...p, fechaActaCierreOT: v || [] }))}
-            />
-          </div>
-
-          <div className="filtro-item">
-            <label>Fecha Cierre Oportunidad</label>
-            <Select
-              {...selectCommon}
-              placeholder="Todas"
-              options={opciones.fechaCierreOportunidad}
-              value={filtros.fechaCierreOportunidad}
-              onChange={(v) => setFiltros((p) => ({ ...p, fechaCierreOportunidad: v || [] }))}
-            />
-          </div>
-
-          <div className="filtro-item">
-            <label>Estado OT</label>
-            <Select
-              {...selectCommon}
-              placeholder="Todos"
-              options={opciones.estadoOT}
-              value={filtros.estadoOT}
-              onChange={(v) => setFiltros((p) => ({ ...p, estadoOT: v || [] }))}
-            />
-          </div>
-
-          <div className="filtro-item">
-            <label>Último Mes</label>
-            <Select
-              {...selectCommon}
-              placeholder="Todos"
-              options={opciones.ultimoMes}
-              value={filtros.ultimoMes}
-              onChange={(v) => setFiltros((p) => ({ ...p, ultimoMes: v || [] }))}
-            />
-          </div>
-
-          <div className="filtro-item">
-            <label>Calificación Oportunidad</label>
-            <Select
-              {...selectCommon}
-              placeholder="Todas"
-              options={opciones.calificacion}
-              value={filtros.calificacion}
-              onChange={(v) => setFiltros((p) => ({ ...p, calificacion: v || [] }))}
-            />
-          </div>
-        </aside>
-      </div>
-      <ModalWinRate
-        isOpen={openWinRateModal}
-        onClose={() => setOpenWinRateModal(false)}
-        rows={dataBase}
-        options={opciones}
-        selectCommon={selectCommon}
-        baseTitle={dashboardBaseTitle}
-      />
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

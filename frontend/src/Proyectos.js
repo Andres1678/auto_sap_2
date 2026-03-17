@@ -32,20 +32,73 @@ const normKey = (s) =>
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
 
+const asBool = (v) => {
+  const s = String(v ?? "").trim().toLowerCase();
+  return v === true || v === 1 || s === "1" || s === "true";
+};
+
+const toArrayResponse = (json) => {
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.items)) return json.items;
+  if (Array.isArray(json?.data)) return json.data;
+  return [];
+};
+
 const getProyectoFasesIds = (p) => {
   if (Array.isArray(p?.fases_ids)) return p.fases_ids.map(String).filter(Boolean);
-  if (Array.isArray(p?.fases)) return p.fases.map((x) => String(x?.id)).filter(Boolean);
+
+  if (Array.isArray(p?.fases)) {
+    return p.fases
+      .map((x) => String(x?.fase_id ?? x?.fase?.id ?? x?.id))
+      .filter(Boolean);
+  }
+
   return [];
 };
 
 const getProyectoFasesNames = (p, fasesMap) => {
   if (Array.isArray(p?.fases) && p.fases.length) {
-    const names = p.fases.map((f) => String(f?.nombre || "").trim()).filter(Boolean);
+    const names = p.fases
+      .map((f) => String(f?.fase?.nombre ?? f?.nombre ?? "").trim())
+      .filter(Boolean);
+
     if (names.length) return names;
   }
 
   const ids = getProyectoFasesIds(p);
   return ids.map((id) => fasesMap.get(String(id))).filter(Boolean);
+};
+
+const getProyectoModulosIds = (p) => {
+  if (Array.isArray(p?.modulos_ids)) {
+    return p.modulos_ids
+      .map(Number)
+      .filter((n) => Number.isFinite(n) && n > 0);
+  }
+
+  if (Array.isArray(p?.modulos)) {
+    return p.modulos
+      .map((x) => Number(x?.modulo_id ?? x?.modulo?.id ?? x?.id))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  }
+
+  return [];
+};
+
+const getProyectoModulosNames = (p, modulosMap) => {
+  if (!Array.isArray(p?.modulos)) return [];
+
+  return p.modulos
+    .map((x) => {
+      const id = Number(x?.modulo_id ?? x?.modulo?.id ?? x?.id);
+      return String(
+        x?.modulo?.nombre ??
+          x?.nombre ??
+          modulosMap.get(id) ??
+          ""
+      ).trim();
+    })
+    .filter(Boolean);
 };
 
 export default function Proyectos() {
@@ -97,11 +150,17 @@ export default function Proyectos() {
       if (!fRes.ok) throw new Error(fData?.mensaje || `HTTP ${fRes.status}`);
       if (!cRes.ok) throw new Error(cData?.mensaje || `HTTP ${cRes.status}`);
 
-      setProyectos(Array.isArray(pData) ? pData : []);
-      setModulos(Array.isArray(mData) ? mData : []);
-      setClientes(Array.isArray(cData) ? cData : []);
+      setProyectos(
+        toArrayResponse(pData).map((p) => ({
+          ...p,
+          activo: asBool(p?.activo),
+        }))
+      );
 
-      const backendFases = Array.isArray(fData) ? fData : [];
+      setModulos(toArrayResponse(mData));
+      setClientes(toArrayResponse(cData));
+
+      const backendFases = toArrayResponse(fData);
       const byName = new Map();
 
       backendFases.forEach((x) => {
@@ -121,7 +180,13 @@ export default function Proyectos() {
         }
       });
 
-      merged.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es"));
+      merged.sort((a, b) => {
+        const ao = Number(a?.orden ?? 0);
+        const bo = Number(b?.orden ?? 0);
+        if (ao !== bo) return ao - bo;
+        return String(a?.nombre || "").localeCompare(String(b?.nombre || ""), "es");
+      });
+
       setFases(merged);
     } catch (e) {
       console.error(e);
@@ -147,7 +212,10 @@ export default function Proyectos() {
 
   const modulosMap = useMemo(() => {
     const m = new Map();
-    (modulos || []).forEach((x) => m.set(Number(x.id), x.nombre));
+    (modulos || []).forEach((x) => {
+      const id = Number(x?.id);
+      if (Number.isFinite(id)) m.set(id, String(x?.nombre || ""));
+    });
     return m;
   }, [modulos]);
 
@@ -175,10 +243,12 @@ export default function Proyectos() {
     const needle = norm(q).toLowerCase();
 
     return (proyectos || []).filter((p) => {
-      if (soloActivos && !p.activo) return false;
+      const activo = asBool(p?.activo);
+      if (soloActivos && !activo) return false;
       if (!needle) return true;
 
-      const fasesTxt = getProyectoFasesNames(p, fasesMap).join(" ");
+      const fasesTxt = getProyectoFasesNames(p, fasesMap).join(" ").toLowerCase();
+      const modulosTxt = getProyectoModulosNames(p, modulosMap).join(" ").toLowerCase();
 
       const clienteTxt = String(
         p?.cliente?.nombre_cliente ??
@@ -190,11 +260,12 @@ export default function Proyectos() {
       return (
         String(p.codigo || "").toLowerCase().includes(needle) ||
         String(p.nombre || "").toLowerCase().includes(needle) ||
-        fasesTxt.toLowerCase().includes(needle) ||
+        fasesTxt.includes(needle) ||
+        modulosTxt.includes(needle) ||
         clienteTxt.includes(needle)
       );
     });
-  }, [proyectos, q, soloActivos, fasesMap, clientesMap]);
+  }, [proyectos, q, soloActivos, fasesMap, modulosMap, clientesMap]);
 
   const toggleModulo = (id) => {
     const mid = Number(id);
@@ -229,15 +300,13 @@ export default function Proyectos() {
   const resetForm = () => setForm(emptyForm());
 
   const startEdit = (p) => {
-    const fasesIds = getProyectoFasesIds(p);
-
     setForm({
       id: p.id,
       codigo: p.codigo || "",
       nombre: p.nombre || "",
-      activo: !!p.activo,
-      modulos: Array.isArray(p.modulos) ? p.modulos.map((x) => Number(x.id)) : [],
-      fases: fasesIds,
+      activo: asBool(p.activo),
+      modulos: getProyectoModulosIds(p),
+      fases: getProyectoFasesIds(p),
       cliente_id: p?.cliente_id != null ? String(p.cliente_id) : "",
     });
 
@@ -385,7 +454,12 @@ export default function Proyectos() {
           </div>
 
           <div className="proj-head-actions">
-            <button className="btn btn-outline" onClick={fetchAll} disabled={loading || saving}>
+            <button
+              className="btn btn-outline"
+              onClick={fetchAll}
+              disabled={loading || saving}
+              type="button"
+            >
               {loading ? "Cargando…" : "Refrescar"}
             </button>
           </div>
@@ -396,7 +470,12 @@ export default function Proyectos() {
             <h3>{isEdit ? "Editar proyecto" : "Nuevo proyecto"}</h3>
 
             {isEdit && (
-              <button className="btn btn-ghost" type="button" onClick={resetForm} disabled={saving}>
+              <button
+                className="btn btn-ghost"
+                type="button"
+                onClick={resetForm}
+                disabled={saving}
+              >
                 Cancelar edición
               </button>
             )}
@@ -536,7 +615,7 @@ export default function Proyectos() {
             <div className="proj-list-filters">
               <input
                 className="search"
-                placeholder="Buscar por código, nombre, cliente o fases…"
+                placeholder="Buscar por código, nombre, cliente, fases o módulos…"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
@@ -569,6 +648,7 @@ export default function Proyectos() {
 
               <tbody>
                 {proyectosFiltrados.map((p) => {
+                  const activo = asBool(p.activo);
                   const fasesNames = getProyectoFasesNames(p, fasesMap);
                   const fasesTxt = fasesNames.length ? fasesNames.join(", ") : "—";
 
@@ -577,6 +657,8 @@ export default function Proyectos() {
                     p?.cliente?.nombre ??
                     (p?.cliente_id != null ? clientesMap.get(Number(p.cliente_id)) : "") ??
                     "";
+
+                  const modulosNames = getProyectoModulosNames(p, modulosMap);
 
                   return (
                     <tr key={p.id}>
@@ -587,26 +669,19 @@ export default function Proyectos() {
                       <td>{fasesTxt}</td>
 
                       <td>
-                        <span className={`badge ${p.activo ? "ok" : "off"}`}>
-                          {p.activo ? "Activo" : "Inactivo"}
+                        <span className={`badge ${activo ? "ok" : "off"}`}>
+                          {activo ? "Activo" : "Inactivo"}
                         </span>
                       </td>
 
                       <td className="mods-cell">
-                        {(Array.isArray(p.modulos) ? p.modulos : [])
-                          .slice(0, 6)
-                          .map((x, idx) => {
-                            const id = Number(x?.id ?? x);
-                            const label = x?.nombre ?? modulosMap.get(id) ?? String(id);
+                        {modulosNames.slice(0, 6).map((label, idx) => (
+                          <span key={`${p.id}-${label}-${idx}`} className="pill">
+                            {label}
+                          </span>
+                        ))}
 
-                            return (
-                              <span key={`${p.id}-${id}-${idx}`} className="pill">
-                                {label}
-                              </span>
-                            );
-                          })}
-
-                        {(Array.isArray(p.modulos) ? p.modulos : []).length > 6 && (
+                        {modulosNames.length > 6 && (
                           <span className="pill more">+ más…</span>
                         )}
                       </td>
@@ -617,6 +692,7 @@ export default function Proyectos() {
                           onClick={() => startEdit(p)}
                           disabled={saving}
                           title="Editar"
+                          type="button"
                         >
                           ✏️
                         </button>
@@ -626,8 +702,9 @@ export default function Proyectos() {
                           onClick={() => toggleActivo(p)}
                           disabled={saving}
                           title="Activar / desactivar"
+                          type="button"
                         >
-                          {p.activo ? "⛔" : "✅"}
+                          {activo ? "⛔" : "✅"}
                         </button>
 
                         <button
@@ -635,6 +712,7 @@ export default function Proyectos() {
                           onClick={() => confirmDelete(p)}
                           disabled={saving}
                           title="Eliminar"
+                          type="button"
                         >
                           🗑️
                         </button>
@@ -644,6 +722,7 @@ export default function Proyectos() {
                           onClick={() => openMapeoModal(p)}
                           disabled={saving}
                           title="Mapeos"
+                          type="button"
                         >
                           🧩
                         </button>

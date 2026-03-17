@@ -1166,6 +1166,56 @@ def _scope_for_graficos(consultor_login, rol_req: str):
 
     return scope_for(consultor_login, rol_req)
 
+def _apply_project_filter_graficos(q, proyecto_id: int):
+    proyecto = (
+        Proyecto.query.options(joinedload(Proyecto.mapeos))
+        .filter(Proyecto.id == proyecto_id)
+        .first()
+    )
+
+    if not proyecto:
+        return q.filter(text("1=0"))
+
+    clauses = [Registro.proyecto_id == proyecto.id]
+
+    codigo = (proyecto.codigo or "").strip().upper()
+
+    campo_nro = func.upper(func.coalesce(Registro.nro_caso_cliente, ""))
+    campo_desc = func.upper(func.coalesce(Registro.descripcion, ""))
+
+    if codigo:
+        clauses.append(campo_nro == codigo)
+        clauses.append(campo_desc == codigo)
+        clauses.append(campo_nro.like(f"%{codigo}%"))
+        clauses.append(campo_desc.like(f"%{codigo}%"))
+
+    for mp in (proyecto.mapeos or []):
+        if not bool(mp.activo):
+            continue
+
+        valor = (mp.valor_origen or "").strip().upper()
+        tipo = (mp.tipo_match or "EXACT").strip().upper()
+
+        if not valor:
+            continue
+
+        if tipo == "EXACT":
+            clauses.append(campo_nro == valor)
+            clauses.append(campo_desc == valor)
+
+        elif tipo == "CONTAINS":
+            clauses.append(campo_nro.like(f"%{valor}%"))
+            clauses.append(campo_desc.like(f"%{valor}%"))
+
+        elif tipo == "REGEX":
+            try:
+                clauses.append(campo_nro.op("REGEXP")(valor))
+                clauses.append(campo_desc.op("REGEXP")(valor))
+            except Exception:
+                pass
+
+    return q.filter(or_(*clauses))
+
 
 # ============================================================
 #  ENDPOINT: SOLO PARA GRAFICOS
@@ -1205,7 +1255,7 @@ def obtener_registros_graficos():
                 joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
                 joinedload(Registro.tarea),
                 joinedload(Registro.ocupacion),
-                joinedload(Registro.proyecto),
+                joinedload(Registro.proyecto).joinedload(Proyecto.mapeos),
                 joinedload(Registro.fase_proyecto),
             )
             .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
@@ -1243,13 +1293,57 @@ def obtener_registros_graficos():
             q = q.filter(func.upper(E.nombre) == equipo_filter)
 
         # ----------------------------------------------------------
-        # Límite razonable
+        # Filtros opcionales backend
         # ----------------------------------------------------------
-        registros = (
-            q.order_by(Registro.fecha.desc(), Registro.id.desc())
-             .limit(12000)
-             .all()
-        )
+        filtro_mes = (request.args.get("mes") or "").strip()
+        filtro_desde = (request.args.get("desde") or "").strip()
+        filtro_hasta = (request.args.get("hasta") or "").strip()
+        filtro_modulo = (request.args.get("modulo") or "").strip()
+        filtro_cliente = (request.args.get("cliente") or "").strip()
+        filtro_consultor = (request.args.get("consultor") or "").strip()
+        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
+
+        if filtro_mes:
+            try:
+                y, m = filtro_mes.split("-")
+                q = q.filter(
+                    extract("year", cast(Registro.fecha, db.Date)) == int(y),
+                    extract("month", cast(Registro.fecha, db.Date)) == int(m),
+                )
+            except Exception:
+                pass
+        else:
+            if filtro_desde:
+                q = q.filter(Registro.fecha >= filtro_desde)
+            if filtro_hasta:
+                q = q.filter(Registro.fecha <= filtro_hasta)
+
+        if filtro_modulo:
+            q = q.filter(func.upper(Registro.modulo) == filtro_modulo.upper())
+
+        if filtro_cliente:
+            q = q.filter(Registro.cliente.ilike(f"%{filtro_cliente}%"))
+
+        if filtro_consultor:
+            q = q.filter(C.nombre.ilike(f"%{filtro_consultor}%"))
+
+        if filtro_proyecto_id:
+            try:
+                q = _apply_project_filter_graficos(q, int(filtro_proyecto_id))
+            except Exception:
+                return jsonify({"error": "proyecto_id inválido"}), 400
+
+        # ----------------------------------------------------------
+        # Límite opcional, no fijo
+        # ----------------------------------------------------------
+        max_rows = request.args.get("max_rows", type=int)
+
+        query_final = q.order_by(Registro.fecha.desc(), Registro.id.desc())
+
+        if max_rows and max_rows > 0:
+            query_final = query_final.limit(min(max_rows, 50000))
+
+        registros = query_final.all()
 
         # ----------------------------------------------------------
         # Serialización
@@ -5071,32 +5165,56 @@ def proyecto_to_dict(p: Proyecto, include_modulos=True, include_fases=True):
 
     if include_fases:
         fases = []
+        fases_ids = []
+
         for pf in (getattr(p, "fases", None) or []):
             fx = getattr(pf, "fase", None)
             if not fx:
                 continue
+
             fases.append({
-                "id": fx.id,
+                "id": fx.id,                 # id real de la fase
+                "fase_id": fx.id,           # explícito para el front
                 "nombre": fx.nombre,
                 "orden": int((pf.orden if pf.orden is not None else (fx.orden or 0)) or 0),
                 "activo": bool(pf.activo),
+                "proyecto_fase_id": pf.id,  # id de la tabla pivote
+                "fase": {
+                    "id": fx.id,
+                    "nombre": fx.nombre,
+                    "orden": int(fx.orden or 0),
+                    "activo": bool(fx.activo),
+                }
             })
+            fases_ids.append(fx.id)
+
         fases.sort(key=lambda x: (x["orden"], x["nombre"]))
         out["fases"] = fases
-        out["fases_ids"] = [x["id"] for x in fases]
+        out["fases_ids"] = fases_ids
 
     if include_modulos:
         mods = []
+        modulos_ids = []
+
         for pm in (p.modulos or []):
             if not pm.modulo:
                 continue
+
             mods.append({
-                "id": pm.modulo.id,
+                "id": pm.modulo.id,            # id real del módulo
+                "modulo_id": pm.modulo.id,     # explícito para el front
                 "nombre": pm.modulo.nombre,
                 "activo": bool(pm.activo),
-                "proyecto_modulo_id": pm.id,
+                "proyecto_modulo_id": pm.id,   # id de la tabla pivote
+                "modulo": {
+                    "id": pm.modulo.id,
+                    "nombre": pm.modulo.nombre,
+                }
             })
+            modulos_ids.append(pm.modulo.id)
+
         out["modulos"] = mods
+        out["modulos_ids"] = modulos_ids
 
     return out
 
