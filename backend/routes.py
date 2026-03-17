@@ -1166,6 +1166,10 @@ def _scope_for_graficos(consultor_login, rol_req: str):
 
     return scope_for(consultor_login, rol_req)
 
+# ============================================================
+#  ENDPOINT: SOLO PARA GRAFICOS
+# ============================================================
+
 def _apply_project_filter_graficos(q, proyecto_id: int):
     proyecto = (
         Proyecto.query.options(joinedload(Proyecto.mapeos))
@@ -1216,10 +1220,6 @@ def _apply_project_filter_graficos(q, proyecto_id: int):
 
     return q.filter(or_(*clauses))
 
-
-# ============================================================
-#  ENDPOINT: SOLO PARA GRAFICOS
-# ============================================================
 @bp.route('/registros/graficos', methods=['GET'])
 @permission_required("GRAFICOS_VER")
 def obtener_registros_graficos():
@@ -1303,6 +1303,11 @@ def obtener_registros_graficos():
         filtro_consultor = (request.args.get("consultor") or "").strip()
         filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
 
+        # Si no envían filtro de fecha, por defecto mes actual
+        if not filtro_mes and not filtro_desde and not filtro_hasta:
+            hoy = date.today()
+            filtro_mes = f"{hoy.year:04d}-{hoy.month:02d}"
+
         if filtro_mes:
             try:
                 y, m = filtro_mes.split("-")
@@ -1311,7 +1316,7 @@ def obtener_registros_graficos():
                     extract("month", cast(Registro.fecha, db.Date)) == int(m),
                 )
             except Exception:
-                pass
+                return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
         else:
             if filtro_desde:
                 q = q.filter(Registro.fecha >= filtro_desde)
@@ -1334,16 +1339,16 @@ def obtener_registros_graficos():
                 return jsonify({"error": "proyecto_id inválido"}), 400
 
         # ----------------------------------------------------------
-        # Límite opcional, no fijo
+        # Límite seguro
         # ----------------------------------------------------------
-        max_rows = request.args.get("max_rows", type=int)
+        max_rows = request.args.get("max_rows", type=int) or 10000
+        max_rows = min(max(max_rows, 1), 10000)
 
-        query_final = q.order_by(Registro.fecha.desc(), Registro.id.desc())
-
-        if max_rows and max_rows > 0:
-            query_final = query_final.limit(min(max_rows, 50000))
-
-        registros = query_final.all()
+        registros = (
+            q.order_by(Registro.fecha.desc(), Registro.id.desc())
+             .limit(max_rows)
+             .all()
+        )
 
         # ----------------------------------------------------------
         # Serialización
