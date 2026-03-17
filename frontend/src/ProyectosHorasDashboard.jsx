@@ -24,23 +24,18 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const getCurrentMonth = () => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
-};
-
 const normalizeDateOnly = (value) => {
   if (!value) return "";
-  if (typeof value !== "string") return "";
-  return value.slice(0, 10); // YYYY-MM-DD
+  if (!["string", "number"].includes(typeof value)) return "";
+  return String(value).slice(0, 10); // YYYY-MM-DD
 };
 
 const coincideMes = (fechaISO, mesYYYYMM) => {
   if (!mesYYYYMM) return true;
+  const fecha = normalizeDateOnly(fechaISO);
+  if (!fecha) return false;
   const [y, m] = mesYYYYMM.split("-");
-  return typeof fechaISO === "string" && fechaISO.startsWith(`${y}-${m}`);
+  return fecha.startsWith(`${y}-${m}`);
 };
 
 const monthToDateStart = (monthStr) => {
@@ -64,7 +59,13 @@ const estaEnRangoFecha = (fechaISO, desde, hasta) => {
   return true;
 };
 
-const hasRangeActivo = (tipoRango, filtroRangoMesDesde, filtroRangoMesHasta, filtroFechaDesde, filtroFechaHasta) => {
+const hasRangeActivo = (
+  tipoRango,
+  filtroRangoMesDesde,
+  filtroRangoMesHasta,
+  filtroFechaDesde,
+  filtroFechaHasta
+) => {
   if (tipoRango === "mes") {
     return !!(filtroRangoMesDesde || filtroRangoMesHasta);
   }
@@ -81,7 +82,12 @@ const cumpleFiltroFechaPrincipal = ({
   if (rangoActivo) {
     return estaEnRangoFecha(fechaISO, rangoDesde, rangoHasta);
   }
-  return coincideMes(fechaISO, filtroMes);
+
+  if (filtroMes) {
+    return coincideMes(fechaISO, filtroMes);
+  }
+
+  return true;
 };
 
 const equipoOf = (r, fallback = "SIN EQUIPO") =>
@@ -171,6 +177,7 @@ function YAxisTickWrap(props) {
       if (lines.length >= maxLines - 1) break;
     }
   }
+
   if (line && lines.length < maxLines) lines.push(line);
 
   const joined = lines.join(" ");
@@ -344,7 +351,7 @@ export default function ProyectosHorasDashboard({
   defaultMonth = "",
   registrosOverride = null,
 }) {
-  const currentMonth = useMemo(() => defaultMonth || getCurrentMonth(), [defaultMonth]);
+  const initialMonth = useMemo(() => defaultMonth || "", [defaultMonth]);
 
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState("");
@@ -352,11 +359,9 @@ export default function ProyectosHorasDashboard({
   const [mapeosProyecto, setMapeosProyecto] = useState([]);
   const [loadingMain, setLoadingMain] = useState(false);
 
-  // Filtro puntual por mes (se mantiene)
-  const [filtroMes, setFiltroMes] = useState(currentMonth);
+  const [filtroMes, setFiltroMes] = useState(initialMonth);
 
-  // Nuevo rango
-  const [tipoRango, setTipoRango] = useState("mes"); // "mes" | "dia"
+  const [tipoRango, setTipoRango] = useState("mes");
   const [filtroRangoMesDesde, setFiltroRangoMesDesde] = useState("");
   const [filtroRangoMesHasta, setFiltroRangoMesHasta] = useState("");
   const [filtroFechaDesde, setFiltroFechaDesde] = useState("");
@@ -460,15 +465,7 @@ export default function ProyectosHorasDashboard({
     setError("");
 
     try {
-      const qs = new URLSearchParams();
-      if (rangoActivo) {
-        if (rangoDesde) qs.set("desde", rangoDesde);
-        if (rangoHasta) qs.set("hasta", rangoHasta);
-      } else if (filtroMes) {
-        qs.set("mes", filtroMes);
-      }
-
-      const url = `/registros/graficos${qs.toString() ? `?${qs.toString()}` : ""}`;
+      const url = `/registros/graficos`;
 
       const res = await jfetch(url, {
         method: "GET",
@@ -498,10 +495,6 @@ export default function ProyectosHorasDashboard({
     usuario,
     rolUpper,
     equipoUser,
-    filtroMes,
-    rangoActivo,
-    rangoDesde,
-    rangoHasta,
     initFiltrosPorScope,
   ]);
 
@@ -549,7 +542,7 @@ export default function ProyectosHorasDashboard({
   }, []);
 
   useEffect(() => {
-    setFiltroMes(defaultMonth || getCurrentMonth());
+    setFiltroMes(defaultMonth || "");
   }, [defaultMonth]);
 
   const proyectosByCodigo = useMemo(() => {
@@ -769,8 +762,7 @@ export default function ProyectosHorasDashboard({
             rangoDesde,
             rangoHasta,
           })
-          )
-        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
+        )
         .map((r) => r.ocupacionNormalizada)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
@@ -945,8 +937,7 @@ export default function ProyectosHorasDashboard({
   const topProyectos = useMemo(() => horasPorProyecto.slice(0, TOP), [horasPorProyecto]);
 
   const limpiarFiltros = () => {
-    setFiltroMes(getCurrentMonth());
-
+    setFiltroMes(defaultMonth || "");
     setTipoRango("mes");
     setFiltroRangoMesDesde("");
     setFiltroRangoMesHasta("");

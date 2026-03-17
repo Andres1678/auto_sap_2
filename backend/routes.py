@@ -1227,12 +1227,9 @@ def obtener_registros_graficos():
             pass
 
         # ----------------------------------------------------------
-        # Filtros opcionales
+        # Filtro opcional por equipo
         # ----------------------------------------------------------
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
-        mes_filter = (request.args.get("mes") or "").strip()      # esperado: YYYY-MM
-        desde = (request.args.get("desde") or "").strip()         # esperado: YYYY-MM-DD
-        hasta = (request.args.get("hasta") or "").strip()         # esperado: YYYY-MM-DD
 
         if equipo_filter:
             if scope in ("TEAM", "SELF"):
@@ -1246,36 +1243,7 @@ def obtener_registros_graficos():
             q = q.filter(func.upper(E.nombre) == equipo_filter)
 
         # ----------------------------------------------------------
-        # Filtro por mes puntual: mes=YYYY-MM
-        # ----------------------------------------------------------
-        if mes_filter:
-            try:
-                partes = mes_filter.split("-")
-                if len(partes) == 2:
-                    anio = int(partes[0])
-                    mes_num = int(partes[1])
-
-                    q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == anio)
-                    q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == mes_num)
-                else:
-                    return jsonify({'error': 'Formato inválido para mes. Use YYYY-MM'}), 400
-            except ValueError:
-                return jsonify({'error': 'Formato inválido para mes. Use YYYY-MM'}), 400
-
-        # ----------------------------------------------------------
-        # Filtro por rango de fechas: desde / hasta
-        # ----------------------------------------------------------
-        if desde and hasta:
-            if desde > hasta:
-                return jsonify({'error': 'La fecha desde no puede ser mayor que hasta'}), 400
-            q = q.filter(cast(Registro.fecha, db.Date).between(desde, hasta))
-        elif desde:
-            q = q.filter(cast(Registro.fecha, db.Date) >= desde)
-        elif hasta:
-            q = q.filter(cast(Registro.fecha, db.Date) <= hasta)
-
-        # ----------------------------------------------------------
-        # Límite para gráficas
+        # Límite razonable
         # ----------------------------------------------------------
         registros = (
             q.order_by(Registro.fecha.desc(), Registro.id.desc())
