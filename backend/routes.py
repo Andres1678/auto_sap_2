@@ -1190,6 +1190,7 @@ def obtener_registros_graficos():
             .filter(func.lower(Consultor.usuario) == usuario_norm)
             .first()
         )
+
         if not consultor_login:
             return jsonify({'error': 'Consultor no encontrado'}), 404
 
@@ -1229,54 +1230,52 @@ def obtener_registros_graficos():
         # Filtros opcionales
         # ----------------------------------------------------------
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
-        mes_filter = (request.args.get("mes") or "").strip()          # formato esperado YYYY-MM
-        desde = (request.args.get("desde") or "").strip()            # YYYY-MM-DD
-        hasta = (request.args.get("hasta") or "").strip()            # YYYY-MM-DD
+        mes_filter = (request.args.get("mes") or "").strip()      # esperado: YYYY-MM
+        desde = (request.args.get("desde") or "").strip()         # esperado: YYYY-MM-DD
+        hasta = (request.args.get("hasta") or "").strip()         # esperado: YYYY-MM-DD
 
         if equipo_filter:
             if scope in ("TEAM", "SELF"):
-                eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper() if consultor_login.equipo_obj else ""
+                eq_login = ""
+                if consultor_login.equipo_obj:
+                    eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper()
+
                 if equipo_filter != eq_login:
                     return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
+
             q = q.filter(func.upper(E.nombre) == equipo_filter)
 
-        # Filtro por mes (prioridad si viene)
+        # ----------------------------------------------------------
+        # Filtro por mes puntual: mes=YYYY-MM
+        # ----------------------------------------------------------
         if mes_filter:
             try:
                 partes = mes_filter.split("-")
                 if len(partes) == 2:
                     anio = int(partes[0])
                     mes_num = int(partes[1])
+
                     q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == anio)
                     q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == mes_num)
-            except Exception:
-                pass
-
-        # Filtro por rango de fechas
-        if desde and hasta:
-            q = q.filter(Registro.fecha.between(desde, hasta))
-        elif desde:
-            q = q.filter(Registro.fecha >= desde)
-        elif hasta:
-            q = q.filter(Registro.fecha <= hasta)
-
-        filtro_mes = (request.args.get("mes") or "").strip()
-        filtro_anio = (request.args.get("anio") or "").strip()
-
-        if filtro_mes:
-            try:
-                q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
-            except Exception:
-                pass
-
-        if filtro_anio:
-            try:
-                q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == int(filtro_anio))
-            except Exception:
-                pass
+                else:
+                    return jsonify({'error': 'Formato inválido para mes. Use YYYY-MM'}), 400
+            except ValueError:
+                return jsonify({'error': 'Formato inválido para mes. Use YYYY-MM'}), 400
 
         # ----------------------------------------------------------
-        # Límite más razonable para gráficas
+        # Filtro por rango de fechas: desde / hasta
+        # ----------------------------------------------------------
+        if desde and hasta:
+            if desde > hasta:
+                return jsonify({'error': 'La fecha desde no puede ser mayor que hasta'}), 400
+            q = q.filter(cast(Registro.fecha, db.Date).between(desde, hasta))
+        elif desde:
+            q = q.filter(cast(Registro.fecha, db.Date) >= desde)
+        elif hasta:
+            q = q.filter(cast(Registro.fecha, db.Date) <= hasta)
+
+        # ----------------------------------------------------------
+        # Límite para gráficas
         # ----------------------------------------------------------
         registros = (
             q.order_by(Registro.fecha.desc(), Registro.id.desc())
@@ -1288,6 +1287,7 @@ def obtener_registros_graficos():
         # Serialización
         # ----------------------------------------------------------
         data = []
+
         for r in registros:
             tarea = r.tarea
             ocup = r.ocupacion

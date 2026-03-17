@@ -24,10 +24,44 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const getCurrentMonth = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+};
+
+const normalizeDateOnly = (value) => {
+  if (!value) return "";
+  if (typeof value !== "string") return "";
+  return value.slice(0, 10); // YYYY-MM-DD
+};
+
 const coincideMes = (fechaISO, mesYYYYMM) => {
   if (!mesYYYYMM) return true;
   const [y, m] = mesYYYYMM.split("-");
   return typeof fechaISO === "string" && fechaISO.startsWith(`${y}-${m}`);
+};
+
+const monthToDateStart = (monthStr) => {
+  if (!monthStr) return "";
+  return `${monthStr}-01`;
+};
+
+const monthToDateEnd = (monthStr) => {
+  if (!monthStr) return "";
+  const [y, m] = monthStr.split("-").map(Number);
+  if (!y || !m) return "";
+  const lastDay = new Date(y, m, 0).getDate();
+  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+};
+
+const estaEnRangoFecha = (fechaISO, desde, hasta) => {
+  const fecha = normalizeDateOnly(fechaISO);
+  if (!fecha) return false;
+  if (desde && fecha < desde) return false;
+  if (hasta && fecha > hasta) return false;
+  return true;
 };
 
 const equipoOf = (r, fallback = "SIN EQUIPO") =>
@@ -290,13 +324,24 @@ export default function ProyectosHorasDashboard({
   defaultMonth = "",
   registrosOverride = null,
 }) {
+  const currentMonth = useMemo(() => defaultMonth || getCurrentMonth(), [defaultMonth]);
+
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState("");
   const [proyectos, setProyectos] = useState([]);
   const [mapeosProyecto, setMapeosProyecto] = useState([]);
   const [loadingMain, setLoadingMain] = useState(false);
 
-  const [filtroMes, setFiltroMes] = useState(defaultMonth || "");
+  // Filtro puntual por mes (se mantiene)
+  const [filtroMes, setFiltroMes] = useState(currentMonth);
+
+  // Nuevo rango
+  const [tipoRango, setTipoRango] = useState("mes"); // "mes" | "dia"
+  const [filtroRangoMesDesde, setFiltroRangoMesDesde] = useState("");
+  const [filtroRangoMesHasta, setFiltroRangoMesHasta] = useState("");
+  const [filtroFechaDesde, setFiltroFechaDesde] = useState("");
+  const [filtroFechaHasta, setFiltroFechaHasta] = useState("");
+
   const [filtroEquipo, setFiltroEquipo] = useState([]);
   const [filtroConsultor, setFiltroConsultor] = useState([]);
   const [filtroModulo, setFiltroModulo] = useState([]);
@@ -346,6 +391,16 @@ export default function ProyectosHorasDashboard({
     }
   }, [scope, nombreUser, equipoUser]);
 
+  const rangoDesde = useMemo(() => {
+    if (tipoRango === "mes") return monthToDateStart(filtroRangoMesDesde);
+    return filtroFechaDesde || "";
+  }, [tipoRango, filtroRangoMesDesde, filtroFechaDesde]);
+
+  const rangoHasta = useMemo(() => {
+    if (tipoRango === "mes") return monthToDateEnd(filtroRangoMesHasta);
+    return filtroFechaHasta || "";
+  }, [tipoRango, filtroRangoMesHasta, filtroFechaHasta]);
+
   const fetchGraficos = useCallback(async () => {
     if (Array.isArray(registrosOverride)) {
       setError("");
@@ -370,11 +425,17 @@ export default function ProyectosHorasDashboard({
 
     try {
       const qs = new URLSearchParams();
-
+      
       if (filtroMes) {
-        const [anio, mes] = filtroMes.split("-");
-        if (anio) qs.set("anio", anio);
-        if (mes) qs.set("mes", mes);
+        qs.set("mes", filtroMes);
+      }
+
+      if (rangoDesde) {
+        qs.set("desde", rangoDesde); 
+      }
+
+      if (rangoHasta) {
+        qs.set("hasta", rangoHasta); 
       }
 
       const url = `/registros/graficos${qs.toString() ? `?${qs.toString()}` : ""}`;
@@ -390,7 +451,7 @@ export default function ProyectosHorasDashboard({
       });
 
       const json = await res.json().catch(() => []);
-      if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(json?.mensaje || json?.error || `HTTP ${res.status}`);
 
       const arr = Array.isArray(json) ? json : [];
       setRegistros(arr);
@@ -402,7 +463,16 @@ export default function ProyectosHorasDashboard({
     } finally {
       setLoadingMain(false);
     }
-  }, [registrosOverride, usuario, rolUpper, equipoUser, filtroMes, initFiltrosPorScope]);
+  }, [
+    registrosOverride,
+    usuario,
+    rolUpper,
+    equipoUser,
+    filtroMes,
+    rangoDesde,
+    rangoHasta,
+    initFiltrosPorScope,
+  ]);
 
   useEffect(() => {
     fetchGraficos();
@@ -448,7 +518,7 @@ export default function ProyectosHorasDashboard({
   }, []);
 
   useEffect(() => {
-    setFiltroMes(defaultMonth || "");
+    setFiltroMes(defaultMonth || getCurrentMonth());
   }, [defaultMonth]);
 
   const proyectosByCodigo = useMemo(() => {
@@ -518,19 +588,16 @@ export default function ProyectosHorasDashboard({
 
   const resolveProyecto = useCallback(
     (r) => {
-      // 1) prioridad máxima: proyecto_id
       const pid = Number(r?.proyecto_id || r?.proyecto?.id || 0);
       if (pid && proyectosById.has(pid)) {
         return proyectosById.get(pid);
       }
 
-      // 2) si viene código directo desde backend
       const codigoDirecto = normTxt(r?.proyecto_codigo || r?.proyecto?.codigo || "");
       if (codigoDirecto && proyectosByCodigo.has(codigoDirecto)) {
         return proyectosByCodigo.get(codigoDirecto);
       }
 
-      // 3) si viene nombre + código en el objeto proyecto
       const proyectoObjCodigo = normTxt(r?.proyecto?.codigo || "");
       if (proyectoObjCodigo && proyectosByCodigo.has(proyectoObjCodigo)) {
         return proyectosByCodigo.get(proyectoObjCodigo);
@@ -546,24 +613,20 @@ export default function ProyectosHorasDashboard({
         const val = normTxt(raw);
         if (!val) continue;
 
-        // 4) coincide con código real del proyecto
         if (proyectosByCodigo.has(val)) {
           return proyectosByCodigo.get(val);
         }
 
-        // 5) EXACT
         if (mapeosProyectoPreparados.exactMap.has(val)) {
           return mapeosProyectoPreparados.exactMap.get(val);
         }
 
-        // 6) CONTAINS
         for (const rule of mapeosProyectoPreparados.containsRules) {
           if (val.includes(rule.valor)) {
             return rule.proyecto;
           }
         }
 
-        // 7) REGEX
         for (const rule of mapeosProyectoPreparados.regexRules) {
           if (rule.regex.test(String(raw))) {
             return rule.proyecto;
@@ -616,56 +679,62 @@ export default function ProyectosHorasDashboard({
     const set = new Set(
       (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
+        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
         .map((r) => r.equipoNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes]);
+  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta]);
 
   const consultoresUnicos = useMemo(() => {
     const set = new Set(
       (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
+        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
         .filter((r) => (scope !== "TEAM" ? true : !equipoUser || r.equipoNormalizado === equipoUser))
         .map((r) => r.consultorNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, scope, equipoUser]);
+  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta, scope, equipoUser]);
 
   const modulosUnicos = useMemo(() => {
     const set = new Set(
       (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
+        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
         .map((r) => r.moduloNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes]);
+  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta]);
 
   const ocupacionesUnicas = useMemo(() => {
     const set = new Set(
       (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
+        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
         .map((r) => r.ocupacionNormalizada)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes]);
+  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta]);
 
   const tareasUnicas = useMemo(() => {
     const set = new Set(
       (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
+        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
         .map((r) => r.tareaNormalizada)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes]);
+  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta]);
 
   const proyectosUnicos = useMemo(() => {
     const set = new Set(
       (registrosEnriquecidos ?? [])
         .filter((r) => coincideMes(r.fecha, filtroMes))
+        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
         .map((r) => r.proyectoOficial)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes]);
+  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta]);
 
   const datosFiltrados = useMemo(() => {
     return (registrosEnriquecidos ?? []).filter((r) => {
@@ -681,6 +750,8 @@ export default function ProyectosHorasDashboard({
       }
 
       if (!coincideMes(r.fecha, filtroMes)) return false;
+      if (!estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta)) return false;
+
       if (filtroEquipo.length > 0 && !filtroEquipo.includes(r.equipoNormalizado)) return false;
       if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultorNormalizado)) return false;
       if (filtroModulo.length > 0 && !filtroModulo.includes(r.moduloNormalizado)) return false;
@@ -693,6 +764,8 @@ export default function ProyectosHorasDashboard({
   }, [
     registrosEnriquecidos,
     filtroMes,
+    rangoDesde,
+    rangoHasta,
     filtroEquipo,
     filtroConsultor,
     filtroModulo,
@@ -788,6 +861,14 @@ export default function ProyectosHorasDashboard({
   const topProyectos = useMemo(() => horasPorProyecto.slice(0, TOP), [horasPorProyecto]);
 
   const limpiarFiltros = () => {
+    setFiltroMes(getCurrentMonth());
+
+    setTipoRango("mes");
+    setFiltroRangoMesDesde("");
+    setFiltroRangoMesHasta("");
+    setFiltroFechaDesde("");
+    setFiltroFechaHasta("");
+
     setFiltroModulo([]);
     setFiltroOcupacion([]);
     setFiltroTarea([]);
@@ -933,6 +1014,59 @@ export default function ProyectosHorasDashboard({
                 onChange={(e) => setFiltroMes(e.target.value)}
               />
             </div>
+
+            <div className="phd-month">
+              <span className="phd-label">TIPO DE RANGO</span>
+              <select
+                value={tipoRango}
+                onChange={(e) => setTipoRango(e.target.value)}
+              >
+                <option value="mes">Rango por meses</option>
+                <option value="dia">Rango por días</option>
+              </select>
+            </div>
+
+            {tipoRango === "mes" ? (
+              <>
+                <div className="phd-month">
+                  <span className="phd-label">RANGO MES DESDE</span>
+                  <input
+                    type="month"
+                    value={filtroRangoMesDesde}
+                    onChange={(e) => setFiltroRangoMesDesde(e.target.value)}
+                  />
+                </div>
+
+                <div className="phd-month">
+                  <span className="phd-label">RANGO MES HASTA</span>
+                  <input
+                    type="month"
+                    value={filtroRangoMesHasta}
+                    onChange={(e) => setFiltroRangoMesHasta(e.target.value)}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="phd-month">
+                  <span className="phd-label">FECHA DESDE</span>
+                  <input
+                    type="date"
+                    value={filtroFechaDesde}
+                    onChange={(e) => setFiltroFechaDesde(e.target.value)}
+                  />
+                </div>
+
+                <div className="phd-month">
+                  <span className="phd-label">FECHA HASTA</span>
+                  <input
+                    type="date"
+                    value={filtroFechaHasta}
+                    onChange={(e) => setFiltroFechaHasta(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
 
             <MultiFiltro
               titulo="PROYECTOS (OFICIAL)"
