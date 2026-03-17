@@ -4,11 +4,20 @@ import Swal from "sweetalert2";
 import { jfetch } from "./lib/api";
 import "./ModalMapeoProyecto.css";
 
+const TIPO_MATCH_OPTIONS = ["EXACT", "CONTAINS", "REGEX"];
+
+const normalizeValorOrigen = (value) =>
+  String(value ?? "")
+    .trim()
+    .toUpperCase();
+
 export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState({
     id: null,
     valor_origen: "",
+    tipo_match: "EXACT",
+    activo: true,
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -16,13 +25,19 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
   const fetchRows = async () => {
     if (!proyecto?.id) return;
     setLoading(true);
+
     try {
       const res = await jfetch(`/proyectos/${proyecto.id}/mapeos`);
       const json = await res.json().catch(() => []);
       if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
+
       setRows(Array.isArray(json) ? json : []);
     } catch (e) {
-      Swal.fire({ icon: "error", title: "Error", text: String(e.message || e) });
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: String(e.message || e),
+      });
       setRows([]);
     } finally {
       setLoading(false);
@@ -34,14 +49,31 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
   }, [isOpen, proyecto?.id]);
 
   const resetForm = () => {
-    setForm({ id: null, valor_origen: "" });
+    setForm({
+      id: null,
+      valor_origen: "",
+      tipo_match: "EXACT",
+      activo: true,
+    });
   };
 
   const onSubmit = async (e) => {
     e.preventDefault();
 
-    if (!form.valor_origen.trim()) {
-      return Swal.fire({ icon: "warning", title: "Completa el valor origen" });
+    const valorOrigen = normalizeValorOrigen(form.valor_origen);
+
+    if (!valorOrigen) {
+      return Swal.fire({
+        icon: "warning",
+        title: "Completa el valor origen",
+      });
+    }
+
+    if (!proyecto?.id && !form.id) {
+      return Swal.fire({
+        icon: "warning",
+        title: "No hay proyecto seleccionado",
+      });
     }
 
     try {
@@ -53,19 +85,23 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
 
       const method = form.id ? "PUT" : "POST";
 
+      const payload = {
+        valor_origen: valorOrigen,
+        tipo_match: form.tipo_match,
+        activo: !!form.activo,
+      };
+
       const res = await jfetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          valor_origen: form.valor_origen.trim(),
-        }),
+        body: JSON.stringify(payload),
       });
 
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
 
       resetForm();
-      fetchRows();
+      await fetchRows();
 
       Swal.fire({
         icon: "success",
@@ -74,7 +110,11 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
         showConfirmButton: false,
       });
     } catch (e2) {
-      Swal.fire({ icon: "error", title: "Error guardando", text: String(e2.message || e2) });
+      Swal.fire({
+        icon: "error",
+        title: "Error guardando",
+        text: String(e2.message || e2),
+      });
     } finally {
       setSaving(false);
     }
@@ -84,6 +124,8 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
     setForm({
       id: row.id,
       valor_origen: row.valor_origen || "",
+      tipo_match: row.tipo_match || "EXACT",
+      activo: row.activo !== false,
     });
   };
 
@@ -100,13 +142,20 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
     if (!ok.isConfirmed) return;
 
     try {
-      const res = await jfetch(`/proyecto-mapeos/${row.id}`, { method: "DELETE" });
+      const res = await jfetch(`/proyecto-mapeos/${row.id}`, {
+        method: "DELETE",
+      });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
-      fetchRows();
+
+      await fetchRows();
       if (form.id === row.id) resetForm();
     } catch (e) {
-      Swal.fire({ icon: "error", title: "No se pudo eliminar", text: String(e.message || e) });
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo eliminar",
+        text: String(e.message || e),
+      });
     }
   };
 
@@ -118,16 +167,55 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
       overlayClassName="modal-overlay"
     >
       <div className="modal-header">
-        <h3>Mapeos — {proyecto?.codigo} - {proyecto?.nombre}</h3>
-        <button type="button" onClick={onClose} aria-label="Cerrar modal">✖</button>
+        <h3>
+          Mapeos — {proyecto?.codigo} - {proyecto?.nombre}
+        </h3>
+        <button type="button" onClick={onClose} aria-label="Cerrar modal">
+          ✖
+        </button>
       </div>
 
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} className="mapeo-form">
         <input
           value={form.valor_origen}
-          onChange={(e) => setForm((f) => ({ ...f, valor_origen: e.target.value }))}
+          onChange={(e) =>
+            setForm((f) => ({
+              ...f,
+              valor_origen: e.target.value,
+            }))
+          }
           placeholder="Valor origen"
         />
+
+        <select
+          value={form.tipo_match}
+          onChange={(e) =>
+            setForm((f) => ({
+              ...f,
+              tipo_match: e.target.value,
+            }))
+          }
+        >
+          {TIPO_MATCH_OPTIONS.map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+
+        <label className="mapeo-check">
+          <input
+            type="checkbox"
+            checked={!!form.activo}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                activo: e.target.checked,
+              }))
+            }
+          />
+          Activo
+        </label>
 
         <button type="submit" disabled={saving}>
           {form.id ? "Actualizar" : "Agregar"}
@@ -147,6 +235,8 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
           <thead>
             <tr>
               <th>Origen</th>
+              <th>Tipo</th>
+              <th>Activo</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -154,15 +244,21 @@ export default function ModalMapeoProyecto({ isOpen, onClose, proyecto }) {
             {rows.map((r) => (
               <tr key={r.id}>
                 <td>{r.valor_origen}</td>
+                <td>{r.tipo_match || "EXACT"}</td>
+                <td>{r.activo ? "Sí" : "No"}</td>
                 <td>
-                  <button type="button" onClick={() => startEdit(r)}>✏️</button>
-                  <button type="button" onClick={() => removeRow(r)}>🗑️</button>
+                  <button type="button" onClick={() => startEdit(r)}>
+                    ✏️
+                  </button>
+                  <button type="button" onClick={() => removeRow(r)}>
+                    🗑️
+                  </button>
                 </td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan="2">Sin mapeos</td>
+                <td colSpan="4">Sin mapeos</td>
               </tr>
             )}
           </tbody>

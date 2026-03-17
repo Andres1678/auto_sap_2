@@ -5589,6 +5589,7 @@ def pm_to_dict(x: ProyectoMapeo):
         "id": x.id,
         "proyecto_id": x.proyecto_id,
         "valor_origen": x.valor_origen,
+        "tipo_match": x.tipo_match,
         "activo": bool(x.activo),
     }
 
@@ -5614,11 +5615,14 @@ def crear_proyecto_mapeo():
     data = request.get_json(silent=True) or {}
     proyecto_id = data.get("proyecto_id")
     valor_origen = (data.get("valor_origen") or "").strip().upper()
+    tipo_match = (data.get("tipo_match") or "EXACT").strip().upper()
 
     if not proyecto_id:
         return jsonify({"mensaje": "proyecto_id requerido"}), 400
     if not valor_origen:
         return jsonify({"mensaje": "valor_origen requerido"}), 400
+    if tipo_match not in {"EXACT", "CONTAINS", "REGEX"}:
+        return jsonify({"mensaje": "tipo_match inválido"}), 400
 
     try:
         proyecto_id = int(proyecto_id)
@@ -5631,6 +5635,7 @@ def crear_proyecto_mapeo():
     x = ProyectoMapeo(
         proyecto_id=proyecto_id,
         valor_origen=valor_origen,
+        tipo_match=tipo_match,
         activo=_to_bool2(data.get("activo"), default=True)
     )
     db.session.add(x)
@@ -5650,7 +5655,16 @@ def editar_proyecto_mapeo(id):
     data = request.get_json(silent=True) or {}
 
     if "valor_origen" in data:
-        x.valor_origen = (data.get("valor_origen") or "").strip().upper()
+        valor_origen = (data.get("valor_origen") or "").strip().upper()
+        if not valor_origen:
+            return jsonify({"mensaje": "valor_origen requerido"}), 400
+        x.valor_origen = valor_origen
+
+    if "tipo_match" in data:
+        tipo_match = (data.get("tipo_match") or "").strip().upper()
+        if tipo_match not in {"EXACT", "CONTAINS", "REGEX"}:
+            return jsonify({"mensaje": "tipo_match inválido"}), 400
+        x.tipo_match = tipo_match
 
     if "activo" in data:
         x.activo = _to_bool2(data.get("activo"), default=True)
@@ -5687,9 +5701,12 @@ def listar_mapeos_por_proyecto(proyecto_id):
 def crear_mapeo_por_proyecto(proyecto_id):
     data = request.get_json(silent=True) or {}
     valor_origen = (data.get("valor_origen") or "").strip().upper()
+    tipo_match = (data.get("tipo_match") or "EXACT").strip().upper()
 
     if not valor_origen:
         return jsonify({"mensaje": "valor_origen requerido"}), 400
+    if tipo_match not in {"EXACT", "CONTAINS", "REGEX"}:
+        return jsonify({"mensaje": "tipo_match inválido"}), 400
 
     proyecto = Proyecto.query.get(proyecto_id)
     if not proyecto:
@@ -5698,6 +5715,7 @@ def crear_mapeo_por_proyecto(proyecto_id):
     x = ProyectoMapeo(
         proyecto_id=proyecto_id,
         valor_origen=valor_origen,
+        tipo_match=tipo_match,
         activo=_to_bool2(data.get("activo"), default=True)
     )
     db.session.add(x)

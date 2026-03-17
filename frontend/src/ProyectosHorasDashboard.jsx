@@ -31,19 +31,7 @@ const coincideMes = (fechaISO, mesYYYYMM) => {
 };
 
 const equipoOf = (r, fallback = "SIN EQUIPO") =>
-  String(r?.equipo || "").trim().toUpperCase() || fallback;
-
-const groupSum = (rows, keyFn) => {
-  const acc = new Map();
-  for (const r of rows) {
-    const k = String(keyFn(r) || "—");
-    acc.set(k, (acc.get(k) || 0) + toNum(r?.horasNum ?? r?.tiempoInvertido));
-  }
-  return Array.from(acc, ([name, horas]) => ({
-    name,
-    horas: +horas.toFixed(2),
-  })).sort((a, b) => b.horas - a.horas);
-};
+  String(r?.equipo || r?.equipoNormalizado || "").trim().toUpperCase() || fallback;
 
 const uniqueCount = (rows, keyFn) => {
   const s = new Set();
@@ -62,6 +50,49 @@ const normTxt = (s) =>
     .replace(/\p{Diacritic}/gu, "")
     .replace(/\s+/g, " ");
 
+const cleanProjectInput = (v) => {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  const up = s.toUpperCase();
+  if (up === "0" || up === "NA" || up === "N/A") return "";
+  return s;
+};
+
+const getHorasRegistro = (r) =>
+  toNum(
+    r?.horasNum ??
+      r?.total_horas ??
+      r?.totalHoras ??
+      r?.tiempoInvertido ??
+      r?.tiempo_invertido ??
+      0
+  );
+
+const groupSum = (rows, keyFn, labelFn) => {
+  const acc = new Map();
+
+  for (const r of rows) {
+    const key = String(keyFn(r) || "SIN_PROYECTO");
+    const label = String(labelFn(r) || "SIN PROYECTO");
+
+    const prev = acc.get(key) || {
+      key,
+      name: label,
+      horas: 0,
+    };
+
+    prev.horas += getHorasRegistro(r);
+    acc.set(key, prev);
+  }
+
+  return Array.from(acc.values())
+    .map((x) => ({
+      ...x,
+      horas: +x.horas.toFixed(2),
+    }))
+    .sort((a, b) => b.horas - a.horas);
+};
+
 /* =========================
    Tick custom: WRAP en YAxis
 ========================= */
@@ -77,7 +108,7 @@ function YAxisTickWrap(props) {
   let line = "";
 
   for (const w of words) {
-    const test = (line ? `${line} ${w}` : w);
+    const test = line ? `${line} ${w}` : w;
     if (test.length <= maxCharsPerLine) {
       line = test;
     } else {
@@ -252,7 +283,7 @@ function MultiFiltro({
 }
 
 /* =========================
-   Componente principal dashboard
+   Componente principal
 ========================= */
 export default function ProyectosHorasDashboard({
   userData,
@@ -444,78 +475,142 @@ export default function ProyectosHorasDashboard({
     return map;
   }, [proyectos]);
 
-  const mapeoOrigenToProyecto = useMemo(() => {
-    const map = new Map();
+  const mapeosProyectoPreparados = useMemo(() => {
+    const exactMap = new Map();
+    const containsRules = [];
+    const regexRules = [];
 
     (mapeosProyecto || []).forEach((m) => {
-      if (!m?.activo) return;
+      const activo =
+        m?.activo === true ||
+        m?.activo === 1 ||
+        String(m?.activo ?? "").trim() === "1" ||
+        String(m?.activo ?? "").toLowerCase() === "true";
 
-      const proyectoId = Number(m.proyecto_id);
-      const origen = normTxt(m.valor_origen);
+      if (!activo) return;
 
-      if (!proyectoId || !origen) return;
-
-      const proyecto = proyectosById.get(proyectoId);
+      const proyecto = proyectosById.get(Number(m.proyecto_id));
       if (!proyecto) return;
 
-      map.set(origen, proyecto);
+      const valor = normTxt(m.valor_origen);
+      const tipo = String(m.tipo_match || "EXACT").toUpperCase();
+
+      if (!valor) return;
+
+      if (tipo === "EXACT") {
+        exactMap.set(valor, proyecto);
+      } else if (tipo === "CONTAINS") {
+        containsRules.push({ valor, proyecto });
+      } else if (tipo === "REGEX") {
+        try {
+          regexRules.push({
+            regex: new RegExp(String(m.valor_origen), "i"),
+            proyecto,
+          });
+        } catch {
+          // ignorar regex inválido
+        }
+      }
     });
 
-    return map;
+    return { exactMap, containsRules, regexRules };
   }, [mapeosProyecto, proyectosById]);
 
-  const registrosEnriquecidos = useMemo(() => {
-    return (registros || []).map((r) => {
-      const codigoDirecto = String(r?.proyecto_codigo || r?.proyecto?.codigo || "").trim();
-      const nombreDirecto = String(r?.proyecto_nombre || r?.proyecto?.nombre || "").trim();
+  const resolveProyecto = useCallback(
+    (r) => {
+      // 1) prioridad máxima: proyecto_id
+      const pid = Number(r?.proyecto_id || r?.proyecto?.id || 0);
+      if (pid && proyectosById.has(pid)) {
+        return proyectosById.get(pid);
+      }
 
-      let proyectoOficial = "SIN PROYECTO";
+      // 2) si viene código directo desde backend
+      const codigoDirecto = normTxt(r?.proyecto_codigo || r?.proyecto?.codigo || "");
+      if (codigoDirecto && proyectosByCodigo.has(codigoDirecto)) {
+        return proyectosByCodigo.get(codigoDirecto);
+      }
 
-      if (codigoDirecto) {
-        proyectoOficial = `${codigoDirecto} - ${nombreDirecto || "SIN NOMBRE"}`;
-      } else {
-        const nroCaso = String(r?.nroCasoCliente || "").trim();
-        const nroCasoNorm = normTxt(nroCaso);
+      // 3) si viene nombre + código en el objeto proyecto
+      const proyectoObjCodigo = normTxt(r?.proyecto?.codigo || "");
+      if (proyectoObjCodigo && proyectosByCodigo.has(proyectoObjCodigo)) {
+        return proyectosByCodigo.get(proyectoObjCodigo);
+      }
 
-        if (nroCasoNorm && proyectosByCodigo.has(nroCasoNorm)) {
-          const p = proyectosByCodigo.get(nroCasoNorm);
-          proyectoOficial = `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
-        } else if (nroCasoNorm && mapeoOrigenToProyecto.has(nroCasoNorm)) {
-          const p = mapeoOrigenToProyecto.get(nroCasoNorm);
-          proyectoOficial = `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
-        } else {
-          const descripcion = String(r?.descripcion || "").trim();
-          const descripcionNorm = normTxt(descripcion);
+      const candidatos = [
+        cleanProjectInput(r?.nroCasoCliente),
+        cleanProjectInput(r?.nro_caso_cliente),
+        cleanProjectInput(r?.descripcion),
+      ].filter(Boolean);
 
-          if (descripcionNorm && mapeoOrigenToProyecto.has(descripcionNorm)) {
-            const p = mapeoOrigenToProyecto.get(descripcionNorm);
-            proyectoOficial = `${p.codigo} - ${p.nombre || "SIN NOMBRE"}`;
+      for (const raw of candidatos) {
+        const val = normTxt(raw);
+        if (!val) continue;
+
+        // 4) coincide con código real del proyecto
+        if (proyectosByCodigo.has(val)) {
+          return proyectosByCodigo.get(val);
+        }
+
+        // 5) EXACT
+        if (mapeosProyectoPreparados.exactMap.has(val)) {
+          return mapeosProyectoPreparados.exactMap.get(val);
+        }
+
+        // 6) CONTAINS
+        for (const rule of mapeosProyectoPreparados.containsRules) {
+          if (val.includes(rule.valor)) {
+            return rule.proyecto;
+          }
+        }
+
+        // 7) REGEX
+        for (const rule of mapeosProyectoPreparados.regexRules) {
+          if (rule.regex.test(String(raw))) {
+            return rule.proyecto;
           }
         }
       }
 
-      const proyectoDigitadoRaw = String(r?.nroCasoCliente ?? "").trim();
-      const proyectoDigitado =
-        !proyectoDigitadoRaw ||
-        proyectoDigitadoRaw === "0" ||
-        proyectoDigitadoRaw.toUpperCase() === "NA" ||
-        proyectoDigitadoRaw.toUpperCase() === "N/A"
-          ? ""
-          : proyectoDigitadoRaw;
+      return null;
+    },
+    [proyectosById, proyectosByCodigo, mapeosProyectoPreparados]
+  );
+
+  const registrosEnriquecidos = useMemo(() => {
+    return (registros || []).map((r) => {
+      const proyectoResuelto = resolveProyecto(r);
+
+      const proyectoKey = proyectoResuelto
+        ? `PROY_${proyectoResuelto.id}`
+        : "SIN_PROYECTO";
+
+      const proyectoOficial = proyectoResuelto
+        ? `${String(proyectoResuelto.codigo || "").trim()} - ${String(
+            proyectoResuelto.nombre || "SIN NOMBRE"
+          ).trim()}`
+        : "SIN PROYECTO";
+
+      const proyectoDigitadoRaw = cleanProjectInput(r?.nroCasoCliente || r?.nro_caso_cliente);
+      const proyectoDigitado = proyectoDigitadoRaw || "";
 
       return {
         ...r,
         equipoNormalizado: equipoOf(r),
-        ocupacionNormalizada: r?.ocupacion_nombre || "SIN OCUPACIÓN",
-        moduloNormalizado: r?.modulo || "—",
-        consultorNormalizado: r?.consultor || "—",
-        tareaNormalizada: r?.tipoTarea || "—",
+        ocupacionNormalizada: String(
+          r?.ocupacion_nombre || r?.ocupacion || "SIN OCUPACIÓN"
+        ).trim(),
+        moduloNormalizado: String(r?.modulo || "—").trim(),
+        consultorNormalizado: String(r?.consultor || r?.usuario_consultor || "—").trim(),
+        tareaNormalizada: String(
+          r?.tipoTarea || r?.tipo_tarea || r?.tarea?.nombre || "—"
+        ).trim(),
+        proyectoKey,
         proyectoOficial,
         proyectoDigitado,
-        horasNum: toNum(r?.tiempoInvertido),
+        horasNum: getHorasRegistro(r),
       };
     });
-  }, [registros, proyectosByCodigo, mapeoOrigenToProyecto]);
+  }, [registros, resolveProyecto]);
 
   const equiposUnicos = useMemo(() => {
     const set = new Set(
@@ -610,27 +705,32 @@ export default function ProyectosHorasDashboard({
   ]);
 
   const horasPorProyecto = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.proyectoOficial),
+    () =>
+      groupSum(
+        datosFiltrados,
+        (r) => r.proyectoKey,
+        (r) => r.proyectoOficial
+      ),
     [datosFiltrados]
   );
 
   const horasPorModulo = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.moduloNormalizado),
+    () => groupSum(datosFiltrados, (r) => r.moduloNormalizado, (r) => r.moduloNormalizado),
     [datosFiltrados]
   );
 
   const horasPorConsultor = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.consultorNormalizado),
+    () => groupSum(datosFiltrados, (r) => r.consultorNormalizado, (r) => r.consultorNormalizado),
     [datosFiltrados]
   );
 
   const horasPorTarea = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.tareaNormalizada),
+    () => groupSum(datosFiltrados, (r) => r.tareaNormalizada, (r) => r.tareaNormalizada),
     [datosFiltrados]
   );
 
   const horasPorOcupacion = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.ocupacionNormalizada),
+    () => groupSum(datosFiltrados, (r) => r.ocupacionNormalizada, (r) => r.ocupacionNormalizada),
     [datosFiltrados]
   );
 
@@ -640,7 +740,7 @@ export default function ProyectosHorasDashboard({
   );
 
   const totalProyectos = useMemo(
-    () => uniqueCount(datosFiltrados, (r) => r.proyectoOficial),
+    () => uniqueCount(datosFiltrados, (r) => r.proyectoKey),
     [datosFiltrados]
   );
 
@@ -659,22 +759,30 @@ export default function ProyectosHorasDashboard({
     [datosFiltrados]
   );
 
-  const openDetail = useCallback((kind, value) => {
-    let rows = [];
+  const openDetail = useCallback(
+    (kind, value) => {
+      let rows = [];
 
-    if (kind === "proyecto") rows = datosFiltrados.filter((r) => r.proyectoOficial === value);
-    if (kind === "modulo") rows = datosFiltrados.filter((r) => r.moduloNormalizado === value);
-    if (kind === "consultor") rows = datosFiltrados.filter((r) => r.consultorNormalizado === value);
-    if (kind === "tarea") rows = datosFiltrados.filter((r) => r.tareaNormalizada === value);
-    if (kind === "ocupacion") rows = datosFiltrados.filter((r) => r.ocupacionNormalizada === value);
+      if (kind === "proyecto") rows = datosFiltrados.filter((r) => r.proyectoKey === value);
+      if (kind === "modulo") rows = datosFiltrados.filter((r) => r.moduloNormalizado === value);
+      if (kind === "consultor") rows = datosFiltrados.filter((r) => r.consultorNormalizado === value);
+      if (kind === "tarea") rows = datosFiltrados.filter((r) => r.tareaNormalizada === value);
+      if (kind === "ocupacion") rows = datosFiltrados.filter((r) => r.ocupacionNormalizada === value);
 
-    rows = rows.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-    const subtotal = rows.reduce((s, r) => s + r.horasNum, 0);
+      rows = rows.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+      const subtotal = rows.reduce((s, r) => s + r.horasNum, 0);
 
-    setDetailTitle(`${kind.toUpperCase()}: ${value} — Total: ${subtotal.toFixed(2)} h`);
-    setDetailRows(rows);
-    setDetailOpen(true);
-  }, [datosFiltrados]);
+      const label =
+        kind === "proyecto"
+          ? rows[0]?.proyectoOficial || "SIN PROYECTO"
+          : value;
+
+      setDetailTitle(`${kind.toUpperCase()}: ${label} — Total: ${subtotal.toFixed(2)} h`);
+      setDetailRows(rows);
+      setDetailOpen(true);
+    },
+    [datosFiltrados]
+  );
 
   const TOP = 20;
   const topProyectos = useMemo(() => horasPorProyecto.slice(0, TOP), [horasPorProyecto]);
@@ -745,7 +853,7 @@ export default function ProyectosHorasDashboard({
                     <Cell
                       key={idx}
                       fill={color}
-                      onClick={() => openDetail(kind, entry.name)}
+                      onClick={() => openDetail(kind, entry.key ?? entry.name)}
                       style={{ cursor: "pointer" }}
                     />
                   ))}
@@ -783,12 +891,7 @@ export default function ProyectosHorasDashboard({
           </div>
         </section>
 
-        {loadingMain && (
-          <div className="phd-loading-box">
-            Cargando información...
-          </div>
-        )}
-
+        {loadingMain && <div className="phd-loading-box">Cargando información...</div>}
         {error && <div className="phd-error">Error: {error}</div>}
 
         <section className="phd-kpis">
@@ -942,7 +1045,7 @@ export default function ProyectosHorasDashboard({
                 </thead>
                 <tbody>
                   {detailRows.map((r, i) => (
-                    <tr key={i}>
+                    <tr key={r.id ?? i}>
                       <td className="num">{r.id ?? "—"}</td>
                       <td>{r.fecha}</td>
                       <td className="phd-truncate" title={r.consultorNormalizado}>

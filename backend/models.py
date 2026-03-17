@@ -4,6 +4,7 @@ from sqlalchemy import Column, Integer, String, Float, Text, Boolean, text, Uniq
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.hybrid import hybrid_property
 from decimal import Decimal
+from sqlalchemy.dialects.mysql import BIGINT
 
 db = SQLAlchemy()
 
@@ -534,12 +535,11 @@ class ConsultorPresupuesto(db.Model):
     vigente = db.Column(db.Boolean, default=True)
 
 ##Proyectos
-
 class ProyectoFase(db.Model):
     __tablename__ = "proyecto_fase"
 
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(120), nullable=False, unique=True)  
+    nombre = db.Column(db.String(120), nullable=False, unique=True)
     orden = db.Column(db.Integer, nullable=False, default=0)
     activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
 
@@ -547,7 +547,8 @@ class ProyectoFase(db.Model):
 
     def __repr__(self):
         return f"<ProyectoFase id={self.id} nombre={self.nombre!r}>"
-    
+
+
 class Proyecto(db.Model):
     __tablename__ = "proyecto"
 
@@ -555,7 +556,7 @@ class Proyecto(db.Model):
     codigo = db.Column(db.String(50), nullable=False, unique=True)
     nombre = db.Column(db.String(180), nullable=False)
     activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
-    
+
     cliente_id = db.Column(
         db.Integer,
         db.ForeignKey("clientes.id", ondelete="SET NULL"),
@@ -563,7 +564,11 @@ class Proyecto(db.Model):
     )
     cliente = relationship("Cliente", lazy="joined")
 
-    fase_id = db.Column(db.Integer, db.ForeignKey("proyecto_fase.id", ondelete="SET NULL"), nullable=True)
+    fase_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto_fase.id", ondelete="SET NULL"),
+        nullable=True
+    )
     fase = relationship("ProyectoFase", back_populates="proyectos")
 
     modulos = relationship(
@@ -579,16 +584,34 @@ class Proyecto(db.Model):
         cascade="all, delete-orphan",
         lazy="joined"
     )
-    
+
+    mapeos = relationship(
+        "ProyectoMapeo",
+        back_populates="proyecto",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+
+    def __repr__(self):
+        return f"<Proyecto id={self.id} codigo={self.codigo!r} nombre={self.nombre!r}>"
+
+
 class ProyectoModulo(db.Model):
     __tablename__ = "proyecto_modulo"
 
     id = db.Column(db.Integer, primary_key=True)
 
-    proyecto_id = db.Column(db.Integer, db.ForeignKey("proyecto.id", ondelete="CASCADE"), nullable=False)
-    modulo_id = db.Column(db.Integer, db.ForeignKey("modulo.id", ondelete="CASCADE"), nullable=False)
+    proyecto_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    modulo_id = db.Column(
+        db.Integer,
+        db.ForeignKey("modulo.id", ondelete="CASCADE"),
+        nullable=False
+    )
 
-    # ✅ Por si algún día quieres desactivar un módulo en un proyecto sin borrarlo
     activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
 
     proyecto = relationship("Proyecto", back_populates="modulos")
@@ -601,13 +624,22 @@ class ProyectoModulo(db.Model):
     def __repr__(self):
         return f"<ProyectoModulo proyecto_id={self.proyecto_id} modulo_id={self.modulo_id} activo={self.activo}>"
 
+
 class ProyectoFaseProyecto(db.Model):
     __tablename__ = "proyecto_fase_proyecto"
 
     id = db.Column(db.BigInteger, primary_key=True)
 
-    proyecto_id = db.Column(db.Integer, db.ForeignKey("proyecto.id", ondelete="CASCADE"), nullable=False)
-    fase_id = db.Column(db.Integer, db.ForeignKey("proyecto_fase.id", ondelete="CASCADE"), nullable=False)
+    proyecto_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    fase_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto_fase.id", ondelete="CASCADE"),
+        nullable=False
+    )
 
     activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
     orden = db.Column(db.Integer, nullable=True)
@@ -619,10 +651,15 @@ class ProyectoFaseProyecto(db.Model):
         UniqueConstraint("proyecto_id", "fase_id", name="uq_proyecto_fase_proyecto"),
     )
 
+    def __repr__(self):
+        return f"<ProyectoFaseProyecto proyecto_id={self.proyecto_id} fase_id={self.fase_id}>"
+
+
 class ProyectoMapeo(db.Model):
     __tablename__ = "proyecto_mapeos"
 
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(BIGINT(unsigned=True), primary_key=True, autoincrement=True)
+
     proyecto_id = db.Column(
         db.Integer,
         db.ForeignKey("proyecto.id", ondelete="CASCADE"),
@@ -630,10 +667,40 @@ class ProyectoMapeo(db.Model):
     )
 
     valor_origen = db.Column(db.String(255), nullable=False)
-    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+
+    tipo_match = db.Column(
+        db.Enum("EXACT", "CONTAINS", "REGEX", name="tipo_match_enum"),
+        nullable=False,
+        server_default=text("'EXACT'")
+    )
+
+    activo = db.Column(
+        db.Boolean,
+        nullable=False,
+        server_default=text("1")
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        nullable=True,
+        server_default=text("current_timestamp()")
+    )
+
+    updated_at = db.Column(
+        db.DateTime,
+        nullable=True,
+        server_default=text("current_timestamp()"),
+        server_onupdate=text("current_timestamp()")
+    )
+
+    proyecto = relationship("Proyecto", back_populates="mapeos", lazy="joined")
 
     __table_args__ = (
         UniqueConstraint("proyecto_id", "valor_origen", name="uq_pm"),
     )
 
-    proyecto = relationship("Proyecto", lazy="joined")
+    def __repr__(self):
+        return (
+            f"<ProyectoMapeo id={self.id} proyecto_id={self.proyecto_id} "
+            f"valor_origen={self.valor_origen!r} tipo_match={self.tipo_match!r} activo={self.activo}>"
+        )
