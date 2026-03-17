@@ -31,7 +31,7 @@ const normalizeDateOnly = (value) => {
     if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
       return value.slice(0, 10);
     }
-    
+
     const parsed = new Date(value);
     if (!Number.isNaN(parsed.getTime())) {
       const y = parsed.getFullYear();
@@ -174,6 +174,13 @@ const groupSum = (rows, keyFn, labelFn) => {
       horas: +x.horas.toFixed(2),
     }))
     .sort((a, b) => b.horas - a.horas);
+};
+
+const currentMonthStr = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
 };
 
 /* =========================
@@ -374,7 +381,7 @@ export default function ProyectosHorasDashboard({
   defaultMonth = "",
   registrosOverride = null,
 }) {
-  const initialMonth = useMemo(() => defaultMonth || "", [defaultMonth]);
+  const initialMonth = useMemo(() => defaultMonth || currentMonthStr(), [defaultMonth]);
 
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState("");
@@ -565,7 +572,7 @@ export default function ProyectosHorasDashboard({
   }, []);
 
   useEffect(() => {
-    setFiltroMes(defaultMonth || "");
+    setFiltroMes(defaultMonth || currentMonthStr());
   }, [defaultMonth]);
 
   const proyectosByCodigo = useMemo(() => {
