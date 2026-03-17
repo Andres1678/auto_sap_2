@@ -1169,6 +1169,18 @@ def _scope_for_graficos(consultor_login, rol_req: str):
 # ============================================================
 #  ENDPOINT: SOLO PARA GRAFICOS
 # ============================================================
+def _safe_fecha_iso(v):
+    if v is None:
+        return None
+
+    if hasattr(v, "isoformat"):
+        try:
+            return v.isoformat()
+        except Exception:
+            pass
+
+    s = str(v).strip()
+    return s[:10] if s else None
 
 def _apply_project_filter_graficos(q, proyecto_id: int):
     proyecto = (
@@ -1303,7 +1315,6 @@ def obtener_registros_graficos():
         filtro_consultor = (request.args.get("consultor") or "").strip()
         filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
 
-        # Si no envían filtro de fecha, por defecto mes actual
         if not filtro_mes and not filtro_desde and not filtro_hasta:
             hoy = date.today()
             filtro_mes = f"{hoy.year:04d}-{hoy.month:02d}"
@@ -1311,17 +1322,18 @@ def obtener_registros_graficos():
         if filtro_mes:
             try:
                 y, m = filtro_mes.split("-")
+                prefijo_mes = f"{int(y):04d}-{int(m):02d}"
+
                 q = q.filter(
-                    extract("year", cast(Registro.fecha, db.Date)) == int(y),
-                    extract("month", cast(Registro.fecha, db.Date)) == int(m),
+                    func.substr(func.cast(Registro.fecha, db.String), 1, 7) == prefijo_mes
                 )
             except Exception:
                 return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
         else:
             if filtro_desde:
-                q = q.filter(Registro.fecha >= filtro_desde)
+                q = q.filter(func.cast(Registro.fecha, db.String) >= filtro_desde)
             if filtro_hasta:
-                q = q.filter(Registro.fecha <= filtro_hasta)
+                q = q.filter(func.cast(Registro.fecha, db.String) <= filtro_hasta)
 
         if filtro_modulo:
             q = q.filter(func.upper(Registro.modulo) == filtro_modulo.upper())
@@ -1356,16 +1368,16 @@ def obtener_registros_graficos():
         data = []
 
         for r in registros:
-            tarea = r.tarea
-            ocup = r.ocupacion
+            tarea = getattr(r, "tarea", None)
+            ocup = getattr(r, "ocupacion", None)
 
             if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
                 tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
             else:
-                tipo_tarea_str = (r.tipo_tarea or "").strip() or None
+                tipo_tarea_str = (getattr(r, "tipo_tarea", "") or "").strip() or None
 
             equipo_nombre = None
-            if r.consultor and r.consultor.equipo_obj:
+            if r.consultor and getattr(r.consultor, "equipo_obj", None):
                 equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
 
             proyecto = getattr(r, "proyecto", None)
@@ -1373,7 +1385,7 @@ def obtener_registros_graficos():
 
             data.append({
                 "id": r.id,
-                "fecha": r.fecha.isoformat() if r.fecha else None,
+                "fecha": _safe_fecha_iso(r.fecha),
                 "modulo": r.modulo,
                 "cliente": r.cliente,
                 "equipo": equipo_nombre or (r.equipo or "").strip().upper() or "SIN EQUIPO",

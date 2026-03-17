@@ -14,7 +14,12 @@ import {
 import { jfetch } from "./lib/api";
 import "./ProyectosHorasDashboard.css";
 
-Modal.setAppElement("#root");
+if (typeof document !== "undefined") {
+  const rootEl = document.querySelector("#root");
+  if (rootEl) {
+    Modal.setAppElement(rootEl);
+  }
+}
 
 /* =========================
    Helpers
@@ -22,6 +27,25 @@ Modal.setAppElement("#root");
 const toNum = (v) => {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
+};
+
+const toArrayResponse = (json) => {
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.items)) return json.items;
+  if (Array.isArray(json?.data)) return json.data;
+  return [];
+};
+
+const asBool = (v) => {
+  const s = String(v ?? "").trim().toLowerCase();
+  return v === true || v === 1 || s === "1" || s === "true";
+};
+
+const currentMonthStr = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
 };
 
 const normalizeDateOnly = (value) => {
@@ -151,6 +175,16 @@ const getHorasRegistro = (r) =>
       0
   );
 
+const buildProyectoLabel = (p) => {
+  const codigo = String(p?.codigo || "").trim();
+  const nombre = String(p?.nombre || "").trim();
+
+  if (codigo && nombre) return `${codigo} - ${nombre}`;
+  if (codigo) return codigo;
+  if (nombre) return nombre;
+  return "SIN PROYECTO";
+};
+
 const groupSum = (rows, keyFn, labelFn) => {
   const acc = new Map();
 
@@ -176,11 +210,26 @@ const groupSum = (rows, keyFn, labelFn) => {
     .sort((a, b) => b.horas - a.horas);
 };
 
-const currentMonthStr = () => {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
+const recordMatchesSelfScope = (r, usuario, nombreUser, equipoUser) => {
+  if (equipoUser && equipoOf(r) !== equipoUser) return false;
+
+  const userLogin = String(usuario || "").trim().toLowerCase();
+  const rowLogin = String(r?.usuario_consultor || r?.usuario || "")
+    .trim()
+    .toLowerCase();
+
+  if (userLogin && rowLogin) {
+    return userLogin === rowLogin;
+  }
+
+  const userName = normTxt(nombreUser);
+  const rowName = normTxt(r?.consultor || r?.consultorNormalizado || "");
+
+  if (userName && rowName) {
+    return userName === rowName;
+  }
+
+  return true;
 };
 
 /* =========================
@@ -446,6 +495,10 @@ export default function ProyectosHorasDashboard({
     }
   }, [scope, nombreUser, equipoUser]);
 
+  useEffect(() => {
+    initFiltrosPorScope();
+  }, [initFiltrosPorScope]);
+
   const rangoDesde = useMemo(() => {
     if (tipoRango === "mes") return monthToDateStart(filtroRangoMesDesde);
     return filtroFechaDesde || "";
@@ -472,73 +525,6 @@ export default function ProyectosHorasDashboard({
     filtroFechaHasta,
   ]);
 
-  const fetchGraficos = useCallback(async () => {
-    if (Array.isArray(registrosOverride)) {
-      setError("");
-      setRegistros(registrosOverride);
-      initFiltrosPorScope();
-      return;
-    }
-
-    if (!usuario) return;
-
-    if (abortMainRef.current) {
-      try {
-        abortMainRef.current.abort();
-      } catch {}
-    }
-
-    const controller = new AbortController();
-    abortMainRef.current = controller;
-
-    setLoadingMain(true);
-    setError("");
-
-    try {
-      const url = `/registros/graficos`;
-
-      const res = await jfetch(url, {
-        method: "GET",
-        signal: controller.signal,
-        headers: {
-          "X-User-Rol": rolUpper,
-          "X-User-Usuario": usuario,
-          "X-User-Equipo": equipoUser,
-        },
-      });
-
-      const json = await res.json().catch(() => []);
-      if (!res.ok) throw new Error(json?.mensaje || json?.error || `HTTP ${res.status}`);
-
-      const arr = Array.isArray(json) ? json : [];
-      setRegistros(arr);
-      initFiltrosPorScope();
-    } catch (e) {
-      if (e?.name === "AbortError") return;
-      setRegistros([]);
-      setError(String(e?.message || e));
-    } finally {
-      setLoadingMain(false);
-    }
-  }, [
-    registrosOverride,
-    usuario,
-    rolUpper,
-    equipoUser,
-    initFiltrosPorScope,
-  ]);
-
-  useEffect(() => {
-    fetchGraficos();
-    return () => {
-      if (abortMainRef.current) {
-        try {
-          abortMainRef.current.abort();
-        } catch {}
-      }
-    };
-  }, [fetchGraficos]);
-
   useEffect(() => {
     const fetchCatalogosProyecto = async () => {
       try {
@@ -559,8 +545,19 @@ export default function ProyectosHorasDashboard({
           throw new Error(jsonMapeos?.mensaje || `HTTP ${resMapeos.status}`);
         }
 
-        setProyectos(Array.isArray(jsonProyectos) ? jsonProyectos : []);
-        setMapeosProyecto(Array.isArray(jsonMapeos) ? jsonMapeos : []);
+        setProyectos(
+          toArrayResponse(jsonProyectos).map((p) => ({
+            ...p,
+            activo: asBool(p?.activo),
+          }))
+        );
+
+        setMapeosProyecto(
+          toArrayResponse(jsonMapeos).map((m) => ({
+            ...m,
+            activo: asBool(m?.activo),
+          }))
+        );
       } catch (e) {
         console.error("Error cargando catálogo de proyectos:", e);
         setProyectos([]);
@@ -599,19 +596,28 @@ export default function ProyectosHorasDashboard({
     return map;
   }, [proyectos]);
 
+  const proyectoLabelToId = useMemo(() => {
+    const map = new Map();
+
+    (proyectos || []).forEach((p) => {
+      const label = buildProyectoLabel(p);
+      const id = Number(p?.id);
+
+      if (label && Number.isFinite(id) && id > 0) {
+        map.set(label, id);
+      }
+    });
+
+    return map;
+  }, [proyectos]);
+
   const mapeosProyectoPreparados = useMemo(() => {
     const exactMap = new Map();
     const containsRules = [];
     const regexRules = [];
 
     (mapeosProyecto || []).forEach((m) => {
-      const activo =
-        m?.activo === true ||
-        m?.activo === 1 ||
-        String(m?.activo ?? "").trim() === "1" ||
-        String(m?.activo ?? "").toLowerCase() === "true";
-
-      if (!activo) return;
+      if (!asBool(m?.activo)) return;
 
       const proyecto = proyectosById.get(Number(m.proyecto_id));
       if (!proyecto) return;
@@ -637,8 +643,122 @@ export default function ProyectosHorasDashboard({
       }
     });
 
+    containsRules.sort((a, b) => b.valor.length - a.valor.length);
+
     return { exactMap, containsRules, regexRules };
   }, [mapeosProyecto, proyectosById]);
+
+  const fetchGraficos = useCallback(async () => {
+    if (Array.isArray(registrosOverride)) {
+      setError("");
+      setRegistros(registrosOverride);
+      return;
+    }
+
+    if (!usuario) return;
+
+    if (abortMainRef.current) {
+      try {
+        abortMainRef.current.abort();
+      } catch {}
+    }
+
+    const controller = new AbortController();
+    abortMainRef.current = controller;
+
+    setLoadingMain(true);
+    setError("");
+
+    try {
+      const params = new URLSearchParams();
+
+      if (rangoActivo) {
+        if (rangoDesde) params.set("desde", rangoDesde);
+        if (rangoHasta) params.set("hasta", rangoHasta);
+      } else if (filtroMes) {
+        params.set("mes", filtroMes);
+      }
+
+      params.set("max_rows", "10000");
+
+      if (scope === "ALL" && filtroEquipo.length === 1) {
+        params.set("equipo", filtroEquipo[0]);
+      }
+
+      if (scope !== "SELF" && filtroConsultor.length === 1) {
+        params.set("consultor", filtroConsultor[0]);
+      }
+
+      if (filtroModulo.length === 1) {
+        params.set("modulo", filtroModulo[0]);
+      }
+
+      if (filtroProyecto.length === 1) {
+        const proyectoId = proyectoLabelToId.get(filtroProyecto[0]);
+        if (proyectoId) {
+          params.set("proyecto_id", String(proyectoId));
+        }
+      }
+
+      const qs = params.toString();
+      const url = qs ? `/registros/graficos?${qs}` : "/registros/graficos";
+
+      const res = await jfetch(url, {
+        method: "GET",
+        signal: controller.signal,
+        headers: {
+          "X-User-Rol": rolUpper,
+          "X-User-Usuario": usuario,
+          "X-User-Equipo": equipoUser,
+        },
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(
+          json?.detalle ||
+          json?.mensaje ||
+          json?.error ||
+          `HTTP ${res.status}`
+        );
+      }
+
+      setRegistros(toArrayResponse(json));
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      setRegistros([]);
+      setError(String(e?.message || e));
+    } finally {
+      setLoadingMain(false);
+    }
+  }, [
+    registrosOverride,
+    usuario,
+    rolUpper,
+    equipoUser,
+    filtroMes,
+    rangoActivo,
+    rangoDesde,
+    rangoHasta,
+    filtroEquipo,
+    filtroConsultor,
+    filtroModulo,
+    filtroProyecto,
+    proyectoLabelToId,
+    scope,
+  ]);
+
+  useEffect(() => {
+    fetchGraficos();
+    return () => {
+      if (abortMainRef.current) {
+        try {
+          abortMainRef.current.abort();
+        } catch {}
+      }
+    };
+  }, [fetchGraficos]);
 
   const resolveProyecto = useCallback(
     (r) => {
@@ -652,12 +772,9 @@ export default function ProyectosHorasDashboard({
         return proyectosByCodigo.get(codigoDirecto);
       }
 
-      const proyectoObjCodigo = normTxt(r?.proyecto?.codigo || "");
-      if (proyectoObjCodigo && proyectosByCodigo.has(proyectoObjCodigo)) {
-        return proyectosByCodigo.get(proyectoObjCodigo);
-      }
-
       const candidatos = [
+        cleanProjectInput(r?.proyecto_codigo),
+        cleanProjectInput(r?.proyecto?.codigo),
         cleanProjectInput(r?.nroCasoCliente),
         cleanProjectInput(r?.nro_caso_cliente),
         cleanProjectInput(r?.descripcion),
@@ -702,13 +819,15 @@ export default function ProyectosHorasDashboard({
         : "SIN_PROYECTO";
 
       const proyectoOficial = proyectoResuelto
-        ? `${String(proyectoResuelto.codigo || "").trim()} - ${String(
-            proyectoResuelto.nombre || "SIN NOMBRE"
-          ).trim()}`
+        ? buildProyectoLabel(proyectoResuelto)
         : "SIN PROYECTO";
 
-      const proyectoDigitadoRaw = cleanProjectInput(r?.nroCasoCliente || r?.nro_caso_cliente);
-      const proyectoDigitado = proyectoDigitadoRaw || "";
+      const proyectoDigitadoRaw = cleanProjectInput(
+        r?.proyecto_codigo ||
+        r?.proyecto?.codigo ||
+        r?.nroCasoCliente ||
+        r?.nro_caso_cliente
+      );
 
       return {
         ...r,
@@ -723,7 +842,7 @@ export default function ProyectosHorasDashboard({
         ).trim(),
         proyectoKey,
         proyectoOficial,
-        proyectoDigitado,
+        proyectoDigitado: proyectoDigitadoRaw || "",
         horasNum: getHorasRegistro(r),
       };
     });
@@ -828,17 +947,15 @@ export default function ProyectosHorasDashboard({
           })
         )
         .map((r) => r.proyectoOficial)
+        .filter((x) => x && x !== "SIN PROYECTO")
     );
-    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
 
   const datosFiltrados = useMemo(() => {
     return (registrosEnriquecidos ?? []).filter((r) => {
       if (scope === "SELF") {
-        const u = String(usuario || "").trim().toLowerCase();
-        const ru = String(r.usuario_consultor || "").trim().toLowerCase();
-        if (u && ru && ru !== u) return false;
-        if (equipoUser && r.equipoNormalizado !== equipoUser) return false;
+        if (!recordMatchesSelfScope(r, usuario, nombreUser, equipoUser)) return false;
       }
 
       if (scope === "TEAM") {
@@ -880,6 +997,7 @@ export default function ProyectosHorasDashboard({
     filtroProyecto,
     scope,
     usuario,
+    nombreUser,
     equipoUser,
   ]);
 
@@ -919,7 +1037,11 @@ export default function ProyectosHorasDashboard({
   );
 
   const totalProyectos = useMemo(
-    () => uniqueCount(datosFiltrados, (r) => r.proyectoKey),
+    () =>
+      uniqueCount(
+        datosFiltrados.filter((r) => r.proyectoKey !== "SIN_PROYECTO"),
+        (r) => r.proyectoKey
+      ),
     [datosFiltrados]
   );
 
@@ -967,7 +1089,9 @@ export default function ProyectosHorasDashboard({
   const topProyectos = useMemo(() => horasPorProyecto.slice(0, TOP), [horasPorProyecto]);
 
   const limpiarFiltros = () => {
-    setFiltroMes(defaultMonth || "");
+    const mesBase = defaultMonth || currentMonthStr();
+
+    setFiltroMes(mesBase);
     setTipoRango("mes");
     setFiltroRangoMesDesde("");
     setFiltroRangoMesHasta("");
@@ -1105,7 +1229,7 @@ export default function ProyectosHorasDashboard({
               <h3>Filtros</h3>
               <p>Aplica filtros para refinar las gráficas y el detalle.</p>
             </div>
-            <button className="phd-btn phd-btn-dark" onClick={limpiarFiltros}>
+            <button className="phd-btn phd-btn-dark" onClick={limpiarFiltros} type="button">
               Limpiar filtros
             </button>
           </div>
@@ -1256,6 +1380,7 @@ export default function ProyectosHorasDashboard({
             className="phd-modalClose"
             onClick={() => setDetailOpen(false)}
             aria-label="Cerrar"
+            type="button"
           >
             ✖
           </button>
