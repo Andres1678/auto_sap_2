@@ -64,6 +64,26 @@ const estaEnRangoFecha = (fechaISO, desde, hasta) => {
   return true;
 };
 
+const hasRangeActivo = (tipoRango, filtroRangoMesDesde, filtroRangoMesHasta, filtroFechaDesde, filtroFechaHasta) => {
+  if (tipoRango === "mes") {
+    return !!(filtroRangoMesDesde || filtroRangoMesHasta);
+  }
+  return !!(filtroFechaDesde || filtroFechaHasta);
+};
+
+const cumpleFiltroFechaPrincipal = ({
+  fechaISO,
+  filtroMes,
+  rangoActivo,
+  rangoDesde,
+  rangoHasta,
+}) => {
+  if (rangoActivo) {
+    return estaEnRangoFecha(fechaISO, rangoDesde, rangoHasta);
+  }
+  return coincideMes(fechaISO, filtroMes);
+};
+
 const equipoOf = (r, fallback = "SIN EQUIPO") =>
   String(r?.equipo || r?.equipoNormalizado || "").trim().toUpperCase() || fallback;
 
@@ -401,6 +421,22 @@ export default function ProyectosHorasDashboard({
     return filtroFechaHasta || "";
   }, [tipoRango, filtroRangoMesHasta, filtroFechaHasta]);
 
+  const rangoActivo = useMemo(() => {
+    return hasRangeActivo(
+      tipoRango,
+      filtroRangoMesDesde,
+      filtroRangoMesHasta,
+      filtroFechaDesde,
+      filtroFechaHasta
+    );
+  }, [
+    tipoRango,
+    filtroRangoMesDesde,
+    filtroRangoMesHasta,
+    filtroFechaDesde,
+    filtroFechaHasta,
+  ]);
+
   const fetchGraficos = useCallback(async () => {
     if (Array.isArray(registrosOverride)) {
       setError("");
@@ -425,17 +461,11 @@ export default function ProyectosHorasDashboard({
 
     try {
       const qs = new URLSearchParams();
-      
-      if (filtroMes) {
+      if (rangoActivo) {
+        if (rangoDesde) qs.set("desde", rangoDesde);
+        if (rangoHasta) qs.set("hasta", rangoHasta);
+      } else if (filtroMes) {
         qs.set("mes", filtroMes);
-      }
-
-      if (rangoDesde) {
-        qs.set("desde", rangoDesde); 
-      }
-
-      if (rangoHasta) {
-        qs.set("hasta", rangoHasta); 
       }
 
       const url = `/registros/graficos${qs.toString() ? `?${qs.toString()}` : ""}`;
@@ -469,6 +499,7 @@ export default function ProyectosHorasDashboard({
     rolUpper,
     equipoUser,
     filtroMes,
+    rangoActivo,
     rangoDesde,
     rangoHasta,
     initFiltrosPorScope,
@@ -678,63 +709,106 @@ export default function ProyectosHorasDashboard({
   const equiposUnicos = useMemo(() => {
     const set = new Set(
       (registrosEnriquecidos ?? [])
-        .filter((r) => coincideMes(r.fecha, filtroMes))
-        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
         .map((r) => r.equipoNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta]);
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
 
   const consultoresUnicos = useMemo(() => {
     const set = new Set(
       (registrosEnriquecidos ?? [])
-        .filter((r) => coincideMes(r.fecha, filtroMes))
-        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
         .filter((r) => (scope !== "TEAM" ? true : !equipoUser || r.equipoNormalizado === equipoUser))
         .map((r) => r.consultorNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta, scope, equipoUser]);
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta, scope, equipoUser]);
 
   const modulosUnicos = useMemo(() => {
     const set = new Set(
       (registrosEnriquecidos ?? [])
-        .filter((r) => coincideMes(r.fecha, filtroMes))
-        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
         .map((r) => r.moduloNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta]);
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
 
   const ocupacionesUnicas = useMemo(() => {
     const set = new Set(
       (registrosEnriquecidos ?? [])
-        .filter((r) => coincideMes(r.fecha, filtroMes))
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+          )
         .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
         .map((r) => r.ocupacionNormalizada)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta]);
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
 
   const tareasUnicas = useMemo(() => {
     const set = new Set(
       (registrosEnriquecidos ?? [])
-        .filter((r) => coincideMes(r.fecha, filtroMes))
-        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
         .map((r) => r.tareaNormalizada)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta]);
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
 
   const proyectosUnicos = useMemo(() => {
     const set = new Set(
       (registrosEnriquecidos ?? [])
-        .filter((r) => coincideMes(r.fecha, filtroMes))
-        .filter((r) => estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta))
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
         .map((r) => r.proyectoOficial)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoDesde, rangoHasta]);
+  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
 
   const datosFiltrados = useMemo(() => {
     return (registrosEnriquecidos ?? []).filter((r) => {
@@ -749,8 +823,17 @@ export default function ProyectosHorasDashboard({
         if (equipoUser && r.equipoNormalizado !== equipoUser) return false;
       }
 
-      if (!coincideMes(r.fecha, filtroMes)) return false;
-      if (!estaEnRangoFecha(r.fecha, rangoDesde, rangoHasta)) return false;
+      if (
+        !cumpleFiltroFechaPrincipal({
+          fechaISO: r.fecha,
+          filtroMes,
+          rangoActivo,
+          rangoDesde,
+          rangoHasta,
+        })
+      ) {
+        return false;
+      }
 
       if (filtroEquipo.length > 0 && !filtroEquipo.includes(r.equipoNormalizado)) return false;
       if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultorNormalizado)) return false;
@@ -764,6 +847,7 @@ export default function ProyectosHorasDashboard({
   }, [
     registrosEnriquecidos,
     filtroMes,
+    rangoActivo,
     rangoDesde,
     rangoHasta,
     filtroEquipo,
