@@ -6,6 +6,7 @@ import GraficoActivasCerradas from "./GraficoActivasCerradas";
 import ResumenCalificacion from "./ResumenCalificacion";
 import "./DashboardOportunidades.css";
 import { jfetch } from "./lib/api";
+import ModalWinRate from "./ModalWinRate";
 
 /* ===================== React-Select styles ===================== */
 const rsStyles = {
@@ -76,6 +77,7 @@ const EXCLUDE_SET = new Set(
     "0TP",
     "0TE",
     "0TL",
+    "OT"
   ].map(normKeyForMatch)
 );
 
@@ -119,7 +121,6 @@ function toNumberSmart(v) {
   const lastComma = s.lastIndexOf(",");
   const lastDot = s.lastIndexOf(".");
 
-  
   if (commaCount > 0 && dotCount > 0) {
     const decimalSep = lastComma > lastDot ? "," : ".";
     const thousandSep = decimalSep === "," ? "." : ",";
@@ -127,11 +128,9 @@ function toNumberSmart(v) {
     s = s.split(thousandSep).join("");
     if (decimalSep === ",") s = s.replace(",", ".");
   } else if (commaCount > 0 && dotCount === 0) {
-   
     if (commaCount === 1) {
       const after = s.slice(lastComma + 1);
       const before = s.slice(0, lastComma).replace(/^[+-]/, "");
-      
       if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
       else s = s.replace(",", ".");
     } else {
@@ -144,7 +143,6 @@ function toNumberSmart(v) {
 
       if (after.length === 3 && before.length <= 3) {
         s = s.replace(".", "");
-      } else {
       }
     } else {
       const parts = s.split(".");
@@ -152,15 +150,13 @@ function toNumberSmart(v) {
       const mid = parts.slice(1, -1);
 
       const midAll3 = mid.every((p) => p.length === 3);
-      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3; 
+      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3;
       const looksLikeGrouped = midAll3 && firstOk;
 
-      
       if (looksLikeGrouped && last.length !== 3) {
         const intPart = parts.slice(0, -1).join("");
         s = intPart + "." + last;
       } else {
-        
         s = s.replace(/\./g, "");
       }
     }
@@ -174,7 +170,6 @@ function toNumberSmart(v) {
 function fmtMoney(n) {
   return nfMoney.format(n || 0);
 }
-
 
 function readMoney(row, keys) {
   for (const k of keys) {
@@ -271,21 +266,135 @@ function useDebouncedValue(value, delay = 350) {
 
 /* ===================== sets de KPIs ===================== */
 const ESTADOS_ACTIVOS_N = new Set(
-  ["EN PROCESO", "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION", "EN ELABORACION", "ENTREGA COMERCIAL"].map(
-    normKeyForMatch
-  )
+  [
+    "EN PROCESO",
+    "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
+    "EN ELABORACION",
+    "ENTREGA COMERCIAL",
+    "EN ESPERA DEL RFI / RFP",
+    "RFI PRESENTADO",
+    "SUSPENDIDA",
+  ].map(normKeyForMatch)
 );
 
 const ESTADOS_CERRADOS_N = new Set(
-  ["GANADA", "PERDIDA", "DECLINADA", "SUSPENDIDA", "PERDIDA - SIN FEEDBACK", "RFI PRESENTADO", "RFP PRESENTADO"].map(
-    normKeyForMatch
-  )
+  [
+    "GANADA",
+    "PERDIDA",
+    "DECLINADA",
+    "PERDIDA - SIN FEEDBACK",
+    "RFP PRESENTADO",
+  ].map(normKeyForMatch)
 );
+
+const ESTADO_RESULTADO_FORZADO = {
+  "EN ESPERA DEL RFI / RFP": "EN ESPERA DEL CLIENTE",
+  "RFI PRESENTADO": "EN ESPERA DEL CLIENTE",
+  "SUSPENDIDA": "EN ESPERA DEL CLIENTE",
+};
+
+const ESTADOS_TOTAL_KPI_N = new Set([...ESTADOS_ACTIVOS_N, ...ESTADOS_CERRADOS_N]);
+
+function buildEstadoBreakdown(rows, allowedStates) {
+  const map = new Map();
+
+  for (const op of Array.isArray(rows) ? rows : []) {
+    const raw = op?.estado_oferta ?? "";
+    if (isExcludedLabel(raw)) continue;
+
+    const estadoN = normKeyForMatch(raw);
+    if (allowedStates && !allowedStates.has(estadoN)) continue;
+
+    const prev = map.get(estadoN) || {
+      key: estadoN,
+      label: displayLabel(raw),
+      count: 0,
+    };
+
+    prev.count += 1;
+    map.set(estadoN, prev);
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) =>
+      b.count - a.count ||
+      a.label.localeCompare(b.label, "es", { sensitivity: "base" })
+  );
+}
+
+/* ===================== Observaciones: separar por fechas ===================== */
+const OBS_DATE_TOKEN = /(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})/g;
+
+function normObsText(v) {
+  return String(v ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\u00A0/g, " ")
+    .trim();
+}
+
+function splitObservacionesByDate(raw) {
+  const text = normObsText(raw);
+  if (!text) return [];
+
+  const prepared = text.replace(OBS_DATE_TOKEN, "\n$1");
+
+  const lines = prepared
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const out = [];
+  for (const line of lines) {
+    const m = line.match(
+      /^(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*(.*)$/
+    );
+    if (m) {
+      out.push({ date: m[1], text: (m[2] || "").trim() || "-" });
+    } else {
+      out.push({ date: null, text: line });
+    }
+  }
+
+  // Si hay líneas sin fecha después de una fechada, se pegan como continuación
+  const merged = [];
+  for (const it of out) {
+    const last = merged[merged.length - 1];
+    if (!it.date && last && last.date) {
+      last.text = `${last.text}\n${it.text}`.trim();
+    } else {
+      merged.push({ ...it });
+    }
+  }
+
+  return merged;
+}
+
+function renderObservacionesCell(value) {
+  const items = splitObservacionesByDate(value);
+  if (!items.length) return "-";
+
+  return (
+    <div className="obs-box">
+      {items.map((it, idx) => (
+        <div key={idx} className={`obs-item ${it.date ? "has-date" : "no-date"}`}>
+          <div className="obs-date">{it.date ? it.date : "SIN FECHA"}</div>
+          <div className="obs-text">
+            {it.text.split("\n").map((p, i) => (
+              <div key={i}>{p}</div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /* ===================== Component ===================== */
 export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState([]);
+  const [openWinRateModal, setOpenWinRateModal] = useState(false);
 
   const [filtros, setFiltros] = useState({
     anios: [],
@@ -324,11 +433,41 @@ export default function DashboardOportunidades() {
   const dataBase = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
   const dataFiltrada = useMemo(() => {
-    return dataBase.filter((op) => !isExcludedLabel(op?.estado_oferta ?? ""));
+    return dataBase.filter(
+      (op) => !isExcludedLabel(op?.estado_oferta ?? "") && !isExcludedLabel(op?.resultado_oferta ?? "")
+    );
   }, [dataBase]);
 
+  function normalizeOportunidadRow(row) {
+    const estado = displayLabel(row?.estado_oferta ?? "");
+    const resultadoOriginal = displayLabel(row?.resultado_oferta ?? "");
+    const resultadoForzado = ESTADO_RESULTADO_FORZADO[estado];
+
+    return {
+      ...row,
+      estado_oferta: estado || row?.estado_oferta || "",
+      resultado_oferta: resultadoForzado || resultadoOriginal || row?.resultado_oferta || "",
+    };
+  }
+
+  function mergeOptions(base, extras) {
+    const map = new Map();
+
+    [...(base || []), ...(extras || []).map((v) => ({ value: v, label: v }))].forEach((opt) => {
+      const key = String(opt?.value ?? "").trim();
+      if (!key) return;
+      if (!map.has(key)) {
+        map.set(key, { value: key, label: String(opt?.label ?? key) });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) =>
+      a.label.localeCompare(b.label, "es", { sensitivity: "base" })
+    );
+  }
+
   const fetchFilters = async () => {
-    const res = await jfetch(`/oportunidades/filters`); 
+    const res = await jfetch(`/oportunidades/filters`);
     if (!res.ok) throw new Error("filters");
     const json = await res.json();
 
@@ -339,8 +478,14 @@ export default function DashboardOportunidades() {
       direccionComercial: toOptions(json.direccion_comercial),
       gerenciaComercial: toOptions(json.gerencia_comercial),
       cliente: toOptions(json.nombre_cliente),
-      estadoOferta: toOptions(json.estado_oferta),
-      resultadoOferta: toOptions(json.resultado_oferta),
+      estadoOferta: mergeOptions(toOptions(json.estado_oferta), [
+        "EN ESPERA DEL RFI / RFP",
+        "RFI PRESENTADO",
+        "SUSPENDIDA",
+      ]),
+      resultadoOferta: mergeOptions(toOptions(json.resultado_oferta), [
+        "EN ESPERA DEL CLIENTE",
+      ]),
       fechaActaCierreOT: toOptions(json.fecha_acta_cierre_ot),
       fechaCierreOportunidad: toOptions(json.fecha_cierre_oportunidad),
       estadoOT: toOptions(json.estado_ot),
@@ -355,7 +500,12 @@ export default function DashboardOportunidades() {
       const res = await jfetch(`/oportunidades${toQuery(current)}`);
       if (!res.ok) throw new Error("data");
       const json = await res.json();
-      setData(Array.isArray(json) ? json : []);
+
+      const rows = Array.isArray(json)
+        ? json.map(normalizeOportunidadRow)
+        : [];
+
+      setData(rows);
     } catch (e) {
       Swal.fire("Error", "No se pudo consultar oportunidades", "error");
       setData([]);
@@ -367,19 +517,18 @@ export default function DashboardOportunidades() {
   useEffect(() => {
     (async () => {
       try {
-        await fetchFilters();      
-        await fetchData(filtros);  
+        await fetchFilters();
+        await fetchData(filtros);
       } catch (e) {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
   }, []);
 
-
   useEffect(() => {
     (async () => {
       try {
-        await fetchData(filtrosDebounced); 
+        await fetchData(filtrosDebounced);
       } catch (e) {}
     })();
   }, [filtrosDebounced]);
@@ -391,7 +540,9 @@ export default function DashboardOportunidades() {
   const totEstadoOferta = useMemo(() => sumPivotRows(tablaEstadoOferta.rows), [tablaEstadoOferta.rows]);
 
   const tablaResultadoOferta = useMemo(() => {
-    return buildPivot(dataBase, "resultado_oferta", { excludeKeyFn: (_key, raw) => isExcludedLabel(raw) });
+    return buildPivot(dataBase, "resultado_oferta", {
+      excludeKeyFn: (_key, raw, row) => isExcludedLabel(row?.estado_oferta ?? "") || isExcludedLabel(raw),
+    });
   }, [dataBase]);
 
   const totResultadoOferta = useMemo(() => sumPivotRows(tablaResultadoOferta.rows), [tablaResultadoOferta.rows]);
@@ -427,6 +578,14 @@ export default function DashboardOportunidades() {
     };
   }, [dataBase]);
 
+  const kpiEstadosInfo = useMemo(() => {
+    return {
+      total: buildEstadoBreakdown(dataBase, ESTADOS_TOTAL_KPI_N),
+      activas: buildEstadoBreakdown(dataBase, ESTADOS_ACTIVOS_N),
+      cerradas: buildEstadoBreakdown(dataBase, ESTADOS_CERRADOS_N),
+    };
+  }, [dataBase]);
+
   const limpiar = () => {
     setFiltros({
       anios: [],
@@ -457,6 +616,25 @@ export default function DashboardOportunidades() {
     classNamePrefix: "rs",
   };
 
+  const renderKpiTooltip = (titulo, items) => (
+    <div className="kpi-tooltip">
+      <div className="kpi-tooltip-title">{titulo}</div>
+
+      {items?.length ? (
+        <ul className="kpi-tooltip-list">
+          {items.map((it) => (
+            <li key={it.key} className="kpi-tooltip-item">
+              <span className="kpi-tooltip-state">{it.label}</span>
+              <strong className="kpi-tooltip-count">{it.count}</strong>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="kpi-tooltip-empty">Sin estados disponibles</div>
+      )}
+    </div>
+  );
+
   return (
     <div className="oport-dash-wrapper">
       <div className="oport-topbar">
@@ -465,9 +643,20 @@ export default function DashboardOportunidades() {
           <div className="oport-dash-subtitle">KPIs, filtros y detalle consolidado</div>
         </div>
 
-        <button className="oport-btn" onClick={limpiar} disabled={loading}>
-          Limpiar filtros
-        </button>
+        <div className="oport-topbar-actions">
+          <button
+            className="oport-btn"
+            type="button"
+            onClick={() => setOpenWinRateModal(true)}
+            disabled={loading}
+          >
+            Ver Win Rate
+          </button>
+
+          <button className="oport-btn" onClick={limpiar} disabled={loading}>
+            Limpiar filtros
+          </button>
+        </div>
       </div>
 
       <div className="dashboard-layout">
@@ -475,19 +664,22 @@ export default function DashboardOportunidades() {
           {loading && <div className="oport-loading">Cargando...</div>}
 
           <section className="kpi-grid">
-            <div className="kpi-card">
+            <div className="kpi-card has-tooltip" tabIndex={0}>
               <div className="kpi-label">Cantidad</div>
               <div className="kpi-value">{kpis.total}</div>
+              {renderKpiTooltip("Estados incluidos en cantidad", kpiEstadosInfo.total)}
             </div>
 
-            <div className="kpi-card">
+            <div className="kpi-card has-tooltip" tabIndex={0}>
               <div className="kpi-label">Activas</div>
               <div className="kpi-value">{kpis.activas}</div>
+              {renderKpiTooltip("Estados incluidos en activas", kpiEstadosInfo.activas)}
             </div>
 
-            <div className="kpi-card">
+            <div className="kpi-card has-tooltip" tabIndex={0}>
               <div className="kpi-label">Cerradas</div>
               <div className="kpi-value">{kpis.cerradas}</div>
+              {renderKpiTooltip("Estados incluidos en cerradas", kpiEstadosInfo.cerradas)}
             </div>
 
             <div className="kpi-card">
@@ -501,7 +693,6 @@ export default function DashboardOportunidades() {
 
           <section className="main-grid">
             <div className="main-col">
-              {/* ===================== ESTADO DE OFERTA ===================== */}
               <div className="card">
                 <div className="card-title">Estado de Oferta</div>
                 <div className="table-scroll">
@@ -524,10 +715,7 @@ export default function DashboardOportunidades() {
                           <td>{fmtMoney(it.otc)}</td>
                           <td>{fmtMoney(it.mrc)}</td>
                           <td>
-                            {totEstadoOferta.count
-                              ? ((it.count / totEstadoOferta.count) * 100).toFixed(2)
-                              : "0.00"}
-                            %
+                            {totEstadoOferta.count ? ((it.count / totEstadoOferta.count) * 100).toFixed(2) : "0.00"}%
                           </td>
                         </tr>
                       ))}
@@ -544,7 +732,6 @@ export default function DashboardOportunidades() {
                 </div>
               </div>
 
-              {/* ===================== RESULTADO DE OFERTA ===================== */}
               <div className="card">
                 <div className="card-title">Resultado de Oferta</div>
                 <div className="table-scroll">
@@ -639,7 +826,7 @@ export default function DashboardOportunidades() {
                       <td>{fmtMoney(readMoney(row, ["mrc", "MRC"]))}</td>
                       <td>{row.gerencia_comercial ?? "-"}</td>
                       <td>{row.comercial_asignado ?? "-"}</td>
-                      <td className="td-wrap">{row.observaciones ?? "-"}</td>
+                      <td className="td-wrap">{renderObservacionesCell(row.observaciones)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -795,6 +982,14 @@ export default function DashboardOportunidades() {
           </div>
         </aside>
       </div>
+      <ModalWinRate
+        isOpen={openWinRateModal}
+        onClose={() => setOpenWinRateModal(false)}
+        rows={dataBase}
+        options={opciones}
+        selectCommon={selectCommon}
+        baseTitle="1ER SEMESTRE 2025"
+      />
     </div>
   );
 }
