@@ -153,7 +153,7 @@ function App() {
             <Route
               path="/OportunidadesDashboard"
               element={
-                <AdminRoute allow={['ADMIN', 'CONSULTOR']} requirePermiso="OPORTUNIDADES_VER">
+                <AdminRoute allow={['ADMIN', 'CONSULTOR']} requirePermiso="DASHBOARD_VER">
                   <OportunidadesDashboard />
                 </AdminRoute>
               }
