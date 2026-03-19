@@ -587,6 +587,12 @@ export default function ProyectosHorasDashboard({
   }, [rangoActivo, filtroMes]);
 
   useEffect(() => {
+    if (rangoActivo && filtroMes) {
+      setFiltroMes("");
+    }
+  }, [rangoActivo, filtroMes]);
+
+  useEffect(() => {
     const fetchCatalogosProyecto = async () => {
       try {
         const [resProyectos, resMapeos] = await Promise.all([
@@ -1378,7 +1384,7 @@ export default function ProyectosHorasDashboard({
               <span className="phd-label">MES</span>
               <input
                 type="month"
-                value={filtroMes}
+                value={rangoActivo ? "" : filtroMes}
                 onChange={(e) => setFiltroMes(e.target.value)}
                 disabled={rangoActivo}
               />
