@@ -233,6 +233,63 @@ const recordMatchesSelfScope = (r, usuario, nombreUser, equipoUser) => {
 };
 
 /* =========================
+   Helpers gráfico por mes
+========================= */
+const MONTHS_ES = [
+  "ENE",
+  "FEB",
+  "MAR",
+  "ABR",
+  "MAY",
+  "JUN",
+  "JUL",
+  "AGO",
+  "SEP",
+  "OCT",
+  "NOV",
+  "DIC",
+];
+
+const getMonthKeyFromFecha = (fechaISO) => {
+  const fecha = normalizeDateOnly(fechaISO);
+  if (!fecha || fecha.length < 7) return "";
+  return fecha.slice(0, 7); // YYYY-MM
+};
+
+const formatMonthLabel = (monthKey) => {
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) return "SIN MES";
+  const [y, m] = monthKey.split("-");
+  const idx = Number(m) - 1;
+  if (idx < 0 || idx > 11) return monthKey;
+  return `${MONTHS_ES[idx]} ${y}`;
+};
+
+const groupSumByMonth = (rows) => {
+  const acc = new Map();
+
+  for (const r of rows) {
+    const key = r?.mesKey || getMonthKeyFromFecha(r?.fecha);
+    if (!key) continue;
+
+    const prev = acc.get(key) || {
+      key,
+      name: formatMonthLabel(key),
+      horas: 0,
+    };
+
+    prev.horas += getHorasRegistro(r);
+    acc.set(key, prev);
+  }
+
+  return Array.from(acc.values())
+    .map((x) => ({
+      ...x,
+      horas: +x.horas.toFixed(2),
+    }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+};
+
+/* =========================
    Tick custom: WRAP en YAxis
 ========================= */
 function YAxisTickWrap(props) {
@@ -525,6 +582,10 @@ export default function ProyectosHorasDashboard({
     filtroFechaHasta,
   ]);
 
+  const filtroMesActivo = useMemo(() => {
+    return rangoActivo ? "" : filtroMes;
+  }, [rangoActivo, filtroMes]);
+
   useEffect(() => {
     const fetchCatalogosProyecto = async () => {
       try {
@@ -675,8 +736,8 @@ export default function ProyectosHorasDashboard({
       if (rangoActivo) {
         if (rangoDesde) params.set("desde", rangoDesde);
         if (rangoHasta) params.set("hasta", rangoHasta);
-      } else if (filtroMes) {
-        params.set("mes", filtroMes);
+      } else if (filtroMesActivo) {
+        params.set("mes", filtroMesActivo);
       }
 
       params.set("max_rows", "10000");
@@ -718,9 +779,9 @@ export default function ProyectosHorasDashboard({
       if (!res.ok) {
         throw new Error(
           json?.detalle ||
-          json?.mensaje ||
-          json?.error ||
-          `HTTP ${res.status}`
+            json?.mensaje ||
+            json?.error ||
+            `HTTP ${res.status}`
         );
       }
 
@@ -737,7 +798,7 @@ export default function ProyectosHorasDashboard({
     usuario,
     rolUpper,
     equipoUser,
-    filtroMes,
+    filtroMesActivo,
     rangoActivo,
     rangoDesde,
     rangoHasta,
@@ -824,10 +885,12 @@ export default function ProyectosHorasDashboard({
 
       const proyectoDigitadoRaw = cleanProjectInput(
         r?.proyecto_codigo ||
-        r?.proyecto?.codigo ||
-        r?.nroCasoCliente ||
-        r?.nro_caso_cliente
+          r?.proyecto?.codigo ||
+          r?.nroCasoCliente ||
+          r?.nro_caso_cliente
       );
+
+      const mesKey = getMonthKeyFromFecha(r?.fecha);
 
       return {
         ...r,
@@ -843,6 +906,8 @@ export default function ProyectosHorasDashboard({
         proyectoKey,
         proyectoOficial,
         proyectoDigitado: proyectoDigitadoRaw || "",
+        mesKey,
+        mesLabel: formatMonthLabel(mesKey),
         horasNum: getHorasRegistro(r),
       };
     });
@@ -854,7 +919,7 @@ export default function ProyectosHorasDashboard({
         .filter((r) =>
           cumpleFiltroFechaPrincipal({
             fechaISO: r.fecha,
-            filtroMes,
+            filtroMes: filtroMesActivo,
             rangoActivo,
             rangoDesde,
             rangoHasta,
@@ -863,7 +928,7 @@ export default function ProyectosHorasDashboard({
         .map((r) => r.equipoNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
+  }, [registrosEnriquecidos, filtroMesActivo, rangoActivo, rangoDesde, rangoHasta]);
 
   const consultoresUnicos = useMemo(() => {
     const set = new Set(
@@ -871,7 +936,7 @@ export default function ProyectosHorasDashboard({
         .filter((r) =>
           cumpleFiltroFechaPrincipal({
             fechaISO: r.fecha,
-            filtroMes,
+            filtroMes: filtroMesActivo,
             rangoActivo,
             rangoDesde,
             rangoHasta,
@@ -881,7 +946,15 @@ export default function ProyectosHorasDashboard({
         .map((r) => r.consultorNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta, scope, equipoUser]);
+  }, [
+    registrosEnriquecidos,
+    filtroMesActivo,
+    rangoActivo,
+    rangoDesde,
+    rangoHasta,
+    scope,
+    equipoUser,
+  ]);
 
   const modulosUnicos = useMemo(() => {
     const set = new Set(
@@ -889,7 +962,7 @@ export default function ProyectosHorasDashboard({
         .filter((r) =>
           cumpleFiltroFechaPrincipal({
             fechaISO: r.fecha,
-            filtroMes,
+            filtroMes: filtroMesActivo,
             rangoActivo,
             rangoDesde,
             rangoHasta,
@@ -898,7 +971,7 @@ export default function ProyectosHorasDashboard({
         .map((r) => r.moduloNormalizado)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
+  }, [registrosEnriquecidos, filtroMesActivo, rangoActivo, rangoDesde, rangoHasta]);
 
   const ocupacionesUnicas = useMemo(() => {
     const set = new Set(
@@ -906,7 +979,7 @@ export default function ProyectosHorasDashboard({
         .filter((r) =>
           cumpleFiltroFechaPrincipal({
             fechaISO: r.fecha,
-            filtroMes,
+            filtroMes: filtroMesActivo,
             rangoActivo,
             rangoDesde,
             rangoHasta,
@@ -915,7 +988,7 @@ export default function ProyectosHorasDashboard({
         .map((r) => r.ocupacionNormalizada)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
+  }, [registrosEnriquecidos, filtroMesActivo, rangoActivo, rangoDesde, rangoHasta]);
 
   const tareasUnicas = useMemo(() => {
     const set = new Set(
@@ -923,7 +996,7 @@ export default function ProyectosHorasDashboard({
         .filter((r) =>
           cumpleFiltroFechaPrincipal({
             fechaISO: r.fecha,
-            filtroMes,
+            filtroMes: filtroMesActivo,
             rangoActivo,
             rangoDesde,
             rangoHasta,
@@ -932,7 +1005,7 @@ export default function ProyectosHorasDashboard({
         .map((r) => r.tareaNormalizada)
     );
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
+  }, [registrosEnriquecidos, filtroMesActivo, rangoActivo, rangoDesde, rangoHasta]);
 
   const proyectosUnicos = useMemo(() => {
     const set = new Set(
@@ -940,7 +1013,7 @@ export default function ProyectosHorasDashboard({
         .filter((r) =>
           cumpleFiltroFechaPrincipal({
             fechaISO: r.fecha,
-            filtroMes,
+            filtroMes: filtroMesActivo,
             rangoActivo,
             rangoDesde,
             rangoHasta,
@@ -950,7 +1023,7 @@ export default function ProyectosHorasDashboard({
         .filter((x) => x && x !== "SIN PROYECTO")
     );
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [registrosEnriquecidos, filtroMes, rangoActivo, rangoDesde, rangoHasta]);
+  }, [registrosEnriquecidos, filtroMesActivo, rangoActivo, rangoDesde, rangoHasta]);
 
   const datosFiltrados = useMemo(() => {
     return (registrosEnriquecidos ?? []).filter((r) => {
@@ -965,7 +1038,7 @@ export default function ProyectosHorasDashboard({
       if (
         !cumpleFiltroFechaPrincipal({
           fechaISO: r.fecha,
-          filtroMes,
+          filtroMes: filtroMesActivo,
           rangoActivo,
           rangoDesde,
           rangoHasta,
@@ -985,7 +1058,7 @@ export default function ProyectosHorasDashboard({
     });
   }, [
     registrosEnriquecidos,
-    filtroMes,
+    filtroMesActivo,
     rangoActivo,
     rangoDesde,
     rangoHasta,
@@ -1000,6 +1073,11 @@ export default function ProyectosHorasDashboard({
     nombreUser,
     equipoUser,
   ]);
+
+  const horasPorMes = useMemo(
+    () => groupSumByMonth(datosFiltrados),
+    [datosFiltrados]
+  );
 
   const horasPorProyecto = useMemo(
     () =>
@@ -1069,6 +1147,7 @@ export default function ProyectosHorasDashboard({
       if (kind === "consultor") rows = datosFiltrados.filter((r) => r.consultorNormalizado === value);
       if (kind === "tarea") rows = datosFiltrados.filter((r) => r.tareaNormalizada === value);
       if (kind === "ocupacion") rows = datosFiltrados.filter((r) => r.ocupacionNormalizada === value);
+      if (kind === "mes") rows = datosFiltrados.filter((r) => r.mesKey === value);
 
       rows = rows.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
       const subtotal = rows.reduce((s, r) => s + r.horasNum, 0);
@@ -1076,6 +1155,8 @@ export default function ProyectosHorasDashboard({
       const label =
         kind === "proyecto"
           ? rows[0]?.proyectoOficial || "SIN PROYECTO"
+          : kind === "mes"
+          ? rows[0]?.mesLabel || value
           : value;
 
       setDetailTitle(`${kind.toUpperCase()}: ${label} — Total: ${subtotal.toFixed(2)} h`);
@@ -1176,6 +1257,64 @@ export default function ProyectosHorasDashboard({
     );
   };
 
+  const renderMonthChartCard = (title, data, color) => {
+    if (!data || data.length === 0) {
+      return (
+        <div className="phd-card phd-card-chart">
+          <div className="phd-card-head">
+            <h4>{title}</h4>
+          </div>
+          <div className="phd-empty">Sin datos con los filtros.</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="phd-card phd-card-chart">
+        <div className="phd-card-head">
+          <h4>{title}</h4>
+          <span className="phd-card-badge">{data.length} meses</span>
+        </div>
+
+        <div className="phd-chartWrap">
+          <div className="phd-chartInner">
+            <ResponsiveContainer width="100%" height={360}>
+              <BarChart
+                data={data}
+                margin={{ top: 10, right: 24, left: 0, bottom: 50 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="name"
+                  interval={0}
+                  angle={-20}
+                  textAnchor="end"
+                  height={60}
+                />
+                <YAxis />
+                <Tooltip
+                  formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]}
+                  labelFormatter={(label) => `Mes: ${label}`}
+                />
+                <Legend />
+                <Bar dataKey="horas" name="Horas">
+                  {data.map((entry, idx) => (
+                    <Cell
+                      key={idx}
+                      fill={color}
+                      onClick={() => openDetail("mes", entry.key)}
+                      style={{ cursor: "pointer" }}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="phd-page">
       <div className="phd-shell">
@@ -1184,7 +1323,7 @@ export default function ProyectosHorasDashboard({
             <span className="phd-kicker">Dashboard</span>
             <h1>Horas por Proyecto</h1>
             <p>
-              Visualiza horas registradas por proyecto, módulo, consultor, tarea y ocupación
+              Visualiza horas registradas por mes, proyecto, módulo, consultor, tarea y ocupación
               con filtros avanzados y detalle de registros.
             </p>
           </div>
@@ -1241,6 +1380,7 @@ export default function ProyectosHorasDashboard({
                 type="month"
                 value={filtroMes}
                 onChange={(e) => setFiltroMes(e.target.value)}
+                disabled={rangoActivo}
               />
             </div>
 
@@ -1350,6 +1490,7 @@ export default function ProyectosHorasDashboard({
         </section>
 
         <section className="phd-grid">
+          {renderMonthChartCard("Horas por Mes", horasPorMes, "#7C3AED")}
           {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#0055B8", "proyecto")}
           {renderChartCard("Horas por Módulo", horasPorModulo, "#E30613", "modulo")}
           {renderChartCard("Horas por Consultor", horasPorConsultor, "#111827", "consultor")}
@@ -1363,7 +1504,7 @@ export default function ProyectosHorasDashboard({
         onRequestClose={() => setDetailOpen(false)}
         className="phd-modal"
         overlayClassName="phd-modalOverlay"
-        contentLabel="Detalle de horas por proyecto"
+        contentLabel="Detalle de horas"
         shouldCloseOnOverlayClick
         ariaHideApp={false}
       >
@@ -1396,6 +1537,7 @@ export default function ProyectosHorasDashboard({
                   <tr>
                     <th>ID</th>
                     <th>Fecha</th>
+                    <th>Mes</th>
                     <th>Consultor</th>
                     <th>Cliente</th>
                     <th>Proyecto (OFICIAL)</th>
@@ -1412,6 +1554,7 @@ export default function ProyectosHorasDashboard({
                     <tr key={r.id ?? i}>
                       <td className="num">{r.id ?? "—"}</td>
                       <td>{r.fecha}</td>
+                      <td>{r.mesLabel || "—"}</td>
                       <td className="phd-truncate" title={r.consultorNormalizado}>
                         {r.consultorNormalizado}
                       </td>
