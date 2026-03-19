@@ -251,16 +251,16 @@ const MONTHS_ES = [
 ];
 
 const STACK_COLORS = [
-  "#7C3AED",
-  "#E30613",
-  "#0055B8",
-  "#10B981",
-  "#0EA5E9",
-  "#F59E0B",
-  "#111827",
-  "#EC4899",
-  "#14B8A6",
-  "#F97316",
+  "#6B7280", // gris
+  "#94A3B8", // slate claro
+  "#64748B", // slate medio
+  "#475569", // slate oscuro
+  "#7C8EA3", // azul grisáceo
+  "#8B95A7", // gris azulado
+  "#A3A3A3", // gris neutro
+  "#9CA3AF", // gris suave
+  "#B0BEC5", // gris frío
+  "#78909C", // azul humo
 ];
 
 const getMonthKeyFromFecha = (fechaISO) => {
@@ -1614,10 +1614,10 @@ export default function ProyectosHorasDashboard({
 
         <section className="phd-grid">
           {renderMesModuloChart("Horas por Mes y Módulo", horasPorMesModulo, seriesMesModulo)}
-          {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#0055B8", "proyecto")}
-          {renderChartCard("Horas por Consultor", horasPorConsultor, "#111827", "consultor")}
-          {renderChartCard("Horas por Tarea", horasPorTarea, "#0EA5E9", "tarea")}
-          {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#10B981", "ocupacion")}
+          {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#64748B", "proyecto")}
+          {renderChartCard("Horas por Consultor", horasPorConsultor, "#6B7280", "consultor")}
+          {renderChartCard("Horas por Tarea", horasPorTarea, "#94A3B8", "tarea")}
+          {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#7C8EA3", "ocupacion")}
         </section>
       </div>
 
