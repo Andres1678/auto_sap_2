@@ -8,7 +8,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Cell,
   Legend,
 } from "recharts";
 import { jfetch } from "./lib/api";
@@ -185,31 +184,6 @@ const buildProyectoLabel = (p) => {
   return "SIN PROYECTO";
 };
 
-const groupSum = (rows, keyFn, labelFn) => {
-  const acc = new Map();
-
-  for (const r of rows) {
-    const key = String(keyFn(r) || "SIN_PROYECTO");
-    const label = String(labelFn(r) || "SIN PROYECTO");
-
-    const prev = acc.get(key) || {
-      key,
-      name: label,
-      horas: 0,
-    };
-
-    prev.horas += getHorasRegistro(r);
-    acc.set(key, prev);
-  }
-
-  return Array.from(acc.values())
-    .map((x) => ({
-      ...x,
-      horas: +x.horas.toFixed(2),
-    }))
-    .sort((a, b) => b.horas - a.horas);
-};
-
 const recordMatchesSelfScope = (r, usuario, nombreUser, equipoUser) => {
   if (equipoUser && equipoOf(r) !== equipoUser) return false;
 
@@ -232,117 +206,18 @@ const recordMatchesSelfScope = (r, usuario, nombreUser, equipoUser) => {
   return true;
 };
 
-/* =========================
-   Helpers gráfico por mes
-========================= */
-const MONTHS_ES = [
-  "ENE",
-  "FEB",
-  "MAR",
-  "ABR",
-  "MAY",
-  "JUN",
-  "JUL",
-  "AGO",
-  "SEP",
-  "OCT",
-  "NOV",
-  "DIC",
+const STACK_COLORS = [
+  "#0055B8",
+  "#E30613",
+  "#0EA5E9",
+  "#10B981",
+  "#7C3AED",
+  "#F59E0B",
+  "#111827",
+  "#EC4899",
+  "#14B8A6",
+  "#F97316",
 ];
-
-const getMonthKeyFromFecha = (fechaISO) => {
-  const fecha = normalizeDateOnly(fechaISO);
-  if (!fecha || fecha.length < 7) return "";
-  return fecha.slice(0, 7); // YYYY-MM
-};
-
-const formatMonthLabel = (monthKey) => {
-  if (!/^\d{4}-\d{2}$/.test(monthKey)) return "SIN MES";
-  const [y, m] = monthKey.split("-");
-  const idx = Number(m) - 1;
-  if (idx < 0 || idx > 11) return monthKey;
-  return `${MONTHS_ES[idx]} ${y}`;
-};
-
-const groupSumByMonth = (rows) => {
-  const acc = new Map();
-
-  for (const r of rows) {
-    const key = r?.mesKey || getMonthKeyFromFecha(r?.fecha);
-    if (!key) continue;
-
-    const prev = acc.get(key) || {
-      key,
-      name: formatMonthLabel(key),
-      horas: 0,
-    };
-
-    prev.horas += getHorasRegistro(r);
-    acc.set(key, prev);
-  }
-
-  return Array.from(acc.values())
-    .map((x) => ({
-      ...x,
-      horas: +x.horas.toFixed(2),
-    }))
-    .sort((a, b) => a.key.localeCompare(b.key));
-};
-
-/* =========================
-   Tick custom: WRAP en YAxis
-========================= */
-function YAxisTickWrap(props) {
-  const { x, y, payload, width = 420 } = props;
-  const text = String(payload?.value ?? "");
-
-  const maxCharsPerLine = Math.max(18, Math.floor(width / 10));
-  const maxLines = 3;
-
-  const words = text.split(" ");
-  const lines = [];
-  let line = "";
-
-  for (const w of words) {
-    const test = line ? `${line} ${w}` : w;
-    if (test.length <= maxCharsPerLine) {
-      line = test;
-    } else {
-      if (line) lines.push(line);
-      line = w;
-      if (lines.length >= maxLines - 1) break;
-    }
-  }
-
-  if (line && lines.length < maxLines) lines.push(line);
-
-  const joined = lines.join(" ");
-  const wasCut = joined.length < text.length;
-  if (wasCut && lines.length) {
-    lines[lines.length - 1] = `${lines[lines.length - 1].replace(/\s*$/, "")}…`;
-  }
-
-  return (
-    <g transform={`translate(${x},${y})`}>
-      <title>{text}</title>
-      <text
-        x={0}
-        y={0}
-        dy={4}
-        textAnchor="end"
-        fill="#475569"
-        fontSize={12}
-        fontWeight={700}
-      >
-        {lines.map((ln, i) => (
-          <tspan key={i} x={0} dy={i === 0 ? 0 : 14}>
-            {ln}
-          </tspan>
-        ))}
-      </text>
-    </g>
-  );
-}
 
 /* =========================
    MultiFiltro
@@ -896,8 +771,6 @@ export default function ProyectosHorasDashboard({
           r?.nro_caso_cliente
       );
 
-      const mesKey = getMonthKeyFromFecha(r?.fecha);
-
       return {
         ...r,
         equipoNormalizado: equipoOf(r),
@@ -912,8 +785,6 @@ export default function ProyectosHorasDashboard({
         proyectoKey,
         proyectoOficial,
         proyectoDigitado: proyectoDigitadoRaw || "",
-        mesKey,
-        mesLabel: formatMonthLabel(mesKey),
         horasNum: getHorasRegistro(r),
       };
     });
@@ -1080,40 +951,102 @@ export default function ProyectosHorasDashboard({
     equipoUser,
   ]);
 
-  const horasPorMes = useMemo(
-    () => groupSumByMonth(datosFiltrados),
-    [datosFiltrados]
-  );
+  const horasPorProyectoModuloBase = useMemo(() => {
+    const acc = new Map();
 
-  const horasPorProyecto = useMemo(
-    () =>
-      groupSum(
-        datosFiltrados,
-        (r) => r.proyectoKey,
-        (r) => r.proyectoOficial
-      ),
-    [datosFiltrados]
-  );
+    for (const r of datosFiltrados) {
+      const proyecto = String(r?.proyectoOficial || "SIN PROYECTO").trim();
+      const modulo = String(r?.moduloNormalizado || "SIN MÓDULO").trim();
+      const horas = toNum(r?.horasNum);
 
-  const horasPorModulo = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.moduloNormalizado, (r) => r.moduloNormalizado),
-    [datosFiltrados]
-  );
+      if (!proyecto || proyecto === "SIN PROYECTO") continue;
 
-  const horasPorConsultor = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.consultorNormalizado, (r) => r.consultorNormalizado),
-    [datosFiltrados]
-  );
+      const prev = acc.get(proyecto) || {
+        name: proyecto,
+        total: 0,
+        modulosTrabajadosSet: new Set(),
+      };
 
-  const horasPorTarea = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.tareaNormalizada, (r) => r.tareaNormalizada),
-    [datosFiltrados]
-  );
+      prev.total += horas;
+      prev[modulo] = toNum(prev[modulo]) + horas;
+      prev.modulosTrabajadosSet.add(modulo);
 
-  const horasPorOcupacion = useMemo(
-    () => groupSum(datosFiltrados, (r) => r.ocupacionNormalizada, (r) => r.ocupacionNormalizada),
-    [datosFiltrados]
-  );
+      acc.set(proyecto, prev);
+    }
+
+    return Array.from(acc.values())
+      .map((row) => ({
+        ...row,
+        total: +row.total.toFixed(2),
+        modulosTrabajados: Array.from(row.modulosTrabajadosSet).sort(),
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [datosFiltrados]);
+
+  const modulosProyectoSeriesTop = useMemo(() => {
+    const totals = new Map();
+
+    for (const row of horasPorProyectoModuloBase) {
+      Object.entries(row).forEach(([key, value]) => {
+        if (
+          key === "name" ||
+          key === "total" ||
+          key === "modulosTrabajados" ||
+          key === "modulosTrabajadosSet"
+        ) {
+          return;
+        }
+
+        totals.set(key, toNum(totals.get(key)) + toNum(value));
+      });
+    }
+
+    return Array.from(totals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([key]) => key);
+  }, [horasPorProyectoModuloBase]);
+
+  const horasPorProyectoModulo = useMemo(() => {
+    return horasPorProyectoModuloBase.slice(0, 12).map((row) => {
+      const next = {
+        name: row.name,
+        total: row.total,
+        modulosTrabajados: row.modulosTrabajados,
+      };
+
+      let otros = 0;
+
+      Object.entries(row).forEach(([key, value]) => {
+        if (
+          key === "name" ||
+          key === "total" ||
+          key === "modulosTrabajados" ||
+          key === "modulosTrabajadosSet"
+        ) {
+          return;
+        }
+
+        if (modulosProyectoSeriesTop.includes(key)) {
+          next[key] = +toNum(value).toFixed(2);
+        } else {
+          otros += toNum(value);
+        }
+      });
+
+      if (otros > 0) {
+        next.OTROS = +otros.toFixed(2);
+      }
+
+      return next;
+    });
+  }, [horasPorProyectoModuloBase, modulosProyectoSeriesTop]);
+
+  const seriesProyectoModulo = useMemo(() => {
+    const base = [...modulosProyectoSeriesTop];
+    const tieneOtros = horasPorProyectoModulo.some((r) => toNum(r.OTROS) > 0);
+    return tieneOtros ? [...base, "OTROS"] : base;
+  }, [modulosProyectoSeriesTop, horasPorProyectoModulo]);
 
   const totalHoras = useMemo(
     () => datosFiltrados.reduce((s, r) => s + r.horasNum, 0),
@@ -1135,45 +1068,45 @@ export default function ProyectosHorasDashboard({
   );
 
   const totalModulos = useMemo(
-    () => uniqueCount(datosFiltrados, (r) => r.moduloNormalizado),
+    () =>
+      uniqueCount(
+        datosFiltrados.filter((r) => r.proyectoKey !== "SIN_PROYECTO"),
+        (r) => r.moduloNormalizado
+      ),
     [datosFiltrados]
   );
 
-  const totalTareas = useMemo(
-    () => uniqueCount(datosFiltrados, (r) => r.tareaNormalizada),
-    [datosFiltrados]
-  );
-
-  const openDetail = useCallback(
-    (kind, value) => {
+  const openDetailProyectoModulo = useCallback(
+    (proyecto, modulo = "") => {
       let rows = [];
 
-      if (kind === "proyecto") rows = datosFiltrados.filter((r) => r.proyectoKey === value);
-      if (kind === "modulo") rows = datosFiltrados.filter((r) => r.moduloNormalizado === value);
-      if (kind === "consultor") rows = datosFiltrados.filter((r) => r.consultorNormalizado === value);
-      if (kind === "tarea") rows = datosFiltrados.filter((r) => r.tareaNormalizada === value);
-      if (kind === "ocupacion") rows = datosFiltrados.filter((r) => r.ocupacionNormalizada === value);
-      if (kind === "mes") rows = datosFiltrados.filter((r) => r.mesKey === value);
+      if (modulo === "OTROS") {
+        rows = datosFiltrados.filter(
+          (r) =>
+            r.proyectoOficial === proyecto &&
+            !modulosProyectoSeriesTop.includes(r.moduloNormalizado)
+        );
+      } else if (modulo) {
+        rows = datosFiltrados.filter(
+          (r) => r.proyectoOficial === proyecto && r.moduloNormalizado === modulo
+        );
+      } else {
+        rows = datosFiltrados.filter((r) => r.proyectoOficial === proyecto);
+      }
 
       rows = rows.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
       const subtotal = rows.reduce((s, r) => s + r.horasNum, 0);
 
-      const label =
-        kind === "proyecto"
-          ? rows[0]?.proyectoOficial || "SIN PROYECTO"
-          : kind === "mes"
-          ? rows[0]?.mesLabel || value
-          : value;
+      const title = modulo
+        ? `PROYECTO: ${proyecto} | MÓDULO: ${modulo} — Total: ${subtotal.toFixed(2)} h`
+        : `PROYECTO: ${proyecto} — Total: ${subtotal.toFixed(2)} h`;
 
-      setDetailTitle(`${kind.toUpperCase()}: ${label} — Total: ${subtotal.toFixed(2)} h`);
+      setDetailTitle(title);
       setDetailRows(rows);
       setDetailOpen(true);
     },
-    [datosFiltrados]
+    [datosFiltrados, modulosProyectoSeriesTop]
   );
-
-  const TOP = 20;
-  const topProyectos = useMemo(() => horasPorProyecto.slice(0, TOP), [horasPorProyecto]);
 
   const limpiarFiltros = () => {
     const mesBase = defaultMonth || currentMonthStr();
@@ -1202,68 +1135,7 @@ export default function ProyectosHorasDashboard({
     }
   };
 
-  const renderChartCard = (title, data, color, kind) => {
-    if (!data || data.length === 0) {
-      return (
-        <div className="phd-card phd-card-chart">
-          <div className="phd-card-head">
-            <h4>{title}</h4>
-          </div>
-          <div className="phd-empty">Sin datos con los filtros.</div>
-        </div>
-      );
-    }
-
-    const height = Math.max(320, data.length * 34);
-    const yAxisWidth = 460;
-
-    return (
-      <div className="phd-card phd-card-chart">
-        <div className="phd-card-head">
-          <h4>{title}</h4>
-          <span className="phd-card-badge">{data.length} ítems</span>
-        </div>
-
-        <div className="phd-chartWrap">
-          <div className="phd-chartInner">
-            <ResponsiveContainer width="100%" height={height}>
-              <BarChart
-                data={data}
-                layout="vertical"
-                margin={{ top: 10, right: 24, left: 10, bottom: 10 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={yAxisWidth}
-                  tick={<YAxisTickWrap width={yAxisWidth} />}
-                />
-                <Tooltip
-                  formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]}
-                  labelFormatter={(label) => `Nombre: ${label}`}
-                />
-                {kind === "proyecto" && <Legend />}
-                <Bar dataKey="horas" name="Horas">
-                  {data.map((entry, idx) => (
-                    <Cell
-                      key={idx}
-                      fill={color}
-                      onClick={() => openDetail(kind, entry.key ?? entry.name)}
-                      style={{ cursor: "pointer" }}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderMonthChartCard = (title, data, color) => {
+  const renderProyectoModuloStackedChart = (title, data, series) => {
     if (!data || data.length === 0) {
       return (
         <div className="phd-card phd-card-chart">
@@ -1279,40 +1151,48 @@ export default function ProyectosHorasDashboard({
       <div className="phd-card phd-card-chart">
         <div className="phd-card-head">
           <h4>{title}</h4>
-          <span className="phd-card-badge">{data.length} meses</span>
+          <span className="phd-card-badge">{data.length} proyectos</span>
         </div>
 
         <div className="phd-chartWrap">
           <div className="phd-chartInner">
-            <ResponsiveContainer width="100%" height={360}>
+            <ResponsiveContainer width="100%" height={480}>
               <BarChart
                 data={data}
-                margin={{ top: 10, right: 24, left: 0, bottom: 50 }}
+                margin={{ top: 20, right: 24, left: 10, bottom: 110 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="name"
                   interval={0}
-                  angle={-20}
+                  angle={-18}
                   textAnchor="end"
-                  height={60}
+                  height={110}
+                  tick={{ fontSize: 12 }}
                 />
                 <YAxis />
                 <Tooltip
-                  formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]}
-                  labelFormatter={(label) => `Mes: ${label}`}
+                  formatter={(value, name) => [`${Number(value).toFixed(2)} h`, name]}
+                  labelFormatter={(label, payload) => {
+                    const row = payload?.[0]?.payload;
+                    const mods = Array.isArray(row?.modulosTrabajados)
+                      ? row.modulosTrabajados.join(", ")
+                      : "";
+                    return mods ? `${label} | Módulos: ${mods}` : label;
+                  }}
                 />
                 <Legend />
-                <Bar dataKey="horas" name="Horas">
-                  {data.map((entry, idx) => (
-                    <Cell
-                      key={idx}
-                      fill={color}
-                      onClick={() => openDetail("mes", entry.key)}
-                      style={{ cursor: "pointer" }}
-                    />
-                  ))}
-                </Bar>
+                {series.map((modulo, idx) => (
+                  <Bar
+                    key={modulo}
+                    dataKey={modulo}
+                    stackId="total"
+                    name={modulo}
+                    fill={STACK_COLORS[idx % STACK_COLORS.length]}
+                    onClick={(entry) => openDetailProyectoModulo(entry?.payload?.name, modulo)}
+                    style={{ cursor: "pointer" }}
+                  />
+                ))}
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -1327,10 +1207,10 @@ export default function ProyectosHorasDashboard({
         <section className="phd-hero">
           <div className="phd-hero-left">
             <span className="phd-kicker">Dashboard</span>
-            <h1>Horas por Proyecto</h1>
+            <h1>Horas por Proyecto y Módulo</h1>
             <p>
-              Visualiza horas registradas por mes, proyecto, módulo, consultor, tarea y ocupación
-              con filtros avanzados y detalle de registros.
+              Visualiza las horas registradas por proyecto y los módulos que trabajaron
+              sobre esas horas.
             </p>
           </div>
 
@@ -1363,8 +1243,8 @@ export default function ProyectosHorasDashboard({
             <strong>{totalModulos}</strong>
           </div>
           <div className="phd-kpi phd-kpi-green">
-            <span>Tareas</span>
-            <strong>{totalTareas}</strong>
+            <span>Series</span>
+            <strong>{seriesProyectoModulo.length}</strong>
           </div>
         </section>
 
@@ -1372,7 +1252,7 @@ export default function ProyectosHorasDashboard({
           <div className="phd-filtros-head">
             <div>
               <h3>Filtros</h3>
-              <p>Aplica filtros para refinar las gráficas y el detalle.</p>
+              <p>Aplica filtros para refinar la gráfica y el detalle.</p>
             </div>
             <button className="phd-btn phd-btn-dark" onClick={limpiarFiltros} type="button">
               Limpiar filtros
@@ -1496,12 +1376,11 @@ export default function ProyectosHorasDashboard({
         </section>
 
         <section className="phd-grid">
-          {renderMonthChartCard("Horas por Mes", horasPorMes, "#7C3AED")}
-          {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#0055B8", "proyecto")}
-          {renderChartCard("Horas por Módulo", horasPorModulo, "#E30613", "modulo")}
-          {renderChartCard("Horas por Consultor", horasPorConsultor, "#111827", "consultor")}
-          {renderChartCard("Horas por Tarea", horasPorTarea, "#0EA5E9", "tarea")}
-          {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#10B981", "ocupacion")}
+          {renderProyectoModuloStackedChart(
+            "Horas por Proyecto y Módulo",
+            horasPorProyectoModulo,
+            seriesProyectoModulo
+          )}
         </section>
       </div>
 
@@ -1510,7 +1389,7 @@ export default function ProyectosHorasDashboard({
         onRequestClose={() => setDetailOpen(false)}
         className="phd-modal"
         overlayClassName="phd-modalOverlay"
-        contentLabel="Detalle de horas"
+        contentLabel="Detalle de horas por proyecto y módulo"
         shouldCloseOnOverlayClick
         ariaHideApp={false}
       >
@@ -1543,7 +1422,6 @@ export default function ProyectosHorasDashboard({
                   <tr>
                     <th>ID</th>
                     <th>Fecha</th>
-                    <th>Mes</th>
                     <th>Consultor</th>
                     <th>Cliente</th>
                     <th>Proyecto (OFICIAL)</th>
@@ -1560,7 +1438,6 @@ export default function ProyectosHorasDashboard({
                     <tr key={r.id ?? i}>
                       <td className="num">{r.id ?? "—"}</td>
                       <td>{r.fecha}</td>
-                      <td>{r.mesLabel || "—"}</td>
                       <td className="phd-truncate" title={r.consultorNormalizado}>
                         {r.consultorNormalizado}
                       </td>
