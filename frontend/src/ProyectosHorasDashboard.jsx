@@ -10,6 +10,7 @@ import {
   ResponsiveContainer,
   Legend,
   LabelList,
+  ReferenceDot,
 } from "recharts";
 import { jfetch } from "./lib/api";
 import "./ProyectosHorasDashboard.css";
@@ -1393,21 +1394,26 @@ export default function ProyectosHorasDashboard({
 
         <div className="phd-chartWrap">
           <div className="phd-chartInner">
-            <ResponsiveContainer width="100%" height={420}>
+            <ResponsiveContainer width="100%" height={360}>
               <BarChart
                 data={data}
-                margin={{ top: 35, right: 24, left: 10, bottom: 80 }}
+                margin={{ top: 52, right: 24, left: 10, bottom: 55 }}
+                barCategoryGap="28%"
+                maxBarSize={90}
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="name"
                   interval={0}
-                  angle={-18}
+                  angle={-14}
                   textAnchor="end"
-                  height={90}
+                  height={55}
                   tick={{ fontSize: 12 }}
                 />
-                <YAxis tickFormatter={(v) => `${Number(v).toFixed(0)}`} />
+                <YAxis
+                  width={46}
+                  tickFormatter={(v) => `${Number(v).toFixed(0)}`}
+                />
                 <Tooltip
                   formatter={(v, name) => [`${Number(v).toFixed(2)} h`, name]}
                   labelFormatter={(label, payload) => {
@@ -1418,7 +1424,12 @@ export default function ProyectosHorasDashboard({
                     return mods ? `Mes: ${label} | Módulos: ${mods}` : `Mes: ${label}`;
                   }}
                 />
-                <Legend />
+                <Legend
+                  verticalAlign="top"
+                  align="center"
+                  height={36}
+                  wrapperStyle={{ top: 0 }}
+                />
 
                 {series.map((serie, idx) => (
                   <Bar
@@ -1432,23 +1443,24 @@ export default function ProyectosHorasDashboard({
                   />
                 ))}
 
-                <Bar
-                  dataKey="total"
-                  fill="transparent"
-                  legendType="none"
-                  isAnimationActive={false}
-                >
-                  <LabelList
-                    dataKey="total"
-                    position="top"
-                    formatter={(v) => `${Number(v).toFixed(1)} h`}
-                    style={{
+                {data.map((row) => (
+                  <ReferenceDot
+                    key={`total-${row.key}`}
+                    x={row.name}
+                    y={row.total}
+                    r={0}
+                    isFront
+                    ifOverflow="extendDomain"
+                    label={{
+                      value: `${Number(row.total).toFixed(1)} h`,
+                      position: "top",
                       fill: "#334155",
                       fontSize: 12,
                       fontWeight: 700,
+                      dy: -8,
                     }}
                   />
-                </Bar>
+                ))}
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -1632,8 +1644,8 @@ export default function ProyectosHorasDashboard({
         </section>
 
         <section className="phd-grid">
-          {renderMesModuloChart("Horas por Mes y Módulo", horasPorMesModulo, seriesMesModulo)}
           {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#4C8BF5", "proyecto")}
+          {renderMesModuloChart("Horas por Mes y Módulo", horasPorMesModulo, seriesMesModulo)}
           {renderChartCard("Horas por Consultor", horasPorConsultor, "#374151", "consultor")}
           {renderChartCard("Horas por Tarea", horasPorTarea, "#5B6CFA", "tarea")}
           {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#2FA36B", "ocupacion")}
