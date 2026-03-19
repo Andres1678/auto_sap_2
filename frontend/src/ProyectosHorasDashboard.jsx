@@ -251,16 +251,16 @@ const MONTHS_ES = [
 ];
 
 const STACK_COLORS = [
-  "#6B7280", // gris
-  "#94A3B8", // slate claro
-  "#64748B", // slate medio
-  "#475569", // slate oscuro
-  "#7C8EA3", // azul grisáceo
-  "#8B95A7", // gris azulado
-  "#A3A3A3", // gris neutro
-  "#9CA3AF", // gris suave
-  "#B0BEC5", // gris frío
-  "#78909C", // azul humo
+  "#5B6CFA", // azul moderno
+  "#E35D6A", // rojo suave
+  "#4C8BF5", // azul medio
+  "#2FA36B", // verde elegante
+  "#8B5CF6", // morado balanceado
+  "#F4A261", // naranja suave
+  "#374151", // gris oscuro elegante
+  "#D16BA5", // rosa sobrio
+  "#2A9D8F", // teal medio
+  "#F28C28", // naranja cálido
 ];
 
 const getMonthKeyFromFecha = (fechaISO) => {
@@ -1396,7 +1396,7 @@ export default function ProyectosHorasDashboard({
             <ResponsiveContainer width="100%" height={420}>
               <BarChart
                 data={data}
-                margin={{ top: 20, right: 24, left: 10, bottom: 80 }}
+                margin={{ top: 35, right: 24, left: 10, bottom: 80 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
@@ -1419,6 +1419,7 @@ export default function ProyectosHorasDashboard({
                   }}
                 />
                 <Legend />
+
                 {series.map((serie, idx) => (
                   <Bar
                     key={serie}
@@ -1430,6 +1431,24 @@ export default function ProyectosHorasDashboard({
                     style={{ cursor: "pointer" }}
                   />
                 ))}
+
+                <Bar
+                  dataKey="total"
+                  fill="transparent"
+                  legendType="none"
+                  isAnimationActive={false}
+                >
+                  <LabelList
+                    dataKey="total"
+                    position="top"
+                    formatter={(v) => `${Number(v).toFixed(1)} h`}
+                    style={{
+                      fill: "#334155",
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -1614,10 +1633,10 @@ export default function ProyectosHorasDashboard({
 
         <section className="phd-grid">
           {renderMesModuloChart("Horas por Mes y Módulo", horasPorMesModulo, seriesMesModulo)}
-          {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#64748B", "proyecto")}
-          {renderChartCard("Horas por Consultor", horasPorConsultor, "#6B7280", "consultor")}
-          {renderChartCard("Horas por Tarea", horasPorTarea, "#94A3B8", "tarea")}
-          {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#7C8EA3", "ocupacion")}
+          {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#4C8BF5", "proyecto")}
+          {renderChartCard("Horas por Consultor", horasPorConsultor, "#374151", "consultor")}
+          {renderChartCard("Horas por Tarea", horasPorTarea, "#5B6CFA", "tarea")}
+          {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#2FA36B", "ocupacion")}
         </section>
       </div>
 
