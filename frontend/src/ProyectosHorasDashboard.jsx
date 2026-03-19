@@ -10,7 +10,6 @@ import {
   ResponsiveContainer,
   Legend,
   LabelList,
-  ReferenceDot,
 } from "recharts";
 import { jfetch } from "./lib/api";
 import "./ProyectosHorasDashboard.css";
@@ -252,16 +251,16 @@ const MONTHS_ES = [
 ];
 
 const STACK_COLORS = [
-  "#5B6CFA", // azul moderno
-  "#E35D6A", // rojo suave
-  "#4C8BF5", // azul medio
-  "#2FA36B", // verde elegante
-  "#8B5CF6", // morado balanceado
-  "#F4A261", // naranja suave
-  "#374151", // gris oscuro elegante
-  "#D16BA5", // rosa sobrio
-  "#2A9D8F", // teal medio
-  "#F28C28", // naranja cálido
+  "#5B6CFA",
+  "#E35D6A",
+  "#4C8BF5",
+  "#2FA36B",
+  "#8B5CF6",
+  "#F4A261",
+  "#374151",
+  "#D16BA5",
+  "#2A9D8F",
+  "#F28C28",
 ];
 
 const getMonthKeyFromFecha = (fechaISO) => {
@@ -1135,6 +1134,7 @@ export default function ProyectosHorasDashboard({
         name: row.name,
         total: row.total,
         modulosTrabajados: row.modulosTrabajados,
+        topLabelAnchor: 0,
       };
 
       let otros = 0;
@@ -1385,6 +1385,9 @@ export default function ProyectosHorasDashboard({
       );
     }
 
+    const barSize =
+      data.length <= 1 ? 120 : data.length === 2 ? 86 : data.length <= 4 ? 64 : 48;
+
     return (
       <div className="phd-card phd-card-chart">
         <div className="phd-card-head">
@@ -1394,12 +1397,11 @@ export default function ProyectosHorasDashboard({
 
         <div className="phd-chartWrap">
           <div className="phd-chartInner">
-            <ResponsiveContainer width="100%" height={360}>
+            <ResponsiveContainer width="100%" height={390}>
               <BarChart
                 data={data}
-                margin={{ top: 52, right: 24, left: 10, bottom: 55 }}
-                barCategoryGap="28%"
-                maxBarSize={90}
+                margin={{ top: 40, right: 24, left: 10, bottom: 65 }}
+                barCategoryGap="35%"
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
@@ -1411,7 +1413,7 @@ export default function ProyectosHorasDashboard({
                   tick={{ fontSize: 12 }}
                 />
                 <YAxis
-                  width={46}
+                  width={54}
                   tickFormatter={(v) => `${Number(v).toFixed(0)}`}
                 />
                 <Tooltip
@@ -1424,12 +1426,7 @@ export default function ProyectosHorasDashboard({
                     return mods ? `Mes: ${label} | Módulos: ${mods}` : `Mes: ${label}`;
                   }}
                 />
-                <Legend
-                  verticalAlign="top"
-                  align="center"
-                  height={36}
-                  wrapperStyle={{ top: 0 }}
-                />
+                <Legend />
 
                 {series.map((serie, idx) => (
                   <Bar
@@ -1438,29 +1435,32 @@ export default function ProyectosHorasDashboard({
                     stackId="mes_modulo"
                     name={serie}
                     fill={STACK_COLORS[idx % STACK_COLORS.length]}
+                    barSize={barSize}
                     onClick={(entry) => openDetail("mes_modulo", entry?.payload?.key, serie)}
                     style={{ cursor: "pointer" }}
                   />
                 ))}
 
-                {data.map((row) => (
-                  <ReferenceDot
-                    key={`total-${row.key}`}
-                    x={row.name}
-                    y={row.total}
-                    r={0}
-                    isFront
-                    ifOverflow="extendDomain"
-                    label={{
-                      value: `${Number(row.total).toFixed(1)} h`,
-                      position: "top",
+                <Bar
+                  dataKey="topLabelAnchor"
+                  stackId="mes_modulo"
+                  fill="transparent"
+                  stroke="transparent"
+                  legendType="none"
+                  isAnimationActive={false}
+                  barSize={barSize}
+                >
+                  <LabelList
+                    dataKey="total"
+                    position="top"
+                    formatter={(v) => `${Number(v).toFixed(1)} h`}
+                    style={{
                       fill: "#334155",
                       fontSize: 12,
                       fontWeight: 700,
-                      dy: -8,
                     }}
                   />
-                ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
