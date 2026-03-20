@@ -284,6 +284,13 @@ function buildSelectOptionsFromRows(rows, col) {
   return options;
 }
 
+function toFilterOption(value) {
+  return {
+    label: value === EMPTY_FILTER_VALUE ? "(Vacío)" : value,
+    value,
+  };
+}
+
 const DATE_AT_START = /^\s*(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*/;
 const DATE_ANYWHERE = /(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]\s*/g;
 
@@ -551,16 +558,7 @@ export default function Oportunidades() {
     };
   }
 
-  const computeUniqueValues = (rows) => {
-    const uniq = {};
-    columnOrder.forEach((col) => {
-      uniq[col] = buildSelectOptionsFromRows(rows, col);
-    });
-    setUniqueValues(uniq);
-    setEstadoResultadoMap(buildEstadoResultadoMap(rows));
-  };
-
-  const applyFilters = (rows, currentFilters) => {
+  const applyFilters = useCallback((rows, currentFilters) => {
     let result = [...rows];
 
     Object.entries(currentFilters).forEach(([col, selectedValues]) => {
@@ -580,7 +578,40 @@ export default function Oportunidades() {
     });
 
     return result;
-  };
+  }, []);
+
+  const computeUniqueValues = useCallback(
+    (rows, currentFilters = {}) => {
+      const uniq = {};
+
+      columnOrder.forEach((col) => {
+        const otherFilters = Object.fromEntries(
+          Object.entries(currentFilters).filter(([key]) => key !== col)
+        );
+
+        const rowsForThisColumn = applyFilters(rows, otherFilters);
+        const dynamicOptions = buildSelectOptionsFromRows(rowsForThisColumn, col);
+        const selectedOptions = (currentFilters[col] || []).map(toFilterOption);
+
+        const merged = [...dynamicOptions];
+
+        selectedOptions.forEach((selected) => {
+          const exists = merged.some(
+            (opt) => normalizeForCompare(opt.value) === normalizeForCompare(selected.value)
+          );
+
+          if (!exists) {
+            merged.unshift(selected);
+          }
+        });
+
+        uniq[col] = merged;
+      });
+
+      return uniq;
+    },
+    [columnOrder, applyFilters]
+  );
 
   const fetchData = async () => {
     setLoading(true);
@@ -598,8 +629,6 @@ export default function Oportunidades() {
 
       const normalized = json.map(normalizeRowFromApi);
       setData(normalized);
-      setFilteredData(applyFilters(normalized, filters));
-      computeUniqueValues(normalized);
     } catch {
       Swal.fire("Error", "No se pudo cargar la información", "error");
     } finally {
@@ -637,6 +666,16 @@ export default function Oportunidades() {
     fetchClientesCatalogo();
   }, []);
 
+  useEffect(() => {
+    const nextFiltered = applyFilters(data, filters);
+    setFilteredData(nextFiltered);
+    setUniqueValues(computeUniqueValues(data, filters));
+  }, [data, filters, computeUniqueValues]);
+
+  useEffect(() => {
+    setEstadoResultadoMap(buildEstadoResultadoMap(data));
+  }, [data]);
+
   const handleUpload = async () => {
     if (!file) return Swal.fire("Seleccione un archivo Excel");
 
@@ -663,15 +702,18 @@ export default function Oportunidades() {
   };
 
   const handleFilterChange = (column, selectedOptions) => {
-    const values = Array.isArray(selectedOptions) ? selectedOptions.map((opt) => opt.value) : [];
-    const newFilters = { ...filters, [column]: values };
-    setFilters(newFilters);
-    setFilteredData(applyFilters(data, newFilters));
+    const values = Array.isArray(selectedOptions)
+      ? selectedOptions.map((opt) => opt.value)
+      : [];
+
+    setFilters((prev) => ({
+      ...prev,
+      [column]: values,
+    }));
   };
 
   const handleClearFilters = () => {
     setFilters({});
-    setFilteredData([...data]);
     setEditing({ row: null, col: null });
     setEditingContext(null);
   };
@@ -739,8 +781,6 @@ export default function Oportunidades() {
 
       const nextData = data.map((r) => (r.id === row.id ? { ...r, ...payload } : r));
       setData(nextData);
-      setFilteredData(applyFilters(nextData, filters));
-      computeUniqueValues(nextData);
 
       highlightRow(rowIndex);
       setEditing({ row: null, col: null });
@@ -975,15 +1015,6 @@ export default function Oportunidades() {
             const allowed = estadoResultadoMap[estado] || [];
             const autoRes = allowed.length === 1 ? allowed[0] : "";
             setEditValue(estado);
-
-            setFilteredData((prev) =>
-              prev.map((r) =>
-                r.id === row.id
-                  ? { ...r, estado_oferta: estado, resultado_oferta: autoRes || r.resultado_oferta }
-                  : r
-              )
-            );
-
             setData((prev) =>
               prev.map((r) =>
                 r.id === row.id
@@ -1041,14 +1072,6 @@ export default function Oportunidades() {
             setEditValue(cat);
             const allowed = CATEGORIA_SUBCATEGORIA[cat] || [];
             const autoSub = allowed.length === 1 ? allowed[0] : "";
-
-            setFilteredData((prev) =>
-              prev.map((r) =>
-                r.id === row.id
-                  ? { ...r, categoria_perdida: cat, subcategoria_perdida: autoSub || r.subcategoria_perdida }
-                  : r
-              )
-            );
 
             setData((prev) =>
               prev.map((r) =>
@@ -1450,7 +1473,7 @@ export default function Oportunidades() {
                   {col === "id" ? null : (
                     <Select
                       options={uniqueValues[col] || []}
-                      value={(filters[col] || []).map((v) => ({ label: v, value: v }))}
+                      value={(filters[col] || []).map(toFilterOption)}
                       onChange={(opts) => handleFilterChange(col, opts)}
                       placeholder="Filtrar..."
                       className="select-filter"
