@@ -1181,6 +1181,11 @@ export default function ProyectosHorasDashboard({
     [datosFiltrados]
   );
 
+  const horasPorModulo = useMemo(
+    () => groupSum(datosFiltrados, (r) => r.moduloNormalizado, (r) => r.moduloNormalizado),
+    [datosFiltrados]
+  );
+
   const horasPorConsultor = useMemo(
     () => groupSum(datosFiltrados, (r) => r.consultorNormalizado, (r) => r.consultorNormalizado),
     [datosFiltrados]
@@ -1231,6 +1236,10 @@ export default function ProyectosHorasDashboard({
 
       if (kind === "proyecto") {
         rows = datosFiltrados.filter((r) => r.proyectoKey === value);
+      }
+
+      if (kind === "modulo") {
+        rows = datosFiltrados.filter((r) => r.moduloNormalizado === value);
       }
 
       if (kind === "consultor") {
@@ -1362,6 +1371,71 @@ export default function ProyectosHorasDashboard({
                   <LabelList
                     dataKey="horas"
                     position="right"
+                    formatter={(v) => Number(v).toFixed(1)}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderModuloVerticalChart = (title, data, color) => {
+    if (!data || data.length === 0) {
+      return (
+        <div className="phd-card phd-card-chart">
+          <div className="phd-card-head">
+            <h4>{title}</h4>
+          </div>
+          <div className="phd-empty">Sin datos con los filtros.</div>
+        </div>
+      );
+    }
+
+    const chartData = data.slice(0, 12);
+
+    return (
+      <div className="phd-card phd-card-chart">
+        <div className="phd-card-head">
+          <h4>{title}</h4>
+          <span className="phd-card-badge">{chartData.length} módulos</span>
+        </div>
+
+        <div className="phd-chartWrap">
+          <div className="phd-chartInner">
+            <ResponsiveContainer width="100%" height={420}>
+              <BarChart
+                data={chartData}
+                margin={{ top: 20, right: 24, left: 10, bottom: 80 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="name"
+                  interval={0}
+                  angle={-18}
+                  textAnchor="end"
+                  height={90}
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis tickFormatter={(v) => `${Number(v).toFixed(0)}`} />
+                <Tooltip
+                  formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]}
+                  labelFormatter={(label) => `Módulo: ${label}`}
+                />
+                <Legend />
+                <Bar
+                  dataKey="horas"
+                  name="Horas"
+                  fill={color}
+                  radius={[8, 8, 0, 0]}
+                  onClick={(entry) => openDetail("modulo", entry?.key ?? entry?.name)}
+                  style={{ cursor: "pointer" }}
+                >
+                  <LabelList
+                    dataKey="horas"
+                    position="top"
                     formatter={(v) => Number(v).toFixed(1)}
                   />
                 </Bar>
@@ -1646,6 +1720,7 @@ export default function ProyectosHorasDashboard({
         <section className="phd-grid">
           {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#4C8BF5", "proyecto")}
           {renderMesModuloChart("Horas por Mes y Módulo", horasPorMesModulo, seriesMesModulo)}
+          {renderModuloVerticalChart("Horas por Módulo", horasPorModulo, "#E35D6A")}
           {renderChartCard("Horas por Consultor", horasPorConsultor, "#374151", "consultor")}
           {renderChartCard("Horas por Tarea", horasPorTarea, "#5B6CFA", "tarea")}
           {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#2FA36B", "ocupacion")}
