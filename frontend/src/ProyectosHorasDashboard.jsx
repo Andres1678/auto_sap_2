@@ -250,19 +250,6 @@ const MONTHS_ES = [
   "DIC",
 ];
 
-const STACK_COLORS = [
-  "#5B6CFA",
-  "#E35D6A",
-  "#4C8BF5",
-  "#2FA36B",
-  "#8B5CF6",
-  "#F4A261",
-  "#374151",
-  "#D16BA5",
-  "#2A9D8F",
-  "#F28C28",
-];
-
 const getMonthKeyFromFecha = (fechaISO) => {
   const fecha = normalizeDateOnly(fechaISO);
   if (!fecha || fecha.length < 7) return "";
@@ -276,6 +263,59 @@ const formatMonthLabel = (monthKey) => {
   if (idx < 0 || idx > 11) return monthKey;
   return `${MONTHS_ES[idx]} ${y}`;
 };
+
+function MesModuloTooltip({ active, payload, label }) {
+  if (!active || !payload || !payload.length) return null;
+
+  const row = payload[0]?.payload;
+  const detalle = Array.isArray(row?.modulosDetalle) ? row.modulosDetalle : [];
+
+  return (
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 12,
+        padding: 12,
+        boxShadow: "0 10px 25px rgba(0,0,0,0.08)",
+        minWidth: 240,
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>{label}</div>
+      <div style={{ marginBottom: 8 }}>
+        <b>Total:</b> {Number(row?.horas || 0).toFixed(2)} h
+      </div>
+
+      {detalle.length > 0 && (
+        <div style={{ maxHeight: 220, overflowY: "auto" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: "#475569" }}>
+            Módulos
+          </div>
+          {detalle.slice(0, 8).map((m) => (
+            <div
+              key={m.name}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                fontSize: 12,
+                padding: "3px 0",
+              }}
+            >
+              <span style={{ color: "#334155" }}>{m.name}</span>
+              <span style={{ fontWeight: 700 }}>{Number(m.horas).toFixed(2)} h</span>
+            </div>
+          ))}
+          {detalle.length > 8 && (
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
+              + {detalle.length - 8} módulos más
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* =========================
    Tick custom: WRAP en YAxis
@@ -756,7 +796,7 @@ export default function ProyectosHorasDashboard({
       }
 
       const qs = params.toString();
-      const url = qs ? `/registros/graficos?${qs}` : "/registros/graficos";
+      const url = qs ? `/dashboard/proyectos-horas?${qs}` : "/dashboard/proyectos-horas";
 
       const res = await jfetch(url, {
         method: "GET",
@@ -1068,7 +1108,7 @@ export default function ProyectosHorasDashboard({
     equipoUser,
   ]);
 
-  const horasPorMesModuloBase = useMemo(() => {
+  const horasPorMesModulo = useMemo(() => {
     const acc = new Map();
 
     for (const r of datosFiltrados) {
@@ -1082,94 +1122,35 @@ export default function ProyectosHorasDashboard({
       const prev = acc.get(mesKey) || {
         key: mesKey,
         name: mesLabel,
-        total: 0,
-        modulosTrabajadosSet: new Set(),
+        horas: 0,
+        modulosMap: new Map(),
       };
 
-      prev.total += horas;
-      prev[modulo] = toNum(prev[modulo]) + horas;
-      prev.modulosTrabajadosSet.add(modulo);
+      prev.horas += horas;
+      prev.modulosMap.set(modulo, toNum(prev.modulosMap.get(modulo)) + horas);
 
       acc.set(mesKey, prev);
     }
 
     return Array.from(acc.values())
-      .map((row) => ({
-        ...row,
-        total: +row.total.toFixed(2),
-        modulosTrabajados: Array.from(row.modulosTrabajadosSet).sort(),
-      }))
+      .map((row) => {
+        const modulosDetalle = Array.from(row.modulosMap.entries())
+          .map(([name, horas]) => ({
+            name,
+            horas: +toNum(horas).toFixed(2),
+          }))
+          .sort((a, b) => b.horas - a.horas);
+
+        return {
+          key: row.key,
+          name: row.name,
+          horas: +row.horas.toFixed(2),
+          totalModulos: modulosDetalle.length,
+          modulosDetalle,
+        };
+      })
       .sort((a, b) => a.key.localeCompare(b.key));
   }, [datosFiltrados]);
-
-  const modulosSeriesTopMes = useMemo(() => {
-    const totals = new Map();
-
-    for (const row of horasPorMesModuloBase) {
-      Object.entries(row).forEach(([key, value]) => {
-        if (
-          key === "key" ||
-          key === "name" ||
-          key === "total" ||
-          key === "modulosTrabajados" ||
-          key === "modulosTrabajadosSet"
-        ) {
-          return;
-        }
-
-        totals.set(key, toNum(totals.get(key)) + toNum(value));
-      });
-    }
-
-    return Array.from(totals.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([key]) => key);
-  }, [horasPorMesModuloBase]);
-
-  const horasPorMesModulo = useMemo(() => {
-    return horasPorMesModuloBase.map((row) => {
-      const next = {
-        key: row.key,
-        name: row.name,
-        total: row.total,
-        modulosTrabajados: row.modulosTrabajados,
-        topLabelAnchor: 0,
-      };
-
-      let otros = 0;
-
-      Object.entries(row).forEach(([key, value]) => {
-        if (
-          key === "key" ||
-          key === "name" ||
-          key === "total" ||
-          key === "modulosTrabajados" ||
-          key === "modulosTrabajadosSet"
-        ) {
-          return;
-        }
-
-        if (modulosSeriesTopMes.includes(key)) {
-          next[key] = +toNum(value).toFixed(2);
-        } else {
-          otros += toNum(value);
-        }
-      });
-
-      if (otros > 0) {
-        next.OTROS = +otros.toFixed(2);
-      }
-
-      return next;
-    });
-  }, [horasPorMesModuloBase, modulosSeriesTopMes]);
-
-  const seriesMesModulo = useMemo(() => {
-    const base = [...modulosSeriesTopMes];
-    const tieneOtros = horasPorMesModulo.some((r) => toNum(r.OTROS) > 0);
-    return tieneOtros ? [...base, "OTROS"] : base;
-  }, [modulosSeriesTopMes, horasPorMesModulo]);
 
   const horasPorProyecto = useMemo(
     () =>
@@ -1268,6 +1249,10 @@ export default function ProyectosHorasDashboard({
         }
       }
 
+      if (kind === "mes_total") {
+        rows = datosFiltrados.filter((r) => r.mesKey === value);
+      }
+
       rows = rows.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
       const subtotal = rows.reduce((s, r) => s + r.horasNum, 0);
 
@@ -1278,6 +1263,8 @@ export default function ProyectosHorasDashboard({
       } else if (kind === "mes_modulo") {
         const mesLabel = rows[0]?.mesLabel || formatMonthLabel(value) || value;
         label = `${mesLabel} | ${extra}`;
+      } else if (kind === "mes_total") {
+        label = rows[0]?.mesLabel || formatMonthLabel(value) || value;
       }
 
       setDetailTitle(`${kind.toUpperCase()}: ${label} — Total: ${subtotal.toFixed(2)} h`);
@@ -1447,7 +1434,7 @@ export default function ProyectosHorasDashboard({
     );
   };
 
-  const renderMesModuloChart = (title, data, series) => {
+  const renderMesModuloChart = (title, data) => {
     if (!data || data.length === 0) {
       return (
         <div className="phd-card phd-card-chart">
@@ -1460,13 +1447,15 @@ export default function ProyectosHorasDashboard({
     }
 
     const barSize =
-      data.length <= 1 ? 120 : data.length === 2 ? 86 : data.length <= 4 ? 64 : 48;
+      data.length <= 1 ? 90 : data.length === 2 ? 72 : data.length <= 4 ? 56 : 42;
 
     return (
       <div className="phd-card phd-card-chart">
         <div className="phd-card-head">
           <h4>{title}</h4>
-          <span className="phd-card-badge">{data.length} meses</span>
+          <span className="phd-card-badge">
+            {data.length} {data.length === 1 ? "mes" : "meses"}
+          </span>
         </div>
 
         <div className="phd-chartWrap">
@@ -1474,7 +1463,7 @@ export default function ProyectosHorasDashboard({
             <ResponsiveContainer width="100%" height={390}>
               <BarChart
                 data={data}
-                margin={{ top: 40, right: 24, left: 10, bottom: 65 }}
+                margin={{ top: 30, right: 24, left: 10, bottom: 65 }}
                 barCategoryGap="35%"
               >
                 <CartesianGrid strokeDasharray="3 3" />
@@ -1490,42 +1479,19 @@ export default function ProyectosHorasDashboard({
                   width={54}
                   tickFormatter={(v) => `${Number(v).toFixed(0)}`}
                 />
-                <Tooltip
-                  formatter={(v, name) => [`${Number(v).toFixed(2)} h`, name]}
-                  labelFormatter={(label, payload) => {
-                    const row = payload?.[0]?.payload;
-                    const mods = Array.isArray(row?.modulosTrabajados)
-                      ? row.modulosTrabajados.join(", ")
-                      : "";
-                    return mods ? `Mes: ${label} | Módulos: ${mods}` : `Mes: ${label}`;
-                  }}
-                />
-                <Legend />
-
-                {series.map((serie, idx) => (
-                  <Bar
-                    key={serie}
-                    dataKey={serie}
-                    stackId="mes_modulo"
-                    name={serie}
-                    fill={STACK_COLORS[idx % STACK_COLORS.length]}
-                    barSize={barSize}
-                    onClick={(entry) => openDetail("mes_modulo", entry?.payload?.key, serie)}
-                    style={{ cursor: "pointer" }}
-                  />
-                ))}
+                <Tooltip content={<MesModuloTooltip />} />
 
                 <Bar
-                  dataKey="topLabelAnchor"
-                  stackId="mes_modulo"
-                  fill="transparent"
-                  stroke="transparent"
-                  legendType="none"
-                  isAnimationActive={false}
+                  dataKey="horas"
+                  name="Horas"
+                  fill="#5B6CFA"
+                  radius={[10, 10, 0, 0]}
                   barSize={barSize}
+                  onClick={(entry) => openDetail("mes_total", entry?.payload?.key)}
+                  style={{ cursor: "pointer" }}
                 >
                   <LabelList
-                    dataKey="total"
+                    dataKey="horas"
                     position="top"
                     formatter={(v) => `${Number(v).toFixed(1)} h`}
                     style={{
@@ -1719,7 +1685,7 @@ export default function ProyectosHorasDashboard({
 
         <section className="phd-grid">
           {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#4C8BF5", "proyecto")}
-          {renderMesModuloChart("Horas por Mes y Módulo", horasPorMesModulo, seriesMesModulo)}
+          {renderMesModuloChart("Horas por Mes y Módulo", horasPorMesModulo)}
           {renderModuloVerticalChart("Horas por Módulo", horasPorModulo, "#E35D6A")}
           {renderChartCard("Horas por Consultor", horasPorConsultor, "#374151", "consultor")}
           {renderChartCard("Horas por Tarea", horasPorTarea, "#5B6CFA", "tarea")}

@@ -6067,3 +6067,537 @@ def eliminar_modulo(id):
     db.session.commit()
 
     return jsonify({"mensaje": "Módulo eliminado"}), 200
+
+
+##Ruta para graficos de proyectos 
+
+def _registro_fecha_expr():
+    fecha_txt = func.left(func.cast(Registro.fecha, db.String), 10)
+    return func.coalesce(
+        func.str_to_date(fecha_txt, "%Y-%m-%d"),
+        func.str_to_date(fecha_txt, "%d/%m/%Y"),
+        func.str_to_date(fecha_txt, "%d-%m-%Y"),
+    )
+
+def _safe_float_report(v):
+    try:
+        return float(v or 0)
+    except Exception:
+        return 0.0
+
+@bp.route("/reporte/horas-consultor-cliente-detalle", methods=["GET"])
+@permission_required("GRAFICOS_VER")
+def reporte_horas_consultor_cliente_detalle():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
+
+        scope, val = _scope_for_graficos(consultor_login, rol_req)
+
+        desde = (request.args.get("desde") or "").strip()
+        hasta = (request.args.get("hasta") or "").strip()
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        cliente_filter = (request.args.get("cliente") or "").strip()
+        consultor_filter = (request.args.get("consultor") or "").strip()
+        modulo_filter = (request.args.get("modulo") or "").strip().upper()
+
+        max_rows = request.args.get("max_rows", type=int) or 5000
+        max_rows = min(max(max_rows, 1), 20000)
+
+        C = aliased(Consultor)
+        E = aliased(Equipo)
+
+        fecha_expr = _registro_fecha_expr()
+
+        q = (
+            Registro.query
+            .options(
+                joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
+                joinedload(Registro.tarea),
+                joinedload(Registro.ocupacion),
+                joinedload(Registro.proyecto),
+                joinedload(Registro.fase_proyecto),
+            )
+            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .outerjoin(E, C.equipo_id == E.id)
+        )
+
+        # -------------------------
+        # Scope
+        # -------------------------
+        if scope == "SELF":
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+
+        elif scope == "TEAM":
+            if not int(val or 0):
+                return jsonify({"error": "Consultor sin equipo asignado"}), 403
+            q = q.filter(C.equipo_id == int(val))
+
+        # ALL -> sin filtro
+
+        # -------------------------
+        # Filtros
+        # -------------------------
+        if desde:
+            q = q.filter(fecha_expr >= desde)
+
+        if hasta:
+            q = q.filter(fecha_expr <= hasta)
+
+        if equipo_filter:
+            if scope == "TEAM":
+                eq_login = (
+                    (consultor_login.equipo_obj.nombre or "").strip().upper()
+                    if consultor_login.equipo_obj else ""
+                )
+                if equipo_filter != eq_login:
+                    return jsonify({"error": "No autorizado para consultar otro equipo"}), 403
+
+            q = q.filter(func.upper(E.nombre) == equipo_filter)
+
+        if cliente_filter:
+            q = q.filter(Registro.cliente.ilike(f"%{cliente_filter}%"))
+
+        if consultor_filter:
+            q = q.filter(C.nombre.ilike(f"%{consultor_filter}%"))
+
+        if modulo_filter:
+            q = q.filter(func.upper(Registro.modulo) == modulo_filter)
+
+        registros = (
+            q.order_by(fecha_expr.desc(), C.nombre.asc(), Registro.id.desc())
+             .limit(max_rows)
+             .all()
+        )
+
+        # -------------------------
+        # Presupuestos vigentes
+        # -------------------------
+        consultor_ids = sorted({
+            r.consultor.id for r in registros
+            if getattr(r, "consultor", None) and getattr(r.consultor, "id", None)
+        })
+
+        presupuesto_map = {}
+        if consultor_ids:
+            pres_rows = (
+                ConsultorPresupuesto.query
+                .filter(ConsultorPresupuesto.consultor_id.in_(consultor_ids))
+                .filter(ConsultorPresupuesto.vigente == True)
+                .all()
+            )
+            for p in pres_rows:
+                presupuesto_map[int(p.consultor_id)] = {
+                    "horas_base_mes": _safe_float_report(p.horas_base_mes),
+                    "vr_perfil": _safe_float_report(p.vr_perfil),
+                }
+
+        # -------------------------
+        # Acumuladores
+        # -------------------------
+        clientes_set = set()
+        filtros_equipos = set()
+        filtros_clientes = set()
+        filtros_consultores = set()
+        filtros_modulos = set()
+
+        resumen_map = {}
+        totales_cliente = defaultdict(float)
+        total_general = 0.0
+
+        graf_cliente = defaultdict(float)
+        graf_consultor = defaultdict(float)
+        graf_equipo = defaultdict(float)
+        graf_fecha = defaultdict(float)
+
+        registros_out = []
+
+        for r in registros:
+            consultor_obj = getattr(r, "consultor", None)
+            tarea = getattr(r, "tarea", None)
+            ocup = getattr(r, "ocupacion", None)
+
+            consultor_id = getattr(consultor_obj, "id", None)
+            consultor_nombre = (
+                getattr(consultor_obj, "nombre", None)
+                or (r.usuario_consultor or "SIN CONSULTOR")
+            ).strip()
+
+            equipo_nombre = (
+                (consultor_obj.equipo_obj.nombre if consultor_obj and consultor_obj.equipo_obj else None)
+                or (r.equipo or "SIN EQUIPO")
+            )
+            equipo_nombre = str(equipo_nombre).strip().upper()
+
+            cliente_nombre = str(r.cliente or "SIN CLIENTE").strip()
+            modulo_nombre = str(r.modulo or "SIN MODULO").strip().upper()
+
+            horas = _safe_float_report(
+                r.total_horas if r.total_horas is not None else r.tiempo_invertido
+            )
+
+            fecha_str = _safe_fecha_iso(r.fecha)
+
+            if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
+                tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
+            else:
+                tipo_tarea_str = (getattr(r, "tipo_tarea", None) or "").strip() or None
+
+            clientes_set.add(cliente_nombre)
+            filtros_equipos.add(equipo_nombre)
+            filtros_clientes.add(cliente_nombre)
+            filtros_consultores.add(consultor_nombre)
+            filtros_modulos.add(modulo_nombre)
+
+            key = consultor_id or f"user::{(r.usuario_consultor or '').strip().lower()}"
+
+            if key not in resumen_map:
+                resumen_map[key] = {
+                    "consultorId": consultor_id,
+                    "consultor": consultor_nombre,
+                    "equipo": equipo_nombre,
+                    "presupuestoHoras": 0.0,
+                    "totalHoras": 0.0,
+                    "diferenciaHoras": 0.0,
+                    "porcentajeUso": None,
+                    "clientes": defaultdict(float),
+                }
+
+            resumen_map[key]["clientes"][cliente_nombre] += horas
+            resumen_map[key]["totalHoras"] += horas
+
+            totales_cliente[cliente_nombre] += horas
+            total_general += horas
+
+            graf_cliente[cliente_nombre] += horas
+            graf_consultor[consultor_nombre] += horas
+            graf_equipo[equipo_nombre] += horas
+            if fecha_str:
+                graf_fecha[fecha_str] += horas
+
+            registros_out.append({
+                "id": r.id,
+                "fecha": fecha_str,
+                "cliente": cliente_nombre,
+                "consultor": consultor_nombre,
+                "consultorId": consultor_id,
+                "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+                "equipo": equipo_nombre,
+                "modulo": modulo_nombre,
+                "nroCasoCliente": r.nro_caso_cliente,
+                "nroCasoInterno": r.nro_caso_interno,
+                "nroCasoEscaladoSap": r.nro_caso_escalado,
+                "tipoTarea": tipo_tarea_str,
+                "ocupacion": ocup.nombre if ocup else None,
+                "horaInicio": r.hora_inicio,
+                "horaFin": r.hora_fin,
+                "tiempoInvertido": _safe_float_report(r.tiempo_invertido),
+                "tiempoFacturable": _safe_float_report(r.tiempo_facturable),
+                "totalHoras": round(horas, 2),
+                "descripcion": r.descripcion,
+                "proyecto": r.proyecto.nombre if getattr(r, "proyecto", None) else None,
+                "faseProyecto": r.fase_proyecto.nombre if getattr(r, "fase_proyecto", None) else None,
+            })
+
+        clientes = sorted(clientes_set)
+
+        rows_out = []
+        for _, item in resumen_map.items():
+            presupuesto_horas = 0.0
+            if item["consultorId"] and item["consultorId"] in presupuesto_map:
+                presupuesto_horas = _safe_float_report(
+                    presupuesto_map[item["consultorId"]]["horas_base_mes"]
+                )
+
+            total_horas = round(_safe_float_report(item["totalHoras"]), 2)
+            diferencia_horas = round(presupuesto_horas - total_horas, 2)
+            porcentaje = round((total_horas / presupuesto_horas) * 100, 2) if presupuesto_horas > 0 else None
+
+            clientes_dict = {}
+            for c in clientes:
+                clientes_dict[c] = round(_safe_float_report(item["clientes"].get(c, 0)), 2)
+
+            rows_out.append({
+                "consultorId": item["consultorId"],
+                "consultor": item["consultor"],
+                "equipo": item["equipo"],
+                "presupuestoHoras": round(presupuesto_horas, 2),
+                "totalHoras": total_horas,
+                "diferenciaHoras": diferencia_horas,
+                "porcentajeUso": porcentaje,
+                "clientes": clientes_dict,
+            })
+
+        rows_out.sort(key=lambda x: ((x["equipo"] or ""), (x["consultor"] or "")))
+
+        totales_cliente_out = {
+            c: round(_safe_float_report(v), 2)
+            for c, v in totales_cliente.items()
+        }
+
+        graficos = {
+            "porCliente": [
+                {"name": k, "horas": round(v, 2)}
+                for k, v in sorted(graf_cliente.items(), key=lambda x: x[1], reverse=True)
+            ],
+            "porConsultor": [
+                {"name": k, "horas": round(v, 2)}
+                for k, v in sorted(graf_consultor.items(), key=lambda x: x[1], reverse=True)
+            ],
+            "porEquipo": [
+                {"name": k, "horas": round(v, 2)}
+                for k, v in sorted(graf_equipo.items(), key=lambda x: x[1], reverse=True)
+            ],
+            "porFecha": [
+                {"fecha": k, "horas": round(v, 2)}
+                for k, v in sorted(graf_fecha.items(), key=lambda x: x[0])
+            ],
+        }
+
+        filtros = {
+            "equipos": sorted(filtros_equipos),
+            "clientes": sorted(filtros_clientes),
+            "consultores": sorted(filtros_consultores),
+            "modulos": sorted(filtros_modulos),
+        }
+
+        return jsonify({
+            "clientes": clientes,
+            "rows": rows_out,
+            "registros": registros_out,
+            "totalesCliente": totales_cliente_out,
+            "totalGeneral": round(total_general, 2),
+            "graficos": graficos,
+            "filtros": filtros,
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("❌ Error en /reporte/horas-consultor-cliente-detalle")
+        return jsonify({"error": str(e)}), 500
+    
+
+@bp.route('/dashboard/proyectos-horas', methods=['GET'])
+@permission_required("GRAFICOS_VER")
+def dashboard_proyectos_horas():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({'error': 'Usuario no enviado'}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+
+        if not consultor_login:
+            return jsonify({'error': 'Consultor no encontrado'}), 404
+
+        scope, val = _scope_for_graficos(consultor_login, rol_req)
+
+        C = aliased(Consultor)
+        E = aliased(Equipo)
+
+        fecha_expr = _registro_fecha_expr()
+
+        q = (
+            Registro.query
+            .options(
+                joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
+                joinedload(Registro.tarea),
+                joinedload(Registro.ocupacion),
+                joinedload(Registro.proyecto),
+                joinedload(Registro.fase_proyecto),
+            )
+            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .outerjoin(E, C.equipo_id == E.id)
+        )
+
+        # -------------------------
+        # Scope
+        # -------------------------
+        if scope == "SELF":
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+
+        elif scope == "TEAM":
+            if not int(val or 0):
+                return jsonify({'error': 'Consultor sin equipo asignado'}), 403
+            q = q.filter(C.equipo_id == int(val))
+
+        # -------------------------
+        # Filtros
+        # -------------------------
+        filtro_mes = (request.args.get("mes") or "").strip()
+        filtro_desde = (request.args.get("desde") or "").strip()
+        filtro_hasta = (request.args.get("hasta") or "").strip()
+        filtro_equipo = (request.args.get("equipo") or "").strip().upper()
+        filtro_consultor = (request.args.get("consultor") or "").strip()
+        filtro_modulo = (request.args.get("modulo") or "").strip()
+        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
+        filtro_ocupacion = (request.args.get("ocupacion") or "").strip()
+        filtro_tarea = (request.args.get("tarea") or "").strip()
+
+        if filtro_mes:
+            try:
+                y, m = filtro_mes.split("-")
+                y = int(y)
+                m = int(m)
+                desde_mes = f"{y:04d}-{m:02d}-01"
+                ultimo_dia = (date(y + (1 if m == 12 else 0), 1 if m == 12 else m + 1, 1) - timedelta(days=1)).day
+                hasta_mes = f"{y:04d}-{m:02d}-{ultimo_dia:02d}"
+
+                q = q.filter(fecha_expr >= desde_mes)
+                q = q.filter(fecha_expr <= hasta_mes)
+            except Exception:
+                return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
+        else:
+            if filtro_desde:
+                q = q.filter(fecha_expr >= filtro_desde)
+            if filtro_hasta:
+                q = q.filter(fecha_expr <= filtro_hasta)
+
+        if filtro_equipo:
+            if scope == "TEAM":
+                eq_login = ""
+                if consultor_login.equipo_obj:
+                    eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper()
+
+                if filtro_equipo != eq_login:
+                    return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
+
+            q = q.filter(func.upper(E.nombre) == filtro_equipo)
+
+        if filtro_consultor:
+            q = q.filter(C.nombre.ilike(f"%{filtro_consultor}%"))
+
+        if filtro_modulo:
+            q = q.filter(func.upper(Registro.modulo) == filtro_modulo.upper())
+
+        if filtro_ocupacion:
+            q = q.filter(Ocupacion.nombre.ilike(f"%{filtro_ocupacion}%"))
+
+        if filtro_tarea:
+            q = q.filter(
+                or_(
+                    Tarea.nombre.ilike(f"%{filtro_tarea}%"),
+                    Registro.tipo_tarea.ilike(f"%{filtro_tarea}%")
+                )
+            )
+
+        if filtro_proyecto_id:
+            try:
+                q = _apply_project_filter_graficos(q, int(filtro_proyecto_id))
+            except Exception:
+                return jsonify({"error": "proyecto_id inválido"}), 400
+
+        max_rows = request.args.get("max_rows", type=int) or 15000
+        max_rows = min(max(max_rows, 1), 20000)
+
+        registros = (
+            q.order_by(fecha_expr.desc(), Registro.id.desc())
+             .limit(max_rows)
+             .all()
+        )
+
+        data = []
+
+        for r in registros:
+            tarea = getattr(r, "tarea", None)
+            ocup = getattr(r, "ocupacion", None)
+
+            if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
+                tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
+            else:
+                tipo_tarea_str = (getattr(r, "tipo_tarea", "") or "").strip() or None
+
+            equipo_nombre = None
+            if r.consultor and getattr(r.consultor, "equipo_obj", None):
+                equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
+
+            proyecto = getattr(r, "proyecto", None)
+            fase_proyecto = getattr(r, "fase_proyecto", None)
+
+            data.append({
+                "id": r.id,
+                "fecha": _safe_fecha_iso(r.fecha),
+                "modulo": r.modulo,
+                "cliente": r.cliente,
+                "equipo": equipo_nombre or (r.equipo or "").strip().upper() or "SIN EQUIPO",
+                "nroCasoCliente": r.nro_caso_cliente,
+                "nroCasoInterno": r.nro_caso_interno,
+                "nroCasoEscaladoSap": r.nro_caso_escalado,
+
+                "ocupacion_id": r.ocupacion_id,
+                "ocupacion_codigo": ocup.codigo if ocup else None,
+                "ocupacion_nombre": ocup.nombre if ocup else None,
+
+                "tarea_id": r.tarea_id,
+                "tipoTarea": tipo_tarea_str,
+                "tarea": {
+                    "id": tarea.id,
+                    "codigo": getattr(tarea, "codigo", None),
+                    "nombre": getattr(tarea, "nombre", None),
+                } if tarea else None,
+
+                "consultor": r.consultor.nombre if r.consultor else None,
+                "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+                "horaInicio": r.hora_inicio,
+                "horaFin": r.hora_fin,
+                "tiempoInvertido": r.tiempo_invertido,
+                "tiempoFacturable": r.tiempo_facturable,
+                "horasAdicionales": r.horas_adicionales,
+                "descripcion": r.descripcion,
+                "totalHoras": r.total_horas,
+                "bloqueado": bool(r.bloqueado),
+                "oncall": r.oncall,
+                "desborde": r.desborde,
+                "actividadMalla": r.actividad_malla,
+
+                "proyecto_id": r.proyecto_id,
+                "fase_proyecto_id": r.fase_proyecto_id,
+                "proyecto": {
+                    "id": proyecto.id,
+                    "codigo": proyecto.codigo,
+                    "nombre": proyecto.nombre,
+                    "activo": bool(getattr(proyecto, "activo", True)),
+                } if proyecto else None,
+                "fase_proyecto": {
+                    "id": fase_proyecto.id,
+                    "nombre": fase_proyecto.nombre,
+                } if fase_proyecto else None,
+                "proyecto_codigo": proyecto.codigo if proyecto else None,
+                "proyecto_nombre": proyecto.nombre if proyecto else None,
+                "proyecto_fase": fase_proyecto.nombre if fase_proyecto else None,
+            })
+
+        return jsonify({
+            "data": data,
+            "total": len(data)
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("❌ Error en /dashboard/proyectos-horas")
+        return jsonify({"error": str(e)}), 500
