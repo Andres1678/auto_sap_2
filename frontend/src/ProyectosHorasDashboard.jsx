@@ -1235,20 +1235,6 @@ export default function ProyectosHorasDashboard({
         rows = datosFiltrados.filter((r) => r.ocupacionNormalizada === value);
       }
 
-      if (kind === "mes_modulo") {
-        if (extra === "OTROS") {
-          rows = datosFiltrados.filter(
-            (r) =>
-              r.mesKey === value &&
-              !modulosSeriesTopMes.includes(r.moduloNormalizado)
-          );
-        } else {
-          rows = datosFiltrados.filter(
-            (r) => r.mesKey === value && r.moduloNormalizado === extra
-          );
-        }
-      }
-
       if (kind === "mes_total") {
         rows = datosFiltrados.filter((r) => r.mesKey === value);
       }
@@ -1260,9 +1246,6 @@ export default function ProyectosHorasDashboard({
 
       if (kind === "proyecto") {
         label = rows[0]?.proyectoOficial || "SIN PROYECTO";
-      } else if (kind === "mes_modulo") {
-        const mesLabel = rows[0]?.mesLabel || formatMonthLabel(value) || value;
-        label = `${mesLabel} | ${extra}`;
       } else if (kind === "mes_total") {
         label = rows[0]?.mesLabel || formatMonthLabel(value) || value;
       }
@@ -1271,9 +1254,9 @@ export default function ProyectosHorasDashboard({
       setDetailRows(rows);
       setDetailOpen(true);
     },
-    [datosFiltrados, modulosSeriesTopMes]
+    [datosFiltrados]
   );
-
+  
   const TOP = 20;
   const topProyectos = useMemo(() => horasPorProyecto.slice(0, TOP), [horasPorProyecto]);
 
