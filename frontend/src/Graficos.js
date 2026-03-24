@@ -319,7 +319,8 @@ export default function Graficos() {
   const [filtroTarea, setFiltroTarea] = useState([]);
   const [filtroCliente, setFiltroCliente] = useState([]);
   const [filtroModulo, setFiltroModulo] = useState([]);
-  const [filtroMes, setFiltroMes] = useState('');
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const [filtroMes, setFiltroMes] = useState(currentMonth);
   const [filtroNroCliente, setFiltroNroCliente] = useState([]);
   const [filtroNroEscalado, setFiltroNroEscalado] = useState([]);
   const [filtroEquipo, setFiltroEquipo] = useState([]);
@@ -386,7 +387,7 @@ export default function Graficos() {
     setError('');
 
     try {
-      const res = await jfetch('/registros/graficos', {
+      const res = await jfetch('/registros/graficos?max_rows=50000',{
         method: 'GET',
         signal: controller.signal,
         headers: {
@@ -579,14 +580,32 @@ export default function Graficos() {
     return "NO MAPEADO";
   }, [proyectosByCodigo, mapeoOrigenToProyecto]);
 
+  const registrosBase = useMemo(() => {
+    return (registros ?? []).filter(r => {
+      const eq = equipoOf(r);
+
+      if (scope === 'SELF') {
+        const u = String(usuario || '').trim().toLowerCase();
+        const ru = String(r.usuario_consultor || '').trim().toLowerCase();
+        if (u && ru && ru !== u) return false;
+        if (equipoUser && eq !== equipoUser) return false;
+      }
+
+      if (scope === 'TEAM') {
+        if (equipoUser && eq !== equipoUser) return false;
+      }
+
+      if (!coincideMes(r.fecha, filtroMes)) return false;
+      if (!inRangeISO(r.fecha, filtroDesde, filtroHasta)) return false;
+
+      return true;
+    });
+  }, [registros, scope, usuario, equipoUser, filtroMes, filtroDesde, filtroHasta]);
+
   const consultoresUnicos = useMemo(() => {
-    const set = new Set(
-      (registros ?? [])
-        .filter(r => coincideMes(r.fecha, filtroMes))
-        .map(r => r.consultor)
-    );
+    const set = new Set((registrosBase ?? []).map(r => r.consultor));
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registrosBase]);
 
   const tareasUnicos = useMemo(() => {
     const set = new Set(
@@ -649,22 +668,8 @@ export default function Graficos() {
   }, [registros, filtroMes]);
 
   const datosFiltrados = useMemo(() => {
-    return (registros ?? []).filter(r => {
+    return (registrosBase ?? []).filter(r => {
       const eq = equipoOf(r);
-
-      if (scope === 'SELF') {
-        const u = String(usuario || '').trim().toLowerCase();
-        const ru = String(r.usuario_consultor || '').trim().toLowerCase();
-        if (u && ru && ru !== u) return false;
-        if (equipoUser && eq !== equipoUser) return false;
-      }
-
-      if (scope === 'TEAM') {
-        if (equipoUser && eq !== equipoUser) return false;
-      }
-
-      if (!coincideMes(r.fecha, filtroMes)) return false;
-      if (!inRangeISO(r.fecha, filtroDesde, filtroHasta)) return false;
 
       if (filtroOcupacion.length > 0) {
         const occLabel =
@@ -694,9 +699,15 @@ export default function Graficos() {
       return true;
     });
   }, [
-    registros, filtroMes, filtroConsultor, filtroTarea, filtroCliente,
-    filtroModulo, filtroEquipo, filtroNroCliente, filtroNroEscalado,
-    scope, usuario, equipoUser, filtroOcupacion, filtroDesde, filtroHasta
+    registrosBase,
+    filtroOcupacion,
+    filtroConsultor,
+    filtroTarea,
+    filtroCliente,
+    filtroModulo,
+    filtroEquipo,
+    filtroNroCliente,
+    filtroNroEscalado
   ]);
 
   const horasPorConsultor = useMemo(() => {
@@ -927,7 +938,11 @@ export default function Graficos() {
               className="pgx-input-month"
               type="month"
               value={filtroMes}
-              onChange={(e) => setFiltroMes(e.target.value)}
+              onChange={(e) => {
+                setFiltroMes(e.target.value);
+                setFiltroDesde("");
+                setFiltroHasta("");
+              }}
             />
           </div>
 
@@ -938,14 +953,20 @@ export default function Graficos() {
                 className="pgx-input-date"
                 type="date"
                 value={filtroDesde}
-                onChange={(e) => { setFiltroDesde(e.target.value); setFiltroMes(""); }}
+                onChange={(e) => {
+                  setFiltroDesde(e.target.value);
+                  setFiltroMes("");
+                }}
               />
               <span className="pgx-range-sep">a</span>
               <input
                 className="pgx-input-date"
                 type="date"
                 value={filtroHasta}
-                onChange={(e) => setFiltroHasta(e.target.value)}
+                onChange={(e) => {
+                  setFiltroHasta(e.target.value);
+                  setFiltroMes("");
+                }}
               />
             </div>
           </div>

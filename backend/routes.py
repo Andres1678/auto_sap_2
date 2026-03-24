@@ -1315,9 +1315,9 @@ def obtener_registros_graficos():
         filtro_consultor = (request.args.get("consultor") or "").strip()
         filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
 
-        if not filtro_mes and not filtro_desde and not filtro_hasta:
-            hoy = date.today()
-            filtro_mes = f"{hoy.year:04d}-{hoy.month:02d}"
+        # OJO:
+        # Ya no se fuerza el mes actual en backend.
+        # Si quieres mes actual por defecto, eso debe venir visible desde el frontend.
 
         if filtro_mes:
             try:
@@ -1353,8 +1353,8 @@ def obtener_registros_graficos():
         # ----------------------------------------------------------
         # Límite seguro
         # ----------------------------------------------------------
-        max_rows = request.args.get("max_rows", type=int) or 10000
-        max_rows = min(max(max_rows, 1), 10000)
+        max_rows = request.args.get("max_rows", type=int) or 50000
+        max_rows = min(max(max_rows, 1), 50000)
 
         registros = (
             q.order_by(Registro.fecha.desc(), Registro.id.desc())
