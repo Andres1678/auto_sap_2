@@ -407,8 +407,17 @@ export default function Graficos() {
         }
       });
 
-      const json = await res.json().catch(() => []);
-      if (!res.ok) throw new Error(json?.error || json?.mensaje || `HTTP ${res.status}`);
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        console.error("Respuesta error /registros/graficos:", json);
+        throw new Error(
+          json?.detalle ||
+          json?.error ||
+          json?.mensaje ||
+          `HTTP ${res.status}`
+        );
+      }
 
       const arr = Array.isArray(json) ? json : [];
       setRegistros(arr);
