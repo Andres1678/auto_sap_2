@@ -387,7 +387,17 @@ export default function Graficos() {
     setError('');
 
     try {
-      const res = await jfetch('/registros/graficos?max_rows=50000',{
+      const params = new URLSearchParams();
+      params.set('max_rows', '2000');
+
+      if (filtroMes) {
+        params.set('mes', filtroMes);
+      } else {
+        if (filtroDesde) params.set('desde', filtroDesde);
+        if (filtroHasta) params.set('hasta', filtroHasta);
+      }
+
+      const res = await jfetch(`/registros/graficos?${params.toString()}`, {
         method: 'GET',
         signal: controller.signal,
         headers: {
@@ -398,7 +408,7 @@ export default function Graficos() {
       });
 
       const json = await res.json().catch(() => []);
-      if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(json?.error || json?.mensaje || `HTTP ${res.status}`);
 
       const arr = Array.isArray(json) ? json : [];
       setRegistros(arr);
@@ -421,11 +431,12 @@ export default function Graficos() {
     } finally {
       setLoading(false);
     }
-  }, [rolUpper, usuario, nombreUser, equipoUser, scope]);
+  }, [rolUpper, usuario, nombreUser, equipoUser, scope, filtroMes, filtroDesde, filtroHasta]);
 
   useEffect(() => {
     if (!usuario) return;
     fetchRegistros();
+
     return () => {
       if (fetchAbortRef.current) {
         try { fetchAbortRef.current.abort(); } catch {}

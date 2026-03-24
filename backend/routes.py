@@ -1264,35 +1264,24 @@ def obtener_registros_graficos():
         q = (
             Registro.query
             .options(
-                joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
-                joinedload(Registro.tarea),
-                joinedload(Registro.ocupacion),
-                joinedload(Registro.proyecto),
-                joinedload(Registro.fase_proyecto),
+                selectinload(Registro.consultor).selectinload(Consultor.equipo_obj),
+                selectinload(Registro.tarea),
+                selectinload(Registro.ocupacion),
+                selectinload(Registro.proyecto),
+                selectinload(Registro.fase_proyecto),
             )
             .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
             .outerjoin(E, C.equipo_id == E.id)
         )
 
-        # ----------------------------------------------------------
-        # Scope
-        # ----------------------------------------------------------
         if scope == "SELF":
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
-
         elif scope == "TEAM":
             if not int(val or 0):
                 return jsonify({'error': 'Consultor sin equipo asignado'}), 403
             q = q.filter(C.equipo_id == int(val))
 
-        elif scope == "ALL":
-            pass
-
-        # ----------------------------------------------------------
-        # Filtro opcional por equipo
-        # ----------------------------------------------------------
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
-
         if equipo_filter:
             if scope in ("TEAM", "SELF"):
                 eq_login = ""
@@ -1304,9 +1293,6 @@ def obtener_registros_graficos():
 
             q = q.filter(func.upper(E.nombre) == equipo_filter)
 
-        # ----------------------------------------------------------
-        # Filtros opcionales backend
-        # ----------------------------------------------------------
         filtro_mes = (request.args.get("mes") or "").strip()
         filtro_desde = (request.args.get("desde") or "").strip()
         filtro_hasta = (request.args.get("hasta") or "").strip()
@@ -1315,25 +1301,31 @@ def obtener_registros_graficos():
         filtro_consultor = (request.args.get("consultor") or "").strip()
         filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
 
-        # OJO:
-        # Ya no se fuerza el mes actual en backend.
-        # Si quieres mes actual por defecto, eso debe venir visible desde el frontend.
+        if not filtro_mes and not filtro_desde and not filtro_hasta:
+            hoy = date.today()
+            filtro_mes = f"{hoy.year:04d}-{hoy.month:02d}"
 
         if filtro_mes:
             try:
                 y, m = filtro_mes.split("-")
-                prefijo_mes = f"{int(y):04d}-{int(m):02d}"
-
-                q = q.filter(
-                    func.substr(func.cast(Registro.fecha, db.String), 1, 7) == prefijo_mes
-                )
+                y = int(y)
+                m = int(m)
+                fecha_inicio = date(y, m, 1)
+                fecha_fin = date(y, m, monthrange(y, m)[1])
+                q = q.filter(Registro.fecha >= fecha_inicio, Registro.fecha <= fecha_fin)
             except Exception:
                 return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
         else:
-            if filtro_desde:
-                q = q.filter(func.cast(Registro.fecha, db.String) >= filtro_desde)
-            if filtro_hasta:
-                q = q.filter(func.cast(Registro.fecha, db.String) <= filtro_hasta)
+            try:
+                if filtro_desde:
+                    fecha_desde = datetime.strptime(filtro_desde, "%Y-%m-%d").date()
+                    q = q.filter(Registro.fecha >= fecha_desde)
+
+                if filtro_hasta:
+                    fecha_hasta = datetime.strptime(filtro_hasta, "%Y-%m-%d").date()
+                    q = q.filter(Registro.fecha <= fecha_hasta)
+            except Exception:
+                return jsonify({"error": "rango de fechas inválido, usa YYYY-MM-DD"}), 400
 
         if filtro_modulo:
             q = q.filter(func.upper(Registro.modulo) == filtro_modulo.upper())
@@ -1350,11 +1342,8 @@ def obtener_registros_graficos():
             except Exception:
                 return jsonify({"error": "proyecto_id inválido"}), 400
 
-        # ----------------------------------------------------------
-        # Límite seguro
-        # ----------------------------------------------------------
-        max_rows = request.args.get("max_rows", type=int) or 50000
-        max_rows = min(max(max_rows, 1), 50000)
+        max_rows = request.args.get("max_rows", type=int) or 2000
+        max_rows = min(max(max_rows, 1), 5000)
 
         registros = (
             q.order_by(Registro.fecha.desc(), Registro.id.desc())
@@ -1362,9 +1351,6 @@ def obtener_registros_graficos():
              .all()
         )
 
-        # ----------------------------------------------------------
-        # Serialización
-        # ----------------------------------------------------------
         data = []
 
         for r in registros:
@@ -1392,11 +1378,9 @@ def obtener_registros_graficos():
                 "nroCasoCliente": r.nro_caso_cliente,
                 "nroCasoInterno": r.nro_caso_interno,
                 "nroCasoEscaladoSap": r.nro_caso_escalado,
-
                 "ocupacion_id": r.ocupacion_id,
                 "ocupacion_codigo": ocup.codigo if ocup else None,
                 "ocupacion_nombre": ocup.nombre if ocup else None,
-
                 "tarea_id": r.tarea_id,
                 "tipoTarea": tipo_tarea_str,
                 "tarea": {
@@ -1404,7 +1388,6 @@ def obtener_registros_graficos():
                     "codigo": getattr(tarea, "codigo", None),
                     "nombre": getattr(tarea, "nombre", None),
                 } if tarea else None,
-
                 "consultor": r.consultor.nombre if r.consultor else None,
                 "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
                 "horaInicio": r.hora_inicio,
@@ -1418,7 +1401,6 @@ def obtener_registros_graficos():
                 "oncall": r.oncall,
                 "desborde": r.desborde,
                 "actividadMalla": r.actividad_malla,
-
                 "proyecto_id": r.proyecto_id,
                 "fase_proyecto_id": r.fase_proyecto_id,
                 "proyecto": {
