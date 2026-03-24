@@ -9,7 +9,7 @@ from backend.models import (
 from datetime import datetime, timedelta, time, date
 from functools import wraps
 from sqlalchemy import or_, text, func, extract, and_, cast, Integer
-from sqlalchemy.orm import relationship, backref, joinedload, aliased
+from sqlalchemy.orm import relationship, backref, joinedload, aliased, selectinload
 import unicodedata, re
 from collections import defaultdict
 import pandas as pd
@@ -22,6 +22,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from openpyxl import load_workbook
 from zoneinfo import ZoneInfo
 import bcrypt
+
 
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
