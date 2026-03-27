@@ -473,7 +473,30 @@ export default function Oportunidades() {
     [baseColumnOrder]
   );
 
-  const tableColumnOrder = useMemo(() => ["id", ...columnOrder], [columnOrder]);
+  const displayColumnOrder = useMemo(() => {
+    const reordered = columnOrder.filter(
+      (c) => !["num_ot", "num_incidente", "num_enlace"].includes(c)
+    );
+
+    const descripcionIndex = reordered.indexOf("descripcion_ot");
+
+    if (descripcionIndex !== -1) {
+      reordered.splice(
+        descripcionIndex + 1,
+        0,
+        "num_ot",
+        "num_incidente",
+        "num_enlace"
+      );
+    }
+
+    return reordered;
+  }, [columnOrder]);
+
+  const tableColumnOrder = useMemo(
+    () => ["id", ...displayColumnOrder],
+    [displayColumnOrder]
+  );
 
   const portalTarget = typeof document !== "undefined" ? document.body : null;
 
@@ -495,6 +518,10 @@ export default function Oportunidades() {
       if (col === "id") classes.push("sticky-col", "sticky-col-1", "id-col");
       if (col === CLIENTE_COL) classes.push("sticky-col", "sticky-col-2", "cliente-col");
       if (col === SERVICIO_COL) classes.push("sticky-col", "sticky-col-3", "servicio-col", "servicio-wrap-cell");
+
+      if (col === "descripcion_ot") {
+        classes.push("descripcion-ot-col", "descripcion-ot-wrap-cell");
+      }
 
       const idx = tableColumnOrder.indexOf(col);
       if (prcStartIndex !== -1 && idx >= prcStartIndex) {
