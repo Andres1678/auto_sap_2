@@ -2398,6 +2398,7 @@ const Registro = ({ userData }) => {
             filtroConsultor={filtroConsultor}
             filtroMes={filtroMes}
             filtroAnio={filtroAnio}
+            equipoBloqueado={isAdminEquipo}
           />
         )}
 
