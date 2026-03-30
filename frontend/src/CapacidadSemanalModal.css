@@ -532,7 +532,7 @@
 
 .ocupacion-chart-wrap {
   width: 100%;
-  min-height: 300px;
+  min-height: 500px;
   margin-bottom: 14px;
 }
 
@@ -639,3 +639,4 @@
     padding: 14px;
   }
 }
+

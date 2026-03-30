@@ -1317,9 +1317,9 @@ def obtener_registros_graficos():
         filtro_consultor = (request.args.get("consultor") or "").strip()
         filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
 
-        # No forzar mes por defecto en backend.
-        # El frontend debe mandar el mes visible o el rango visible.
-
+        # ----------------------------------------------------------
+        # Filtro por mes o rango
+        # ----------------------------------------------------------
         if filtro_mes:
             partes = filtro_mes.split("-")
             if len(partes) != 2:
@@ -1361,16 +1361,25 @@ def obtener_registros_graficos():
                 return jsonify({"error": "proyecto_id inválido"}), 400
 
         # ----------------------------------------------------------
-        # Límite seguro
+        # Orden
         # ----------------------------------------------------------
-        max_rows = request.args.get("max_rows", type=int) or 2000
-        max_rows = min(max(max_rows, 1), 5000)
+        q = q.order_by(Registro.fecha.desc(), Registro.id.desc())
 
-        registros = (
-            q.order_by(Registro.fecha.desc(), Registro.id.desc())
-             .limit(max_rows)
-             .all()
-        )
+        # ----------------------------------------------------------
+        # IMPORTANTE:
+        # No limitar cuando se consulta un mes o rango, porque
+        # las gráficas deben sumar TODO el periodo visible.
+        # El limit solo se usa como protección cuando NO hay
+        # filtro temporal.
+        # ----------------------------------------------------------
+        tiene_filtro_temporal = bool(filtro_mes or filtro_desde or filtro_hasta)
+
+        if tiene_filtro_temporal:
+            registros = q.all()
+        else:
+            max_rows = request.args.get("max_rows", type=int) or 5000
+            max_rows = min(max(max_rows, 1), 10000)
+            registros = q.limit(max_rows).all()
 
         # ----------------------------------------------------------
         # Serialización
