@@ -2414,13 +2414,13 @@ const Registro = ({ userData }) => {
           />
         )}
 
-        <Resumen
+        {/* <Resumen
           userData={userData}
           filtroEquipo={filtroEquipo}
           filtroConsultor={filtroConsultor}
           filtroMes={filtroMes}
-          filtroAnio={filtroAnio}
-        />
+          filtroAnio={filtroAnio} 
+        />*/}
       </div>
     </div>
   );
