@@ -6,6 +6,7 @@ import { jfetch } from './lib/api';
 import Resumen from './Resumen';
 import { exportRegistrosExcelXLSX_ALL } from "./lib/exportExcel";
 import CapacidadSemanalModal from "./CapacidadSemanalModal";
+import { Navigate } from "react-router-dom";
 
 Modal.setAppElement('#root');
 
@@ -412,10 +413,17 @@ const Registro = ({ userData }) => {
     "ADMIN_OPORTUNIDADES",
   ]);
 
-  const isAdmin = rolUpper.startsWith("ADMIN");
-  const isAdminGlobal = REGISTRO_GLOBAL_ROLES.has(rolUpper);
-  const isAdminRolePool = REGISTRO_ROLE_POOL_ROLES.has(rolUpper);
-  const isAdminEquipo = isAdmin && !isAdminGlobal && !isAdminRolePool;
+  const REGISTRO_EXCLUDED_ROLES = new Set([
+    "ADMIN_GERENTES",
+  ]);
+
+  const canAccessRegistro = !REGISTRO_EXCLUDED_ROLES.has(rolUpper);
+
+  const isAdmin = canAccessRegistro && rolUpper.startsWith("ADMIN");
+  const isAdminGlobal = canAccessRegistro && REGISTRO_GLOBAL_ROLES.has(rolUpper);
+  const isAdminRolePool = canAccessRegistro && REGISTRO_ROLE_POOL_ROLES.has(rolUpper);
+  const isAdminEquipo = canAccessRegistro && isAdmin && !isAdminGlobal && !isAdminRolePool;
+  
 
   const miEquipo = String(equipoUser || "").trim().toUpperCase();
   const equipoLocked = isAdminEquipo ? miEquipo : filtroEquipo;
@@ -478,7 +486,7 @@ const Registro = ({ userData }) => {
   const prevIsProyectoModeRef = useRef(false);
   const [capacidadModalOpen, setCapacidadModalOpen] = useState(false);
 
-  const canViewCapacidadSemanal = isAdminGlobal || isAdminEquipo;
+  const canViewCapacidadSemanal = canAccessRegistro && (isAdminGlobal || isAdminEquipo);
 
   useEffect(() => {
     const v = userData?.activo ?? userData?.user?.activo;
@@ -1719,6 +1727,10 @@ const Registro = ({ userData }) => {
     if (isAdmin) cols += 1;
     return cols;
   }, [isBASISTable, isAdmin]);
+
+  if (!canAccessRegistro) {
+    return <Navigate to="/panel-grafico" replace />;
+  }
 
   return (
     <div className="registro-page-scope">
