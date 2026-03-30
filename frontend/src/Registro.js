@@ -2402,7 +2402,7 @@ const Registro = ({ userData }) => {
 
         {error && <div className="registro-error-box">Error: {error}</div>}
 
-        {canViewCapacidadSemanal && (
+        {/*{canViewCapacidadSemanal && (
           <CapacidadSemanalModal
             isOpen={capacidadModalOpen}
             onClose={() => setCapacidadModalOpen(false)}
@@ -2412,7 +2412,7 @@ const Registro = ({ userData }) => {
             filtroAnio={filtroAnio}
             equipoBloqueado={isAdminEquipo}
           />
-        )}
+        )}*/}
 
         {/* <Resumen
           userData={userData}
