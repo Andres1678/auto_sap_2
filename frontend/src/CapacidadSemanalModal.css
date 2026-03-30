@@ -10,7 +10,7 @@
 }
 
 .capacidad-modal-content {
-  width: min(1440px, 96vw);
+  width: min(1480px, 96vw);
   max-height: 92vh;
   overflow: auto;
   background: #f8fafc;
@@ -213,9 +213,82 @@
   flex-wrap: wrap;
 }
 
+.capacidad-summary-card {
+  border: 1px solid #dbeafe;
+  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.summary-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.summary-card-head h5 {
+  margin: 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.summary-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.summary-item {
+  background: #fff;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.summary-label {
+  display: block;
+  color: #64748b;
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+}
+
+.summary-item strong {
+  display: block;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.summary-item small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.summary-progress {
+  margin-top: 6px;
+}
+
 .capacidad-semanas-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 14px;
 }
 
@@ -369,13 +442,17 @@
   color: #334155;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1280px) {
   .capacidad-filters {
     grid-template-columns: repeat(3, minmax(180px, 1fr));
   }
 
   .capacidad-top-cards {
     grid-template-columns: repeat(3, minmax(210px, 1fr));
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
   }
 }
 
@@ -388,21 +465,21 @@
     grid-template-columns: 1fr 1fr;
   }
 
-  .capacidad-consultor-head {
+  .summary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .capacidad-consultor-head,
+  .summary-card-head {
     flex-direction: column;
     align-items: flex-start;
   }
 }
 
 @media (max-width: 640px) {
-  .capacidad-filters {
-    grid-template-columns: 1fr;
-  }
-
-  .capacidad-top-cards {
-    grid-template-columns: 1fr;
-  }
-
+  .capacidad-filters,
+  .capacidad-top-cards,
+  .summary-grid,
   .semana-metrics {
     grid-template-columns: 1fr;
   }

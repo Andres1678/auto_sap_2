@@ -67,6 +67,10 @@ function buildYearOptions(baseYear) {
   return [y - 2, y - 1, y, y + 1];
 }
 
+function barWidth(pct) {
+  return `${Math.max(0, Math.min(100, Number(pct || 0)))}%`;
+}
+
 export default function CapacidadSemanalModal({
   isOpen,
   onClose,
@@ -76,9 +80,9 @@ export default function CapacidadSemanalModal({
   filtroAnio,
   equipoBloqueado = false,
 }) {
-  const today = new Date();
-  const defaultMonth = Number(filtroMes || today.getMonth() + 1);
-  const defaultYear = Number(filtroAnio || today.getFullYear());
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -86,8 +90,8 @@ export default function CapacidadSemanalModal({
 
   const [selectedEquipo, setSelectedEquipo] = useState(normalizeUpper(filtroEquipo));
   const [selectedConsultor, setSelectedConsultor] = useState(normalizeText(filtroConsultor));
-  const [selectedMes, setSelectedMes] = useState(defaultMonth);
-  const [selectedAnio, setSelectedAnio] = useState(defaultYear);
+  const [selectedMes, setSelectedMes] = useState(Number(filtroMes || currentMonth));
+  const [selectedAnio, setSelectedAnio] = useState(Number(filtroAnio || currentYear));
   const [selectedCumplimiento, setSelectedCumplimiento] = useState("");
 
   useEffect(() => {
@@ -95,10 +99,10 @@ export default function CapacidadSemanalModal({
 
     setSelectedEquipo(normalizeUpper(filtroEquipo));
     setSelectedConsultor(normalizeText(filtroConsultor));
-    setSelectedMes(Number(filtroMes || today.getMonth() + 1));
-    setSelectedAnio(Number(filtroAnio || today.getFullYear()));
+    setSelectedMes(Number(filtroMes || currentMonth));
+    setSelectedAnio(Number(filtroAnio || currentYear));
     setSelectedCumplimiento("");
-  }, [isOpen, filtroEquipo, filtroConsultor, filtroMes, filtroAnio]);
+  }, [isOpen, filtroEquipo, filtroConsultor, filtroMes, filtroAnio, currentMonth, currentYear]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -112,9 +116,8 @@ export default function CapacidadSemanalModal({
         qs.set("mes", String(selectedMes));
         qs.set("anio", String(selectedAnio));
 
-        if (equipoBloqueado && selectedEquipo) {
-          qs.set("equipo", selectedEquipo);
-        }
+        if (selectedEquipo) qs.set("equipo", selectedEquipo);
+        if (selectedConsultor) qs.set("consultor", selectedConsultor);
 
         const res = await jfetch(`/resumen-capacidad-semanal?${qs.toString()}`);
         const json = await res.json();
@@ -132,33 +135,30 @@ export default function CapacidadSemanalModal({
     };
 
     fetchData();
-  }, [isOpen, selectedMes, selectedAnio, selectedEquipo, equipoBloqueado]);
+  }, [isOpen, selectedMes, selectedAnio, selectedEquipo, selectedConsultor]);
 
   const equiposDisponibles = useMemo(() => {
-    const items = Array.from(
-      new Set(
-        rows
-          .map((r) => normalizeUpper(r.equipo))
-          .filter(Boolean)
-      )
+    return Array.from(
+      new Set(rows.map((r) => normalizeUpper(r.equipo)).filter(Boolean))
     ).sort((a, b) => a.localeCompare(b, "es"));
-    return items;
   }, [rows]);
 
   const consultoresDisponibles = useMemo(() => {
-    const base = rows.filter((r) => {
+    const source = rows.filter((r) => {
       if (!selectedEquipo) return true;
       return normalizeUpper(r.equipo) === selectedEquipo;
     });
 
     return Array.from(
-      new Set(
-        base
-          .map((r) => normalizeText(r.consultor))
-          .filter(Boolean)
-      )
+      new Set(source.map((r) => normalizeText(r.consultor)).filter(Boolean))
     ).sort((a, b) => a.localeCompare(b, "es"));
   }, [rows, selectedEquipo]);
+
+  useEffect(() => {
+    if (equipoBloqueado) {
+      setSelectedEquipo(normalizeUpper(filtroEquipo));
+    }
+  }, [equipoBloqueado, filtroEquipo]);
 
   useEffect(() => {
     if (!selectedConsultor) return;
@@ -167,18 +167,6 @@ export default function CapacidadSemanalModal({
     }
   }, [consultoresDisponibles, selectedConsultor]);
 
-  useEffect(() => {
-    if (equipoBloqueado) {
-      setSelectedEquipo(normalizeUpper(filtroEquipo));
-      return;
-    }
-
-    if (!selectedEquipo) return;
-    if (!equiposDisponibles.includes(selectedEquipo)) {
-      setSelectedEquipo("");
-    }
-  }, [equiposDisponibles, selectedEquipo, equipoBloqueado, filtroEquipo]);
-
   const filteredRows = useMemo(() => {
     return rows.filter((item) => {
       const equipoOk = !selectedEquipo || normalizeUpper(item.equipo) === selectedEquipo;
@@ -186,31 +174,34 @@ export default function CapacidadSemanalModal({
         !selectedConsultor || normalizeText(item.consultor) === selectedConsultor;
       const cumplimientoOk =
         !selectedCumplimiento ||
-        cumplimientoBucket(item.porcentajeMes) === selectedCumplimiento;
+        cumplimientoBucket(item.porcentajeLegalMes) === selectedCumplimiento;
 
       return equipoOk && consultorOk && cumplimientoOk;
     });
   }, [rows, selectedEquipo, selectedConsultor, selectedCumplimiento]);
 
   const resumenGeneral = useMemo(() => {
-    const totalMetaMes = filteredRows.reduce(
-      (acc, r) => acc + Number(r.metaMes || 0),
+    const totalConsultores = filteredRows.length;
+    const totalHorasMes = filteredRows.reduce((acc, r) => acc + Number(r.horasMes || 0), 0);
+    const totalMetaLegal = filteredRows.reduce(
+      (acc, r) => acc + Number(r.metaLegalMes || 0),
       0
     );
-    const totalHorasMes = filteredRows.reduce(
-      (acc, r) => acc + Number(r.horasMes || 0),
+    const totalMetaOperativa = filteredRows.reduce(
+      (acc, r) => acc + Number(r.metaOperativaMes || 0),
       0
     );
-    const totalDiff = totalMetaMes - totalHorasMes;
-    const totalPct =
-      totalMetaMes > 0 ? (totalHorasMes / totalMetaMes) * 100 : 0;
+
+    const totalPctLegal =
+      totalMetaLegal > 0 ? (totalHorasMes / totalMetaLegal) * 100 : 0;
 
     return {
-      totalMetaMes,
+      totalConsultores,
       totalHorasMes,
-      totalDiff,
-      totalPct,
-      totalConsultores: filteredRows.length,
+      totalMetaLegal,
+      totalMetaOperativa,
+      totalPctLegal,
+      totalDiffLegal: totalMetaLegal - totalHorasMes,
     };
   }, [filteredRows]);
 
@@ -220,8 +211,8 @@ export default function CapacidadSemanalModal({
     setSelectedEquipo(normalizeUpper(filtroEquipo));
     setSelectedConsultor("");
     setSelectedCumplimiento("");
-    setSelectedMes(Number(filtroMes || today.getMonth() + 1));
-    setSelectedAnio(Number(filtroAnio || today.getFullYear()));
+    setSelectedMes(Number(filtroMes || currentMonth));
+    setSelectedAnio(Number(filtroAnio || currentYear));
   };
 
   return (
@@ -242,8 +233,8 @@ export default function CapacidadSemanalModal({
             <div className="capacidad-kicker">Vista operativa</div>
             <h3>Capacidad semanal del mes</h3>
             <p>
-              Seguimiento del porcentaje de llenado por semana frente a la meta
-              mensual y la meta semanal calculada por horario.
+              Meta legal fija de 43 horas por consultor y meta operativa calculada
+              por días laborables y jornada diaria.
             </p>
           </div>
 
@@ -313,7 +304,7 @@ export default function CapacidadSemanalModal({
           </div>
 
           <div className="filter-field">
-            <label>Estado cumplimiento</label>
+            <label>Cumplimiento legal</label>
             <select
               value={selectedCumplimiento}
               onChange={(e) => setSelectedCumplimiento(e.target.value)}
@@ -334,8 +325,8 @@ export default function CapacidadSemanalModal({
 
         <div className="capacidad-top-cards">
           <div className="capacidad-card">
-            <span className="label">Meta mensual</span>
-            <strong>{fmtHours(resumenGeneral.totalMetaMes)}</strong>
+            <span className="label">Consultores visibles</span>
+            <strong>{resumenGeneral.totalConsultores}</strong>
           </div>
 
           <div className="capacidad-card">
@@ -344,25 +335,23 @@ export default function CapacidadSemanalModal({
           </div>
 
           <div className="capacidad-card">
-            <span className="label">Diferencia</span>
-            <strong>{fmtHours(resumenGeneral.totalDiff)}</strong>
-          </div>
-
-          <div className={`capacidad-card ${pctClass(resumenGeneral.totalPct)}`}>
-            <span className="label">% cumplimiento mes</span>
-            <strong>{fmtPct(resumenGeneral.totalPct)}</strong>
+            <span className="label">Meta legal total</span>
+            <strong>{fmtHours(resumenGeneral.totalMetaLegal)}</strong>
           </div>
 
           <div className="capacidad-card">
-            <span className="label">Consultores visibles</span>
-            <strong>{resumenGeneral.totalConsultores}</strong>
+            <span className="label">Meta operativa total</span>
+            <strong>{fmtHours(resumenGeneral.totalMetaOperativa)}</strong>
+          </div>
+
+          <div className={`capacidad-card ${pctClass(resumenGeneral.totalPctLegal)}`}>
+            <span className="label">% legal total</span>
+            <strong>{fmtPct(resumenGeneral.totalPctLegal)}</strong>
           </div>
         </div>
 
         <div className="capacidad-body">
-          {loading && (
-            <div className="capacidad-state">Cargando capacidad semanal…</div>
-          )}
+          {loading && <div className="capacidad-state">Cargando capacidad semanal…</div>}
 
           {!loading && error && (
             <div className="capacidad-state error">{error}</div>
@@ -377,10 +366,7 @@ export default function CapacidadSemanalModal({
           {!loading &&
             !error &&
             filteredRows.map((item, idx) => (
-              <section
-                className="capacidad-consultor"
-                key={`${item.consultor}-${idx}`}
-              >
+              <section className="capacidad-consultor" key={`${item.consultor}-${idx}`}>
                 <div className="capacidad-consultor-head">
                   <div>
                     <h4>{item.consultor || "Sin nombre"}</h4>
@@ -389,118 +375,150 @@ export default function CapacidadSemanalModal({
 
                   <div className="capacidad-consultor-stats">
                     <span>
-                      <b>Mes:</b> {fmtHours(item.horasMes)} /{" "}
-                      {fmtHours(item.metaMes)}
+                      <b>Mes:</b> {fmtHours(item.horasMes)} / {fmtHours(item.metaLegalMes)}
                     </span>
-                    <span className={`pill ${pctClass(item.porcentajeMes)}`}>
-                      {fmtPct(item.porcentajeMes)}
+                    <span className={`pill ${pctClass(item.porcentajeLegalMes)}`}>
+                      {fmtPct(item.porcentajeLegalMes)}
                     </span>
                   </div>
                 </div>
 
+                <div className="capacidad-summary-card">
+                  <div className="summary-card-head">
+                    <h5>Resumen del consultor</h5>
+                    <span className="summary-badge">100% = {fmtHours(item.metaLegalMes)}</span>
+                  </div>
+
+                  <div className="summary-grid">
+                    <div className="summary-item">
+                      <span className="summary-label">Meta legal fija</span>
+                      <strong>{fmtHours(item.metaLegalMes)}</strong>
+                    </div>
+
+                    <div className="summary-item">
+                      <span className="summary-label">Horas registradas mes</span>
+                      <strong>{fmtHours(item.horasMes)}</strong>
+                    </div>
+
+                    <div className="summary-item">
+                      <span className="summary-label">% sobre meta legal</span>
+                      <strong>{fmtPct(item.porcentajeLegalMes)}</strong>
+                    </div>
+
+                    <div className="summary-item">
+                      <span className="summary-label">Meta operativa mes</span>
+                      <strong>{fmtHours(item.metaOperativaMes)}</strong>
+                    </div>
+
+                    <div className="summary-item">
+                      <span className="summary-label">Días de trabajo</span>
+                      <strong>{item.diasTrabajoTexto}</strong>
+                      <small>{item.diasLaborablesMes} días del periodo</small>
+                    </div>
+
+                    <div className="summary-item">
+                      <span className="summary-label">Meta del día</span>
+                      <strong>{fmtHours(item.metaDiaObjetivo)}</strong>
+                    </div>
+                  </div>
+
+                  <div className="summary-progress">
+                    <div className="progress-row">
+                      <span>Cumplimiento meta legal</span>
+                      <span>{fmtPct(item.porcentajeLegalMes)}</span>
+                    </div>
+                    <div className="progress-bar">
+                      <div
+                        className={`progress-fill ${pctClass(item.porcentajeLegalMes)}`}
+                        style={{ width: barWidth(item.porcentajeLegalMes) }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="capacidad-semanas-grid">
-                  {(item.semanas || []).map((semana, i) => {
-                    const semanalPct = Math.max(
-                      0,
-                      Math.min(100, Number(semana.porcentajeSemanal || 0))
-                    );
-                    const aporteMesPct = Math.max(
-                      0,
-                      Math.min(100, Number(semana.aporteMesPct || 0))
-                    );
-
-                    return (
-                      <article
-                        className="semana-card"
-                        key={`${item.consultor}-sem-${i}`}
-                      >
-                        <div className="semana-card-head">
-                          <div>
-                            <h5>{semana.label}</h5>
-                            <p>
-                              {semana.inicio} — {semana.fin}
-                            </p>
-                          </div>
-
-                          <span
-                            className={`pill ${pctClass(
-                              semana.porcentajeSemanal
-                            )}`}
-                          >
-                            {fmtPct(semana.porcentajeSemanal)}
-                          </span>
+                  {(item.semanas || []).map((semana, i) => (
+                    <article className="semana-card" key={`${item.consultor}-sem-${i}`}>
+                      <div className="semana-card-head">
+                        <div>
+                          <h5>{semana.label}</h5>
+                          <p>
+                            {semana.inicio} — {semana.fin}
+                          </p>
                         </div>
 
-                        <div className="semana-metrics">
-                          <div>
-                            <span className="mini-label">Horas</span>
-                            <strong>{fmtHours(semana.horasSemana)}</strong>
-                          </div>
-                          <div>
-                            <span className="mini-label">Meta semanal</span>
-                            <strong>{fmtHours(semana.metaSemanal)}</strong>
-                          </div>
-                          <div>
-                            <span className="mini-label">Aporte al mes</span>
-                            <strong>{fmtPct(semana.aporteMesPct)}</strong>
-                          </div>
-                          <div>
-                            <span className="mini-label">Diferencia</span>
-                            <strong>{fmtHours(semana.diferenciaSemana)}</strong>
-                          </div>
+                        <span className={`pill ${pctClass(semana.porcentajeSemanal)}`}>
+                          {fmtPct(semana.porcentajeSemanal)}
+                        </span>
+                      </div>
+
+                      <div className="semana-metrics">
+                        <div>
+                          <span className="mini-label">Horas semana</span>
+                          <strong>{fmtHours(semana.horasSemana)}</strong>
                         </div>
 
-                        <div className="progress-block">
-                          <div className="progress-row">
-                            <span>Llenado semanal</span>
-                            <span>{fmtPct(semana.porcentajeSemanal)}</span>
-                          </div>
-                          <div className="progress-bar">
-                            <div
-                              className={`progress-fill ${pctClass(
-                                semana.porcentajeSemanal
-                              )}`}
-                              style={{ width: `${semanalPct}%` }}
-                            />
-                          </div>
+                        <div>
+                          <span className="mini-label">Meta semana</span>
+                          <strong>{fmtHours(semana.metaSemanal)}</strong>
                         </div>
 
-                        <div className="progress-block">
-                          <div className="progress-row">
-                            <span>% del 100% mensual</span>
-                            <span>{fmtPct(semana.aporteMesPct)}</span>
-                          </div>
-                          <div className="progress-bar">
-                            <div
-                              className="progress-fill is-month"
-                              style={{ width: `${aporteMesPct}%` }}
-                            />
-                          </div>
+                        <div>
+                          <span className="mini-label">% sobre meta legal</span>
+                          <strong>{fmtPct(semana.aporteMesLegalPct)}</strong>
                         </div>
 
-                        {!!semana.dias?.length && (
-                          <div className="dias-table">
-                            <div className="dias-head">
-                              <span>Fecha</span>
-                              <span>Horas</span>
-                              <span>Meta día</span>
+                        <div>
+                          <span className="mini-label">Diferencia</span>
+                          <strong>{fmtHours(semana.diferenciaSemana)}</strong>
+                        </div>
+                      </div>
+
+                      <div className="progress-block">
+                        <div className="progress-row">
+                          <span>Llenado de la semana</span>
+                          <span>{fmtPct(semana.porcentajeSemanal)}</span>
+                        </div>
+                        <div className="progress-bar">
+                          <div
+                            className={`progress-fill ${pctClass(semana.porcentajeSemanal)}`}
+                            style={{ width: barWidth(semana.porcentajeSemanal) }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="progress-block">
+                        <div className="progress-row">
+                          <span>Aporte sobre 43 h</span>
+                          <span>{fmtPct(semana.aporteMesLegalPct)}</span>
+                        </div>
+                        <div className="progress-bar">
+                          <div
+                            className="progress-fill is-month"
+                            style={{ width: barWidth(semana.aporteMesLegalPct) }}
+                          />
+                        </div>
+                      </div>
+
+                      {!!semana.dias?.length && (
+                        <div className="dias-table">
+                          <div className="dias-head">
+                            <span>Fecha</span>
+                            <span>Horas</span>
+                            <span>Meta día</span>
+                          </div>
+
+                          {semana.dias.map((d, ix) => (
+                            <div className="dias-row" key={`${semana.label}-${ix}`}>
+                              <span>{d.fecha}</span>
+                              <span>{fmtHours(d.horas)}</span>
+                              <span>{fmtHours(d.metaDia)}</span>
                             </div>
-
-                            {semana.dias.map((d, ix) => (
-                              <div
-                                className="dias-row"
-                                key={`${semana.label}-${ix}`}
-                              >
-                                <span>{d.fecha}</span>
-                                <span>{fmtHours(d.horas)}</span>
-                                <span>{fmtHours(d.metaDia)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </article>
-                    );
-                  })}
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  ))}
                 </div>
               </section>
             ))}

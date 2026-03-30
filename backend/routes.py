@@ -6615,8 +6615,11 @@ def dashboard_proyectos_horas():
 
 
 # ==========================================
-# HELPERS CAPACIDAD SEMANAL
+# CAPACIDAD SEMANAL / MENSUAL
 # ==========================================
+META_LEGAL_MENSUAL = 43.0
+
+
 def _cap_norm(value):
     txt = str(value or "").strip().upper()
     txt = unicodedata.normalize("NFD", txt)
@@ -6640,7 +6643,7 @@ def _cap_parse_iso_date(value):
 def _cap_parse_horario_horas(rango):
     """
     Convierte '08:00 - 17:00' en 9.0 horas.
-    Soporta cruces de medianoche si el fin es menor o igual al inicio.
+    Si el formato no es válido, retorna 0.
     """
     s = str(rango or "").strip()
     m = re.match(r"^\s*(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})\s*$", s)
@@ -6657,6 +6660,32 @@ def _cap_parse_horario_horas(rango):
     return round((fin - ini) / 60.0, 2)
 
 
+def _cap_team_kind(equipo_nombre):
+    eq = _cap_norm(equipo_nombre)
+    if "BASIS" in eq:
+        return "BASIS"
+    if "FUNCIONAL" in eq:
+        return "FUNCIONAL"
+    return "OTRO"
+
+
+def _cap_daily_target_hours(horario_rango, equipo_kind):
+    """
+    Meta diaria entre 8 y 9 horas.
+    - Si el horario real cae entre 8 y 9, se usa ese valor.
+    - Si no, usa 9 para FUNCIONAL y 8 para BASIS.
+    """
+    parsed = float(_cap_parse_horario_horas(horario_rango) or 0)
+
+    if 8.0 <= parsed <= 9.0:
+        return round(parsed, 2)
+
+    if equipo_kind == "FUNCIONAL":
+        return 9.0
+
+    return 8.0
+
+
 def _cap_month_bounds(anio, mes):
     start = date(anio, mes, 1)
     if mes == 12:
@@ -6668,10 +6697,9 @@ def _cap_month_bounds(anio, mes):
 
 def _cap_weeks_for_month(anio, mes):
     """
-    Devuelve semanas calendario (lunes-domingo) recortadas al mes.
+    Semanas calendario lunes-domingo, recortadas al mes.
     """
     month_start, month_end = _cap_month_bounds(anio, mes)
-
     cursor = month_start - timedelta(days=month_start.weekday())  # lunes
     out = []
     idx = 1
@@ -6685,8 +6713,6 @@ def _cap_weeks_for_month(anio, mes):
 
         out.append({
             "index": idx,
-            "week_start": week_start,
-            "week_end": week_end,
             "start": real_start,
             "end": real_end,
         })
@@ -6697,44 +6723,27 @@ def _cap_weeks_for_month(anio, mes):
     return out
 
 
-def _cap_team_kind(equipo_nombre):
-    eq = _cap_norm(equipo_nombre)
-    if "BASIS" in eq:
-        return "BASIS"
-    if "FUNCIONAL" in eq:
-        return "FUNCIONAL"
-    return "OTRO"
-
-
-def _cap_is_holiday(fecha_obj):
-    """
-    Hook para festivos.
-    En lo que compartiste no se ve una tabla/servicio de festivos,
-    así que por ahora retorna False.
-    """
-    return False
-
-
 def _cap_is_working_day(fecha_obj, equipo_kind):
     wd = fecha_obj.weekday()  # lunes=0 ... domingo=6
 
     if equipo_kind == "FUNCIONAL":
-        return wd <= 4 and not _cap_is_holiday(fecha_obj)
+        return wd <= 4  # lunes a viernes
 
     if equipo_kind == "BASIS":
-        return True
+        return True  # domingo a domingo
 
-    # fallback
     return wd <= 4
 
 
+def _cap_work_days_text(equipo_kind):
+    if equipo_kind == "FUNCIONAL":
+        return "Lunes a viernes"
+    if equipo_kind == "BASIS":
+        return "Domingo a domingo"
+    return "Lunes a viernes"
+
+
 def _cap_parse_month_year_from_request():
-    """
-    Soporta:
-      - ?mes=3&anio=2026
-      - ?mes=03&anio=2026
-      - ?mes=2026-03
-    """
     tz = ZoneInfo("America/Bogota")
     now = datetime.now(tz)
 
@@ -6762,9 +6771,6 @@ def _cap_parse_month_year_from_request():
     return anio, mes
 
 
-# ==========================================
-# ENDPOINT CAPACIDAD SEMANAL
-# ==========================================
 @bp.route("/resumen-capacidad-semanal", methods=["GET"])
 def resumen_capacidad_semanal():
     try:
@@ -6802,7 +6808,7 @@ def resumen_capacidad_semanal():
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
         consultor_filter = (request.args.get("consultor") or "").strip().lower()
 
-        # Si es TEAM, obligar a que consulte solo su equipo
+        # TEAM no puede consultar otro equipo
         if scope == "TEAM":
             eq_login = (
                 (consultor_login.equipo_obj.nombre or "").strip().upper()
@@ -6828,12 +6834,14 @@ def resumen_capacidad_semanal():
                 func.coalesce(func.sum(Registro.total_horas), 0).label("total_horas"),
             )
             .select_from(Registro)
-            .join(Consultor, func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario))
+            .join(
+                Consultor,
+                func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
+            )
             .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
             .outerjoin(Horario, Consultor.horario_id == Horario.id)
         )
 
-        # Scope
         if scope == "TEAM":
             q = q.filter(Consultor.equipo_id == int(val))
         elif scope == "ALL":
@@ -6841,7 +6849,6 @@ def resumen_capacidad_semanal():
         else:
             return jsonify({"error": "Scope no permitido"}), 403
 
-        # Filtros
         q = q.filter(Registro.fecha.between(month_start.isoformat(), month_end.isoformat()))
 
         if equipo_filter:
@@ -6864,36 +6871,19 @@ def resumen_capacidad_semanal():
 
         raw = q.all()
 
-        # Presupuesto vigente por consultor
-        consultor_ids = sorted({int(r.consultor_id) for r in raw if r.consultor_id})
-        presupuesto_map = {}
-
-        if consultor_ids:
-            pres_rows = (
-                db.session.query(
-                    ConsultorPresupuesto.consultor_id,
-                    ConsultorPresupuesto.horas_base_mes,
-                )
-                .filter(ConsultorPresupuesto.consultor_id.in_(consultor_ids))
-                .filter(ConsultorPresupuesto.vigente == True)
-                .all()
-            )
-
-            for pr in pres_rows:
-                presupuesto_map[int(pr.consultor_id)] = float(pr.horas_base_mes or 0)
-
-        # Agrupar por consultor
         grouped = {}
 
         for r in raw:
-            key = int(r.consultor_id) if r.consultor_id else (r.usuario_consultor or "na")
+            consultor_id = int(r.consultor_id) if r.consultor_id else None
+            key = consultor_id or (r.usuario_consultor or "na")
+
             fecha_obj = _cap_parse_iso_date(r.fecha)
             if not fecha_obj:
                 continue
 
             if key not in grouped:
                 grouped[key] = {
-                    "consultorId": int(r.consultor_id) if r.consultor_id else None,
+                    "consultorId": consultor_id,
                     "consultor": r.consultor or r.usuario_consultor or "—",
                     "equipo": (r.equipo or "SIN EQUIPO").strip().upper(),
                     "horario": (r.horario or "").strip(),
@@ -6906,25 +6896,23 @@ def resumen_capacidad_semanal():
 
         for _, item in grouped.items():
             equipo_kind = _cap_team_kind(item["equipo"])
-            horas_dia_base = _cap_parse_horario_horas(item["horario"])
+            meta_dia_objetivo = _cap_daily_target_hours(item["horario"], equipo_kind)
 
-            # Meta mensual calculada por horario
-            meta_mes_calculada = 0.0
-            d = month_start
-            while d <= month_end:
-                if _cap_is_working_day(d, equipo_kind):
-                    meta_mes_calculada += horas_dia_base
-                d += timedelta(days=1)
+            # Calcular meta operativa del mes según días trabajables
+            meta_operativa_mes = 0.0
+            dias_laborables_mes = 0
+            cursor = month_start
 
-            meta_mes_presupuesto = 0.0
-            if item["consultorId"] and item["consultorId"] in presupuesto_map:
-                meta_mes_presupuesto = float(presupuesto_map[item["consultorId"]] or 0)
+            while cursor <= month_end:
+                if _cap_is_working_day(cursor, equipo_kind):
+                    meta_operativa_mes += meta_dia_objetivo
+                    dias_laborables_mes += 1
+                cursor += timedelta(days=1)
 
-            meta_mes = round(meta_mes_presupuesto if meta_mes_presupuesto > 0 else meta_mes_calculada, 2)
+            meta_operativa_mes = round(meta_operativa_mes, 2)
+            meta_legal_mes = float(META_LEGAL_MENSUAL)
 
-            horas_mes = round(sum(float(v or 0) for v in item["diasHoras"].values()), 2)
-            porcentaje_mes = round((horas_mes / meta_mes) * 100, 2) if meta_mes > 0 else 0.0
-
+            horas_mes = 0.0
             semanas_out = []
 
             for wk in semanas_mes:
@@ -6932,14 +6920,19 @@ def resumen_capacidad_semanal():
                 meta_semana = 0.0
                 dias_out = []
 
-                d = wk["start"]
-                while d <= wk["end"]:
-                    fecha_key = d.isoformat()
+                cursor = wk["start"]
+                while cursor <= wk["end"]:
+                    if not _cap_is_working_day(cursor, equipo_kind):
+                        cursor += timedelta(days=1)
+                        continue
+
+                    fecha_key = cursor.isoformat()
                     horas_dia = round(float(item["diasHoras"].get(fecha_key, 0)), 2)
-                    meta_dia = round(horas_dia_base if _cap_is_working_day(d, equipo_kind) else 0.0, 2)
+                    meta_dia = round(meta_dia_objetivo, 2)
 
                     horas_semana += horas_dia
                     meta_semana += meta_dia
+                    horas_mes += horas_dia
 
                     dias_out.append({
                         "fecha": fecha_key,
@@ -6947,13 +6940,14 @@ def resumen_capacidad_semanal():
                         "metaDia": meta_dia,
                     })
 
-                    d += timedelta(days=1)
+                    cursor += timedelta(days=1)
 
                 horas_semana = round(horas_semana, 2)
                 meta_semana = round(meta_semana, 2)
-                diferencia_semana = round(meta_semana - horas_semana, 2)
+
                 porcentaje_semanal = round((horas_semana / meta_semana) * 100, 2) if meta_semana > 0 else 0.0
-                aporte_mes_pct = round((horas_semana / meta_mes) * 100, 2) if meta_mes > 0 else 0.0
+                aporte_mes_legal_pct = round((horas_semana / meta_legal_mes) * 100, 2) if meta_legal_mes > 0 else 0.0
+                diferencia_semana = round(meta_semana - horas_semana, 2)
 
                 semanas_out.append({
                     "label": f"Semana {wk['index']}",
@@ -6962,20 +6956,28 @@ def resumen_capacidad_semanal():
                     "metaSemanal": meta_semana,
                     "horasSemana": horas_semana,
                     "porcentajeSemanal": porcentaje_semanal,
-                    "aporteMesPct": aporte_mes_pct,
+                    "aporteMesLegalPct": aporte_mes_legal_pct,
                     "diferenciaSemana": diferencia_semana,
                     "dias": dias_out,
                 })
+
+            horas_mes = round(horas_mes, 2)
+            porcentaje_legal_mes = round((horas_mes / meta_legal_mes) * 100, 2) if meta_legal_mes > 0 else 0.0
+            porcentaje_operativo_mes = round((horas_mes / meta_operativa_mes) * 100, 2) if meta_operativa_mes > 0 else 0.0
 
             rows_out.append({
                 "consultorId": item["consultorId"],
                 "consultor": item["consultor"],
                 "equipo": item["equipo"],
                 "horario": item["horario"],
-                "metaMes": meta_mes,
+                "metaLegalMes": meta_legal_mes,
+                "metaOperativaMes": meta_operativa_mes,
+                "metaDiaObjetivo": round(meta_dia_objetivo, 2),
                 "horasMes": horas_mes,
-                "porcentajeMes": porcentaje_mes,
-                "diferenciaMes": round(meta_mes - horas_mes, 2),
+                "porcentajeLegalMes": porcentaje_legal_mes,
+                "porcentajeOperativoMes": porcentaje_operativo_mes,
+                "diasTrabajoTexto": _cap_work_days_text(equipo_kind),
+                "diasLaborablesMes": dias_laborables_mes,
                 "semanas": semanas_out,
             })
 
