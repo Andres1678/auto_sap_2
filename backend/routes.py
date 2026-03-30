@@ -6612,3 +6612,385 @@ def dashboard_proyectos_horas():
     except Exception as e:
         app.logger.exception("❌ Error en /dashboard/proyectos-horas")
         return jsonify({"error": str(e)}), 500
+
+
+# ==========================================
+# HELPERS CAPACIDAD SEMANAL
+# ==========================================
+def _cap_norm(value):
+    txt = str(value or "").strip().upper()
+    txt = unicodedata.normalize("NFD", txt)
+    return "".join(ch for ch in txt if unicodedata.category(ch) != "Mn")
+
+
+def _cap_parse_iso_date(value):
+    s = str(value or "").strip()
+    if not s:
+        return None
+
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(s[:10], fmt).date()
+        except Exception:
+            continue
+
+    return None
+
+
+def _cap_parse_horario_horas(rango):
+    """
+    Convierte '08:00 - 17:00' en 9.0 horas.
+    Soporta cruces de medianoche si el fin es menor o igual al inicio.
+    """
+    s = str(rango or "").strip()
+    m = re.match(r"^\s*(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})\s*$", s)
+    if not m:
+        return 0.0
+
+    h1, m1, h2, m2 = map(int, m.groups())
+    ini = h1 * 60 + m1
+    fin = h2 * 60 + m2
+
+    if fin <= ini:
+        fin += 24 * 60
+
+    return round((fin - ini) / 60.0, 2)
+
+
+def _cap_month_bounds(anio, mes):
+    start = date(anio, mes, 1)
+    if mes == 12:
+        end = date(anio + 1, 1, 1) - timedelta(days=1)
+    else:
+        end = date(anio, mes + 1, 1) - timedelta(days=1)
+    return start, end
+
+
+def _cap_weeks_for_month(anio, mes):
+    """
+    Devuelve semanas calendario (lunes-domingo) recortadas al mes.
+    """
+    month_start, month_end = _cap_month_bounds(anio, mes)
+
+    cursor = month_start - timedelta(days=month_start.weekday())  # lunes
+    out = []
+    idx = 1
+
+    while cursor <= month_end:
+        week_start = cursor
+        week_end = cursor + timedelta(days=6)
+
+        real_start = max(week_start, month_start)
+        real_end = min(week_end, month_end)
+
+        out.append({
+            "index": idx,
+            "week_start": week_start,
+            "week_end": week_end,
+            "start": real_start,
+            "end": real_end,
+        })
+
+        idx += 1
+        cursor = week_end + timedelta(days=1)
+
+    return out
+
+
+def _cap_team_kind(equipo_nombre):
+    eq = _cap_norm(equipo_nombre)
+    if "BASIS" in eq:
+        return "BASIS"
+    if "FUNCIONAL" in eq:
+        return "FUNCIONAL"
+    return "OTRO"
+
+
+def _cap_is_holiday(fecha_obj):
+    """
+    Hook para festivos.
+    En lo que compartiste no se ve una tabla/servicio de festivos,
+    así que por ahora retorna False.
+    """
+    return False
+
+
+def _cap_is_working_day(fecha_obj, equipo_kind):
+    wd = fecha_obj.weekday()  # lunes=0 ... domingo=6
+
+    if equipo_kind == "FUNCIONAL":
+        return wd <= 4 and not _cap_is_holiday(fecha_obj)
+
+    if equipo_kind == "BASIS":
+        return True
+
+    # fallback
+    return wd <= 4
+
+
+def _cap_parse_month_year_from_request():
+    """
+    Soporta:
+      - ?mes=3&anio=2026
+      - ?mes=03&anio=2026
+      - ?mes=2026-03
+    """
+    tz = ZoneInfo("America/Bogota")
+    now = datetime.now(tz)
+
+    mes_raw = (request.args.get("mes") or "").strip()
+    anio_raw = (request.args.get("anio") or "").strip()
+
+    mes = now.month
+    anio = now.year
+
+    if mes_raw and re.match(r"^\d{4}-\d{2}$", mes_raw):
+        y, m = mes_raw.split("-")
+        anio = int(y)
+        mes = int(m)
+        return anio, mes
+
+    if mes_raw.isdigit():
+        mes = int(mes_raw)
+
+    if anio_raw.isdigit():
+        anio = int(anio_raw)
+
+    if mes < 1 or mes > 12:
+        raise ValueError("Mes inválido")
+
+    return anio, mes
+
+
+# ==========================================
+# ENDPOINT CAPACIDAD SEMANAL
+# ==========================================
+@bp.route("/resumen-capacidad-semanal", methods=["GET"])
+def resumen_capacidad_semanal():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+                joinedload(Consultor.horario_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
+
+        scope, val = scope_for(consultor_login, rol_req)
+
+        # Solo ADMIN global y ADMIN_EQUIPO
+        if scope in {"SELF", "ROLE_POOL"}:
+            return jsonify({"error": "No autorizado para ver capacidad semanal"}), 403
+
+        anio, mes = _cap_parse_month_year_from_request()
+        month_start, month_end = _cap_month_bounds(anio, mes)
+        semanas_mes = _cap_weeks_for_month(anio, mes)
+
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        consultor_filter = (request.args.get("consultor") or "").strip().lower()
+
+        # Si es TEAM, obligar a que consulte solo su equipo
+        if scope == "TEAM":
+            eq_login = (
+                (consultor_login.equipo_obj.nombre or "").strip().upper()
+                if consultor_login.equipo_obj else ""
+            )
+
+            if not eq_login:
+                return jsonify({"error": "Consultor sin equipo asignado"}), 403
+
+            if equipo_filter and equipo_filter != eq_login:
+                return jsonify({"error": "No autorizado para consultar otro equipo"}), 403
+
+            equipo_filter = eq_login
+
+        q = (
+            db.session.query(
+                func.lower(Registro.usuario_consultor).label("usuario_consultor"),
+                Consultor.id.label("consultor_id"),
+                Consultor.nombre.label("consultor"),
+                Equipo.nombre.label("equipo"),
+                Horario.rango.label("horario"),
+                Registro.fecha.label("fecha"),
+                func.coalesce(func.sum(Registro.total_horas), 0).label("total_horas"),
+            )
+            .select_from(Registro)
+            .join(Consultor, func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario))
+            .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
+            .outerjoin(Horario, Consultor.horario_id == Horario.id)
+        )
+
+        # Scope
+        if scope == "TEAM":
+            q = q.filter(Consultor.equipo_id == int(val))
+        elif scope == "ALL":
+            pass
+        else:
+            return jsonify({"error": "Scope no permitido"}), 403
+
+        # Filtros
+        q = q.filter(Registro.fecha.between(month_start.isoformat(), month_end.isoformat()))
+
+        if equipo_filter:
+            q = q.filter(func.upper(Equipo.nombre) == equipo_filter)
+
+        if consultor_filter:
+            q = q.filter(func.lower(Consultor.nombre).like(f"%{consultor_filter}%"))
+
+        q = q.group_by(
+            func.lower(Registro.usuario_consultor),
+            Consultor.id,
+            Consultor.nombre,
+            Equipo.nombre,
+            Horario.rango,
+            Registro.fecha,
+        ).order_by(
+            Consultor.nombre.asc(),
+            Registro.fecha.asc(),
+        )
+
+        raw = q.all()
+
+        # Presupuesto vigente por consultor
+        consultor_ids = sorted({int(r.consultor_id) for r in raw if r.consultor_id})
+        presupuesto_map = {}
+
+        if consultor_ids:
+            pres_rows = (
+                db.session.query(
+                    ConsultorPresupuesto.consultor_id,
+                    ConsultorPresupuesto.horas_base_mes,
+                )
+                .filter(ConsultorPresupuesto.consultor_id.in_(consultor_ids))
+                .filter(ConsultorPresupuesto.vigente == True)
+                .all()
+            )
+
+            for pr in pres_rows:
+                presupuesto_map[int(pr.consultor_id)] = float(pr.horas_base_mes or 0)
+
+        # Agrupar por consultor
+        grouped = {}
+
+        for r in raw:
+            key = int(r.consultor_id) if r.consultor_id else (r.usuario_consultor or "na")
+            fecha_obj = _cap_parse_iso_date(r.fecha)
+            if not fecha_obj:
+                continue
+
+            if key not in grouped:
+                grouped[key] = {
+                    "consultorId": int(r.consultor_id) if r.consultor_id else None,
+                    "consultor": r.consultor or r.usuario_consultor or "—",
+                    "equipo": (r.equipo or "SIN EQUIPO").strip().upper(),
+                    "horario": (r.horario or "").strip(),
+                    "diasHoras": defaultdict(float),
+                }
+
+            grouped[key]["diasHoras"][fecha_obj.isoformat()] += float(r.total_horas or 0)
+
+        rows_out = []
+
+        for _, item in grouped.items():
+            equipo_kind = _cap_team_kind(item["equipo"])
+            horas_dia_base = _cap_parse_horario_horas(item["horario"])
+
+            # Meta mensual calculada por horario
+            meta_mes_calculada = 0.0
+            d = month_start
+            while d <= month_end:
+                if _cap_is_working_day(d, equipo_kind):
+                    meta_mes_calculada += horas_dia_base
+                d += timedelta(days=1)
+
+            meta_mes_presupuesto = 0.0
+            if item["consultorId"] and item["consultorId"] in presupuesto_map:
+                meta_mes_presupuesto = float(presupuesto_map[item["consultorId"]] or 0)
+
+            meta_mes = round(meta_mes_presupuesto if meta_mes_presupuesto > 0 else meta_mes_calculada, 2)
+
+            horas_mes = round(sum(float(v or 0) for v in item["diasHoras"].values()), 2)
+            porcentaje_mes = round((horas_mes / meta_mes) * 100, 2) if meta_mes > 0 else 0.0
+
+            semanas_out = []
+
+            for wk in semanas_mes:
+                horas_semana = 0.0
+                meta_semana = 0.0
+                dias_out = []
+
+                d = wk["start"]
+                while d <= wk["end"]:
+                    fecha_key = d.isoformat()
+                    horas_dia = round(float(item["diasHoras"].get(fecha_key, 0)), 2)
+                    meta_dia = round(horas_dia_base if _cap_is_working_day(d, equipo_kind) else 0.0, 2)
+
+                    horas_semana += horas_dia
+                    meta_semana += meta_dia
+
+                    dias_out.append({
+                        "fecha": fecha_key,
+                        "horas": horas_dia,
+                        "metaDia": meta_dia,
+                    })
+
+                    d += timedelta(days=1)
+
+                horas_semana = round(horas_semana, 2)
+                meta_semana = round(meta_semana, 2)
+                diferencia_semana = round(meta_semana - horas_semana, 2)
+                porcentaje_semanal = round((horas_semana / meta_semana) * 100, 2) if meta_semana > 0 else 0.0
+                aporte_mes_pct = round((horas_semana / meta_mes) * 100, 2) if meta_mes > 0 else 0.0
+
+                semanas_out.append({
+                    "label": f"Semana {wk['index']}",
+                    "inicio": wk["start"].isoformat(),
+                    "fin": wk["end"].isoformat(),
+                    "metaSemanal": meta_semana,
+                    "horasSemana": horas_semana,
+                    "porcentajeSemanal": porcentaje_semanal,
+                    "aporteMesPct": aporte_mes_pct,
+                    "diferenciaSemana": diferencia_semana,
+                    "dias": dias_out,
+                })
+
+            rows_out.append({
+                "consultorId": item["consultorId"],
+                "consultor": item["consultor"],
+                "equipo": item["equipo"],
+                "horario": item["horario"],
+                "metaMes": meta_mes,
+                "horasMes": horas_mes,
+                "porcentajeMes": porcentaje_mes,
+                "diferenciaMes": round(meta_mes - horas_mes, 2),
+                "semanas": semanas_out,
+            })
+
+        rows_out.sort(key=lambda x: ((x["equipo"] or ""), (x["consultor"] or "")))
+
+        return jsonify({
+            "mes": mes,
+            "anio": anio,
+            "desde": month_start.isoformat(),
+            "hasta": month_end.isoformat(),
+            "rows": rows_out,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        app.logger.exception("❌ Error en /resumen-capacidad-semanal")
+        return jsonify({"error": str(e)}), 500

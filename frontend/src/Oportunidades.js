@@ -206,6 +206,26 @@ function parseNumberSmart(input) {
   return Number.isFinite(n) ? n : "";
 }
 
+function computeMrcNormalizado(source) {
+  const otcRaw = source?.otc ?? source?.otr ?? source?.OTR ?? "";
+  const mrcRaw = source?.mrc ?? "";
+
+  const otc = parseNumberSmart(otcRaw);
+  const mrc = parseNumberSmart(mrcRaw);
+
+  const hasOtc = otc !== "";
+  const hasMrc = mrc !== "";
+
+  if (!hasOtc && !hasMrc) return "";
+
+  const otcMensualizado = hasOtc ? otc / 12 : 0;
+  const mrcBase = hasMrc ? mrc : 0;
+
+  const total = otcMensualizado + mrcBase;
+
+  return Number(total.toFixed(2));
+}
+
 function formatCell(col, value) {
   if (isDateCol(col)) return value ? toIsoDate(value) : "-";
   if (!isNumericCol(col)) return value ?? "-";
@@ -576,6 +596,10 @@ export default function Oportunidades() {
     return {
       ...rest,
       otc: otcValue,
+      mrc_normalizado: computeMrcNormalizado({
+        otc: otcValue,
+        mrc: rest.mrc,
+      }),
       nombre_cliente: normalizeText(rest.nombre_cliente),
       servicio: normalizeText(rest.servicio),
       estado_oferta: normalizeText(rest.estado_oferta),
@@ -665,6 +689,7 @@ export default function Oportunidades() {
 
   const toDbPayload = (row) => {
     const out = {};
+
     for (const col of columnOrder) {
       const v = row?.[col];
 
@@ -675,7 +700,8 @@ export default function Oportunidades() {
 
       if (isNumericCol(col)) {
         if (col === "mrc_normalizado") {
-          out[col] = null;
+          const calculado = computeMrcNormalizado(row);
+          out[col] = calculado === "" ? null : calculado;
         } else {
           const parsed = parseNumberSmart(v);
           out[col] = parsed === "" ? null : parsed;
@@ -685,6 +711,7 @@ export default function Oportunidades() {
 
       out[col] = v === undefined || v === null ? null : v;
     }
+
     return out;
   };
 
@@ -806,7 +833,11 @@ export default function Oportunidades() {
         return;
       }
 
-      const nextData = data.map((r) => (r.id === row.id ? { ...r, ...payload } : r));
+      const nextData = data.map((r) =>
+        r.id === row.id
+          ? normalizeRowFromApi({ ...r, ...payload })
+          : r
+      );
       setData(nextData);
 
       highlightRow(rowIndex);
@@ -1170,7 +1201,9 @@ export default function Oportunidades() {
   };
 
   const renderNewRowCell = (col) => {
-    if (col === "mrc_normalizado") return <span>-</span>;
+    if (col === "mrc_normalizado") {
+      return <span>{formatCell("mrc_normalizado", computeMrcNormalizado(newRow))}</span>;
+    }
 
     if (col === CLIENTE_COL) {
       return (

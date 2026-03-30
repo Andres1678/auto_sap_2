@@ -1,0 +1,328 @@
+.capacidad-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.55);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.capacidad-modal-content {
+  width: min(1440px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  background: #f8fafc;
+  border-radius: 20px;
+  outline: none;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+}
+
+.capacidad-shell {
+  padding: 22px;
+}
+
+.capacidad-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.capacidad-kicker {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #2563eb;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.capacidad-header h3 {
+  margin: 0 0 6px;
+  font-size: 1.8rem;
+  color: #0f172a;
+}
+
+.capacidad-header p {
+  margin: 0;
+  color: #475569;
+}
+
+.capacidad-close {
+  border: none;
+  background: #e2e8f0;
+  color: #0f172a;
+  border-radius: 12px;
+  width: 42px;
+  height: 42px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.capacidad-top-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.capacidad-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.capacidad-card .label {
+  display: block;
+  color: #64748b;
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+
+.capacidad-card strong {
+  font-size: 1.35rem;
+  color: #0f172a;
+}
+
+.capacidad-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.capacidad-state {
+  background: #fff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
+  padding: 26px;
+  text-align: center;
+  color: #475569;
+}
+
+.capacidad-state.error {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fff5f5;
+}
+
+.capacidad-consultor {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+}
+
+.capacidad-consultor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.capacidad-consultor-head h4 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: #0f172a;
+}
+
+.capacidad-consultor-head p {
+  margin: 4px 0 0;
+  color: #64748b;
+}
+
+.capacidad-consultor-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.capacidad-semanas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 14px;
+}
+
+.semana-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.semana-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.semana-card-head h5 {
+  margin: 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.semana-card-head p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.semana-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.semana-metrics > div {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 10px;
+}
+
+.mini-label {
+  display: block;
+  color: #64748b;
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+}
+
+.progress-block {
+  margin-bottom: 12px;
+}
+
+.progress-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.84rem;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 10px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.progress-fill.is-good,
+.pill.is-good,
+.capacidad-card.is-good {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.progress-fill.is-warn,
+.pill.is-warn,
+.capacidad-card.is-warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.progress-fill.is-bad,
+.pill.is-bad,
+.capacidad-card.is-bad {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.progress-fill.is-good {
+  background-color: #22c55e;
+}
+
+.progress-fill.is-warn {
+  background-color: #f59e0b;
+}
+
+.progress-fill.is-bad {
+  background-color: #ef4444;
+}
+
+.progress-fill.is-month {
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.dias-table {
+  margin-top: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.dias-head,
+.dias-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.8fr;
+  gap: 10px;
+  padding: 9px 10px;
+  font-size: 0.82rem;
+}
+
+.dias-head {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 800;
+}
+
+.dias-row {
+  border-top: 1px solid #e2e8f0;
+  color: #334155;
+}
+
+@media (max-width: 900px) {
+  .capacidad-top-cards {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .capacidad-consultor-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .capacidad-top-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .semana-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .dias-head,
+  .dias-row {
+    grid-template-columns: 1fr;
+  }
+}
