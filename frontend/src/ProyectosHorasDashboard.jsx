@@ -533,6 +533,7 @@ export default function ProyectosHorasDashboard({
 
   const [filtroEquipo, setFiltroEquipo] = useState([]);
   const [filtroConsultor, setFiltroConsultor] = useState([]);
+  const [filtroCliente, setFiltroCliente] = useState([]);
   const [filtroModulo, setFiltroModulo] = useState([]);
   const [filtroOcupacion, setFiltroOcupacion] = useState([]);
   const [filtroTarea, setFiltroTarea] = useState([]);
@@ -776,25 +777,6 @@ export default function ProyectosHorasDashboard({
 
       params.set("max_rows", "10000");
 
-      if (scope === "ALL" && filtroEquipo.length === 1) {
-        params.set("equipo", filtroEquipo[0]);
-      }
-
-      if (scope !== "SELF" && filtroConsultor.length === 1) {
-        params.set("consultor", filtroConsultor[0]);
-      }
-
-      if (filtroModulo.length === 1) {
-        params.set("modulo", filtroModulo[0]);
-      }
-
-      if (filtroProyecto.length === 1) {
-        const proyectoId = proyectoLabelToId.get(filtroProyecto[0]);
-        if (proyectoId) {
-          params.set("proyecto_id", String(proyectoId));
-        }
-      }
-
       const qs = params.toString();
       const url = qs ? `/dashboard/proyectos-horas?${qs}` : "/dashboard/proyectos-horas";
 
@@ -836,12 +818,6 @@ export default function ProyectosHorasDashboard({
     rangoActivo,
     rangoDesde,
     rangoHasta,
-    filtroEquipo,
-    filtroConsultor,
-    filtroModulo,
-    filtroProyecto,
-    proyectoLabelToId,
-    scope,
   ]);
 
   useEffect(() => {
@@ -929,6 +905,7 @@ export default function ProyectosHorasDashboard({
       return {
         ...r,
         equipoNormalizado: equipoOf(r),
+        clienteNormalizado: String(r?.cliente || "SIN CLIENTE").trim(),
         ocupacionNormalizada: String(
           r?.ocupacion_nombre || r?.ocupacion || "SIN OCUPACIÓN"
         ).trim(),
@@ -989,6 +966,24 @@ export default function ProyectosHorasDashboard({
     scope,
     equipoUser,
   ]);
+
+  const clientesUnicos = useMemo(() => {
+    const set = new Set(
+      (registrosEnriquecidos ?? [])
+        .filter((r) =>
+          cumpleFiltroFechaPrincipal({
+            fechaISO: r.fecha,
+            filtroMes: filtroMesActivo,
+            rangoActivo,
+            rangoDesde,
+            rangoHasta,
+          })
+        )
+        .map((r) => r.clienteNormalizado)
+    );
+
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [registrosEnriquecidos, filtroMesActivo, rangoActivo, rangoDesde, rangoHasta]);
 
   const modulosUnicos = useMemo(() => {
     const set = new Set(
@@ -1083,6 +1078,7 @@ export default function ProyectosHorasDashboard({
 
       if (filtroEquipo.length > 0 && !filtroEquipo.includes(r.equipoNormalizado)) return false;
       if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultorNormalizado)) return false;
+      if (filtroCliente.length > 0 && !filtroCliente.includes(r.clienteNormalizado)) return false;
       if (filtroModulo.length > 0 && !filtroModulo.includes(r.moduloNormalizado)) return false;
       if (filtroOcupacion.length > 0 && !filtroOcupacion.includes(r.ocupacionNormalizada)) return false;
       if (filtroTarea.length > 0 && !filtroTarea.includes(r.tareaNormalizada)) return false;
@@ -1098,6 +1094,7 @@ export default function ProyectosHorasDashboard({
     rangoHasta,
     filtroEquipo,
     filtroConsultor,
+    filtroCliente,
     filtroModulo,
     filtroOcupacion,
     filtroTarea,
@@ -1274,6 +1271,7 @@ export default function ProyectosHorasDashboard({
     setFiltroOcupacion([]);
     setFiltroTarea([]);
     setFiltroProyecto([]);
+    setFiltroCliente([]);
 
     if (scope === "ALL") {
       setFiltroEquipo([]);
@@ -1620,6 +1618,14 @@ export default function ProyectosHorasDashboard({
               seleccion={filtroProyecto}
               onChange={setFiltroProyecto}
               placeholder="Todos los proyectos"
+            />
+
+            <MultiFiltro
+              titulo="CLIENTES"
+              opciones={clientesUnicos}
+              seleccion={filtroCliente}
+              onChange={setFiltroCliente}
+              placeholder="Todos los clientes"
             />
 
             <MultiFiltro
