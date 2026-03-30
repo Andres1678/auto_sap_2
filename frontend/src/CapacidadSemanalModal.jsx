@@ -1,5 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Modal from "react-modal";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Cell,
+} from "recharts";
 import { jfetch } from "./lib/api";
 import "./CapacidadSemanalModal.css";
 
@@ -25,13 +35,23 @@ const MONTHS = [
   { value: 12, label: "Diciembre" },
 ];
 
+const CHART_COLORS = [
+  "#2563eb",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ef4444",
+  "#06b6d4",
+  "#84cc16",
+  "#f97316",
+];
+
 function fmtHours(v) {
   return `${nf.format(Number(v || 0))} h`;
 }
 
 function fmtPct(v) {
-  const n = Number(v || 0);
-  return `${n.toFixed(1)}%`;
+  return `${Number(v || 0).toFixed(1)}%`;
 }
 
 function pctClass(v) {
@@ -39,6 +59,10 @@ function pctClass(v) {
   if (n >= 90) return "is-good";
   if (n >= 70) return "is-warn";
   return "is-bad";
+}
+
+function clampPct(v) {
+  return Math.max(0, Math.min(100, Number(v || 0)));
 }
 
 function safeRows(payload) {
@@ -67,8 +91,14 @@ function buildYearOptions(baseYear) {
   return [y - 2, y - 1, y, y + 1];
 }
 
-function clampPct(v) {
-  return Math.max(0, Math.min(100, Number(v || 0)));
+function shortLabel(value, max = 26) {
+  const txt = String(value || "");
+  if (txt.length <= max) return txt;
+  return `${txt.slice(0, max - 1)}…`;
+}
+
+function chartHeightFromRows(rows) {
+  return Math.max(300, Math.min(460, rows.length * 48));
 }
 
 export default function CapacidadSemanalModal({
@@ -193,7 +223,8 @@ export default function CapacidadSemanalModal({
       0
     );
     const totalDiff = totalMetaMes - totalHorasMes;
-    const totalPct = totalMetaMes > 0 ? (totalHorasMes / totalMetaMes) * 100 : 0;
+    const totalPct =
+      totalMetaMes > 0 ? (totalHorasMes / totalMetaMes) * 100 : 0;
     const totalFestivos = filteredRows.reduce(
       (acc, r) => acc + Number(r.diasFestivosMes || 0),
       0
@@ -371,158 +402,261 @@ export default function CapacidadSemanalModal({
 
           {!loading &&
             !error &&
-            filteredRows.map((item, idx) => (
-              <section
-                className="capacidad-consultor"
-                key={`${item.consultor || "sin-nombre"}-${idx}`}
-              >
-                <div className="capacidad-consultor-head">
-                  <div>
-                    <h4>{item.consultor || "Sin nombre"}</h4>
-                    <p>{item.equipo || "Sin equipo"}</p>
-                  </div>
+            filteredRows.map((item, idx) => {
+              const chartData = Array.isArray(item.ocupacionesChart)
+                ? item.ocupacionesChart
+                : [];
 
-                  <div className="capacidad-consultor-stats">
-                    <span>
-                      <b>Mes:</b> {fmtHours(item.horasMes)} / {fmtHours(item.metaMes)}
-                    </span>
-                    <span className={`pill ${pctClass(item.porcentajeMes)}`}>
-                      {fmtPct(item.porcentajeMes)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="capacidad-summary-card">
-                  <div className="summary-card-head">
-                    <h5>Resumen del consultor</h5>
-                    <span className="summary-badge">
-                      Meta mes: {fmtHours(item.metaMes)}
-                    </span>
-                  </div>
-
-                  <div className="summary-grid">
-                    <div className="summary-item">
-                      <span className="summary-label">Meta mensual</span>
-                      <strong>{fmtHours(item.metaMes)}</strong>
+              return (
+                <section
+                  className="capacidad-consultor"
+                  key={`${item.consultor || "sin-nombre"}-${idx}`}
+                >
+                  <div className="capacidad-consultor-head">
+                    <div>
+                      <h4>{item.consultor || "Sin nombre"}</h4>
+                      <p>{item.equipo || "Sin equipo"}</p>
                     </div>
 
-                    <div className="summary-item">
-                      <span className="summary-label">Horas registradas mes</span>
-                      <strong>{fmtHours(item.horasMes)}</strong>
-                    </div>
-
-                    <div className="summary-item">
-                      <span className="summary-label">% cumplimiento mes</span>
-                      <strong>{fmtPct(item.porcentajeMes)}</strong>
-                    </div>
-
-                    <div className="summary-item">
-                      <span className="summary-label">Días de trabajo</span>
-                      <strong>{item.diasTrabajoTexto || "—"}</strong>
-                      <small>{item.diasLaborablesMes || 0} días del periodo</small>
-                    </div>
-
-                    <div className="summary-item">
-                      <span className="summary-label">Festivos CO</span>
-                      <strong>{item.diasFestivosMes || 0}</strong>
-                    </div>
-
-                    <div className="summary-item">
-                      <span className="summary-label">Meta del día</span>
-                      <strong>{fmtHours(item.metaDiaObjetivo)}</strong>
+                    <div className="capacidad-consultor-stats">
+                      <span>
+                        <b>Mes:</b> {fmtHours(item.horasMes)} / {fmtHours(item.metaMes)}
+                      </span>
+                      <span className={`pill ${pctClass(item.porcentajeMes)}`}>
+                        {fmtPct(item.porcentajeMes)}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="summary-progress">
-                    <div className="progress-row">
-                      <span>Cumplimiento del mes</span>
-                      <span>{fmtPct(item.porcentajeMes)}</span>
-                    </div>
-                    <div className="progress-bar">
-                      <div
-                        className={`progress-fill ${pctClass(item.porcentajeMes)}`}
-                        style={{ width: `${clampPct(item.porcentajeMes)}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="capacidad-semanas-grid">
-                  {(item.semanas || []).map((semana, i) => (
-                    <article
-                      className="semana-card"
-                      key={`${item.consultor || "sin-nombre"}-sem-${i}`}
-                    >
-                      <div className="semana-card-head">
-                        <div>
-                          <h5>{semana.label}</h5>
-                          <p>
-                            {semana.inicio} — {semana.fin}
-                          </p>
+                  <div className="capacidad-consultor-layout">
+                    <div className="capacidad-main-column">
+                      <div className="capacidad-summary-card">
+                        <div className="summary-card-head">
+                          <h5>Resumen del consultor</h5>
+                          <span className="summary-badge">
+                            Meta mes: {fmtHours(item.metaMes)}
+                          </span>
                         </div>
 
-                        <span className={`pill ${pctClass(semana.porcentajeSemanal)}`}>
-                          {fmtPct(semana.porcentajeSemanal)}
-                        </span>
-                      </div>
-
-                      <div className="semana-metrics">
-                        <div>
-                          <span className="mini-label">Horas semana</span>
-                          <strong>{fmtHours(semana.horasSemana)}</strong>
-                        </div>
-
-                        <div>
-                          <span className="mini-label">Meta semana</span>
-                          <strong>{fmtHours(semana.metaSemanal)}</strong>
-                        </div>
-
-                        <div>
-                          <span className="mini-label">% llenado semana</span>
-                          <strong>{fmtPct(semana.porcentajeSemanal)}</strong>
-                        </div>
-
-                        <div>
-                          <span className="mini-label">Diferencia</span>
-                          <strong>{fmtHours(semana.diferenciaSemana)}</strong>
-                        </div>
-                      </div>
-
-                      <div className="progress-block">
-                        <div className="progress-row">
-                          <span>Llenado semanal</span>
-                          <span>{fmtPct(semana.porcentajeSemanal)}</span>
-                        </div>
-                        <div className="progress-bar">
-                          <div
-                            className={`progress-fill ${pctClass(semana.porcentajeSemanal)}`}
-                            style={{ width: `${clampPct(semana.porcentajeSemanal)}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {!!semana.dias?.length && (
-                        <div className="dias-table">
-                          <div className="dias-head">
-                            <span>Fecha</span>
-                            <span>Horas</span>
-                            <span>Meta día</span>
+                        <div className="summary-grid">
+                          <div className="summary-item">
+                            <span className="summary-label">Meta mensual</span>
+                            <strong>{fmtHours(item.metaMes)}</strong>
                           </div>
 
-                          {semana.dias.map((d, ix) => (
-                            <div className="dias-row" key={`${semana.label}-${ix}`}>
-                              <span>{d.fecha}</span>
-                              <span>{fmtHours(d.horas)}</span>
-                              <span>{fmtHours(d.metaDia)}</span>
-                            </div>
-                          ))}
+                          <div className="summary-item">
+                            <span className="summary-label">Horas registradas mes</span>
+                            <strong>{fmtHours(item.horasMes)}</strong>
+                          </div>
+
+                          <div className="summary-item">
+                            <span className="summary-label">% cumplimiento mes</span>
+                            <strong>{fmtPct(item.porcentajeMes)}</strong>
+                          </div>
+
+                          <div className="summary-item">
+                            <span className="summary-label">Días de trabajo</span>
+                            <strong>{item.diasTrabajoTexto || "—"}</strong>
+                            <small>{item.diasLaborablesMes || 0} días del periodo</small>
+                          </div>
+
+                          <div className="summary-item">
+                            <span className="summary-label">Festivos CO</span>
+                            <strong>{item.diasFestivosMes || 0}</strong>
+                          </div>
+
+                          <div className="summary-item">
+                            <span className="summary-label">Meta del día</span>
+                            <strong>{fmtHours(item.metaDiaObjetivo)}</strong>
+                          </div>
                         </div>
-                      )}
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ))}
+
+                        <div className="summary-progress">
+                          <div className="progress-row">
+                            <span>Cumplimiento del mes</span>
+                            <span>{fmtPct(item.porcentajeMes)}</span>
+                          </div>
+                          <div className="progress-bar">
+                            <div
+                              className={`progress-fill ${pctClass(item.porcentajeMes)}`}
+                              style={{ width: `${clampPct(item.porcentajeMes)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="capacidad-semanas-grid">
+                        {(item.semanas || []).map((semana, i) => (
+                          <article
+                            className="semana-card"
+                            key={`${item.consultor || "sin-nombre"}-sem-${i}`}
+                          >
+                            <div className="semana-card-head">
+                              <div>
+                                <h5>{semana.label}</h5>
+                                <p>
+                                  {semana.inicio} — {semana.fin}
+                                </p>
+                              </div>
+
+                              <span className={`pill ${pctClass(semana.porcentajeSemanal)}`}>
+                                {fmtPct(semana.porcentajeSemanal)}
+                              </span>
+                            </div>
+
+                            <div className="semana-metrics">
+                              <div>
+                                <span className="mini-label">Horas semana</span>
+                                <strong>{fmtHours(semana.horasSemana)}</strong>
+                              </div>
+
+                              <div>
+                                <span className="mini-label">Meta semana</span>
+                                <strong>{fmtHours(semana.metaSemanal)}</strong>
+                              </div>
+
+                              <div>
+                                <span className="mini-label">% llenado semana</span>
+                                <strong>{fmtPct(semana.porcentajeSemanal)}</strong>
+                              </div>
+
+                              <div>
+                                <span className="mini-label">Diferencia</span>
+                                <strong>{fmtHours(semana.diferenciaSemana)}</strong>
+                              </div>
+                            </div>
+
+                            <div className="progress-block">
+                              <div className="progress-row">
+                                <span>Llenado semanal</span>
+                                <span>{fmtPct(semana.porcentajeSemanal)}</span>
+                              </div>
+                              <div className="progress-bar">
+                                <div
+                                  className={`progress-fill ${pctClass(semana.porcentajeSemanal)}`}
+                                  style={{ width: `${clampPct(semana.porcentajeSemanal)}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {!!semana.dias?.length && (
+                              <div className="dias-table">
+                                <div className="dias-head">
+                                  <span>Fecha</span>
+                                  <span>Horas</span>
+                                  <span>Meta día</span>
+                                </div>
+
+                                {semana.dias.map((d, ix) => (
+                                  <div
+                                    className={`dias-row ${d.esExtra ? "is-extra-day" : ""}`}
+                                    key={`${semana.label}-${ix}`}
+                                  >
+                                    <span>
+                                      {d.fecha}
+                                      {d.esExtra && (
+                                        <small className="extra-day-badge"> Extra</small>
+                                      )}
+                                    </span>
+                                    <span>{fmtHours(d.horas)}</span>
+                                    <span>{fmtHours(d.metaDia)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+
+                    <aside className="capacidad-side-column">
+                      <div className="capacidad-side-card">
+                        <div className="side-card-head">
+                          <h5>Ocupaciones del mes</h5>
+                          <span className="side-kpi">
+                            Top: {item.ocupacionPrincipal || "Sin datos"}
+                          </span>
+                        </div>
+
+                        {chartData.length === 0 ? (
+                          <div className="capacidad-side-empty">
+                            No hay ocupaciones registradas para este consultor.
+                          </div>
+                        ) : (
+                          <>
+                            <div className="ocupacion-top-box">
+                              <span className="top-box-label">Ocupación principal</span>
+                              <strong title={item.ocupacionPrincipal || ""}>
+                                {item.ocupacionPrincipal || "Sin datos"}
+                              </strong>
+                              <small>{fmtHours(item.ocupacionPrincipalHoras)}</small>
+                            </div>
+
+                            <div className="ocupacion-chart-wrap">
+                              <ResponsiveContainer
+                                width="100%"
+                                height={chartHeightFromRows(chartData)}
+                              >
+                                <BarChart
+                                  data={chartData}
+                                  layout="vertical"
+                                  margin={{ top: 10, right: 18, left: 6, bottom: 10 }}
+                                  barCategoryGap={12}
+                                >
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis type="number" tickLine={false} axisLine={false} />
+                                  <YAxis
+                                    type="category"
+                                    dataKey="ocupacion"
+                                    width={150}
+                                    tickLine={false}
+                                    axisLine={false}
+                                    tickFormatter={(v) => shortLabel(v, 24)}
+                                  />
+                                  <Tooltip
+                                    formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]}
+                                    labelFormatter={(label) => String(label || "")}
+                                  />
+                                  <Bar dataKey="horas" radius={[0, 8, 8, 0]}>
+                                    {chartData.map((entry, i) => (
+                                      <Cell
+                                        key={`${entry.ocupacion}-${i}`}
+                                        fill={CHART_COLORS[i % CHART_COLORS.length]}
+                                      />
+                                    ))}
+                                  </Bar>
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+
+                            <div className="ocupacion-top-list">
+                              {chartData.slice(0, 6).map((o, i) => (
+                                <div className="ocupacion-top-item" key={`${o.ocupacion}-${i}`}>
+                                  <span
+                                    className="ocupacion-dot"
+                                    style={{
+                                      backgroundColor:
+                                        CHART_COLORS[i % CHART_COLORS.length],
+                                    }}
+                                  />
+                                  <span
+                                    className="ocupacion-name"
+                                    title={o.ocupacion || ""}
+                                  >
+                                    {o.ocupacion}
+                                  </span>
+                                  <strong>{fmtHours(o.horas)}</strong>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </aside>
+                  </div>
+                </section>
+              );
+            })}
         </div>
       </div>
     </Modal>

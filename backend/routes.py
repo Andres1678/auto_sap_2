@@ -8,7 +8,7 @@ from backend.models import (
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
-from sqlalchemy import or_, text, func, extract, and_, cast, Integer
+from sqlalchemy import or_, text, func, extract, and_, cast, Integer, literal
 from sqlalchemy.orm import relationship, backref, joinedload, aliased, selectinload
 import unicodedata, re
 from collections import defaultdict
@@ -6726,10 +6726,6 @@ def _cap_weeks_for_month(anio, mes):
 
 
 def _cap_colombia_holidays_for_years(years):
-    """
-    Festivos oficiales de Colombia.
-    country_holidays('CO', years=...) está soportado por la librería holidays. :contentReference[oaicite:4]{index=4}
-    """
     return holidays.country_holidays("CO", years=years)
 
 
@@ -6737,15 +6733,7 @@ def _cap_is_holiday(fecha_obj, co_holidays):
     return fecha_obj in co_holidays
 
 
-def _cap_is_working_day(fecha_obj, equipo_kind, co_holidays):
-    """
-    Regla propuesta:
-    - FUNCIONAL: lunes a viernes, excluyendo festivos Colombia
-    - BASIS: domingo a domingo, excluyendo festivos Colombia
-    """
-    if _cap_is_holiday(fecha_obj, co_holidays):
-        return False
-
+def _cap_is_base_schedule_day(fecha_obj, equipo_kind):
     wd = fecha_obj.weekday()  # lunes=0 ... domingo=6
 
     if equipo_kind == "FUNCIONAL":
@@ -6755,6 +6743,20 @@ def _cap_is_working_day(fecha_obj, equipo_kind, co_holidays):
         return True
 
     return wd <= 4
+
+
+def _cap_is_working_day(fecha_obj, equipo_kind, co_holidays):
+    """
+    - FUNCIONAL: lunes a viernes, excluyendo festivos CO
+    - BASIS: domingo a domingo, excluyendo festivos CO
+    """
+    if not _cap_is_base_schedule_day(fecha_obj, equipo_kind):
+        return False
+
+    if _cap_is_holiday(fecha_obj, co_holidays):
+        return False
+
+    return True
 
 
 def _cap_work_days_text(equipo_kind):
@@ -6793,6 +6795,53 @@ def _cap_parse_month_year_from_request():
     return anio, mes
 
 
+def _cap_resolve_ocupacion_expr():
+    """
+    Intenta resolver el campo de ocupación de forma flexible
+    según el modelo disponible.
+    """
+    ocupacion_codigo_col = getattr(Registro, "ocupacion_codigo", None)
+    ocupacion_nombre_col = getattr(Registro, "ocupacion_nombre", None)
+    ocupacion_azure_col = getattr(Registro, "ocupacion_azure", None)
+
+    if ocupacion_codigo_col is not None and ocupacion_nombre_col is not None:
+        return func.trim(
+            func.concat(
+                func.coalesce(ocupacion_codigo_col, ""),
+                literal(" - "),
+                func.coalesce(ocupacion_nombre_col, "")
+            )
+        ).label("ocupacion")
+
+    if ocupacion_azure_col is not None:
+        return func.coalesce(ocupacion_azure_col, literal("SIN OCUPACIÓN")).label("ocupacion")
+
+    return literal("SIN OCUPACIÓN").label("ocupacion")
+
+
+def _cap_compact_occupations(ocupaciones_map, limit=8):
+    ordered = sorted(
+        [{"ocupacion": k or "SIN OCUPACIÓN", "horas": round(float(v or 0), 2)} for k, v in ocupaciones_map.items()],
+        key=lambda x: x["horas"],
+        reverse=True,
+    )
+
+    if len(ordered) <= limit:
+        return ordered
+
+    head = ordered[:limit - 1]
+    tail = ordered[limit - 1:]
+    otras_horas = round(sum(x["horas"] for x in tail), 2)
+
+    if otras_horas > 0:
+        head.append({
+            "ocupacion": "OTRAS",
+            "horas": otras_horas,
+        })
+
+    return head
+
+
 @bp.route("/resumen-capacidad-semanal", methods=["GET"])
 def resumen_capacidad_semanal():
     try:
@@ -6819,16 +6868,13 @@ def resumen_capacidad_semanal():
 
         scope, val = scope_for(consultor_login, rol_req)
 
-        # solo ADMIN global y ADMIN_EQUIPO
+        # Solo ADMIN global y ADMIN_EQUIPO
         if scope in {"SELF", "ROLE_POOL"}:
             return jsonify({"error": "No autorizado para ver capacidad semanal"}), 403
 
         anio, mes = _cap_parse_month_year_from_request()
         month_start, month_end = _cap_month_bounds(anio, mes)
         semanas_mes = _cap_weeks_for_month(anio, mes)
-
-        # cargar festivos de Colombia para el año solicitado
-        # se crea una sola vez y luego se reutiliza para todas las comparaciones
         co_holidays = _cap_colombia_holidays_for_years([anio])
 
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
@@ -6849,6 +6895,8 @@ def resumen_capacidad_semanal():
 
             equipo_filter = eq_login
 
+        ocupacion_expr = _cap_resolve_ocupacion_expr()
+
         q = (
             db.session.query(
                 func.lower(Registro.usuario_consultor).label("usuario_consultor"),
@@ -6857,6 +6905,7 @@ def resumen_capacidad_semanal():
                 Equipo.nombre.label("equipo"),
                 Horario.rango.label("horario"),
                 Registro.fecha.label("fecha"),
+                ocupacion_expr,
                 func.coalesce(func.sum(Registro.total_horas), 0).label("total_horas"),
             )
             .select_from(Registro)
@@ -6875,7 +6924,9 @@ def resumen_capacidad_semanal():
         else:
             return jsonify({"error": "Scope no permitido"}), 403
 
-        q = q.filter(Registro.fecha.between(month_start.isoformat(), month_end.isoformat()))
+        q = q.filter(
+            Registro.fecha.between(month_start.isoformat(), month_end.isoformat())
+        )
 
         if equipo_filter:
             q = q.filter(func.upper(Equipo.nombre) == equipo_filter)
@@ -6890,6 +6941,7 @@ def resumen_capacidad_semanal():
             Equipo.nombre,
             Horario.rango,
             Registro.fecha,
+            ocupacion_expr,
         ).order_by(
             Consultor.nombre.asc(),
             Registro.fecha.asc(),
@@ -6914,9 +6966,14 @@ def resumen_capacidad_semanal():
                     "equipo": (r.equipo or "SIN EQUIPO").strip().upper(),
                     "horario": (r.horario or "").strip(),
                     "diasHoras": defaultdict(float),
+                    "ocupacionesHoras": defaultdict(float),
                 }
 
-            grouped[key]["diasHoras"][fecha_obj.isoformat()] += float(r.total_horas or 0)
+            horas = float(r.total_horas or 0)
+            ocupacion = str(r.ocupacion or "SIN OCUPACIÓN").strip() or "SIN OCUPACIÓN"
+
+            grouped[key]["diasHoras"][fecha_obj.isoformat()] += horas
+            grouped[key]["ocupacionesHoras"][ocupacion] += horas
 
         rows_out = []
 
@@ -6924,14 +6981,16 @@ def resumen_capacidad_semanal():
             equipo_kind = _cap_team_kind(item["equipo"])
             meta_dia_objetivo = _cap_daily_target_hours(item["horario"], equipo_kind)
 
-            # meta mensual real según calendario Colombia
+            # Meta mensual real según calendario Colombia
             meta_mes = 0.0
             dias_laborables_mes = 0
             dias_festivos_mes = 0
 
             cursor = month_start
             while cursor <= month_end:
-                if _cap_is_holiday(cursor, co_holidays):
+                es_base = _cap_is_base_schedule_day(cursor, equipo_kind)
+
+                if es_base and _cap_is_holiday(cursor, co_holidays):
                     dias_festivos_mes += 1
 
                 if _cap_is_working_day(cursor, equipo_kind, co_holidays):
@@ -6942,7 +7001,12 @@ def resumen_capacidad_semanal():
 
             meta_mes = round(meta_mes, 2)
 
-            horas_mes = 0.0
+            # Horas del mes: suma cualquier día con tiempo, incluso si es fin de semana o festivo
+            horas_mes = round(
+                sum(float(v or 0) for v in item["diasHoras"].values()),
+                2
+            )
+
             semanas_out = []
 
             for wk in semanas_mes:
@@ -6952,32 +7016,43 @@ def resumen_capacidad_semanal():
 
                 cursor = wk["start"]
                 while cursor <= wk["end"]:
-                    # no pintar días no laborables en la tabla del modal
-                    if not _cap_is_working_day(cursor, equipo_kind, co_holidays):
-                        cursor += timedelta(days=1)
-                        continue
-
                     fecha_key = cursor.isoformat()
                     horas_dia = round(float(item["diasHoras"].get(fecha_key, 0)), 2)
-                    meta_dia = round(meta_dia_objetivo, 2)
 
-                    horas_semana += horas_dia
-                    meta_semana += meta_dia
-                    horas_mes += horas_dia
+                    es_laborable = _cap_is_working_day(cursor, equipo_kind, co_holidays)
+                    meta_dia = round(meta_dia_objetivo, 2) if es_laborable else 0.0
 
-                    dias_out.append({
-                        "fecha": fecha_key,
-                        "horas": horas_dia,
-                        "metaDia": meta_dia,
-                        "esFestivo": False,
-                    })
+                    # La meta semanal solo cuenta días laborables
+                    if es_laborable:
+                        meta_semana += meta_dia
+
+                    # Las horas sí cuentan aunque sea fin de semana o festivo
+                    if horas_dia > 0:
+                        horas_semana += horas_dia
+
+                    # Mostrar:
+                    # - siempre los días laborables
+                    # - días no laborables solo si tienen horas
+                    mostrar_dia = es_laborable or horas_dia > 0
+
+                    if mostrar_dia:
+                        dias_out.append({
+                            "fecha": fecha_key,
+                            "horas": horas_dia,
+                            "metaDia": meta_dia,
+                            "esLaborable": es_laborable,
+                            "esExtra": (not es_laborable and horas_dia > 0),
+                        })
 
                     cursor += timedelta(days=1)
 
                 horas_semana = round(horas_semana, 2)
                 meta_semana = round(meta_semana, 2)
 
-                porcentaje_semanal = round((horas_semana / meta_semana) * 100, 2) if meta_semana > 0 else 0.0
+                porcentaje_semanal = (
+                    round((horas_semana / meta_semana) * 100, 2)
+                    if meta_semana > 0 else 0.0
+                )
                 diferencia_semana = round(meta_semana - horas_semana, 2)
 
                 semanas_out.append({
@@ -6991,8 +7066,14 @@ def resumen_capacidad_semanal():
                     "dias": dias_out,
                 })
 
-            horas_mes = round(horas_mes, 2)
-            porcentaje_mes = round((horas_mes / meta_mes) * 100, 2) if meta_mes > 0 else 0.0
+            porcentaje_mes = (
+                round((horas_mes / meta_mes) * 100, 2)
+                if meta_mes > 0 else 0.0
+            )
+
+            ocupaciones_chart = _cap_compact_occupations(item["ocupacionesHoras"], limit=8)
+            ocupacion_principal = ocupaciones_chart[0]["ocupacion"] if ocupaciones_chart else "SIN OCUPACIÓN"
+            ocupacion_principal_horas = ocupaciones_chart[0]["horas"] if ocupaciones_chart else 0.0
 
             rows_out.append({
                 "consultorId": item["consultorId"],
@@ -7006,6 +7087,9 @@ def resumen_capacidad_semanal():
                 "diasTrabajoTexto": _cap_work_days_text(equipo_kind),
                 "diasLaborablesMes": dias_laborables_mes,
                 "diasFestivosMes": dias_festivos_mes,
+                "ocupacionPrincipal": ocupacion_principal,
+                "ocupacionPrincipalHoras": ocupacion_principal_horas,
+                "ocupacionesChart": ocupaciones_chart,
                 "semanas": semanas_out,
             })
 
