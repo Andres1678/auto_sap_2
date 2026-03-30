@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie, Legend, ReferenceLine
+  PieChart, Pie, Legend, ReferenceLine, LabelList
 } from 'recharts';
 import Modal from 'react-modal';
 import './PanelGraficos.css';
@@ -913,7 +913,7 @@ export default function Graficos() {
     scope === 'TEAM' ? consultoresUnicosTeam :
     (nombreUser ? [nombreUser] : []);
 
-  return (
+    return (
     <div className="pgx-scope">
       <div className="pgx-container">
         {error && (
@@ -1076,11 +1076,22 @@ export default function Graficos() {
             ) : (
               <div className="pgx-chart-scroll">
                 <ResponsiveContainer width="100%" height={hConsultores}>
-                  <BarChart data={horasPorConsultor} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }} barCategoryGap={12} barSize={20}>
+                  <BarChart
+                    data={horasPorConsultor}
+                    layout="vertical"
+                    margin={{ top: 8, right: 80, left: 8, bottom: 8 }}
+                    barCategoryGap={12}
+                    barSize={20}
+                  >
                     <BrandDefs id="pgx-gradConsultor" />
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" tickLine={false} axisLine={false} />
-                    <YAxis type="category" dataKey="consultor" width={yWidthConsultor} tick={<WrapTickPx maxWidth={yWidthConsultor - 18} fontSize={12} />} />
+                    <YAxis
+                      type="category"
+                      dataKey="consultor"
+                      width={yWidthConsultor}
+                      tick={<WrapTickPx maxWidth={yWidthConsultor - 18} fontSize={12} />}
+                    />
                     <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
                     {metaMensual && (
                       <ReferenceLine
@@ -1097,6 +1108,12 @@ export default function Graficos() {
                       />
                     )}
                     <Bar dataKey="horas" name="Horas">
+                      <LabelList
+                        dataKey="horas"
+                        position="right"
+                        formatter={(value) => Number(value).toFixed(1)}
+                        style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
+                      />
                       {horasPorConsultor.map((entry, idx) => (
                         <Cell
                           key={`c-${idx}`}
@@ -1120,13 +1137,30 @@ export default function Graficos() {
             ) : (
               <div className="pgx-chart-scroll">
                 <ResponsiveContainer width="100%" height={hTareas}>
-                  <BarChart data={horasPorTarea} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }} barCategoryGap={12} barSize={20}>
+                  <BarChart
+                    data={horasPorTarea}
+                    layout="vertical"
+                    margin={{ top: 8, right: 80, left: 8, bottom: 8 }}
+                    barCategoryGap={12}
+                    barSize={20}
+                  >
                     <BrandDefs id="pgx-gradTarea" />
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" tickLine={false} axisLine={false} />
-                    <YAxis type="category" dataKey="tipoTarea" width={yWidthTarea} tick={<WrapTickPx maxWidth={yWidthTarea - 18} fontSize={12} />} />
+                    <YAxis
+                      type="category"
+                      dataKey="tipoTarea"
+                      width={yWidthTarea}
+                      tick={<WrapTickPx maxWidth={yWidthTarea - 18} fontSize={12} />}
+                    />
                     <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
                     <Bar dataKey="horas" name="Horas">
+                      <LabelList
+                        dataKey="horas"
+                        position="right"
+                        formatter={(value) => Number(value).toFixed(1)}
+                        style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
+                      />
                       {horasPorTarea.map((entry, idx) => (
                         <Cell
                           key={`t-${idx}`}
@@ -1153,13 +1187,30 @@ export default function Graficos() {
             ) : (
               <div className="pgx-chart-scroll">
                 <ResponsiveContainer width="100%" height={hClientes}>
-                  <BarChart data={horasPorCliente} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }} barCategoryGap={12} barSize={20}>
+                  <BarChart
+                    data={horasPorCliente}
+                    layout="vertical"
+                    margin={{ top: 8, right: 80, left: 8, bottom: 8 }}
+                    barCategoryGap={12}
+                    barSize={20}
+                  >
                     <BrandDefs id="pgx-gradCliente" />
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" tickLine={false} axisLine={false} />
-                    <YAxis type="category" dataKey="cliente" width={yWidthCliente} tick={<WrapTickPx maxWidth={yWidthCliente - 18} fontSize={12} />} />
+                    <YAxis
+                      type="category"
+                      dataKey="cliente"
+                      width={yWidthCliente}
+                      tick={<WrapTickPx maxWidth={yWidthCliente - 18} fontSize={12} />}
+                    />
                     <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
                     <Bar dataKey="horas" name="Horas">
+                      <LabelList
+                        dataKey="horas"
+                        position="right"
+                        formatter={(value) => Number(value).toFixed(1)}
+                        style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
+                      />
                       {horasPorCliente.map((entry, idx) => (
                         <Cell
                           key={`cli-${idx}`}
@@ -1186,13 +1237,30 @@ export default function Graficos() {
             ) : (
               <div className="pgx-chart-scroll">
                 <ResponsiveContainer width="100%" height={hModulos}>
-                  <BarChart data={horasPorModulo} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }} barCategoryGap={12} barSize={20}>
+                  <BarChart
+                    data={horasPorModulo}
+                    layout="vertical"
+                    margin={{ top: 8, right: 80, left: 8, bottom: 8 }}
+                    barCategoryGap={12}
+                    barSize={20}
+                  >
                     <BrandDefs id="pgx-gradModulo" />
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" tickLine={false} axisLine={false} />
-                    <YAxis type="category" dataKey="modulo" width={yWidthModulo} tick={<WrapTickPx maxWidth={yWidthModulo - 18} fontSize={12} />} />
+                    <YAxis
+                      type="category"
+                      dataKey="modulo"
+                      width={yWidthModulo}
+                      tick={<WrapTickPx maxWidth={yWidthModulo - 18} fontSize={12} />}
+                    />
                     <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
                     <Bar dataKey="horas" name="Horas">
+                      <LabelList
+                        dataKey="horas"
+                        position="right"
+                        formatter={(value) => Number(value).toFixed(1)}
+                        style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
+                      />
                       {horasPorModulo.map((entry, idx) => (
                         <Cell
                           key={`m-${idx}`}
@@ -1220,15 +1288,38 @@ export default function Graficos() {
             ) : (
               <div className="pgx-chart-scroll">
                 <ResponsiveContainer width="100%" height={Math.max(320, horasPorProyecto.length * 30)}>
-                  <BarChart data={horasPorProyecto} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }} barCategoryGap={12} barSize={20}>
+                  <BarChart
+                    data={horasPorProyecto}
+                    layout="vertical"
+                    margin={{ top: 8, right: 80, left: 8, bottom: 8 }}
+                    barCategoryGap={12}
+                    barSize={20}
+                  >
                     <BrandDefs id="pgx-gradProyecto" />
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" tickLine={false} axisLine={false} />
-                    <YAxis type="category" dataKey="proyecto" width={360} tick={<WrapTickPx maxWidth={340} fontSize={12} />} />
+                    <YAxis
+                      type="category"
+                      dataKey="proyecto"
+                      width={360}
+                      tick={<WrapTickPx maxWidth={340} fontSize={12} />}
+                    />
                     <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
+
                     <Bar dataKey="horas" name="Horas">
+                      <LabelList
+                        dataKey="horas"
+                        position="right"
+                        formatter={(value) => Number(value).toFixed(1)}
+                        style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
+                      />
+
                       {horasPorProyecto.map((entry, idx) => (
-                        <Cell key={`p-${idx}`} fill="url(#pgx-gradProyecto)" style={{ cursor: 'pointer' }} />
+                        <Cell
+                          key={`p-${idx}`}
+                          fill="url(#pgx-gradProyecto)"
+                          style={{ cursor: 'pointer' }}
+                        />
                       ))}
                     </Bar>
                   </BarChart>
@@ -1247,7 +1338,11 @@ export default function Graficos() {
               <div className="pgx-empty">Sin datos para los filtros seleccionados.</div>
             ) : (
               <ResponsiveContainer width="100%" height={hDias}>
-                <BarChart data={horasPorDia} margin={{ top: 8, right: 24, left: 8, bottom: 16 }} barCategoryGap={6}>
+                <BarChart
+                  data={horasPorDia}
+                  margin={{ top: 24, right: 24, left: 8, bottom: 16 }}
+                  barCategoryGap={6}
+                >
                   <BrandDefs id="pgx-gradDia" />
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="day" tickLine={false} />
@@ -1262,6 +1357,12 @@ export default function Graficos() {
                     }}
                   />
                   <Bar dataKey="horas" name="Horas" radius={[4,4,0,0]}>
+                    <LabelList
+                      dataKey="horas"
+                      position="top"
+                      formatter={(value) => Number(value).toFixed(1)}
+                      style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
+                    />
                     {horasPorDia.map((entry, idx) => (
                       <Cell
                         key={`d-${entry.fecha}-${idx}`}
@@ -1294,7 +1395,19 @@ export default function Graficos() {
                     ]}
                   />
                   <Legend />
-                  <Pie data={pieTareas} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={70} outerRadius={120} paddingAngle={2} isAnimationActive>
+                  <Pie
+                    data={pieTareas}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={70}
+                    outerRadius={120}
+                    paddingAngle={2}
+                    isAnimationActive
+                    labelLine={false}
+                    label={({ value }) => `${Number(value).toFixed(1)}%`}
+                  >
                     {pieTareas.map((entry, index) => (
                       <Cell key={`slice-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                     ))}
