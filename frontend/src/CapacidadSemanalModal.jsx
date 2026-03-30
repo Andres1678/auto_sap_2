@@ -67,8 +67,8 @@ function buildYearOptions(baseYear) {
   return [y - 2, y - 1, y, y + 1];
 }
 
-function barWidth(pct) {
-  return `${Math.max(0, Math.min(100, Number(pct || 0)))}%`;
+function clampPct(v) {
+  return Math.max(0, Math.min(100, Number(v || 0)));
 }
 
 export default function CapacidadSemanalModal({
@@ -80,9 +80,9 @@ export default function CapacidadSemanalModal({
   filtroAnio,
   equipoBloqueado = false,
 }) {
-  const now = new Date();
-  const currentMonth = now.getMonth() + 1;
-  const currentYear = now.getFullYear();
+  const today = new Date();
+  const currentMonth = today.getMonth() + 1;
+  const currentYear = today.getFullYear();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -137,6 +137,11 @@ export default function CapacidadSemanalModal({
     fetchData();
   }, [isOpen, selectedMes, selectedAnio, selectedEquipo, selectedConsultor]);
 
+  useEffect(() => {
+    if (!equipoBloqueado) return;
+    setSelectedEquipo(normalizeUpper(filtroEquipo));
+  }, [equipoBloqueado, filtroEquipo]);
+
   const equiposDisponibles = useMemo(() => {
     return Array.from(
       new Set(rows.map((r) => normalizeUpper(r.equipo)).filter(Boolean))
@@ -155,12 +160,6 @@ export default function CapacidadSemanalModal({
   }, [rows, selectedEquipo]);
 
   useEffect(() => {
-    if (equipoBloqueado) {
-      setSelectedEquipo(normalizeUpper(filtroEquipo));
-    }
-  }, [equipoBloqueado, filtroEquipo]);
-
-  useEffect(() => {
     if (!selectedConsultor) return;
     if (!consultoresDisponibles.includes(selectedConsultor)) {
       setSelectedConsultor("");
@@ -169,12 +168,15 @@ export default function CapacidadSemanalModal({
 
   const filteredRows = useMemo(() => {
     return rows.filter((item) => {
-      const equipoOk = !selectedEquipo || normalizeUpper(item.equipo) === selectedEquipo;
+      const equipoOk =
+        !selectedEquipo || normalizeUpper(item.equipo) === selectedEquipo;
+
       const consultorOk =
         !selectedConsultor || normalizeText(item.consultor) === selectedConsultor;
+
       const cumplimientoOk =
         !selectedCumplimiento ||
-        cumplimientoBucket(item.porcentajeLegalMes) === selectedCumplimiento;
+        cumplimientoBucket(item.porcentajeMes) === selectedCumplimiento;
 
       return equipoOk && consultorOk && cumplimientoOk;
     });
@@ -182,26 +184,28 @@ export default function CapacidadSemanalModal({
 
   const resumenGeneral = useMemo(() => {
     const totalConsultores = filteredRows.length;
-    const totalHorasMes = filteredRows.reduce((acc, r) => acc + Number(r.horasMes || 0), 0);
-    const totalMetaLegal = filteredRows.reduce(
-      (acc, r) => acc + Number(r.metaLegalMes || 0),
+    const totalMetaMes = filteredRows.reduce(
+      (acc, r) => acc + Number(r.metaMes || 0),
       0
     );
-    const totalMetaOperativa = filteredRows.reduce(
-      (acc, r) => acc + Number(r.metaOperativaMes || 0),
+    const totalHorasMes = filteredRows.reduce(
+      (acc, r) => acc + Number(r.horasMes || 0),
       0
     );
-
-    const totalPctLegal =
-      totalMetaLegal > 0 ? (totalHorasMes / totalMetaLegal) * 100 : 0;
+    const totalDiff = totalMetaMes - totalHorasMes;
+    const totalPct = totalMetaMes > 0 ? (totalHorasMes / totalMetaMes) * 100 : 0;
+    const totalFestivos = filteredRows.reduce(
+      (acc, r) => acc + Number(r.diasFestivosMes || 0),
+      0
+    );
 
     return {
       totalConsultores,
+      totalMetaMes,
       totalHorasMes,
-      totalMetaLegal,
-      totalMetaOperativa,
-      totalPctLegal,
-      totalDiffLegal: totalMetaLegal - totalHorasMes,
+      totalDiff,
+      totalPct,
+      totalFestivos,
     };
   }, [filteredRows]);
 
@@ -233,8 +237,8 @@ export default function CapacidadSemanalModal({
             <div className="capacidad-kicker">Vista operativa</div>
             <h3>Capacidad semanal del mes</h3>
             <p>
-              Meta legal fija de 43 horas por consultor y meta operativa calculada
-              por días laborables y jornada diaria.
+              La meta mensual se calcula con el calendario real de Colombia,
+              según días laborables, festivos y la meta diaria del consultor.
             </p>
           </div>
 
@@ -304,7 +308,7 @@ export default function CapacidadSemanalModal({
           </div>
 
           <div className="filter-field">
-            <label>Cumplimiento legal</label>
+            <label>Cumplimiento</label>
             <select
               value={selectedCumplimiento}
               onChange={(e) => setSelectedCumplimiento(e.target.value)}
@@ -330,28 +334,30 @@ export default function CapacidadSemanalModal({
           </div>
 
           <div className="capacidad-card">
+            <span className="label">Meta mensual objetivo</span>
+            <strong>{fmtHours(resumenGeneral.totalMetaMes)}</strong>
+          </div>
+
+          <div className="capacidad-card">
             <span className="label">Horas registradas</span>
             <strong>{fmtHours(resumenGeneral.totalHorasMes)}</strong>
           </div>
 
           <div className="capacidad-card">
-            <span className="label">Meta legal total</span>
-            <strong>{fmtHours(resumenGeneral.totalMetaLegal)}</strong>
+            <span className="label">Diferencia</span>
+            <strong>{fmtHours(resumenGeneral.totalDiff)}</strong>
           </div>
 
-          <div className="capacidad-card">
-            <span className="label">Meta operativa total</span>
-            <strong>{fmtHours(resumenGeneral.totalMetaOperativa)}</strong>
-          </div>
-
-          <div className={`capacidad-card ${pctClass(resumenGeneral.totalPctLegal)}`}>
-            <span className="label">% legal total</span>
-            <strong>{fmtPct(resumenGeneral.totalPctLegal)}</strong>
+          <div className={`capacidad-card ${pctClass(resumenGeneral.totalPct)}`}>
+            <span className="label">% cumplimiento general</span>
+            <strong>{fmtPct(resumenGeneral.totalPct)}</strong>
           </div>
         </div>
 
         <div className="capacidad-body">
-          {loading && <div className="capacidad-state">Cargando capacidad semanal…</div>}
+          {loading && (
+            <div className="capacidad-state">Cargando capacidad semanal…</div>
+          )}
 
           {!loading && error && (
             <div className="capacidad-state error">{error}</div>
@@ -366,7 +372,10 @@ export default function CapacidadSemanalModal({
           {!loading &&
             !error &&
             filteredRows.map((item, idx) => (
-              <section className="capacidad-consultor" key={`${item.consultor}-${idx}`}>
+              <section
+                className="capacidad-consultor"
+                key={`${item.consultor || "sin-nombre"}-${idx}`}
+              >
                 <div className="capacidad-consultor-head">
                   <div>
                     <h4>{item.consultor || "Sin nombre"}</h4>
@@ -375,10 +384,10 @@ export default function CapacidadSemanalModal({
 
                   <div className="capacidad-consultor-stats">
                     <span>
-                      <b>Mes:</b> {fmtHours(item.horasMes)} / {fmtHours(item.metaLegalMes)}
+                      <b>Mes:</b> {fmtHours(item.horasMes)} / {fmtHours(item.metaMes)}
                     </span>
-                    <span className={`pill ${pctClass(item.porcentajeLegalMes)}`}>
-                      {fmtPct(item.porcentajeLegalMes)}
+                    <span className={`pill ${pctClass(item.porcentajeMes)}`}>
+                      {fmtPct(item.porcentajeMes)}
                     </span>
                   </div>
                 </div>
@@ -386,13 +395,15 @@ export default function CapacidadSemanalModal({
                 <div className="capacidad-summary-card">
                   <div className="summary-card-head">
                     <h5>Resumen del consultor</h5>
-                    <span className="summary-badge">100% = {fmtHours(item.metaLegalMes)}</span>
+                    <span className="summary-badge">
+                      Meta mes: {fmtHours(item.metaMes)}
+                    </span>
                   </div>
 
                   <div className="summary-grid">
                     <div className="summary-item">
-                      <span className="summary-label">Meta legal fija</span>
-                      <strong>{fmtHours(item.metaLegalMes)}</strong>
+                      <span className="summary-label">Meta mensual</span>
+                      <strong>{fmtHours(item.metaMes)}</strong>
                     </div>
 
                     <div className="summary-item">
@@ -401,19 +412,19 @@ export default function CapacidadSemanalModal({
                     </div>
 
                     <div className="summary-item">
-                      <span className="summary-label">% sobre meta legal</span>
-                      <strong>{fmtPct(item.porcentajeLegalMes)}</strong>
-                    </div>
-
-                    <div className="summary-item">
-                      <span className="summary-label">Meta operativa mes</span>
-                      <strong>{fmtHours(item.metaOperativaMes)}</strong>
+                      <span className="summary-label">% cumplimiento mes</span>
+                      <strong>{fmtPct(item.porcentajeMes)}</strong>
                     </div>
 
                     <div className="summary-item">
                       <span className="summary-label">Días de trabajo</span>
-                      <strong>{item.diasTrabajoTexto}</strong>
-                      <small>{item.diasLaborablesMes} días del periodo</small>
+                      <strong>{item.diasTrabajoTexto || "—"}</strong>
+                      <small>{item.diasLaborablesMes || 0} días del periodo</small>
+                    </div>
+
+                    <div className="summary-item">
+                      <span className="summary-label">Festivos CO</span>
+                      <strong>{item.diasFestivosMes || 0}</strong>
                     </div>
 
                     <div className="summary-item">
@@ -424,13 +435,13 @@ export default function CapacidadSemanalModal({
 
                   <div className="summary-progress">
                     <div className="progress-row">
-                      <span>Cumplimiento meta legal</span>
-                      <span>{fmtPct(item.porcentajeLegalMes)}</span>
+                      <span>Cumplimiento del mes</span>
+                      <span>{fmtPct(item.porcentajeMes)}</span>
                     </div>
                     <div className="progress-bar">
                       <div
-                        className={`progress-fill ${pctClass(item.porcentajeLegalMes)}`}
-                        style={{ width: barWidth(item.porcentajeLegalMes) }}
+                        className={`progress-fill ${pctClass(item.porcentajeMes)}`}
+                        style={{ width: `${clampPct(item.porcentajeMes)}%` }}
                       />
                     </div>
                   </div>
@@ -438,7 +449,10 @@ export default function CapacidadSemanalModal({
 
                 <div className="capacidad-semanas-grid">
                   {(item.semanas || []).map((semana, i) => (
-                    <article className="semana-card" key={`${item.consultor}-sem-${i}`}>
+                    <article
+                      className="semana-card"
+                      key={`${item.consultor || "sin-nombre"}-sem-${i}`}
+                    >
                       <div className="semana-card-head">
                         <div>
                           <h5>{semana.label}</h5>
@@ -464,8 +478,8 @@ export default function CapacidadSemanalModal({
                         </div>
 
                         <div>
-                          <span className="mini-label">% sobre meta legal</span>
-                          <strong>{fmtPct(semana.aporteMesLegalPct)}</strong>
+                          <span className="mini-label">% llenado semana</span>
+                          <strong>{fmtPct(semana.porcentajeSemanal)}</strong>
                         </div>
 
                         <div>
@@ -476,26 +490,13 @@ export default function CapacidadSemanalModal({
 
                       <div className="progress-block">
                         <div className="progress-row">
-                          <span>Llenado de la semana</span>
+                          <span>Llenado semanal</span>
                           <span>{fmtPct(semana.porcentajeSemanal)}</span>
                         </div>
                         <div className="progress-bar">
                           <div
                             className={`progress-fill ${pctClass(semana.porcentajeSemanal)}`}
-                            style={{ width: barWidth(semana.porcentajeSemanal) }}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="progress-block">
-                        <div className="progress-row">
-                          <span>Aporte sobre 43 h</span>
-                          <span>{fmtPct(semana.aporteMesLegalPct)}</span>
-                        </div>
-                        <div className="progress-bar">
-                          <div
-                            className="progress-fill is-month"
-                            style={{ width: barWidth(semana.aporteMesLegalPct) }}
+                            style={{ width: `${clampPct(semana.porcentajeSemanal)}%` }}
                           />
                         </div>
                       </div>
