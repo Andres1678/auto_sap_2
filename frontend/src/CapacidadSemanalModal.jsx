@@ -166,19 +166,25 @@ export default function CapacidadSemanalModal({
   }, [consultoresDisponibles, selectedConsultor]);
 
   const filteredRows = useMemo(() => {
-    return rows.filter((item) => {
-      const equipoOk =
-        !selectedEquipo || normalizeUpper(item.equipo) === selectedEquipo;
+    return rows
+      .filter((item) => {
+        const equipoOk =
+          !selectedEquipo || normalizeUpper(item.equipo) === selectedEquipo;
 
-      const consultorOk =
-        !selectedConsultor || normalizeText(item.consultor) === selectedConsultor;
+        const consultorOk =
+          !selectedConsultor || normalizeText(item.consultor) === selectedConsultor;
 
-      const cumplimientoOk =
-        !selectedCumplimiento ||
-        cumplimientoBucket(item.porcentajeMes) === selectedCumplimiento;
+        const cumplimientoOk =
+          !selectedCumplimiento ||
+          cumplimientoBucket(item.porcentajeMes) === selectedCumplimiento;
 
-      return equipoOk && consultorOk && cumplimientoOk;
-    });
+        return equipoOk && consultorOk && cumplimientoOk;
+      })
+      .sort((a, b) =>
+        normalizeText(a.consultor).localeCompare(normalizeText(b.consultor), "es", {
+          sensitivity: "base",
+        })
+      );
   }, [rows, selectedEquipo, selectedConsultor, selectedCumplimiento]);
 
   const resumenGeneral = useMemo(() => {
