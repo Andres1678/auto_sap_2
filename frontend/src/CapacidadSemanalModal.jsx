@@ -232,8 +232,8 @@ export default function CapacidadSemanalModal({
             <div className="capacidad-kicker">Vista operativa</div>
             <h3>Capacidad semanal del mes</h3>
             <p>
-              La meta mensual se calcula con el calendario real de Colombia,
-              según días laborables, festivos y la meta diaria del consultor.
+              La meta mensual se calcula igual para todos: lunes 8 h, martes a viernes 9 h,
+              sin festivos de Colombia.
             </p>
           </div>
 
@@ -412,7 +412,7 @@ export default function CapacidadSemanalModal({
                     </div>
 
                     <div className="summary-item">
-                      <span className="summary-label">Días de trabajo</span>
+                      <span className="summary-label">Jornada objetivo</span>
                       <strong>{item.diasTrabajoTexto || "—"}</strong>
                       <small>{item.diasLaborablesMes || 0} días del periodo</small>
                     </div>
@@ -505,16 +505,8 @@ export default function CapacidadSemanalModal({
                           </div>
 
                           {semana.dias.map((d, ix) => (
-                            <div
-                              className={`dias-row ${d.esExtra ? "is-extra-day" : ""}`}
-                              key={`${semana.label}-${ix}`}
-                            >
-                              <span>
-                                {d.fecha}
-                                {d.esExtra && (
-                                  <small className="extra-day-badge"> Extra</small>
-                                )}
-                              </span>
+                            <div className="dias-row" key={`${semana.label}-${ix}`}>
+                              <span>{d.fecha}</span>
                               <span>{fmtHours(d.horas)}</span>
                               <span>{fmtHours(d.metaDia)}</span>
                             </div>
