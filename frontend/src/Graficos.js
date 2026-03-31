@@ -192,6 +192,34 @@ const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent, name }) => {
   );
 };
 
+const truncateTxt = (txt, max = 30) => {
+  const s = String(txt ?? "");
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+};
+
+const renderPieLabelTask3D = ({ cx, cy, midAngle, outerRadius, percent }) => {
+  if (!percent || percent < 0.045) return null;
+
+  const RADIAN = Math.PI / 180;
+  const radius = outerRadius + 22;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="#334155"
+      textAnchor={x > cx ? "start" : "end"}
+      dominantBaseline="central"
+      fontSize={12}
+      fontWeight={800}
+    >
+      {`${Math.round(percent * 100)}%`}
+    </text>
+  );
+};
+
 function MultiFiltro({
   titulo,
   opciones,
@@ -822,14 +850,35 @@ export default function Graficos() {
   }, [datosFiltrados]);
 
   const pieTareas = useMemo(() => {
-    const total = horasPorTarea.reduce((s, r) => s + r.horas, 0);
-    if (total <= 0) return [];
-    return horasPorTarea.map((t) => ({
+    const totalHoras = horasPorTarea.reduce((s, r) => s + r.horas, 0);
+    if (totalHoras <= 0) return [];
+
+    const base = horasPorTarea.map((t) => ({
       name: t.tipoTarea,
-      value: +((t.horas / total) * 100).toFixed(2),
-      horas: t.horas
+      horas: +t.horas.toFixed(2),
+      value: +((t.horas / totalHoras) * 100).toFixed(2),
     }));
+
+    const MAX_SEGMENTOS = 8;
+    const ordenado = [...base].sort((a, b) => b.horas - a.horas);
+    const visibles = ordenado.slice(0, MAX_SEGMENTOS);
+    const resto = ordenado.slice(MAX_SEGMENTOS);
+
+    if (resto.length > 0) {
+      visibles.push({
+        name: "Otros",
+        horas: +resto.reduce((s, r) => s + r.horas, 0).toFixed(2),
+        value: +resto.reduce((s, r) => s + r.value, 0).toFixed(2),
+      });
+    }
+
+    return visibles;
   }, [horasPorTarea]);
+
+const totalHorasPieTareas = useMemo(
+  () => pieTareas.reduce((s, r) => s + r.horas, 0),
+  [pieTareas]
+);
 
   const pieOcupacion = useMemo(() => {
     const total = horasPorOcupacion.reduce((sum, r) => sum + r.horas, 0);
@@ -1383,37 +1432,100 @@ export default function Graficos() {
               {filtroMes && ` (${filtroMes})`}
               {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
             </h3>
+
             {pieTareas.length === 0 ? (
               <div className="pgx-empty">Sin datos para los filtros seleccionados.</div>
             ) : (
-              <ResponsiveContainer width="100%" height={420}>
-                <PieChart>
-                  <Tooltip
-                    formatter={(v, n, p) => [
-                      `${v}% — ${Number(p.payload.horas).toFixed(2)} h`,
-                      p.payload.name
-                    ]}
-                  />
-                  <Legend />
-                  <Pie
-                    data={pieTareas}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={70}
-                    outerRadius={120}
-                    paddingAngle={2}
-                    isAnimationActive
-                    labelLine={false}
-                    label={({ value }) => `${Number(value).toFixed(1)}%`}
-                  >
-                    {pieTareas.map((entry, index) => (
-                      <Cell key={`slice-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="pgx-pie-3d-layout">
+                <div className="pgx-pie-3d-chart">
+                  <ResponsiveContainer width="100%" height={520}>
+                    <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                      <Tooltip
+                        formatter={(v, n, p) => [
+                          `${Number(v).toFixed(2)}% — ${Number(p.payload.horas).toFixed(2)} h`,
+                          p.payload.name
+                        ]}
+                      />
+
+                      {[...Array(12)].map((_, layerIndex) => (
+                        <Pie
+                          key={`task-depth-${layerIndex}`}
+                          data={pieTareas}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy={250 + (12 - layerIndex)}
+                          startAngle={210}
+                          endAngle={-30}
+                          innerRadius={74}
+                          outerRadius={128}
+                          paddingAngle={2}
+                          isAnimationActive={false}
+                          stroke="none"
+                          legendType="none"
+                        >
+                          {pieTareas.map((entry, i) => (
+                            <Cell
+                              key={`task-depth-cell-${layerIndex}-${i}`}
+                              fill={darkenHex(PIE_COLORS[i % PIE_COLORS.length], 0.42)}
+                            />
+                          ))}
+                        </Pie>
+                      ))}
+
+                      <Pie
+                        data={pieTareas}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy={250}
+                        startAngle={210}
+                        endAngle={-30}
+                        innerRadius={74}
+                        outerRadius={128}
+                        paddingAngle={2}
+                        stroke="#ffffff"
+                        strokeWidth={2}
+                        labelLine={false}
+                        label={renderPieLabelTask3D}
+                      >
+                        {pieTareas.map((entry, i) => (
+                          <Cell
+                            key={`task-top-cell-${i}`}
+                            fill={PIE_COLORS[i % PIE_COLORS.length]}
+                          />
+                        ))}
+                      </Pie>
+
+                      <text x="50%" y="242" textAnchor="middle" className="pgx-pie-center-big">
+                        {`${totalHorasPieTareas.toFixed(1)} h`}
+                      </text>
+                      <text x="50%" y="265" textAnchor="middle" className="pgx-pie-center-small">
+                        Total mes
+                      </text>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="pgx-pie-legend-box">
+                  {pieTareas.map((entry, index) => (
+                    <div
+                      key={`task-legend-${index}`}
+                      className="pgx-pie-legend-item"
+                      title={`${entry.name} — ${entry.value.toFixed(2)}%`}
+                    >
+                      <span
+                        className="pgx-pie-legend-dot"
+                        style={{ background: PIE_COLORS[index % PIE_COLORS.length] }}
+                      />
+                      <span className="pgx-pie-legend-text">{truncateTxt(entry.name, 38)}</span>
+                      <strong className="pgx-pie-legend-val">
+                        {entry.value.toFixed(1)}%
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
