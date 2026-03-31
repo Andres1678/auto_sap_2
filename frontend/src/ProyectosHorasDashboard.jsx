@@ -585,35 +585,96 @@ export default function ProyectosHorasDashboard({
     initFiltrosPorScope();
   }, [initFiltrosPorScope]);
 
-  const rangoDesde = useMemo(() => {
-    if (tipoRango === "mes") return monthToDateStart(filtroRangoMesDesde);
-    return filtroFechaDesde || "";
-  }, [tipoRango, filtroRangoMesDesde, filtroFechaDesde]);
+  const rangoMesNormalizado = useMemo(
+    () => normalizeMonthRange(filtroRangoMesDesde, filtroRangoMesHasta),
+    [filtroRangoMesDesde, filtroRangoMesHasta]
+  );
 
-  const rangoHasta = useMemo(() => {
-    if (tipoRango === "mes") return monthToDateEnd(filtroRangoMesHasta);
-    return filtroFechaHasta || "";
-  }, [tipoRango, filtroRangoMesHasta, filtroFechaHasta]);
+  const rangoDiaNormalizado = useMemo(
+    () => normalizeDayRange(filtroFechaDesde, filtroFechaHasta),
+    [filtroFechaDesde, filtroFechaHasta]
+  );
 
   const rangoActivo = useMemo(() => {
-    return hasRangeActivo(
-      tipoRango,
-      filtroRangoMesDesde,
-      filtroRangoMesHasta,
-      filtroFechaDesde,
-      filtroFechaHasta
-    );
-  }, [
-    tipoRango,
-    filtroRangoMesDesde,
-    filtroRangoMesHasta,
-    filtroFechaDesde,
-    filtroFechaHasta,
-  ]);
+    return tipoRango === "mes"
+      ? rangoMesNormalizado.activo
+      : rangoDiaNormalizado.activo;
+  }, [tipoRango, rangoMesNormalizado, rangoDiaNormalizado]);
+
+  const rangoDesde = useMemo(() => {
+    if (tipoRango === "mes") return monthToDateStart(rangoMesNormalizado.desdeMes);
+    return rangoDiaNormalizado.desde;
+  }, [tipoRango, rangoMesNormalizado, rangoDiaNormalizado]);
+
+  const rangoHasta = useMemo(() => {
+    if (tipoRango === "mes") return monthToDateEnd(rangoMesNormalizado.hastaMes);
+    return rangoDiaNormalizado.hasta;
+  }, [tipoRango, rangoMesNormalizado, rangoDiaNormalizado]);
 
   const filtroMesActivo = useMemo(() => {
     return rangoActivo ? "" : filtroMes;
   }, [rangoActivo, filtroMes]);
+
+  const isMonthStr = (value) => /^\d{4}-\d{2}$/.test(String(value || ""));
+  const isDateStr = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+
+  const normalizeMonthRange = (desdeMes, hastaMes) => {
+    const d = isMonthStr(desdeMes) ? desdeMes : "";
+    const h = isMonthStr(hastaMes) ? hastaMes : "";
+
+    if (!d && !h) return { desdeMes: "", hastaMes: "", activo: false };
+
+    // si solo selecciona uno, tomar ese mismo mes como inicio y fin
+    if (d && !h) return { desdeMes: d, hastaMes: d, activo: true };
+    if (!d && h) return { desdeMes: h, hastaMes: h, activo: true };
+
+    return d <= h
+      ? { desdeMes: d, hastaMes: h, activo: true }
+      : { desdeMes: h, hastaMes: d, activo: true };
+  };
+
+  const normalizeDayRange = (desde, hasta) => {
+    const d = isDateStr(desde) ? desde : "";
+    const h = isDateStr(hasta) ? hasta : "";
+
+    if (!d && !h) return { desde: "", hasta: "", activo: false };
+
+    // si solo selecciona una fecha, tomar ese mismo día
+    if (d && !h) return { desde: d, hasta: d, activo: true };
+    if (!d && h) return { desde: h, hasta: h, activo: true };
+
+    return d <= h
+      ? { desde: d, hasta: h, activo: true }
+      : { desde: h, hasta: d, activo: true };
+  };
+
+  const buildMonthSeries = (desdeMonthKey, hastaMonthKey) => {
+    if (!isMonthStr(desdeMonthKey) || !isMonthStr(hastaMonthKey)) return [];
+
+    let [y, m] = desdeMonthKey.split("-").map(Number);
+    const [endY, endM] = hastaMonthKey.split("-").map(Number);
+
+    const out = [];
+
+    while (y < endY || (y === endY && m <= endM)) {
+      const key = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`;
+      out.push({
+        key,
+        name: formatMonthLabel(key),
+        horas: 0,
+        totalModulos: 0,
+        modulosDetalle: [],
+      });
+
+      m += 1;
+      if (m > 12) {
+        m = 1;
+        y += 1;
+      }
+    }
+
+    return out;
+  };
 
   useEffect(() => {
     if (rangoActivo && filtroMes) {
@@ -1129,7 +1190,7 @@ export default function ProyectosHorasDashboard({
       acc.set(mesKey, prev);
     }
 
-    return Array.from(acc.values())
+    const rows = Array.from(acc.values())
       .map((row) => {
         const modulosDetalle = Array.from(row.modulosMap.entries())
           .map(([name, horas]) => ({
@@ -1147,7 +1208,29 @@ export default function ProyectosHorasDashboard({
         };
       })
       .sort((a, b) => a.key.localeCompare(b.key));
-  }, [datosFiltrados]);
+
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+
+    let mesDesdeSerie = "";
+    let mesHastaSerie = "";
+
+    if (rangoActivo) {
+      mesDesdeSerie = rangoDesde ? rangoDesde.slice(0, 7) : "";
+      mesHastaSerie = rangoHasta ? rangoHasta.slice(0, 7) : "";
+    } else if (filtroMesActivo) {
+      mesDesdeSerie = filtroMesActivo;
+      mesHastaSerie = filtroMesActivo;
+    } else if (rows.length > 0) {
+      mesDesdeSerie = rows[0].key;
+      mesHastaSerie = rows[rows.length - 1].key;
+    }
+
+    if (!mesDesdeSerie || !mesHastaSerie) return rows;
+
+    const baseSerie = buildMonthSeries(mesDesdeSerie, mesHastaSerie);
+
+    return baseSerie.map((base) => byKey.get(base.key) || base);
+  }, [datosFiltrados, rangoActivo, rangoDesde, rangoHasta, filtroMesActivo]);
 
   const horasPorProyecto = useMemo(
     () =>

@@ -6413,6 +6413,16 @@ def reporte_horas_consultor_cliente_detalle():
         return jsonify({"error": str(e)}), 500
     
 
+def _normalize_iso_range(desde, hasta):
+    d = (desde or "").strip()
+    h = (hasta or "").strip()
+
+    if d and h and d > h:
+        return h, d
+
+    return d, h
+
+
 @bp.route('/dashboard/proyectos-horas', methods=['GET'])
 @permission_required("GRAFICOS_VER")
 def dashboard_proyectos_horas():
@@ -6486,17 +6496,25 @@ def dashboard_proyectos_horas():
                 y, m = filtro_mes.split("-")
                 y = int(y)
                 m = int(m)
+
                 desde_mes = f"{y:04d}-{m:02d}-01"
-                ultimo_dia = (date(y + (1 if m == 12 else 0), 1 if m == 12 else m + 1, 1) - timedelta(days=1)).day
+                ultimo_dia = (
+                    date(y + (1 if m == 12 else 0), 1 if m == 12 else m + 1, 1)
+                    - timedelta(days=1)
+                ).day
                 hasta_mes = f"{y:04d}-{m:02d}-{ultimo_dia:02d}"
 
                 q = q.filter(fecha_expr >= desde_mes)
                 q = q.filter(fecha_expr <= hasta_mes)
+
             except Exception:
                 return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
         else:
+            filtro_desde, filtro_hasta = _normalize_iso_range(filtro_desde, filtro_hasta)
+
             if filtro_desde:
                 q = q.filter(fecha_expr >= filtro_desde)
+
             if filtro_hasta:
                 q = q.filter(fecha_expr <= filtro_hasta)
 
@@ -6534,14 +6552,25 @@ def dashboard_proyectos_horas():
             except Exception:
                 return jsonify({"error": "proyecto_id inválido"}), 400
 
-        max_rows = request.args.get("max_rows", type=int) or 15000
-        max_rows = min(max(max_rows, 1), 20000)
+        # -------------------------
+        # Carga de registros
+        # -------------------------
+        tiene_filtro_temporal = bool(filtro_mes or filtro_desde or filtro_hasta)
 
-        registros = (
-            q.order_by(fecha_expr.desc(), Registro.id.desc())
-             .limit(max_rows)
-             .all()
-        )
+        if tiene_filtro_temporal:
+            registros = (
+                q.order_by(fecha_expr.desc(), Registro.id.desc())
+                 .all()
+            )
+        else:
+            max_rows = request.args.get("max_rows", type=int) or 15000
+            max_rows = min(max(max_rows, 1), 20000)
+
+            registros = (
+                q.order_by(fecha_expr.desc(), Registro.id.desc())
+                 .limit(max_rows)
+                 .all()
+            )
 
         data = []
 
@@ -6622,7 +6651,6 @@ def dashboard_proyectos_horas():
     except Exception as e:
         app.logger.exception("❌ Error en /dashboard/proyectos-horas")
         return jsonify({"error": str(e)}), 500
-
 
 # ==========================================
 # CAPACIDAD SEMANAL / MENSUAL
