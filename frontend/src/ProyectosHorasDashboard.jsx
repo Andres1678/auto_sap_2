@@ -507,6 +507,67 @@ function MultiFiltro({
   );
 }
 
+ const isMonthStr = (value) => /^\d{4}-\d{2}$/.test(String(value || ""));
+  const isDateStr = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+
+  const normalizeMonthRange = (desdeMes, hastaMes) => {
+    const d = isMonthStr(desdeMes) ? desdeMes : "";
+    const h = isMonthStr(hastaMes) ? hastaMes : "";
+
+    if (!d && !h) return { desdeMes: "", hastaMes: "", activo: false };
+
+    // si solo selecciona uno, tomar ese mismo mes como inicio y fin
+    if (d && !h) return { desdeMes: d, hastaMes: d, activo: true };
+    if (!d && h) return { desdeMes: h, hastaMes: h, activo: true };
+
+    return d <= h
+      ? { desdeMes: d, hastaMes: h, activo: true }
+      : { desdeMes: h, hastaMes: d, activo: true };
+  };
+
+  const normalizeDayRange = (desde, hasta) => {
+    const d = isDateStr(desde) ? desde : "";
+    const h = isDateStr(hasta) ? hasta : "";
+
+    if (!d && !h) return { desde: "", hasta: "", activo: false };
+
+    // si solo selecciona una fecha, tomar ese mismo día
+    if (d && !h) return { desde: d, hasta: d, activo: true };
+    if (!d && h) return { desde: h, hasta: h, activo: true };
+
+    return d <= h
+      ? { desde: d, hasta: h, activo: true }
+      : { desde: h, hasta: d, activo: true };
+  };
+
+  const buildMonthSeries = (desdeMonthKey, hastaMonthKey) => {
+    if (!isMonthStr(desdeMonthKey) || !isMonthStr(hastaMonthKey)) return [];
+
+    let [y, m] = desdeMonthKey.split("-").map(Number);
+    const [endY, endM] = hastaMonthKey.split("-").map(Number);
+
+    const out = [];
+
+    while (y < endY || (y === endY && m <= endM)) {
+      const key = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`;
+      out.push({
+        key,
+        name: formatMonthLabel(key),
+        horas: 0,
+        totalModulos: 0,
+        modulosDetalle: [],
+      });
+
+      m += 1;
+      if (m > 12) {
+        m = 1;
+        y += 1;
+      }
+    }
+
+    return out;
+  };
+
 /* =========================
    Componente principal
 ========================= */
@@ -614,67 +675,6 @@ export default function ProyectosHorasDashboard({
   const filtroMesActivo = useMemo(() => {
     return rangoActivo ? "" : filtroMes;
   }, [rangoActivo, filtroMes]);
-
-  const isMonthStr = (value) => /^\d{4}-\d{2}$/.test(String(value || ""));
-  const isDateStr = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
-
-  const normalizeMonthRange = (desdeMes, hastaMes) => {
-    const d = isMonthStr(desdeMes) ? desdeMes : "";
-    const h = isMonthStr(hastaMes) ? hastaMes : "";
-
-    if (!d && !h) return { desdeMes: "", hastaMes: "", activo: false };
-
-    // si solo selecciona uno, tomar ese mismo mes como inicio y fin
-    if (d && !h) return { desdeMes: d, hastaMes: d, activo: true };
-    if (!d && h) return { desdeMes: h, hastaMes: h, activo: true };
-
-    return d <= h
-      ? { desdeMes: d, hastaMes: h, activo: true }
-      : { desdeMes: h, hastaMes: d, activo: true };
-  };
-
-  const normalizeDayRange = (desde, hasta) => {
-    const d = isDateStr(desde) ? desde : "";
-    const h = isDateStr(hasta) ? hasta : "";
-
-    if (!d && !h) return { desde: "", hasta: "", activo: false };
-
-    // si solo selecciona una fecha, tomar ese mismo día
-    if (d && !h) return { desde: d, hasta: d, activo: true };
-    if (!d && h) return { desde: h, hasta: h, activo: true };
-
-    return d <= h
-      ? { desde: d, hasta: h, activo: true }
-      : { desde: h, hasta: d, activo: true };
-  };
-
-  const buildMonthSeries = (desdeMonthKey, hastaMonthKey) => {
-    if (!isMonthStr(desdeMonthKey) || !isMonthStr(hastaMonthKey)) return [];
-
-    let [y, m] = desdeMonthKey.split("-").map(Number);
-    const [endY, endM] = hastaMonthKey.split("-").map(Number);
-
-    const out = [];
-
-    while (y < endY || (y === endY && m <= endM)) {
-      const key = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`;
-      out.push({
-        key,
-        name: formatMonthLabel(key),
-        horas: 0,
-        totalModulos: 0,
-        modulosDetalle: [],
-      });
-
-      m += 1;
-      if (m > 12) {
-        m = 1;
-        y += 1;
-      }
-    }
-
-    return out;
-  };
 
   useEffect(() => {
     if (rangoActivo && filtroMes) {
