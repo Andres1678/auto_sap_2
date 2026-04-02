@@ -197,28 +197,232 @@ const truncateTxt = (txt, max = 30) => {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 };
 
-const renderPieLabelTask3D = ({ cx, cy, midAngle, outerRadius, percent }) => {
-  if (!percent || percent < 0.045) return null;
+const formatPiePercent = (value, digits = 1) => `${Number(value || 0).toFixed(digits)}%`;
 
-  const RADIAN = Math.PI / 180;
-  const radius = outerRadius + 22;
-  const x = cx + radius * Math.cos(-midAngle * RADIAN);
-  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+function buildSmartPieLabelLayout(
+  data,
+  {
+    cx,
+    cy,
+    outerRadius,
+    startAngle,
+    endAngle,
+    minPercent = 2,
+    maxLabels = 12,
+    offset = 24,
+    minGap = 18,
+  }
+) {
+  const rows = Array.isArray(data) ? data : [];
+  if (!rows.length) return new Map();
+
+  const total = rows.reduce((s, r) => s + toNum(r.value), 0) || 100;
+  const sweepTotal = endAngle - startAngle;
+
+  let cursor = startAngle;
+
+  const raw = rows.map((row, index) => {
+    const pct = toNum(row.value);
+    const sweep = sweepTotal * (pct / total);
+    const midAngle = cursor + sweep / 2;
+    cursor += sweep;
+
+    const RADIAN = Math.PI / 180;
+    const radius = outerRadius + offset;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    const side = x >= cx ? "right" : "left";
+
+    return {
+      index,
+      value: pct,
+      x,
+      y,
+      side,
+      textAnchor: side === "right" ? "start" : "end",
+    };
+  });
+
+  const visibleByValue = [...raw]
+    .sort((a, b) => b.value - a.value)
+    .slice(0, maxLabels)
+    .filter((r) => r.value >= minPercent);
+
+  const visibleSet = new Set(visibleByValue.map((r) => r.index));
+  const layout = new Map();
+
+  const minY = cy - outerRadius - 26;
+  const maxY = cy + outerRadius + 26;
+
+  const adjustSide = (side) => {
+    const items = raw
+      .filter((r) => r.side === side && visibleSet.has(r.index))
+      .sort((a, b) => a.y - b.y)
+      .map((r) => ({ ...r }));
+
+    if (!items.length) return;
+
+    for (let i = 1; i < items.length; i++) {
+      if (items[i].y - items[i - 1].y < minGap) {
+        items[i].y = items[i - 1].y + minGap;
+      }
+    }
+
+    if (items.length && items[items.length - 1].y > maxY) {
+      items[items.length - 1].y = maxY;
+      for (let i = items.length - 2; i >= 0; i--) {
+        if (items[i + 1].y - items[i].y < minGap) {
+          items[i].y = items[i + 1].y - minGap;
+        }
+      }
+    }
+
+    if (items.length && items[0].y < minY) {
+      items[0].y = minY;
+      for (let i = 1; i < items.length; i++) {
+        if (items[i].y - items[i - 1].y < minGap) {
+          items[i].y = items[i - 1].y + minGap;
+        }
+      }
+    }
+
+    items.forEach((item) => layout.set(item.index, item));
+  };
+
+  adjustSide("left");
+  adjustSide("right");
+
+  raw.forEach((r) => {
+    if (!layout.has(r.index)) {
+      layout.set(r.index, { ...r, hidden: !visibleSet.has(r.index) });
+    }
+  });
+
+  return layout;
+}
+
+function makeSmartPieLabelRenderer(
+  data,
+  {
+    startAngle,
+    endAngle,
+    minPercent = 2,
+    maxLabels = 12,
+    offset = 24,
+    minGap = 18,
+    digits = 1,
+    color = "#334155",
+    fontSize = 12,
+    fontWeight = 800,
+  }
+) {
+  let cache = null;
+
+  return (props) => {
+    const { index, cx, cy, outerRadius } = props;
+    if (index == null) return null;
+
+    if (!cache) {
+      cache = buildSmartPieLabelLayout(data, {
+        cx,
+        cy,
+        outerRadius,
+        startAngle,
+        endAngle,
+        minPercent,
+        maxLabels,
+        offset,
+        minGap,
+      });
+    }
+
+    const layout = cache.get(index);
+    const row = data[index];
+
+    if (!layout || layout.hidden || !row) return null;
+
+    return (
+      <text
+        x={layout.x}
+        y={layout.y}
+        fill={color}
+        textAnchor={layout.textAnchor}
+        dominantBaseline="central"
+        fontSize={fontSize}
+        fontWeight={fontWeight}
+      >
+        {formatPiePercent(row.value, digits)}
+      </text>
+    );
+  };
+}
+
+function TaskPieTooltip({ active, payload, otrosDetalle = [] }) {
+  if (!active || !payload || !payload.length) return null;
+
+  const row = payload[0]?.payload;
+  if (!row) return null;
+
+  const isOtros = row.name === "Otros" && otrosDetalle.length > 0;
 
   return (
-    <text
-      x={x}
-      y={y}
-      fill="#334155"
-      textAnchor={x > cx ? "start" : "end"}
-      dominantBaseline="central"
-      fontSize={12}
-      fontWeight={800}
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 14,
+        padding: 12,
+        boxShadow: "0 10px 30px rgba(15,23,42,.12)",
+        minWidth: 250,
+        maxWidth: 340,
+      }}
     >
-      {`${Math.round(percent * 100)}%`}
-    </text>
+      <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>
+        {row.name}
+      </div>
+
+      <div style={{ fontSize: 13, color: "#334155", marginBottom: isOtros ? 10 : 0 }}>
+        {formatPiePercent(row.value, 2)} — {Number(row.horas).toFixed(2)} h
+      </div>
+
+      {isOtros && (
+        <div style={{ maxHeight: 220, overflowY: "auto", paddingRight: 4 }}>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 800,
+              color: "#64748b",
+              marginBottom: 6,
+              textTransform: "uppercase",
+              letterSpacing: ".04em",
+            }}
+          >
+            Tareas agrupadas
+          </div>
+
+          {otrosDetalle.map((item) => (
+            <div
+              key={item.name}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                gap: 12,
+                fontSize: 12,
+                padding: "4px 0",
+                borderBottom: "1px dashed #e5e7eb",
+              }}
+            >
+              <span style={{ color: "#334155" }}>{item.name}</span>
+              <strong style={{ color: "#0f172a" }}>
+                {formatPiePercent(item.value, 1)}
+              </strong>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
-};
+}
 
 
 function MultiFiltro({
@@ -850,9 +1054,15 @@ export default function Graficos() {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
-  const pieTareas = useMemo(() => {
+  const pieTareasData = useMemo(() => {
     const totalHoras = horasPorTarea.reduce((s, r) => s + r.horas, 0);
-    if (totalHoras <= 0) return [];
+    if (totalHoras <= 0) {
+      return {
+        chartData: [],
+        otrosDetalle: [],
+        totalHoras: 0,
+      };
+    }
 
     const base = horasPorTarea.map((t) => ({
       name: t.tipoTarea,
@@ -870,16 +1080,24 @@ export default function Graficos() {
         name: "Otros",
         horas: +resto.reduce((s, r) => s + r.horas, 0).toFixed(2),
         value: +resto.reduce((s, r) => s + r.value, 0).toFixed(2),
+        isOthers: true,
       });
     }
 
-    return visibles;
+    return {
+      chartData: visibles,
+      otrosDetalle: resto,
+      totalHoras,
+    };
   }, [horasPorTarea]);
 
-const totalHorasPieTareas = useMemo(
-  () => pieTareas.reduce((s, r) => s + r.horas, 0),
-  [pieTareas]
-);
+  const pieTareas = pieTareasData.chartData;
+  const otrosTareasDetalle = pieTareasData.otrosDetalle;
+
+  const totalHorasPieTareas = useMemo(
+    () => pieTareasData.totalHoras,
+    [pieTareasData]
+  );
 
   const pieOcupacion = useMemo(() => {
     const total = horasPorOcupacion.reduce((sum, r) => sum + r.horas, 0);
@@ -893,6 +1111,40 @@ const totalHorasPieTareas = useMemo(
 
   const totalHorasPieOcupacion = useMemo(
     () => pieOcupacion.reduce((s, r) => s + r.horas, 0),
+    [pieOcupacion]
+  );
+
+  const taskPieLabelRenderer = useMemo(
+    () =>
+      makeSmartPieLabelRenderer(pieTareas, {
+        startAngle: 210,
+        endAngle: -30,
+        minPercent: 1.6,
+        maxLabels: 11,
+        offset: 28,
+        minGap: 20,
+        digits: 1,
+        color: "#334155",
+        fontSize: 12,
+        fontWeight: 800,
+      }),
+    [pieTareas]
+  );
+
+  const ocupPieLabelRenderer = useMemo(
+    () =>
+      makeSmartPieLabelRenderer(pieOcupacion, {
+        startAngle: 90,
+        endAngle: -270,
+        minPercent: 0.8,
+        maxLabels: 14,
+        offset: 28,
+        minGap: 18,
+        digits: 1,
+        color: "#334155",
+        fontSize: 12,
+        fontWeight: 800,
+      }),
     [pieOcupacion]
   );
 
@@ -1147,7 +1399,7 @@ const totalHorasPieTareas = useMemo(
                       width={yWidthConsultor}
                       tick={<WrapTickPx maxWidth={yWidthConsultor - 18} fontSize={12} />}
                     />
-                    <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
+                    <Tooltip formatter={(v) => [`${Number(v).toFixed(2)} h`, 'Horas']} />
                     {metaMensual && (
                       <ReferenceLine
                         x={metaMensual.limite}
@@ -1446,13 +1698,7 @@ const totalHorasPieTareas = useMemo(
                 <div className="pgx-pie-3d-chart">
                   <ResponsiveContainer width="100%" height={520}>
                     <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-                      <Tooltip
-                        formatter={(v, n, p) => [
-                          `${Number(v).toFixed(2)}% — ${Number(p.payload.horas).toFixed(2)} h`,
-                          p.payload.name
-                        ]}
-                      />
-
+                      <Tooltip content={<TaskPieTooltip otrosDetalle={otrosTareasDetalle} />} />
                       {[...Array(12)].map((_, layerIndex) => (
                         <Pie
                           key={`task-depth-${layerIndex}`}
@@ -1493,7 +1739,7 @@ const totalHorasPieTareas = useMemo(
                         stroke="#ffffff"
                         strokeWidth={2}
                         labelLine={false}
-                        label={renderPieLabelTask3D}
+                        label={taskPieLabelRenderer}
                       >
                         {pieTareas.map((entry, i) => (
                           <Cell
@@ -1596,7 +1842,7 @@ const totalHorasPieTareas = useMemo(
                         stroke="#ffffff"
                         strokeWidth={2}
                         labelLine={false}
-                        label={renderPieLabelTask3D}
+                        label={ocupPieLabelRenderer}
                       >
                         {pieOcupacion.map((entry, i) => (
                           <Cell
