@@ -1531,28 +1531,46 @@ def obtener_registros():
         # -----------------------------
         filtro_id = (request.args.get("id") or "").strip()
         filtro_fecha = (request.args.get("fecha") or "").strip()
-        filtro_cliente = (request.args.get("cliente") or "").strip()
-        filtro_consultor = (request.args.get("consultor") or "").strip()
         filtro_equipo = (request.args.get("equipo") or "").strip().upper()
         filtro_mes = (request.args.get("mes") or "").strip()
         filtro_anio = (request.args.get("anio") or "").strip()
         filtro_nro_caso = (request.args.get("nroCasoCliente") or "").strip()
-        filtro_horas_adic = (request.args.get("horasAdicionales") or "").strip().upper()
-        filtro_tarea_id = (request.args.get("tarea_id") or "").strip()
-        filtro_ocupacion_id = (request.args.get("ocupacion_id") or "").strip()
 
-        if filtro_id:
-            if filtro_id.isdigit():
-                q = q.filter(Registro.id == int(filtro_id))
+        filtro_clientes = [v.strip() for v in _get_list_arg("cliente") if str(v).strip()]
+        filtro_consultores = [v.strip() for v in _get_list_arg("consultor") if str(v).strip()]
+        filtro_horas_adic = [str(v).strip().upper() for v in _get_list_arg("horasAdicionales") if str(v).strip()]
+        filtro_tarea_ids = []
+        filtro_ocupacion_ids = []
+
+        for v in _get_list_arg("tarea_id"):
+            try:
+                filtro_tarea_ids.append(int(v))
+            except Exception:
+                pass
+
+        for v in _get_list_arg("ocupacion_id"):
+            try:
+                filtro_ocupacion_ids.append(int(v))
+            except Exception:
+                pass
+
+        filtro_clientes = list(dict.fromkeys(filtro_clientes))
+        filtro_consultores = list(dict.fromkeys(filtro_consultores))
+        filtro_horas_adic = list(dict.fromkeys(filtro_horas_adic))
+        filtro_tarea_ids = list(dict.fromkeys(filtro_tarea_ids))
+        filtro_ocupacion_ids = list(dict.fromkeys(filtro_ocupacion_ids))
+
+        if filtro_id and filtro_id.isdigit():
+            q = q.filter(Registro.id == int(filtro_id))
 
         if filtro_fecha:
             q = q.filter(Registro.fecha == filtro_fecha)
 
-        if filtro_cliente:
-            q = q.filter(Registro.cliente == filtro_cliente)
+        if filtro_clientes:
+            q = q.filter(Registro.cliente.in_(filtro_clientes))
 
-        if filtro_consultor:
-            q = q.filter(C.nombre == filtro_consultor)
+        if filtro_consultores:
+            q = q.filter(C.nombre.in_(filtro_consultores))
 
         if filtro_equipo:
             if scope == "TEAM":
@@ -1577,19 +1595,13 @@ def obtener_registros():
             q = q.filter(Registro.nro_caso_cliente.ilike(f"%{filtro_nro_caso}%"))
 
         if filtro_horas_adic:
-            q = q.filter(func.upper(Registro.horas_adicionales) == filtro_horas_adic)
+            q = q.filter(func.upper(Registro.horas_adicionales).in_(filtro_horas_adic))
 
-        if filtro_tarea_id:
-            try:
-                q = q.filter(Registro.tarea_id == int(filtro_tarea_id))
-            except Exception:
-                pass
+        if filtro_tarea_ids:
+            q = q.filter(Registro.tarea_id.in_(filtro_tarea_ids))
 
-        if filtro_ocupacion_id:
-            try:
-                q = q.filter(Registro.ocupacion_id == int(filtro_ocupacion_id))
-            except Exception:
-                pass
+        if filtro_ocupacion_ids:
+            q = q.filter(Registro.ocupacion_id.in_(filtro_ocupacion_ids))
 
         # -----------------------------
         # Paginación
@@ -1632,9 +1644,11 @@ def obtener_registros():
                 "nroCasoCliente": r.nro_caso_cliente,
                 "nroCasoInterno": r.nro_caso_interno,
                 "nroCasoEscaladoSap": r.nro_caso_escalado,
+
                 "ocupacion_id": r.ocupacion_id,
                 "ocupacion_codigo": ocup.codigo if ocup else None,
                 "ocupacion_nombre": ocup.nombre if ocup else None,
+
                 "tarea_id": r.tarea_id,
                 "tipoTarea": tipo_tarea_str,
                 "tarea": {
@@ -1642,8 +1656,10 @@ def obtener_registros():
                     "codigo": getattr(tarea, "codigo", None),
                     "nombre": getattr(tarea, "nombre", None),
                 } if tarea else None,
+
                 "consultor": r.consultor.nombre if r.consultor else None,
                 "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+
                 "horaInicio": r.hora_inicio,
                 "horaFin": r.hora_fin,
                 "tiempoInvertido": r.tiempo_invertido,
@@ -1651,22 +1667,27 @@ def obtener_registros():
                 "horasAdicionales": r.horas_adicionales,
                 "descripcion": r.descripcion,
                 "totalHoras": r.total_horas,
+
                 "bloqueado": bool(r.bloqueado),
                 "oncall": r.oncall,
                 "desborde": r.desborde,
                 "actividadMalla": r.actividad_malla,
+
                 "proyecto_id": r.proyecto_id,
                 "fase_proyecto_id": r.fase_proyecto_id,
+
                 "proyecto": {
                     "id": proyecto.id,
                     "codigo": proyecto.codigo,
                     "nombre": proyecto.nombre,
                     "activo": bool(getattr(proyecto, "activo", True)),
                 } if proyecto else None,
+
                 "fase_proyecto": {
                     "id": fase_proyecto.id,
                     "nombre": fase_proyecto.nombre,
                 } if fase_proyecto else None,
+
                 "proyecto_codigo": proyecto.codigo if proyecto else None,
                 "proyecto_nombre": proyecto.nombre if proyecto else None,
                 "proyecto_fase": fase_proyecto.nombre if fase_proyecto else None,
@@ -4410,15 +4431,34 @@ def export_registros():
         # Filtros
         filtro_id = (request.args.get("id") or "").strip()
         filtro_fecha = (request.args.get("fecha") or "").strip()
-        filtro_cliente = (request.args.get("cliente") or "").strip()
-        filtro_consultor = (request.args.get("consultor") or "").strip()
         filtro_equipo = (request.args.get("equipo") or "").strip().upper()
         filtro_mes = (request.args.get("mes") or "").strip()
         filtro_anio = (request.args.get("anio") or "").strip()
         filtro_nro_caso = (request.args.get("nroCasoCliente") or "").strip()
-        filtro_horas_adic = (request.args.get("horasAdicionales") or "").strip().upper()
-        filtro_tarea_id = (request.args.get("tarea_id") or "").strip()
-        filtro_ocupacion_id = (request.args.get("ocupacion_id") or "").strip()
+
+        filtro_clientes = [v.strip() for v in _get_list_arg("cliente") if str(v).strip()]
+        filtro_consultores = [v.strip() for v in _get_list_arg("consultor") if str(v).strip()]
+        filtro_horas_adic = [str(v).strip().upper() for v in _get_list_arg("horasAdicionales") if str(v).strip()]
+        filtro_tarea_ids = []
+        filtro_ocupacion_ids = []
+
+        for v in _get_list_arg("tarea_id"):
+            try:
+                filtro_tarea_ids.append(int(v))
+            except Exception:
+                pass
+
+        for v in _get_list_arg("ocupacion_id"):
+            try:
+                filtro_ocupacion_ids.append(int(v))
+            except Exception:
+                pass
+
+        filtro_clientes = list(dict.fromkeys(filtro_clientes))
+        filtro_consultores = list(dict.fromkeys(filtro_consultores))
+        filtro_horas_adic = list(dict.fromkeys(filtro_horas_adic))
+        filtro_tarea_ids = list(dict.fromkeys(filtro_tarea_ids))
+        filtro_ocupacion_ids = list(dict.fromkeys(filtro_ocupacion_ids))
 
         if filtro_id and filtro_id.isdigit():
             q = q.filter(Registro.id == int(filtro_id))
@@ -4426,11 +4466,11 @@ def export_registros():
         if filtro_fecha:
             q = q.filter(Registro.fecha == filtro_fecha)
 
-        if filtro_cliente:
-            q = q.filter(Registro.cliente == filtro_cliente)
+        if filtro_clientes:
+            q = q.filter(Registro.cliente.in_(filtro_clientes))
 
-        if filtro_consultor:
-            q = q.filter(C.nombre == filtro_consultor)
+        if filtro_consultores:
+            q = q.filter(C.nombre.in_(filtro_consultores))
 
         if filtro_equipo:
             if scope == "TEAM":
@@ -4455,26 +4495,20 @@ def export_registros():
             q = q.filter(Registro.nro_caso_cliente.ilike(f"%{filtro_nro_caso}%"))
 
         if filtro_horas_adic:
-            q = q.filter(func.upper(Registro.horas_adicionales) == filtro_horas_adic)
+            q = q.filter(func.upper(Registro.horas_adicionales).in_(filtro_horas_adic))
 
-        if filtro_tarea_id:
-            try:
-                q = q.filter(Registro.tarea_id == int(filtro_tarea_id))
-            except Exception:
-                pass
+        if filtro_tarea_ids:
+            q = q.filter(Registro.tarea_id.in_(filtro_tarea_ids))
 
-        if filtro_ocupacion_id:
-            try:
-                q = q.filter(Registro.ocupacion_id == int(filtro_ocupacion_id))
-            except Exception:
-                pass
+        if filtro_ocupacion_ids:
+            q = q.filter(Registro.ocupacion_id.in_(filtro_ocupacion_ids))
 
         registros = q.order_by(Registro.fecha.desc(), Registro.id.desc()).all()
 
         data = []
         for r in registros:
-            tarea = r.tarea
-            ocup = r.ocupacion
+            tarea = getattr(r, "tarea", None)
+            ocup = getattr(r, "ocupacion", None)
 
             if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
                 tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
@@ -4482,7 +4516,7 @@ def export_registros():
                 tipo_tarea_str = (r.tipo_tarea or "").strip() or None
 
             equipo_nombre = None
-            if r.consultor and r.consultor.equipo_obj:
+            if r.consultor and getattr(r.consultor, "equipo_obj", None):
                 equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
 
             proyecto = getattr(r, "proyecto", None)
@@ -4497,13 +4531,22 @@ def export_registros():
                 "nroCasoCliente": r.nro_caso_cliente,
                 "nroCasoInterno": r.nro_caso_interno,
                 "nroCasoEscaladoSap": r.nro_caso_escalado,
+
                 "ocupacion_id": r.ocupacion_id,
                 "ocupacion_codigo": ocup.codigo if ocup else None,
                 "ocupacion_nombre": ocup.nombre if ocup else None,
+
                 "tarea_id": r.tarea_id,
                 "tipoTarea": tipo_tarea_str,
+                "tarea": {
+                    "id": tarea.id,
+                    "codigo": getattr(tarea, "codigo", None),
+                    "nombre": getattr(tarea, "nombre", None),
+                } if tarea else None,
+
                 "consultor": r.consultor.nombre if r.consultor else None,
                 "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+
                 "horaInicio": r.hora_inicio,
                 "horaFin": r.hora_fin,
                 "tiempoInvertido": r.tiempo_invertido,
@@ -4511,12 +4554,15 @@ def export_registros():
                 "horasAdicionales": r.horas_adicionales,
                 "descripcion": r.descripcion,
                 "totalHoras": r.total_horas,
+
                 "bloqueado": bool(r.bloqueado),
                 "oncall": r.oncall,
                 "desborde": r.desborde,
                 "actividadMalla": r.actividad_malla,
+
                 "proyecto_id": r.proyecto_id,
                 "fase_proyecto_id": r.fase_proyecto_id,
+
                 "proyecto_codigo": proyecto.codigo if proyecto else None,
                 "proyecto_nombre": proyecto.nombre if proyecto else None,
                 "proyecto_fase": fase_proyecto.nombre if fase_proyecto else None,
@@ -7029,4 +7075,124 @@ def resumen_capacidad_semanal():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         app.logger.exception("❌ Error en /resumen-capacidad-semanal")
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/capacidad-semanal-ocupaciones", methods=["GET"])
+def capacidad_semanal_ocupaciones():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+                joinedload(Consultor.horario_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
+
+        scope, val = scope_for(consultor_login, rol_req)
+
+        if scope in {"SELF", "ROLE_POOL"}:
+            return jsonify({"error": "No autorizado para ver ocupaciones de capacidad semanal"}), 403
+
+        anio, mes = _cap_parse_month_year_from_request()
+        month_start, month_end = _cap_month_bounds(anio, mes)
+
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        consultor_filter = (request.args.get("consultor") or "").strip().lower()
+
+        if scope == "TEAM":
+            eq_login = (
+                (consultor_login.equipo_obj.nombre or "").strip().upper()
+                if consultor_login.equipo_obj else ""
+            )
+
+            if not eq_login:
+                return jsonify({"error": "Consultor sin equipo asignado"}), 403
+
+            if equipo_filter and equipo_filter != eq_login:
+                return jsonify({"error": "No autorizado para consultar otro equipo"}), 403
+
+            equipo_filter = eq_login
+
+        q = (
+            db.session.query(
+                Consultor.id.label("consultor_id"),
+                Consultor.nombre.label("consultor"),
+                Equipo.nombre.label("equipo"),
+                Ocupacion.codigo.label("ocupacion_codigo"),
+                Ocupacion.nombre.label("ocupacion_nombre"),
+                func.coalesce(func.sum(Registro.total_horas), 0).label("horas"),
+            )
+            .select_from(Registro)
+            .join(
+                Consultor,
+                func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
+            )
+            .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
+            .outerjoin(Ocupacion, Registro.ocupacion_id == Ocupacion.id)
+            .filter(Registro.fecha >= month_start.isoformat())
+            .filter(Registro.fecha <= month_end.isoformat())
+        )
+
+        if scope == "TEAM":
+            q = q.filter(func.upper(Equipo.nombre) == equipo_filter)
+        elif equipo_filter:
+            q = q.filter(func.upper(Equipo.nombre) == equipo_filter)
+
+        if consultor_filter:
+            q = q.filter(func.lower(Consultor.nombre) == consultor_filter)
+
+        q = q.group_by(
+            Consultor.id,
+            Consultor.nombre,
+            Equipo.nombre,
+            Ocupacion.codigo,
+            Ocupacion.nombre,
+        )
+
+        rows = q.all()
+
+        data = []
+        for r in rows:
+            data.append({
+                "consultorId": r.consultor_id,
+                "consultor": r.consultor,
+                "equipo": r.equipo,
+                "ocupacion_codigo": r.ocupacion_codigo or "",
+                "ocupacion_nombre": r.ocupacion_nombre or "SIN OCUPACIÓN",
+                "horas": round(float(r.horas or 0), 2),
+            })
+
+        data.sort(key=lambda x: (
+            (x["equipo"] or ""),
+            (x["consultor"] or ""),
+            -float(x["horas"] or 0),
+            (x["ocupacion_nombre"] or ""),
+        ))
+
+        return jsonify({
+            "mes": mes,
+            "anio": anio,
+            "desde": month_start.isoformat(),
+            "hasta": month_end.isoformat(),
+            "rows": data,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        app.logger.exception("❌ Error en /capacidad-semanal-ocupaciones")
         return jsonify({"error": str(e)}), 500

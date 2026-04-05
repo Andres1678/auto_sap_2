@@ -640,3 +640,168 @@
   }
 }
 
+
+/* Agrega esto al final de CapacidadSemanalModal.css */
+
+.capacidad-analitica-grid{
+  display:grid;
+  grid-template-columns:minmax(0, 1.7fr) minmax(320px, 420px);
+  gap:18px;
+  align-items:start;
+  margin-top:18px;
+}
+
+.capacidad-semanas-wrap{
+  min-width:0;
+}
+
+.capacidad-ocupaciones-card{
+  background:#fff;
+  border:1px solid #dbe4f0;
+  border-radius:18px;
+  padding:16px;
+  box-shadow:0 10px 24px rgba(15,23,42,.06);
+  position:sticky;
+  top:12px;
+}
+
+.ocup-card-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:14px;
+}
+
+.ocup-card-head h5{
+  margin:0;
+  font-size:18px;
+  color:#0f172a;
+}
+
+.ocup-card-head p{
+  margin:4px 0 0;
+  color:#64748b;
+  font-size:13px;
+}
+
+.ocup-card-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:999px;
+  padding:8px 12px;
+  background:#eff6ff;
+  color:#1d4ed8;
+  font-size:12px;
+  font-weight:900;
+  white-space:nowrap;
+}
+
+.ocup-state{
+  border:1px dashed #dbe4f0;
+  border-radius:14px;
+  padding:18px 14px;
+  background:#fafcff;
+  text-align:center;
+  color:#64748b;
+  font-weight:700;
+}
+
+.ocup-state-error{
+  color:#b91c1c;
+  background:#fff1f2;
+  border-color:#fecdd3;
+}
+
+.ocup-list{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.ocup-item{
+  border:1px solid #e5edf6;
+  border-radius:14px;
+  padding:12px;
+  background:linear-gradient(180deg, #ffffff, #fbfdff);
+}
+
+.ocup-item-head{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  margin-bottom:8px;
+}
+
+.ocup-rank{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:34px;
+  height:28px;
+  padding:0 8px;
+  border-radius:999px;
+  background:rgba(227, 6, 19, .08);
+  border:1px solid rgba(227, 6, 19, .16);
+  color:#b00510;
+  font-size:12px;
+  font-weight:900;
+}
+
+.ocup-main{
+  min-width:0;
+  flex:1;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.ocup-name{
+  min-width:0;
+  display:block;
+  color:#0f172a;
+  font-size:13px;
+  line-height:1.35;
+}
+
+.ocup-hours{
+  color:#475569;
+  font-size:12px;
+  font-weight:800;
+  white-space:nowrap;
+}
+
+.ocup-bar{
+  height:10px;
+  background:#e9eef5;
+  border-radius:999px;
+  overflow:hidden;
+}
+
+.ocup-bar-fill{
+  height:100%;
+  border-radius:999px;
+  background:linear-gradient(90deg, #E30613, #0055B8);
+}
+
+.ocup-foot{
+  margin-top:6px;
+  display:flex;
+  justify-content:flex-end;
+  color:#64748b;
+  font-size:12px;
+  font-weight:800;
+}
+
+@media (max-width: 1180px){
+  .capacidad-analitica-grid{
+    grid-template-columns:1fr;
+  }
+
+  .capacidad-ocupaciones-card{
+    position:relative;
+    top:auto;
+  }
+}

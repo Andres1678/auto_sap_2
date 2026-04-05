@@ -1,6 +1,8 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import Modal from "react-modal";
 import { jfetch } from "./lib/api";
+import TopOcupacionesConsultorChart from "./GraficosOperacion/TopOcupacionesConsultorChart";
 import "./CapacidadSemanalModal.css";
 
 Modal.setAppElement("#root");
@@ -448,79 +450,91 @@ export default function CapacidadSemanalModal({
                   </div>
                 </div>
 
-                <div className="capacidad-semanas-grid">
-                  {(item.semanas || []).map((semana, i) => (
-                    <article
-                      className="semana-card"
-                      key={`${item.consultor || "sin-nombre"}-sem-${i}`}
-                    >
-                      <div className="semana-card-head">
-                        <div>
-                          <h5>{semana.label}</h5>
-                          <p>
-                            {semana.inicio} — {semana.fin}
-                          </p>
-                        </div>
+                <div className="capacidad-analitica-grid">
+                  <div className="capacidad-semanas-wrap">
+                    <div className="capacidad-semanas-grid">
+                      {(item.semanas || []).map((semana, i) => (
+                        <article
+                          className="semana-card"
+                          key={`${item.consultor || "sin-nombre"}-sem-${i}`}
+                        >
+                          <div className="semana-card-head">
+                            <div>
+                              <h5>{semana.label}</h5>
+                              <p>
+                                {semana.inicio} — {semana.fin}
+                              </p>
+                            </div>
 
-                        <span className={`pill ${pctClass(semana.porcentajeSemanal)}`}>
-                          {fmtPct(semana.porcentajeSemanal)}
-                        </span>
-                      </div>
-
-                      <div className="semana-metrics">
-                        <div>
-                          <span className="mini-label">Horas semana</span>
-                          <strong>{fmtHours(semana.horasSemana)}</strong>
-                        </div>
-
-                        <div>
-                          <span className="mini-label">Meta semana</span>
-                          <strong>{fmtHours(semana.metaSemanal)}</strong>
-                        </div>
-
-                        <div>
-                          <span className="mini-label">% llenado semana</span>
-                          <strong>{fmtPct(semana.porcentajeSemanal)}</strong>
-                        </div>
-
-                        <div>
-                          <span className="mini-label">Diferencia</span>
-                          <strong>{fmtHours(semana.diferenciaSemana)}</strong>
-                        </div>
-                      </div>
-
-                      <div className="progress-block">
-                        <div className="progress-row">
-                          <span>Llenado semanal</span>
-                          <span>{fmtPct(semana.porcentajeSemanal)}</span>
-                        </div>
-                        <div className="progress-bar">
-                          <div
-                            className={`progress-fill ${pctClass(semana.porcentajeSemanal)}`}
-                            style={{ width: `${clampPct(semana.porcentajeSemanal)}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {!!semana.dias?.length && (
-                        <div className="dias-table">
-                          <div className="dias-head">
-                            <span>Fecha</span>
-                            <span>Horas</span>
-                            <span>Meta día</span>
+                            <span className={`pill ${pctClass(semana.porcentajeSemanal)}`}>
+                              {fmtPct(semana.porcentajeSemanal)}
+                            </span>
                           </div>
 
-                          {semana.dias.map((d, ix) => (
-                            <div className="dias-row" key={`${semana.label}-${ix}`}>
-                              <span>{d.fecha}</span>
-                              <span>{fmtHours(d.horas)}</span>
-                              <span>{fmtHours(d.metaDia)}</span>
+                          <div className="semana-metrics">
+                            <div>
+                              <span className="mini-label">Horas semana</span>
+                              <strong>{fmtHours(semana.horasSemana)}</strong>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                  ))}
+
+                            <div>
+                              <span className="mini-label">Meta semana</span>
+                              <strong>{fmtHours(semana.metaSemanal)}</strong>
+                            </div>
+
+                            <div>
+                              <span className="mini-label">% llenado semana</span>
+                              <strong>{fmtPct(semana.porcentajeSemanal)}</strong>
+                            </div>
+
+                            <div>
+                              <span className="mini-label">Diferencia</span>
+                              <strong>{fmtHours(semana.diferenciaSemana)}</strong>
+                            </div>
+                          </div>
+
+                          <div className="progress-block">
+                            <div className="progress-row">
+                              <span>Llenado semanal</span>
+                              <span>{fmtPct(semana.porcentajeSemanal)}</span>
+                            </div>
+                            <div className="progress-bar">
+                              <div
+                                className={`progress-fill ${pctClass(semana.porcentajeSemanal)}`}
+                                style={{ width: `${clampPct(semana.porcentajeSemanal)}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {!!semana.dias?.length && (
+                            <div className="dias-table">
+                              <div className="dias-head">
+                                <span>Fecha</span>
+                                <span>Horas</span>
+                                <span>Meta día</span>
+                              </div>
+
+                              {semana.dias.map((d, ix) => (
+                                <div className="dias-row" key={`${semana.label}-${ix}`}>
+                                  <span>{d.fecha}</span>
+                                  <span>{fmtHours(d.horas)}</span>
+                                  <span>{fmtHours(d.metaDia)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+
+                  <TopOcupacionesConsultorChart
+                    consultor={item.consultor}
+                    equipo={item.equipo}
+                    mes={selectedMes}
+                    anio={selectedAnio}
+                    maxItems={6}
+                  />
                 </div>
               </section>
             ))}

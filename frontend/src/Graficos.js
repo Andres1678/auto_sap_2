@@ -1,15 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie, Legend, ReferenceLine, LabelList
-} from 'recharts';
 import Modal from 'react-modal';
 import './PanelGraficos.css';
 import { jfetch } from './lib/api';
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 
-const OPEN_ON_HOVER = false;
+import HorasPorConsultorChart from './GraficosOperacion/HorasPorConsultorChart';
+import HorasPorTareaChart from './GraficosOperacion/HorasPorTareaChart';
+import HorasPorClienteChart from './GraficosOperacion/HorasPorClienteChart';
+import HorasPorModuloChart from './GraficosOperacion/HorasPorModuloChart';
+import HorasPorProyectoChart from './GraficosOperacion/HorasPorProyectoChart';
+import HorasPorDiaChart from './GraficosOperacion/HorasPorDiaChart';
+import PieTareasChart from './GraficosOperacion/PieTareasChart';
+import PieOcupacionChart from './GraficosOperacion/PieOcupacionChart';
+
 Modal.setAppElement('#root');
 
 const HOLIDAYS = [];
@@ -66,364 +70,6 @@ function workdaysInMonth(year, month, holidays = []) {
   }
   return count;
 }
-
-const _canvas = document.createElement('canvas');
-const _ctx = _canvas.getContext('2d');
-
-function _setFont({
-  fontSize = 12,
-  fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
-  fontWeight = 400,
-} = {}) {
-  _ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
-}
-
-function textWidthPx(text, opts) {
-  _setFont(opts);
-  return _ctx.measureText(String(text ?? '')).width;
-}
-
-function yWidthFromPx(labels, { min = 120, max = 360, pad = 28, fontSize = 12, fontWeight = 400 } = {}) {
-  _setFont({ fontSize, fontWeight });
-  const w = Math.max(0, ...labels.map(t => textWidthPx(t, { fontSize, fontWeight })));
-  return Math.max(min, Math.min(max, Math.ceil(w + pad)));
-}
-
-function wrapByPx(text, maxWidth, { lineHeight = 13, fontSize = 12, fontWeight = 400 } = {}) {
-  _setFont({ fontSize, fontWeight });
-  const words = String(text ?? '').split(' ');
-  const lines = [];
-  let line = '';
-
-  for (const w of words) {
-    const tentative = line ? `${line} ${w}` : w;
-    if (textWidthPx(tentative, { fontSize, fontWeight }) > maxWidth) {
-      if (line) lines.push(line);
-      if (textWidthPx(w, { fontSize, fontWeight }) > maxWidth) {
-        let buff = '';
-        for (const ch of w) {
-          if (textWidthPx(buff + ch, { fontSize, fontWeight }) > maxWidth) {
-            lines.push(buff);
-            buff = ch;
-          } else {
-            buff += ch;
-          }
-        }
-        line = buff;
-      } else {
-        line = w;
-      }
-    } else {
-      line = tentative;
-    }
-  }
-
-  if (line) lines.push(line);
-  return { lines, lineHeight };
-}
-
-function WrapTickPx({ x, y, payload, maxWidth = 160, dy = 3, fontSize = 12, color = '#6b7280' }) {
-  const full = String(payload?.value ?? '');
-  const { lines, lineHeight } = wrapByPx(full, maxWidth, { lineHeight: 13, fontSize });
-
-  return (
-    <g transform={`translate(${x - 6},${y})`}>
-      <title>{full}</title>
-      <text textAnchor="end" fontSize={fontSize} fill={color}>
-        {lines.map((t, i) => (
-          <tspan key={i} x={0} dy={i === 0 ? dy : lineHeight}>{t}</tspan>
-        ))}
-      </text>
-    </g>
-  );
-}
-
-const BrandDefs = ({ id }) => (
-  <defs>
-    <linearGradient id={id} x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stopColor="#E30613" />
-      <stop offset="100%" stopColor="#0055B8" />
-    </linearGradient>
-  </defs>
-);
-
-const PIE_COLORS = [
-  '#2563eb', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
-  '#06b6d4', '#dc2626', '#059669', '#d97706', '#7c3aed',
-  '#0ea5e9', '#e11d48', '#16a34a', '#ca8a04', '#6d28d9'
-];
-
-const darkenHex = (hex, factor = 0.35) => {
-  const clean = String(hex || "").replace("#", "");
-  if (clean.length !== 6) return hex;
-
-  const num = parseInt(clean, 16);
-  let r = (num >> 16) & 255;
-  let g = (num >> 8) & 255;
-  let b = num & 255;
-
-  r = Math.max(0, Math.floor(r * (1 - factor)));
-  g = Math.max(0, Math.floor(g * (1 - factor)));
-  b = Math.max(0, Math.floor(b * (1 - factor)));
-
-  return `#${[r, g, b].map(v => v.toString(16).padStart(2, "0")).join("")}`;
-};
-
-const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent, name }) => {
-  if (!percent || percent < 0.03) return null; 
-
-  const RADIAN = Math.PI / 180;
-  const radius = outerRadius + 26;
-  const x = cx + radius * Math.cos(-midAngle * RADIAN);
-  const y = cy + radius * Math.sin(-midAngle * RADIAN);
-
-  return (
-    <text
-      x={x}
-      y={y}
-      fill="#374151"
-      textAnchor={x > cx ? "start" : "end"}
-      dominantBaseline="central"
-      fontSize={12}
-      fontWeight={700}
-    >
-      {`${name} ${Math.round(percent * 100)}%`}
-    </text>
-  );
-};
-
-const truncateTxt = (txt, max = 30) => {
-  const s = String(txt ?? "");
-  return s.length > max ? `${s.slice(0, max)}…` : s;
-};
-
-const formatPiePercent = (value, digits = 1) => `${Number(value || 0).toFixed(digits)}%`;
-
-function buildSmartPieLabelLayout(
-  data,
-  {
-    cx,
-    cy,
-    outerRadius,
-    startAngle,
-    endAngle,
-    minPercent = 2,
-    maxLabels = 12,
-    offset = 24,
-    minGap = 18,
-  }
-) {
-  const rows = Array.isArray(data) ? data : [];
-  if (!rows.length) return new Map();
-
-  const total = rows.reduce((s, r) => s + toNum(r.value), 0) || 100;
-  const sweepTotal = endAngle - startAngle;
-
-  let cursor = startAngle;
-
-  const raw = rows.map((row, index) => {
-    const pct = toNum(row.value);
-    const sweep = sweepTotal * (pct / total);
-    const midAngle = cursor + sweep / 2;
-    cursor += sweep;
-
-    const RADIAN = Math.PI / 180;
-    const radius = outerRadius + offset;
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
-    const side = x >= cx ? "right" : "left";
-
-    return {
-      index,
-      value: pct,
-      x,
-      y,
-      side,
-      textAnchor: side === "right" ? "start" : "end",
-    };
-  });
-
-  const visibleByValue = [...raw]
-    .sort((a, b) => b.value - a.value)
-    .slice(0, maxLabels)
-    .filter((r) => r.value >= minPercent);
-
-  const visibleSet = new Set(visibleByValue.map((r) => r.index));
-  const layout = new Map();
-
-  const minY = cy - outerRadius - 26;
-  const maxY = cy + outerRadius + 26;
-
-  const adjustSide = (side) => {
-    const items = raw
-      .filter((r) => r.side === side && visibleSet.has(r.index))
-      .sort((a, b) => a.y - b.y)
-      .map((r) => ({ ...r }));
-
-    if (!items.length) return;
-
-    for (let i = 1; i < items.length; i++) {
-      if (items[i].y - items[i - 1].y < minGap) {
-        items[i].y = items[i - 1].y + minGap;
-      }
-    }
-
-    if (items.length && items[items.length - 1].y > maxY) {
-      items[items.length - 1].y = maxY;
-      for (let i = items.length - 2; i >= 0; i--) {
-        if (items[i + 1].y - items[i].y < minGap) {
-          items[i].y = items[i + 1].y - minGap;
-        }
-      }
-    }
-
-    if (items.length && items[0].y < minY) {
-      items[0].y = minY;
-      for (let i = 1; i < items.length; i++) {
-        if (items[i].y - items[i - 1].y < minGap) {
-          items[i].y = items[i - 1].y + minGap;
-        }
-      }
-    }
-
-    items.forEach((item) => layout.set(item.index, item));
-  };
-
-  adjustSide("left");
-  adjustSide("right");
-
-  raw.forEach((r) => {
-    if (!layout.has(r.index)) {
-      layout.set(r.index, { ...r, hidden: !visibleSet.has(r.index) });
-    }
-  });
-
-  return layout;
-}
-
-function makeSmartPieLabelRenderer(
-  data,
-  {
-    startAngle,
-    endAngle,
-    minPercent = 2,
-    maxLabels = 12,
-    offset = 24,
-    minGap = 18,
-    digits = 1,
-    color = "#334155",
-    fontSize = 12,
-    fontWeight = 800,
-  }
-) {
-  let cache = null;
-
-  return (props) => {
-    const { index, cx, cy, outerRadius } = props;
-    if (index == null) return null;
-
-    if (!cache) {
-      cache = buildSmartPieLabelLayout(data, {
-        cx,
-        cy,
-        outerRadius,
-        startAngle,
-        endAngle,
-        minPercent,
-        maxLabels,
-        offset,
-        minGap,
-      });
-    }
-
-    const layout = cache.get(index);
-    const row = data[index];
-
-    if (!layout || layout.hidden || !row) return null;
-
-    return (
-      <text
-        x={layout.x}
-        y={layout.y}
-        fill={color}
-        textAnchor={layout.textAnchor}
-        dominantBaseline="central"
-        fontSize={fontSize}
-        fontWeight={fontWeight}
-      >
-        {formatPiePercent(row.value, digits)}
-      </text>
-    );
-  };
-}
-
-function TaskPieTooltip({ active, payload, otrosDetalle = [] }) {
-  if (!active || !payload || !payload.length) return null;
-
-  const row = payload[0]?.payload;
-  if (!row) return null;
-
-  const isOtros = row.name === "Otros" && otrosDetalle.length > 0;
-
-  return (
-    <div
-      style={{
-        background: "#fff",
-        border: "1px solid #e5e7eb",
-        borderRadius: 14,
-        padding: 12,
-        boxShadow: "0 10px 30px rgba(15,23,42,.12)",
-        minWidth: 250,
-        maxWidth: 340,
-      }}
-    >
-      <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 6 }}>
-        {row.name}
-      </div>
-
-      <div style={{ fontSize: 13, color: "#334155", marginBottom: isOtros ? 10 : 0 }}>
-        {formatPiePercent(row.value, 2)} — {Number(row.horas).toFixed(2)} h
-      </div>
-
-      {isOtros && (
-        <div style={{ maxHeight: 220, overflowY: "auto", paddingRight: 4 }}>
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 800,
-              color: "#64748b",
-              marginBottom: 6,
-              textTransform: "uppercase",
-              letterSpacing: ".04em",
-            }}
-          >
-            Tareas agrupadas
-          </div>
-
-          {otrosDetalle.map((item) => (
-            <div
-              key={item.name}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr auto",
-                gap: 12,
-                fontSize: 12,
-                padding: "4px 0",
-                borderBottom: "1px dashed #e5e7eb",
-              }}
-            >
-              <span style={{ color: "#334155" }}>{item.name}</span>
-              <strong style={{ color: "#0f172a" }}>
-                {formatPiePercent(item.value, 1)}
-              </strong>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 
 function MultiFiltro({
   titulo,
@@ -1114,50 +760,9 @@ export default function Graficos() {
     [pieOcupacion]
   );
 
-  const taskPieLabelRenderer = useMemo(
-    () =>
-      makeSmartPieLabelRenderer(pieTareas, {
-        startAngle: 210,
-        endAngle: -30,
-        minPercent: 1.6,
-        maxLabels: 11,
-        offset: 28,
-        minGap: 20,
-        digits: 1,
-        color: "#334155",
-        fontSize: 12,
-        fontWeight: 800,
-      }),
-    [pieTareas]
-  );
 
-  const ocupPieLabelRenderer = useMemo(
-    () =>
-      makeSmartPieLabelRenderer(pieOcupacion, {
-        startAngle: 90,
-        endAngle: -270,
-        minPercent: 0.8,
-        maxLabels: 14,
-        offset: 28,
-        minGap: 18,
-        digits: 1,
-        color: "#334155",
-        fontSize: 12,
-        fontWeight: 800,
-      }),
-    [pieOcupacion]
-  );
 
-  const hConsultores = Math.max(320, horasPorConsultor.length * 30);
-  const hTareas = Math.max(320, horasPorTarea.length * 30);
-  const hClientes = Math.max(320, horasPorCliente.length * 30);
-  const hModulos = Math.max(320, horasPorModulo.length * 30);
-  const hDias = 380;
 
-  const yWidthConsultor = yWidthFromPx(horasPorConsultor.map(d => d.consultor), { min: 140, max: 360, pad: 32 });
-  const yWidthTarea = yWidthFromPx(horasPorTarea.map(d => d.tipoTarea), { min: 160, max: 380, pad: 32 });
-  const yWidthCliente = yWidthFromPx(horasPorCliente.map(d => d.cliente), { min: 160, max: 380, pad: 32 });
-  const yWidthModulo = yWidthFromPx(horasPorModulo.map(d => d.modulo), { min: 140, max: 360, pad: 32 });
 
   const openDetail = (kind, value, pretty) => {
     let rows = [];
@@ -1370,524 +975,69 @@ export default function Graficos() {
           </div>
         )}
 
-        <div className="pgx-grid pgx-grid-stack">
-          <div className="pgx-card">
-            <h3>
-              {isAdmin ? 'Horas por Consultor' : 'Tus horas por Consultor'}
-              {filtroMes && ` (${filtroMes})`}
-              {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
-            </h3>
+<div className="pgx-grid pgx-grid-stack">
+  <HorasPorConsultorChart
+    data={horasPorConsultor}
+    isAdmin={isAdmin}
+    filtroMes={filtroMes}
+    filtroEquipo={filtroEquipo}
+    metaMensual={metaMensual}
+    onOpenDetail={openDetail}
+  />
 
-            {horasPorConsultor.length === 0 ? (
-              <div className="pgx-empty">Sin datos para los filtros seleccionados.</div>
-            ) : (
-              <div className="pgx-chart-scroll">
-                <ResponsiveContainer width="100%" height={hConsultores}>
-                  <BarChart
-                    data={horasPorConsultor}
-                    layout="vertical"
-                    margin={{ top: 8, right: 80, left: 8, bottom: 8 }}
-                    barCategoryGap={12}
-                    barSize={20}
-                  >
-                    <BrandDefs id="pgx-gradConsultor" />
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" tickLine={false} axisLine={false} />
-                    <YAxis
-                      type="category"
-                      dataKey="consultor"
-                      width={yWidthConsultor}
-                      tick={<WrapTickPx maxWidth={yWidthConsultor - 18} fontSize={12} />}
-                    />
-                    <Tooltip formatter={(v) => [`${Number(v).toFixed(2)} h`, 'Horas']} />
-                    {metaMensual && (
-                      <ReferenceLine
-                        x={metaMensual.limite}
-                        stroke="#ef4444"
-                        strokeDasharray="6 6"
-                        label={{
-                          value: `Meta: ${metaMensual.limite.toFixed(0)} h (${metaMensual.diasHabiles} días)`,
-                          position: 'top',
-                          fill: '#ef4444',
-                          fontSize: 12,
-                          fontWeight: 700
-                        }}
-                      />
-                    )}
-                    <Bar dataKey="horas" name="Horas">
-                      <LabelList
-                        dataKey="horas"
-                        position="right"
-                        formatter={(value) => Number(value).toFixed(1)}
-                        style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
-                      />
-                      {horasPorConsultor.map((entry, idx) => (
-                        <Cell
-                          key={`c-${idx}`}
-                          fill="url(#pgx-gradConsultor)"
-                          onClick={() => openDetail('consultor', entry.consultor, 'Consultor')}
-                          onMouseEnter={() => { if (OPEN_ON_HOVER) openDetail('consultor', entry.consultor, 'Consultor'); }}
-                          style={{ cursor: 'pointer' }}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
+  <HorasPorTareaChart
+    data={horasPorTarea}
+    isAdmin={isAdmin}
+    onOpenDetail={openDetail}
+  />
 
-          <div className="pgx-card">
-            <h3>{isAdmin ? 'Horas por Tipo de Tarea' : 'Tus horas por Tipo de Tarea'}</h3>
-            {horasPorTarea.length === 0 ? (
-              <div className="pgx-empty">Sin datos para los filtros seleccionados.</div>
-            ) : (
-              <div className="pgx-chart-scroll">
-                <ResponsiveContainer width="100%" height={hTareas}>
-                  <BarChart
-                    data={horasPorTarea}
-                    layout="vertical"
-                    margin={{ top: 8, right: 80, left: 8, bottom: 8 }}
-                    barCategoryGap={12}
-                    barSize={20}
-                  >
-                    <BrandDefs id="pgx-gradTarea" />
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" tickLine={false} axisLine={false} />
-                    <YAxis
-                      type="category"
-                      dataKey="tipoTarea"
-                      width={yWidthTarea}
-                      tick={<WrapTickPx maxWidth={yWidthTarea - 18} fontSize={12} />}
-                    />
-                    <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
-                    <Bar dataKey="horas" name="Horas">
-                      <LabelList
-                        dataKey="horas"
-                        position="right"
-                        formatter={(value) => Number(value).toFixed(1)}
-                        style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
-                      />
-                      {horasPorTarea.map((entry, idx) => (
-                        <Cell
-                          key={`t-${idx}`}
-                          fill="url(#pgx-gradTarea)"
-                          onClick={() => openDetail('tipoTarea', entry.tipoTarea, 'Tipo de Tarea')}
-                          style={{ cursor: 'pointer' }}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
+  <HorasPorClienteChart
+    data={horasPorCliente}
+    isAdmin={isAdmin}
+    filtroMes={filtroMes}
+    filtroEquipo={filtroEquipo}
+    onOpenDetail={openDetail}
+  />
 
-          <div className="pgx-card">
-            <h3>
-              {isAdmin ? 'Horas por Cliente' : 'Tus horas por Cliente'}
-              {filtroMes && ` (${filtroMes})`}
-              {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
-            </h3>
-            {horasPorCliente.length === 0 ? (
-              <div className="pgx-empty">Sin datos para los filtros seleccionados.</div>
-            ) : (
-              <div className="pgx-chart-scroll">
-                <ResponsiveContainer width="100%" height={hClientes}>
-                  <BarChart
-                    data={horasPorCliente}
-                    layout="vertical"
-                    margin={{ top: 8, right: 80, left: 8, bottom: 8 }}
-                    barCategoryGap={12}
-                    barSize={20}
-                  >
-                    <BrandDefs id="pgx-gradCliente" />
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" tickLine={false} axisLine={false} />
-                    <YAxis
-                      type="category"
-                      dataKey="cliente"
-                      width={yWidthCliente}
-                      tick={<WrapTickPx maxWidth={yWidthCliente - 18} fontSize={12} />}
-                    />
-                    <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
-                    <Bar dataKey="horas" name="Horas">
-                      <LabelList
-                        dataKey="horas"
-                        position="right"
-                        formatter={(value) => Number(value).toFixed(1)}
-                        style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
-                      />
-                      {horasPorCliente.map((entry, idx) => (
-                        <Cell
-                          key={`cli-${idx}`}
-                          fill="url(#pgx-gradCliente)"
-                          onClick={() => openDetail('cliente', entry.cliente, 'Cliente')}
-                          style={{ cursor: 'pointer' }}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
+  <HorasPorModuloChart
+    data={horasPorModulo}
+    isAdmin={isAdmin}
+    filtroMes={filtroMes}
+    filtroEquipo={filtroEquipo}
+    onOpenDetail={openDetail}
+  />
 
-          <div className="pgx-card">
-            <h3>
-              {isAdmin ? 'Horas por Módulo' : 'Tus horas por Módulo'}
-              {filtroMes && ` (${filtroMes})`}
-              {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
-            </h3>
-            {horasPorModulo.length === 0 ? (
-              <div className="pgx-empty">Sin datos para los filtros seleccionados.</div>
-            ) : (
-              <div className="pgx-chart-scroll">
-                <ResponsiveContainer width="100%" height={hModulos}>
-                  <BarChart
-                    data={horasPorModulo}
-                    layout="vertical"
-                    margin={{ top: 8, right: 80, left: 8, bottom: 8 }}
-                    barCategoryGap={12}
-                    barSize={20}
-                  >
-                    <BrandDefs id="pgx-gradModulo" />
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" tickLine={false} axisLine={false} />
-                    <YAxis
-                      type="category"
-                      dataKey="modulo"
-                      width={yWidthModulo}
-                      tick={<WrapTickPx maxWidth={yWidthModulo - 18} fontSize={12} />}
-                    />
-                    <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
-                    <Bar dataKey="horas" name="Horas">
-                      <LabelList
-                        dataKey="horas"
-                        position="right"
-                        formatter={(value) => Number(value).toFixed(1)}
-                        style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
-                      />
-                      {horasPorModulo.map((entry, idx) => (
-                        <Cell
-                          key={`m-${idx}`}
-                          fill="url(#pgx-gradModulo)"
-                          onClick={() => openDetail('modulo', entry.modulo, 'Módulo')}
-                          style={{ cursor: 'pointer' }}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
+  <HorasPorProyectoChart
+    data={horasPorProyecto}
+    isAdmin={isAdmin}
+    filtroMes={filtroMes}
+    filtroEquipo={filtroEquipo}
+  />
 
-          <div className="pgx-card">
-            <h3>
-              {isAdmin ? 'Horas por Proyecto' : 'Tus horas por Proyecto'}
-              {filtroMes && ` (${filtroMes})`}
-              {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
-            </h3>
+  <HorasPorDiaChart
+    data={horasPorDia}
+    filtroMes={filtroMes}
+    filtroEquipo={filtroEquipo}
+    onOpenDetail={openDetail}
+  />
 
-            {horasPorProyecto.length === 0 ? (
-              <div className="pgx-empty">Sin datos para los filtros seleccionados.</div>
-            ) : (
-              <div className="pgx-chart-scroll">
-                <ResponsiveContainer width="100%" height={Math.max(320, horasPorProyecto.length * 30)}>
-                  <BarChart
-                    data={horasPorProyecto}
-                    layout="vertical"
-                    margin={{ top: 8, right: 80, left: 8, bottom: 8 }}
-                    barCategoryGap={12}
-                    barSize={20}
-                  >
-                    <BrandDefs id="pgx-gradProyecto" />
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" tickLine={false} axisLine={false} />
-                    <YAxis
-                      type="category"
-                      dataKey="proyecto"
-                      width={360}
-                      tick={<WrapTickPx maxWidth={340} fontSize={12} />}
-                    />
-                    <Tooltip formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']} />
+  <PieTareasChart
+    data={pieTareas}
+    otrosDetalle={otrosTareasDetalle}
+    totalHoras={totalHorasPieTareas}
+    filtroMes={filtroMes}
+    filtroEquipo={filtroEquipo}
+  />
 
-                    <Bar dataKey="horas" name="Horas">
-                      <LabelList
-                        dataKey="horas"
-                        position="right"
-                        formatter={(value) => Number(value).toFixed(1)}
-                        style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
-                      />
+  <PieOcupacionChart
+    data={pieOcupacion}
+    totalHoras={totalHorasPieOcupacion}
+    filtroMes={filtroMes}
+    filtroEquipo={filtroEquipo}
+  />
+</div>
 
-                      {horasPorProyecto.map((entry, idx) => (
-                        <Cell
-                          key={`p-${idx}`}
-                          fill="url(#pgx-gradProyecto)"
-                          style={{ cursor: 'pointer' }}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-
-          <div className="pgx-card">
-            <h3>
-              Horas por Día (mes)
-              {filtroMes && ` (${filtroMes})`}
-              {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
-            </h3>
-            {horasPorDia.length === 0 ? (
-              <div className="pgx-empty">Sin datos para los filtros seleccionados.</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={hDias}>
-                <BarChart
-                  data={horasPorDia}
-                  margin={{ top: 24, right: 24, left: 8, bottom: 16 }}
-                  barCategoryGap={6}
-                >
-                  <BrandDefs id="pgx-gradDia" />
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="day" tickLine={false} />
-                  <YAxis />
-                  <Tooltip
-                    formatter={(v)=> [`${Number(v).toFixed(2)} h`, 'Horas']}
-                    labelFormatter={(label, payload) => {
-                      if (payload && payload[0] && payload[0].payload?.fecha) {
-                        return payload[0].payload.fecha;
-                      }
-                      return String(label);
-                    }}
-                  />
-                  <Bar dataKey="horas" name="Horas" radius={[4,4,0,0]}>
-                    <LabelList
-                      dataKey="horas"
-                      position="top"
-                      formatter={(value) => Number(value).toFixed(1)}
-                      style={{ fill: '#6b7280', fontSize: 12, fontWeight: 600 }}
-                    />
-                    {horasPorDia.map((entry, idx) => (
-                      <Cell
-                        key={`d-${entry.fecha}-${idx}`}
-                        fill="url(#pgx-gradDia)"
-                        onClick={() => openDetail('fecha', entry.fecha, 'Fecha')}
-                        style={{ cursor: 'pointer' }}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          <div className="pgx-card">
-            <h3>
-              Distribución por Tipo de Tarea (%)
-              {filtroMes && ` (${filtroMes})`}
-              {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
-            </h3>
-
-            {pieTareas.length === 0 ? (
-              <div className="pgx-empty">Sin datos para los filtros seleccionados.</div>
-            ) : (
-              <div className="pgx-pie-3d-layout">
-                <div className="pgx-pie-3d-chart">
-                  <ResponsiveContainer width="100%" height={520}>
-                    <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-                      <Tooltip content={<TaskPieTooltip otrosDetalle={otrosTareasDetalle} />} />
-                      {[...Array(12)].map((_, layerIndex) => (
-                        <Pie
-                          key={`task-depth-${layerIndex}`}
-                          data={pieTareas}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy={250 + (12 - layerIndex)}
-                          startAngle={210}
-                          endAngle={-30}
-                          innerRadius={74}
-                          outerRadius={128}
-                          paddingAngle={2}
-                          isAnimationActive={false}
-                          stroke="none"
-                          legendType="none"
-                        >
-                          {pieTareas.map((entry, i) => (
-                            <Cell
-                              key={`task-depth-cell-${layerIndex}-${i}`}
-                              fill={darkenHex(PIE_COLORS[i % PIE_COLORS.length], 0.42)}
-                            />
-                          ))}
-                        </Pie>
-                      ))}
-
-                      <Pie
-                        data={pieTareas}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy={250}
-                        startAngle={210}
-                        endAngle={-30}
-                        innerRadius={74}
-                        outerRadius={128}
-                        paddingAngle={2}
-                        stroke="#ffffff"
-                        strokeWidth={2}
-                        labelLine={false}
-                        label={taskPieLabelRenderer}
-                      >
-                        {pieTareas.map((entry, i) => (
-                          <Cell
-                            key={`task-top-cell-${i}`}
-                            fill={PIE_COLORS[i % PIE_COLORS.length]}
-                          />
-                        ))}
-                      </Pie>
-
-                      <text x="50%" y="242" textAnchor="middle" className="pgx-pie-center-big">
-                        {`${totalHorasPieTareas.toFixed(1)} h`}
-                      </text>
-                      <text x="50%" y="265" textAnchor="middle" className="pgx-pie-center-small">
-                        Total mes
-                      </text>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="pgx-pie-legend-box">
-                  {pieTareas.map((entry, index) => (
-                    <div
-                      key={`task-legend-${index}`}
-                      className="pgx-pie-legend-item"
-                      title={`${entry.name} — ${entry.value.toFixed(2)}%`}
-                    >
-                      <span
-                        className="pgx-pie-legend-dot"
-                        style={{ background: PIE_COLORS[index % PIE_COLORS.length] }}
-                      />
-                      <span className="pgx-pie-legend-text">{truncateTxt(entry.name, 38)}</span>
-                      <strong className="pgx-pie-legend-val">
-                        {entry.value.toFixed(1)}%
-                      </strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="pgx-card">
-            <h3>
-              Distribución por Ocupación (%)
-              {filtroMes && ` (${filtroMes})`}
-              {filtroEquipo.length > 0 && ` — Equipo: ${filtroEquipo.join(', ')}`}
-            </h3>
-
-            {pieOcupacion.length === 0 ? (
-              <div className="pgx-empty">Sin datos para los filtros seleccionados.</div>
-            ) : (
-              <div className="pgx-pie-3d-layout">
-                <div className="pgx-pie-3d-chart">
-                  <ResponsiveContainer width="100%" height={520}>
-                    <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-                      <Tooltip
-                        formatter={(v, n, p) => [
-                          `${Number(v).toFixed(2)}% — ${Number(p.payload.horas).toFixed(2)} h`,
-                          p.payload.name,
-                        ]}
-                      />
-
-                      {[...Array(10)].map((_, layerIndex) => (
-                        <Pie
-                          key={`ocup-depth-${layerIndex}`}
-                          data={pieOcupacion}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy={250 + (10 - layerIndex)}
-                          startAngle={90}
-                          endAngle={-270}
-                          innerRadius={0}
-                          outerRadius={128}
-                          paddingAngle={1.2}
-                          isAnimationActive={false}
-                          stroke="none"
-                          legendType="none"
-                        >
-                          {pieOcupacion.map((entry, i) => (
-                            <Cell
-                              key={`ocup-depth-cell-${layerIndex}-${i}`}
-                              fill={darkenHex(PIE_COLORS[i % PIE_COLORS.length], 0.40)}
-                            />
-                          ))}
-                        </Pie>
-                      ))}
-
-                      <Pie
-                        data={pieOcupacion}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy={250}
-                        startAngle={90}
-                        endAngle={-270}
-                        innerRadius={0}
-                        outerRadius={128}
-                        paddingAngle={1.2}
-                        stroke="#ffffff"
-                        strokeWidth={2}
-                        labelLine={false}
-                        label={ocupPieLabelRenderer}
-                      >
-                        {pieOcupacion.map((entry, i) => (
-                          <Cell
-                            key={`ocup-top-cell-${i}`}
-                            fill={PIE_COLORS[i % PIE_COLORS.length]}
-                          />
-                        ))}
-                      </Pie>
-
-                      <text x="50%" y="242" textAnchor="middle" className="pgx-pie-center-big">
-                        {`${totalHorasPieOcupacion.toFixed(1)} h`}
-                      </text>
-                      <text x="50%" y="265" textAnchor="middle" className="pgx-pie-center-small">
-                        Total mes
-                      </text>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="pgx-pie-legend-box">
-                  {pieOcupacion.map((entry, index) => (
-                    <div
-                      key={`ocup-legend-${index}`}
-                      className="pgx-pie-legend-item"
-                      title={`${entry.name} — ${entry.value.toFixed(2)}% — ${entry.horas.toFixed(2)} h`}
-                    >
-                      <span
-                        className="pgx-pie-legend-dot"
-                        style={{ background: PIE_COLORS[index % PIE_COLORS.length] }}
-                      />
-                      <span className="pgx-pie-legend-text">
-                        {truncateTxt(entry.name, 38)}
-                      </span>
-                      <strong className="pgx-pie-legend-val">
-                        {entry.value.toFixed(1)}%
-                      </strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <Modal
+<Modal
           isOpen={modalOpen}
           onRequestClose={closeModal}
           className="pgx-modal-content"

@@ -353,6 +353,66 @@ const RegistroRow = React.memo(function RegistroRow({
   );
 });
 
+function MultiSelectField({
+  value = [],
+  onChange,
+  options = [],
+  placeholder = "Selecciona",
+  disabled = false,
+}) {
+  return (
+    <select
+      multiple
+      value={value}
+      disabled={disabled}
+      onChange={(e) => {
+        const values = Array.from(e.target.selectedOptions).map((o) => o.value);
+        onChange(values);
+      }}
+      className="multi-select-field"
+      size={6}
+      title="Ctrl o Cmd + clic para seleccionar varias opciones"
+    >
+      {options.length === 0 ? (
+        <option value="" disabled>
+          {placeholder}
+        </option>
+      ) : (
+        options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))
+      )}
+    </select>
+  );
+}
+
+function buildOptionsSortedByCount(baseOptions, rows, getValue) {
+  const counts = new Map();
+
+  (rows || []).forEach((row) => {
+    const raw = getValue(row);
+    const value = String(raw ?? "").trim();
+    if (!value) return;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  });
+
+  return [...new Set((baseOptions || []).map((x) => String(x || "").trim()).filter(Boolean))]
+    .sort((a, b) => {
+      const diff = (counts.get(b) || 0) - (counts.get(a) || 0);
+      if (diff !== 0) return diff;
+      return a.localeCompare(b);
+    });
+}
+
+const appendMultiValues = (params, key, values) => {
+  (Array.isArray(values) ? values : [])
+    .map((v) => String(v ?? "").trim())
+    .filter(Boolean)
+    .forEach((v) => params.append(key, v));
+};
+
 const Registro = ({ userData }) => {
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros] = useState([]);
@@ -367,12 +427,12 @@ const Registro = ({ userData }) => {
 
   const [filtroId, setFiltroId] = useState('');
   const [filtroFecha, setFiltroFecha] = useState('');
-  const [filtroCliente, setFiltroCliente] = useState('');
-  const [filtroOcupacion, setFiltroOcupacion] = useState('');
-  const [filtroTarea, setFiltroTarea] = useState('');
-  const [filtroConsultor, setFiltroConsultor] = useState('');
+  const [filtroCliente, setFiltroCliente] = useState([]);
+  const [filtroOcupacion, setFiltroOcupacion] = useState([]);
+  const [filtroTarea, setFiltroTarea] = useState([]);
+  const [filtroConsultor, setFiltroConsultor] = useState([]);
   const [filtroNroCasoCli, setFiltroNroCasoCli] = useState('');
-  const [filtroHorasAdic, setFiltroHorasAdic] = useState('');
+  const [filtroHorasAdic, setFiltroHorasAdic] = useState([]);
   const [filtroMes, setFiltroMes] = useState("");
   const [filtroAnio, setFiltroAnio] = useState("");
 
@@ -470,9 +530,8 @@ const Registro = ({ userData }) => {
   const [equiposDisponibles, setEquiposDisponibles] = useState([]);
   const [consultoresGlobales, setConsultoresGlobales] = useState([]);
   const [equiposConConteo, setEquiposConConteo] = useState([{ key: '', label: 'Todos', count: 0 }]);
-
-  const filtroNroCasoCliDeb = useDebouncedValue(filtroNroCasoCli, 300);
   const filtroIdDeb = useDebouncedValue(filtroId, 250);
+  const filtroNroCasoCliDeb = useDebouncedValue(filtroNroCasoCli, 250);
 
   const [page, setPage] = useState(1);
   const [perPage] = useState(50);
@@ -799,29 +858,44 @@ const Registro = ({ userData }) => {
       if (equipoLocked) params.set("equipo", equipoLocked);
       if (filtroMes) params.set("mes", filtroMes);
       if (filtroAnio) params.set("anio", filtroAnio);
-      if (filtroConsultor) params.set("consultor", filtroConsultor);
-      if (filtroCliente) params.set("cliente", filtroCliente);
       if (filtroFecha) params.set("fecha", filtroFecha);
       if (filtroIdDeb) params.set("id", filtroIdDeb);
       if (filtroNroCasoCliDeb) params.set("nroCasoCliente", filtroNroCasoCliDeb);
-      if (filtroHorasAdic) params.set("horasAdicionales", filtroHorasAdic);
 
-      if (filtroTarea) {
-        const tareaObj = (todasTareas || []).find(
-          t => `${t.codigo} - ${t.nombre}` === filtroTarea
-        );
-        if (tareaObj?.id) params.set("tarea_id", tareaObj.id);
-      }
+      appendMultiValues(params, "consultor", filtroConsultor);
+      appendMultiValues(params, "cliente", filtroCliente);
+      appendMultiValues(params, "horasAdicionales", filtroHorasAdic);
 
-      if (filtroOcupacion) {
-        const occObj = (ocupaciones || []).find(
-          o => `${o.codigo} - ${o.nombre}` === filtroOcupacion
-        );
-        if (occObj?.id) params.set("ocupacion_id", occObj.id);
-      }
+      const tareaIds = [
+        ...new Set(
+          (Array.isArray(filtroTarea) ? filtroTarea : [])
+            .map((label) =>
+              (todasTareas || []).find(
+                (t) => `${t.codigo} - ${t.nombre}` === String(label || "").trim()
+              )?.id
+            )
+            .filter(Boolean)
+        ),
+      ];
 
-      params.set("page", page);
-      params.set("per_page", perPage);
+      tareaIds.forEach((id) => params.append("tarea_id", String(id)));
+
+      const ocupacionIds = [
+        ...new Set(
+          (Array.isArray(filtroOcupacion) ? filtroOcupacion : [])
+            .map((label) =>
+              (ocupaciones || []).find(
+                (o) => `${o.codigo} - ${o.nombre}` === String(label || "").trim()
+              )?.id
+            )
+            .filter(Boolean)
+        ),
+      ];
+
+      ocupacionIds.forEach((id) => params.append("ocupacion_id", String(id)));
+
+      params.set("page", String(page));
+      params.set("per_page", String(perPage));
 
       const url = `/registros?${params.toString()}`;
 
@@ -836,7 +910,9 @@ const Registro = ({ userData }) => {
       });
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
+      if (!res.ok) {
+        throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
+      }
 
       setRegistros(Array.isArray(data?.data) ? data.data : []);
       setTotalRegistros(Number(data?.total || 0));
@@ -852,11 +928,11 @@ const Registro = ({ userData }) => {
     equipoLocked,
     filtroMes,
     filtroAnio,
-    filtroConsultor,
-    filtroCliente,
     filtroFecha,
     filtroIdDeb,
     filtroNroCasoCliDeb,
+    filtroConsultor,
+    filtroCliente,
     filtroHorasAdic,
     filtroTarea,
     filtroOcupacion,
@@ -945,6 +1021,38 @@ const Registro = ({ userData }) => {
       tipoTareaTexto: r.tipoTarea || (r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—"),
     }));
   }, [registros, obtenerOcupacionDeRegistro]);
+
+  const clientesOptions = useMemo(() => {
+    return buildOptionsSortedByCount(
+      clientes.map((c) => c.nombre_cliente),
+      registrosProcesados,
+      (r) => r.cliente
+    );
+  }, [clientes, registrosProcesados]);
+
+  const ocupacionesOptions = useMemo(() => {
+    return buildOptionsSortedByCount(
+      ocupaciones.map((o) => `${o.codigo} - ${o.nombre}`),
+      registrosProcesados,
+      (r) => r.ocupacionTexto
+    );
+  }, [ocupaciones, registrosProcesados]);
+
+  const tareasOptions = useMemo(() => {
+    return buildOptionsSortedByCount(
+      todasTareas.map((t) => `${t.codigo} - ${t.nombre}`),
+      registrosProcesados,
+      (r) => r.tipoTareaTexto
+    );
+  }, [todasTareas, registrosProcesados]);
+
+  const consultoresOptions = useMemo(() => {
+    return buildOptionsSortedByCount(
+      consultoresGlobales,
+      registrosProcesados,
+      (r) => r.consultor
+    );
+  }, [consultoresGlobales, registrosProcesados]);
 
   const registrosFiltrados = useMemo(() => {
     return {
@@ -1493,37 +1601,52 @@ const Registro = ({ userData }) => {
     if (equipoLocked) params.set("equipo", equipoLocked);
     if (filtroMes) params.set("mes", filtroMes);
     if (filtroAnio) params.set("anio", filtroAnio);
-    if (filtroConsultor) params.set("consultor", filtroConsultor);
-    if (filtroCliente) params.set("cliente", filtroCliente);
     if (filtroFecha) params.set("fecha", filtroFecha);
     if (filtroIdDeb) params.set("id", filtroIdDeb);
     if (filtroNroCasoCliDeb) params.set("nroCasoCliente", filtroNroCasoCliDeb);
-    if (filtroHorasAdic) params.set("horasAdicionales", filtroHorasAdic);
 
-    if (filtroTarea) {
-      const tareaObj = (todasTareas || []).find(
-        t => `${t.codigo} - ${t.nombre}` === filtroTarea
-      );
-      if (tareaObj?.id) params.set("tarea_id", tareaObj.id);
-    }
+    appendMultiValues(params, "consultor", filtroConsultor);
+    appendMultiValues(params, "cliente", filtroCliente);
+    appendMultiValues(params, "horasAdicionales", filtroHorasAdic);
 
-    if (filtroOcupacion) {
-      const occObj = (ocupaciones || []).find(
-        o => `${o.codigo} - ${o.nombre}` === filtroOcupacion
-      );
-      if (occObj?.id) params.set("ocupacion_id", occObj.id);
-    }
+    const tareaIds = [
+      ...new Set(
+        (Array.isArray(filtroTarea) ? filtroTarea : [])
+          .map((label) =>
+            (todasTareas || []).find(
+              (t) => `${t.codigo} - ${t.nombre}` === String(label || "").trim()
+            )?.id
+          )
+          .filter(Boolean)
+      ),
+    ];
+
+    tareaIds.forEach((id) => params.append("tarea_id", String(id)));
+
+    const ocupacionIds = [
+      ...new Set(
+        (Array.isArray(filtroOcupacion) ? filtroOcupacion : [])
+          .map((label) =>
+            (ocupaciones || []).find(
+              (o) => `${o.codigo} - ${o.nombre}` === String(label || "").trim()
+            )?.id
+          )
+          .filter(Boolean)
+      ),
+    ];
+
+    ocupacionIds.forEach((id) => params.append("ocupacion_id", String(id)));
 
     return params;
   }, [
     equipoLocked,
     filtroMes,
     filtroAnio,
-    filtroConsultor,
-    filtroCliente,
     filtroFecha,
     filtroIdDeb,
     filtroNroCasoCliDeb,
+    filtroConsultor,
+    filtroCliente,
     filtroHorasAdic,
     filtroTarea,
     filtroOcupacion,
@@ -1551,12 +1674,12 @@ const Registro = ({ userData }) => {
         rows,
         `registros_${new Date().toISOString().slice(0, 10)}.xlsx`,
         {
-          'Consultor filtro': filtroConsultor || 'Todos',
-          'Tarea filtro': filtroTarea || 'Todas',
-          'Cliente filtro': filtroCliente || 'Todos',
+          'Consultor filtro': filtroConsultor.length ? filtroConsultor.join(', ') : 'Todos',
+          'Tarea filtro': filtroTarea.length ? filtroTarea.join(', ') : 'Todas',
+          'Cliente filtro': filtroCliente.length ? filtroCliente.join(', ') : 'Todos',
           'Equipo filtro': filtroEquipo || 'Todos',
           'Nro Caso Cliente filtro': filtroNroCasoCli || 'Todos',
-          'Horas Adicionales filtro': filtroHorasAdic || 'Todas',
+          'Horas Adicionales filtro': filtroHorasAdic.length ? filtroHorasAdic.join(', ') : 'Todas',
           'Fecha filtro': filtroFecha || 'Todas',
           'Mes filtro': filtroMes || 'Todos',
           'Año filtro': filtroAnio || 'Todos',
@@ -1577,25 +1700,25 @@ const Registro = ({ userData }) => {
     if (!userData) return;
 
     if (!isAdmin) {
-      setFiltroConsultor(nombreUser);
+      setFiltroConsultor(nombreUser ? [nombreUser] : []);
       setFiltroEquipo(normKey(equipoUser));
       return;
     }
 
     if (isAdminEquipo) {
-      setFiltroConsultor('');
+      setFiltroConsultor([]);
       setFiltroEquipo(normKey(equipoUser));
       return;
     }
 
     if (isAdminRolePool) {
-      setFiltroConsultor('');
+      setFiltroConsultor([]);
       setFiltroEquipo('');
       return;
     }
 
     if (isAdminGlobal) {
-      setFiltroConsultor('');
+      setFiltroConsultor([]);
       setFiltroEquipo('');
     }
   }, [isAdmin, isAdminEquipo, isAdminRolePool, isAdminGlobal, nombreUser, equipoUser, userData]);
@@ -1840,41 +1963,26 @@ const Registro = ({ userData }) => {
               onChange={(e) => setFiltroFecha(e.target.value)}
             />
 
-            <select
+            <MultiSelectField
               value={filtroCliente}
-              onChange={(e) => setFiltroCliente(e.target.value)}
-            >
-              <option value="">Todos los clientes</option>
-              {clientes.map((c) => (
-                <option key={c.id} value={c.nombre_cliente}>
-                  {c.nombre_cliente}
-                </option>
-              ))}
-            </select>
+              onChange={setFiltroCliente}
+              options={clientesOptions}
+              placeholder="Todos los clientes"
+            />
 
-            <select
+            <MultiSelectField
               value={filtroOcupacion}
-              onChange={(e) => setFiltroOcupacion(e.target.value)}
-            >
-              <option value="">Todas las ocupaciones</option>
-              {ocupaciones.map((o) => (
-                <option key={o.id} value={`${o.codigo} - ${o.nombre}`}>
-                  {o.codigo} - {o.nombre}
-                </option>
-              ))}
-            </select>
+              onChange={setFiltroOcupacion}
+              options={ocupacionesOptions}
+              placeholder="Todas las ocupaciones"
+            />
 
-            <select
+            <MultiSelectField
               value={filtroTarea}
-              onChange={(e) => setFiltroTarea(e.target.value)}
-            >
-              <option value="">Todas las tareas</option>
-              {todasTareas.map((t) => (
-                <option key={t.id} value={`${t.codigo} - ${t.nombre}`}>
-                  {t.codigo} - {t.nombre}
-                </option>
-              ))}
-            </select>
+              onChange={setFiltroTarea}
+              options={tareasOptions}
+              placeholder="Todas las tareas"
+            />
 
             {isAdminGlobal ? (
               <select
@@ -1904,23 +2012,19 @@ const Registro = ({ userData }) => {
               />
             )}
 
-            <select
+            <MultiSelectField
               value={filtroConsultor}
-              onChange={(e) => setFiltroConsultor(e.target.value)}
-              disabled={!isAdmin}
-            >
-              <option value="">
-                {!isAdmin
-                  ? (nombreUser || 'Consultor')
+              onChange={setFiltroConsultor}
+              options={consultoresOptions}
+              placeholder={
+                !isAdmin
+                  ? (nombreUser || "Consultor")
                   : isAdminRolePool
-                    ? 'Consultores asignados al rol'
-                    : 'Todos los consultores'}
-              </option>
-
-              {consultoresGlobales.map((c, idx) => (
-                <option key={idx} value={c}>{c}</option>
-              ))}
-            </select>
+                    ? "Consultores asignados al rol"
+                    : "Todos los consultores"
+              }
+              disabled={!isAdmin}
+            />
 
             <input
               type="text"
@@ -1929,14 +2033,12 @@ const Registro = ({ userData }) => {
               onChange={(e) => setFiltroNroCasoCli(e.target.value)}
             />
 
-            <select
+            <MultiSelectField
               value={filtroHorasAdic}
-              onChange={(e) => setFiltroHorasAdic(e.target.value)}
-            >
-              <option value="">Horas Adicionales (todas)</option>
-              <option value="SI">Sí</option>
-              <option value="NO">No</option>
-            </select>
+              onChange={setFiltroHorasAdic}
+              options={["SI", "NO"]}
+              placeholder="Horas Adicionales"
+            />
 
             <select value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}>
               <option value="">Todos los meses</option>
@@ -1962,25 +2064,26 @@ const Registro = ({ userData }) => {
               onClick={() => {
                 setFiltroId('');
                 setFiltroFecha('');
-                setFiltroCliente('');
-                setFiltroTarea('');
-                setFiltroOcupacion('');
+                setFiltroCliente([]);
+                setFiltroTarea([]);
+                setFiltroOcupacion([]);
                 setFiltroNroCasoCli('');
-                setFiltroHorasAdic('');
+                setFiltroHorasAdic([]);
                 setFiltroMes('');
                 setFiltroAnio('');
                 setPage(1);
+
                 if (!isAdmin) {
-                  setFiltroConsultor(nombreUser);
+                  setFiltroConsultor(nombreUser ? [nombreUser] : []);
                   setFiltroEquipo(normKey(equipoUser));
                 } else if (isAdminEquipo) {
-                  setFiltroConsultor('');
+                  setFiltroConsultor([]);
                   setFiltroEquipo(normKey(equipoUser));
                 } else if (isAdminRolePool) {
-                  setFiltroConsultor('');
+                  setFiltroConsultor([]);
                   setFiltroEquipo('');
                 } else {
-                  setFiltroConsultor('');
+                  setFiltroConsultor([]);
                   setFiltroEquipo('');
                 }
               }}

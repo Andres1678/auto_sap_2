@@ -359,7 +359,7 @@
   flex-direction:column;
   gap:12px;
   position:relative;
-  overflow:hidden;
+  overflow:visible;
 }
 
 .pgx-card::before{
