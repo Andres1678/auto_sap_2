@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Modal from "react-modal";
 import { jfetch } from "./lib/api";
-import TopOcupacionesConsultorChart from "./GraficosOperacion/TopOcupacionesConsultorChart";
+import TopOcupacionesConsultorChart from "./GraficosOperacion/TopOcupacionesConsultor";
 import "./CapacidadSemanalModal.css";
 
 Modal.setAppElement("#root");
