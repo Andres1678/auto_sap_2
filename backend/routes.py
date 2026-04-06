@@ -4803,7 +4803,7 @@ def resumen_calendario():
         if not consultor_login:
             return jsonify({"error": "Consultor no encontrado"}), 404
 
-        scope, val = scope_for(consultor_login, rol_req)
+        scope, val = _scope_for_graficos(consultor_login, rol_req)
 
         # filtros de fecha opcionales
         desde = (request.args.get("desde") or "").strip()
