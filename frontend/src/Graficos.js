@@ -73,8 +73,8 @@ function workdaysInMonth(year, month, holidays = []) {
 
 function MultiFiltro({
   titulo,
-  opciones,
-  seleccion,
+  opciones = [],
+  seleccion = [],
   onChange,
   placeholder = 'Todas',
   disabled = false,
@@ -97,24 +97,45 @@ function MultiFiltro({
     return () => document.removeEventListener('click', handler);
   }, [open]);
 
+  const lower = search.toLowerCase();
+
+  const filtered = (opciones || []).filter((o) =>
+    o && String(o).toLowerCase().includes(lower)
+  );
+
   const toggleValue = (val) => {
     if (disabled) return;
+
     const exists = seleccion.includes(val);
     const next = exists
-      ? seleccion.filter(v => v !== val)
+      ? seleccion.filter((v) => v !== val)
       : [...seleccion, val];
+
     onChange(next);
   };
 
   const removeChip = (val) => {
     if (disabled) return;
-    onChange(seleccion.filter(v => v !== val));
+    onChange(seleccion.filter((v) => v !== val));
   };
 
-  const lower = search.toLowerCase();
-  const filtered = (opciones || []).filter(o =>
-    o && String(o).toLowerCase().includes(lower)
-  );
+  const handleSelectAll = (e) => {
+    e.stopPropagation();
+    if (disabled) return;
+
+    const base = new Set(seleccion);
+    filtered.forEach((val) => base.add(val));
+    onChange(Array.from(base));
+  };
+
+  const handleClearAll = (e) => {
+    e.stopPropagation();
+    if (disabled) return;
+    onChange([]);
+  };
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((val) => seleccion.includes(val));
 
   const showPlaceholder = seleccion.length === 0;
 
@@ -129,19 +150,24 @@ function MultiFiltro({
           (open ? ' is-open' : '') +
           (disabled ? ' is-disabled' : '')
         }
-        onClick={() => { if (!disabled) setOpen(o => !o); }}
+        onClick={() => {
+          if (!disabled) setOpen((o) => !o);
+        }}
       >
         {showPlaceholder ? (
           <span className="pgx-mf-placeholder">{placeholder}</span>
         ) : (
           <div className="pgx-mf-chips">
-            {seleccion.map(val => (
+            {seleccion.map((val) => (
               <span key={val} className="pgx-mf-chip">
                 <span>{val}</span>
                 {!disabled && (
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); removeChip(val); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeChip(val);
+                    }}
                   >
                     ✕
                   </button>
@@ -166,13 +192,35 @@ function MultiFiltro({
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+
+          <div className="pgx-mf-actions">
+            <button
+              type="button"
+              className="pgx-mf-action-btn"
+              onClick={handleSelectAll}
+              disabled={filtered.length === 0 || allFilteredSelected}
+            >
+              Seleccionar todo
+            </button>
+
+            <button
+              type="button"
+              className="pgx-mf-action-btn pgx-mf-action-btn-clear"
+              onClick={handleClearAll}
+              disabled={seleccion.length === 0}
+            >
+              Quitar selección
+            </button>
+          </div>
+
           <div className="pgx-mf-options">
             {filtered.length === 0 && (
               <div className="pgx-mf-option pgx-mf-option-empty">
                 Sin resultados
               </div>
             )}
-            {filtered.map(val => (
+
+            {filtered.map((val) => (
               <label key={val} className="pgx-mf-option">
                 <input
                   type="checkbox"

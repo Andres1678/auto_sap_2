@@ -360,31 +360,105 @@ function MultiSelectField({
   placeholder = "Selecciona",
   disabled = false,
 }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef(null);
+
+  const selectedValues = Array.isArray(value) ? value : [];
+
+  useEffect(() => {
+    const handleOutside = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  const toggleOption = (option) => {
+    if (disabled) return;
+
+    const exists = selectedValues.includes(option);
+    if (exists) {
+      onChange(selectedValues.filter((v) => v !== option));
+    } else {
+      onChange([...selectedValues, option]);
+    }
+  };
+
+  const clearAll = (e) => {
+    e.stopPropagation();
+    onChange([]);
+  };
+
+  const summaryText = useMemo(() => {
+    if (!selectedValues.length) return placeholder;
+    if (selectedValues.length === 1) return selectedValues[0];
+    if (selectedValues.length === 2) return `${selectedValues[0]}, ${selectedValues[1]}`;
+    return `${selectedValues.length} seleccionados`;
+  }, [selectedValues, placeholder]);
+
   return (
-    <select
-      multiple
-      value={value}
-      disabled={disabled}
-      onChange={(e) => {
-        const values = Array.from(e.target.selectedOptions).map((o) => o.value);
-        onChange(values);
-      }}
-      className="multi-select-field"
-      size={6}
-      title="Ctrl o Cmd + clic para seleccionar varias opciones"
+    <div
+      className={`filter-multiselect ${disabled ? "is-disabled" : ""}`}
+      ref={wrapperRef}
     >
-      {options.length === 0 ? (
-        <option value="" disabled>
-          {placeholder}
-        </option>
-      ) : (
-        options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
-        ))
+      <button
+        type="button"
+        className={`filter-multiselect__trigger ${open ? "is-open" : ""}`}
+        onClick={() => !disabled && setOpen((prev) => !prev)}
+        disabled={disabled}
+      >
+        <span
+          className={`filter-multiselect__text ${
+            !selectedValues.length ? "is-placeholder" : ""
+          }`}
+          title={selectedValues.join(", ")}
+        >
+          {summaryText}
+        </span>
+
+        <span className="filter-multiselect__actions">
+          {!!selectedValues.length && !disabled && (
+            <span
+              className="filter-multiselect__clear"
+              onClick={clearAll}
+              role="button"
+              tabIndex={0}
+            >
+              ✕
+            </span>
+          )}
+          <span className="filter-multiselect__arrow">{open ? "▴" : "▾"}</span>
+        </span>
+      </button>
+
+      {open && (
+        <div className="filter-multiselect__menu">
+          {options.length === 0 ? (
+            <div className="filter-multiselect__empty">
+              No hay opciones
+            </div>
+          ) : (
+            options.map((opt) => {
+              const checked = selectedValues.includes(opt);
+
+              return (
+                <label key={opt} className="filter-multiselect__option">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleOption(opt)}
+                  />
+                  <span>{opt}</span>
+                </label>
+              );
+            })
+          )}
+        </div>
       )}
-    </select>
+    </div>
   );
 }
 
