@@ -474,7 +474,6 @@ const Registro = ({ userData }) => {
   ]);
 
   const REGISTRO_EXCLUDED_ROLES = new Set([
-    "ADMIN_GERENTES",
   ]);
 
   const canAccessRegistro = !REGISTRO_EXCLUDED_ROLES.has(rolUpper);
