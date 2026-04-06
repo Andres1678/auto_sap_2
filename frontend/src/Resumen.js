@@ -111,7 +111,7 @@ export default function Resumen({
 
   const rolUpper = useMemo(() => String(rol || "").trim().toUpperCase(), [rol]);
   const RESUMEN_GLOBAL_ROLES = new Set([
-    "ADMIN", "ADMIN_GERENTES" 
+    "ADMIN"
   ]);
   const RESUMEN_ROLE_POOL_ROLES = new Set([
     "ADMIN_GESTION_PREVENTA",
