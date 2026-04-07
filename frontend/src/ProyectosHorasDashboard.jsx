@@ -1381,8 +1381,8 @@ export default function ProyectosHorasDashboard({
       );
     }
 
-    const height = Math.max(320, data.length * 34);
-    const yAxisWidth = 320;
+    const height = Math.min(Math.max(360, data.length * 26), 760);
+    const yAxisWidth = kind === "proyecto" ? 280 : 240;
 
     return (
       <div className="phd-card phd-card-chart">
@@ -1766,8 +1766,13 @@ export default function ProyectosHorasDashboard({
           {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#4C8BF5", "proyecto")}
           {renderMesModuloChart("Horas por Mes y Módulo", horasPorMesModulo)}
           {renderModuloVerticalChart("Horas por Módulo", horasPorModulo, "#E35D6A")}
-          {renderChartCard("Horas por Consultor", horasPorConsultor, "#374151", "consultor")}
-          {renderChartCard("Horas por Tarea", horasPorTarea, "#5B6CFA", "tarea")}
+          <div className="phd-card--wide">
+            {renderChartCard("Horas por Consultor", horasPorConsultor, "#374151", "consultor")}
+          </div>
+
+          <div className="phd-card--wide">
+            {renderChartCard("Horas por Tarea", horasPorTarea, "#5B6CFA", "tarea")}
+          </div>
           {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#2FA36B", "ocupacion")}
         </section>
       </div>
