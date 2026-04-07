@@ -10,10 +10,41 @@ import {
   Legend,
 } from "recharts";
 
+const DEFAULT_PHASE_ORDER = [
+  "DESCUBRIR",
+  "PREPARAR",
+  "EXPLORAR",
+  "REALIZAR",
+  "DESPLEGAR",
+  "OPERAR",
+];
+
+const LINE_COLORS = [
+  "#2563eb",
+  "#f97316",
+  "#16a34a",
+  "#7c3aed",
+  "#dc2626",
+  "#0891b2",
+  "#ca8a04",
+  "#db2777",
+  "#4f46e5",
+  "#059669",
+  "#9333ea",
+  "#ea580c",
+];
+
 const toNum = (v) => {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
 };
+
+const normKey = (s) =>
+  String(s ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
 
 const getHorasRegistro = (r) =>
   toNum(
@@ -26,11 +57,7 @@ const getHorasRegistro = (r) =>
   );
 
 const getProyectoId = (r) =>
-  String(
-    r?.proyecto_id ??
-      r?.proyecto?.id ??
-      ""
-  ).trim();
+  String(r?.proyecto_id ?? r?.proyecto?.id ?? "").trim();
 
 const getProyectoNombre = (r) => {
   const codigo = String(r?.proyecto_codigo ?? r?.proyecto?.codigo ?? "").trim();
@@ -51,15 +78,21 @@ const getFaseNombre = (r) => {
       ""
   ).trim();
 
-  if (directa) return directa;
-
-  return "SIN FASE";
+  return directa || "SIN FASE";
 };
 
-function ProyectoFaseTopTooltip({ active, payload, label }) {
+const getPhaseRank = (fase) => {
+  const key = normKey(fase);
+  const idx = DEFAULT_PHASE_ORDER.indexOf(key);
+  return idx === -1 ? 999 : idx;
+};
+
+function ProyectoFasesTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
 
-  const row = payload[0]?.payload;
+  const visibles = payload
+    .filter((p) => Number(p?.value || 0) > 0)
+    .sort((a, b) => Number(b?.value || 0) - Number(a?.value || 0));
 
   return (
     <div
@@ -69,81 +102,98 @@ function ProyectoFaseTopTooltip({ active, payload, label }) {
         borderRadius: 12,
         padding: 12,
         boxShadow: "0 10px 25px rgba(0,0,0,0.08)",
-        minWidth: 250,
+        minWidth: 260,
+        maxWidth: 360,
       }}
     >
       <div style={{ fontWeight: 700, marginBottom: 8 }}>{label}</div>
-      <div style={{ fontSize: 13, marginBottom: 4 }}>
-        <b>Fase top:</b> {row?.faseTop || "—"}
-      </div>
-      <div style={{ fontSize: 13, marginBottom: 4 }}>
-        <b>Horas proyecto:</b> {Number(row?.horasProyecto || 0).toFixed(2)} h
-      </div>
-      <div style={{ fontSize: 13 }}>
-        <b>Horas fase top:</b> {Number(row?.horasFaseTop || 0).toFixed(2)} h
-      </div>
+
+      {visibles.length === 0 ? (
+        <div style={{ fontSize: 13 }}>Sin horas registradas en esta fase.</div>
+      ) : (
+        visibles.map((item) => (
+          <div
+            key={item.dataKey}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              fontSize: 13,
+              marginBottom: 4,
+            }}
+          >
+            <span>{item.name}</span>
+            <b>{Number(item.value || 0).toFixed(2)} h</b>
+          </div>
+        ))
+      )}
     </div>
   );
 }
 
-export default function ProyectoFaseTopLineChart({
+export default function ProyectoFasesRegistradasLineChart({
   rows = [],
-  title = "Proyecto vs fase más trabajada",
-  top = 10,
+  title = "Horas por fases registradas del proyecto",
 }) {
-  const data = useMemo(() => {
-    const proyectosMap = new Map();
+  const { data, series } = useMemo(() => {
+    const arr = Array.isArray(rows) ? rows : [];
 
-    for (const r of Array.isArray(rows) ? rows : []) {
+    const proyectosMap = new Map();
+    const fasesSet = new Set();
+    const horasMap = new Map();
+
+    for (const r of arr) {
       const proyectoId = getProyectoId(r);
       if (!proyectoId) continue;
 
       const proyectoNombre = getProyectoNombre(r);
-      const faseNombre = getFaseNombre(r);
+      const fase = getFaseNombre(r);
       const horas = getHorasRegistro(r);
 
-      if (!proyectosMap.has(proyectoId)) {
-        proyectosMap.set(proyectoId, {
-          key: proyectoId,
-          name: proyectoNombre,
-          horasProyecto: 0,
-          fases: new Map(),
-        });
-      }
+      if (!fase) continue;
 
-      const current = proyectosMap.get(proyectoId);
-      current.horasProyecto += horas;
-      current.fases.set(
-        faseNombre,
-        toNum(current.fases.get(faseNombre)) + horas
-      );
+      proyectosMap.set(proyectoId, proyectoNombre);
+      fasesSet.add(fase);
+
+      const comboKey = `${proyectoId}__${fase}`;
+      horasMap.set(comboKey, toNum(horasMap.get(comboKey)) + horas);
     }
 
-    return Array.from(proyectosMap.values())
-      .map((p) => {
-        let faseTop = "SIN FASE";
-        let horasFaseTop = 0;
+    const fasesOrdenadas = Array.from(fasesSet).sort((a, b) => {
+      const ra = getPhaseRank(a);
+      const rb = getPhaseRank(b);
 
-        for (const [fase, horas] of p.fases.entries()) {
-          if (horas > horasFaseTop) {
-            faseTop = fase;
-            horasFaseTop = horas;
-          }
-        }
+      if (ra !== rb) return ra - rb;
+      return String(a).localeCompare(String(b), "es", { sensitivity: "base" });
+    });
 
-        return {
-          key: p.key,
-          name: p.name,
-          horasProyecto: +p.horasProyecto.toFixed(2),
-          horasFaseTop: +horasFaseTop.toFixed(2),
-          faseTop,
-        };
-      })
-      .sort((a, b) => b.horasProyecto - a.horasProyecto)
-      .slice(0, top);
-  }, [rows, top]);
+    const proyectosOrdenados = Array.from(proyectosMap.entries())
+      .map(([id, name], idx) => ({
+        projectId: id,
+        seriesKey: `proyecto_${id}`,
+        name,
+        color: LINE_COLORS[idx % LINE_COLORS.length],
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
 
-  if (!data.length) {
+    const data = fasesOrdenadas.map((fase) => {
+      const row = { fase };
+
+      proyectosOrdenados.forEach((p) => {
+        const comboKey = `${p.projectId}__${fase}`;
+        row[p.seriesKey] = +toNum(horasMap.get(comboKey)).toFixed(2);
+      });
+
+      return row;
+    });
+
+    return {
+      data,
+      series: proyectosOrdenados,
+    };
+  }, [rows]);
+
+  if (!data.length || !series.length) {
     return (
       <div className="phd-card phd-card-chart">
         <div className="phd-card-head">
@@ -158,48 +208,50 @@ export default function ProyectoFaseTopLineChart({
     <div className="phd-card phd-card-chart">
       <div className="phd-card-head">
         <h4>{title}</h4>
-        <span className="phd-card-badge">{data.length} proyectos</span>
+        <span className="phd-card-badge">{series.length} proyectos</span>
       </div>
+
+      {series.length > 8 && (
+        <div
+          style={{
+            padding: "0 20px 6px",
+            fontSize: 12,
+            color: "#64748b",
+          }}
+        >
+          Hay varios proyectos al tiempo; para verlo más claro usa el filtro de proyecto.
+        </div>
+      )}
 
       <div className="phd-chartWrap">
         <div className="phd-chartInner">
           <ResponsiveContainer width="100%" height={430}>
-            <LineChart
-              data={data}
-              margin={{ top: 20, right: 24, left: 10, bottom: 95 }}
-            >
+            <LineChart data={data} margin={{ top: 20, right: 24, left: 10, bottom: 30 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis
-                dataKey="name"
+                dataKey="fase"
                 interval={0}
-                angle={-18}
+                angle={-12}
                 textAnchor="end"
-                height={95}
+                height={60}
                 tick={{ fontSize: 12 }}
               />
               <YAxis tickFormatter={(v) => `${Number(v).toFixed(0)}`} />
-              <Tooltip content={<ProyectoFaseTopTooltip />} />
-              <Legend />
+              <Tooltip content={<ProyectoFasesTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
 
-              <Line
-                type="monotone"
-                dataKey="horasProyecto"
-                name="Horas del proyecto"
-                stroke="#2563eb"
-                strokeWidth={3}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
-
-              <Line
-                type="monotone"
-                dataKey="horasFaseTop"
-                name="Horas de la fase top"
-                stroke="#f97316"
-                strokeWidth={3}
-                dot={{ r: 4 }}
-                activeDot={{ r: 6 }}
-              />
+              {series.map((s) => (
+                <Line
+                  key={s.seriesKey}
+                  type="monotone"
+                  dataKey={s.seriesKey}
+                  name={s.name}
+                  stroke={s.color}
+                  strokeWidth={2.5}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+              ))}
             </LineChart>
           </ResponsiveContainer>
         </div>
