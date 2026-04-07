@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { jfetch } from "./lib/api";
 import "./ProyectosHorasDashboard.css";
+import ProyectoFaseTopLineChart from "./Proyectos/ProyectoFaseTopLineChart";
 
 if (typeof document !== "undefined") {
   const rootEl = document.querySelector("#root");
@@ -1756,6 +1757,12 @@ export default function ProyectosHorasDashboard({
         </section>
 
         <section className="phd-grid">
+          <ProyectoFaseTopLineChart
+            rows={datosFiltrados}
+            title="Proyecto vs fase más trabajada"
+            top={10}
+          />
+          
           {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#4C8BF5", "proyecto")}
           {renderMesModuloChart("Horas por Mes y Módulo", horasPorMesModulo)}
           {renderModuloVerticalChart("Horas por Módulo", horasPorModulo, "#E35D6A")}

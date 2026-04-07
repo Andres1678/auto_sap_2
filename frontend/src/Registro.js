@@ -231,6 +231,17 @@ const isActiveValue = (v) => {
   return s === "1" || s === "true" || s === "si" || s === "sí";
 };
 
+const getFaseRealId = (f) =>
+  String(f?.fase_id ?? f?.fase?.id ?? f?.id ?? "").trim();
+
+const getFaseRealNombre = (f) =>
+  String(f?.fase?.nombre ?? f?.nombre ?? "").trim();
+
+const findFaseByRealId = (fases, faseId) =>
+  (Array.isArray(fases) ? fases : []).find(
+    (f) => getFaseRealId(f) === String(faseId)
+  );
+
 const uniq = (arr) => Array.from(new Set((arr || []).map(v => String(v || "").trim()).filter(Boolean)));
 
 const proyectoClienteNombre = (p) =>
@@ -1475,7 +1486,7 @@ const Registro = ({ userData }) => {
         : (reg?.fase_proyecto?.id ? String(reg.fase_proyecto.id) : "");
 
     const faseObj =
-      (faseIdFromReg && fases.find(f => String(f.id) === String(faseIdFromReg))) ||
+      (faseIdFromReg && findFaseByRealId(fases, faseIdFromReg)) ||
       (fases.length ? fases[0] : null);
 
     setRegistro({
@@ -1501,8 +1512,13 @@ const Registro = ({ userData }) => {
       proyecto_id: pid,
       proyecto_codigo: reg?.proyecto_codigo ?? reg?.proyecto?.codigo ?? (proyectoObj?.codigo ?? ""),
       proyecto_nombre: reg?.proyecto_nombre ?? reg?.proyecto?.nombre ?? (proyectoObj?.nombre ?? ""),
-      proyecto_fase: faseObj?.nombre || (reg?.proyecto_fase ?? reg?.fase_proyecto?.nombre ?? ""),
-      fase_proyecto_id: faseObj?.id ? String(faseObj.id) : (faseIdFromReg || ""),
+      proyecto_fase:
+        getFaseRealNombre(faseObj) ||
+        reg?.proyecto_fase ||
+        reg?.fase_proyecto?.nombre ||
+        "",
+      fase_proyecto_id:
+        getFaseRealId(faseObj) || faseIdFromReg || "",
     });
 
     setOcupacionSeleccionada(ocupacionId);
@@ -1601,7 +1617,7 @@ const Registro = ({ userData }) => {
         : (reg?.fase_proyecto?.id ? String(reg.fase_proyecto.id) : "");
 
     const faseObj =
-      (faseIdFromReg && fases.find(f => String(f.id) === String(faseIdFromReg))) ||
+      (faseIdFromReg && findFaseByRealId(fases, faseIdFromReg)) ||
       (fases.length ? fases[0] : null);
 
     setRegistro({
@@ -1627,8 +1643,14 @@ const Registro = ({ userData }) => {
       proyecto_id: pid,
       proyecto_codigo: reg?.proyecto_codigo ?? reg?.proyecto?.codigo ?? "",
       proyecto_nombre: reg?.proyecto_nombre ?? reg?.proyecto?.nombre ?? "",
-      proyecto_fase: faseObj?.nombre || (reg?.proyecto_fase ?? ""),
-      fase_proyecto_id: faseObj?.id ? String(faseObj.id) : "",
+      proyecto_fase:
+        getFaseRealNombre(faseObj) ||
+        reg?.proyecto_fase ||
+        reg?.fase_proyecto?.nombre ||
+        "",
+
+      fase_proyecto_id:
+        getFaseRealId(faseObj) || faseIdFromReg || "",
     });
 
     setOcupacionSeleccionada(ocupacionId);
@@ -2339,7 +2361,9 @@ const Registro = ({ userData }) => {
                         value={registro.proyecto_id || ""}
                         onChange={(e) => {
                           const pid = e.target.value;
-                          const p = proyectosFiltradosPorCliente.find(x => String(x.id) === String(pid));
+                          const p = proyectosFiltradosPorCliente.find(
+                            (x) => String(x.id) === String(pid)
+                          );
 
                           const fases = Array.isArray(p?.fases) ? p.fases : [];
                           setFasesProyecto(fases);
@@ -2352,8 +2376,8 @@ const Registro = ({ userData }) => {
                             proyecto_codigo: p?.codigo || "",
                             proyecto_nombre: p?.nombre || "",
                             nroCasoCliente: p?.codigo ? String(p.codigo) : r.nroCasoCliente,
-                            fase_proyecto_id: firstFase ? String(firstFase.id) : "",
-                            proyecto_fase: firstFase ? String(firstFase.nombre) : "",
+                            fase_proyecto_id: firstFase ? getFaseRealId(firstFase) : "",
+                            proyecto_fase: firstFase ? getFaseRealNombre(firstFase) : "",
                           }));
                         }}
                         required
@@ -2379,22 +2403,27 @@ const Registro = ({ userData }) => {
                           value={registro.fase_proyecto_id || ""}
                           onChange={(e) => {
                             const faseId = e.target.value;
-                            const faseObj = fasesProyecto.find(f => String(f.id) === String(faseId));
+                            const faseObj = findFaseByRealId(fasesProyecto, faseId);
 
-                            setRegistro(r => ({
+                            setRegistro((r) => ({
                               ...r,
                               fase_proyecto_id: faseId,
-                              proyecto_fase: faseObj?.nombre || "",
+                              proyecto_fase: faseObj ? getFaseRealNombre(faseObj) : "",
                             }));
                           }}
                           required
                         >
                           <option value="">Seleccionar Fase</option>
-                          {fasesProyecto.map((fx) => (
-                            <option key={fx.id} value={fx.id}>
-                              {fx.nombre}
-                            </option>
-                          ))}
+                          {fasesProyecto.map((fx, idx) => {
+                            const realId = getFaseRealId(fx);
+                            const realNombre = getFaseRealNombre(fx);
+
+                            return (
+                              <option key={realId || `fase-${idx}`} value={realId}>
+                                {realNombre}
+                              </option>
+                            );
+                          })}
                         </select>
                       )}
 
