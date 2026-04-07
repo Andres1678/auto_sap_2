@@ -322,49 +322,62 @@ function MesModuloTooltip({ active, payload, label }) {
    Tick custom: WRAP en YAxis
 ========================= */
 function YAxisTickWrap(props) {
-  const { x, y, payload, width = 420 } = props;
-  const text = String(payload?.value ?? "");
+  const {
+    x,
+    y,
+    payload,
+    width = 420,
+    maxLines = 4,
+    lineHeight = 14,
+    fontSize = 12,
+  } = props;
 
-  const maxCharsPerLine = Math.max(18, Math.floor(width / 10));
-  const maxLines = 3;
+  const text = String(payload?.value ?? "").trim();
+  const words = text.split(/\s+/).filter(Boolean);
 
-  const words = text.split(" ");
+  const maxCharsPerLine = Math.max(16, Math.floor(width / 9));
   const lines = [];
   let line = "";
 
   for (const w of words) {
     const test = line ? `${line} ${w}` : w;
+
     if (test.length <= maxCharsPerLine) {
       line = test;
     } else {
       if (line) lines.push(line);
       line = w;
+
       if (lines.length >= maxLines - 1) break;
     }
   }
 
-  if (line && lines.length < maxLines) lines.push(line);
+  if (line && lines.length < maxLines) {
+    lines.push(line);
+  }
 
-  const joined = lines.join(" ");
-  const wasCut = joined.length < text.length;
+  const visibleText = lines.join(" ");
+  const wasCut = visibleText.length < text.length;
+
   if (wasCut && lines.length) {
     lines[lines.length - 1] = `${lines[lines.length - 1].replace(/\s*$/, "")}…`;
   }
+
+  const offsetY = -((lines.length - 1) * lineHeight) / 2;
 
   return (
     <g transform={`translate(${x},${y})`}>
       <title>{text}</title>
       <text
         x={0}
-        y={0}
-        dy={4}
+        y={offsetY}
         textAnchor="end"
         fill="#475569"
-        fontSize={12}
+        fontSize={fontSize}
         fontWeight={700}
       >
         {lines.map((ln, i) => (
-          <tspan key={i} x={0} dy={i === 0 ? 0 : 14}>
+          <tspan key={i} x={0} dy={i === 0 ? 0 : lineHeight}>
             {ln}
           </tspan>
         ))}
