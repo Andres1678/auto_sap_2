@@ -1382,7 +1382,7 @@ export default function ProyectosHorasDashboard({
     }
 
     const height = Math.max(320, data.length * 34);
-    const yAxisWidth = 460;
+    const yAxisWidth = 320;
 
     return (
       <div className="phd-card phd-card-chart">

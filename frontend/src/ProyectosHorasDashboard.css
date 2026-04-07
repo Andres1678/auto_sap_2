@@ -631,15 +631,21 @@
 
 /* CARDS GRÁFICAS */
 .phd-page .phd-grid{
-  display:flex;
-  flex-direction:column;
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
   gap:18px;
   margin-bottom:24px;
   position:relative;
   z-index:1;
+  align-items:start;
 }
 
-.phd-page .phd-card{
+.phd-page .phd-grid > *{
+  min-width:0;
+}
+
+.phd-page .phd-card,
+.phd-page .phd-card-chart{
   position:relative;
   z-index:1;
   overflow:hidden;
@@ -648,6 +654,10 @@
   border-radius:22px;
   box-shadow:var(--phd-shadow-lg);
   transition:transform .16s ease, box-shadow .16s ease;
+  min-width:0;
+  height:100%;
+  display:flex;
+  flex-direction:column;
 }
 
 .phd-page .phd-card:hover{
@@ -701,10 +711,12 @@
 .phd-page .phd-chartWrap{
   overflow:auto;
   padding:22px 18px 18px;
+  flex:1 1 auto;
+  min-width:0;
 }
 
 .phd-page .phd-chartInner{
-  min-width:1040px;
+  min-width:680px;
 }
 
 /* TABLA BASE */
@@ -989,11 +1001,29 @@
 
   .phd-page .phd-month{ grid-column:span 4; }
   .phd-page .phd-mf{ grid-column:span 4; }
+
+  .phd-page .phd-grid{
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+  }
+
+  .phd-page .phd-chartInner{
+    min-width:620px;
+  }
 }
 
 @media (max-width: 1300px){
   .phd-page .phd-hero{
     grid-template-columns:1fr;
+  }
+}
+
+@media (max-width: 1100px){
+  .phd-page .phd-grid{
+    grid-template-columns:1fr;
+  }
+
+  .phd-page .phd-chartInner{
+    min-width:920px;
   }
 }
 
@@ -1055,6 +1085,10 @@
 }
 
 @media (max-width: 640px){
+  .phd-page .phd-grid{
+    grid-template-columns:1fr;
+  }
+
   .phd-page .phd-kpis{
     grid-template-columns:1fr;
   }
