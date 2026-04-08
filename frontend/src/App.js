@@ -22,6 +22,7 @@ import PresupuestoConsultorImport from './PresupuestoConsultorImport';
 import Proyectos from "./Proyectos";
 import ModulosAdmin from "./ModulosAdmin";
 import ProyectosHorasDashboard from './ProyectosHorasDashboard';
+import Graficos from './Graficos';
 
 function App() {
   const [userData, setUserData] = useState(null);
@@ -136,7 +137,7 @@ function App() {
               path="/grafico"
               element={
                 <AdminRoute allow={['ADMIN', 'CONSULTOR']} requirePermiso="GRAFICOS_VER">
-                  <PanelGraficos />
+                  <Graficos />
                 </AdminRoute>
               }
             />
