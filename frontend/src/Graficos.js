@@ -13,6 +13,7 @@ import HorasPorProyectoChart from './GraficosOperacion/HorasPorProyectoChart';
 import HorasPorDiaChart from './GraficosOperacion/HorasPorDiaChart';
 import PieTareasChart from './GraficosOperacion/PieTareasChart';
 import PieOcupacionChart from './GraficosOperacion/PieOcupacionChart';
+import HorasPorOcupacionChart from './GraficosOperacion/HorasPorOcupacionChart';
 
 Modal.setAppElement('#root');
 
@@ -810,11 +811,37 @@ export default function Graficos() {
 
   const openDetail = (kind, value, pretty) => {
     let rows = [];
-    if (kind === 'consultor') rows = datosFiltrados.filter(r => r.consultor === value);
-    if (kind === 'tipoTarea') rows = datosFiltrados.filter(r => r.tipoTarea === value);
-    if (kind === 'cliente') rows = datosFiltrados.filter(r => r.cliente === value);
-    if (kind === 'modulo') rows = datosFiltrados.filter(r => r.modulo === value);
-    if (kind === 'fecha') rows = datosFiltrados.filter(r => r.fecha === value);
+
+    if (kind === 'consultor') {
+      rows = datosFiltrados.filter(r => r.consultor === value);
+    }
+
+    if (kind === 'tipoTarea') {
+      rows = datosFiltrados.filter(r => r.tipoTarea === value);
+    }
+
+    if (kind === 'cliente') {
+      rows = datosFiltrados.filter(r => r.cliente === value);
+    }
+
+    if (kind === 'modulo') {
+      rows = datosFiltrados.filter(r => r.modulo === value);
+    }
+
+    if (kind === 'fecha') {
+      rows = datosFiltrados.filter(r => r.fecha === value);
+    }
+
+    if (kind === 'ocupacion') {
+      rows = datosFiltrados.filter(r => {
+        const ocupacionLabel =
+          (r.ocupacion_codigo && r.ocupacion_nombre)
+            ? `${String(r.ocupacion_codigo).trim()} - ${String(r.ocupacion_nombre).trim()}`
+            : (r.ocupacion_nombre ? String(r.ocupacion_nombre).trim() : "SIN OCUPACIÓN");
+
+        return ocupacionLabel === value;
+      });
+    }
 
     rows = rows
       .slice()
@@ -1077,12 +1104,9 @@ export default function Graficos() {
           />
 
           <div className="pgx-chart-mono">
-            <HorasPorConsultorChart
-              data={horasPorConsultor}
+            <HorasPorOcupacionChart
+              data={horasPorOcupacion}
               isAdmin={isAdmin}
-              filtroMes={filtroMes}
-              filtroEquipo={filtroEquipo}
-              metaMensual={metaMensual}
               onOpenDetail={openDetail}
             />
           </div>
@@ -1116,11 +1140,13 @@ export default function Graficos() {
           </div>
 
           <div className="pgx-chart-mono">
-            <HorasPorProyectoChart
-              data={horasPorProyecto}
+            <HorasPorConsultorChart
+              data={horasPorConsultor}
               isAdmin={isAdmin}
               filtroMes={filtroMes}
               filtroEquipo={filtroEquipo}
+              metaMensual={metaMensual}
+              onOpenDetail={openDetail}
             />
           </div>
 
@@ -1130,6 +1156,15 @@ export default function Graficos() {
               filtroMes={filtroMes}
               filtroEquipo={filtroEquipo}
               onOpenDetail={openDetail}
+            />
+          </div>
+
+          <div className="pgx-chart-mono">
+            <HorasPorProyectoChart
+              data={horasPorProyecto}
+              isAdmin={isAdmin}
+              filtroMes={filtroMes}
+              filtroEquipo={filtroEquipo}
             />
           </div>
         </div>
