@@ -233,6 +233,23 @@ const recordMatchesSelfScope = (r, usuario, nombreUser, equipoUser) => {
   return true;
 };
 
+const CHART_BLUE = "#0055B8";
+
+const getYAxisWidth = (kind, data = []) => {
+  const longest = Math.max(
+    18,
+    ...data.map((d) => String(d?.name || "").length)
+  );
+
+  if (kind === "proyecto") return Math.min(Math.max(longest * 7.2, 320), 460);
+  if (kind === "consultor") return Math.min(Math.max(longest * 6.9, 280), 400);
+  return Math.min(Math.max(longest * 6.6, 260), 380);
+};
+
+const getChartHeight = (len) => {
+  return Math.min(Math.max(380, len * 34), 980);
+};
+
 /* =========================
    Helpers gráfico por mes
 ========================= */
@@ -327,15 +344,15 @@ function YAxisTickWrap(props) {
     y,
     payload,
     width = 420,
-    maxLines = 4,
-    lineHeight = 14,
+    maxLines = 5,
+    lineHeight = 13,
     fontSize = 12,
   } = props;
 
   const text = String(payload?.value ?? "").trim();
   const words = text.split(/\s+/).filter(Boolean);
 
-  const maxCharsPerLine = Math.max(16, Math.floor(width / 9));
+  const maxCharsPerLine = Math.max(18, Math.floor(width / 8.2));
   const lines = [];
   let line = "";
 
@@ -1382,10 +1399,10 @@ export default function ProyectosHorasDashboard({
     }
   };
 
-  const renderChartCard = (title, data, color, kind) => {
+  const renderChartCard = (title, data, kind, opts = {}) => {
     if (!data || data.length === 0) {
       return (
-        <div className="phd-card phd-card-chart">
+        <div className={`phd-card phd-card-chart ${opts.className || ""}`}>
           <div className="phd-card-head">
             <h4>{title}</h4>
           </div>
@@ -1394,114 +1411,58 @@ export default function ProyectosHorasDashboard({
       );
     }
 
-    const height = Math.min(Math.max(360, data.length * 26), 760);
-    const yAxisWidth = kind === "proyecto" ? 280 : 240;
+    const chartData = opts.limit ? data.slice(0, opts.limit) : data;
+    const height = getChartHeight(chartData.length);
+    const yAxisWidth = getYAxisWidth(kind, chartData);
 
     return (
-      <div className="phd-card phd-card-chart">
+      <div className={`phd-card phd-card-chart ${opts.className || ""}`}>
         <div className="phd-card-head">
           <h4>{title}</h4>
-          <span className="phd-card-badge">{data.length} ítems</span>
+          <span className="phd-card-badge">{chartData.length} ítems</span>
         </div>
 
         <div className="phd-chartWrap">
           <div className="phd-chartInner">
             <ResponsiveContainer width="100%" height={height}>
               <BarChart
-                data={data}
+                data={chartData}
                 layout="vertical"
-                margin={{ top: 10, right: 24, left: 10, bottom: 10 }}
+                margin={{ top: 12, right: 34, left: 8, bottom: 12 }}
+                barCategoryGap={10}
               >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 12, fill: "#64748b", fontWeight: 700 }}
+                />
                 <YAxis
                   type="category"
                   dataKey="name"
                   width={yAxisWidth}
-                  tick={<YAxisTickWrap width={yAxisWidth} />}
+                  tick={<YAxisTickWrap width={yAxisWidth - 14} />}
                 />
                 <Tooltip
                   formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]}
                   labelFormatter={(label) => `Nombre: ${label}`}
                 />
-                {kind === "proyecto" && <Legend />}
                 <Bar
                   dataKey="horas"
                   name="Horas"
-                  fill={color}
-                  radius={[8, 8, 0, 0]}
+                  fill={CHART_BLUE}
+                  radius={[10, 10, 10, 10]}
                   onClick={(entry) => openDetail(kind, entry?.key ?? entry?.name)}
                   style={{ cursor: "pointer" }}
                 >
                   <LabelList
                     dataKey="horas"
                     position="right"
-                    formatter={(v) => Number(v).toFixed(1)}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderModuloVerticalChart = (title, data, color) => {
-    if (!data || data.length === 0) {
-      return (
-        <div className="phd-card phd-card-chart">
-          <div className="phd-card-head">
-            <h4>{title}</h4>
-          </div>
-          <div className="phd-empty">Sin datos con los filtros.</div>
-        </div>
-      );
-    }
-
-    const chartData = data.slice(0, 12);
-
-    return (
-      <div className="phd-card phd-card-chart">
-        <div className="phd-card-head">
-          <h4>{title}</h4>
-          <span className="phd-card-badge">{chartData.length} módulos</span>
-        </div>
-
-        <div className="phd-chartWrap">
-          <div className="phd-chartInner">
-            <ResponsiveContainer width="100%" height={420}>
-              <BarChart
-                data={chartData}
-                margin={{ top: 20, right: 24, left: 10, bottom: 80 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  interval={0}
-                  angle={-18}
-                  textAnchor="end"
-                  height={90}
-                  tick={{ fontSize: 12 }}
-                />
-                <YAxis tickFormatter={(v) => `${Number(v).toFixed(0)}`} />
-                <Tooltip
-                  formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]}
-                  labelFormatter={(label) => `Módulo: ${label}`}
-                />
-                <Legend />
-                <Bar
-                  dataKey="horas"
-                  name="Horas"
-                  fill={color}
-                  radius={[8, 8, 0, 0]}
-                  onClick={(entry) => openDetail("modulo", entry?.key ?? entry?.name)}
-                  style={{ cursor: "pointer" }}
-                >
-                  <LabelList
-                    dataKey="horas"
-                    position="top"
-                    formatter={(v) => Number(v).toFixed(1)}
+                    formatter={(v) => `${Number(v).toFixed(1)} h`}
+                    style={{
+                      fill: "#334155",
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
                   />
                 </Bar>
               </BarChart>
@@ -1515,7 +1476,7 @@ export default function ProyectosHorasDashboard({
   const renderMesModuloChart = (title, data) => {
     if (!data || data.length === 0) {
       return (
-        <div className="phd-card phd-card-chart">
+        <div className="phd-card phd-card-chart phd-card--wide">
           <div className="phd-card-head">
             <h4>{title}</h4>
           </div>
@@ -1525,10 +1486,10 @@ export default function ProyectosHorasDashboard({
     }
 
     const barSize =
-      data.length <= 1 ? 90 : data.length === 2 ? 72 : data.length <= 4 ? 56 : 42;
+      data.length <= 1 ? 92 : data.length === 2 ? 76 : data.length <= 4 ? 58 : 44;
 
     return (
-      <div className="phd-card phd-card-chart">
+      <div className="phd-card phd-card-chart phd-card--wide">
         <div className="phd-card-head">
           <h4>{title}</h4>
           <span className="phd-card-badge">
@@ -1538,31 +1499,32 @@ export default function ProyectosHorasDashboard({
 
         <div className="phd-chartWrap">
           <div className="phd-chartInner">
-            <ResponsiveContainer width="100%" height={390}>
+            <ResponsiveContainer width="100%" height={410}>
               <BarChart
                 data={data}
-                margin={{ top: 30, right: 24, left: 10, bottom: 65 }}
-                barCategoryGap="35%"
+                margin={{ top: 34, right: 26, left: 8, bottom: 62 }}
+                barCategoryGap="30%"
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="name"
                   interval={0}
-                  angle={-14}
+                  angle={-12}
                   textAnchor="end"
-                  height={55}
-                  tick={{ fontSize: 12 }}
+                  height={52}
+                  tick={{ fontSize: 12, fill: "#475569", fontWeight: 700 }}
                 />
                 <YAxis
-                  width={54}
+                  width={58}
                   tickFormatter={(v) => `${Number(v).toFixed(0)}`}
+                  tick={{ fontSize: 12, fill: "#475569", fontWeight: 700 }}
                 />
                 <Tooltip content={<MesModuloTooltip />} />
 
                 <Bar
                   dataKey="horas"
                   name="Horas"
-                  fill="#5B6CFA"
+                  fill={CHART_BLUE}
                   radius={[10, 10, 0, 0]}
                   barSize={barSize}
                   onClick={(entry) => openDetail("mes_total", entry?.payload?.key)}
@@ -1770,23 +1732,23 @@ export default function ProyectosHorasDashboard({
         </section>
 
         <section className="phd-grid">
-          <ProyectoFaseTopLineChart
-            rows={datosFiltrados}
-            title="Proyecto vs fase más trabajada"
-            top={10}
-          />
-          
-          {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "#4C8BF5", "proyecto")}
-          {renderMesModuloChart("Horas por Mes y Módulo", horasPorMesModulo)}
-          {renderModuloVerticalChart("Horas por Módulo", horasPorModulo, "#E35D6A")}
-          <div className="phd-card--wide">
-            {renderChartCard("Horas por Consultor", horasPorConsultor, "#374151", "consultor")}
+          {renderChartCard(`Top Proyectos (Top ${TOP})`, topProyectos, "proyecto")}
+
+          <div className="phd-card-slot">
+            <ProyectoFaseTopLineChart
+              rows={datosFiltrados}
+              title="Proyecto vs fase más trabajada"
+              top={10}
+            />
           </div>
 
-          <div className="phd-card--wide">
-            {renderChartCard("Horas por Tarea", horasPorTarea, "#5B6CFA", "tarea")}
-          </div>
-          {renderChartCard("Horas por Ocupación", horasPorOcupacion, "#2FA36B", "ocupacion")}
+          {renderMesModuloChart("Horas por Mes y Módulo", horasPorMesModulo)}
+
+          {renderChartCard("Horas por Módulo", horasPorModulo, "modulo", { limit: 18 })}
+          {renderChartCard("Horas por Consultor", horasPorConsultor, "consultor", { limit: 18 })}
+
+          {renderChartCard("Horas por Tarea", horasPorTarea, "tarea", { limit: 20 })}
+          {renderChartCard("Horas por Ocupación", horasPorOcupacion, "ocupacion", { limit: 20 })}
         </section>
       </div>
 
