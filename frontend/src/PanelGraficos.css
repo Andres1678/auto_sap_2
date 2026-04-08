@@ -19,7 +19,7 @@
   --pgx-accent-700:var(--pgx-brand-blue-700);
   --pgx-ring:rgba(227,6,19,.18);
   --pgx-ring-2:rgba(0,85,184,.14);
-  --pgx-max:1160px;
+  --pgx-max:1680px;
   --pgx-control-h:40px;
   --pgx-control-radius:12px;
   --pgx-font: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
@@ -44,7 +44,7 @@
   flex-direction:column;
   align-items:center;
   gap:22px;
-  padding:22px 14px 44px;
+  padding:22px 18px 44px;
 }
 
 .pgx-error{
@@ -53,7 +53,7 @@
   border:1px solid #f5c2c7;
   padding:10px 12px;
   border-radius:12px;
-  max-width:1100px;
+  max-width:var(--pgx-max);
   width:100%;
   box-shadow:0 10px 18px rgba(176,5,16,.08);
 }
@@ -273,17 +273,19 @@
   box-shadow:0 0 0 3px var(--pgx-ring);
 }
 
+.pgx-mf-options{
+  padding:8px 10px 10px;
+  overflow-y:auto;
+  flex:1 1 auto;
+  min-height:0;
+}
+
 .pgx-mf-option input[type="checkbox"]{
   width:16px;
   height:16px;
   accent-color:var(--pgx-accent);
   cursor:pointer;
   flex:0 0 auto;
-}
-
-.pgx-mf-options{
-  padding:8px 10px 10px;
-  overflow-y:auto;
 }
 
 .pgx-mf-option{
@@ -398,7 +400,8 @@
 }
 
 .pgx-grid-stack{
-  grid-template-columns:1fr;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  align-items:start;
 }
 
 .pgx-card{
@@ -659,17 +662,17 @@
 .pgx-chart-scroll::-webkit-scrollbar,
 .pgx-modal-body-scroll::-webkit-scrollbar,
 .pgx-table-responsive::-webkit-scrollbar,
-.pgx-mf-options{
-  padding:8px 10px 10px;
-  overflow-y:auto;
-  flex:1 1 auto;
-  min-height:0;
+.pgx-mf-options::-webkit-scrollbar,
+.pgx-pie-legend-box::-webkit-scrollbar{
+  width:10px;
+  height:10px;
 }
 
 .pgx-chart-scroll::-webkit-scrollbar-thumb,
 .pgx-modal-body-scroll::-webkit-scrollbar-thumb,
 .pgx-table-responsive::-webkit-scrollbar-thumb,
-.pgx-mf-options::-webkit-scrollbar-thumb{
+.pgx-mf-options::-webkit-scrollbar-thumb,
+.pgx-pie-legend-box::-webkit-scrollbar-thumb{
   background:rgba(2,6,23,.22);
   border-radius:999px;
 }
@@ -677,41 +680,6 @@
 .pgx-modal-body-open,
 .pgx-modal-html-open{
   overflow:hidden;
-}
-
-@media (max-width:640px){
-  .pgx-container{
-    padding:18px 10px 40px;
-    gap:18px;
-  }
-
-  .pgx-filtros{
-    border-radius:14px;
-    padding:10px;
-  }
-
-  .pgx-multi-filter,
-  .pgx-range-days,
-  .pgx-field{
-    flex:1 1 100%;
-    min-width:100%;
-    max-width:none;
-  }
-
-  .pgx-modal-content{
-    width:98vw;
-    max-height:92vh;
-    border-radius:14px;
-  }
-
-  .pgx-card{
-    padding:16px 14px 14px;
-    min-height:390px;
-  }
-
-  .pgx-truncate{
-    max-width:180px;
-  }
 }
 
 .pgx-pie-3d-layout{
@@ -780,7 +748,43 @@
   fill:#64748b;
 }
 
-@media (max-width: 960px){
+/* Color azul único para todos los gráficos excepto los pie charts */
+.pgx-chart-mono .recharts-bar-rectangle path,
+.pgx-chart-mono .recharts-bar-rectangle rect,
+.pgx-chart-mono .recharts-rectangle path,
+.pgx-chart-mono .recharts-rectangle rect,
+.pgx-chart-mono .recharts-dot circle,
+.pgx-chart-mono .recharts-scatter-symbol path,
+.pgx-chart-mono .recharts-scatter-symbol circle{
+  fill:var(--pgx-accent) !important;
+}
+
+.pgx-chart-mono .recharts-line-curve,
+.pgx-chart-mono .recharts-area-curve,
+.pgx-chart-mono .recharts-radar-polygon,
+.pgx-chart-mono .recharts-radial-bar-sector path{
+  stroke:var(--pgx-accent) !important;
+}
+
+.pgx-chart-mono .recharts-area-area{
+  fill:var(--pgx-accent) !important;
+  fill-opacity:.18 !important;
+}
+
+.pgx-chart-mono .recharts-legend-item svg path,
+.pgx-chart-mono .recharts-legend-item svg rect,
+.pgx-chart-mono .recharts-legend-item svg circle{
+  fill:var(--pgx-accent) !important;
+  stroke:var(--pgx-accent) !important;
+}
+
+@media (max-width:1200px){
+  .pgx-grid-stack{
+    grid-template-columns:1fr;
+  }
+}
+
+@media (max-width:960px){
   .pgx-pie-3d-layout{
     grid-template-columns:1fr;
   }
@@ -791,5 +795,40 @@
 
   .pgx-pie-legend-box{
     max-height:none;
+  }
+}
+
+@media (max-width:640px){
+  .pgx-container{
+    padding:18px 10px 40px;
+    gap:18px;
+  }
+
+  .pgx-filtros{
+    border-radius:14px;
+    padding:10px;
+  }
+
+  .pgx-multi-filter,
+  .pgx-range-days,
+  .pgx-field{
+    flex:1 1 100%;
+    min-width:100%;
+    max-width:none;
+  }
+
+  .pgx-modal-content{
+    width:98vw;
+    max-height:92vh;
+    border-radius:14px;
+  }
+
+  .pgx-card{
+    padding:16px 14px 14px;
+    min-height:390px;
+  }
+
+  .pgx-truncate{
+    max-width:180px;
   }
 }

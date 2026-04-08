@@ -808,10 +808,6 @@ export default function Graficos() {
     [pieOcupacion]
   );
 
-
-
-
-
   const openDetail = (kind, value, pretty) => {
     let rows = [];
     if (kind === 'consultor') rows = datosFiltrados.filter(r => r.consultor === value);
@@ -873,7 +869,7 @@ export default function Graficos() {
     scope === 'TEAM' ? consultoresUnicosTeam :
     (nombreUser ? [nombreUser] : []);
 
-    return (
+  return (
     <div className="pgx-scope">
       <div className="pgx-container">
         {error && (
@@ -896,12 +892,53 @@ export default function Graficos() {
             }
           />
 
-          <MultiFiltro titulo="TAREAS" opciones={tareasUnicos} seleccion={filtroTarea} onChange={setFiltroTarea} placeholder="Todas las tareas" />
-          <MultiFiltro titulo="MÓDULOS" opciones={modulosUnicos} seleccion={filtroModulo} onChange={setFiltroModulo} placeholder="Todos los módulos" />
-          <MultiFiltro titulo="CLIENTES" opciones={clientesUnicos} seleccion={filtroCliente} onChange={setFiltroCliente} placeholder="Todos los clientes" />
-          <MultiFiltro titulo="OCUPACIONES" opciones={ocupacionesCatalogo} seleccion={filtroOcupacion} onChange={setFiltroOcupacion} placeholder="Todas las ocupaciones" />
-          <MultiFiltro titulo="Nro. CASO CLIENTE" opciones={nroClienteUnicos} seleccion={filtroNroCliente} onChange={setFiltroNroCliente} placeholder="Nro. Caso Cliente (todos)" />
-          <MultiFiltro titulo="Nro. ESCALADO SAP" opciones={nroEscaladoUnicos} seleccion={filtroNroEscalado} onChange={setFiltroNroEscalado} placeholder="Nro. Escalado SAP (todos)" />
+          <MultiFiltro
+            titulo="TAREAS"
+            opciones={tareasUnicos}
+            seleccion={filtroTarea}
+            onChange={setFiltroTarea}
+            placeholder="Todas las tareas"
+          />
+
+          <MultiFiltro
+            titulo="MÓDULOS"
+            opciones={modulosUnicos}
+            seleccion={filtroModulo}
+            onChange={setFiltroModulo}
+            placeholder="Todos los módulos"
+          />
+
+          <MultiFiltro
+            titulo="CLIENTES"
+            opciones={clientesUnicos}
+            seleccion={filtroCliente}
+            onChange={setFiltroCliente}
+            placeholder="Todos los clientes"
+          />
+
+          <MultiFiltro
+            titulo="OCUPACIONES"
+            opciones={ocupacionesCatalogo}
+            seleccion={filtroOcupacion}
+            onChange={setFiltroOcupacion}
+            placeholder="Todas las ocupaciones"
+          />
+
+          <MultiFiltro
+            titulo="Nro. CASO CLIENTE"
+            opciones={nroClienteUnicos}
+            seleccion={filtroNroCliente}
+            onChange={setFiltroNroCliente}
+            placeholder="Nro. Caso Cliente (todos)"
+          />
+
+          <MultiFiltro
+            titulo="Nro. ESCALADO SAP"
+            opciones={nroEscaladoUnicos}
+            seleccion={filtroNroEscalado}
+            onChange={setFiltroNroEscalado}
+            placeholder="Nro. Escalado SAP (todos)"
+          />
 
           <MultiFiltro
             titulo="EQUIPOS"
@@ -1023,69 +1060,81 @@ export default function Graficos() {
           </div>
         )}
 
-<div className="pgx-grid pgx-grid-stack">
-  <HorasPorConsultorChart
-    data={horasPorConsultor}
-    isAdmin={isAdmin}
-    filtroMes={filtroMes}
-    filtroEquipo={filtroEquipo}
-    metaMensual={metaMensual}
-    onOpenDetail={openDetail}
-  />
+        <div className="pgx-grid pgx-grid-stack">
+          <PieOcupacionChart
+            data={pieOcupacion}
+            totalHoras={totalHorasPieOcupacion}
+            filtroMes={filtroMes}
+            filtroEquipo={filtroEquipo}
+          />
 
-  <HorasPorTareaChart
-    data={horasPorTarea}
-    isAdmin={isAdmin}
-    onOpenDetail={openDetail}
-  />
+          <PieTareasChart
+            data={pieTareas}
+            otrosDetalle={otrosTareasDetalle}
+            totalHoras={totalHorasPieTareas}
+            filtroMes={filtroMes}
+            filtroEquipo={filtroEquipo}
+          />
 
-  <HorasPorClienteChart
-    data={horasPorCliente}
-    isAdmin={isAdmin}
-    filtroMes={filtroMes}
-    filtroEquipo={filtroEquipo}
-    onOpenDetail={openDetail}
-  />
+          <div className="pgx-chart-mono">
+            <HorasPorConsultorChart
+              data={horasPorConsultor}
+              isAdmin={isAdmin}
+              filtroMes={filtroMes}
+              filtroEquipo={filtroEquipo}
+              metaMensual={metaMensual}
+              onOpenDetail={openDetail}
+            />
+          </div>
 
-  <HorasPorModuloChart
-    data={horasPorModulo}
-    isAdmin={isAdmin}
-    filtroMes={filtroMes}
-    filtroEquipo={filtroEquipo}
-    onOpenDetail={openDetail}
-  />
+          <div className="pgx-chart-mono">
+            <HorasPorTareaChart
+              data={horasPorTarea}
+              isAdmin={isAdmin}
+              onOpenDetail={openDetail}
+            />
+          </div>
 
-  <HorasPorProyectoChart
-    data={horasPorProyecto}
-    isAdmin={isAdmin}
-    filtroMes={filtroMes}
-    filtroEquipo={filtroEquipo}
-  />
+          <div className="pgx-chart-mono">
+            <HorasPorClienteChart
+              data={horasPorCliente}
+              isAdmin={isAdmin}
+              filtroMes={filtroMes}
+              filtroEquipo={filtroEquipo}
+              onOpenDetail={openDetail}
+            />
+          </div>
 
-  <HorasPorDiaChart
-    data={horasPorDia}
-    filtroMes={filtroMes}
-    filtroEquipo={filtroEquipo}
-    onOpenDetail={openDetail}
-  />
+          <div className="pgx-chart-mono">
+            <HorasPorModuloChart
+              data={horasPorModulo}
+              isAdmin={isAdmin}
+              filtroMes={filtroMes}
+              filtroEquipo={filtroEquipo}
+              onOpenDetail={openDetail}
+            />
+          </div>
 
-  <PieTareasChart
-    data={pieTareas}
-    otrosDetalle={otrosTareasDetalle}
-    totalHoras={totalHorasPieTareas}
-    filtroMes={filtroMes}
-    filtroEquipo={filtroEquipo}
-  />
+          <div className="pgx-chart-mono">
+            <HorasPorProyectoChart
+              data={horasPorProyecto}
+              isAdmin={isAdmin}
+              filtroMes={filtroMes}
+              filtroEquipo={filtroEquipo}
+            />
+          </div>
 
-  <PieOcupacionChart
-    data={pieOcupacion}
-    totalHoras={totalHorasPieOcupacion}
-    filtroMes={filtroMes}
-    filtroEquipo={filtroEquipo}
-  />
-</div>
+          <div className="pgx-chart-mono">
+            <HorasPorDiaChart
+              data={horasPorDia}
+              filtroMes={filtroMes}
+              filtroEquipo={filtroEquipo}
+              onOpenDetail={openDetail}
+            />
+          </div>
+        </div>
 
-<Modal
+        <Modal
           isOpen={modalOpen}
           onRequestClose={closeModal}
           className="pgx-modal-content"

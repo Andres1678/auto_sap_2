@@ -4,8 +4,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Login from './Login';
 import Registro from './Registro';
 import Navbar from './Navbar/Navbar';
-import PanelGraficos from './PanelGraficos';
-/*import GraficoBase from './GraficoBase';
+/*import PanelGraficos from './PanelGraficos';
+import GraficoBase from './GraficoBase';
 import BaseRegistros from './BaseRegistros';*/
 import ConsultoresTable from './ConsultoresTable';
 import AdminRoute from './AdminRoute';
