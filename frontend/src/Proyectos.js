@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { jfetch } from "./lib/api";
 import ModalMapeoProyecto from "./ModalMapeoProyecto";
+import ProyectoCostosPanel from "./ProyectoCostosPanel";
 import "./Proyectos.css";
 
 const DEFAULT_FASES = [
@@ -119,7 +120,6 @@ const oppLabel = (o) => {
   const prc = String(o?.codigo_prc || "").trim();
   const cliente = String(o?.nombre_cliente || "").trim();
   const servicio = String(o?.servicio || "").trim();
-
   return [prc, cliente, servicio].filter(Boolean).join(" — ");
 };
 
@@ -142,6 +142,9 @@ export default function Proyectos() {
   const [mapeoOpen, setMapeoOpen] = useState(false);
   const [proyectoMapeo, setProyectoMapeo] = useState(null);
 
+  const [costosOpen, setCostosOpen] = useState(false);
+  const [proyectoCostos, setProyectoCostos] = useState(null);
+
   const openMapeoModal = (p) => {
     setProyectoMapeo(p);
     setMapeoOpen(true);
@@ -150,6 +153,17 @@ export default function Proyectos() {
   const closeMapeoModal = () => {
     setMapeoOpen(false);
     setProyectoMapeo(null);
+  };
+
+  const openCostosPanel = (p) => {
+    setProyectoCostos(p);
+    setCostosOpen(true);
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  };
+
+  const closeCostosPanel = () => {
+    setCostosOpen(false);
+    setProyectoCostos(null);
   };
 
   const fetchAll = async () => {
@@ -257,13 +271,11 @@ export default function Proyectos() {
 
   const clientesMap = useMemo(() => {
     const m = new Map();
-
     (clientes || []).forEach((c) => {
       const id = Number(c?.id);
       const name = c?.nombre_cliente ?? c?.nombre ?? "";
       if (Number.isFinite(id)) m.set(id, String(name));
     });
-
     return m;
   }, [clientes]);
 
@@ -365,16 +377,18 @@ export default function Proyectos() {
     const oppFromProject = p?.oportunidad_id ? oportunidadesMap.get(String(p.oportunidad_id)) : null;
     const oppByPrc =
       !oppFromProject && p?.codigo
-        ? (oportunidades || []).find((o) => String(o.codigo_prc || "").trim().toUpperCase() === String(p.codigo || "").trim().toUpperCase())
+        ? (oportunidades || []).find(
+            (o) =>
+              String(o.codigo_prc || "").trim().toUpperCase() ===
+              String(p.codigo || "").trim().toUpperCase()
+          )
         : null;
 
     const opp = oppFromProject || oppByPrc || null;
 
     setForm({
       id: p.id,
-      oportunidad_id: p?.oportunidad_id != null
-        ? String(p.oportunidad_id)
-        : (opp?.id ? String(opp.id) : ""),
+      oportunidad_id: p?.oportunidad_id != null ? String(p.oportunidad_id) : opp?.id ? String(opp.id) : "",
       codigo: p.codigo || (opp?.codigo_prc ?? ""),
       nombre: p.nombre || "",
       tipo_negocio: p?.tipo_negocio || (opp?.tipo_negocio ?? ""),
@@ -413,6 +427,7 @@ export default function Proyectos() {
       await fetchAll();
 
       if (form.id === p.id) resetForm();
+      if (proyectoCostos?.id === p.id) closeCostosPanel();
     } catch (e) {
       Swal.fire({
         icon: "error",
@@ -762,10 +777,11 @@ export default function Proyectos() {
                   const clienteTxt =
                     p?.cliente?.nombre_cliente ??
                     p?.cliente?.nombre ??
-                    (p?.cliente_id != null ? clientesMap.get(Number(p.cliente_id)) : "") ??
+                    (p?.cliente_id != null ? clientesMap.get(Number(p?.cliente_id)) : "") ??
                     "";
 
                   const modulosNames = getProyectoModulosNames(p, modulosMap);
+                  const costosSelected = proyectoCostos?.id === p.id && costosOpen;
 
                   return (
                     <tr key={p.id}>
@@ -826,6 +842,16 @@ export default function Proyectos() {
                         </button>
 
                         <button
+                          className={`icon-btn ${costosSelected ? "is-selected" : ""}`}
+                          onClick={() => openCostosPanel(p)}
+                          disabled={saving}
+                          title="Costos"
+                          type="button"
+                        >
+                          💰
+                        </button>
+
+                        <button
                           className="icon-btn"
                           onClick={() => openMapeoModal(p)}
                           disabled={saving}
@@ -854,6 +880,29 @@ export default function Proyectos() {
             Total: <b>{proyectosFiltrados.length}</b>
           </div>
         </div>
+
+        {costosOpen && proyectoCostos && (
+          <div className="proj-card proj-costos-shell">
+            <div className="proj-card-head">
+              <div>
+                <h3>Costos del proyecto</h3>
+                <div className="muted">
+                  {proyectoCostos.codigo} - {proyectoCostos.nombre}
+                </div>
+              </div>
+
+              <button
+                className="btn btn-ghost"
+                type="button"
+                onClick={closeCostosPanel}
+              >
+                Cerrar costos
+              </button>
+            </div>
+
+            <ProyectoCostosPanel proyectoId={proyectoCostos.id} />
+          </div>
+        )}
 
         {mapeoOpen && proyectoMapeo && (
           <ModalMapeoProyecto

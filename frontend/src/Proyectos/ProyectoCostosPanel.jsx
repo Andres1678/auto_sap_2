@@ -39,21 +39,6 @@ const newMes = () => ({
   activo: true,
 });
 
-const newPerfilRow = () => ({
-  id: null,
-  anio: yearNow,
-  mes: monthNow,
-  perfil_id: "",
-  consultor_id: "",
-  horas_estimadas: "",
-  fte_estimado: "",
-  valor_hora_planeado: "",
-  costo_estimado: "",
-  ingreso_estimado: "",
-  observacion: "",
-  activo: true,
-});
-
 const newCostoAdicional = () => ({
   id: null,
   anio: yearNow,
@@ -99,11 +84,6 @@ const formatNumber = (value, digits = 2) => {
   });
 };
 
-const periodLabel = (anio, mes) => {
-  const mm = String(mes).padStart(2, "0");
-  return `${anio}-${mm}`;
-};
-
 const recalcCabecera = (row) => {
   const ingreso = toNumber(row.ingreso_total);
   const costo = toNumber(row.costo_objetivo_total);
@@ -115,9 +95,10 @@ const recalcCabecera = (row) => {
 
   return {
     ...row,
-    ebitda_objetivo: row.ebitda_objetivo === "" || row.ebitda_objetivo === null
-      ? toFixedIfNeeded(ebitda)
-      : row.ebitda_objetivo,
+    ebitda_objetivo:
+      row.ebitda_objetivo === "" || row.ebitda_objetivo === null
+        ? toFixedIfNeeded(ebitda)
+        : row.ebitda_objetivo,
     margen_objetivo_pct:
       row.margen_objetivo_pct === "" || row.margen_objetivo_pct === null
         ? toFixedIfNeeded(margenPct)
@@ -130,6 +111,7 @@ const recalcPresupuestoRow = (row) => {
   const costo = toNumber(row.costo_planeado);
   const gastoOp = toNumber(row.gasto_operativo_planeado);
   const costoAdm = toNumber(row.costo_administrativo_planeado);
+
   const ebitda = ingreso - costo - gastoOp - costoAdm;
   const margen = ingreso > 0 ? (ebitda / ingreso) * 100 : 0;
 
@@ -137,17 +119,6 @@ const recalcPresupuestoRow = (row) => {
     ...row,
     ebitda_planeado: toFixedIfNeeded(ebitda),
     margen_planeado_pct: toFixedIfNeeded(margen),
-  };
-};
-
-const recalcPerfilRow = (row) => {
-  const horas = toNumber(row.horas_estimadas);
-  const valorHora = toNumber(row.valor_hora_planeado);
-  const costo = horas * valorHora;
-
-  return {
-    ...row,
-    costo_estimado: toFixedIfNeeded(costo),
   };
 };
 
@@ -169,16 +140,12 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   const [saving, setSaving] = useState({
     cabecera: false,
     presupuesto: false,
-    perfiles: false,
     adicionales: false,
   });
 
   const [proyecto, setProyecto] = useState(null);
   const [cabecera, setCabecera] = useState(emptyCabecera);
-  const [catalogos, setCatalogos] = useState({ perfiles: [] });
-
   const [presupuestoMensual, setPresupuestoMensual] = useState([]);
-  const [perfilPlan, setPerfilPlan] = useState([]);
   const [costosAdicionales, setCostosAdicionales] = useState([]);
   const [resumen, setResumen] = useState(null);
 
@@ -199,7 +166,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       if (!resumenRes.ok) throw new Error(sum?.mensaje || `HTTP ${resumenRes.status}`);
 
       const p = cfg.proyecto || {};
-      const cab = {
+
+      setProyecto(p);
+      setCabecera({
         oportunidad_id: p.oportunidad_id ?? "",
         codigo_ot_principal: p.codigo_ot_principal ?? "",
         fecha_inicio_ejecucion: p.fecha_inicio_ejecucion ?? "",
@@ -217,13 +186,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         alerta_umbral_1: p.alerta_umbral_1 ?? 70,
         alerta_umbral_2: p.alerta_umbral_2 ?? 85,
         alerta_umbral_3: p.alerta_umbral_3 ?? 95,
-      };
+      });
 
-      setProyecto(p);
-      setCabecera(cab);
-      setCatalogos(cfg.catalogos || { perfiles: [] });
       setPresupuestoMensual(Array.isArray(cfg.presupuesto_mensual) ? cfg.presupuesto_mensual : []);
-      setPerfilPlan(Array.isArray(cfg.perfil_plan) ? cfg.perfil_plan : []);
       setCostosAdicionales(Array.isArray(cfg.costos_adicionales) ? cfg.costos_adicionales : []);
       setResumen(sum || null);
     } catch (e) {
@@ -253,14 +218,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     );
   };
 
-  const onPerfilChange = (index, key, value) => {
-    setPerfilPlan((prev) =>
-      prev.map((row, i) =>
-        i === index ? recalcPerfilRow({ ...row, [key]: value }) : row
-      )
-    );
-  };
-
   const onAdicionalChange = (index, key, value) => {
     setCostosAdicionales((prev) =>
       prev.map((row, i) => (i === index ? { ...row, [key]: value } : row))
@@ -271,20 +228,12 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     setPresupuestoMensual((prev) => [...prev, newMes()]);
   };
 
-  const addPerfilRow = () => {
-    setPerfilPlan((prev) => [...prev, newPerfilRow()]);
-  };
-
   const addCostoAdicionalRow = () => {
     setCostosAdicionales((prev) => [...prev, newCostoAdicional()]);
   };
 
   const removePresupuestoRow = (index) => {
     setPresupuestoMensual((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const removePerfilRow = (index) => {
-    setPerfilPlan((prev) => prev.filter((_, i) => i !== index));
   };
 
   const removeCostoAdicionalRow = (index) => {
@@ -294,6 +243,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   const guardarCabecera = async () => {
     try {
       setSaving((s) => ({ ...s, cabecera: true }));
+
       const res = await jfetch(`/proyectos/${proyectoId}/costos/cabecera`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -315,6 +265,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   const guardarPresupuestoMensual = async () => {
     try {
       setSaving((s) => ({ ...s, presupuesto: true }));
+
       const res = await jfetch(`/proyectos/${proyectoId}/costos/presupuesto-mensual`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -333,30 +284,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     }
   };
 
-  const guardarPerfilPlan = async () => {
-    try {
-      setSaving((s) => ({ ...s, perfiles: true }));
-      const res = await jfetch(`/proyectos/${proyectoId}/costos/perfil-plan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: perfilPlan }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
-
-      Swal.fire({ icon: "success", title: "Planeación por perfil guardada" });
-      await fetchAll();
-    } catch (e) {
-      Swal.fire({ icon: "error", title: "Error", text: String(e.message || e) });
-    } finally {
-      setSaving((s) => ({ ...s, perfiles: false }));
-    }
-  };
-
   const guardarCostosAdicionales = async () => {
     try {
       setSaving((s) => ({ ...s, adicionales: true }));
+
       const res = await jfetch(`/proyectos/${proyectoId}/costos/costos-adicionales`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -391,19 +322,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       { ingreso: 0, costo: 0, gastoOp: 0, costoAdm: 0, ebitda: 0 }
     );
   }, [presupuestoMensual]);
-
-  const totalsPerfil = useMemo(() => {
-    return perfilPlan.reduce(
-      (acc, row) => {
-        acc.horas += toNumber(row.horas_estimadas);
-        acc.fte += toNumber(row.fte_estimado);
-        acc.costo += toNumber(row.costo_estimado);
-        acc.ingreso += toNumber(row.ingreso_estimado);
-        return acc;
-      },
-      { horas: 0, fte: 0, costo: 0, ingreso: 0 }
-    );
-  }, [perfilPlan]);
 
   const totalsAdicionales = useMemo(() => {
     return costosAdicionales.reduce((acc, row) => acc + toNumber(row.valor), 0);
@@ -468,20 +386,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
         <div className="pcp-form-grid">
           <div className="pcp-field">
-            <label>Oportunidad ID</label>
-            <input
-              value={cabecera.oportunidad_id}
-              onChange={(e) => onCabeceraChange("oportunidad_id", e.target.value)}
-              placeholder="Ej: 120"
-            />
-          </div>
-
-          <div className="pcp-field">
             <label>Código OT principal</label>
             <input
               value={cabecera.codigo_ot_principal}
               onChange={(e) => onCabeceraChange("codigo_ot_principal", e.target.value)}
-              placeholder="Ej: OT-2026-001"
             />
           </div>
 
@@ -508,6 +416,54 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <option value="PAUSADO">PAUSADO</option>
               <option value="CERRADO">CERRADO</option>
             </select>
+          </div>
+
+          <div className="pcp-field">
+            <label>Ingreso total</label>
+            <input
+              value={cabecera.ingreso_total}
+              onChange={(e) => onCabeceraChange("ingreso_total", e.target.value)}
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Costo objetivo total</label>
+            <input
+              value={cabecera.costo_objetivo_total}
+              onChange={(e) => onCabeceraChange("costo_objetivo_total", e.target.value)}
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Gasto operativo total</label>
+            <input
+              value={cabecera.gasto_operativo_total}
+              onChange={(e) => onCabeceraChange("gasto_operativo_total", e.target.value)}
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Costo administrativo total</label>
+            <input
+              value={cabecera.costo_administrativo_total}
+              onChange={(e) => onCabeceraChange("costo_administrativo_total", e.target.value)}
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>EBITDA objetivo</label>
+            <input
+              value={cabecera.ebitda_objetivo}
+              onChange={(e) => onCabeceraChange("ebitda_objetivo", e.target.value)}
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>% margen objetivo</label>
+            <input
+              value={cabecera.margen_objetivo_pct}
+              onChange={(e) => onCabeceraChange("margen_objetivo_pct", e.target.value)}
+            />
           </div>
 
           <div className="pcp-field">
@@ -547,65 +503,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           </div>
 
           <div className="pcp-field">
-            <label>Ingreso total</label>
-            <input
-              value={cabecera.ingreso_total}
-              onChange={(e) => onCabeceraChange("ingreso_total", e.target.value)}
-              placeholder="0"
-            />
-          </div>
-
-          <div className="pcp-field">
-            <label>Costo objetivo total</label>
-            <input
-              value={cabecera.costo_objetivo_total}
-              onChange={(e) => onCabeceraChange("costo_objetivo_total", e.target.value)}
-              placeholder="0"
-            />
-          </div>
-
-          <div className="pcp-field">
-            <label>Gasto operativo total</label>
-            <input
-              value={cabecera.gasto_operativo_total}
-              onChange={(e) => onCabeceraChange("gasto_operativo_total", e.target.value)}
-              placeholder="0"
-            />
-          </div>
-
-          <div className="pcp-field">
-            <label>Costo administrativo total</label>
-            <input
-              value={cabecera.costo_administrativo_total}
-              onChange={(e) => onCabeceraChange("costo_administrativo_total", e.target.value)}
-              placeholder="0"
-            />
-          </div>
-
-          <div className="pcp-field">
-            <label>EBITDA objetivo</label>
-            <input
-              value={cabecera.ebitda_objetivo}
-              onChange={(e) => onCabeceraChange("ebitda_objetivo", e.target.value)}
-              placeholder="0"
-            />
-          </div>
-
-          <div className="pcp-field">
-            <label>% margen objetivo</label>
-            <input
-              value={cabecera.margen_objetivo_pct}
-              onChange={(e) => onCabeceraChange("margen_objetivo_pct", e.target.value)}
-              placeholder="0"
-            />
-          </div>
-
-          <div className="pcp-field">
             <label>Alerta 1 (%)</label>
             <input
               value={cabecera.alerta_umbral_1}
               onChange={(e) => onCabeceraChange("alerta_umbral_1", e.target.value)}
-              placeholder="70"
             />
           </div>
 
@@ -614,7 +515,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
             <input
               value={cabecera.alerta_umbral_2}
               onChange={(e) => onCabeceraChange("alerta_umbral_2", e.target.value)}
-              placeholder="85"
             />
           </div>
 
@@ -623,7 +523,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
             <input
               value={cabecera.alerta_umbral_3}
               onChange={(e) => onCabeceraChange("alerta_umbral_3", e.target.value)}
-              placeholder="95"
             />
           </div>
         </div>
@@ -633,7 +532,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         <div className="pcp-section-head">
           <div>
             <h3>Presupuesto mensual</h3>
-            <p className="pcp-note">Planeación macro por período.</p>
+            <p className="pcp-note">Planeación manual de preventa por período.</p>
           </div>
 
           <div className="pcp-section-actions">
@@ -672,52 +571,14 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
               {presupuestoMensual.map((row, index) => (
                 <tr key={`pm-${index}`}>
-                  <td>
-                    <input
-                      value={row.anio}
-                      onChange={(e) => onPresupuestoChange(index, "anio", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.mes}
-                      onChange={(e) => onPresupuestoChange(index, "mes", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.ingreso_planeado ?? ""}
-                      onChange={(e) => onPresupuestoChange(index, "ingreso_planeado", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.costo_planeado ?? ""}
-                      onChange={(e) => onPresupuestoChange(index, "costo_planeado", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.gasto_operativo_planeado ?? ""}
-                      onChange={(e) =>
-                        onPresupuestoChange(index, "gasto_operativo_planeado", e.target.value)
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.costo_administrativo_planeado ?? ""}
-                      onChange={(e) =>
-                        onPresupuestoChange(index, "costo_administrativo_planeado", e.target.value)
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input value={row.ebitda_planeado ?? ""} readOnly />
-                  </td>
-                  <td>
-                    <input value={row.margen_planeado_pct ?? ""} readOnly />
-                  </td>
+                  <td><input value={row.anio} onChange={(e) => onPresupuestoChange(index, "anio", e.target.value)} /></td>
+                  <td><input value={row.mes} onChange={(e) => onPresupuestoChange(index, "mes", e.target.value)} /></td>
+                  <td><input value={row.ingreso_planeado ?? ""} onChange={(e) => onPresupuestoChange(index, "ingreso_planeado", e.target.value)} /></td>
+                  <td><input value={row.costo_planeado ?? ""} onChange={(e) => onPresupuestoChange(index, "costo_planeado", e.target.value)} /></td>
+                  <td><input value={row.gasto_operativo_planeado ?? ""} onChange={(e) => onPresupuestoChange(index, "gasto_operativo_planeado", e.target.value)} /></td>
+                  <td><input value={row.costo_administrativo_planeado ?? ""} onChange={(e) => onPresupuestoChange(index, "costo_administrativo_planeado", e.target.value)} /></td>
+                  <td><input value={row.ebitda_planeado ?? ""} readOnly /></td>
+                  <td><input value={row.margen_planeado_pct ?? ""} readOnly /></td>
                   <td className="center">
                     <input
                       type="checkbox"
@@ -742,147 +603,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 <th>{formatMoney(totalsPresupuesto.gastoOp, cabecera.moneda)}</th>
                 <th>{formatMoney(totalsPresupuesto.costoAdm, cabecera.moneda)}</th>
                 <th>{formatMoney(totalsPresupuesto.ebitda, cabecera.moneda)}</th>
-                <th colSpan={3}></th>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </section>
-
-      <section className="pcp-section">
-        <div className="pcp-section-head">
-          <div>
-            <h3>Planeación por perfil</h3>
-            <p className="pcp-note">La unidad clave: proyecto + mes + perfil.</p>
-          </div>
-
-          <div className="pcp-section-actions">
-            <button className="secondary" onClick={addPerfilRow}>
-              + Agregar fila
-            </button>
-            <button onClick={guardarPerfilPlan} disabled={saving.perfiles || loading}>
-              {saving.perfiles ? "Guardando..." : "Guardar perfiles"}
-            </button>
-          </div>
-        </div>
-
-        <div className="pcp-table-wrap">
-          <table className="pcp-table">
-            <thead>
-              <tr>
-                <th>Año</th>
-                <th>Mes</th>
-                <th>Perfil</th>
-                <th>Consultor ID</th>
-                <th>Horas estimadas</th>
-                <th>FTE</th>
-                <th>Valor hora planeado</th>
-                <th>Costo estimado</th>
-                <th>Ingreso estimado</th>
-                <th>Observación</th>
-                <th>Activo</th>
-                <th></th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {perfilPlan.length === 0 && (
-                <tr>
-                  <td colSpan={12} className="pcp-empty">Sin planeación por perfil</td>
-                </tr>
-              )}
-
-              {perfilPlan.map((row, index) => (
-                <tr key={`pp-${index}`}>
-                  <td>
-                    <input
-                      value={row.anio}
-                      onChange={(e) => onPerfilChange(index, "anio", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.mes}
-                      onChange={(e) => onPerfilChange(index, "mes", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <select
-                      value={row.perfil_id ?? ""}
-                      onChange={(e) => onPerfilChange(index, "perfil_id", e.target.value)}
-                    >
-                      <option value="">Seleccione</option>
-                      {(catalogos.perfiles || []).map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.codigo} - {p.nombre}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <input
-                      value={row.consultor_id ?? ""}
-                      onChange={(e) => onPerfilChange(index, "consultor_id", e.target.value)}
-                      placeholder="Opcional"
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.horas_estimadas ?? ""}
-                      onChange={(e) => onPerfilChange(index, "horas_estimadas", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.fte_estimado ?? ""}
-                      onChange={(e) => onPerfilChange(index, "fte_estimado", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.valor_hora_planeado ?? ""}
-                      onChange={(e) => onPerfilChange(index, "valor_hora_planeado", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input value={row.costo_estimado ?? ""} readOnly />
-                  </td>
-                  <td>
-                    <input
-                      value={row.ingreso_estimado ?? ""}
-                      onChange={(e) => onPerfilChange(index, "ingreso_estimado", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.observacion ?? ""}
-                      onChange={(e) => onPerfilChange(index, "observacion", e.target.value)}
-                    />
-                  </td>
-                  <td className="center">
-                    <input
-                      type="checkbox"
-                      checked={!!row.activo}
-                      onChange={(e) => onPerfilChange(index, "activo", e.target.checked)}
-                    />
-                  </td>
-                  <td className="center">
-                    <button className="danger ghost" onClick={() => removePerfilRow(index)}>
-                      Eliminar
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-
-            <tfoot>
-              <tr>
-                <th colSpan={4}>Totales</th>
-                <th>{formatNumber(totalsPerfil.horas)}</th>
-                <th>{formatNumber(totalsPerfil.fte)}</th>
-                <th></th>
-                <th>{formatMoney(totalsPerfil.costo, cabecera.moneda)}</th>
-                <th>{formatMoney(totalsPerfil.ingreso, cabecera.moneda)}</th>
                 <th colSpan={3}></th>
               </tr>
             </tfoot>
@@ -931,18 +651,8 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
               {costosAdicionales.map((row, index) => (
                 <tr key={`ca-${index}`}>
-                  <td>
-                    <input
-                      value={row.anio}
-                      onChange={(e) => onAdicionalChange(index, "anio", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.mes}
-                      onChange={(e) => onAdicionalChange(index, "mes", e.target.value)}
-                    />
-                  </td>
+                  <td><input value={row.anio} onChange={(e) => onAdicionalChange(index, "anio", e.target.value)} /></td>
+                  <td><input value={row.mes} onChange={(e) => onAdicionalChange(index, "mes", e.target.value)} /></td>
                   <td>
                     <select
                       value={row.tipo_costo ?? "OTRO"}
@@ -953,24 +663,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                       <option value="OTRO">OTRO</option>
                     </select>
                   </td>
-                  <td>
-                    <input
-                      value={row.categoria ?? ""}
-                      onChange={(e) => onAdicionalChange(index, "categoria", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.descripcion ?? ""}
-                      onChange={(e) => onAdicionalChange(index, "descripcion", e.target.value)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={row.valor ?? ""}
-                      onChange={(e) => onAdicionalChange(index, "valor", e.target.value)}
-                    />
-                  </td>
+                  <td><input value={row.categoria ?? ""} onChange={(e) => onAdicionalChange(index, "categoria", e.target.value)} /></td>
+                  <td><input value={row.descripcion ?? ""} onChange={(e) => onAdicionalChange(index, "descripcion", e.target.value)} /></td>
+                  <td><input value={row.valor ?? ""} onChange={(e) => onAdicionalChange(index, "valor", e.target.value)} /></td>
                   <td className="center">
                     <input
                       type="checkbox"
@@ -1035,7 +730,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 const cls = getAlertClass(row.pct_uso, cabecera);
                 return (
                   <tr key={row.periodo}>
-                    <td>{row.periodo || periodLabel(row.anio, row.mes)}</td>
+                    <td>{row.periodo}</td>
                     <td>{formatMoney(row.ingreso_planeado, cabecera.moneda)}</td>
                     <td>{formatMoney(row.costo_planeado, cabecera.moneda)}</td>
                     <td>{formatMoney(row.costo_adicional, cabecera.moneda)}</td>

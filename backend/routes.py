@@ -5437,27 +5437,29 @@ def proyecto_to_dict(p: Proyecto, include_modulos=True, include_fases=True):
             "activo": bool(fase.activo),
         } if fase else None,
 
-        "oportunidad_id": p.oportunidad_id,
-        "oportunidad": p.oportunidad.to_dict() if getattr(p, "oportunidad", None) else None,
+        # nuevo
+        "oportunidad_id": getattr(p, "oportunidad_id", None),
+        "oportunidad": opp.to_dict() if opp else None,
         "tipo_negocio": getattr(p, "tipo_negocio", None),
 
-        "fecha_inicio_ejecucion": _date_to_json(p.fecha_inicio_ejecucion),
-        "fecha_fin_ejecucion": _date_to_json(p.fecha_fin_ejecucion),
-        "fecha_inicio_facturacion": _date_to_json(p.fecha_inicio_facturacion),
-        "fecha_fin_facturacion": _date_to_json(p.fecha_fin_facturacion),
+        "codigo_ot_principal": getattr(p, "codigo_ot_principal", None),
+        "fecha_inicio_ejecucion": _date_to_json(getattr(p, "fecha_inicio_ejecucion", None)),
+        "fecha_fin_ejecucion": _date_to_json(getattr(p, "fecha_fin_ejecucion", None)),
+        "fecha_inicio_facturacion": _date_to_json(getattr(p, "fecha_inicio_facturacion", None)),
+        "fecha_fin_facturacion": _date_to_json(getattr(p, "fecha_fin_facturacion", None)),
 
-        "moneda": p.moneda,
-        "ingreso_total": _money_to_json(p.ingreso_total),
-        "costo_objetivo_total": _money_to_json(p.costo_objetivo_total),
-        "gasto_operativo_total": _money_to_json(p.gasto_operativo_total),
-        "costo_administrativo_total": _money_to_json(p.costo_administrativo_total),
-        "margen_objetivo_pct": _money_to_json(p.margen_objetivo_pct),
-        "ebitda_objetivo": _money_to_json(p.ebitda_objetivo),
-        "estado_financiero": p.estado_financiero,
+        "moneda": getattr(p, "moneda", "COP"),
+        "ingreso_total": _money_to_json(getattr(p, "ingreso_total", None)),
+        "costo_objetivo_total": _money_to_json(getattr(p, "costo_objetivo_total", None)),
+        "gasto_operativo_total": _money_to_json(getattr(p, "gasto_operativo_total", None)),
+        "costo_administrativo_total": _money_to_json(getattr(p, "costo_administrativo_total", None)),
+        "margen_objetivo_pct": _money_to_json(getattr(p, "margen_objetivo_pct", None)),
+        "ebitda_objetivo": _money_to_json(getattr(p, "ebitda_objetivo", None)),
+        "estado_financiero": getattr(p, "estado_financiero", "BORRADOR"),
 
-        "alerta_umbral_1": _money_to_json(p.alerta_umbral_1),
-        "alerta_umbral_2": _money_to_json(p.alerta_umbral_2),
-        "alerta_umbral_3": _money_to_json(p.alerta_umbral_3),
+        "alerta_umbral_1": _money_to_json(getattr(p, "alerta_umbral_1", None)),
+        "alerta_umbral_2": _money_to_json(getattr(p, "alerta_umbral_2", None)),
+        "alerta_umbral_3": _money_to_json(getattr(p, "alerta_umbral_3", None)),
     }
 
     if include_fases:
@@ -6911,7 +6913,603 @@ def listar_oportunidades_elegibles_proyecto():
             "mensaje": "Error interno en /oportunidades/elegibles-proyecto",
             "trace": traceback.format_exc()
         }), 500
-    
+
+## ----------
+## Costos Endpoint 
+def _cost_parse_date(v):
+    if v in (None, "", "null", "None"):
+        return None
+    if isinstance(v, date):
+        return v
+    try:
+        return datetime.strptime(str(v).strip()[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+def _cost_parse_decimal(v):
+    if v in (None, "", "null", "None"):
+        return None
+
+    if isinstance(v, Decimal):
+        return v
+
+    s = str(v).strip()
+    s = s.replace("$", "").replace(" ", "")
+
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "," in s and "." not in s:
+        s = s.replace(",", ".")
+
+    try:
+        return Decimal(s)
+    except Exception:
+        return None
+
+def _perfil_to_dict(x: ProyectoPerfilCatalogo):
+    return {
+        "id": x.id,
+        "codigo": x.codigo,
+        "nombre": x.nombre,
+        "activo": bool(x.activo),
+        "orden": int(x.orden or 0),
+    }
+
+def _presupuesto_mensual_to_dict(x: ProyectoPresupuestoMensual):
+    return {
+        "id": x.id,
+        "proyecto_id": x.proyecto_id,
+        "anio": x.anio,
+        "mes": x.mes,
+        "ingreso_planeado": _money_to_json(x.ingreso_planeado),
+        "costo_planeado": _money_to_json(x.costo_planeado),
+        "gasto_operativo_planeado": _money_to_json(x.gasto_operativo_planeado),
+        "costo_administrativo_planeado": _money_to_json(x.costo_administrativo_planeado),
+        "ebitda_planeado": _money_to_json(x.ebitda_planeado),
+        "margen_planeado_pct": _money_to_json(x.margen_planeado_pct),
+        "activo": bool(x.activo),
+    }
+
+def _perfil_plan_to_dict(x: ProyectoPerfilPlan):
+    return {
+        "id": x.id,
+        "proyecto_id": x.proyecto_id,
+        "anio": x.anio,
+        "mes": x.mes,
+        "perfil_id": x.perfil_id,
+        "perfil": _perfil_to_dict(x.perfil) if x.perfil else None,
+        "consultor_id": x.consultor_id,
+        "consultor": {
+            "id": x.consultor.id,
+            "nombre": x.consultor.nombre,
+            "usuario": x.consultor.usuario,
+        } if x.consultor else None,
+        "horas_estimadas": _money_to_json(x.horas_estimadas),
+        "fte_estimado": _money_to_json(x.fte_estimado),
+        "valor_hora_planeado": _money_to_json(x.valor_hora_planeado),
+        "costo_estimado": _money_to_json(x.costo_estimado),
+        "ingreso_estimado": _money_to_json(x.ingreso_estimado),
+        "observacion": x.observacion,
+        "orden": int(x.orden or 0),
+        "activo": bool(x.activo),
+    }
+
+def _costo_adicional_to_dict(x: ProyectoCostoAdicional):
+    return {
+        "id": x.id,
+        "proyecto_id": x.proyecto_id,
+        "anio": x.anio,
+        "mes": x.mes,
+        "tipo_costo": x.tipo_costo,
+        "categoria": x.categoria,
+        "descripcion": x.descripcion,
+        "valor": _money_to_json(x.valor),
+        "activo": bool(x.activo),
+    }
+
+def _ym_from_registro_fecha(fecha_str):
+    s = str(fecha_str or "").strip()
+    if not s:
+        return None, None
+
+    s10 = s[:10]
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            d = datetime.strptime(s10, fmt).date()
+            return d.year, d.month
+        except Exception:
+            continue
+
+    if len(s) >= 7 and s[4] == "-":
+        try:
+            return int(s[:4]), int(s[5:7])
+        except Exception:
+            return None, None
+
+    return None, None
+
+def _valor_hora_consultor(consultor_id, anio, mes):
+    if not consultor_id or not anio or not mes:
+        return Decimal("0")
+
+    row = (
+        ConsultorPresupuesto.query
+        .filter(ConsultorPresupuesto.consultor_id == consultor_id)
+        .filter(ConsultorPresupuesto.anio == anio)
+        .filter(ConsultorPresupuesto.mes == mes)
+        .filter(ConsultorPresupuesto.vigente == True)
+        .order_by(ConsultorPresupuesto.id.desc())
+        .first()
+    )
+
+    if not row:
+        row = (
+            ConsultorPresupuesto.query
+            .filter(ConsultorPresupuesto.consultor_id == consultor_id)
+            .filter(ConsultorPresupuesto.anio == anio)
+            .filter(ConsultorPresupuesto.mes == mes)
+            .order_by(ConsultorPresupuesto.id.desc())
+            .first()
+        )
+
+    if not row:
+        return Decimal("0")
+
+    vr = Decimal(str(row.vr_perfil or 0))
+    hb = Decimal(str(row.horas_base_mes or 0))
+
+    if hb <= 0:
+        return Decimal("0")
+
+    return vr / hb
+
+@bp.route("/proyecto-perfiles-catalogo", methods=["GET"])
+@permission_required("PROYECTOS_VER")
+def listar_catalogo_perfiles_proyecto():
+    rows = (
+        ProyectoPerfilCatalogo.query
+        .order_by(ProyectoPerfilCatalogo.orden.asc(), ProyectoPerfilCatalogo.nombre.asc())
+        .all()
+    )
+    return jsonify([_perfil_to_dict(x) for x in rows]), 200
+
+@bp.route("/proyectos/<int:proyecto_id>/costos", methods=["GET"])
+@permission_required("PROYECTOS_VER")
+def get_proyecto_costos(proyecto_id):
+    p = (
+        Proyecto.query.options(
+            joinedload(Proyecto.cliente),
+            joinedload(Proyecto.oportunidad),
+            joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo),
+            joinedload(Proyecto.fase),
+            joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase),
+            joinedload(Proyecto.presupuestos_mensuales),
+            joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.perfil),
+            joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.consultor),
+            joinedload(Proyecto.costos_adicionales),
+        )
+        .get_or_404(proyecto_id)
+    )
+
+    perfiles_catalogo = (
+        ProyectoPerfilCatalogo.query
+        .order_by(ProyectoPerfilCatalogo.orden.asc(), ProyectoPerfilCatalogo.nombre.asc())
+        .all()
+    )
+
+    return jsonify({
+        "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True),
+        "catalogos": {
+            "perfiles": [_perfil_to_dict(x) for x in perfiles_catalogo],
+        },
+        "presupuesto_mensual": [
+            _presupuesto_mensual_to_dict(x)
+            for x in sorted(p.presupuestos_mensuales, key=lambda r: (r.anio, r.mes))
+        ],
+        "perfil_plan": [
+            _perfil_plan_to_dict(x)
+            for x in sorted(p.perfiles_plan, key=lambda r: (r.anio, r.mes, r.orden, r.id))
+        ],
+        "costos_adicionales": [
+            _costo_adicional_to_dict(x)
+            for x in sorted(p.costos_adicionales, key=lambda r: (r.anio, r.mes, r.id))
+        ],
+    }), 200
+
+@bp.route("/proyectos/<int:proyecto_id>/costos/cabecera", methods=["PUT"])
+@permission_required("PROYECTOS_EDITAR")
+def update_proyecto_costos_cabecera(proyecto_id):
+    p = Proyecto.query.get_or_404(proyecto_id)
+    data = request.get_json(silent=True) or {}
+
+    if "oportunidad_id" in data:
+        opp_id = data.get("oportunidad_id")
+        if opp_id in (None, "", "null"):
+            p.oportunidad_id = None
+        else:
+            try:
+                opp_id = int(opp_id)
+            except Exception:
+                return jsonify({"mensaje": "oportunidad_id inválido"}), 400
+
+            if not Oportunidad.query.get(opp_id):
+                return jsonify({"mensaje": "La oportunidad no existe"}), 400
+
+            p.oportunidad_id = opp_id
+
+    if "codigo_ot_principal" in data:
+        p.codigo_ot_principal = (data.get("codigo_ot_principal") or "").strip().upper() or None
+
+    if "fecha_inicio_ejecucion" in data:
+        p.fecha_inicio_ejecucion = _cost_parse_date(data.get("fecha_inicio_ejecucion"))
+    if "fecha_fin_ejecucion" in data:
+        p.fecha_fin_ejecucion = _cost_parse_date(data.get("fecha_fin_ejecucion"))
+    if "fecha_inicio_facturacion" in data:
+        p.fecha_inicio_facturacion = _cost_parse_date(data.get("fecha_inicio_facturacion"))
+    if "fecha_fin_facturacion" in data:
+        p.fecha_fin_facturacion = _cost_parse_date(data.get("fecha_fin_facturacion"))
+
+    if p.fecha_inicio_ejecucion and p.fecha_fin_ejecucion and p.fecha_fin_ejecucion < p.fecha_inicio_ejecucion:
+        return jsonify({"mensaje": "La fecha fin de ejecución no puede ser menor a la fecha inicio"}), 400
+
+    if p.fecha_inicio_facturacion and p.fecha_fin_facturacion and p.fecha_fin_facturacion < p.fecha_inicio_facturacion:
+        return jsonify({"mensaje": "La fecha fin de facturación no puede ser menor a la fecha inicio"}), 400
+
+    if "moneda" in data:
+        moneda = (data.get("moneda") or "COP").strip().upper()
+        if moneda not in {"COP", "USD"}:
+            return jsonify({"mensaje": "moneda inválida"}), 400
+        p.moneda = moneda
+
+    if "ingreso_total" in data:
+        p.ingreso_total = _cost_parse_decimal(data.get("ingreso_total"))
+    if "costo_objetivo_total" in data:
+        p.costo_objetivo_total = _cost_parse_decimal(data.get("costo_objetivo_total"))
+    if "gasto_operativo_total" in data:
+        p.gasto_operativo_total = _cost_parse_decimal(data.get("gasto_operativo_total"))
+    if "costo_administrativo_total" in data:
+        p.costo_administrativo_total = _cost_parse_decimal(data.get("costo_administrativo_total"))
+    if "margen_objetivo_pct" in data:
+        p.margen_objetivo_pct = _cost_parse_decimal(data.get("margen_objetivo_pct"))
+    if "ebitda_objetivo" in data:
+        p.ebitda_objetivo = _cost_parse_decimal(data.get("ebitda_objetivo"))
+
+    if "estado_financiero" in data:
+        estado = (data.get("estado_financiero") or "").strip().upper()
+        if estado not in {"BORRADOR", "CONFIGURADO", "ACTIVO", "PAUSADO", "CERRADO"}:
+            return jsonify({"mensaje": "estado_financiero inválido"}), 400
+        p.estado_financiero = estado
+
+    if "alerta_umbral_1" in data:
+        p.alerta_umbral_1 = _cost_parse_decimal(data.get("alerta_umbral_1")) or Decimal("70.00")
+    if "alerta_umbral_2" in data:
+        p.alerta_umbral_2 = _cost_parse_decimal(data.get("alerta_umbral_2")) or Decimal("85.00")
+    if "alerta_umbral_3" in data:
+        p.alerta_umbral_3 = _cost_parse_decimal(data.get("alerta_umbral_3")) or Decimal("95.00")
+
+    db.session.commit()
+
+    return jsonify({
+        "mensaje": "Cabecera financiera actualizada",
+        "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True)
+    }), 200
+
+@bp.route("/proyectos/<int:proyecto_id>/costos/presupuesto-mensual", methods=["POST"])
+@permission_required("PROYECTOS_EDITAR")
+def save_proyecto_presupuesto_mensual(proyecto_id):
+    Proyecto.query.get_or_404(proyecto_id)
+    data = request.get_json(silent=True) or {}
+    rows = data.get("rows") or []
+
+    # validar duplicados antes de borrar
+    seen = set()
+    for row in rows:
+        anio = int(row.get("anio") or 0)
+        mes = int(row.get("mes") or 0)
+        if anio <= 0 or mes < 1 or mes > 12:
+            return jsonify({"mensaje": f"Periodo inválido en presupuesto mensual: {anio}-{mes}"}), 400
+
+        key = (anio, mes)
+        if key in seen:
+            return jsonify({"mensaje": f"Periodo duplicado en presupuesto mensual: {anio}-{mes}"}), 400
+        seen.add(key)
+
+    ProyectoPresupuestoMensual.query.filter_by(proyecto_id=proyecto_id).delete()
+
+    for row in rows:
+        db.session.add(ProyectoPresupuestoMensual(
+            proyecto_id=proyecto_id,
+            anio=int(row.get("anio")),
+            mes=int(row.get("mes")),
+            ingreso_planeado=_cost_parse_decimal(row.get("ingreso_planeado")),
+            costo_planeado=_cost_parse_decimal(row.get("costo_planeado")),
+            gasto_operativo_planeado=_cost_parse_decimal(row.get("gasto_operativo_planeado")),
+            costo_administrativo_planeado=_cost_parse_decimal(row.get("costo_administrativo_planeado")),
+            ebitda_planeado=_cost_parse_decimal(row.get("ebitda_planeado")),
+            margen_planeado_pct=_cost_parse_decimal(row.get("margen_planeado_pct")),
+            activo=_to_bool2(row.get("activo"), default=True),
+        ))
+
+    db.session.commit()
+
+    rows_db = (
+        ProyectoPresupuestoMensual.query
+        .filter_by(proyecto_id=proyecto_id)
+        .order_by(ProyectoPresupuestoMensual.anio.asc(), ProyectoPresupuestoMensual.mes.asc())
+        .all()
+    )
+
+    return jsonify({
+        "mensaje": "Presupuesto mensual guardado",
+        "rows": [_presupuesto_mensual_to_dict(x) for x in rows_db]
+    }), 200
+
+@bp.route("/proyectos/<int:proyecto_id>/costos/perfil-plan", methods=["POST"])
+@permission_required("PROYECTOS_EDITAR")
+def save_proyecto_perfil_plan(proyecto_id):
+    Proyecto.query.get_or_404(proyecto_id)
+    data = request.get_json(silent=True) or {}
+    rows = data.get("rows") or []
+
+    seen = set()
+    for idx, row in enumerate(rows):
+        anio = int(row.get("anio") or 0)
+        mes = int(row.get("mes") or 0)
+        perfil_id = int(row.get("perfil_id") or 0) if row.get("perfil_id") else 0
+
+        if anio <= 0 or mes < 1 or mes > 12 or perfil_id <= 0:
+            return jsonify({"mensaje": f"Fila inválida en planeación por perfil (índice {idx})"}), 400
+
+        key = (anio, mes, perfil_id)
+        if key in seen:
+            return jsonify({"mensaje": f"Perfil duplicado para el mismo periodo: {anio}-{mes}, perfil {perfil_id}"}), 400
+        seen.add(key)
+
+        if not ProyectoPerfilCatalogo.query.get(perfil_id):
+            return jsonify({"mensaje": f"Perfil no existe: {perfil_id}"}), 400
+
+    ProyectoPerfilPlan.query.filter_by(proyecto_id=proyecto_id).delete()
+
+    for idx, row in enumerate(rows):
+        consultor_id = row.get("consultor_id")
+        if consultor_id in ("", "null", None):
+            consultor_id = None
+        elif consultor_id:
+            consultor_id = int(consultor_id)
+            if not Consultor.query.get(consultor_id):
+                return jsonify({"mensaje": f"Consultor no existe: {consultor_id}"}), 400
+
+        db.session.add(ProyectoPerfilPlan(
+            proyecto_id=proyecto_id,
+            anio=int(row.get("anio")),
+            mes=int(row.get("mes")),
+            perfil_id=int(row.get("perfil_id")),
+            consultor_id=consultor_id,
+            horas_estimadas=_cost_parse_decimal(row.get("horas_estimadas")),
+            fte_estimado=_cost_parse_decimal(row.get("fte_estimado")),
+            valor_hora_planeado=_cost_parse_decimal(row.get("valor_hora_planeado")),
+            costo_estimado=_cost_parse_decimal(row.get("costo_estimado")),
+            ingreso_estimado=_cost_parse_decimal(row.get("ingreso_estimado")),
+            observacion=(row.get("observacion") or "").strip() or None,
+            orden=int(row.get("orden") or idx),
+            activo=_to_bool2(row.get("activo"), default=True),
+        ))
+
+    db.session.commit()
+
+    rows_db = (
+        ProyectoPerfilPlan.query
+        .options(
+            joinedload(ProyectoPerfilPlan.perfil),
+            joinedload(ProyectoPerfilPlan.consultor),
+        )
+        .filter_by(proyecto_id=proyecto_id)
+        .order_by(ProyectoPerfilPlan.anio.asc(), ProyectoPerfilPlan.mes.asc(), ProyectoPerfilPlan.orden.asc())
+        .all()
+    )
+
+    return jsonify({
+        "mensaje": "Planeación por perfil guardada",
+        "rows": [_perfil_plan_to_dict(x) for x in rows_db]
+    }), 200
+
+@bp.route("/proyectos/<int:proyecto_id>/costos/costos-adicionales", methods=["POST"])
+@permission_required("PROYECTOS_EDITAR")
+def save_proyecto_costos_adicionales(proyecto_id):
+    Proyecto.query.get_or_404(proyecto_id)
+    data = request.get_json(silent=True) or {}
+    rows = data.get("rows") or []
+
+    for idx, row in enumerate(rows):
+        anio = int(row.get("anio") or 0)
+        mes = int(row.get("mes") or 0)
+
+        if anio <= 0 or mes < 1 or mes > 12:
+            return jsonify({"mensaje": f"Fila inválida en costos adicionales (índice {idx})"}), 400
+
+    ProyectoCostoAdicional.query.filter_by(proyecto_id=proyecto_id).delete()
+
+    for row in rows:
+        tipo_costo = (row.get("tipo_costo") or "").strip().upper()
+        if tipo_costo not in {"OPERATIVO", "ADMINISTRATIVO", "OTRO"}:
+            tipo_costo = "OTRO"
+
+        db.session.add(ProyectoCostoAdicional(
+            proyecto_id=proyecto_id,
+            anio=int(row.get("anio")),
+            mes=int(row.get("mes")),
+            tipo_costo=tipo_costo,
+            categoria=(row.get("categoria") or "").strip() or None,
+            descripcion=(row.get("descripcion") or "").strip() or None,
+            valor=_cost_parse_decimal(row.get("valor")) or Decimal("0"),
+            activo=_to_bool2(row.get("activo"), default=True),
+        ))
+
+    db.session.commit()
+
+    rows_db = (
+        ProyectoCostoAdicional.query
+        .filter_by(proyecto_id=proyecto_id)
+        .order_by(ProyectoCostoAdicional.anio.asc(), ProyectoCostoAdicional.mes.asc(), ProyectoCostoAdicional.id.asc())
+        .all()
+    )
+
+    return jsonify({
+        "mensaje": "Costos adicionales guardados",
+        "rows": [_costo_adicional_to_dict(x) for x in rows_db]
+    }), 200
+
+@bp.route("/proyectos/<int:proyecto_id>/costos/resumen", methods=["GET"])
+@permission_required("PROYECTOS_VER")
+def get_proyecto_costos_resumen(proyecto_id):
+    p = (
+        Proyecto.query.options(
+            joinedload(Proyecto.presupuestos_mensuales),
+            joinedload(Proyecto.perfiles_plan),
+            joinedload(Proyecto.costos_adicionales),
+        )
+        .get_or_404(proyecto_id)
+    )
+
+    plan_mensual = {}
+    for x in (p.presupuestos_mensuales or []):
+        key = f"{x.anio:04d}-{x.mes:02d}"
+        plan_mensual[key] = {
+            "anio": x.anio,
+            "mes": x.mes,
+            "ingreso_planeado": Decimal(str(x.ingreso_planeado or 0)),
+            "costo_planeado": Decimal(str(x.costo_planeado or 0)),
+            "gasto_operativo_planeado": Decimal(str(x.gasto_operativo_planeado or 0)),
+            "costo_administrativo_planeado": Decimal(str(x.costo_administrativo_planeado or 0)),
+            "ebitda_planeado": Decimal(str(x.ebitda_planeado or 0)),
+            "margen_planeado_pct": Decimal(str(x.margen_planeado_pct or 0)),
+            "horas_planeadas": Decimal("0"),
+            "costo_adicional": Decimal("0"),
+            "horas_reales": Decimal("0"),
+            "costo_real": Decimal("0"),
+        }
+
+    for x in (p.perfiles_plan or []):
+        key = f"{x.anio:04d}-{x.mes:02d}"
+        if key not in plan_mensual:
+            plan_mensual[key] = {
+                "anio": x.anio,
+                "mes": x.mes,
+                "ingreso_planeado": Decimal("0"),
+                "costo_planeado": Decimal("0"),
+                "gasto_operativo_planeado": Decimal("0"),
+                "costo_administrativo_planeado": Decimal("0"),
+                "ebitda_planeado": Decimal("0"),
+                "margen_planeado_pct": Decimal("0"),
+                "horas_planeadas": Decimal("0"),
+                "costo_adicional": Decimal("0"),
+                "horas_reales": Decimal("0"),
+                "costo_real": Decimal("0"),
+            }
+        plan_mensual[key]["horas_planeadas"] += Decimal(str(x.horas_estimadas or 0))
+
+    for x in (p.costos_adicionales or []):
+        key = f"{x.anio:04d}-{x.mes:02d}"
+        if key not in plan_mensual:
+            plan_mensual[key] = {
+                "anio": x.anio,
+                "mes": x.mes,
+                "ingreso_planeado": Decimal("0"),
+                "costo_planeado": Decimal("0"),
+                "gasto_operativo_planeado": Decimal("0"),
+                "costo_administrativo_planeado": Decimal("0"),
+                "ebitda_planeado": Decimal("0"),
+                "margen_planeado_pct": Decimal("0"),
+                "horas_planeadas": Decimal("0"),
+                "costo_adicional": Decimal("0"),
+                "horas_reales": Decimal("0"),
+                "costo_real": Decimal("0"),
+            }
+        plan_mensual[key]["costo_adicional"] += Decimal(str(x.valor or 0))
+
+    regs = (
+        db.session.query(Registro, Consultor.id.label("consultor_id"))
+        .outerjoin(Consultor, func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario))
+        .filter(Registro.proyecto_id == proyecto_id)
+        .all()
+    )
+
+    for reg, consultor_id in regs:
+        anio, mes = _ym_from_registro_fecha(reg.fecha)
+        if not anio or not mes:
+            continue
+
+        key = f"{anio:04d}-{mes:02d}"
+        if key not in plan_mensual:
+            plan_mensual[key] = {
+                "anio": anio,
+                "mes": mes,
+                "ingreso_planeado": Decimal("0"),
+                "costo_planeado": Decimal("0"),
+                "gasto_operativo_planeado": Decimal("0"),
+                "costo_administrativo_planeado": Decimal("0"),
+                "ebitda_planeado": Decimal("0"),
+                "margen_planeado_pct": Decimal("0"),
+                "horas_planeadas": Decimal("0"),
+                "costo_adicional": Decimal("0"),
+                "horas_reales": Decimal("0"),
+                "costo_real": Decimal("0"),
+            }
+
+        horas = Decimal(str(reg.total_horas or reg.tiempo_invertido or 0))
+        valor_hora = _valor_hora_consultor(consultor_id, anio, mes)
+        costo_real = horas * valor_hora
+
+        plan_mensual[key]["horas_reales"] += horas
+        plan_mensual[key]["costo_real"] += costo_real
+
+    meses = []
+    for key in sorted(plan_mensual.keys()):
+        row = plan_mensual[key]
+        costo_planeado_total = row["costo_planeado"] + row["costo_adicional"]
+        variacion_costo = row["costo_real"] - costo_planeado_total
+        pct_uso = None
+        if costo_planeado_total > 0:
+            pct_uso = float((row["costo_real"] / costo_planeado_total) * Decimal("100"))
+
+        meses.append({
+            "periodo": key,
+            "anio": row["anio"],
+            "mes": row["mes"],
+            "ingreso_planeado": float(row["ingreso_planeado"]),
+            "costo_planeado": float(row["costo_planeado"]),
+            "costo_adicional": float(row["costo_adicional"]),
+            "costo_planeado_total": float(costo_planeado_total),
+            "horas_planeadas": float(row["horas_planeadas"]),
+            "horas_reales": float(row["horas_reales"]),
+            "costo_real": float(row["costo_real"]),
+            "variacion_costo": float(variacion_costo),
+            "pct_uso": pct_uso,
+        })
+
+    costo_real_acumulado = sum(Decimal(str(x["costo_real"])) for x in meses)
+    costo_planeado_acumulado = sum(Decimal(str(x["costo_planeado_total"])) for x in meses)
+    ingreso_total = Decimal(str(getattr(p, "ingreso_total", 0) or 0))
+    margen_real = ingreso_total - costo_real_acumulado
+    margen_planeado = ingreso_total - costo_planeado_acumulado
+
+    return jsonify({
+        "cards": {
+            "ingreso_total": _money_to_json(getattr(p, "ingreso_total", None)),
+            "costo_objetivo_total": _money_to_json(getattr(p, "costo_objetivo_total", None)),
+            "costo_planeado_acumulado": float(costo_planeado_acumulado),
+            "costo_real_acumulado": float(costo_real_acumulado),
+            "margen_planeado": float(margen_planeado),
+            "margen_real": float(margen_real),
+            "estado_financiero": getattr(p, "estado_financiero", "BORRADOR"),
+        },
+        "meses": meses,
+    }), 200
+
+
 ## -------------------------------
 ## Modulos (para categorizar proyectos y reportes)
 @bp.route('/modulos', methods=['POST'])

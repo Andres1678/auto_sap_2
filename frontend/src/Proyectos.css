@@ -604,3 +604,20 @@
 .proj-costos-shell button {
   cursor: pointer;
 }
+
+.proj-costos-shell {
+  margin-top: 18px;
+  border: 1px solid #dbe4f0;
+}
+
+.proj-costos-shell .card,
+.proj-costos-shell .proj-card,
+.proj-costos-shell .proj-card-head {
+  box-shadow: none;
+}
+
+.icon-btn.is-selected {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+  background: rgba(37, 99, 235, 0.08);
+}
