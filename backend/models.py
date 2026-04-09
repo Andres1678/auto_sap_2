@@ -571,6 +571,49 @@ class Proyecto(db.Model):
     )
     fase = relationship("ProyectoFase", back_populates="proyectos")
 
+    oportunidad_id = db.Column(
+        db.Integer,
+        db.ForeignKey("oportunidades.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    oportunidad = relationship("Oportunidad", lazy="joined")
+
+    tipo_negocio = db.Column(
+        db.String(30),
+        nullable=False,
+        server_default=text("'PROYECTO'")
+    )
+
+    codigo_ot_principal = db.Column(db.String(100), nullable=True)
+
+    fecha_inicio_ejecucion = db.Column(db.Date, nullable=True)
+    fecha_fin_ejecucion = db.Column(db.Date, nullable=True)
+    fecha_inicio_facturacion = db.Column(db.Date, nullable=True)
+    fecha_fin_facturacion = db.Column(db.Date, nullable=True)
+
+    moneda = db.Column(
+        db.String(10),
+        nullable=False,
+        server_default=text("'COP'")
+    )
+
+    ingreso_total = db.Column(db.Numeric(14, 2), nullable=True)
+    costo_objetivo_total = db.Column(db.Numeric(14, 2), nullable=True)
+    gasto_operativo_total = db.Column(db.Numeric(14, 2), nullable=True)
+    costo_administrativo_total = db.Column(db.Numeric(14, 2), nullable=True)
+    margen_objetivo_pct = db.Column(db.Numeric(8, 2), nullable=True)
+    ebitda_objetivo = db.Column(db.Numeric(14, 2), nullable=True)
+
+    estado_financiero = db.Column(
+        db.String(30),
+        nullable=False,
+        server_default=text("'BORRADOR'")
+    )
+
+    alerta_umbral_1 = db.Column(db.Numeric(5, 2), nullable=False, server_default=text("70.00"))
+    alerta_umbral_2 = db.Column(db.Numeric(5, 2), nullable=False, server_default=text("85.00"))
+    alerta_umbral_3 = db.Column(db.Numeric(5, 2), nullable=False, server_default=text("95.00"))
+
     modulos = relationship(
         "ProyectoModulo",
         back_populates="proyecto",
@@ -587,6 +630,27 @@ class Proyecto(db.Model):
 
     mapeos = relationship(
         "ProyectoMapeo",
+        back_populates="proyecto",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+
+    presupuestos_mensuales = relationship(
+        "ProyectoPresupuestoMensual",
+        back_populates="proyecto",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+
+    perfiles_plan = relationship(
+        "ProyectoPerfilPlan",
+        back_populates="proyecto",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+
+    costos_adicionales = relationship(
+        "ProyectoCostoAdicional",
         back_populates="proyecto",
         cascade="all, delete-orphan",
         lazy="select"
@@ -704,3 +768,143 @@ class ProyectoMapeo(db.Model):
             f"<ProyectoMapeo id={self.id} proyecto_id={self.proyecto_id} "
             f"valor_origen={self.valor_origen!r} tipo_match={self.tipo_match!r} activo={self.activo}>"
         )
+    
+class ProyectoPerfilCatalogo(db.Model):
+    __tablename__ = "proyecto_perfil_catalogo"
+
+    id = db.Column(db.Integer, primary_key=True)
+    codigo = db.Column(db.String(50), nullable=False, unique=True)
+    nombre = db.Column(db.String(150), nullable=False, unique=True)
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+    orden = db.Column(db.Integer, nullable=False, server_default=text("0"))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "codigo": self.codigo,
+            "nombre": self.nombre,
+            "activo": bool(self.activo),
+            "orden": int(self.orden or 0),
+        }
+
+
+class ProyectoPresupuestoMensual(db.Model):
+    __tablename__ = "proyecto_presupuesto_mensual"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    proyecto_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    anio = db.Column(db.Integer, nullable=False)
+    mes = db.Column(db.Integer, nullable=False)
+
+    ingreso_planeado = db.Column(db.Numeric(14, 2), nullable=True)
+    costo_planeado = db.Column(db.Numeric(14, 2), nullable=True)
+    gasto_operativo_planeado = db.Column(db.Numeric(14, 2), nullable=True)
+    costo_administrativo_planeado = db.Column(db.Numeric(14, 2), nullable=True)
+    ebitda_planeado = db.Column(db.Numeric(14, 2), nullable=True)
+    margen_planeado_pct = db.Column(db.Numeric(8, 2), nullable=True)
+
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+    created_at = db.Column(db.DateTime, nullable=True, server_default=text("current_timestamp()"))
+    updated_at = db.Column(
+        db.DateTime,
+        nullable=True,
+        server_default=text("current_timestamp()"),
+        server_onupdate=text("current_timestamp()")
+    )
+
+    proyecto = relationship("Proyecto", back_populates="presupuestos_mensuales")
+
+    __table_args__ = (
+        UniqueConstraint("proyecto_id", "anio", "mes", name="uq_proyecto_presupuesto_mensual"),
+    )
+
+
+class ProyectoPerfilPlan(db.Model):
+    __tablename__ = "proyecto_perfil_plan"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    proyecto_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    anio = db.Column(db.Integer, nullable=False)
+    mes = db.Column(db.Integer, nullable=False)
+
+    perfil_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto_perfil_catalogo.id", ondelete="RESTRICT"),
+        nullable=False
+    )
+
+    consultor_id = db.Column(
+        db.Integer,
+        db.ForeignKey("consultor.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    horas_estimadas = db.Column(db.Numeric(10, 2), nullable=True)
+    fte_estimado = db.Column(db.Numeric(10, 2), nullable=True)
+    valor_hora_planeado = db.Column(db.Numeric(14, 2), nullable=True)
+    costo_estimado = db.Column(db.Numeric(14, 2), nullable=True)
+    ingreso_estimado = db.Column(db.Numeric(14, 2), nullable=True)
+
+    observacion = db.Column(db.Text, nullable=True)
+    orden = db.Column(db.Integer, nullable=False, server_default=text("0"))
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+
+    created_at = db.Column(db.DateTime, nullable=True, server_default=text("current_timestamp()"))
+    updated_at = db.Column(
+        db.DateTime,
+        nullable=True,
+        server_default=text("current_timestamp()"),
+        server_onupdate=text("current_timestamp()")
+    )
+
+    proyecto = relationship("Proyecto", back_populates="perfiles_plan")
+    perfil = relationship("ProyectoPerfilCatalogo", lazy="joined")
+    consultor = relationship("Consultor", lazy="joined")
+
+    __table_args__ = (
+        UniqueConstraint("proyecto_id", "anio", "mes", "perfil_id", name="uq_proyecto_perfil_plan"),
+    )
+
+
+class ProyectoCostoAdicional(db.Model):
+    __tablename__ = "proyecto_costo_adicional"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    proyecto_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    anio = db.Column(db.Integer, nullable=False)
+    mes = db.Column(db.Integer, nullable=False)
+
+    tipo_costo = db.Column(db.String(30), nullable=False)   # OPERATIVO / ADMINISTRATIVO / OTRO
+    categoria = db.Column(db.String(100), nullable=True)
+    descripcion = db.Column(db.Text, nullable=True)
+    valor = db.Column(db.Numeric(14, 2), nullable=False, default=0)
+
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+
+    created_at = db.Column(db.DateTime, nullable=True, server_default=text("current_timestamp()"))
+    updated_at = db.Column(
+        db.DateTime,
+        nullable=True,
+        server_default=text("current_timestamp()"),
+        server_onupdate=text("current_timestamp()")
+    )
+
+    proyecto = relationship("Proyecto", back_populates="costos_adicionales")

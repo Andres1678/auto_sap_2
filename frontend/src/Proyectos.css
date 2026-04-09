@@ -563,3 +563,44 @@
     width:100%;
   }
 }
+
+.proj-costos-shell {
+  margin-top: 18px;
+  border: 1px solid #dbe4f0;
+}
+
+.proj-costos-shell .card,
+.proj-costos-shell .proj-card,
+.proj-costos-shell .proj-card-head {
+  box-shadow: none;
+}
+
+.icon-btn.is-selected {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.proj-costos-shell h2,
+.proj-costos-shell h3 {
+  margin-top: 0;
+}
+
+.proj-costos-shell pre {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.proj-costos-shell .card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.proj-costos-shell button {
+  cursor: pointer;
+}

@@ -1,0 +1,263 @@
+.pcp {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.pcp-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pcp-title {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.pcp-subtitle {
+  margin: 4px 0 0;
+  color: #64748b;
+}
+
+.pcp-refresh,
+.pcp-section-head button,
+.pcp .secondary,
+.pcp .danger.ghost {
+  border: none;
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.pcp-refresh,
+.pcp-section-head button {
+  background: #2563eb;
+  color: #fff;
+}
+
+.pcp-refresh:hover,
+.pcp-section-head button:hover {
+  background: #1d4ed8;
+}
+
+.pcp .secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.pcp .secondary:hover {
+  background: #cbd5e1;
+}
+
+.pcp .danger.ghost {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.pcp .danger.ghost:hover {
+  background: #fecaca;
+}
+
+.pcp-cards {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.pcp-card {
+  background: #fff;
+  border: 1px solid #dbe4f0;
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pcp-card-label {
+  font-size: 0.88rem;
+  color: #64748b;
+}
+
+.pcp-card strong {
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+
+.pcp-section {
+  background: #fff;
+  border: 1px solid #dbe4f0;
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.pcp-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.pcp-section-head h3 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.pcp-note {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+.pcp-section-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pcp-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.pcp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pcp-field label {
+  font-size: 0.88rem;
+  color: #334155;
+  font-weight: 600;
+}
+
+.pcp input,
+.pcp select,
+.pcp textarea {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 9px 10px;
+  outline: none;
+  background: #fff;
+}
+
+.pcp input:focus,
+.pcp select:focus,
+.pcp textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.pcp-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+}
+
+.pcp-table {
+  width: 100%;
+  min-width: 1200px;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.pcp-table th,
+.pcp-table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 10px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.pcp-table th {
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.pcp-table tfoot th,
+.pcp-table tfoot td {
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.pcp-table td.center,
+.pcp-table th.center {
+  text-align: center;
+}
+
+.pcp-empty {
+  text-align: center;
+  color: #64748b;
+  padding: 16px !important;
+}
+
+.pcp-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.pcp-badge.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.pcp-badge.info {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.pcp-badge.warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.pcp-badge.danger {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.pcp-badge.neutral {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+@media (max-width: 1300px) {
+  .pcp-cards {
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+  }
+
+  .pcp-form-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .pcp-cards,
+  .pcp-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pcp-head,
+  .pcp-section-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

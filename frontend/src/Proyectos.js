@@ -15,8 +15,10 @@ const DEFAULT_FASES = [
 
 const emptyForm = () => ({
   id: null,
+  oportunidad_id: "",
   codigo: "",
   nombre: "",
+  tipo_negocio: "",
   fases: [],
   activo: true,
   modulos: [],
@@ -101,6 +103,26 @@ const getProyectoModulosNames = (p, modulosMap) => {
     .filter(Boolean);
 };
 
+const findClienteIdByNombre = (clientes, nombreCliente) => {
+  const target = normKey(nombreCliente);
+  if (!target) return "";
+
+  const found = (clientes || []).find((c) => {
+    const name = c?.nombre_cliente ?? c?.nombre ?? "";
+    return normKey(name) === target;
+  });
+
+  return found?.id ? String(found.id) : "";
+};
+
+const oppLabel = (o) => {
+  const prc = String(o?.codigo_prc || "").trim();
+  const cliente = String(o?.nombre_cliente || "").trim();
+  const servicio = String(o?.servicio || "").trim();
+
+  return [prc, cliente, servicio].filter(Boolean).join(" — ");
+};
+
 export default function Proyectos() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -109,6 +131,7 @@ export default function Proyectos() {
   const [modulos, setModulos] = useState([]);
   const [fases, setFases] = useState([]);
   const [clientes, setClientes] = useState([]);
+  const [oportunidades, setOportunidades] = useState([]);
 
   const [q, setQ] = useState("");
   const [soloActivos, setSoloActivos] = useState(false);
@@ -133,22 +156,25 @@ export default function Proyectos() {
     setLoading(true);
 
     try {
-      const [pRes, mRes, fRes, cRes] = await Promise.all([
+      const [pRes, mRes, fRes, cRes, oRes] = await Promise.all([
         jfetch("/proyectos?include_modulos=1&include_fases=1"),
         jfetch("/modulos"),
         jfetch("/proyecto-fases"),
         jfetch("/clientes"),
+        jfetch("/oportunidades/elegibles-proyecto"),
       ]);
 
       const pData = await pRes.json().catch(() => []);
       const mData = await mRes.json().catch(() => []);
       const fData = await fRes.json().catch(() => []);
       const cData = await cRes.json().catch(() => []);
+      const oData = await oRes.json().catch(() => []);
 
       if (!pRes.ok) throw new Error(pData?.mensaje || `HTTP ${pRes.status}`);
       if (!mRes.ok) throw new Error(mData?.mensaje || `HTTP ${mRes.status}`);
       if (!fRes.ok) throw new Error(fData?.mensaje || `HTTP ${fRes.status}`);
       if (!cRes.ok) throw new Error(cData?.mensaje || `HTTP ${cRes.status}`);
+      if (!oRes.ok) throw new Error(oData?.mensaje || `HTTP ${oRes.status}`);
 
       setProyectos(
         toArrayResponse(pData).map((p) => ({
@@ -159,6 +185,7 @@ export default function Proyectos() {
 
       setModulos(toArrayResponse(mData));
       setClientes(toArrayResponse(cData));
+      setOportunidades(toArrayResponse(oData));
 
       const backendFases = toArrayResponse(fData);
       const byName = new Map();
@@ -201,6 +228,7 @@ export default function Proyectos() {
       setModulos([]);
       setFases(DEFAULT_FASES);
       setClientes([]);
+      setOportunidades([]);
     } finally {
       setLoading(false);
     }
@@ -239,6 +267,14 @@ export default function Proyectos() {
     return m;
   }, [clientes]);
 
+  const oportunidadesMap = useMemo(() => {
+    const m = new Map();
+    (oportunidades || []).forEach((o) => {
+      if (o?.id != null) m.set(String(o.id), o);
+    });
+    return m;
+  }, [oportunidades]);
+
   const proyectosFiltrados = useMemo(() => {
     const needle = norm(q).toLowerCase();
 
@@ -257,12 +293,15 @@ export default function Proyectos() {
           ""
       ).toLowerCase();
 
+      const tipoTxt = String(p?.tipo_negocio || "").toLowerCase();
+
       return (
         String(p.codigo || "").toLowerCase().includes(needle) ||
         String(p.nombre || "").toLowerCase().includes(needle) ||
         fasesTxt.includes(needle) ||
         modulosTxt.includes(needle) ||
-        clienteTxt.includes(needle)
+        clienteTxt.includes(needle) ||
+        tipoTxt.includes(needle)
       );
     });
   }, [proyectos, q, soloActivos, fasesMap, modulosMap, clientesMap]);
@@ -297,13 +336,48 @@ export default function Proyectos() {
     });
   };
 
+  const handleOportunidadChange = (oppId) => {
+    const opp = oportunidadesMap.get(String(oppId));
+    if (!opp) {
+      setForm((f) => ({
+        ...f,
+        oportunidad_id: "",
+        codigo: "",
+        tipo_negocio: "",
+      }));
+      return;
+    }
+
+    const clienteIdFound = findClienteIdByNombre(clientes, opp.nombre_cliente);
+
+    setForm((f) => ({
+      ...f,
+      oportunidad_id: String(opp.id),
+      codigo: String(opp.codigo_prc || "").trim().toUpperCase(),
+      tipo_negocio: String(opp.tipo_negocio || "").trim().toUpperCase(),
+      cliente_id: clienteIdFound || f.cliente_id || "",
+    }));
+  };
+
   const resetForm = () => setForm(emptyForm());
 
   const startEdit = (p) => {
+    const oppFromProject = p?.oportunidad_id ? oportunidadesMap.get(String(p.oportunidad_id)) : null;
+    const oppByPrc =
+      !oppFromProject && p?.codigo
+        ? (oportunidades || []).find((o) => String(o.codigo_prc || "").trim().toUpperCase() === String(p.codigo || "").trim().toUpperCase())
+        : null;
+
+    const opp = oppFromProject || oppByPrc || null;
+
     setForm({
       id: p.id,
-      codigo: p.codigo || "",
+      oportunidad_id: p?.oportunidad_id != null
+        ? String(p.oportunidad_id)
+        : (opp?.id ? String(opp.id) : ""),
+      codigo: p.codigo || (opp?.codigo_prc ?? ""),
       nombre: p.nombre || "",
+      tipo_negocio: p?.tipo_negocio || (opp?.tipo_negocio ?? ""),
       activo: asBool(p.activo),
       modulos: getProyectoModulosIds(p),
       fases: getProyectoFasesIds(p),
@@ -372,12 +446,12 @@ export default function Proyectos() {
   };
 
   const validateForm = () => {
-    if (!norm(form.codigo)) return "El código es obligatorio";
+    if (!String(form.oportunidad_id || "").trim()) return "Debes seleccionar una oportunidad ganada";
+    if (!norm(form.codigo)) return "El código PRC es obligatorio";
     if (!norm(form.nombre)) return "El nombre es obligatorio";
     if (!Array.isArray(form.modulos) || form.modulos.length === 0) {
       return "Debes seleccionar al menos 1 módulo";
     }
-
     return null;
   };
 
@@ -399,6 +473,7 @@ export default function Proyectos() {
       .filter((n) => Number.isFinite(n) && n > 0);
 
     const clienteIdClean = String(form.cliente_id || "").trim();
+    const oportunidadIdClean = String(form.oportunidad_id || "").trim();
 
     const payload = {
       codigo: norm(form.codigo).toUpperCase(),
@@ -407,6 +482,8 @@ export default function Proyectos() {
       modulos: (form.modulos || []).map(Number),
       fases: fasesIds,
       cliente_id: clienteIdClean ? Number(clienteIdClean) : null,
+      oportunidad_id: oportunidadIdClean ? Number(oportunidadIdClean) : null,
+      tipo_negocio: norm(form.tipo_negocio).toUpperCase() || null,
     };
 
     try {
@@ -449,7 +526,7 @@ export default function Proyectos() {
           <div>
             <h2 className="proj-title">Gestión de Proyectos</h2>
             <p className="proj-subtitle">
-              Crear / editar proyectos, asignar cliente, módulos permitidos, múltiples fases y estado activo.
+              Crear / editar proyectos desde oportunidades ganadas, asignar cliente, módulos permitidos, múltiples fases y estado activo.
             </p>
           </div>
 
@@ -484,11 +561,40 @@ export default function Proyectos() {
           <form onSubmit={onSubmit} className="proj-form">
             <div className="grid-2">
               <div className="field">
-                <label>Código</label>
+                <label>Oportunidad ganada</label>
+                <select
+                  value={form.oportunidad_id ?? ""}
+                  onChange={(e) => handleOportunidadChange(e.target.value)}
+                >
+                  <option value="">— Selecciona una oportunidad —</option>
+                  {(oportunidades || []).map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {oppLabel(o)}
+                    </option>
+                  ))}
+                </select>
+                <div className="muted">
+                  Solo se muestran oportunidades ganadas de tipo proyecto o bolsa de horas.
+                </div>
+              </div>
+
+              <div className="field">
+                <label>Código PRC</label>
                 <input
                   value={form.codigo}
-                  onChange={(e) => setForm((f) => ({ ...f, codigo: e.target.value }))}
-                  placeholder="Ej: PRY-001"
+                  readOnly
+                  placeholder="Se llena automáticamente desde la oportunidad"
+                />
+              </div>
+            </div>
+
+            <div className="grid-2">
+              <div className="field">
+                <label>Tipo de negocio</label>
+                <input
+                  value={form.tipo_negocio}
+                  readOnly
+                  placeholder="Se llena automáticamente"
                 />
               </div>
 
@@ -497,7 +603,7 @@ export default function Proyectos() {
                 <input
                   value={form.nombre}
                   onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
-                  placeholder="Ej: Proyecto Migración"
+                  placeholder="Ej: Greenland - Upgrade SAP"
                 />
               </div>
             </div>
@@ -523,7 +629,7 @@ export default function Proyectos() {
                 </select>
 
                 <div className="muted">
-                  Si seleccionas un cliente, el proyecto queda ligado para reportes y filtros.
+                  Se intenta autollenar desde la oportunidad; puedes ajustarlo si el catálogo interno no coincide.
                 </div>
               </div>
             </div>
@@ -615,7 +721,7 @@ export default function Proyectos() {
             <div className="proj-list-filters">
               <input
                 className="search"
-                placeholder="Buscar por código, nombre, cliente, fases o módulos…"
+                placeholder="Buscar por PRC, nombre, cliente, fases, módulos o tipo…"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
@@ -636,9 +742,10 @@ export default function Proyectos() {
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Código</th>
+                  <th>PRC</th>
                   <th>Nombre</th>
                   <th className="cliente">Cliente</th>
+                  <th>Tipo</th>
                   <th>Fases</th>
                   <th>Activo</th>
                   <th>Módulos</th>
@@ -666,6 +773,7 @@ export default function Proyectos() {
                       <td className="mono">{p.codigo}</td>
                       <td>{p.nombre}</td>
                       <td className="cliente">{clienteTxt || "—"}</td>
+                      <td>{p?.tipo_negocio || "—"}</td>
                       <td>{fasesTxt}</td>
 
                       <td>
@@ -733,7 +841,7 @@ export default function Proyectos() {
 
                 {proyectosFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="muted" style={{ padding: 14 }}>
+                    <td colSpan={9} className="muted" style={{ padding: 14 }}>
                       Sin proyectos
                     </td>
                   </tr>

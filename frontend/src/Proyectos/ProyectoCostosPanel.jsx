@@ -1,0 +1,1070 @@
+import React, { useEffect, useMemo, useState } from "react";
+import Swal from "sweetalert2";
+import { jfetch } from "./lib/api";
+import "./ProyectoCostosPanel.css";
+
+const emptyCabecera = {
+  oportunidad_id: "",
+  codigo_ot_principal: "",
+  fecha_inicio_ejecucion: "",
+  fecha_fin_ejecucion: "",
+  fecha_inicio_facturacion: "",
+  fecha_fin_facturacion: "",
+  moneda: "COP",
+  ingreso_total: "",
+  costo_objetivo_total: "",
+  gasto_operativo_total: "",
+  costo_administrativo_total: "",
+  margen_objetivo_pct: "",
+  ebitda_objetivo: "",
+  estado_financiero: "BORRADOR",
+  alerta_umbral_1: 70,
+  alerta_umbral_2: 85,
+  alerta_umbral_3: 95,
+};
+
+const monthNow = new Date().getMonth() + 1;
+const yearNow = new Date().getFullYear();
+
+const newMes = () => ({
+  id: null,
+  anio: yearNow,
+  mes: monthNow,
+  ingreso_planeado: "",
+  costo_planeado: "",
+  gasto_operativo_planeado: "",
+  costo_administrativo_planeado: "",
+  ebitda_planeado: "",
+  margen_planeado_pct: "",
+  activo: true,
+});
+
+const newPerfilRow = () => ({
+  id: null,
+  anio: yearNow,
+  mes: monthNow,
+  perfil_id: "",
+  consultor_id: "",
+  horas_estimadas: "",
+  fte_estimado: "",
+  valor_hora_planeado: "",
+  costo_estimado: "",
+  ingreso_estimado: "",
+  observacion: "",
+  activo: true,
+});
+
+const newCostoAdicional = () => ({
+  id: null,
+  anio: yearNow,
+  mes: monthNow,
+  tipo_costo: "OTRO",
+  categoria: "",
+  descripcion: "",
+  valor: "",
+  activo: true,
+});
+
+const toNumber = (v) => {
+  if (v === null || v === undefined || v === "") return 0;
+  const n = Number(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+};
+
+const toFixedIfNeeded = (n, digits = 2) => {
+  if (!Number.isFinite(n)) return "";
+  return Number(n.toFixed(digits));
+};
+
+const formatMoney = (value, currency = "COP") => {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "—";
+  try {
+    return new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(n);
+  } catch {
+    return `${currency} ${n.toLocaleString("es-CO")}`;
+  }
+};
+
+const formatNumber = (value, digits = 2) => {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("es-CO", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+};
+
+const periodLabel = (anio, mes) => {
+  const mm = String(mes).padStart(2, "0");
+  return `${anio}-${mm}`;
+};
+
+const recalcCabecera = (row) => {
+  const ingreso = toNumber(row.ingreso_total);
+  const costo = toNumber(row.costo_objetivo_total);
+  const gastoOp = toNumber(row.gasto_operativo_total);
+  const costoAdm = toNumber(row.costo_administrativo_total);
+
+  const ebitda = ingreso - costo - gastoOp - costoAdm;
+  const margenPct = ingreso > 0 ? (ebitda / ingreso) * 100 : 0;
+
+  return {
+    ...row,
+    ebitda_objetivo: row.ebitda_objetivo === "" || row.ebitda_objetivo === null
+      ? toFixedIfNeeded(ebitda)
+      : row.ebitda_objetivo,
+    margen_objetivo_pct:
+      row.margen_objetivo_pct === "" || row.margen_objetivo_pct === null
+        ? toFixedIfNeeded(margenPct)
+        : row.margen_objetivo_pct,
+  };
+};
+
+const recalcPresupuestoRow = (row) => {
+  const ingreso = toNumber(row.ingreso_planeado);
+  const costo = toNumber(row.costo_planeado);
+  const gastoOp = toNumber(row.gasto_operativo_planeado);
+  const costoAdm = toNumber(row.costo_administrativo_planeado);
+  const ebitda = ingreso - costo - gastoOp - costoAdm;
+  const margen = ingreso > 0 ? (ebitda / ingreso) * 100 : 0;
+
+  return {
+    ...row,
+    ebitda_planeado: toFixedIfNeeded(ebitda),
+    margen_planeado_pct: toFixedIfNeeded(margen),
+  };
+};
+
+const recalcPerfilRow = (row) => {
+  const horas = toNumber(row.horas_estimadas);
+  const valorHora = toNumber(row.valor_hora_planeado);
+  const costo = horas * valorHora;
+
+  return {
+    ...row,
+    costo_estimado: toFixedIfNeeded(costo),
+  };
+};
+
+const getAlertClass = (pct, thresholds) => {
+  if (pct == null) return "neutral";
+  const t1 = toNumber(thresholds.alerta_umbral_1 || 70);
+  const t2 = toNumber(thresholds.alerta_umbral_2 || 85);
+  const t3 = toNumber(thresholds.alerta_umbral_3 || 95);
+
+  if (pct >= 100) return "danger";
+  if (pct >= t3) return "danger";
+  if (pct >= t2) return "warn";
+  if (pct >= t1) return "info";
+  return "ok";
+};
+
+export default function ProyectoCostosPanel({ proyectoId }) {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState({
+    cabecera: false,
+    presupuesto: false,
+    perfiles: false,
+    adicionales: false,
+  });
+
+  const [proyecto, setProyecto] = useState(null);
+  const [cabecera, setCabecera] = useState(emptyCabecera);
+  const [catalogos, setCatalogos] = useState({ perfiles: [] });
+
+  const [presupuestoMensual, setPresupuestoMensual] = useState([]);
+  const [perfilPlan, setPerfilPlan] = useState([]);
+  const [costosAdicionales, setCostosAdicionales] = useState([]);
+  const [resumen, setResumen] = useState(null);
+
+  const fetchAll = async () => {
+    if (!proyectoId) return;
+    setLoading(true);
+
+    try {
+      const [cfgRes, resumenRes] = await Promise.all([
+        jfetch(`/proyectos/${proyectoId}/costos`),
+        jfetch(`/proyectos/${proyectoId}/costos/resumen`),
+      ]);
+
+      const cfg = await cfgRes.json().catch(() => ({}));
+      const sum = await resumenRes.json().catch(() => ({}));
+
+      if (!cfgRes.ok) throw new Error(cfg?.mensaje || `HTTP ${cfgRes.status}`);
+      if (!resumenRes.ok) throw new Error(sum?.mensaje || `HTTP ${resumenRes.status}`);
+
+      const p = cfg.proyecto || {};
+      const cab = {
+        oportunidad_id: p.oportunidad_id ?? "",
+        codigo_ot_principal: p.codigo_ot_principal ?? "",
+        fecha_inicio_ejecucion: p.fecha_inicio_ejecucion ?? "",
+        fecha_fin_ejecucion: p.fecha_fin_ejecucion ?? "",
+        fecha_inicio_facturacion: p.fecha_inicio_facturacion ?? "",
+        fecha_fin_facturacion: p.fecha_fin_facturacion ?? "",
+        moneda: p.moneda ?? "COP",
+        ingreso_total: p.ingreso_total ?? "",
+        costo_objetivo_total: p.costo_objetivo_total ?? "",
+        gasto_operativo_total: p.gasto_operativo_total ?? "",
+        costo_administrativo_total: p.costo_administrativo_total ?? "",
+        margen_objetivo_pct: p.margen_objetivo_pct ?? "",
+        ebitda_objetivo: p.ebitda_objetivo ?? "",
+        estado_financiero: p.estado_financiero ?? "BORRADOR",
+        alerta_umbral_1: p.alerta_umbral_1 ?? 70,
+        alerta_umbral_2: p.alerta_umbral_2 ?? 85,
+        alerta_umbral_3: p.alerta_umbral_3 ?? 95,
+      };
+
+      setProyecto(p);
+      setCabecera(cab);
+      setCatalogos(cfg.catalogos || { perfiles: [] });
+      setPresupuestoMensual(Array.isArray(cfg.presupuesto_mensual) ? cfg.presupuesto_mensual : []);
+      setPerfilPlan(Array.isArray(cfg.perfil_plan) ? cfg.perfil_plan : []);
+      setCostosAdicionales(Array.isArray(cfg.costos_adicionales) ? cfg.costos_adicionales : []);
+      setResumen(sum || null);
+    } catch (e) {
+      Swal.fire({
+        icon: "error",
+        title: "Error cargando costos",
+        text: String(e.message || e),
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAll();
+  }, [proyectoId]);
+
+  const onCabeceraChange = (key, value) => {
+    setCabecera((prev) => recalcCabecera({ ...prev, [key]: value }));
+  };
+
+  const onPresupuestoChange = (index, key, value) => {
+    setPresupuestoMensual((prev) =>
+      prev.map((row, i) =>
+        i === index ? recalcPresupuestoRow({ ...row, [key]: value }) : row
+      )
+    );
+  };
+
+  const onPerfilChange = (index, key, value) => {
+    setPerfilPlan((prev) =>
+      prev.map((row, i) =>
+        i === index ? recalcPerfilRow({ ...row, [key]: value }) : row
+      )
+    );
+  };
+
+  const onAdicionalChange = (index, key, value) => {
+    setCostosAdicionales((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, [key]: value } : row))
+    );
+  };
+
+  const addPresupuestoRow = () => {
+    setPresupuestoMensual((prev) => [...prev, newMes()]);
+  };
+
+  const addPerfilRow = () => {
+    setPerfilPlan((prev) => [...prev, newPerfilRow()]);
+  };
+
+  const addCostoAdicionalRow = () => {
+    setCostosAdicionales((prev) => [...prev, newCostoAdicional()]);
+  };
+
+  const removePresupuestoRow = (index) => {
+    setPresupuestoMensual((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const removePerfilRow = (index) => {
+    setPerfilPlan((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const removeCostoAdicionalRow = (index) => {
+    setCostosAdicionales((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const guardarCabecera = async () => {
+    try {
+      setSaving((s) => ({ ...s, cabecera: true }));
+      const res = await jfetch(`/proyectos/${proyectoId}/costos/cabecera`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cabecera),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
+      Swal.fire({ icon: "success", title: "Cabecera guardada" });
+      await fetchAll();
+    } catch (e) {
+      Swal.fire({ icon: "error", title: "Error", text: String(e.message || e) });
+    } finally {
+      setSaving((s) => ({ ...s, cabecera: false }));
+    }
+  };
+
+  const guardarPresupuestoMensual = async () => {
+    try {
+      setSaving((s) => ({ ...s, presupuesto: true }));
+      const res = await jfetch(`/proyectos/${proyectoId}/costos/presupuesto-mensual`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: presupuestoMensual }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
+      Swal.fire({ icon: "success", title: "Presupuesto mensual guardado" });
+      await fetchAll();
+    } catch (e) {
+      Swal.fire({ icon: "error", title: "Error", text: String(e.message || e) });
+    } finally {
+      setSaving((s) => ({ ...s, presupuesto: false }));
+    }
+  };
+
+  const guardarPerfilPlan = async () => {
+    try {
+      setSaving((s) => ({ ...s, perfiles: true }));
+      const res = await jfetch(`/proyectos/${proyectoId}/costos/perfil-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: perfilPlan }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
+      Swal.fire({ icon: "success", title: "Planeación por perfil guardada" });
+      await fetchAll();
+    } catch (e) {
+      Swal.fire({ icon: "error", title: "Error", text: String(e.message || e) });
+    } finally {
+      setSaving((s) => ({ ...s, perfiles: false }));
+    }
+  };
+
+  const guardarCostosAdicionales = async () => {
+    try {
+      setSaving((s) => ({ ...s, adicionales: true }));
+      const res = await jfetch(`/proyectos/${proyectoId}/costos/costos-adicionales`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: costosAdicionales }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
+      Swal.fire({ icon: "success", title: "Costos adicionales guardados" });
+      await fetchAll();
+    } catch (e) {
+      Swal.fire({ icon: "error", title: "Error", text: String(e.message || e) });
+    } finally {
+      setSaving((s) => ({ ...s, adicionales: false }));
+    }
+  };
+
+  const cards = resumen?.cards || {};
+  const mesesResumen = Array.isArray(resumen?.meses) ? resumen.meses : [];
+
+  const totalsPresupuesto = useMemo(() => {
+    return presupuestoMensual.reduce(
+      (acc, row) => {
+        acc.ingreso += toNumber(row.ingreso_planeado);
+        acc.costo += toNumber(row.costo_planeado);
+        acc.gastoOp += toNumber(row.gasto_operativo_planeado);
+        acc.costoAdm += toNumber(row.costo_administrativo_planeado);
+        acc.ebitda += toNumber(row.ebitda_planeado);
+        return acc;
+      },
+      { ingreso: 0, costo: 0, gastoOp: 0, costoAdm: 0, ebitda: 0 }
+    );
+  }, [presupuestoMensual]);
+
+  const totalsPerfil = useMemo(() => {
+    return perfilPlan.reduce(
+      (acc, row) => {
+        acc.horas += toNumber(row.horas_estimadas);
+        acc.fte += toNumber(row.fte_estimado);
+        acc.costo += toNumber(row.costo_estimado);
+        acc.ingreso += toNumber(row.ingreso_estimado);
+        return acc;
+      },
+      { horas: 0, fte: 0, costo: 0, ingreso: 0 }
+    );
+  }, [perfilPlan]);
+
+  const totalsAdicionales = useMemo(() => {
+    return costosAdicionales.reduce((acc, row) => acc + toNumber(row.valor), 0);
+  }, [costosAdicionales]);
+
+  if (!proyectoId) return null;
+
+  return (
+    <div className="pcp">
+      <div className="pcp-head">
+        <div>
+          <h2 className="pcp-title">Control financiero del proyecto</h2>
+          <p className="pcp-subtitle">
+            {proyecto ? `${proyecto.codigo} - ${proyecto.nombre}` : "Cargando proyecto..."}
+          </p>
+        </div>
+
+        <button className="pcp-refresh" onClick={fetchAll} disabled={loading}>
+          {loading ? "Actualizando..." : "Refrescar"}
+        </button>
+      </div>
+
+      <div className="pcp-cards">
+        <div className="pcp-card">
+          <span className="pcp-card-label">Ingreso total</span>
+          <strong>{formatMoney(cards.ingreso_total, cabecera.moneda)}</strong>
+        </div>
+
+        <div className="pcp-card">
+          <span className="pcp-card-label">Costo objetivo</span>
+          <strong>{formatMoney(cards.costo_objetivo_total, cabecera.moneda)}</strong>
+        </div>
+
+        <div className="pcp-card">
+          <span className="pcp-card-label">Costo planeado acumulado</span>
+          <strong>{formatMoney(cards.costo_planeado_acumulado, cabecera.moneda)}</strong>
+        </div>
+
+        <div className="pcp-card">
+          <span className="pcp-card-label">Costo real acumulado</span>
+          <strong>{formatMoney(cards.costo_real_acumulado, cabecera.moneda)}</strong>
+        </div>
+
+        <div className="pcp-card">
+          <span className="pcp-card-label">Margen planeado</span>
+          <strong>{formatMoney(cards.margen_planeado, cabecera.moneda)}</strong>
+        </div>
+
+        <div className="pcp-card">
+          <span className="pcp-card-label">Margen real</span>
+          <strong>{formatMoney(cards.margen_real, cabecera.moneda)}</strong>
+        </div>
+      </div>
+
+      <section className="pcp-section">
+        <div className="pcp-section-head">
+          <h3>Cabecera financiera</h3>
+          <button onClick={guardarCabecera} disabled={saving.cabecera || loading}>
+            {saving.cabecera ? "Guardando..." : "Guardar cabecera"}
+          </button>
+        </div>
+
+        <div className="pcp-form-grid">
+          <div className="pcp-field">
+            <label>Oportunidad ID</label>
+            <input
+              value={cabecera.oportunidad_id}
+              onChange={(e) => onCabeceraChange("oportunidad_id", e.target.value)}
+              placeholder="Ej: 120"
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Código OT principal</label>
+            <input
+              value={cabecera.codigo_ot_principal}
+              onChange={(e) => onCabeceraChange("codigo_ot_principal", e.target.value)}
+              placeholder="Ej: OT-2026-001"
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Moneda</label>
+            <select
+              value={cabecera.moneda}
+              onChange={(e) => onCabeceraChange("moneda", e.target.value)}
+            >
+              <option value="COP">COP</option>
+              <option value="USD">USD</option>
+            </select>
+          </div>
+
+          <div className="pcp-field">
+            <label>Estado financiero</label>
+            <select
+              value={cabecera.estado_financiero}
+              onChange={(e) => onCabeceraChange("estado_financiero", e.target.value)}
+            >
+              <option value="BORRADOR">BORRADOR</option>
+              <option value="CONFIGURADO">CONFIGURADO</option>
+              <option value="ACTIVO">ACTIVO</option>
+              <option value="PAUSADO">PAUSADO</option>
+              <option value="CERRADO">CERRADO</option>
+            </select>
+          </div>
+
+          <div className="pcp-field">
+            <label>Inicio ejecución</label>
+            <input
+              type="date"
+              value={cabecera.fecha_inicio_ejecucion}
+              onChange={(e) => onCabeceraChange("fecha_inicio_ejecucion", e.target.value)}
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Fin ejecución</label>
+            <input
+              type="date"
+              value={cabecera.fecha_fin_ejecucion}
+              onChange={(e) => onCabeceraChange("fecha_fin_ejecucion", e.target.value)}
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Inicio facturación</label>
+            <input
+              type="date"
+              value={cabecera.fecha_inicio_facturacion}
+              onChange={(e) => onCabeceraChange("fecha_inicio_facturacion", e.target.value)}
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Fin facturación</label>
+            <input
+              type="date"
+              value={cabecera.fecha_fin_facturacion}
+              onChange={(e) => onCabeceraChange("fecha_fin_facturacion", e.target.value)}
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Ingreso total</label>
+            <input
+              value={cabecera.ingreso_total}
+              onChange={(e) => onCabeceraChange("ingreso_total", e.target.value)}
+              placeholder="0"
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Costo objetivo total</label>
+            <input
+              value={cabecera.costo_objetivo_total}
+              onChange={(e) => onCabeceraChange("costo_objetivo_total", e.target.value)}
+              placeholder="0"
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Gasto operativo total</label>
+            <input
+              value={cabecera.gasto_operativo_total}
+              onChange={(e) => onCabeceraChange("gasto_operativo_total", e.target.value)}
+              placeholder="0"
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Costo administrativo total</label>
+            <input
+              value={cabecera.costo_administrativo_total}
+              onChange={(e) => onCabeceraChange("costo_administrativo_total", e.target.value)}
+              placeholder="0"
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>EBITDA objetivo</label>
+            <input
+              value={cabecera.ebitda_objetivo}
+              onChange={(e) => onCabeceraChange("ebitda_objetivo", e.target.value)}
+              placeholder="0"
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>% margen objetivo</label>
+            <input
+              value={cabecera.margen_objetivo_pct}
+              onChange={(e) => onCabeceraChange("margen_objetivo_pct", e.target.value)}
+              placeholder="0"
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Alerta 1 (%)</label>
+            <input
+              value={cabecera.alerta_umbral_1}
+              onChange={(e) => onCabeceraChange("alerta_umbral_1", e.target.value)}
+              placeholder="70"
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Alerta 2 (%)</label>
+            <input
+              value={cabecera.alerta_umbral_2}
+              onChange={(e) => onCabeceraChange("alerta_umbral_2", e.target.value)}
+              placeholder="85"
+            />
+          </div>
+
+          <div className="pcp-field">
+            <label>Alerta 3 (%)</label>
+            <input
+              value={cabecera.alerta_umbral_3}
+              onChange={(e) => onCabeceraChange("alerta_umbral_3", e.target.value)}
+              placeholder="95"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="pcp-section">
+        <div className="pcp-section-head">
+          <div>
+            <h3>Presupuesto mensual</h3>
+            <p className="pcp-note">Planeación macro por período.</p>
+          </div>
+
+          <div className="pcp-section-actions">
+            <button className="secondary" onClick={addPresupuestoRow}>
+              + Agregar mes
+            </button>
+            <button onClick={guardarPresupuestoMensual} disabled={saving.presupuesto || loading}>
+              {saving.presupuesto ? "Guardando..." : "Guardar presupuesto"}
+            </button>
+          </div>
+        </div>
+
+        <div className="pcp-table-wrap">
+          <table className="pcp-table">
+            <thead>
+              <tr>
+                <th>Año</th>
+                <th>Mes</th>
+                <th>Ingreso planeado</th>
+                <th>Costo planeado</th>
+                <th>Gasto operativo</th>
+                <th>Costo administrativo</th>
+                <th>EBITDA</th>
+                <th>% Margen</th>
+                <th>Activo</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {presupuestoMensual.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="pcp-empty">Sin meses planeados</td>
+                </tr>
+              )}
+
+              {presupuestoMensual.map((row, index) => (
+                <tr key={`pm-${index}`}>
+                  <td>
+                    <input
+                      value={row.anio}
+                      onChange={(e) => onPresupuestoChange(index, "anio", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.mes}
+                      onChange={(e) => onPresupuestoChange(index, "mes", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.ingreso_planeado ?? ""}
+                      onChange={(e) => onPresupuestoChange(index, "ingreso_planeado", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.costo_planeado ?? ""}
+                      onChange={(e) => onPresupuestoChange(index, "costo_planeado", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.gasto_operativo_planeado ?? ""}
+                      onChange={(e) =>
+                        onPresupuestoChange(index, "gasto_operativo_planeado", e.target.value)
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.costo_administrativo_planeado ?? ""}
+                      onChange={(e) =>
+                        onPresupuestoChange(index, "costo_administrativo_planeado", e.target.value)
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input value={row.ebitda_planeado ?? ""} readOnly />
+                  </td>
+                  <td>
+                    <input value={row.margen_planeado_pct ?? ""} readOnly />
+                  </td>
+                  <td className="center">
+                    <input
+                      type="checkbox"
+                      checked={!!row.activo}
+                      onChange={(e) => onPresupuestoChange(index, "activo", e.target.checked)}
+                    />
+                  </td>
+                  <td className="center">
+                    <button className="danger ghost" onClick={() => removePresupuestoRow(index)}>
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th colSpan={2}>Totales</th>
+                <th>{formatMoney(totalsPresupuesto.ingreso, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsPresupuesto.costo, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsPresupuesto.gastoOp, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsPresupuesto.costoAdm, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsPresupuesto.ebitda, cabecera.moneda)}</th>
+                <th colSpan={3}></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section className="pcp-section">
+        <div className="pcp-section-head">
+          <div>
+            <h3>Planeación por perfil</h3>
+            <p className="pcp-note">La unidad clave: proyecto + mes + perfil.</p>
+          </div>
+
+          <div className="pcp-section-actions">
+            <button className="secondary" onClick={addPerfilRow}>
+              + Agregar fila
+            </button>
+            <button onClick={guardarPerfilPlan} disabled={saving.perfiles || loading}>
+              {saving.perfiles ? "Guardando..." : "Guardar perfiles"}
+            </button>
+          </div>
+        </div>
+
+        <div className="pcp-table-wrap">
+          <table className="pcp-table">
+            <thead>
+              <tr>
+                <th>Año</th>
+                <th>Mes</th>
+                <th>Perfil</th>
+                <th>Consultor ID</th>
+                <th>Horas estimadas</th>
+                <th>FTE</th>
+                <th>Valor hora planeado</th>
+                <th>Costo estimado</th>
+                <th>Ingreso estimado</th>
+                <th>Observación</th>
+                <th>Activo</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {perfilPlan.length === 0 && (
+                <tr>
+                  <td colSpan={12} className="pcp-empty">Sin planeación por perfil</td>
+                </tr>
+              )}
+
+              {perfilPlan.map((row, index) => (
+                <tr key={`pp-${index}`}>
+                  <td>
+                    <input
+                      value={row.anio}
+                      onChange={(e) => onPerfilChange(index, "anio", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.mes}
+                      onChange={(e) => onPerfilChange(index, "mes", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <select
+                      value={row.perfil_id ?? ""}
+                      onChange={(e) => onPerfilChange(index, "perfil_id", e.target.value)}
+                    >
+                      <option value="">Seleccione</option>
+                      {(catalogos.perfiles || []).map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.codigo} - {p.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      value={row.consultor_id ?? ""}
+                      onChange={(e) => onPerfilChange(index, "consultor_id", e.target.value)}
+                      placeholder="Opcional"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.horas_estimadas ?? ""}
+                      onChange={(e) => onPerfilChange(index, "horas_estimadas", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.fte_estimado ?? ""}
+                      onChange={(e) => onPerfilChange(index, "fte_estimado", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.valor_hora_planeado ?? ""}
+                      onChange={(e) => onPerfilChange(index, "valor_hora_planeado", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input value={row.costo_estimado ?? ""} readOnly />
+                  </td>
+                  <td>
+                    <input
+                      value={row.ingreso_estimado ?? ""}
+                      onChange={(e) => onPerfilChange(index, "ingreso_estimado", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.observacion ?? ""}
+                      onChange={(e) => onPerfilChange(index, "observacion", e.target.value)}
+                    />
+                  </td>
+                  <td className="center">
+                    <input
+                      type="checkbox"
+                      checked={!!row.activo}
+                      onChange={(e) => onPerfilChange(index, "activo", e.target.checked)}
+                    />
+                  </td>
+                  <td className="center">
+                    <button className="danger ghost" onClick={() => removePerfilRow(index)}>
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th colSpan={4}>Totales</th>
+                <th>{formatNumber(totalsPerfil.horas)}</th>
+                <th>{formatNumber(totalsPerfil.fte)}</th>
+                <th></th>
+                <th>{formatMoney(totalsPerfil.costo, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsPerfil.ingreso, cabecera.moneda)}</th>
+                <th colSpan={3}></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section className="pcp-section">
+        <div className="pcp-section-head">
+          <div>
+            <h3>Costos adicionales</h3>
+            <p className="pcp-note">Operativos, administrativos u otros.</p>
+          </div>
+
+          <div className="pcp-section-actions">
+            <button className="secondary" onClick={addCostoAdicionalRow}>
+              + Agregar costo
+            </button>
+            <button onClick={guardarCostosAdicionales} disabled={saving.adicionales || loading}>
+              {saving.adicionales ? "Guardando..." : "Guardar adicionales"}
+            </button>
+          </div>
+        </div>
+
+        <div className="pcp-table-wrap">
+          <table className="pcp-table">
+            <thead>
+              <tr>
+                <th>Año</th>
+                <th>Mes</th>
+                <th>Tipo costo</th>
+                <th>Categoría</th>
+                <th>Descripción</th>
+                <th>Valor</th>
+                <th>Activo</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {costosAdicionales.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="pcp-empty">Sin costos adicionales</td>
+                </tr>
+              )}
+
+              {costosAdicionales.map((row, index) => (
+                <tr key={`ca-${index}`}>
+                  <td>
+                    <input
+                      value={row.anio}
+                      onChange={(e) => onAdicionalChange(index, "anio", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.mes}
+                      onChange={(e) => onAdicionalChange(index, "mes", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <select
+                      value={row.tipo_costo ?? "OTRO"}
+                      onChange={(e) => onAdicionalChange(index, "tipo_costo", e.target.value)}
+                    >
+                      <option value="OPERATIVO">OPERATIVO</option>
+                      <option value="ADMINISTRATIVO">ADMINISTRATIVO</option>
+                      <option value="OTRO">OTRO</option>
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      value={row.categoria ?? ""}
+                      onChange={(e) => onAdicionalChange(index, "categoria", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.descripcion ?? ""}
+                      onChange={(e) => onAdicionalChange(index, "descripcion", e.target.value)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={row.valor ?? ""}
+                      onChange={(e) => onAdicionalChange(index, "valor", e.target.value)}
+                    />
+                  </td>
+                  <td className="center">
+                    <input
+                      type="checkbox"
+                      checked={!!row.activo}
+                      onChange={(e) => onAdicionalChange(index, "activo", e.target.checked)}
+                    />
+                  </td>
+                  <td className="center">
+                    <button className="danger ghost" onClick={() => removeCostoAdicionalRow(index)}>
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th colSpan={5}>Total costos adicionales</th>
+                <th>{formatMoney(totalsAdicionales, cabecera.moneda)}</th>
+                <th colSpan={2}></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section className="pcp-section">
+        <div className="pcp-section-head">
+          <div>
+            <h3>Resumen mensual real vs planeado</h3>
+            <p className="pcp-note">Consolidado usando horas reales registradas al proyecto.</p>
+          </div>
+        </div>
+
+        <div className="pcp-table-wrap">
+          <table className="pcp-table pcp-table-summary">
+            <thead>
+              <tr>
+                <th>Período</th>
+                <th>Ingreso planeado</th>
+                <th>Costo planeado</th>
+                <th>Adicional</th>
+                <th>Costo planeado total</th>
+                <th>Horas planeadas</th>
+                <th>Horas reales</th>
+                <th>Costo real</th>
+                <th>Variación costo</th>
+                <th>% Uso</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {mesesResumen.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="pcp-empty">Aún no hay resumen mensual</td>
+                </tr>
+              )}
+
+              {mesesResumen.map((row) => {
+                const cls = getAlertClass(row.pct_uso, cabecera);
+                return (
+                  <tr key={row.periodo}>
+                    <td>{row.periodo || periodLabel(row.anio, row.mes)}</td>
+                    <td>{formatMoney(row.ingreso_planeado, cabecera.moneda)}</td>
+                    <td>{formatMoney(row.costo_planeado, cabecera.moneda)}</td>
+                    <td>{formatMoney(row.costo_adicional, cabecera.moneda)}</td>
+                    <td>{formatMoney(row.costo_planeado_total, cabecera.moneda)}</td>
+                    <td>{formatNumber(row.horas_planeadas)}</td>
+                    <td>{formatNumber(row.horas_reales)}</td>
+                    <td>{formatMoney(row.costo_real, cabecera.moneda)}</td>
+                    <td>{formatMoney(row.variacion_costo, cabecera.moneda)}</td>
+                    <td>{row.pct_uso == null ? "—" : `${formatNumber(row.pct_uso)}%`}</td>
+                    <td>
+                      <span className={`pcp-badge ${cls}`}>
+                        {cls === "danger"
+                          ? "Crítico"
+                          : cls === "warn"
+                          ? "Alerta"
+                          : cls === "info"
+                          ? "Seguimiento"
+                          : cls === "ok"
+                          ? "Controlado"
+                          : "Sin dato"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
