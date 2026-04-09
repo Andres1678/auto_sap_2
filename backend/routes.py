@@ -6855,13 +6855,18 @@ def get_proyecto_costos_resumen(proyecto_id):
 def listar_oportunidades_elegibles_proyecto():
     try:
         query = Oportunidad.query
+
+        # Solo oportunidades con PRC
         query = query.filter(Oportunidad.codigo_prc.isnot(None))
         query = query.filter(func.trim(Oportunidad.codigo_prc) != "")
 
-        rows = query.order_by(
-            Oportunidad.fecha_cierre_oportunidad.desc().nullslast(),
+        # Orden seguro para MySQL/MariaDB
+        query = query.order_by(
+            Oportunidad.fecha_cierre_oportunidad.desc(),
             Oportunidad.id.desc()
-        ).all()
+        )
+
+        rows = query.all()
 
         resultados_permitidos = {
             _norm_key_for_match("PROYECTO"),
