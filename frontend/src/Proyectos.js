@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
-import { jfetch } from "./lib/api";
+import { jfetch } from './lib/api';
 import ModalMapeoProyecto from "./ModalMapeoProyecto";
 import ProyectoCostosPanel from "./Proyectos/ProyectoCostosPanel";
 import "./Proyectos.css";
