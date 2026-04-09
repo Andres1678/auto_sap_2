@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
-import { jfetch } from "./lib/api";
+import { jfetch } from "../lib/api";
 import "./ProyectoCostosPanel.css";
 
 const emptyCabecera = {
