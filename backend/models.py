@@ -67,6 +67,13 @@ class Modulo(db.Model):
         lazy='subquery'
     )
 
+    perfiles = relationship(
+        "ModuloPerfil",
+        back_populates="modulo",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+
 class Consultor(db.Model):
     __tablename__ = 'consultor'
 
@@ -908,3 +915,70 @@ class ProyectoCostoAdicional(db.Model):
     )
 
     proyecto = relationship("Proyecto", back_populates="costos_adicionales")
+
+##Perfiles 
+
+class Perfil(db.Model):
+    __tablename__ = "perfil"
+
+    id = db.Column(db.Integer, primary_key=True)
+    codigo = db.Column(db.String(50), nullable=False, unique=True)
+    nombre = db.Column(db.String(150), nullable=False, unique=True)
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+    orden = db.Column(db.Integer, nullable=False, server_default=text("0"))
+
+    created_at = db.Column(db.DateTime, nullable=True, server_default=text("current_timestamp()"))
+    updated_at = db.Column(
+        db.DateTime,
+        nullable=True,
+        server_default=text("current_timestamp()"),
+        server_onupdate=text("current_timestamp()")
+    )
+
+    modulos = relationship(
+        "ModuloPerfil",
+        back_populates="perfil",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+
+    def __repr__(self):
+        return f"<Perfil id={self.id} codigo={self.codigo!r} nombre={self.nombre!r}>"
+
+
+class ModuloPerfil(db.Model):
+    __tablename__ = "modulo_perfil"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    modulo_id = db.Column(
+        db.Integer,
+        db.ForeignKey("modulo.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    perfil_id = db.Column(
+        db.Integer,
+        db.ForeignKey("perfil.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+
+    created_at = db.Column(db.DateTime, nullable=True, server_default=text("current_timestamp()"))
+    updated_at = db.Column(
+        db.DateTime,
+        nullable=True,
+        server_default=text("current_timestamp()"),
+        server_onupdate=text("current_timestamp()")
+    )
+
+    modulo = relationship("Modulo", back_populates="perfiles", lazy="joined")
+    perfil = relationship("Perfil", back_populates="modulos", lazy="joined")
+
+    __table_args__ = (
+        db.UniqueConstraint("modulo_id", "perfil_id", name="uq_modulo_perfil"),
+    )
+
+    def __repr__(self):
+        return f"<ModuloPerfil modulo_id={self.modulo_id} perfil_id={self.perfil_id}>"

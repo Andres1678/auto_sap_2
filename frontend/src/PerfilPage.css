@@ -1,0 +1,282 @@
+.perfiles-page {
+  padding: 18px;
+}
+
+.perfiles-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.perfiles-title {
+  margin: 0;
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.perfiles-subtitle {
+  margin: 6px 0 0;
+  color: #64748b;
+}
+
+.perfiles-card {
+  background: #fff;
+  border: 1px solid #dbe4f0;
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 18px;
+}
+
+.perfiles-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.perfiles-card-head h3 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.pf-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.pf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pf-field label {
+  font-weight: 600;
+  color: #334155;
+}
+
+.pf-field input {
+  min-height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 9px 10px;
+  outline: none;
+}
+
+.pf-field input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.pf-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+}
+
+.pf-switch {
+  position: relative;
+  display: inline-flex;
+  width: 46px;
+  height: 26px;
+}
+
+.pf-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.pf-slider {
+  position: absolute;
+  inset: 0;
+  background: #cbd5e1;
+  border-radius: 999px;
+  transition: 0.2s ease;
+  cursor: pointer;
+}
+
+.pf-slider::before {
+  content: "";
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: 0.2s ease;
+}
+
+.pf-switch input:checked + .pf-slider {
+  background: #2563eb;
+}
+
+.pf-switch input:checked + .pf-slider::before {
+  transform: translateX(20px);
+}
+
+.pf-actions {
+  margin-top: 14px;
+}
+
+.pf-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.pf-btn-primary {
+  background: #2563eb;
+  color: #fff;
+}
+
+.pf-btn-primary:hover {
+  background: #1d4ed8;
+}
+
+.pf-btn-outline {
+  background: #fff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+}
+
+.pf-btn-ghost {
+  background: #eef2ff;
+  color: #1e3a8a;
+}
+
+.pf-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pf-search {
+  min-width: 260px;
+  min-height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 9px 10px;
+}
+
+.pf-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #334155;
+}
+
+.pf-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+}
+
+.pf-table {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.pf-table th,
+.pf-table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 10px;
+  text-align: left;
+}
+
+.pf-table th {
+  background: #f8fafc;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.pf-empty {
+  text-align: center;
+  color: #64748b;
+  padding: 16px !important;
+}
+
+.pf-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pf-icon-btn {
+  border: none;
+  background: #eef2ff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.pf-icon-btn.danger {
+  background: #fee2e2;
+}
+
+.pf-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.pf-badge.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.pf-badge.off {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.pf-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.pf-muted {
+  color: #64748b;
+}
+
+@media (max-width: 1000px) {
+  .pf-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .perfiles-card-head,
+  .perfiles-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pf-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pf-search {
+    min-width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .pf-grid {
+    grid-template-columns: 1fr;
+  }
+}

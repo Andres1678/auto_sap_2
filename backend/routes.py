@@ -6,7 +6,8 @@ from backend.models import (
     Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel,
     ConsultorPresupuesto, Proyecto, ProyectoFase, ProyectoModulo, ProyectoFaseProyecto,
     ProyectoMapeo,
-    ProyectoPerfilCatalogo, ProyectoPresupuestoMensual, ProyectoPerfilPlan, ProyectoCostoAdicional
+    ProyectoPerfilCatalogo, ProyectoPresupuestoMensual, ProyectoPerfilPlan, ProyectoCostoAdicional,
+    Perfil, ModuloPerfil
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
@@ -418,6 +419,43 @@ def role_scope(rol_nombre: str, user_equipo: str = ""):
 
     # CONSULTOR o cualquier otro => usuario
     return {"mode": "USER"}
+
+def perfil_to_dict(x: Perfil, include_modulos=False):
+    out = {
+        "id": x.id,
+        "codigo": x.codigo,
+        "nombre": x.nombre,
+        "activo": bool(x.activo),
+        "orden": int(x.orden or 0),
+    }
+
+    if include_modulos:
+        out["modulos"] = [
+            {
+                "id": mp.modulo.id,
+                "nombre": mp.modulo.nombre,
+                "activo": bool(mp.activo),
+                "modulo_perfil_id": mp.id,
+            }
+            for mp in (x.modulos or [])
+            if mp.modulo
+        ]
+
+    return out
+
+
+def modulo_perfil_to_dict(x: ModuloPerfil):
+    return {
+        "id": x.id,
+        "modulo_id": x.modulo_id,
+        "perfil_id": x.perfil_id,
+        "activo": bool(x.activo),
+        "modulo": {
+            "id": x.modulo.id,
+            "nombre": x.modulo.nombre,
+        } if x.modulo else None,
+        "perfil": perfil_to_dict(x.perfil) if x.perfil else None,
+    }
 
 # ===============================
 # Catálogos
@@ -8632,3 +8670,168 @@ def capacidad_semanal_ocupaciones():
     except Exception as e:
         app.logger.exception("❌ Error en /capacidad-semanal-ocupaciones")
         return jsonify({"error": str(e)}), 500
+    
+
+@bp.route("/perfiles", methods=["GET"])
+@permission_required("PERFILES_VER")
+def listar_perfiles():
+    q = (request.args.get("q") or "").strip()
+    solo_activos = request.args.get("solo_activos")
+
+    query = Perfil.query
+
+    if solo_activos in ("1", "true", "TRUE"):
+        query = query.filter(Perfil.activo == True)
+
+    if q:
+        q_like = f"%{q.lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(Perfil.codigo).like(q_like),
+                func.lower(Perfil.nombre).like(q_like),
+            )
+        )
+
+    rows = query.order_by(Perfil.orden.asc(), Perfil.nombre.asc()).all()
+
+    return jsonify([perfil_to_dict(x) for x in rows]), 200
+
+@bp.route("/perfiles/<int:perfil_id>", methods=["GET"])
+@permission_required("PERFILES_VER")
+def get_perfil(perfil_id):
+    x = (
+        Perfil.query.options(
+            joinedload(Perfil.modulos).joinedload(ModuloPerfil.modulo)
+        )
+        .get_or_404(perfil_id)
+    )
+
+    return jsonify(perfil_to_dict(x, include_modulos=True)), 200
+
+@bp.route("/perfiles", methods=["POST"])
+@permission_required("PERFILES_CREAR")
+def crear_perfil():
+    data = request.get_json(silent=True) or {}
+
+    codigo = (data.get("codigo") or "").strip().upper()
+    nombre = (data.get("nombre") or "").strip()
+    activo = _to_bool2(data.get("activo"), default=True)
+    orden = int(data.get("orden") or 0)
+
+    if not codigo:
+        return jsonify({"mensaje": "codigo requerido"}), 400
+
+    if not nombre:
+        return jsonify({"mensaje": "nombre requerido"}), 400
+
+    dupe = Perfil.query.filter(
+        or_(
+            func.lower(Perfil.codigo) == codigo.lower(),
+            func.lower(Perfil.nombre) == nombre.lower(),
+        )
+    ).first()
+
+    if dupe:
+        return jsonify({"mensaje": "Ya existe un perfil con ese código o nombre"}), 400
+
+    x = Perfil(
+        codigo=codigo,
+        nombre=nombre,
+        activo=activo,
+        orden=orden,
+    )
+
+    db.session.add(x)
+    db.session.commit()
+
+    return jsonify({
+        "mensaje": "Perfil creado",
+        "perfil": perfil_to_dict(x)
+    }), 201
+
+@bp.route("/perfiles/<int:perfil_id>", methods=["PUT"])
+@permission_required("PERFILES_EDITAR")
+def editar_perfil(perfil_id):
+    x = Perfil.query.get_or_404(perfil_id)
+    data = request.get_json(silent=True) or {}
+
+    if "codigo" in data:
+        codigo = (data.get("codigo") or "").strip().upper()
+        if not codigo:
+            return jsonify({"mensaje": "codigo inválido"}), 400
+
+        dupe = Perfil.query.filter(
+            Perfil.id != perfil_id,
+            func.lower(Perfil.codigo) == codigo.lower()
+        ).first()
+        if dupe:
+            return jsonify({"mensaje": "Ya existe otro perfil con ese código"}), 400
+
+        x.codigo = codigo
+
+    if "nombre" in data:
+        nombre = (data.get("nombre") or "").strip()
+        if not nombre:
+            return jsonify({"mensaje": "nombre inválido"}), 400
+
+        dupe = Perfil.query.filter(
+            Perfil.id != perfil_id,
+            func.lower(Perfil.nombre) == nombre.lower()
+        ).first()
+        if dupe:
+            return jsonify({"mensaje": "Ya existe otro perfil con ese nombre"}), 400
+
+        x.nombre = nombre
+
+    if "activo" in data:
+        x.activo = _to_bool2(data.get("activo"), default=True)
+
+    if "orden" in data:
+        x.orden = int(data.get("orden") or 0)
+
+    db.session.commit()
+
+    return jsonify({
+        "mensaje": "Perfil actualizado",
+        "perfil": perfil_to_dict(x)
+    }), 200
+
+@bp.route("/perfiles/<int:perfil_id>", methods=["DELETE"])
+@permission_required("PERFILES_ELIMINAR")
+def eliminar_perfil(perfil_id):
+    x = Perfil.query.get_or_404(perfil_id)
+
+    en_modulos = ModuloPerfil.query.filter_by(perfil_id=perfil_id).count()
+    if en_modulos > 0:
+        return jsonify({
+            "mensaje": "No se puede eliminar el perfil porque está asociado a uno o más módulos. Inactívalo o desasócialo primero."
+        }), 400
+
+    db.session.delete(x)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Perfil eliminado"}), 200
+
+@bp.route("/modulos/<int:modulo_id>/perfiles", methods=["GET"])
+@permission_required("MODULOS_VER")
+def get_modulo_perfiles(modulo_id):
+    modulo = Modulo.query.get_or_404(modulo_id)
+
+    rows = (
+        ModuloPerfil.query.options(
+            joinedload(ModuloPerfil.modulo),
+            joinedload(ModuloPerfil.perfil),
+        )
+        .filter(ModuloPerfil.modulo_id == modulo_id)
+        .order_by(ModuloPerfil.id.asc())
+        .all()
+    )
+
+    return jsonify({
+        "modulo": {
+            "id": modulo.id,
+            "nombre": modulo.nombre,
+        },
+        "perfiles": [modulo_perfil_to_dict(x) for x in rows]
+    }), 200
+

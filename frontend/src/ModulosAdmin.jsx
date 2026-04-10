@@ -3,6 +3,7 @@ import Modal from "react-modal";
 import Swal from "sweetalert2";
 import { jfetch } from "./lib/api";
 import "./ModulosAdmin.css";
+import ModalModuloPerfiles from "./ModalModuloPerfiles";
 
 Modal.setAppElement("#root");
 
@@ -23,6 +24,9 @@ export default function ModulosAdmin() {
 
   const [openView, setOpenView] = useState(false);
   const [viewConsultor, setViewConsultor] = useState(null);
+
+  const [moduloPerfilesOpen, setModuloPerfilesOpen] = useState(false);
+  const [moduloPerfilesSelected, setModuloPerfilesSelected] = useState(null);
 
   const fetchModulos = useCallback(async () => {
     try {
@@ -224,6 +228,20 @@ export default function ModulosAdmin() {
     setOpenView(true);
   };
 
+  const openModuloPerfiles = (modulo) => {
+    setModuloPerfilesSelected(modulo);
+    setModuloPerfilesOpen(true);
+  };
+
+  const closeModuloPerfiles = (updated = false) => {
+    setModuloPerfilesOpen(false);
+    setModuloPerfilesSelected(null);
+
+    if (updated) {
+      fetchData?.();
+    }
+  };
+
   return (
     <div className="ma-wrap">
       <div className="ma-header">
@@ -328,6 +346,15 @@ export default function ModulosAdmin() {
                             type="button"
                           >
                             Eliminar
+                          </button>
+
+                          <button
+                            className="ma-btn ma-btnDanger"
+                            type="button"
+                            title="Perfiles"
+                            onClick={() => openModuloPerfiles(m)}
+                          >
+                            👥
                           </button>
                         </div>
                       </td>
@@ -461,6 +488,14 @@ export default function ModulosAdmin() {
           </button>
         </div>
       </Modal>
+
+      {moduloPerfilesOpen && moduloPerfilesSelected && (
+        <ModalModuloPerfiles
+          isOpen={moduloPerfilesOpen}
+          onClose={closeModuloPerfiles}
+          modulo={moduloPerfilesSelected}
+        />
+      )}
     </div>
   );
 }

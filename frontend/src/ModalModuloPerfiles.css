@@ -1,0 +1,154 @@
+.mmp-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 9999;
+}
+
+.mmp-modal {
+  width: min(980px, 100%);
+  max-height: 90vh;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 18px;
+  border: 1px solid #dbe4f0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mmp-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.mmp-head h3 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.mmp-head p {
+  margin: 4px 0 0;
+  color: #64748b;
+}
+
+.mmp-close {
+  border: none;
+  background: #f8fafc;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.mmp-toolbar {
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.mmp-search {
+  flex: 1;
+  min-height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.mmp-body {
+  padding: 18px;
+  overflow: auto;
+}
+
+.mmp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.mmp-chip {
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  transition: 0.2s ease;
+  background: #fff;
+}
+
+.mmp-chip.is-on {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.mmp-chip input {
+  margin-bottom: 4px;
+}
+
+.mmp-chip-code {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.mmp-chip-name {
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+.mmp-empty {
+  color: #64748b;
+  text-align: center;
+  padding: 30px 10px;
+}
+
+.mmp-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 18px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.mmp-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mmp-btn.primary {
+  background: #2563eb;
+  color: #fff;
+}
+
+.mmp-btn.secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.mmp-btn.ghost {
+  background: #f8fafc;
+  color: #334155;
+}
+
+@media (max-width: 768px) {
+  .mmp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mmp-toolbar,
+  .mmp-foot {
+    flex-direction: column;
+  }
+}

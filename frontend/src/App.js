@@ -23,6 +23,7 @@ import Proyectos from "./Proyectos";
 import ModulosAdmin from "./ModulosAdmin";
 import ProyectosHorasDashboard from './ProyectosHorasDashboard';
 import Graficos from './Graficos';
+import PerfilesPage from "./PerfilesPage";
 
 function App() {
   const [userData, setUserData] = useState(null);
@@ -257,6 +258,15 @@ function App() {
               element={
                 <AdminRoute allow={["ADMIN"]} requirePermiso="PRESUPUESTO_CONSULTOR_IMPORTAR">
                   <PresupuestoConsultorImport />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/perfiles"
+              element={
+                <AdminRoute>
+                  <PerfilesPage />
                 </AdminRoute>
               }
             />
