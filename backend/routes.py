@@ -8474,7 +8474,7 @@ def get_consultor_perfiles(consultor_id):
 @bp.route("/consultores/<int:consultor_id>/perfiles", methods=["PUT"])
 @permission_required("CONSULTORES_EDITAR")
 def save_consultor_perfiles(consultor_id):
-    Consultor.query.get_or_404(consultor_id)
+    consultor = Consultor.query.get_or_404(consultor_id)
 
     data = request.get_json(silent=True) or {}
     rows = data.get("rows") or []
@@ -8485,64 +8485,105 @@ def save_consultor_perfiles(consultor_id):
     seen = set()
     rows_clean = []
 
-    for idx, row in enumerate(rows):
-        perfil_id = row.get("perfil_id")
-        try:
-            perfil_id = int(perfil_id)
-        except Exception:
-            return jsonify({"mensaje": f"perfil_id inválido en fila {idx}"}), 400
+    try:
+        for idx, row in enumerate(rows):
+            if not isinstance(row, dict):
+                return jsonify({"mensaje": f"Fila inválida en posición {idx}"}), 400
 
-        key = perfil_id
-        if key in seen:
-            return jsonify({"mensaje": f"Perfil duplicado en la misma carga: {perfil_id}"}), 400
-        seen.add(key)
+            perfil_id = row.get("perfil_id")
+            try:
+                perfil_id = int(perfil_id)
+            except Exception:
+                return jsonify({"mensaje": f"perfil_id inválido en fila {idx}"}), 400
 
-        perfil = Perfil.query.get(perfil_id)
-        if not perfil:
-            return jsonify({"mensaje": f"Perfil no existe: {perfil_id}"}), 400
+            if perfil_id in seen:
+                return jsonify({
+                    "mensaje": f"Perfil duplicado en la misma carga: {perfil_id}"
+                }), 400
+            seen.add(perfil_id)
 
-        fecha_inicio = _parse_date_safe(row.get("fecha_inicio"))
-        fecha_fin = _parse_date_safe(row.get("fecha_fin"))
+            perfil = Perfil.query.get(perfil_id)
+            if not perfil:
+                return jsonify({"mensaje": f"Perfil no existe: {perfil_id}"}), 400
 
-        if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
-            return jsonify({
-                "mensaje": f"La fecha fin no puede ser menor que la fecha inicio para el perfil {perfil.nombre}"
-            }), 400
+            fecha_inicio = _parse_date_safe(row.get("fecha_inicio"))
+            fecha_fin = _parse_date_safe(row.get("fecha_fin"))
 
-        rows_clean.append({
-            "perfil_id": perfil_id,
-            "activo": _to_bool2(row.get("activo"), default=True),
-            "fecha_inicio": fecha_inicio,
-            "fecha_fin": fecha_fin,
-        })
+            if row.get("fecha_inicio") not in (None, "", "null", "None") and not fecha_inicio:
+                return jsonify({
+                    "mensaje": f"fecha_inicio inválida para el perfil {perfil.nombre}"
+                }), 400
 
-    ConsultorPerfil.query.filter_by(consultor_id=consultor_id).delete()
+            if row.get("fecha_fin") not in (None, "", "null", "None") and not fecha_fin:
+                return jsonify({
+                    "mensaje": f"fecha_fin inválida para el perfil {perfil.nombre}"
+                }), 400
 
-    for row in rows_clean:
-        db.session.add(ConsultorPerfil(
-            consultor_id=consultor_id,
-            perfil_id=row["perfil_id"],
-            activo=row["activo"],
-            fecha_inicio=row["fecha_inicio"],
-            fecha_fin=row["fecha_fin"],
-        ))
+            if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
+                return jsonify({
+                    "mensaje": f"La fecha fin no puede ser menor que la fecha inicio para el perfil {perfil.nombre}"
+                }), 400
 
-    db.session.commit()
+            rows_clean.append({
+                "perfil_id": perfil_id,
+                "activo": _to_bool2(row.get("activo"), default=True),
+                "fecha_inicio": fecha_inicio,
+                "fecha_fin": fecha_fin,
+            })
 
-    rows_db = (
-        ConsultorPerfil.query.options(
-            joinedload(ConsultorPerfil.consultor),
-            joinedload(ConsultorPerfil.perfil),
+        # borrar relaciones actuales del consultor
+        ConsultorPerfil.query.filter_by(
+            consultor_id=consultor_id
+        ).delete(synchronize_session=False)
+
+        # insertar nuevas relaciones
+        for row in rows_clean:
+            db.session.add(
+                ConsultorPerfil(
+                    consultor_id=consultor_id,
+                    perfil_id=row["perfil_id"],
+                    activo=row["activo"],
+                    fecha_inicio=row["fecha_inicio"],
+                    fecha_fin=row["fecha_fin"],
+                )
+            )
+
+        db.session.commit()
+
+        rows_db = (
+            ConsultorPerfil.query.options(
+                joinedload(ConsultorPerfil.consultor),
+                joinedload(ConsultorPerfil.perfil),
+            )
+            .filter_by(consultor_id=consultor_id)
+            .order_by(ConsultorPerfil.id.asc())
+            .all()
         )
-        .filter_by(consultor_id=consultor_id)
-        .order_by(ConsultorPerfil.id.asc())
-        .all()
-    )
 
-    return jsonify({
-        "mensaje": "Perfiles del consultor actualizados",
-        "perfiles": [consultor_perfil_to_dict(x) for x in rows_db]
-    }), 200
+        return jsonify({
+            "mensaje": "Perfiles del consultor actualizados",
+            "consultor": {
+                "id": consultor.id,
+                "nombre": consultor.nombre,
+                "usuario": consultor.usuario,
+            },
+            "perfiles": [consultor_perfil_to_dict(x) for x in rows_db]
+        }), 200
+
+    except IntegrityError as e:
+        db.session.rollback()
+        return jsonify({
+            "mensaje": "Error de integridad al guardar perfiles del consultor",
+            "detalle": str(e)
+        }), 400
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("❌ Error en save_consultor_perfiles")
+        return jsonify({
+            "mensaje": "Error interno al guardar perfiles del consultor",
+            "detalle": str(e)
+        }), 500
 
 @bp.route("/perfiles/<int:perfil_id>/consultores", methods=["GET"])
 @permission_required("PERFILES_VER")
