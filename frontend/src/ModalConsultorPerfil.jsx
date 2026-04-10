@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { jfetch } from "./lib/api";
-import "./ModalConsultorPerfiles.css";
+import "./ModalConsultorPerfil.css";
 
 const norm = (s) => String(s ?? "").trim().toLowerCase();
 
