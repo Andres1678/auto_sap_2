@@ -238,7 +238,7 @@ export default function ModulosAdmin() {
     setModuloPerfilesSelected(null);
 
     if (updated) {
-      fetchData?.();
+      load();
     }
   };
 
