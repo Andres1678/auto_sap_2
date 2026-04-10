@@ -6,7 +6,7 @@ from backend.models import (
     Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel,
     ConsultorPresupuesto, Proyecto, ProyectoFase, ProyectoModulo, ProyectoFaseProyecto,
     ProyectoMapeo,
-    ProyectoPerfilCatalogo, ProyectoPresupuestoMensual, ProyectoPerfilPlan, ProyectoCostoAdicional,
+    ProyectoPresupuestoMensual, ProyectoPerfilPlan, ProyectoCostoAdicional,
     Perfil, ModuloPerfil
 )
 from datetime import datetime, timedelta, time, date
@@ -6309,9 +6309,6 @@ def _cost_parse_decimal(v):
     except Exception:
         return None
 
-def _perfil_to_dict(x: ProyectoPerfilCatalogo):
-    return x.to_dict()
-
 def _presupuesto_mensual_to_dict(x: ProyectoPresupuestoMensual):
     return {
         "id": x.id,
@@ -6419,51 +6416,6 @@ def _valor_hora_consultor(consultor_id, anio, mes):
         return Decimal("0")
 
     return vr / hb
-
-@bp.route("/proyecto-perfiles-catalogo", methods=["GET"])
-@permission_required("PROYECTOS_VER")
-def listar_catalogo_perfiles_proyecto():
-    rows = (
-        ProyectoPerfilCatalogo.query
-        .order_by(ProyectoPerfilCatalogo.orden.asc(), ProyectoPerfilCatalogo.nombre.asc())
-        .all()
-    )
-    return jsonify([_perfil_to_dict(x) for x in rows]), 200
-
-
-@bp.route("/proyecto-perfiles-catalogo", methods=["POST"])
-@permission_required("PROYECTOS_CREAR")
-def crear_catalogo_perfil_proyecto():
-    data = request.get_json(silent=True) or {}
-
-    codigo = (data.get("codigo") or "").strip().upper()
-    nombre = (data.get("nombre") or "").strip()
-
-    if not codigo:
-        return jsonify({"mensaje": "codigo requerido"}), 400
-    if not nombre:
-        return jsonify({"mensaje": "nombre requerido"}), 400
-
-    dupe = ProyectoPerfilCatalogo.query.filter(
-        or_(
-            func.lower(ProyectoPerfilCatalogo.codigo) == codigo.lower(),
-            func.lower(ProyectoPerfilCatalogo.nombre) == nombre.lower(),
-        )
-    ).first()
-
-    if dupe:
-        return jsonify({"mensaje": "Ya existe un perfil con ese código o nombre"}), 400
-
-    x = ProyectoPerfilCatalogo(
-        codigo=codigo,
-        nombre=nombre,
-        orden=int(data.get("orden") or 0),
-        activo=_to_bool2(data.get("activo"), default=True),
-    )
-    db.session.add(x)
-    db.session.commit()
-
-    return jsonify({"mensaje": "Perfil creado", "perfil": _perfil_to_dict(x)}), 201
     
 @bp.route("/oportunidades/elegibles-proyecto", methods=["GET"])
 @permission_required("OPORTUNIDADES_VER")
@@ -6562,7 +6514,7 @@ def _cost_parse_decimal(v):
     except Exception:
         return None
 
-def _perfil_to_dict(x: ProyectoPerfilCatalogo):
+def _perfil_to_dict(x: Perfil):
     return {
         "id": x.id,
         "codigo": x.codigo,
@@ -6698,8 +6650,9 @@ def get_proyecto_costos(proyecto_id):
     )
 
     perfiles_catalogo = (
-        ProyectoPerfilCatalogo.query
-        .order_by(ProyectoPerfilCatalogo.orden.asc(), ProyectoPerfilCatalogo.nombre.asc())
+        Perfil.query
+        .filter(Perfil.activo == True)
+        .order_by(Perfil.orden.asc(), Perfil.nombre.asc())
         .all()
     )
 
@@ -6871,8 +6824,12 @@ def save_proyecto_perfil_plan(proyecto_id):
             return jsonify({"mensaje": f"Perfil duplicado para el mismo periodo: {anio}-{mes}, perfil {perfil_id}"}), 400
         seen.add(key)
 
-        if not ProyectoPerfilCatalogo.query.get(perfil_id):
+        perfil = Perfil.query.get(perfil_id)
+        if not perfil:
             return jsonify({"mensaje": f"Perfil no existe: {perfil_id}"}), 400
+
+        if not perfil.activo:
+            return jsonify({"mensaje": f"El perfil está inactivo: {perfil.nombre}"}), 400
 
     ProyectoPerfilPlan.query.filter_by(proyecto_id=proyecto_id).delete()
 

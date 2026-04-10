@@ -848,7 +848,7 @@ class ProyectoPerfilPlan(db.Model):
 
     perfil_id = db.Column(
         db.Integer,
-        db.ForeignKey("proyecto_perfil_catalogo.id", ondelete="RESTRICT"),
+        db.ForeignKey("perfil.id", ondelete="RESTRICT"),
         nullable=False
     )
 
@@ -877,7 +877,7 @@ class ProyectoPerfilPlan(db.Model):
     )
 
     proyecto = relationship("Proyecto", back_populates="perfiles_plan")
-    perfil = relationship("ProyectoPerfilCatalogo", lazy="joined")
+    perfil = relationship("Perfil", lazy="joined")
     consultor = relationship("Consultor", lazy="joined")
 
     __table_args__ = (

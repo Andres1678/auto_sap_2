@@ -39,6 +39,21 @@ const newMes = () => ({
   activo: true,
 });
 
+const newPerfilRow = () => ({
+  id: null,
+  anio: yearNow,
+  mes: monthNow,
+  perfil_id: "",
+  consultor_id: "",
+  horas_estimadas: "",
+  fte_estimado: "",
+  valor_hora_planeado: "",
+  costo_estimado: "",
+  ingreso_estimado: "",
+  observacion: "",
+  activo: true,
+});
+
 const newCostoAdicional = () => ({
   id: null,
   anio: yearNow,
@@ -122,6 +137,17 @@ const recalcPresupuestoRow = (row) => {
   };
 };
 
+const recalcPerfilRow = (row) => {
+  const horas = toNumber(row.horas_estimadas);
+  const valorHora = toNumber(row.valor_hora_planeado);
+  const costo = horas * valorHora;
+
+  return {
+    ...row,
+    costo_estimado: toFixedIfNeeded(costo),
+  };
+};
+
 const getAlertClass = (pct, thresholds) => {
   if (pct == null) return "neutral";
   const t1 = toNumber(thresholds.alerta_umbral_1 || 70);
@@ -140,12 +166,16 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   const [saving, setSaving] = useState({
     cabecera: false,
     presupuesto: false,
+    perfiles: false,
     adicionales: false,
   });
 
   const [proyecto, setProyecto] = useState(null);
   const [cabecera, setCabecera] = useState(emptyCabecera);
+  const [catalogos, setCatalogos] = useState({ perfiles: [] });
+
   const [presupuestoMensual, setPresupuestoMensual] = useState([]);
+  const [perfilPlan, setPerfilPlan] = useState([]);
   const [costosAdicionales, setCostosAdicionales] = useState([]);
   const [resumen, setResumen] = useState(null);
 
@@ -168,6 +198,8 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       const p = cfg.proyecto || {};
 
       setProyecto(p);
+      setCatalogos(cfg.catalogos || { perfiles: [] });
+
       setCabecera({
         oportunidad_id: p.oportunidad_id ?? "",
         codigo_ot_principal: p.codigo_ot_principal ?? "",
@@ -189,6 +221,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       });
 
       setPresupuestoMensual(Array.isArray(cfg.presupuesto_mensual) ? cfg.presupuesto_mensual : []);
+      setPerfilPlan(Array.isArray(cfg.perfil_plan) ? cfg.perfil_plan : []);
       setCostosAdicionales(Array.isArray(cfg.costos_adicionales) ? cfg.costos_adicionales : []);
       setResumen(sum || null);
     } catch (e) {
@@ -218,6 +251,14 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     );
   };
 
+  const onPerfilChange = (index, key, value) => {
+    setPerfilPlan((prev) =>
+      prev.map((row, i) =>
+        i === index ? recalcPerfilRow({ ...row, [key]: value }) : row
+      )
+    );
+  };
+
   const onAdicionalChange = (index, key, value) => {
     setCostosAdicionales((prev) =>
       prev.map((row, i) => (i === index ? { ...row, [key]: value } : row))
@@ -228,12 +269,20 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     setPresupuestoMensual((prev) => [...prev, newMes()]);
   };
 
+  const addPerfilRow = () => {
+    setPerfilPlan((prev) => [...prev, newPerfilRow()]);
+  };
+
   const addCostoAdicionalRow = () => {
     setCostosAdicionales((prev) => [...prev, newCostoAdicional()]);
   };
 
   const removePresupuestoRow = (index) => {
     setPresupuestoMensual((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const removePerfilRow = (index) => {
+    setPerfilPlan((prev) => prev.filter((_, i) => i !== index));
   };
 
   const removeCostoAdicionalRow = (index) => {
@@ -284,6 +333,28 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     }
   };
 
+  const guardarPerfilPlan = async () => {
+    try {
+      setSaving((s) => ({ ...s, perfiles: true }));
+
+      const res = await jfetch(`/proyectos/${proyectoId}/costos/perfil-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: perfilPlan }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
+
+      Swal.fire({ icon: "success", title: "Planeación por perfil guardada" });
+      await fetchAll();
+    } catch (e) {
+      Swal.fire({ icon: "error", title: "Error", text: String(e.message || e) });
+    } finally {
+      setSaving((s) => ({ ...s, perfiles: false }));
+    }
+  };
+
   const guardarCostosAdicionales = async () => {
     try {
       setSaving((s) => ({ ...s, adicionales: true }));
@@ -322,6 +393,19 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       { ingreso: 0, costo: 0, gastoOp: 0, costoAdm: 0, ebitda: 0 }
     );
   }, [presupuestoMensual]);
+
+  const totalsPerfil = useMemo(() => {
+    return perfilPlan.reduce(
+      (acc, row) => {
+        acc.horas += toNumber(row.horas_estimadas);
+        acc.fte += toNumber(row.fte_estimado);
+        acc.costo += toNumber(row.costo_estimado);
+        acc.ingreso += toNumber(row.ingreso_estimado);
+        return acc;
+      },
+      { horas: 0, fte: 0, costo: 0, ingreso: 0 }
+    );
+  }, [perfilPlan]);
 
   const totalsAdicionales = useMemo(() => {
     return costosAdicionales.reduce((acc, row) => acc + toNumber(row.valor), 0);
@@ -613,6 +697,102 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       <section className="pcp-section">
         <div className="pcp-section-head">
           <div>
+            <h3>Planeación por perfil</h3>
+            <p className="pcp-note">Usando el maestro real de perfiles del sistema.</p>
+          </div>
+
+          <div className="pcp-section-actions">
+            <button className="secondary" onClick={addPerfilRow}>
+              + Agregar perfil
+            </button>
+            <button onClick={guardarPerfilPlan} disabled={saving.perfiles || loading}>
+              {saving.perfiles ? "Guardando..." : "Guardar perfiles"}
+            </button>
+          </div>
+        </div>
+
+        <div className="pcp-table-wrap">
+          <table className="pcp-table">
+            <thead>
+              <tr>
+                <th>Año</th>
+                <th>Mes</th>
+                <th>Perfil</th>
+                <th>Horas estimadas</th>
+                <th>FTE</th>
+                <th>Valor hora planeado</th>
+                <th>Costo estimado</th>
+                <th>Ingreso estimado</th>
+                <th>Observación</th>
+                <th>Activo</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {perfilPlan.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="pcp-empty">Sin planeación por perfil</td>
+                </tr>
+              )}
+
+              {perfilPlan.map((row, index) => (
+                <tr key={`pp-${index}`}>
+                  <td><input value={row.anio} onChange={(e) => onPerfilChange(index, "anio", e.target.value)} /></td>
+                  <td><input value={row.mes} onChange={(e) => onPerfilChange(index, "mes", e.target.value)} /></td>
+                  <td>
+                    <select
+                      value={row.perfil_id ?? ""}
+                      onChange={(e) => onPerfilChange(index, "perfil_id", e.target.value)}
+                    >
+                      <option value="">Seleccione</option>
+                      {(catalogos.perfiles || []).map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.codigo} - {p.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td><input value={row.horas_estimadas ?? ""} onChange={(e) => onPerfilChange(index, "horas_estimadas", e.target.value)} /></td>
+                  <td><input value={row.fte_estimado ?? ""} onChange={(e) => onPerfilChange(index, "fte_estimado", e.target.value)} /></td>
+                  <td><input value={row.valor_hora_planeado ?? ""} onChange={(e) => onPerfilChange(index, "valor_hora_planeado", e.target.value)} /></td>
+                  <td><input value={row.costo_estimado ?? ""} readOnly /></td>
+                  <td><input value={row.ingreso_estimado ?? ""} onChange={(e) => onPerfilChange(index, "ingreso_estimado", e.target.value)} /></td>
+                  <td><input value={row.observacion ?? ""} onChange={(e) => onPerfilChange(index, "observacion", e.target.value)} /></td>
+                  <td className="center">
+                    <input
+                      type="checkbox"
+                      checked={!!row.activo}
+                      onChange={(e) => onPerfilChange(index, "activo", e.target.checked)}
+                    />
+                  </td>
+                  <td className="center">
+                    <button className="danger ghost" onClick={() => removePerfilRow(index)}>
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th colSpan={3}>Totales</th>
+                <th>{formatNumber(totalsPerfil.horas)}</th>
+                <th>{formatNumber(totalsPerfil.fte)}</th>
+                <th></th>
+                <th>{formatMoney(totalsPerfil.costo, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsPerfil.ingreso, cabecera.moneda)}</th>
+                <th colSpan={3}></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section className="pcp-section">
+        <div className="pcp-section-head">
+          <div>
             <h3>Costos adicionales</h3>
             <p className="pcp-note">Operativos, administrativos u otros.</p>
           </div>
@@ -728,6 +908,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
               {mesesResumen.map((row) => {
                 const cls = getAlertClass(row.pct_uso, cabecera);
+
                 return (
                   <tr key={row.periodo}>
                     <td>{row.periodo}</td>
