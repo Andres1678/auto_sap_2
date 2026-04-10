@@ -6420,16 +6420,6 @@ def _valor_hora_consultor(consultor_id, anio, mes):
 
     return vr / hb
 
-@bp.route("/proyecto-perfiles-catalogo", methods=["GET"])
-@permission_required("PROYECTOS_VER")
-def listar_catalogo_perfiles_proyecto():
-    rows = (
-        ProyectoPerfilCatalogo.query
-        .order_by(ProyectoPerfilCatalogo.orden.asc(), ProyectoPerfilCatalogo.nombre.asc())
-        .all()
-    )
-    return jsonify([_perfil_to_dict(x) for x in rows]), 200
-
 
 @bp.route("/proyecto-perfiles-catalogo", methods=["POST"])
 @permission_required("PROYECTOS_CREAR")
