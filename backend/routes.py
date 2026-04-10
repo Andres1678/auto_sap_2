@@ -6420,6 +6420,16 @@ def _valor_hora_consultor(consultor_id, anio, mes):
 
     return vr / hb
 
+@bp.route("/proyecto-perfiles-catalogo", methods=["GET"])
+@permission_required("PROYECTOS_VER")
+def listar_catalogo_perfiles_proyecto():
+    rows = (
+        ProyectoPerfilCatalogo.query
+        .order_by(ProyectoPerfilCatalogo.orden.asc(), ProyectoPerfilCatalogo.nombre.asc())
+        .all()
+    )
+    return jsonify([_perfil_to_dict(x) for x in rows]), 200
+
 
 @bp.route("/proyecto-perfiles-catalogo", methods=["POST"])
 @permission_required("PROYECTOS_CREAR")
@@ -6454,51 +6464,6 @@ def crear_catalogo_perfil_proyecto():
     db.session.commit()
 
     return jsonify({"mensaje": "Perfil creado", "perfil": _perfil_to_dict(x)}), 201
-
-
-@bp.route("/proyectos/<int:proyecto_id>/costos", methods=["GET"])
-@permission_required("PROYECTOS_VER")
-def get_proyecto_costos(proyecto_id):
-    p = (
-        Proyecto.query.options(
-            joinedload(Proyecto.cliente),
-            joinedload(Proyecto.oportunidad),
-            joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo),
-            joinedload(Proyecto.fase),
-            joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase),
-            joinedload(Proyecto.presupuestos_mensuales),
-            joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.perfil),
-            joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.consultor),
-            joinedload(Proyecto.costos_adicionales),
-        )
-        .get_or_404(proyecto_id)
-    )
-
-    perfiles_catalogo = (
-        ProyectoPerfilCatalogo.query
-        .order_by(ProyectoPerfilCatalogo.orden.asc(), ProyectoPerfilCatalogo.nombre.asc())
-        .all()
-    )
-
-    return jsonify({
-        "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True),
-        "catalogos": {
-            "perfiles": [_perfil_to_dict(x) for x in perfiles_catalogo],
-        },
-        "presupuesto_mensual": [
-            _presupuesto_mensual_to_dict(x)
-            for x in sorted(p.presupuestos_mensuales, key=lambda r: (r.anio, r.mes))
-        ],
-        "perfil_plan": [
-            _perfil_plan_to_dict(x)
-            for x in sorted(p.perfiles_plan, key=lambda r: (r.anio, r.mes, r.orden, r.id))
-        ],
-        "costos_adicionales": [
-            _costo_adicional_to_dict(x)
-            for x in sorted(p.costos_adicionales, key=lambda r: (r.anio, r.mes, r.id))
-        ],
-    }), 200
-
 
 @bp.route("/proyectos/<int:proyecto_id>/costos/cabecera", methods=["PUT"])
 @permission_required("PROYECTOS_EDITAR")
@@ -7093,16 +7058,6 @@ def _valor_hora_consultor(consultor_id, anio, mes):
         return Decimal("0")
 
     return vr / hb
-
-@bp.route("/proyecto-perfiles-catalogo", methods=["GET"])
-@permission_required("PROYECTOS_VER")
-def listar_catalogo_perfiles_proyecto():
-    rows = (
-        ProyectoPerfilCatalogo.query
-        .order_by(ProyectoPerfilCatalogo.orden.asc(), ProyectoPerfilCatalogo.nombre.asc())
-        .all()
-    )
-    return jsonify([_perfil_to_dict(x) for x in rows]), 200
 
 @bp.route("/proyectos/<int:proyecto_id>/costos", methods=["GET"])
 @permission_required("PROYECTOS_VER")
