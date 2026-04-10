@@ -698,7 +698,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         <div className="pcp-section-head">
           <div>
             <h3>Planeación por perfil</h3>
-            <p className="pcp-note">Usando el maestro real de perfiles del sistema.</p>
+            <p className="pcp-note">
+              Solo se muestran perfiles permitidos por los módulos configurados en este proyecto.
+            </p>
           </div>
 
           <div className="pcp-section-actions">
@@ -728,6 +730,12 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 <th></th>
               </tr>
             </thead>
+
+            {(catalogos.perfiles || []).length === 0 && (
+              <div className="pcp-empty" style={{ marginBottom: 12 }}>
+                Este proyecto no tiene perfiles disponibles porque sus módulos aún no tienen perfiles asociados.
+              </div>
+            )}
 
             <tbody>
               {perfilPlan.length === 0 && (

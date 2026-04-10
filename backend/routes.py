@@ -7,7 +7,7 @@ from backend.models import (
     ConsultorPresupuesto, Proyecto, ProyectoFase, ProyectoModulo, ProyectoFaseProyecto,
     ProyectoMapeo,
     ProyectoPresupuestoMensual, ProyectoPerfilPlan, ProyectoCostoAdicional,
-    Perfil, ModuloPerfil
+    Perfil, ModuloPerfil, ConsultorPerfil
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
@@ -220,7 +220,33 @@ def obtener_permisos_finales(consultor):
 
     return permisos
 
+def _get_perfiles_permitidos_proyecto(proyecto_id):
+    modulo_ids = [
+        int(x.modulo_id)
+        for x in (
+            ProyectoModulo.query
+            .filter(ProyectoModulo.proyecto_id == proyecto_id)
+            .filter(ProyectoModulo.activo == True)
+            .all()
+        )
+        if x.modulo_id
+    ]
 
+    if not modulo_ids:
+        return []
+
+    rows = (
+        Perfil.query
+        .join(ModuloPerfil, ModuloPerfil.perfil_id == Perfil.id)
+        .filter(ModuloPerfil.modulo_id.in_(modulo_ids))
+        .filter(ModuloPerfil.activo == True)
+        .filter(Perfil.activo == True)
+        .distinct()
+        .order_by(Perfil.orden.asc(), Perfil.nombre.asc())
+        .all()
+    )
+
+    return rows
 
 
 def _is_admin_role(rol: str) -> bool:
@@ -454,6 +480,33 @@ def modulo_perfil_to_dict(x: ModuloPerfil):
             "id": x.modulo.id,
             "nombre": x.modulo.nombre,
         } if x.modulo else None,
+        "perfil": perfil_to_dict(x.perfil) if x.perfil else None,
+    }
+
+def _parse_date_safe(v):
+    if v in (None, "", "null", "None"):
+        return None
+    if isinstance(v, date):
+        return v
+    try:
+        return datetime.strptime(str(v).strip()[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def consultor_perfil_to_dict(x: ConsultorPerfil):
+    return {
+        "id": x.id,
+        "consultor_id": x.consultor_id,
+        "perfil_id": x.perfil_id,
+        "activo": bool(x.activo),
+        "fecha_inicio": x.fecha_inicio.isoformat() if x.fecha_inicio else None,
+        "fecha_fin": x.fecha_fin.isoformat() if x.fecha_fin else None,
+        "consultor": {
+            "id": x.consultor.id,
+            "nombre": x.consultor.nombre,
+            "usuario": x.consultor.usuario,
+        } if x.consultor else None,
         "perfil": perfil_to_dict(x.perfil) if x.perfil else None,
     }
 
@@ -6514,13 +6567,14 @@ def _cost_parse_decimal(v):
     except Exception:
         return None
 
-def _perfil_to_dict(x: Perfil):
+def _perfil_to_dict(x: Perfil, permitido_en_modulos=True):
     return {
         "id": x.id,
         "codigo": x.codigo,
         "nombre": x.nombre,
         "activo": bool(x.activo),
         "orden": int(x.orden or 0),
+        "permitido_en_modulos": bool(permitido_en_modulos),
     }
 
 def _presupuesto_mensual_to_dict(x: ProyectoPresupuestoMensual):
@@ -6649,11 +6703,32 @@ def get_proyecto_costos(proyecto_id):
         .get_or_404(proyecto_id)
     )
 
-    perfiles_catalogo = (
-        Perfil.query
-        .filter(Perfil.activo == True)
-        .order_by(Perfil.orden.asc(), Perfil.nombre.asc())
-        .all()
+    # Perfiles permitidos según los módulos del proyecto
+    perfiles_permitidos = _get_perfiles_permitidos_proyecto(proyecto_id)
+    perfiles_permitidos_map = {x.id: x for x in perfiles_permitidos}
+
+    # Si ya hay filas guardadas con perfiles que hoy no están permitidos por módulo,
+    # se agregan al catálogo para no romper la edición del formulario.
+    perfiles_guardados_ids = {
+        int(x.perfil_id)
+        for x in (p.perfiles_plan or [])
+        if x.perfil_id
+    }
+
+    faltantes_ids = perfiles_guardados_ids - set(perfiles_permitidos_map.keys())
+    if faltantes_ids:
+        extras = (
+            Perfil.query
+            .filter(Perfil.id.in_(list(faltantes_ids)))
+            .order_by(Perfil.orden.asc(), Perfil.nombre.asc())
+            .all()
+        )
+        for x in extras:
+            perfiles_permitidos_map[x.id] = x
+
+    perfiles_catalogo = sorted(
+        perfiles_permitidos_map.values(),
+        key=lambda r: (int(r.orden or 0), r.nombre or "")
     )
 
     return jsonify({
@@ -6810,6 +6885,14 @@ def save_proyecto_perfil_plan(proyecto_id):
     data = request.get_json(silent=True) or {}
     rows = data.get("rows") or []
 
+    perfiles_permitidos = _get_perfiles_permitidos_proyecto(proyecto_id)
+    perfiles_permitidos_ids = {int(x.id) for x in perfiles_permitidos}
+
+    if rows and not perfiles_permitidos_ids:
+        return jsonify({
+            "mensaje": "El proyecto no tiene perfiles permitidos porque no tiene módulos configurados o esos módulos no tienen perfiles asociados."
+        }), 400
+
     seen = set()
     for idx, row in enumerate(rows):
         anio = int(row.get("anio") or 0)
@@ -6830,6 +6913,11 @@ def save_proyecto_perfil_plan(proyecto_id):
 
         if not perfil.activo:
             return jsonify({"mensaje": f"El perfil está inactivo: {perfil.nombre}"}), 400
+
+        if perfil_id not in perfiles_permitidos_ids:
+            return jsonify({
+                "mensaje": f"El perfil '{perfil.nombre}' no está permitido para los módulos configurados en este proyecto."
+            }), 400
 
     ProyectoPerfilPlan.query.filter_by(proyecto_id=proyecto_id).delete()
 
@@ -8357,3 +8445,121 @@ def get_modulo_perfiles(modulo_id):
         "perfiles": [modulo_perfil_to_dict(x) for x in rows]
     }), 200
 
+## Consultor Perfil 
+
+@bp.route("/consultores/<int:consultor_id>/perfiles", methods=["GET"])
+@permission_required("CONSULTORES_VER")
+def get_consultor_perfiles(consultor_id):
+    consultor = Consultor.query.get_or_404(consultor_id)
+
+    rows = (
+        ConsultorPerfil.query.options(
+            joinedload(ConsultorPerfil.consultor),
+            joinedload(ConsultorPerfil.perfil),
+        )
+        .filter(ConsultorPerfil.consultor_id == consultor_id)
+        .order_by(ConsultorPerfil.id.asc())
+        .all()
+    )
+
+    return jsonify({
+        "consultor": {
+            "id": consultor.id,
+            "nombre": consultor.nombre,
+            "usuario": consultor.usuario,
+        },
+        "perfiles": [consultor_perfil_to_dict(x) for x in rows]
+    }), 200
+
+@bp.route("/consultores/<int:consultor_id>/perfiles", methods=["PUT"])
+@permission_required("CONSULTORES_EDITAR")
+def save_consultor_perfiles(consultor_id):
+    Consultor.query.get_or_404(consultor_id)
+
+    data = request.get_json(silent=True) or {}
+    rows = data.get("rows") or []
+
+    if not isinstance(rows, list):
+        return jsonify({"mensaje": "rows debe ser una lista"}), 400
+
+    seen = set()
+    rows_clean = []
+
+    for idx, row in enumerate(rows):
+        perfil_id = row.get("perfil_id")
+        try:
+            perfil_id = int(perfil_id)
+        except Exception:
+            return jsonify({"mensaje": f"perfil_id inválido en fila {idx}"}), 400
+
+        key = perfil_id
+        if key in seen:
+            return jsonify({"mensaje": f"Perfil duplicado en la misma carga: {perfil_id}"}), 400
+        seen.add(key)
+
+        perfil = Perfil.query.get(perfil_id)
+        if not perfil:
+            return jsonify({"mensaje": f"Perfil no existe: {perfil_id}"}), 400
+
+        fecha_inicio = _parse_date_safe(row.get("fecha_inicio"))
+        fecha_fin = _parse_date_safe(row.get("fecha_fin"))
+
+        if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
+            return jsonify({
+                "mensaje": f"La fecha fin no puede ser menor que la fecha inicio para el perfil {perfil.nombre}"
+            }), 400
+
+        rows_clean.append({
+            "perfil_id": perfil_id,
+            "activo": _to_bool2(row.get("activo"), default=True),
+            "fecha_inicio": fecha_inicio,
+            "fecha_fin": fecha_fin,
+        })
+
+    ConsultorPerfil.query.filter_by(consultor_id=consultor_id).delete()
+
+    for row in rows_clean:
+        db.session.add(ConsultorPerfil(
+            consultor_id=consultor_id,
+            perfil_id=row["perfil_id"],
+            activo=row["activo"],
+            fecha_inicio=row["fecha_inicio"],
+            fecha_fin=row["fecha_fin"],
+        ))
+
+    db.session.commit()
+
+    rows_db = (
+        ConsultorPerfil.query.options(
+            joinedload(ConsultorPerfil.consultor),
+            joinedload(ConsultorPerfil.perfil),
+        )
+        .filter_by(consultor_id=consultor_id)
+        .order_by(ConsultorPerfil.id.asc())
+        .all()
+    )
+
+    return jsonify({
+        "mensaje": "Perfiles del consultor actualizados",
+        "perfiles": [consultor_perfil_to_dict(x) for x in rows_db]
+    }), 200
+
+@bp.route("/perfiles/<int:perfil_id>/consultores", methods=["GET"])
+@permission_required("PERFILES_VER")
+def get_perfil_consultores(perfil_id):
+    perfil = Perfil.query.get_or_404(perfil_id)
+
+    rows = (
+        ConsultorPerfil.query.options(
+            joinedload(ConsultorPerfil.consultor),
+            joinedload(ConsultorPerfil.perfil),
+        )
+        .filter(ConsultorPerfil.perfil_id == perfil_id)
+        .order_by(ConsultorPerfil.id.asc())
+        .all()
+    )
+
+    return jsonify({
+        "perfil": perfil_to_dict(perfil),
+        "consultores": [consultor_perfil_to_dict(x) for x in rows]
+    }), 200

@@ -111,6 +111,13 @@ class Consultor(db.Model):
         lazy="joined"
     )
 
+    perfiles = relationship(
+        "ConsultorPerfil",
+        back_populates="consultor",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+
     @hybrid_property
     def permisos(self):
         permisos_finales = set()
@@ -942,6 +949,13 @@ class Perfil(db.Model):
         lazy="select"
     )
 
+    consultores = relationship(
+        "ConsultorPerfil",
+        back_populates="perfil",
+        cascade="all, delete-orphan",
+        lazy="select"
+    )
+
     def __repr__(self):
         return f"<Perfil id={self.id} codigo={self.codigo!r} nombre={self.nombre!r}>"
 
@@ -982,3 +996,42 @@ class ModuloPerfil(db.Model):
 
     def __repr__(self):
         return f"<ModuloPerfil modulo_id={self.modulo_id} perfil_id={self.perfil_id}>"
+    
+class ConsultorPerfil(db.Model):
+    __tablename__ = "consultor_perfil"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    consultor_id = db.Column(
+        db.Integer,
+        db.ForeignKey("consultor.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    perfil_id = db.Column(
+        db.Integer,
+        db.ForeignKey("perfil.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+    fecha_inicio = db.Column(db.Date, nullable=True)
+    fecha_fin = db.Column(db.Date, nullable=True)
+
+    created_at = db.Column(db.DateTime, nullable=True, server_default=text("current_timestamp()"))
+    updated_at = db.Column(
+        db.DateTime,
+        nullable=True,
+        server_default=text("current_timestamp()"),
+        server_onupdate=text("current_timestamp()")
+    )
+
+    consultor = relationship("Consultor", back_populates="perfiles", lazy="joined")
+    perfil = relationship("Perfil", back_populates="consultores", lazy="joined")
+
+    __table_args__ = (
+        db.UniqueConstraint("consultor_id", "perfil_id", name="uq_consultor_perfil"),
+    )
+
+    def __repr__(self):
+        return f"<ConsultorPerfil consultor_id={self.consultor_id} perfil_id={self.perfil_id}>"

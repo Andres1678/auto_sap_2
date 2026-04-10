@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Swal from "sweetalert2";
 import "./ConsultoresTable.css";
 import { jfetch } from "./lib/api";
+import ModalConsultorPerfiles from "./ModalConsultorPerfiles";
 
 const isActiveValue = (v) => {
   if (v === null || v === undefined) return true;
@@ -43,6 +44,9 @@ export default function ConsultoresTable() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(emptyForm());
+
+  const [consultorPerfilesOpen, setConsultorPerfilesOpen] = useState(false);
+  const [consultorPerfilesSelected, setConsultorPerfilesSelected] = useState(null);
 
   const fetchCatalogos = useCallback(async () => {
     try {
@@ -243,6 +247,20 @@ export default function ConsultoresTable() {
     }
   };
 
+  const openConsultorPerfiles = (consultor) => {
+    setConsultorPerfilesSelected(consultor);
+    setConsultorPerfilesOpen(true);
+  };
+
+  const closeConsultorPerfiles = (updated = false) => {
+    setConsultorPerfilesOpen(false);
+    setConsultorPerfilesSelected(null);
+
+    if (updated) {
+      fetchConsultores?.();
+    }
+  };
+
   return (
     <div className="cst-wrapper">
       <h2 className="cst-title">Consultores</h2>
@@ -345,6 +363,14 @@ export default function ConsultoresTable() {
                       </button>
                       <button className="cst-delete" onClick={() => eliminar(c.id)} title="Eliminar">
                         🗑️
+                      </button>
+                      <button
+                        className="cst-edit"
+                        type="button"
+                        title="Perfiles"
+                        onClick={() => openConsultorPerfiles(c)}
+                      >
+                        👤
                       </button>
                     </div>
                   </td>
@@ -470,6 +496,15 @@ export default function ConsultoresTable() {
           </div>
         </div>
       )}
+
+      {consultorPerfilesOpen && consultorPerfilesSelected && (
+        <ModalConsultorPerfiles
+          isOpen={consultorPerfilesOpen}
+          onClose={closeConsultorPerfiles}
+          consultor={consultorPerfilesSelected}
+        />
+      )}
+
     </div>
   );
 }
