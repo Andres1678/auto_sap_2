@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import Swal from "sweetalert2";
 import "./ConsultoresTable.css";
 import { jfetch } from "./lib/api";
-import ModalConsultorPerfiles from "./ModalConsultorPerfiles";
+import ModalConsultorPerfiles from "./ModalConsultorPerfil";
 
 const isActiveValue = (v) => {
   if (v === null || v === undefined) return true;
