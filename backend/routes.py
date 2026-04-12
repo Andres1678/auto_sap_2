@@ -5341,198 +5341,6 @@ def _norm_doc(s: str) -> str:
     s = (s or "").strip()
     return re.sub(r"[^\d]", "", s)
 
-
-@bp.route("/presupuestos/consultor/import-excel", methods=["POST"])
-def import_presupuesto_consultor_excel():
-    try:
-        f = request.files.get("file")
-        if not f:
-            return jsonify({"error": "Falta archivo (file)"}), 400
-
-        # -------------------------
-        # anio / mes
-        # -------------------------
-        anio = request.form.get("anio")
-        mes = request.form.get("mes")
-
-        try:
-            anio = int(str(anio).strip()) if anio else None
-        except Exception:
-            anio = None
-
-        try:
-            mes = int(str(mes).strip()) if mes else None
-        except Exception:
-            mes = None
-
-        now = datetime.now()
-        if not anio:
-            anio = now.year
-        if not mes or mes < 1 or mes > 12:
-            mes = now.month
-
-        # -------------------------
-        # horas base calculadas automáticamente
-        # -------------------------
-        meta_mes_info = _meta_horas_en_rango(*_month_bounds_local(anio, mes))
-        horas_base = meta_mes_info["horas"]
-
-        # -------------------------
-        # columnas / sheet
-        # -------------------------
-        sheet_name = (request.form.get("sheet") or "").strip() or None
-        col_nombre = (request.form.get("col_nombre") or "NOMBRE COLABORADOR").strip()
-        col_valor = (request.form.get("col_valor") or "VR PERFIL").strip()
-        col_cedula = (request.form.get("col_cedula") or "CEDULA").strip()
-
-        wb = load_workbook(f, data_only=True)
-        ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb.worksheets[0]
-
-        headers = {}
-        for idx, cell in enumerate(ws[1], start=1):
-            key = (str(cell.value).strip() if cell.value is not None else "")
-            if key:
-                headers[key.upper()] = idx
-
-        ci_nombre = _col_idx(headers, col_nombre)
-        ci_valor = _col_idx(headers, col_valor)
-        ci_cedula = _col_idx(headers, col_cedula)
-
-        if ci_valor is None:
-            ci_valor = _col_idx(headers, "VR PERFIL")
-
-        if ci_nombre is None or ci_valor is None:
-            return jsonify({
-                "error": "No encontré columnas requeridas",
-                "detalle": {
-                    "col_nombre": col_nombre,
-                    "col_valor": col_valor,
-                    "col_cedula": col_cedula,
-                    "headers_encontrados": list(headers.keys())[:60]
-                }
-            }), 400
-
-        consultores = Consultor.query.all()
-
-        by_name = {}
-        by_doc = {}
-
-        for c in consultores:
-            nombre_norm = _norm_name(c.nombre) if getattr(c, "nombre", None) else ""
-            if nombre_norm:
-                by_name[nombre_norm] = c
-
-            cedula_norm = _norm_doc(str(getattr(c, "cedula", "") or ""))
-            if cedula_norm:
-                by_doc[cedula_norm] = c
-
-        updated = 0
-        created = 0
-        not_found = []
-        invalid_rows = []
-        seen = set()
-
-        # -------------------------
-        # recorrido excel
-        # -------------------------
-        for r in range(2, ws.max_row + 1):
-            raw_name = ws.cell(row=r, column=ci_nombre).value
-            raw_val = ws.cell(row=r, column=ci_valor).value
-            raw_doc = ws.cell(row=r, column=ci_cedula).value if ci_cedula else None
-
-            if raw_name is None and raw_val is None and raw_doc is None:
-                continue
-
-            vr = _parse_money_to_decimal(raw_val)
-            if vr <= 0:
-                invalid_rows.append({
-                    "row": r,
-                    "nombre": str(raw_name or ""),
-                    "valor": str(raw_val or "")
-                })
-                continue
-
-            c = None
-
-            doc_norm = _norm_doc(str(raw_doc or ""))
-            if doc_norm:
-                c = by_doc.get(doc_norm)
-
-            if not c:
-                name_norm = _norm_name(str(raw_name or ""))
-                if name_norm:
-                    c = by_name.get(name_norm)
-
-            if not c:
-                not_found.append({
-                    "row": r,
-                    "nombre": str(raw_name or ""),
-                    "cedula": str(raw_doc or ""),
-                    "valor": str(raw_val or "")
-                })
-                continue
-
-            key = f"{c.id}"
-            if key in seen:
-                continue
-            seen.add(key)
-
-            existente = (
-                ConsultorPresupuesto.query
-                .filter_by(
-                    consultor_id=c.id,
-                    anio=anio,
-                    mes=mes,
-                    vigente=True
-                )
-                .order_by(ConsultorPresupuesto.id.desc())
-                .first()
-            )
-
-            if existente:
-                existente.vr_perfil = vr
-                existente.horas_base_mes = horas_base
-                updated += 1
-            else:
-                # apagar vigentes SOLO del mismo periodo
-                db.session.query(ConsultorPresupuesto).filter_by(
-                    consultor_id=c.id,
-                    anio=anio,
-                    mes=mes,
-                    vigente=True
-                ).update({"vigente": False})
-
-                db.session.add(ConsultorPresupuesto(
-                    consultor_id=c.id,
-                    anio=anio,
-                    mes=mes,
-                    vr_perfil=vr,
-                    horas_base_mes=horas_base,
-                    vigente=True
-                ))
-                created += 1
-
-        db.session.commit()
-
-        return jsonify({
-            "ok": True,
-            "anio": anio,
-            "mes": mes,
-            "horasBaseCalculadas": float(horas_base),
-            "diasLaborablesMes": meta_mes_info["dias_laborables"],
-            "diasFestivosMes": meta_mes_info["dias_festivos"],
-            "created": created,
-            "updated": updated,
-            "notFoundCount": len(not_found),
-            "invalidCount": len(invalid_rows),
-            "notFound": not_found[:50],
-            "invalidRows": invalid_rows[:50]
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        app.logger.exception("❌ Error en /presupuestos/consultor/import-excel")
-        return jsonify({"error": str(e)}), 500
     
 @bp.route("/me", methods=["GET"])
 def me():
@@ -8944,6 +8752,9 @@ def import_presupuesto_consultor_excel():
         if not f:
             return jsonify({"error": "Falta archivo (file)"}), 400
 
+        # -------------------------
+        # anio / mes
+        # -------------------------
         anio = request.form.get("anio")
         mes = request.form.get("mes")
 
@@ -8963,51 +8774,71 @@ def import_presupuesto_consultor_excel():
         if not mes or mes < 1 or mes > 12:
             mes = now.month
 
-        # ✅ ahora las horas base del mes se calculan automáticamente
+        # -------------------------
+        # horas base calculadas automáticamente
+        # -------------------------
         meta_mes_info = _meta_horas_en_rango(*_month_bounds_local(anio, mes))
         horas_base = meta_mes_info["horas"]
 
-        sheet_name = (request.form.get("sheet") or "").strip()
-        col_nombre = (request.form.get("col_nombre") or "NOMBRE COLABORADOR").strip().upper()
-        col_cedula = (request.form.get("col_cedula") or "CEDULA").strip().upper()
-        col_valor = (request.form.get("col_valor") or "VR PERFIL").strip().upper()
+        # -------------------------
+        # columnas / sheet
+        # -------------------------
+        sheet_name = (request.form.get("sheet") or "").strip() or None
+        col_nombre = (request.form.get("col_nombre") or "NOMBRE COLABORADOR").strip()
+        col_valor = (request.form.get("col_valor") or "VR PERFIL").strip()
+        col_cedula = (request.form.get("col_cedula") or "CEDULA").strip()
 
-        wb = load_workbook(f, data_only=True, read_only=True)
-        ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb[wb.sheetnames[0]]
+        wb = load_workbook(f, data_only=True)
+        ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb.worksheets[0]
 
-        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
         headers = {}
-        for idx, h in enumerate(header_row, start=1):
-            key = str(h or "").strip().upper()
+        for idx, cell in enumerate(ws[1], start=1):
+            key = (str(cell.value).strip() if cell.value is not None else "")
             if key:
-                headers[key] = idx
+                headers[key.upper()] = idx
 
         ci_nombre = _col_idx(headers, col_nombre)
-        ci_cedula = _col_idx(headers, col_cedula)
         ci_valor = _col_idx(headers, col_valor)
+        ci_cedula = _col_idx(headers, col_cedula)
 
-        if not ci_nombre or not ci_valor:
+        if ci_valor is None:
+            ci_valor = _col_idx(headers, "VR PERFIL")
+
+        if ci_nombre is None or ci_valor is None:
             return jsonify({
-                "error": f"No encontré columnas requeridas. Nombre='{col_nombre}', Valor='{col_valor}'"
+                "error": "No encontré columnas requeridas",
+                "detalle": {
+                    "col_nombre": col_nombre,
+                    "col_valor": col_valor,
+                    "col_cedula": col_cedula,
+                    "headers_encontrados": list(headers.keys())[:60]
+                }
             }), 400
 
         consultores = Consultor.query.all()
-        by_name = {_norm_name(c.nombre): c for c in consultores if c.nombre}
-        by_doc = {}
-        for c in consultores:
-            ced = _norm_doc(str(getattr(c, "cedula", "") or ""))
-            if ced:
-                by_doc[ced] = c
 
-        created = 0
+        by_name = {}
+        by_doc = {}
+
+        for c in consultores:
+            nombre_norm = _norm_name(c.nombre) if getattr(c, "nombre", None) else ""
+            if nombre_norm:
+                by_name[nombre_norm] = c
+
+            cedula_norm = _norm_doc(str(getattr(c, "cedula", "") or ""))
+            if cedula_norm:
+                by_doc[cedula_norm] = c
+
         updated = 0
+        created = 0
         not_found = []
         invalid_rows = []
         seen = set()
 
-        max_row = ws.max_row or 0
-
-        for r in range(2, max_row + 1):
+        # -------------------------
+        # recorrido excel
+        # -------------------------
+        for r in range(2, ws.max_row + 1):
             raw_name = ws.cell(row=r, column=ci_nombre).value
             raw_val = ws.cell(row=r, column=ci_valor).value
             raw_doc = ws.cell(row=r, column=ci_cedula).value if ci_cedula else None
@@ -9025,13 +8856,15 @@ def import_presupuesto_consultor_excel():
                 continue
 
             c = None
-            doc = _norm_doc(str(raw_doc or ""))
-            name = _norm_name(str(raw_name or ""))
 
-            if doc:
-                c = by_doc.get(doc)
-            if not c and name:
-                c = by_name.get(name)
+            doc_norm = _norm_doc(str(raw_doc or ""))
+            if doc_norm:
+                c = by_doc.get(doc_norm)
+
+            if not c:
+                name_norm = _norm_name(str(raw_name or ""))
+                if name_norm:
+                    c = by_name.get(name_norm)
 
             if not c:
                 not_found.append({
@@ -9064,6 +8897,7 @@ def import_presupuesto_consultor_excel():
                 existente.horas_base_mes = horas_base
                 updated += 1
             else:
+                # apagar vigentes SOLO del mismo periodo
                 db.session.query(ConsultorPresupuesto).filter_by(
                     consultor_id=c.id,
                     anio=anio,
@@ -9100,9 +8934,9 @@ def import_presupuesto_consultor_excel():
 
     except Exception as e:
         db.session.rollback()
-        current_app.logger.exception("❌ Error en /presupuestos/consultor/import-excel")
+        app.logger.exception("❌ Error en /presupuestos/consultor/import-excel")
         return jsonify({"error": str(e)}), 500
-
+    
 # =========================================================
 # RESUMEN DE COSTO POR CONSULTOR
 # =========================================================
