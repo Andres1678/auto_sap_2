@@ -14,8 +14,11 @@ const getUserData = () => {
 const hasPerm = (code) => {
   const u = getUserData();
   const perms = u?.permisos || [];
-  // si permisos es array de objetos, soporta ambos
-  const codes = Array.isArray(perms) ? perms.map(p => (typeof p === "string" ? p : p?.codigo)).filter(Boolean) : [];
+  const codes = Array.isArray(perms)
+    ? perms
+        .map((p) => (typeof p === "string" ? p : p?.codigo))
+        .filter(Boolean)
+    : [];
   return codes.includes(code);
 };
 
@@ -24,7 +27,6 @@ export default function PresupuestoConsultorImport() {
   const [anio, setAnio] = useState(today.getFullYear());
   const [mes, setMes] = useState(today.getMonth() + 1);
 
-  const [horasBase, setHorasBase] = useState(160);
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -35,33 +37,54 @@ export default function PresupuestoConsultorImport() {
 
   const disabled = useMemo(() => loading || !file, [loading, file]);
 
+  const resetInput = () => {
+    setFile(null);
+    const input = document.getElementById("budgetFileInput");
+    if (input) input.value = "";
+  };
+
   const subir = async () => {
     if (!hasPerm("PRESUPUESTO_CONSULTOR_IMPORTAR")) {
-      Swal.fire({ icon: "error", title: "Sin permiso", text: "No puedes importar presupuestos." });
-      return;
-    }
-    if (!file) {
-      Swal.fire({ icon: "warning", title: "Falta archivo", text: "Selecciona el Excel." });
+      Swal.fire({
+        icon: "error",
+        title: "Sin permiso",
+        text: "No puedes importar presupuestos.",
+      });
       return;
     }
 
-    // Validación básica anio/mes
-    const anioNum = Number(anio || 0);
-    const mesNum = Number(mes || 0);
-    if (!anioNum || anioNum < 2000) {
-      Swal.fire({ icon: "warning", title: "Año inválido", text: "Ingresa un año válido." });
+    if (!file) {
+      Swal.fire({
+        icon: "warning",
+        title: "Falta archivo",
+        text: "Selecciona el Excel.",
+      });
       return;
     }
+
+    const anioNum = Number(anio || 0);
+    const mesNum = Number(mes || 0);
+
+    if (!anioNum || anioNum < 2000) {
+      Swal.fire({
+        icon: "warning",
+        title: "Año inválido",
+        text: "Ingresa un año válido.",
+      });
+      return;
+    }
+
     if (!mesNum || mesNum < 1 || mesNum > 12) {
-      Swal.fire({ icon: "warning", title: "Mes inválido", text: "Mes debe estar entre 1 y 12." });
+      Swal.fire({
+        icon: "warning",
+        title: "Mes inválido",
+        text: "Mes debe estar entre 1 y 12.",
+      });
       return;
     }
 
     const fd = new FormData();
     fd.append("file", file);
-    fd.append("horas_base_mes", String(horasBase));
-
-    // ✅ NUEVO: periodo (evita anio/mes NULL en backend)
     fd.append("anio", String(anioNum));
     fd.append("mes", String(mesNum));
 
@@ -71,6 +94,7 @@ export default function PresupuestoConsultorImport() {
     if (colValor.trim()) fd.append("col_valor", colValor.trim());
 
     setLoading(true);
+
     try {
       const res = await jfetch("/presupuestos/consultor/import-excel", {
         method: "POST",
@@ -78,10 +102,15 @@ export default function PresupuestoConsultorImport() {
       });
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || `Error ${res.status}`);
+      if (!res.ok) {
+        throw new Error(data?.error || `Error ${res.status}`);
+      }
 
       const nf = (data?.notFound || [])
-        .map((x) => `Fila ${x.row}: ${x.nombre}${x.cedula ? ` (CC ${x.cedula})` : ""}`)
+        .map(
+          (x) =>
+            `Fila ${x.row}: ${x.nombre}${x.cedula ? ` (CC ${x.cedula})` : ""}`
+        )
         .join("<br/>");
 
       const inv = (data?.invalidRows || [])
@@ -94,22 +123,27 @@ export default function PresupuestoConsultorImport() {
         html: `
           <div style="text-align:left">
             <b>Periodo:</b> ${data?.anio ?? anioNum}-${String(data?.mes ?? mesNum).padStart(2, "0")}<br/>
-            <b>Creados:</b> ${data.created ?? 0}<br/>
-            <b>Actualizados:</b> ${data.updated ?? 0}<br/>
-            <b>No encontrados:</b> ${data.notFoundCount ?? 0}<br/>
-            <b>Inválidos:</b> ${data.invalidCount ?? 0}<br/>
-            ${nf ? `<hr/><b>No encontrados (primeros 50):</b><br/>${nf}` : ""}
-            ${inv ? `<hr/><b>Inválidos (primeros 50):</b><br/>${inv}` : ""}
+            <b>Horas base calculadas:</b> ${data?.horasBaseCalculadas ?? "N/D"}<br/>
+            <b>Días laborables:</b> ${data?.diasLaborablesMes ?? "N/D"}<br/>
+            <b>Festivos:</b> ${data?.diasFestivosMes ?? "N/D"}<br/>
+            <b>Creados:</b> ${data?.created ?? 0}<br/>
+            <b>Actualizados:</b> ${data?.updated ?? 0}<br/>
+            <b>No encontrados:</b> ${data?.notFoundCount ?? 0}<br/>
+            <b>Inválidos:</b> ${data?.invalidCount ?? 0}<br/>
+            ${nf ? `<hr/><b>No encontrados:</b><br/>${nf}` : ""}
+            ${inv ? `<hr/><b>Inválidos:</b><br/>${inv}` : ""}
           </div>
         `,
-        width: 720,
+        width: 760,
       });
 
-      setFile(null);
-      const input = document.getElementById("budgetFileInput");
-      if (input) input.value = "";
+      resetInput();
     } catch (e) {
-      Swal.fire({ icon: "error", title: "Error", text: e.message || "No se pudo importar" });
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: e.message || "No se pudo importar",
+      });
     } finally {
       setLoading(false);
     }
@@ -117,15 +151,16 @@ export default function PresupuestoConsultorImport() {
 
   return (
     <div className="pci-shell">
-      <h2 className="pci-title">Importar presupuesto por consultor (vigente)</h2>
+      <h2 className="pci-title">Importar presupuesto por consultor y periodo</h2>
+
       <p className="pci-sub">
-        Sube el Excel con <b>{colNombre}</b>, <b>{colCedula}</b> y <b>{colValor}</b>. El último cargado queda vigente
-        (se mantiene hasta que cargues uno nuevo).
+        Sube el Excel con <b>{colNombre}</b>, <b>{colCedula}</b> y{" "}
+        <b>{colValor}</b>. El sistema calculará automáticamente las horas base
+        del mes usando días hábiles y festivos de Colombia.
       </p>
 
       <div className="pci-card">
         <div className="pci-grid">
-          {/* ✅ NUEVO: periodo */}
           <div className="pci-field col-2">
             <label>Año</label>
             <input
@@ -149,17 +184,7 @@ export default function PresupuestoConsultorImport() {
             />
           </div>
 
-          <div className="pci-field col-3">
-            <label>Horas base (para calcular $/hora)</label>
-            <input
-              className="pci-input"
-              type="number"
-              value={horasBase}
-              onChange={(e) => setHorasBase(Number(e.target.value))}
-            />
-          </div>
-
-          <div className="pci-field col-4">
+          <div className="pci-field col-5">
             <label>Archivo Excel</label>
             <input
               id="budgetFileInput"
@@ -212,18 +237,21 @@ export default function PresupuestoConsultorImport() {
               className="pci-input"
               value={colValor}
               onChange={(e) => setColValor(e.target.value)}
-              placeholder="VR PERFIL / VR PERFIL NOVIEMBRE"
+              placeholder="VR PERFIL"
             />
           </div>
         </div>
 
         <div className="pci-hint">
-          <b>Columnas típicas del Excel:</b>
+          <b>Qué hace este cargue:</b>
           <br />
-          NOMBRE SERV DE HITSS, NOMBRE SERV DE CLARO CM, <b>NOMBRE COLABORADOR</b>, <b>CEDULA</b>, <b>VR PERFIL</b>
-          (ej: “VR PERFIL NOVIEMBRE”).
+          Guarda el salario o presupuesto del consultor para el periodo indicado.
           <br />
-          <b>Tip:</b> si en DEV no existen todos los consultores, verás “No encontrados”; en PROD sí matcheará.
+          <b>Qué ya no hace:</b>
+          no fija manualmente el valor hora.
+          <br />
+          <b>Qué hará el sistema después:</b>
+          calculará el valor hora automáticamente cuando filtres por mes o por rango.
         </div>
       </div>
     </div>

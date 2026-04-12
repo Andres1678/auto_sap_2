@@ -5283,6 +5283,65 @@ def presupuestos_consultor_vigentes():
 
     return jsonify(out), 200
 
+def _month_bounds_local(anio: int, mes: int):
+    start = date(anio, mes, 1)
+    if mes == 12:
+        end = date(anio + 1, 1, 1) - timedelta(days=1)
+    else:
+        end = date(anio, mes + 1, 1) - timedelta(days=1)
+    return start, end
+
+
+def _cap_colombia_holidays_for_years(years):
+    out = set()
+    for y in set(int(x) for x in years):
+        for h in holidays.CO(years=[y]).keys():
+            out.add(h)
+    return out
+
+
+def _cap_is_standard_workday(d: date, co_holidays):
+    return d.weekday() < 5 and d not in co_holidays
+
+
+def _cap_meta_hours_for_day(d: date):
+    # Regla actual del sistema:
+    # lunes = 8h, martes a viernes = 9h
+    if d.weekday() == 0:
+        return Decimal("8.00")
+    return Decimal("9.00")
+
+
+def _meta_horas_en_rango(start_date: date, end_date: date):
+    years = {start_date.year, end_date.year}
+    co_holidays = _cap_colombia_holidays_for_years(years)
+
+    total = Decimal("0.00")
+    dias_laborables = 0
+    dias_festivos = 0
+
+    cur = start_date
+    while cur <= end_date:
+        if cur.weekday() < 5:
+            if cur in co_holidays:
+                dias_festivos += 1
+            else:
+                dias_laborables += 1
+                total += _cap_meta_hours_for_day(cur)
+        cur += timedelta(days=1)
+
+    return {
+        "horas": total.quantize(Decimal("0.01")),
+        "dias_laborables": dias_laborables,
+        "dias_festivos": dias_festivos,
+    }
+
+
+def _norm_doc(s: str) -> str:
+    s = (s or "").strip()
+    return re.sub(r"[^\d]", "", s)
+
+
 @bp.route("/presupuestos/consultor/import-excel", methods=["POST"])
 def import_presupuesto_consultor_excel():
     try:
@@ -5291,27 +5350,19 @@ def import_presupuesto_consultor_excel():
             return jsonify({"error": "Falta archivo (file)"}), 400
 
         # -------------------------
-        # horas base
-        # -------------------------
-        horas_base = request.form.get("horas_base_mes")
-        horas_base = Decimal(str(horas_base).strip()) if horas_base else Decimal("160.00")
-        if horas_base <= 0:
-            horas_base = Decimal("160.00")
-
-        # -------------------------
-        # ✅ anio / mes (evita NULL)
+        # anio / mes
         # -------------------------
         anio = request.form.get("anio")
-        mes  = request.form.get("mes")
+        mes = request.form.get("mes")
 
         try:
             anio = int(str(anio).strip()) if anio else None
-        except:
+        except Exception:
             anio = None
 
         try:
             mes = int(str(mes).strip()) if mes else None
-        except:
+        except Exception:
             mes = None
 
         now = datetime.now()
@@ -5321,11 +5372,17 @@ def import_presupuesto_consultor_excel():
             mes = now.month
 
         # -------------------------
+        # horas base calculadas automáticamente
+        # -------------------------
+        meta_mes_info = _meta_horas_en_rango(*_month_bounds_local(anio, mes))
+        horas_base = meta_mes_info["horas"]
+
+        # -------------------------
         # columnas / sheet
         # -------------------------
         sheet_name = (request.form.get("sheet") or "").strip() or None
         col_nombre = (request.form.get("col_nombre") or "NOMBRE COLABORADOR").strip()
-        col_valor  = (request.form.get("col_valor")  or "VR PERFIL").strip()
+        col_valor = (request.form.get("col_valor") or "VR PERFIL").strip()
         col_cedula = (request.form.get("col_cedula") or "CEDULA").strip()
 
         wb = load_workbook(f, data_only=True)
@@ -5338,7 +5395,7 @@ def import_presupuesto_consultor_excel():
                 headers[key.upper()] = idx
 
         ci_nombre = _col_idx(headers, col_nombre)
-        ci_valor  = _col_idx(headers, col_valor)
+        ci_valor = _col_idx(headers, col_valor)
         ci_cedula = _col_idx(headers, col_cedula)
 
         if ci_valor is None:
@@ -5356,7 +5413,18 @@ def import_presupuesto_consultor_excel():
             }), 400
 
         consultores = Consultor.query.all()
-        by_name = {_norm_name(c.nombre): c for c in consultores}
+
+        by_name = {}
+        by_doc = {}
+
+        for c in consultores:
+            nombre_norm = _norm_name(c.nombre) if getattr(c, "nombre", None) else ""
+            if nombre_norm:
+                by_name[nombre_norm] = c
+
+            cedula_norm = _norm_doc(str(getattr(c, "cedula", "") or ""))
+            if cedula_norm:
+                by_doc[cedula_norm] = c
 
         updated = 0
         created = 0
@@ -5369,24 +5437,39 @@ def import_presupuesto_consultor_excel():
         # -------------------------
         for r in range(2, ws.max_row + 1):
             raw_name = ws.cell(row=r, column=ci_nombre).value
-            raw_val  = ws.cell(row=r, column=ci_valor).value
-            raw_doc  = ws.cell(row=r, column=ci_cedula).value if ci_cedula else None
+            raw_val = ws.cell(row=r, column=ci_valor).value
+            raw_doc = ws.cell(row=r, column=ci_cedula).value if ci_cedula else None
 
             if raw_name is None and raw_val is None and raw_doc is None:
                 continue
 
             vr = _parse_money_to_decimal(raw_val)
             if vr <= 0:
-                invalid_rows.append({"row": r, "nombre": str(raw_name or ""), "valor": str(raw_val or "")})
+                invalid_rows.append({
+                    "row": r,
+                    "nombre": str(raw_name or ""),
+                    "valor": str(raw_val or "")
+                })
                 continue
 
             c = None
-            name = _norm_name(str(raw_name or ""))
-            if name:
-                c = by_name.get(name)
+
+            doc_norm = _norm_doc(str(raw_doc or ""))
+            if doc_norm:
+                c = by_doc.get(doc_norm)
 
             if not c:
-                not_found.append({"row": r, "nombre": str(raw_name or ""), "cedula": str(raw_doc or ""), "valor": str(raw_val or "")})
+                name_norm = _norm_name(str(raw_name or ""))
+                if name_norm:
+                    c = by_name.get(name_norm)
+
+            if not c:
+                not_found.append({
+                    "row": r,
+                    "nombre": str(raw_name or ""),
+                    "cedula": str(raw_doc or ""),
+                    "valor": str(raw_val or "")
+                })
                 continue
 
             key = f"{c.id}"
@@ -5394,24 +5477,40 @@ def import_presupuesto_consultor_excel():
                 continue
             seen.add(key)
 
-            # ✅ solo apagar vigentes del MISMO periodo (anio/mes)
-            db.session.query(ConsultorPresupuesto).filter_by(
-                consultor_id=c.id,
-                anio=anio,
-                mes=mes,
-                vigente=True
-            ).update({"vigente": False})
+            existente = (
+                ConsultorPresupuesto.query
+                .filter_by(
+                    consultor_id=c.id,
+                    anio=anio,
+                    mes=mes,
+                    vigente=True
+                )
+                .order_by(ConsultorPresupuesto.id.desc())
+                .first()
+            )
 
-            # ✅ crear nuevo vigente para ese periodo
-            db.session.add(ConsultorPresupuesto(
-                consultor_id=c.id,
-                anio=anio,
-                mes=mes,
-                vr_perfil=vr,
-                horas_base_mes=horas_base,
-                vigente=True
-            ))
-            created += 1
+            if existente:
+                existente.vr_perfil = vr
+                existente.horas_base_mes = horas_base
+                updated += 1
+            else:
+                # apagar vigentes SOLO del mismo periodo
+                db.session.query(ConsultorPresupuesto).filter_by(
+                    consultor_id=c.id,
+                    anio=anio,
+                    mes=mes,
+                    vigente=True
+                ).update({"vigente": False})
+
+                db.session.add(ConsultorPresupuesto(
+                    consultor_id=c.id,
+                    anio=anio,
+                    mes=mes,
+                    vr_perfil=vr,
+                    horas_base_mes=horas_base,
+                    vigente=True
+                ))
+                created += 1
 
         db.session.commit()
 
@@ -5419,6 +5518,9 @@ def import_presupuesto_consultor_excel():
             "ok": True,
             "anio": anio,
             "mes": mes,
+            "horasBaseCalculadas": float(horas_base),
+            "diasLaborablesMes": meta_mes_info["dias_laborables"],
+            "diasFestivosMes": meta_mes_info["dias_festivos"],
             "created": created,
             "updated": updated,
             "notFoundCount": len(not_found),
@@ -5429,7 +5531,7 @@ def import_presupuesto_consultor_excel():
 
     except Exception as e:
         db.session.rollback()
-        current_app.logger.exception("❌ Error en /presupuestos/consultor/import-excel")
+        app.logger.exception("❌ Error en /presupuestos/consultor/import-excel")
         return jsonify({"error": str(e)}), 500
     
 @bp.route("/me", methods=["GET"])
@@ -8604,3 +8706,676 @@ def get_perfil_consultores(perfil_id):
         "perfil": perfil_to_dict(perfil),
         "consultores": [consultor_perfil_to_dict(x) for x in rows]
     }), 200
+
+# =========================================================
+# HELPERS COSTO / PRESUPUESTO
+# =========================================================
+
+def _to_date_safe(value):
+    if isinstance(value, date):
+        return value
+    s = str(value or "").strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(s[:10], fmt).date()
+        except Exception:
+            continue
+    return None
+
+def _daterange(start_date: date, end_date: date):
+    cur = start_date
+    while cur <= end_date:
+        yield cur
+        cur += timedelta(days=1)
+
+def _month_bounds_local(anio: int, mes: int):
+    start = date(anio, mes, 1)
+    if mes == 12:
+        end = date(anio + 1, 1, 1) - timedelta(days=1)
+    else:
+        end = date(anio, mes + 1, 1) - timedelta(days=1)
+    return start, end
+
+def _iter_months_between(start_date: date, end_date: date):
+    cur = date(start_date.year, start_date.month, 1)
+    stop = date(end_date.year, end_date.month, 1)
+    while cur <= stop:
+        yield cur.year, cur.month
+        if cur.month == 12:
+            cur = date(cur.year + 1, 1, 1)
+        else:
+            cur = date(cur.year, cur.month + 1, 1)
+
+def _cap_is_standard_workday(d: date, co_holidays):
+    # Lunes=0 ... Domingo=6
+    return d.weekday() < 5 and d not in co_holidays
+
+def _cap_meta_hours_for_day(d: date):
+    # regla actual del sistema:
+    # lunes 8h, martes-viernes 9h
+    if d.weekday() == 0:
+        return Decimal("8.00")
+    return Decimal("9.00")
+
+def _cap_colombia_holidays_for_years(years):
+    import holidays
+    out = set()
+    for y in set(int(x) for x in years):
+        for h in holidays.CO(years=[y]).keys():
+            out.add(h)
+    return out
+
+def _meta_horas_en_rango(start_date: date, end_date: date):
+    years = {start_date.year, end_date.year}
+    co_holidays = _cap_colombia_holidays_for_years(years)
+    total = Decimal("0.00")
+    dias_laborables = 0
+    dias_festivos = 0
+
+    for d in _daterange(start_date, end_date):
+        if d.weekday() >= 5:
+            continue
+        if d in co_holidays:
+            dias_festivos += 1
+            continue
+        dias_laborables += 1
+        total += _cap_meta_hours_for_day(d)
+
+    return {
+        "horas": total.quantize(Decimal("0.01")),
+        "dias_laborables": dias_laborables,
+        "dias_festivos": dias_festivos,
+    }
+
+def _presupuesto_consultor_mes(consultor_id: int, anio: int, mes: int):
+    """
+    Busca el presupuesto del consultor para un mes específico.
+    Prioriza vigente=True de ese mismo periodo.
+    """
+    row = (
+        ConsultorPresupuesto.query
+        .filter(ConsultorPresupuesto.consultor_id == consultor_id)
+        .filter(ConsultorPresupuesto.anio == anio)
+        .filter(ConsultorPresupuesto.mes == mes)
+        .filter(ConsultorPresupuesto.vigente == True)
+        .order_by(ConsultorPresupuesto.id.desc())
+        .first()
+    )
+
+    if not row:
+        row = (
+            ConsultorPresupuesto.query
+            .filter(ConsultorPresupuesto.consultor_id == consultor_id)
+            .filter(ConsultorPresupuesto.anio == anio)
+            .filter(ConsultorPresupuesto.mes == mes)
+            .order_by(ConsultorPresupuesto.id.desc())
+            .first()
+        )
+
+    if not row:
+        return None
+
+    vr = Decimal(str(row.vr_perfil or 0)).quantize(Decimal("0.01"))
+    horas_base = Decimal(str(row.horas_base_mes or 0)).quantize(Decimal("0.01"))
+
+    if horas_base <= 0:
+        meta_mes = _meta_horas_en_rango(*_month_bounds_local(anio, mes))
+        horas_base = meta_mes["horas"]
+
+    valor_hora = Decimal("0.00")
+    if horas_base > 0:
+        valor_hora = (vr / horas_base).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    return {
+        "row": row,
+        "vr_perfil": vr,
+        "horas_base_mes": horas_base,
+        "valor_hora": valor_hora,
+    }
+
+def _cost_parse_periodo_request():
+    """
+    Soporta:
+      - ?mes=4&anio=2026
+      - ?desde=2026-04-01&hasta=2026-04-30
+    """
+    desde_raw = (request.args.get("desde") or "").strip()
+    hasta_raw = (request.args.get("hasta") or "").strip()
+
+    if desde_raw or hasta_raw:
+        desde = _to_date_safe(desde_raw) if desde_raw else None
+        hasta = _to_date_safe(hasta_raw) if hasta_raw else None
+
+        if not desde and not hasta:
+            raise ValueError("Rango inválido")
+
+        if desde and not hasta:
+            hasta = desde
+        if hasta and not desde:
+            desde = hasta
+
+        if hasta < desde:
+            raise ValueError("Hasta no puede ser menor que desde")
+
+        return desde, hasta, "rango"
+
+    mes_raw = (request.args.get("mes") or "").strip()
+    anio_raw = (request.args.get("anio") or "").strip()
+
+    today = date.today()
+    mes = int(mes_raw) if mes_raw.isdigit() else today.month
+    anio = int(anio_raw) if anio_raw.isdigit() else today.year
+
+    if mes < 1 or mes > 12:
+        raise ValueError("Mes inválido")
+
+    desde, hasta = _month_bounds_local(anio, mes)
+    return desde, hasta, "mes"
+
+# =========================================================
+# IMPORTADOR DE PRESUPUESTO POR PERIODO
+# =========================================================
+
+def _norm_name(s: str) -> str:
+    s = (s or "").strip().upper()
+    s = re.sub(r"\s+", " ", s)
+    s = (
+        s.replace("Á", "A")
+         .replace("É", "E")
+         .replace("Í", "I")
+         .replace("Ó", "O")
+         .replace("Ú", "U")
+         .replace("Ñ", "N")
+    )
+    s = re.sub(r"[^A-Z0-9 ,.-]", "", s)
+    return s
+
+def _norm_doc(s: str) -> str:
+    s = (s or "").strip()
+    return re.sub(r"[^\d]", "", s)
+
+def _parse_money_to_decimal(val) -> Decimal:
+    if val is None:
+        return Decimal("0.00")
+
+    if isinstance(val, (int, float, Decimal)):
+        try:
+            return Decimal(str(val)).quantize(Decimal("0.01"))
+        except InvalidOperation:
+            return Decimal("0.00")
+
+    s = str(val).strip()
+    if not s:
+        return Decimal("0.00")
+
+    s = s.replace("$", "").strip()
+    s = re.sub(r"[^\d,\.]", "", s)
+
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    else:
+        if "." in s and "," not in s:
+            s = s.replace(".", "")
+        if "," in s and "." not in s:
+            s = s.replace(",", ".")
+
+    try:
+        return Decimal(s).quantize(Decimal("0.01"))
+    except InvalidOperation:
+        return Decimal("0.00")
+
+def _col_idx(headers: dict, wanted: str):
+    w = (wanted or "").strip().upper()
+    if not w:
+        return None
+    if w in headers:
+        return headers[w]
+    for hk, i in headers.items():
+        if w in hk:
+            return i
+    return None
+
+@bp.route("/presupuestos/consultor/import-excel", methods=["POST"])
+def import_presupuesto_consultor_excel():
+    try:
+        f = request.files.get("file")
+        if not f:
+            return jsonify({"error": "Falta archivo (file)"}), 400
+
+        anio = request.form.get("anio")
+        mes = request.form.get("mes")
+
+        try:
+            anio = int(str(anio).strip()) if anio else None
+        except Exception:
+            anio = None
+
+        try:
+            mes = int(str(mes).strip()) if mes else None
+        except Exception:
+            mes = None
+
+        now = datetime.now()
+        if not anio:
+            anio = now.year
+        if not mes or mes < 1 or mes > 12:
+            mes = now.month
+
+        # ✅ ahora las horas base del mes se calculan automáticamente
+        meta_mes_info = _meta_horas_en_rango(*_month_bounds_local(anio, mes))
+        horas_base = meta_mes_info["horas"]
+
+        sheet_name = (request.form.get("sheet") or "").strip()
+        col_nombre = (request.form.get("col_nombre") or "NOMBRE COLABORADOR").strip().upper()
+        col_cedula = (request.form.get("col_cedula") or "CEDULA").strip().upper()
+        col_valor = (request.form.get("col_valor") or "VR PERFIL").strip().upper()
+
+        wb = load_workbook(f, data_only=True, read_only=True)
+        ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb[wb.sheetnames[0]]
+
+        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+        headers = {}
+        for idx, h in enumerate(header_row, start=1):
+            key = str(h or "").strip().upper()
+            if key:
+                headers[key] = idx
+
+        ci_nombre = _col_idx(headers, col_nombre)
+        ci_cedula = _col_idx(headers, col_cedula)
+        ci_valor = _col_idx(headers, col_valor)
+
+        if not ci_nombre or not ci_valor:
+            return jsonify({
+                "error": f"No encontré columnas requeridas. Nombre='{col_nombre}', Valor='{col_valor}'"
+            }), 400
+
+        consultores = Consultor.query.all()
+        by_name = {_norm_name(c.nombre): c for c in consultores if c.nombre}
+        by_doc = {}
+        for c in consultores:
+            ced = _norm_doc(str(getattr(c, "cedula", "") or ""))
+            if ced:
+                by_doc[ced] = c
+
+        created = 0
+        updated = 0
+        not_found = []
+        invalid_rows = []
+        seen = set()
+
+        max_row = ws.max_row or 0
+
+        for r in range(2, max_row + 1):
+            raw_name = ws.cell(row=r, column=ci_nombre).value
+            raw_val = ws.cell(row=r, column=ci_valor).value
+            raw_doc = ws.cell(row=r, column=ci_cedula).value if ci_cedula else None
+
+            if raw_name is None and raw_val is None and raw_doc is None:
+                continue
+
+            vr = _parse_money_to_decimal(raw_val)
+            if vr <= 0:
+                invalid_rows.append({
+                    "row": r,
+                    "nombre": str(raw_name or ""),
+                    "valor": str(raw_val or "")
+                })
+                continue
+
+            c = None
+            doc = _norm_doc(str(raw_doc or ""))
+            name = _norm_name(str(raw_name or ""))
+
+            if doc:
+                c = by_doc.get(doc)
+            if not c and name:
+                c = by_name.get(name)
+
+            if not c:
+                not_found.append({
+                    "row": r,
+                    "nombre": str(raw_name or ""),
+                    "cedula": str(raw_doc or ""),
+                    "valor": str(raw_val or "")
+                })
+                continue
+
+            key = f"{c.id}"
+            if key in seen:
+                continue
+            seen.add(key)
+
+            existente = (
+                ConsultorPresupuesto.query
+                .filter_by(
+                    consultor_id=c.id,
+                    anio=anio,
+                    mes=mes,
+                    vigente=True
+                )
+                .order_by(ConsultorPresupuesto.id.desc())
+                .first()
+            )
+
+            if existente:
+                existente.vr_perfil = vr
+                existente.horas_base_mes = horas_base
+                updated += 1
+            else:
+                db.session.query(ConsultorPresupuesto).filter_by(
+                    consultor_id=c.id,
+                    anio=anio,
+                    mes=mes,
+                    vigente=True
+                ).update({"vigente": False})
+
+                db.session.add(ConsultorPresupuesto(
+                    consultor_id=c.id,
+                    anio=anio,
+                    mes=mes,
+                    vr_perfil=vr,
+                    horas_base_mes=horas_base,
+                    vigente=True
+                ))
+                created += 1
+
+        db.session.commit()
+
+        return jsonify({
+            "ok": True,
+            "anio": anio,
+            "mes": mes,
+            "horasBaseCalculadas": float(horas_base),
+            "diasLaborablesMes": meta_mes_info["dias_laborables"],
+            "diasFestivosMes": meta_mes_info["dias_festivos"],
+            "created": created,
+            "updated": updated,
+            "notFoundCount": len(not_found),
+            "invalidCount": len(invalid_rows),
+            "notFound": not_found[:50],
+            "invalidRows": invalid_rows[:50]
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.exception("❌ Error en /presupuestos/consultor/import-excel")
+        return jsonify({"error": str(e)}), 500
+
+# =========================================================
+# RESUMEN DE COSTO POR CONSULTOR
+# =========================================================
+
+@bp.route("/resumen-costo-consultor", methods=["GET"])
+def resumen_costo_consultor():
+    try:
+        # ----------------------------------------------------------
+        # 1) Usuario / rol desde request
+        # ----------------------------------------------------------
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        # ----------------------------------------------------------
+        # 2) Consultor logueado
+        # ----------------------------------------------------------
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
+
+        # ----------------------------------------------------------
+        # 3) Seguridad: SOLO ADMIN
+        # ----------------------------------------------------------
+        rol_real = ""
+        if getattr(consultor_login, "rol_obj", None) and getattr(consultor_login.rol_obj, "nombre", None):
+            rol_real = consultor_login.rol_obj.nombre
+        else:
+            rol_real = getattr(consultor_login, "rol", "") or ""
+
+        if not _is_admin_request(rol_real, consultor_login):
+            return jsonify({"error": "No autorizado. Solo administradores."}), 403
+
+        # ----------------------------------------------------------
+        # 4) Scope + periodo
+        # ----------------------------------------------------------
+        scope, val = scope_for(consultor_login, rol_req)
+        desde, hasta, modo = _cost_parse_periodo_request()
+
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        consultor_filter = (request.args.get("consultor") or "").strip().lower()
+
+        # ----------------------------------------------------------
+        # 5) Query base: horas agrupadas por consultor y periodo YYYY-MM
+        # ----------------------------------------------------------
+        q = (
+            db.session.query(
+                Consultor.id.label("consultor_id"),
+                Consultor.nombre.label("consultor"),
+                Consultor.usuario.label("usuario_consultor"),
+                Equipo.nombre.label("equipo"),
+                func.substr(func.cast(Registro.fecha, db.String), 1, 7).label("periodo"),
+                func.coalesce(func.sum(Registro.total_horas), 0).label("horas"),
+            )
+            .select_from(Registro)
+            .join(
+                Consultor,
+                func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
+            )
+            .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
+            .filter(Registro.fecha >= desde.isoformat())
+            .filter(Registro.fecha <= hasta.isoformat())
+        )
+
+        # ----------------------------------------------------------
+        # 6) Scope real del admin
+        # ----------------------------------------------------------
+        if scope == "TEAM":
+            if not int(val or 0):
+                return jsonify({"error": "Consultor sin equipo asignado"}), 403
+
+            q = q.filter(Consultor.equipo_id == int(val))
+
+            eq_login = (
+                (consultor_login.equipo_obj.nombre or "").strip().upper()
+                if consultor_login.equipo_obj else ""
+            )
+
+            if not eq_login:
+                return jsonify({"error": "Consultor sin equipo asignado"}), 403
+
+            if equipo_filter and equipo_filter != eq_login:
+                return jsonify({"error": "No autorizado para consultar otro equipo"}), 403
+
+            equipo_filter = eq_login
+
+        elif scope == "ALL":
+            pass
+
+        elif scope == "ROLE_POOL":
+            if not int(val or 0):
+                return jsonify({"error": "Consultor sin rol asignado"}), 403
+            q = q.filter(Consultor.rol_id == int(val))
+
+        else:
+            return jsonify({"error": "Scope no permitido"}), 403
+
+        # ----------------------------------------------------------
+        # 7) Filtros opcionales
+        # ----------------------------------------------------------
+        if equipo_filter:
+            q = q.filter(func.upper(Equipo.nombre) == equipo_filter)
+
+        if consultor_filter:
+            q = q.filter(func.lower(Consultor.nombre).like(f"%{consultor_filter}%"))
+
+        q = q.group_by(
+            Consultor.id,
+            Consultor.nombre,
+            Consultor.usuario,
+            Equipo.nombre,
+            func.substr(func.cast(Registro.fecha, db.String), 1, 7),
+        ).order_by(Consultor.nombre.asc())
+
+        raw = q.all()
+
+        # ----------------------------------------------------------
+        # 8) Consolidación por consultor
+        # ----------------------------------------------------------
+        rows_map = {}
+        total_horas_general = Decimal("0.00")
+        total_meta_general = Decimal("0.00")
+        total_costo_general = Decimal("0.00")
+
+        for item in raw:
+            cid = int(item.consultor_id)
+            nombre = item.consultor or "—"
+            usuario_cons = item.usuario_consultor or ""
+            equipo = item.equipo or "SIN EQUIPO"
+            periodo = str(item.periodo or "").strip()
+
+            try:
+                anio = int(periodo[:4])
+                mes = int(periodo[5:7])
+            except Exception:
+                continue
+
+            horas_reg_mes = Decimal(str(item.horas or 0)).quantize(Decimal("0.01"))
+
+            month_start, month_end = _month_bounds_local(anio, mes)
+            tramo_inicio = max(desde, month_start)
+            tramo_fin = min(hasta, month_end)
+
+            meta_tramo_info = _meta_horas_en_rango(tramo_inicio, tramo_fin)
+            meta_tramo = meta_tramo_info["horas"]
+
+            presupuesto = _presupuesto_consultor_mes(cid, anio, mes)
+
+            vr_perfil = Decimal("0.00")
+            horas_base_mes = Decimal("0.00")
+            valor_hora_mes = Decimal("0.00")
+
+            if presupuesto:
+                vr_perfil = presupuesto["vr_perfil"]
+                horas_base_mes = presupuesto["horas_base_mes"]
+                valor_hora_mes = presupuesto["valor_hora"]
+
+            costo_mes = (horas_reg_mes * valor_hora_mes).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP
+            )
+
+            if cid not in rows_map:
+                rows_map[cid] = {
+                    "consultorId": cid,
+                    "consultor": nombre,
+                    "usuarioConsultor": usuario_cons,
+                    "equipo": equipo,
+                    "horasPeriodo": Decimal("0.00"),
+                    "metaHorasPeriodo": Decimal("0.00"),
+                    "costoPeriodo": Decimal("0.00"),
+                    "presupuestos": [],
+                }
+
+            rows_map[cid]["horasPeriodo"] += horas_reg_mes
+            rows_map[cid]["metaHorasPeriodo"] += meta_tramo
+            rows_map[cid]["costoPeriodo"] += costo_mes
+            rows_map[cid]["presupuestos"].append({
+                "anio": anio,
+                "mes": mes,
+                "vrPerfil": float(vr_perfil),
+                "horasBaseMes": float(horas_base_mes),
+                "valorHoraMes": float(valor_hora_mes),
+                "horasRegistradasMesEnFiltro": float(horas_reg_mes),
+                "metaHorasMesEnFiltro": float(meta_tramo),
+                "costoMesEnFiltro": float(costo_mes),
+                "diasLaborablesMesEnFiltro": meta_tramo_info["dias_laborables"],
+                "diasFestivosMesEnFiltro": meta_tramo_info["dias_festivos"],
+            })
+
+            total_horas_general += horas_reg_mes
+            total_meta_general += meta_tramo
+            total_costo_general += costo_mes
+
+        # ----------------------------------------------------------
+        # 9) Respuesta final por consultor
+        # ----------------------------------------------------------
+        rows_out = []
+
+        for _, item in rows_map.items():
+            horas_periodo = item["horasPeriodo"].quantize(Decimal("0.01"))
+            meta_periodo = item["metaHorasPeriodo"].quantize(Decimal("0.01"))
+            costo_periodo = item["costoPeriodo"].quantize(Decimal("0.01"))
+
+            valor_hora_promedio = Decimal("0.00")
+            if horas_periodo > 0:
+                valor_hora_promedio = (costo_periodo / horas_periodo).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP
+                )
+
+            porcentaje = Decimal("0.00")
+            if meta_periodo > 0:
+                porcentaje = ((horas_periodo / meta_periodo) * Decimal("100")).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP
+                )
+
+            item["presupuestos"].sort(key=lambda x: (x["anio"], x["mes"]))
+
+            rows_out.append({
+                "consultorId": item["consultorId"],
+                "consultor": item["consultor"],
+                "usuarioConsultor": item["usuarioConsultor"],
+                "equipo": item["equipo"],
+                "horasPeriodo": float(horas_periodo),
+                "metaHorasPeriodo": float(meta_periodo),
+                "diferenciaHoras": float((meta_periodo - horas_periodo).quantize(Decimal("0.01"))),
+                "porcentajeUsoPeriodo": float(porcentaje),
+                "costoPeriodo": float(costo_periodo),
+                "valorHoraPromedio": float(valor_hora_promedio),
+                "presupuestos": item["presupuestos"],
+            })
+
+        rows_out.sort(key=lambda x: (-x["costoPeriodo"], x["consultor"]))
+
+        porcentaje_general = Decimal("0.00")
+        if total_meta_general > 0:
+            porcentaje_general = ((total_horas_general / total_meta_general) * Decimal("100")).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP
+            )
+
+        # ----------------------------------------------------------
+        # 10) Respuesta
+        # ----------------------------------------------------------
+        return jsonify({
+            "modo": modo,
+            "desde": desde.isoformat(),
+            "hasta": hasta.isoformat(),
+            "totalConsultores": len(rows_out),
+            "totalHorasPeriodo": float(total_horas_general.quantize(Decimal("0.01"))),
+            "totalMetaPeriodo": float(total_meta_general.quantize(Decimal("0.01"))),
+            "totalCostoPeriodo": float(total_costo_general.quantize(Decimal("0.01"))),
+            "porcentajeGeneral": float(porcentaje_general),
+            "rows": rows_out,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    except Exception as e:
+        app.logger.exception("❌ Error en /resumen-costo-consultor")
+        return jsonify({"error": str(e)}), 500

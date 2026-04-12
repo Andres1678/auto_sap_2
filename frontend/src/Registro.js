@@ -7,6 +7,7 @@ import Resumen from './Resumen';
 import { exportRegistrosExcelXLSX_ALL } from "./lib/exportExcel";
 import CapacidadSemanalModal from "./CapacidadSemanalModal";
 import { Navigate } from "react-router-dom";
+import CostoConsultorModal from "./CostoConsultorModal";
 
 Modal.setAppElement('#root');
 
@@ -246,6 +247,7 @@ const uniq = (arr) => Array.from(new Set((arr || []).map(v => String(v || "").tr
 
 const proyectoClienteNombre = (p) =>
   String(p?.cliente?.nombre_cliente ?? p?.cliente?.nombre ?? "").trim();
+
 
 const findOverlapRegistro = ({
   registros,
@@ -628,8 +630,11 @@ const Registro = ({ userData }) => {
   const [fasesProyecto, setFasesProyecto] = useState([]);
   const prevIsProyectoModeRef = useRef(false);
   const [capacidadModalOpen, setCapacidadModalOpen] = useState(false);
+  const [costoModalOpen, setCostoModalOpen] = useState(false);
+
 
   const canViewCapacidadSemanal = canAccessRegistro && (isAdminGlobal || isAdminEquipo);
+  const canViewCostoConsultor = isAdmin;
 
   useEffect(() => {
     const v = userData?.activo ?? userData?.user?.activo;
@@ -2003,6 +2008,16 @@ const Registro = ({ userData }) => {
               </button>
             )}
 
+            {canViewCostoConsultor && (
+              <button
+                type="button"
+                className="btn btn-outline-primary"
+                onClick={() => setCostoModalOpen(true)}
+              >
+                Ver costo por consultor
+              </button>
+            )}
+
             <button
               ref={openButtonRef}
               type="button"
@@ -2626,6 +2641,18 @@ const Registro = ({ userData }) => {
           filtroMes={filtroMes}
           filtroAnio={filtroAnio} 
         />
+
+        {canViewCostoConsultor && (
+          <CostoConsultorModal
+            isOpen={costoModalOpen}
+            onClose={() => setCostoModalOpen(false)}
+            filtroEquipo={equipoLocked}
+            filtroConsultor={Array.isArray(filtroConsultor) ? filtroConsultor[0] || "" : filtroConsultor}
+            filtroMes={filtroMes}
+            filtroAnio={filtroAnio}
+            equipoBloqueado={isAdminEquipo}
+          />
+        )}
       </div>
     </div>
   );
