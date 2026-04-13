@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { jfetch } from "./lib/api";
-import GraficoCantidadGanadas from "./GraficoCantidadGanadas";
 import "./DashboardCostos.css";
 
 const MONTHS = [
@@ -118,36 +117,10 @@ function parseNavYear(value, fallbackYear, monthLike = "") {
   return Number.isFinite(n) && n >= 2000 ? n : fallbackYear;
 }
 
-function toIsoDateSafe(v) {
-  if (!v) return "";
-  const s = String(v).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return "";
-
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function inMonth(fechaIso, month, year) {
-  if (!fechaIso) return false;
-  const [y, m] = fechaIso.split("-");
-  return Number(y) === Number(year) && Number(m) === Number(month);
-}
-
-function inRange(fechaIso, desde, hasta) {
-  if (!fechaIso) return false;
-  if (desde && fechaIso < desde) return false;
-  if (hasta && fechaIso > hasta) return false;
-  return true;
-}
-
 function resolvePeriodParams(filters) {
   if (filters.modo === "mes") {
     return {
+      modo: "mes",
       mes: String(filters.mes),
       anio: String(filters.anio),
     };
@@ -162,8 +135,11 @@ function resolvePeriodParams(filters) {
     }
 
     return {
-      desde: buildMonthStartISO(filters.anioDesde, filters.mesDesde),
-      hasta: buildMonthEndISO(filters.anioHasta, filters.mesHasta),
+      modo: "rango_meses",
+      mes_desde: String(filters.mesDesde),
+      anio_desde: String(filters.anioDesde),
+      mes_hasta: String(filters.mesHasta),
+      anio_hasta: String(filters.anioHasta),
     };
   }
 
@@ -177,12 +153,14 @@ function resolvePeriodParams(filters) {
     }
 
     return {
+      modo: "rango_fechas",
       desde: filters.desde,
       hasta: filters.hasta,
     };
   }
 
   return {
+    modo: "mes",
     mes: String(filters.mes),
     anio: String(filters.anio),
   };
@@ -225,6 +203,199 @@ function SimpleBarChart({ title, rows = [] }) {
         </div>
       )}
     </section>
+  );
+}
+
+function OportunidadesGanadasChart({ rows = [] }) {
+  const max = Math.max(...rows.map((r) => Number(r?.mrcNormalizado || 0)), 0);
+
+  return (
+    <section className="dc-panel">
+      <div className="dc-section-head">
+        <h3>Oportunidades ganadas por PRC</h3>
+        <span>{rows.length} PRC</span>
+      </div>
+
+      {!rows.length ? (
+        <div className="dc-empty">Sin oportunidades ganadas para los filtros aplicados.</div>
+      ) : (
+        <>
+          <div className="dc-chart-list">
+            {rows.map((item) => {
+              const value = Number(item?.mrcNormalizado || 0);
+              const width = max > 0 ? (value / max) * 100 : 0;
+
+              return (
+                <div className="dc-chart-row" key={item.name}>
+                  <div className="dc-chart-label" title={item.name}>
+                    {item.name}
+                  </div>
+
+                  <div className="dc-chart-bar-wrap">
+                    <div
+                      className="dc-chart-bar"
+                      style={{ width: `${Math.max(width, 4)}%` }}
+                    />
+                  </div>
+
+                  <div className="dc-chart-value">{fmtMoney(value)}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="dc-table-wrap" style={{ marginTop: 16 }}>
+            <table className="dc-table dc-table-small">
+              <thead>
+                <tr>
+                  <th>PRC</th>
+                  <th className="num">Cant.</th>
+                  <th className="num">OTC</th>
+                  <th className="num">MRC</th>
+                  <th className="num">MRC Normalizado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((item) => (
+                  <tr key={`prc-${item.name}`}>
+                    <td>{item.name}</td>
+                    <td className="num">{item.count || 0}</td>
+                    <td className="num">{fmtMoney(item.otc)}</td>
+                    <td className="num">{fmtMoney(item.mrc)}</td>
+                    <td className="num">{fmtMoney(item.mrcNormalizado)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function ResumenFilaModal({ row, onClose }) {
+  if (!row) return null;
+
+  const detalleConsultores = Array.isArray(row.detalleConsultores)
+    ? row.detalleConsultores
+    : [];
+
+  return (
+    <div className="dc-modal-backdrop" onClick={onClose}>
+      <div className="dc-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="dc-modal-head">
+          <div>
+            <div className="dc-kicker">Resumen de la línea</div>
+            <h3>{row.cliente}</h3>
+            <p>
+              {row.ocupacion} · {row.equipo || "SIN EQUIPO"}
+            </p>
+          </div>
+
+          <button type="button" className="dc-btn dc-btn-ghost" onClick={onClose}>
+            Cerrar
+          </button>
+        </div>
+
+        <div className="dc-detail-cards">
+          <article className="dc-mini-card">
+            <span>Horas</span>
+            <strong>{fmtHours(row.horas)}</strong>
+          </article>
+
+          <article className="dc-mini-card">
+            <span>Costo total</span>
+            <strong>{fmtMoney(row.costoTotal)}</strong>
+          </article>
+
+          <article className="dc-mini-card">
+            <span>Valor hora promedio</span>
+            <strong>{fmtMoney(row.valorHoraPromedio)}</strong>
+          </article>
+
+          <article className="dc-mini-card">
+            <span>Consultores</span>
+            <strong>{fmtInt(row.consultoresCount)}</strong>
+          </article>
+
+          <article className="dc-mini-card">
+            <span>Registros</span>
+            <strong>{fmtInt(row.registrosCount)}</strong>
+          </article>
+        </div>
+
+        <div className="dc-detail-grid">
+          <div className="dc-subpanel">
+            <h4>Consultores involucrados</h4>
+
+            {detalleConsultores.length ? (
+              <div className="dc-table-wrap">
+                <table className="dc-table dc-table-small">
+                  <thead>
+                    <tr>
+                      <th>Consultor</th>
+                      <th className="num">Horas</th>
+                      <th className="num">Costo</th>
+                      <th className="num">Registros</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detalleConsultores.map((item, idx) => (
+                      <tr key={`${item.consultor}-${idx}`}>
+                        <td>{item.consultor}</td>
+                        <td className="num">{fmtHours(item.horas)}</td>
+                        <td className="num">{fmtMoney(item.costo)}</td>
+                        <td className="num">{fmtInt(item.registrosCount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : Array.isArray(row.consultores) && row.consultores.length ? (
+              <div className="dc-chip-list">
+                {row.consultores.map((name) => (
+                  <span key={name} className="dc-chip">
+                    {name}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="dc-empty">Sin consultores.</div>
+            )}
+          </div>
+
+          <div className="dc-subpanel">
+            <h4>Detalle por período</h4>
+
+            {!row.detallePeriodos?.length ? (
+              <div className="dc-empty">Sin períodos.</div>
+            ) : (
+              <div className="dc-table-wrap">
+                <table className="dc-table dc-table-small">
+                  <thead>
+                    <tr>
+                      <th>Período</th>
+                      <th className="num">Horas</th>
+                      <th className="num">Costo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {row.detallePeriodos.map((p) => (
+                      <tr key={p.periodo}>
+                        <td>{p.periodo}</td>
+                        <td className="num">{fmtHours(p.horas)}</td>
+                        <td className="num">{fmtMoney(p.costo)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -280,6 +451,7 @@ export default function DashboardCostos() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({
     totalCosto: 0,
@@ -292,12 +464,16 @@ export default function DashboardCostos() {
   const [graficos, setGraficos] = useState({
     porCliente: [],
     porOcupacion: [],
-    porConsultor: [],
   });
 
-  const [selectedRowKey, setSelectedRowKey] = useState("");
+  const [oportunidadesGanadas, setOportunidadesGanadas] = useState({
+    rows: [],
+    chart: [],
+  });
+
   const [proyectosOptions, setProyectosOptions] = useState([]);
-  const [oportunidadesRows, setOportunidadesRows] = useState([]);
+  const [ocupacionesOptions, setOcupacionesOptions] = useState([]);
+  const [modalRow, setModalRow] = useState(null);
 
   const yearOptions = useMemo(() => buildYearOptions(draft.anio), [draft.anio]);
   const yearOptionsFrom = useMemo(() => buildYearOptions(draft.anioDesde), [draft.anioDesde]);
@@ -324,26 +500,32 @@ export default function DashboardCostos() {
       }
     };
 
-    fetchProyectos();
-  }, [rol]);
-
-  useEffect(() => {
-    const fetchOportunidades = async () => {
+    const fetchOcupaciones = async () => {
       try {
-        const res = await jfetch("/oportunidades", {
+        const res = await jfetch("/ocupaciones", {
           headers: getAuthHeaders(rol),
         });
 
         const json = await res.json().catch(() => []);
         if (!res.ok) throw new Error();
 
-        setOportunidadesRows(Array.isArray(json) ? json : []);
+        const opts = (Array.isArray(json) ? json : [])
+          .map((o) => ({
+            value: Number(o.id),
+            label: [String(o?.codigo || "").trim(), String(o?.nombre || "").trim()]
+              .filter(Boolean)
+              .join(" - "),
+          }))
+          .filter((o) => Number.isFinite(o.value) && o.value > 0 && o.label);
+
+        setOcupacionesOptions(opts);
       } catch {
-        setOportunidadesRows([]);
+        setOcupacionesOptions([]);
       }
     };
 
-    fetchOportunidades();
+    fetchProyectos();
+    fetchOcupaciones();
   }, [rol]);
 
   useEffect(() => {
@@ -355,9 +537,16 @@ export default function DashboardCostos() {
         const qs = new URLSearchParams();
         const periodParams = resolvePeriodParams(filters);
 
-        if (periodParams.mes && periodParams.anio) {
+        qs.set("modo", periodParams.modo);
+
+        if (periodParams.modo === "mes") {
           qs.set("mes", periodParams.mes);
           qs.set("anio", periodParams.anio);
+        } else if (periodParams.modo === "rango_meses") {
+          qs.set("mes_desde", periodParams.mes_desde);
+          qs.set("anio_desde", periodParams.anio_desde);
+          qs.set("mes_hasta", periodParams.mes_hasta);
+          qs.set("anio_hasta", periodParams.anio_hasta);
         } else {
           qs.set("desde", periodParams.desde);
           qs.set("hasta", periodParams.hasta);
@@ -384,8 +573,7 @@ export default function DashboardCostos() {
           throw new Error(json?.error || `HTTP ${res.status}`);
         }
 
-        const nextRows = Array.isArray(json?.rows) ? json.rows : [];
-        setRows(nextRows);
+        setRows(Array.isArray(json?.rows) ? json.rows : []);
         setSummary({
           totalCosto: Number(json?.totalCosto || 0),
           totalHoras: Number(json?.totalHoras || 0),
@@ -395,17 +583,17 @@ export default function DashboardCostos() {
         });
 
         setGraficos({
-          porCliente: Array.isArray(json?.graficos?.porCliente) ? json.graficos.porCliente.slice(0, 10) : [],
-          porOcupacion: Array.isArray(json?.graficos?.porOcupacion) ? json.graficos.porOcupacion.slice(0, 10) : [],
-          porConsultor: Array.isArray(json?.graficos?.porConsultor) ? json.graficos.porConsultor.slice(0, 10) : [],
+          porCliente: Array.isArray(json?.graficos?.porCliente)
+            ? json.graficos.porCliente.slice(0, 10)
+            : [],
+          porOcupacion: Array.isArray(json?.graficos?.porOcupacion)
+            ? json.graficos.porOcupacion.slice(0, 10)
+            : [],
         });
 
-        setSelectedRowKey((prev) => {
-          if (prev && nextRows.some((r) => `${r.cliente}||${r.ocupacion}` === prev)) {
-            return prev;
-          }
-          const first = nextRows[0];
-          return first ? `${first.cliente}||${first.ocupacion}` : "";
+        setOportunidadesGanadas({
+          rows: Array.isArray(json?.oportunidadesGanadas?.rows) ? json.oportunidadesGanadas.rows : [],
+          chart: Array.isArray(json?.oportunidadesGanadas?.chart) ? json.oportunidadesGanadas.chart : [],
         });
       } catch (e) {
         setRows([]);
@@ -419,7 +607,10 @@ export default function DashboardCostos() {
         setGraficos({
           porCliente: [],
           porOcupacion: [],
-          porConsultor: [],
+        });
+        setOportunidadesGanadas({
+          rows: [],
+          chart: [],
         });
         setError(e?.message || "No se pudo cargar el dashboard de costos");
       } finally {
@@ -429,38 +620,6 @@ export default function DashboardCostos() {
 
     fetchData();
   }, [filters, rol]);
-
-  const selectedRow = useMemo(() => {
-    return rows.find((r) => `${r.cliente}||${r.ocupacion}` === selectedRowKey) || null;
-  }, [rows, selectedRowKey]);
-
-  const oportunidadesFiltradas = useMemo(() => {
-    return (Array.isArray(oportunidadesRows) ? oportunidadesRows : []).filter((op) => {
-      const clienteOp = normalizeText(op?.nombre_cliente || "");
-      const fechaOp =
-        toIsoDateSafe(op?.fecha_creacion) ||
-        toIsoDateSafe(op?.fecha_cierre_oportunidad) ||
-        toIsoDateSafe(op?.fecha_cierre_sm);
-
-      if (filters.cliente && normalizeUpper(clienteOp) !== normalizeUpper(filters.cliente)) {
-        return false;
-      }
-
-      if (filters.modo === "mes") {
-        return inMonth(fechaOp, filters.mes, filters.anio);
-      }
-
-      if (filters.modo === "rango_meses") {
-        return inRange(
-          fechaOp,
-          buildMonthStartISO(filters.anioDesde, filters.mesDesde),
-          buildMonthEndISO(filters.anioHasta, filters.mesHasta)
-        );
-      }
-
-      return inRange(fechaOp, filters.desde, filters.hasta);
-    });
-  }, [oportunidadesRows, filters]);
 
   const applyFilters = () => {
     setFilters({ ...draft });
@@ -473,6 +632,8 @@ export default function DashboardCostos() {
       consultor: "",
       modulo: "",
       proyectoId: "",
+      ocupacionIds: [],
+      ocupacionLabels: [],
       desde: "",
       hasta: "",
       modo: "mes",
@@ -481,6 +642,7 @@ export default function DashboardCostos() {
       mesHasta: currentMonth,
       anioHasta: currentYear,
     };
+
     setDraft(reset);
     setFilters(reset);
   };
@@ -492,8 +654,8 @@ export default function DashboardCostos() {
           <div className="dc-kicker">Vista financiera operativa</div>
           <h1>Dashboard de costos</h1>
           <p>
-            Resumen de costo total por cliente y ocupación, calculado con valor hora real del consultor
-            según período y filtros aplicados.
+            Resumen de costo total por cliente, ocupación y equipo, calculado con valor hora real
+            del consultor según período y filtros aplicados.
           </p>
 
           {!!draft.ocupacionLabels.length && (
@@ -507,6 +669,7 @@ export default function DashboardCostos() {
           <button className="dc-btn dc-btn-ghost" type="button" onClick={() => navigate(-1)}>
             Volver
           </button>
+
           <button className="dc-btn dc-btn-primary" type="button" onClick={applyFilters}>
             Actualizar dashboard
           </button>
@@ -547,18 +710,11 @@ export default function DashboardCostos() {
             <SimpleBarChart title="Top costo por ocupación" rows={graficos.porOcupacion} />
           </section>
 
-          <section className="dc-panel">
-            <div className="dc-section-head">
-              <h3>Oportunidades ganadas / adjudicadas</h3>
-              <span>{oportunidadesFiltradas.length} oportunidades</span>
-            </div>
-
-            <GraficoCantidadGanadas data={oportunidadesFiltradas} />
-          </section>
+          <OportunidadesGanadasChart rows={oportunidadesGanadas.chart} />
 
           <section className="dc-panel">
             <div className="dc-section-head">
-              <h3>Resumen por cliente y ocupación</h3>
+              <h3>Resumen por cliente, ocupación y equipo</h3>
               <span>{rows.length} filas</span>
             </div>
 
@@ -584,13 +740,14 @@ export default function DashboardCostos() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((item) => {
-                      const rowKey = `${item.cliente}||${item.ocupacion}`;
+                    {rows.map((item, idx) => {
+                      const rowKey = `${item.cliente}||${item.ocupacion}||${item.equipo || "SIN EQUIPO"}||${idx}`;
+
                       return (
                         <tr
                           key={rowKey}
-                          className={selectedRowKey === rowKey ? "is-active" : ""}
-                          onClick={() => setSelectedRowKey(rowKey)}
+                          className="dc-row-clickable"
+                          onClick={() => setModalRow(item)}
                         >
                           <td>{item.cliente}</td>
                           <td>{item.ocupacion}</td>
@@ -609,89 +766,50 @@ export default function DashboardCostos() {
             )}
           </section>
 
-          {selectedRow && (
-            <section className="dc-panel">
-              <div className="dc-section-head">
-                <div>
-                  <h3>{selectedRow.cliente}</h3>
-                  <p>{selectedRow.ocupacion}</p>
-                </div>
-                <span>{selectedRow.equipo || "SIN EQUIPO"}</span>
+          {/* Detalle inline deshabilitado intencionalmente.
+              El resumen ahora se muestra en un modal breve al seleccionar una fila. */}
+
+          <section className="dc-panel">
+            <div className="dc-section-head">
+              <h3>Detalle de oportunidades ganadas</h3>
+              <span>{oportunidadesGanadas.rows.length} filas</span>
+            </div>
+
+            {!oportunidadesGanadas.rows.length ? (
+              <div className="dc-empty">Sin oportunidades ganadas para los filtros actuales.</div>
+            ) : (
+              <div className="dc-table-wrap">
+                <table className="dc-table">
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Servicio</th>
+                      <th>PRC</th>
+                      <th>Fecha creación</th>
+                      <th>Resultado</th>
+                      <th className="num">OTC</th>
+                      <th className="num">MRC</th>
+                      <th className="num">MRC Normalizado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {oportunidadesGanadas.rows.map((op) => (
+                      <tr key={op.id}>
+                        <td>{op.cliente}</td>
+                        <td>{op.servicio}</td>
+                        <td>{op.codigo_prc}</td>
+                        <td>{op.fecha_creacion || "-"}</td>
+                        <td>{op.resultado_oferta || "-"}</td>
+                        <td className="num">{fmtMoney(op.otc)}</td>
+                        <td className="num">{fmtMoney(op.mrc)}</td>
+                        <td className="num">{fmtMoney(op.mrcNormalizado)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-
-              <div className="dc-detail-cards">
-                <article className="dc-mini-card">
-                  <span>Costo total</span>
-                  <strong>{fmtMoney(selectedRow.costoTotal)}</strong>
-                </article>
-
-                <article className="dc-mini-card">
-                  <span>Horas</span>
-                  <strong>{fmtHours(selectedRow.horas)}</strong>
-                </article>
-
-                <article className="dc-mini-card">
-                  <span>Valor hora promedio</span>
-                  <strong>{fmtMoney(selectedRow.valorHoraPromedio)}</strong>
-                </article>
-
-                <article className="dc-mini-card">
-                  <span>Consultores</span>
-                  <strong>{fmtInt(selectedRow.consultoresCount)}</strong>
-                </article>
-
-                <article className="dc-mini-card">
-                  <span>Registros</span>
-                  <strong>{fmtInt(selectedRow.registrosCount)}</strong>
-                </article>
-              </div>
-
-              <div className="dc-detail-grid">
-                <div className="dc-subpanel">
-                  <h4>Consultores involucrados</h4>
-                  {!selectedRow.consultores?.length ? (
-                    <div className="dc-empty">Sin consultores</div>
-                  ) : (
-                    <div className="dc-chip-list">
-                      {selectedRow.consultores.map((name) => (
-                        <span key={name} className="dc-chip">
-                          {name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="dc-subpanel">
-                  <h4>Detalle por período</h4>
-                  {!selectedRow.detallePeriodos?.length ? (
-                    <div className="dc-empty">Sin períodos</div>
-                  ) : (
-                    <div className="dc-table-wrap">
-                      <table className="dc-table dc-table-small">
-                        <thead>
-                          <tr>
-                            <th>Período</th>
-                            <th className="num">Horas</th>
-                            <th className="num">Costo</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedRow.detallePeriodos.map((p) => (
-                            <tr key={p.periodo}>
-                              <td>{p.periodo}</td>
-                              <td className="num">{fmtHours(p.horas)}</td>
-                              <td className="num">{fmtMoney(p.costo)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-          )}
+            )}
+          </section>
         </main>
 
         <aside className="dc-sidebar">
@@ -716,7 +834,7 @@ export default function DashboardCostos() {
                 <input
                   value={draft.equipo}
                   onChange={(e) => setDraft((s) => ({ ...s, equipo: normalizeUpper(e.target.value) }))}
-                  placeholder="BASIS / FUNCIONAL"
+                  placeholder="BASIS / FUNCIONAL / IMPLEMENTACIÓN"
                 />
               </div>
 
@@ -765,6 +883,36 @@ export default function DashboardCostos() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="dc-field">
+                <label>Ocupación</label>
+                <select
+                  multiple
+                  className="dc-multi"
+                  value={(draft.ocupacionIds || []).map(String)}
+                  onChange={(e) => {
+                    const selectedOptions = Array.from(e.target.selectedOptions || []);
+                    const nextIds = selectedOptions
+                      .map((opt) => Number(opt.value))
+                      .filter((id) => Number.isFinite(id) && id > 0);
+
+                    const nextLabels = selectedOptions.map((opt) => opt.text);
+
+                    setDraft((s) => ({
+                      ...s,
+                      ocupacionIds: nextIds,
+                      ocupacionLabels: nextLabels,
+                    }));
+                  }}
+                >
+                  {ocupacionesOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <small className="dc-help">Puedes seleccionar una o varias ocupaciones.</small>
               </div>
 
               {draft.modo === "mes" && (
@@ -886,15 +1034,16 @@ export default function DashboardCostos() {
               <button className="dc-btn dc-btn-ghost" type="button" onClick={clearFilters}>
                 Limpiar filtros
               </button>
+
               <button className="dc-btn dc-btn-primary" type="button" onClick={applyFilters}>
                 Aplicar filtros
               </button>
             </div>
           </div>
-
-          <SimpleBarChart title="Top costo por consultor" rows={graficos.porConsultor} />
         </aside>
       </div>
+
+      <ResumenFilaModal row={modalRow} onClose={() => setModalRow(null)} />
     </div>
   );
 }
