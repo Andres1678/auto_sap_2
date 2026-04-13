@@ -186,13 +186,14 @@ function toUniqueSorted(values) {
   ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
 }
 
-function SimpleBarChart({ title, rows = [] }) {
+function SimpleBarChart({ title, rows = [], subtitle = "" }) {
   const max = Math.max(...rows.map((r) => Number(r?.costo || 0)), 0);
 
   return (
     <section className="dc-chart-card">
       <div className="dc-section-head">
         <h3>{title}</h3>
+        {!!subtitle && <span>{subtitle}</span>}
       </div>
 
       {!rows.length ? (
@@ -226,68 +227,89 @@ function SimpleBarChart({ title, rows = [] }) {
   );
 }
 
-function buildOpportunityLabel(op) {
-  const prc = normalizeText(op?.codigo_prc || "SIN PRC");
-  const cliente = normalizeText(op?.cliente || "SIN CLIENTE");
-  const estadoOferta = normalizeText(op?.estado_oferta || "-");
-  const estadoOT = normalizeText(op?.estado_ot || "-");
+function aggregateWonByClient(rows = []) {
+  const map = new Map();
 
-  return `${prc} · ${cliente} · ${estadoOferta} · OT: ${estadoOT}`;
-}
-
-function OportunidadesGanadasChart({ rows = [] }) {
-  const chartRows = (Array.isArray(rows) ? rows : [])
+  (Array.isArray(rows) ? rows : [])
     .filter(
       (item) =>
         normalizeUpper(item?.estado_oferta) === "GANADA" &&
         Number(item?.mrcNormalizado || 0) > 0
     )
-    .map((item) => ({
-      id: item.id,
-      name: buildOpportunityLabel(item),
-      costo: Number(item?.mrcNormalizado || 0),
-    }))
-    .sort((a, b) => Number(b.costo || 0) - Number(a.costo || 0));
+    .forEach((item) => {
+      const cliente = normalizeText(item?.cliente || "SIN CLIENTE");
+      const current = map.get(cliente) || {
+        name: cliente,
+        costo: 0,
+        oportunidades: 0,
+      };
 
-  const max = Math.max(...chartRows.map((r) => Number(r?.costo || 0)), 0);
+      current.costo += Number(item?.mrcNormalizado || 0);
+      current.oportunidades += 1;
+
+      map.set(cliente, current);
+    });
+
+  return Array.from(map.values())
+    .sort((a, b) => Number(b.costo || 0) - Number(a.costo || 0))
+    .map((item) => ({
+      ...item,
+      name: `${item.name} · ${fmtInt(item.oportunidades)} oportunidad(es)`,
+    }));
+}
+
+function aggregateWonByResult(rows = []) {
+  const map = new Map();
+
+  (Array.isArray(rows) ? rows : [])
+    .filter(
+      (item) =>
+        normalizeUpper(item?.estado_oferta) === "GANADA" &&
+        Number(item?.mrcNormalizado || 0) > 0
+    )
+    .forEach((item) => {
+      const resultado = normalizeText(item?.resultado_oferta || "SIN RESULTADO");
+      const current = map.get(resultado) || {
+        name: resultado,
+        costo: 0,
+        oportunidades: 0,
+      };
+
+      current.costo += Number(item?.mrcNormalizado || 0);
+      current.oportunidades += 1;
+
+      map.set(resultado, current);
+    });
+
+  return Array.from(map.values())
+    .sort((a, b) => Number(b.costo || 0) - Number(a.costo || 0))
+    .map((item) => ({
+      ...item,
+      name: `${item.name} · ${fmtInt(item.oportunidades)} oportunidad(es)`,
+    }));
+}
+
+function OportunidadesGanadasPorClienteChart({ rows = [] }) {
+  const chartRows = useMemo(() => aggregateWonByClient(rows), [rows]);
 
   return (
-    <section className="dc-chart-card">
-      <div className="dc-section-head">
-        <h3>Oportunidades ganadas por oportunidad</h3>
-        <span>{chartRows.length} oportunidades</span>
-      </div>
+    <SimpleBarChart
+      title="Oportunidades ganadas por cliente"
+      subtitle={`${chartRows.length} clientes`}
+      rows={chartRows}
+    />
+  );
+}
 
-      {!chartRows.length ? (
-        <div className="dc-empty">
-          Sin oportunidades GANADAS con valor para mostrar.
-        </div>
-      ) : (
-        <div className="dc-chart-list">
-          {chartRows.map((item) => {
-            const value = Number(item?.costo || 0);
-            const width = max > 0 ? (value / max) * 100 : 0;
+function OportunidadesGanadasPorResultadoChart({ rows = [] }) {
+  const chartRows = useMemo(() => aggregateWonByResult(rows), [rows]);
 
-            return (
-              <div className="dc-chart-row" key={`opp-chart-${item.id}`}>
-                <div className="dc-chart-label" title={item.name}>
-                  {item.name}
-                </div>
-
-                <div className="dc-chart-bar-wrap">
-                  <div
-                    className="dc-chart-bar"
-                    style={{ width: `${Math.max(width, 4)}%` }}
-                  />
-                </div>
-
-                <div className="dc-chart-value">{fmtMoney(value)}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
+  return (
+    <SimpleBarChart
+      title="Oportunidades ganadas por resultado"
+      subtitle={`${chartRows.length} resultados`}
+      rows={chartRows}
+    />
   );
 }
 
@@ -817,7 +839,10 @@ export default function DashboardCostos() {
             <SimpleBarChart title="Top costo por ocupación" rows={graficos.porOcupacion} />
           </section>
 
-          <OportunidadesGanadasChart rows={oportunidadesGanadas.rows} />
+          <section className="dc-charts-grid">
+            <OportunidadesGanadasPorClienteChart rows={oportunidadesGanadas.rows} />
+            <OportunidadesGanadasPorResultadoChart rows={oportunidadesGanadas.rows} />
+          </section>
 
           <section className="dc-panel">
             <div className="dc-section-head">
