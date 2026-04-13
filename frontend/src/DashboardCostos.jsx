@@ -64,6 +64,7 @@ function getStoredUser() {
 
 function getAuthHeaders(rolProp = "") {
   const u = getStoredUser();
+
   const usuario =
     u?.usuario ||
     u?.user?.usuario ||
@@ -84,15 +85,6 @@ function getAuthHeaders(rolProp = "") {
 
 function pad2(n) {
   return String(Number(n || 0)).padStart(2, "0");
-}
-
-function buildMonthStartISO(year, month) {
-  return `${year}-${pad2(month)}-01`;
-}
-
-function buildMonthEndISO(year, month) {
-  const lastDay = new Date(Number(year), Number(month), 0).getDate();
-  return `${year}-${pad2(month)}-${pad2(lastDay)}`;
 }
 
 function monthIndex(year, month) {
@@ -164,6 +156,12 @@ function resolvePeriodParams(filters) {
     mes: String(filters.mes),
     anio: String(filters.anio),
   };
+}
+
+function toUniqueSorted(values) {
+  return Array.from(
+    new Set((Array.isArray(values) ? values : []).map((v) => normalizeText(v)).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
 }
 
 function SimpleBarChart({ title, rows = [] }) {
@@ -425,14 +423,17 @@ export default function DashboardCostos() {
       ? normalizeUpper(navState.filtroEquipo[0] || "")
       : normalizeUpper(navState?.filtroEquipo || ""),
     cliente: Array.isArray(navState?.filtroCliente)
-      ? navState.filtroCliente[0] || ""
+      ? normalizeText(navState.filtroCliente[0] || "")
       : normalizeText(navState?.filtroCliente || ""),
     consultor: Array.isArray(navState?.filtroConsultor)
-      ? navState.filtroConsultor[0] || ""
+      ? normalizeText(navState.filtroConsultor[0] || "")
       : normalizeText(navState?.filtroConsultor || ""),
     modulo: Array.isArray(navState?.filtroModulo)
       ? normalizeUpper(navState.filtroModulo[0] || "")
       : normalizeUpper(navState?.filtroModulo || ""),
+    estadoOT: Array.isArray(navState?.filtroEstadoOT)
+      ? normalizeText(navState.filtroEstadoOT[0] || "")
+      : normalizeText(navState?.filtroEstadoOT || ""),
     proyectoId: navState?.filtroProyectoId ? Number(navState.filtroProyectoId) : "",
     mes: navMes,
     anio: navAnio,
@@ -473,6 +474,12 @@ export default function DashboardCostos() {
 
   const [proyectosOptions, setProyectosOptions] = useState([]);
   const [ocupacionesOptions, setOcupacionesOptions] = useState([]);
+  const [clientesOptions, setClientesOptions] = useState([]);
+  const [consultoresOptions, setConsultoresOptions] = useState([]);
+  const [modulosOptions, setModulosOptions] = useState([]);
+  const [equiposOptions, setEquiposOptions] = useState([]);
+  const [estadosOTOptions, setEstadosOTOptions] = useState([]);
+
   const [modalRow, setModalRow] = useState(null);
 
   const yearOptions = useMemo(() => buildYearOptions(draft.anio), [draft.anio]);
@@ -480,52 +487,81 @@ export default function DashboardCostos() {
   const yearOptionsTo = useMemo(() => buildYearOptions(draft.anioHasta), [draft.anioHasta]);
 
   useEffect(() => {
-    const fetchProyectos = async () => {
-      try {
-        const res = await jfetch("/proyectos?include_fases=0", {
-          headers: getAuthHeaders(rol),
-        });
+    const fetchCatalogos = async () => {
+      const headers = getAuthHeaders(rol);
 
-        const json = await res.json().catch(() => []);
-        if (!res.ok) throw new Error();
+      const reqs = await Promise.allSettled([
+        jfetch("/proyectos?include_fases=0", { headers }),
+        jfetch("/ocupaciones", { headers }),
+        jfetch("/clientes", { headers }),
+        jfetch("/consultores", { headers }),
+        jfetch("/modulos", { headers }),
+        jfetch("/equipos", { headers }),
+        jfetch("/oportunidades/filters", { headers }),
+      ]);
 
-        const opts = (Array.isArray(json) ? json : []).map((p) => ({
-          value: Number(p.id),
-          label: `${p.codigo || "SIN CODIGO"} - ${p.nombre || "SIN NOMBRE"}`,
-        }));
+      const readJson = async (result) => {
+        if (result.status !== "fulfilled") return null;
+        try {
+          const res = result.value;
+          const json = await res.json().catch(() => null);
+          if (!res.ok) return null;
+          return json;
+        } catch {
+          return null;
+        }
+      };
 
-        setProyectosOptions(opts);
-      } catch {
-        setProyectosOptions([]);
-      }
+      const [
+        proyectosJson,
+        ocupacionesJson,
+        clientesJson,
+        consultoresJson,
+        modulosJson,
+        equiposJson,
+        oportunidadesFiltersJson,
+      ] = await Promise.all(reqs.map(readJson));
+
+      const proyectos = (Array.isArray(proyectosJson) ? proyectosJson : []).map((p) => ({
+        value: Number(p.id),
+        label: `${p.codigo || "SIN CÓDIGO"} - ${p.nombre || "SIN NOMBRE"}`,
+      }));
+
+      const ocupaciones = (Array.isArray(ocupacionesJson) ? ocupacionesJson : [])
+        .map((o) => ({
+          value: Number(o.id),
+          label: [normalizeText(o?.codigo), normalizeText(o?.nombre)].filter(Boolean).join(" - "),
+        }))
+        .filter((o) => Number.isFinite(o.value) && o.value > 0 && o.label);
+
+      const clientes = toUniqueSorted(
+        (Array.isArray(clientesJson) ? clientesJson : []).map((c) => c?.nombre_cliente)
+      );
+
+      const consultores = toUniqueSorted(
+        (Array.isArray(consultoresJson) ? consultoresJson : []).map((c) => c?.nombre)
+      );
+
+      const modulos = toUniqueSorted(
+        (Array.isArray(modulosJson) ? modulosJson : []).map((m) => m?.nombre).map(normalizeUpper)
+      );
+
+      const equipos = toUniqueSorted(
+        (Array.isArray(equiposJson) ? equiposJson : []).map((e) => e?.nombre).map(normalizeUpper)
+      );
+
+      const estadosOT = toUniqueSorted(oportunidadesFiltersJson?.estado_ot || []);
+
+      setProyectosOptions(proyectos);
+      setOcupacionesOptions(ocupaciones);
+      setClientesOptions(clientes);
+      setConsultoresOptions(consultores);
+      setModulosOptions(modulos);
+      setEquiposOptions(equipos);
+      setEstadosOTOptions(estadosOT);
     };
 
-    const fetchOcupaciones = async () => {
-      try {
-        const res = await jfetch("/ocupaciones", {
-          headers: getAuthHeaders(rol),
-        });
-
-        const json = await res.json().catch(() => []);
-        if (!res.ok) throw new Error();
-
-        const opts = (Array.isArray(json) ? json : [])
-          .map((o) => ({
-            value: Number(o.id),
-            label: [String(o?.codigo || "").trim(), String(o?.nombre || "").trim()]
-              .filter(Boolean)
-              .join(" - "),
-          }))
-          .filter((o) => Number.isFinite(o.value) && o.value > 0 && o.label);
-
-        setOcupacionesOptions(opts);
-      } catch {
-        setOcupacionesOptions([]);
-      }
-    };
-
-    fetchProyectos();
-    fetchOcupaciones();
+    fetchCatalogos();
   }, [rol]);
 
   useEffect(() => {
@@ -556,6 +592,7 @@ export default function DashboardCostos() {
         if (filters.cliente) qs.append("cliente", filters.cliente);
         if (filters.consultor) qs.append("consultor", filters.consultor);
         if (filters.modulo) qs.append("modulo", filters.modulo);
+        if (filters.estadoOT) qs.append("estado_ot", filters.estadoOT);
         if (filters.proyectoId) qs.set("proyecto_id", String(filters.proyectoId));
 
         (Array.isArray(filters.ocupacionIds) ? filters.ocupacionIds : [])
@@ -592,8 +629,12 @@ export default function DashboardCostos() {
         });
 
         setOportunidadesGanadas({
-          rows: Array.isArray(json?.oportunidadesGanadas?.rows) ? json.oportunidadesGanadas.rows : [],
-          chart: Array.isArray(json?.oportunidadesGanadas?.chart) ? json.oportunidadesGanadas.chart : [],
+          rows: Array.isArray(json?.oportunidadesGanadas?.rows)
+            ? json.oportunidadesGanadas.rows
+            : [],
+          chart: Array.isArray(json?.oportunidadesGanadas?.chart)
+            ? json.oportunidadesGanadas.chart
+            : [],
         });
       } catch (e) {
         setRows([]);
@@ -621,6 +662,26 @@ export default function DashboardCostos() {
     fetchData();
   }, [filters, rol]);
 
+  const handleDraftChange = (field, value) => {
+    setDraft((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleOcupacionesChange = (e) => {
+    const selected = Array.from(e.target.selectedOptions).map((opt) => Number(opt.value));
+    const labels = ocupacionesOptions
+      .filter((o) => selected.includes(Number(o.value)))
+      .map((o) => o.label);
+
+    setDraft((prev) => ({
+      ...prev,
+      ocupacionIds: selected,
+      ocupacionLabels: labels,
+    }));
+  };
+
   const applyFilters = () => {
     setFilters({ ...draft });
   };
@@ -631,6 +692,8 @@ export default function DashboardCostos() {
       cliente: "",
       consultor: "",
       modulo: "",
+      equipo: "",
+      estadoOT: "",
       proyectoId: "",
       ocupacionIds: [],
       ocupacionLabels: [],
@@ -641,6 +704,8 @@ export default function DashboardCostos() {
       anioDesde: currentYear,
       mesHasta: currentMonth,
       anioHasta: currentYear,
+      mes: currentMonth,
+      anio: currentYear,
     };
 
     setDraft(reset);
@@ -766,9 +831,6 @@ export default function DashboardCostos() {
             )}
           </section>
 
-          {/* Detalle inline deshabilitado intencionalmente.
-              El resumen ahora se muestra en un modal breve al seleccionar una fila. */}
-
           <section className="dc-panel">
             <div className="dc-section-head">
               <h3>Detalle de oportunidades ganadas</h3>
@@ -786,7 +848,9 @@ export default function DashboardCostos() {
                       <th>Servicio</th>
                       <th>PRC</th>
                       <th>Fecha creación</th>
+                      <th>Estado oferta</th>
                       <th>Resultado</th>
+                      <th>Estado OT</th>
                       <th className="num">OTC</th>
                       <th className="num">MRC</th>
                       <th className="num">MRC Normalizado</th>
@@ -794,12 +858,14 @@ export default function DashboardCostos() {
                   </thead>
                   <tbody>
                     {oportunidadesGanadas.rows.map((op) => (
-                      <tr key={op.id}>
+                      <tr key={`opp-${op.id}`}>
                         <td>{op.cliente}</td>
                         <td>{op.servicio}</td>
                         <td>{op.codigo_prc}</td>
                         <td>{op.fecha_creacion || "-"}</td>
+                        <td>{op.estado_oferta || "-"}</td>
                         <td>{op.resultado_oferta || "-"}</td>
+                        <td>{op.estado_ot || "-"}</td>
                         <td className="num">{fmtMoney(op.otc)}</td>
                         <td className="num">{fmtMoney(op.mrc)}</td>
                         <td className="num">{fmtMoney(op.mrcNormalizado)}</td>
@@ -813,115 +879,31 @@ export default function DashboardCostos() {
         </main>
 
         <aside className="dc-sidebar">
-          <div className="dc-sidebar-card">
-            <h3>Filtros</h3>
+          <section className="dc-panel">
+            <div className="dc-section-head">
+              <h3>Filtros</h3>
+            </div>
 
-            <div className="dc-filter-grid">
-              <div className="dc-field">
-                <label>Modo</label>
+            <div className="dc-filters-grid">
+              <div className="dc-filter-field">
+                <label>Modo de período</label>
                 <select
                   value={draft.modo}
-                  onChange={(e) => setDraft((s) => ({ ...s, modo: e.target.value }))}
+                  onChange={(e) => handleDraftChange("modo", e.target.value)}
                 >
-                  <option value="mes">Mes / año</option>
+                  <option value="mes">Mes</option>
                   <option value="rango_meses">Rango de meses</option>
                   <option value="rango_fechas">Rango de fechas</option>
                 </select>
               </div>
 
-              <div className="dc-field">
-                <label>Equipo</label>
-                <input
-                  value={draft.equipo}
-                  onChange={(e) => setDraft((s) => ({ ...s, equipo: normalizeUpper(e.target.value) }))}
-                  placeholder="BASIS / FUNCIONAL / IMPLEMENTACIÓN"
-                />
-              </div>
-
-              <div className="dc-field">
-                <label>Cliente</label>
-                <input
-                  value={draft.cliente}
-                  onChange={(e) => setDraft((s) => ({ ...s, cliente: e.target.value }))}
-                  placeholder="Cliente"
-                />
-              </div>
-
-              <div className="dc-field">
-                <label>Consultor</label>
-                <input
-                  value={draft.consultor}
-                  onChange={(e) => setDraft((s) => ({ ...s, consultor: e.target.value }))}
-                  placeholder="Consultor"
-                />
-              </div>
-
-              <div className="dc-field">
-                <label>Módulo</label>
-                <input
-                  value={draft.modulo}
-                  onChange={(e) => setDraft((s) => ({ ...s, modulo: normalizeUpper(e.target.value) }))}
-                  placeholder="FI / CO / ..."
-                />
-              </div>
-
-              <div className="dc-field">
-                <label>Proyecto creado</label>
-                <select
-                  value={draft.proyectoId}
-                  onChange={(e) =>
-                    setDraft((s) => ({
-                      ...s,
-                      proyectoId: e.target.value ? Number(e.target.value) : "",
-                    }))
-                  }
-                >
-                  <option value="">Todos</option>
-                  {proyectosOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="dc-field">
-                <label>Ocupación</label>
-                <select
-                  multiple
-                  className="dc-multi"
-                  value={(draft.ocupacionIds || []).map(String)}
-                  onChange={(e) => {
-                    const selectedOptions = Array.from(e.target.selectedOptions || []);
-                    const nextIds = selectedOptions
-                      .map((opt) => Number(opt.value))
-                      .filter((id) => Number.isFinite(id) && id > 0);
-
-                    const nextLabels = selectedOptions.map((opt) => opt.text);
-
-                    setDraft((s) => ({
-                      ...s,
-                      ocupacionIds: nextIds,
-                      ocupacionLabels: nextLabels,
-                    }));
-                  }}
-                >
-                  {ocupacionesOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                <small className="dc-help">Puedes seleccionar una o varias ocupaciones.</small>
-              </div>
-
               {draft.modo === "mes" && (
                 <>
-                  <div className="dc-field">
+                  <div className="dc-filter-field">
                     <label>Mes</label>
                     <select
                       value={draft.mes}
-                      onChange={(e) => setDraft((s) => ({ ...s, mes: Number(e.target.value) }))}
+                      onChange={(e) => handleDraftChange("mes", Number(e.target.value))}
                     >
                       {MONTHS.map((m) => (
                         <option key={m.value} value={m.value}>
@@ -931,11 +913,11 @@ export default function DashboardCostos() {
                     </select>
                   </div>
 
-                  <div className="dc-field">
+                  <div className="dc-filter-field">
                     <label>Año</label>
                     <select
                       value={draft.anio}
-                      onChange={(e) => setDraft((s) => ({ ...s, anio: Number(e.target.value) }))}
+                      onChange={(e) => handleDraftChange("anio", Number(e.target.value))}
                     >
                       {yearOptions.map((y) => (
                         <option key={y} value={y}>
@@ -949,56 +931,56 @@ export default function DashboardCostos() {
 
               {draft.modo === "rango_meses" && (
                 <>
-                  <div className="dc-field">
-                    <label>Mes inicial</label>
+                  <div className="dc-filter-field">
+                    <label>Mes desde</label>
                     <select
                       value={draft.mesDesde}
-                      onChange={(e) => setDraft((s) => ({ ...s, mesDesde: Number(e.target.value) }))}
+                      onChange={(e) => handleDraftChange("mesDesde", Number(e.target.value))}
                     >
                       {MONTHS.map((m) => (
-                        <option key={m.value} value={m.value}>
+                        <option key={`d-${m.value}`} value={m.value}>
                           {m.label}
                         </option>
                       ))}
                     </select>
                   </div>
 
-                  <div className="dc-field">
-                    <label>Año inicial</label>
+                  <div className="dc-filter-field">
+                    <label>Año desde</label>
                     <select
                       value={draft.anioDesde}
-                      onChange={(e) => setDraft((s) => ({ ...s, anioDesde: Number(e.target.value) }))}
+                      onChange={(e) => handleDraftChange("anioDesde", Number(e.target.value))}
                     >
                       {yearOptionsFrom.map((y) => (
-                        <option key={y} value={y}>
+                        <option key={`yd-${y}`} value={y}>
                           {y}
                         </option>
                       ))}
                     </select>
                   </div>
 
-                  <div className="dc-field">
-                    <label>Mes final</label>
+                  <div className="dc-filter-field">
+                    <label>Mes hasta</label>
                     <select
                       value={draft.mesHasta}
-                      onChange={(e) => setDraft((s) => ({ ...s, mesHasta: Number(e.target.value) }))}
+                      onChange={(e) => handleDraftChange("mesHasta", Number(e.target.value))}
                     >
                       {MONTHS.map((m) => (
-                        <option key={m.value} value={m.value}>
+                        <option key={`h-${m.value}`} value={m.value}>
                           {m.label}
                         </option>
                       ))}
                     </select>
                   </div>
 
-                  <div className="dc-field">
-                    <label>Año final</label>
+                  <div className="dc-filter-field">
+                    <label>Año hasta</label>
                     <select
                       value={draft.anioHasta}
-                      onChange={(e) => setDraft((s) => ({ ...s, anioHasta: Number(e.target.value) }))}
+                      onChange={(e) => handleDraftChange("anioHasta", Number(e.target.value))}
                     >
                       {yearOptionsTo.map((y) => (
-                        <option key={y} value={y}>
+                        <option key={`yh-${y}`} value={y}>
                           {y}
                         </option>
                       ))}
@@ -1009,37 +991,148 @@ export default function DashboardCostos() {
 
               {draft.modo === "rango_fechas" && (
                 <>
-                  <div className="dc-field">
-                    <label>Desde</label>
+                  <div className="dc-filter-field">
+                    <label>Fecha desde</label>
                     <input
                       type="date"
                       value={draft.desde}
-                      onChange={(e) => setDraft((s) => ({ ...s, desde: e.target.value }))}
+                      onChange={(e) => handleDraftChange("desde", e.target.value)}
                     />
                   </div>
 
-                  <div className="dc-field">
-                    <label>Hasta</label>
+                  <div className="dc-filter-field">
+                    <label>Fecha hasta</label>
                     <input
                       type="date"
                       value={draft.hasta}
-                      onChange={(e) => setDraft((s) => ({ ...s, hasta: e.target.value }))}
+                      onChange={(e) => handleDraftChange("hasta", e.target.value)}
                     />
                   </div>
                 </>
               )}
-            </div>
 
-            <div className="dc-sidebar-actions">
-              <button className="dc-btn dc-btn-ghost" type="button" onClick={clearFilters}>
-                Limpiar filtros
-              </button>
+              <div className="dc-filter-field">
+                <label>Equipo</label>
+                <select
+                  value={draft.equipo}
+                  onChange={(e) => handleDraftChange("equipo", normalizeUpper(e.target.value))}
+                >
+                  <option value="">Todos</option>
+                  {equiposOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-              <button className="dc-btn dc-btn-primary" type="button" onClick={applyFilters}>
-                Aplicar filtros
-              </button>
+              <div className="dc-filter-field">
+                <label>Cliente</label>
+                <select
+                  value={draft.cliente}
+                  onChange={(e) => handleDraftChange("cliente", e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {clientesOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="dc-filter-field">
+                <label>Consultor</label>
+                <select
+                  value={draft.consultor}
+                  onChange={(e) => handleDraftChange("consultor", e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {consultoresOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="dc-filter-field">
+                <label>Módulo</label>
+                <select
+                  value={draft.modulo}
+                  onChange={(e) => handleDraftChange("modulo", normalizeUpper(e.target.value))}
+                >
+                  <option value="">Todos</option>
+                  {modulosOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="dc-filter-field">
+                <label>Estado OT</label>
+                <select
+                  value={draft.estadoOT}
+                  onChange={(e) => handleDraftChange("estadoOT", e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {estadosOTOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="dc-filter-field">
+                <label>Proyecto</label>
+                <select
+                  value={draft.proyectoId}
+                  onChange={(e) =>
+                    handleDraftChange(
+                      "proyectoId",
+                      e.target.value ? Number(e.target.value) : ""
+                    )
+                  }
+                >
+                  <option value="">Todos</option>
+                  {proyectosOptions.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="dc-filter-field">
+                <label>Ocupación</label>
+                <select
+                  multiple
+                  value={(draft.ocupacionIds || []).map(String)}
+                  onChange={handleOcupacionesChange}
+                  style={{ minHeight: 120 }}
+                >
+                  {ocupacionesOptions.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="dc-filter-actions">
+                <button className="dc-btn dc-btn-primary" type="button" onClick={applyFilters}>
+                  Aplicar filtros
+                </button>
+
+                <button className="dc-btn dc-btn-ghost" type="button" onClick={clearFilters}>
+                  Limpiar filtros
+                </button>
+              </div>
             </div>
-          </div>
+          </section>
         </aside>
       </div>
 

@@ -9193,9 +9193,51 @@ def dashboard_costos_resumen():
             single = (request.args.get(name) or "").strip()
             return [single] if single else []
 
+        def _dec(v):
+            if isinstance(v, Decimal):
+                return v
+            if v is None:
+                return Decimal("0.00")
+            try:
+                return Decimal(str(v)).quantize(Decimal("0.01"))
+            except Exception:
+                return Decimal("0.00")
+
+        def _money_num(v):
+            if v is None:
+                return Decimal("0.00")
+
+            s = str(v).strip()
+            if not s:
+                return Decimal("0.00")
+
+            s = (
+                s.replace("\u00A0", " ")
+                 .replace(" ", "")
+                 .replace("COP", "")
+                 .replace("$", "")
+                 .replace("%", "")
+            )
+
+            if "," in s and "." in s:
+                if s.rfind(",") > s.rfind("."):
+                    s = s.replace(".", "").replace(",", ".")
+                else:
+                    s = s.replace(",", "")
+            elif "," in s and "." not in s:
+                s = s.replace(",", ".")
+            else:
+                s = s.replace(",", "")
+
+            try:
+                return Decimal(s).quantize(Decimal("0.01"))
+            except Exception:
+                return Decimal("0.00")
+
         clientes_filter = _get_multi("cliente")
         consultores_filter = _get_multi("consultor")
         modulos_filter = [x.upper() for x in _get_multi("modulo")]
+        estados_ot_filter = _get_multi("estado_ot")
 
         ocupacion_ids = [
             int(x) for x in request.args.getlist("ocupacion_id")
@@ -9231,25 +9273,10 @@ def dashboard_costos_resumen():
 
         if scope == "SELF":
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
-
         elif scope == "TEAM":
             if not int(val or 0):
                 return jsonify({"error": "Consultor sin equipo asignado"}), 403
             q = q.filter(C.equipo_id == int(val))
-
-        elif scope == "ROLE_POOL":
-            if not int(val or 0):
-                return jsonify({"error": "Consultor sin rol asignado"}), 403
-            q = q.filter(C.rol_id == int(val))
-
-        elif scope == "ALL":
-            pass
-
-        else:
-            return jsonify({"error": "Scope no permitido"}), 403
-
-        if equipo_filter:
-            q = q.filter(func.upper(E.nombre) == equipo_filter)
 
         if clientes_filter:
             q = q.filter(Registro.cliente.in_(clientes_filter))
@@ -9258,59 +9285,22 @@ def dashboard_costos_resumen():
             q = q.filter(C.nombre.in_(consultores_filter))
 
         if modulos_filter:
-            q = q.filter(func.upper(Registro.modulo).in_(modulos_filter))
+            q = q.filter(func.upper(func.coalesce(Registro.modulo, "")).in_(modulos_filter))
+
+        if equipo_filter:
+            q = q.filter(func.upper(func.coalesce(E.nombre, "")) == equipo_filter)
 
         if ocupacion_ids:
             q = q.filter(Registro.ocupacion_id.in_(ocupacion_ids))
 
-        if filtro_proyecto_id:
-            try:
-                q = q.filter(Registro.proyecto_id == int(filtro_proyecto_id))
-            except Exception:
-                return jsonify({"error": "proyecto_id inválido"}), 400
+        if filtro_proyecto_id.isdigit():
+            q = q.filter(Registro.proyecto_id == int(filtro_proyecto_id))
 
-        registros = q.order_by(fecha_expr.asc(), C.nombre.asc()).all()
-
-        def _dec(v):
-            try:
-                return Decimal(str(v or 0)).quantize(Decimal("0.01"))
-            except Exception:
-                return Decimal("0.00")
-
-        def _money_num(v):
-            if v is None:
-                return Decimal("0.00")
-
-            s = str(v).strip()
-            if not s:
-                return Decimal("0.00")
-
-            s = (
-                s.replace("\u00A0", " ")
-                 .replace(" ", "")
-                 .replace("COP", "")
-                 .replace("$", "")
-                 .replace("%", "")
-            )
-
-            if "," in s and "." in s:
-                if s.rfind(",") > s.rfind("."):
-                    s = s.replace(".", "").replace(",", ".")
-                else:
-                    s = s.replace(",", "")
-            elif "," in s and "." not in s:
-                s = s.replace(",", ".")
-            else:
-                s = s.replace(",", "")
-
-            try:
-                return Decimal(s)
-            except Exception:
-                return Decimal("0.00")
+        registros = q.all()
 
         resumen_map = {}
-        graf_cliente = defaultdict(Decimal)
-        graf_ocupacion = defaultdict(Decimal)
+        graf_cliente = defaultdict(lambda: Decimal("0.00"))
+        graf_ocupacion = defaultdict(lambda: Decimal("0.00"))
 
         total_horas = Decimal("0.00")
         total_costo = Decimal("0.00")
@@ -9355,7 +9345,6 @@ def dashboard_costos_resumen():
 
             costo = (horas * valor_hora).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-            # clave corregida: cliente + ocupación + equipo
             key = f"{cliente}||{ocupacion}||{equipo}"
 
             if key not in resumen_map:
@@ -9379,32 +9368,33 @@ def dashboard_costos_resumen():
                 }
 
             bucket = resumen_map[key]
-            bucket["horas"] += horas
-            bucket["costoTotal"] += costo
+            bucket["horas"] = _dec(bucket["horas"]) + horas
+            bucket["costoTotal"] = _dec(bucket["costoTotal"]) + costo
             bucket["consultoresSet"].add(consultor_nombre)
             bucket["registrosCount"] += 1
 
             periodo = f"{fecha_reg.year:04d}-{fecha_reg.month:02d}"
-            bucket["detallePeriodos"][periodo]["horas"] += horas
-            bucket["detallePeriodos"][periodo]["costo"] += costo
+            bucket["detallePeriodos"][periodo]["horas"] = _dec(bucket["detallePeriodos"][periodo]["horas"]) + horas
+            bucket["detallePeriodos"][periodo]["costo"] = _dec(bucket["detallePeriodos"][periodo]["costo"]) + costo
 
-            bucket["detalleConsultores"][consultor_nombre]["horas"] += horas
-            bucket["detalleConsultores"][consultor_nombre]["costo"] += costo
+            bucket["detalleConsultores"][consultor_nombre]["horas"] = _dec(bucket["detalleConsultores"][consultor_nombre]["horas"]) + horas
+            bucket["detalleConsultores"][consultor_nombre]["costo"] = _dec(bucket["detalleConsultores"][consultor_nombre]["costo"]) + costo
             bucket["detalleConsultores"][consultor_nombre]["registrosCount"] += 1
 
-            graf_cliente[cliente] += costo
-            graf_ocupacion[ocupacion] += costo
+            graf_cliente[cliente] = _dec(graf_cliente[cliente]) + costo
+            graf_ocupacion[ocupacion] = _dec(graf_ocupacion[ocupacion]) + costo
 
-            total_horas += horas
-            total_costo += costo
+            total_horas = _dec(total_horas) + horas
+            total_costo = _dec(total_costo) + costo
+
             clientes_set.add(cliente)
             ocupaciones_set.add(ocupacion)
             consultores_set.add(consultor_nombre)
 
         rows_out = []
         for _, item in resumen_map.items():
-            horas_row = item["horas"].quantize(Decimal("0.01"))
-            costo_row = item["costoTotal"].quantize(Decimal("0.01"))
+            horas_row = _dec(item["horas"])
+            costo_row = _dec(item["costoTotal"])
 
             valor_hora_promedio = Decimal("0.00")
             if horas_row > 0:
@@ -9416,8 +9406,8 @@ def dashboard_costos_resumen():
             detalle_periodos = [
                 {
                     "periodo": periodo,
-                    "horas": float(vals["horas"].quantize(Decimal("0.01"))),
-                    "costo": float(vals["costo"].quantize(Decimal("0.01"))),
+                    "horas": float(_dec(vals["horas"])),
+                    "costo": float(_dec(vals["costo"])),
                 }
                 for periodo, vals in sorted(item["detallePeriodos"].items())
             ]
@@ -9425,8 +9415,8 @@ def dashboard_costos_resumen():
             detalle_consultores = [
                 {
                     "consultor": nombre,
-                    "horas": float(vals["horas"].quantize(Decimal("0.01"))),
-                    "costo": float(vals["costo"].quantize(Decimal("0.01"))),
+                    "horas": float(_dec(vals["horas"])),
+                    "costo": float(_dec(vals["costo"])),
                     "registrosCount": int(vals["registrosCount"]),
                 }
                 for nombre, vals in sorted(item["detalleConsultores"].items(), key=lambda x: x[0])
@@ -9458,6 +9448,7 @@ def dashboard_costos_resumen():
             Oportunidad.fecha_creacion.label("fecha_creacion"),
             Oportunidad.estado_oferta.label("estado_oferta"),
             Oportunidad.resultado_oferta.label("resultado_oferta"),
+            Oportunidad.estado_ot.label("estado_ot"),
             Oportunidad.otc.label("otc"),
             Oportunidad.mrc.label("mrc"),
         ).filter(
@@ -9466,6 +9457,9 @@ def dashboard_costos_resumen():
 
         if clientes_filter:
             qo = qo.filter(Oportunidad.nombre_cliente.in_(clientes_filter))
+
+        if estados_ot_filter:
+            qo = qo.filter(Oportunidad.estado_ot.in_(estados_ot_filter))
 
         if filtro_proyecto_id:
             try:
@@ -9509,8 +9503,8 @@ def dashboard_costos_resumen():
                 except Exception:
                     pass
 
-            otc = _money_num(op.otc).quantize(Decimal("0.01"))
-            mrc = _money_num(op.mrc).quantize(Decimal("0.01"))
+            otc = _money_num(op.otc)
+            mrc = _money_num(op.mrc)
             mrc_normalizado = (mrc + (otc / Decimal("12"))).quantize(
                 Decimal("0.01"),
                 rounding=ROUND_HALF_UP
@@ -9526,6 +9520,7 @@ def dashboard_costos_resumen():
                 "fecha_creacion": fecha_iso,
                 "estado_oferta": op.estado_oferta or "GANADA",
                 "resultado_oferta": op.resultado_oferta or "-",
+                "estado_ot": op.estado_ot or "-",
                 "otc": float(otc),
                 "mrc": float(mrc),
                 "mrcNormalizado": float(mrc_normalizado),
@@ -9534,17 +9529,17 @@ def dashboard_costos_resumen():
             bucket = opp_chart_map[prc]
             bucket["name"] = prc
             bucket["count"] += 1
-            bucket["otc"] += otc
-            bucket["mrc"] += mrc
-            bucket["mrcNormalizado"] += mrc_normalizado
+            bucket["otc"] = _dec(bucket["otc"]) + otc
+            bucket["mrc"] = _dec(bucket["mrc"]) + mrc
+            bucket["mrcNormalizado"] = _dec(bucket["mrcNormalizado"]) + mrc_normalizado
 
         opp_chart = [
             {
                 "name": k,
                 "count": v["count"],
-                "otc": float(v["otc"].quantize(Decimal("0.01"))),
-                "mrc": float(v["mrc"].quantize(Decimal("0.01"))),
-                "mrcNormalizado": float(v["mrcNormalizado"].quantize(Decimal("0.01"))),
+                "otc": float(_dec(v["otc"])),
+                "mrc": float(_dec(v["mrc"])),
+                "mrcNormalizado": float(_dec(v["mrcNormalizado"])),
             }
             for k, v in sorted(
                 opp_chart_map.items(),
@@ -9557,19 +9552,19 @@ def dashboard_costos_resumen():
             "modo": modo,
             "desde": desde.isoformat(),
             "hasta": hasta.isoformat(),
-            "totalHoras": float(total_horas.quantize(Decimal("0.01"))),
-            "totalCosto": float(total_costo.quantize(Decimal("0.01"))),
+            "totalHoras": float(_dec(total_horas)),
+            "totalCosto": float(_dec(total_costo)),
             "totalClientes": len(clientes_set),
             "totalOcupaciones": len(ocupaciones_set),
             "totalConsultores": len(consultores_set),
             "rows": rows_out,
             "graficos": {
                 "porCliente": [
-                    {"name": k, "costo": float(v.quantize(Decimal("0.01")))}
+                    {"name": k, "costo": float(_dec(v))}
                     for k, v in sorted(graf_cliente.items(), key=lambda x: x[1], reverse=True)
                 ],
                 "porOcupacion": [
-                    {"name": k, "costo": float(v.quantize(Decimal("0.01")))}
+                    {"name": k, "costo": float(_dec(v))}
                     for k, v in sorted(graf_ocupacion.items(), key=lambda x: x[1], reverse=True)
                 ],
             },
@@ -9583,6 +9578,7 @@ def dashboard_costos_resumen():
                 "consultores": consultores_filter,
                 "modulos": modulos_filter,
                 "ocupacion_ids": ocupacion_ids,
+                "estado_ot": estados_ot_filter,
                 "proyecto_id": int(filtro_proyecto_id) if filtro_proyecto_id.isdigit() else None,
             },
         }), 200
@@ -9592,4 +9588,315 @@ def dashboard_costos_resumen():
 
     except Exception as e:
         app.logger.exception("❌ Error en /dashboard/costos-resumen")
+        return jsonify({"error": str(e)}), 500
+    
+@bp.route("/dashboard/costos-filtros", methods=["GET"])
+@permission_required("GRAFICOS_VER")
+def dashboard_costos_filtros():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _rol_from_request()
+
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
+
+        scope, val = _scope_for_graficos(consultor_login, rol_req)
+        desde, hasta, _modo = _dashboard_costos_parse_periodo_request()
+
+        C = aliased(Consultor)
+        E = aliased(Equipo)
+        fecha_expr = _registro_fecha_expr()
+
+        q = (
+            db.session.query(
+                Registro.cliente.label("cliente"),
+                C.nombre.label("consultor"),
+                Registro.modulo.label("modulo"),
+                E.nombre.label("equipo"),
+            )
+            .select_from(Registro)
+            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .outerjoin(E, C.equipo_id == E.id)
+            .filter(fecha_expr >= desde)
+            .filter(fecha_expr <= hasta)
+        )
+
+        if scope == "SELF":
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+        elif scope == "TEAM":
+            if not int(val or 0):
+                return jsonify({"error": "Consultor sin equipo asignado"}), 403
+            q = q.filter(C.equipo_id == int(val))
+
+        rows = q.all()
+
+        clientes = sorted({(r.cliente or "").strip() for r in rows if (r.cliente or "").strip()})
+        consultores = sorted({(r.consultor or "").strip() for r in rows if (r.consultor or "").strip()})
+        modulos = sorted({(r.modulo or "").strip().upper() for r in rows if (r.modulo or "").strip()})
+        equipos = sorted({(r.equipo or "").strip().upper() for r in rows if (r.equipo or "").strip()})
+
+        estados_ot = [
+            x[0] for x in (
+                db.session.query(Oportunidad.estado_ot)
+                .filter(Oportunidad.estado_ot.isnot(None))
+                .filter(func.trim(Oportunidad.estado_ot) != "")
+                .distinct()
+                .order_by(Oportunidad.estado_ot.asc())
+                .all()
+            )
+        ]
+
+        return jsonify({
+            "clientes": clientes,
+            "consultores": consultores,
+            "modulos": modulos,
+            "equipos": equipos,
+            "estados_ot": estados_ot,
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("❌ Error en /dashboard/costos-filtros")
+        return jsonify({"error": str(e)}), 500
+    
+
+@bp.route('/dashboard/proyectos-horas', methods=['GET'])
+@permission_required("GRAFICOS_VER")
+def dashboard_proyectos_horas():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({'error': 'Usuario no enviado'}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+
+        if not consultor_login:
+            return jsonify({'error': 'Consultor no encontrado'}), 404
+
+        scope, val = _scope_for_graficos(consultor_login, rol_req)
+
+        C = aliased(Consultor)
+        E = aliased(Equipo)
+
+        fecha_expr = _registro_fecha_expr()
+
+        q = (
+            Registro.query
+            .options(
+                joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
+                joinedload(Registro.tarea),
+                joinedload(Registro.ocupacion),
+                joinedload(Registro.proyecto),
+                joinedload(Registro.fase_proyecto),
+            )
+            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .outerjoin(E, C.equipo_id == E.id)
+        )
+
+        # -------------------------
+        # Scope
+        # -------------------------
+        if scope == "SELF":
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+
+        elif scope == "TEAM":
+            if not int(val or 0):
+                return jsonify({'error': 'Consultor sin equipo asignado'}), 403
+            q = q.filter(C.equipo_id == int(val))
+
+        elif scope == "ROLE_POOL":
+            if not int(val or 0):
+                return jsonify({'error': 'Consultor sin rol asignado'}), 403
+            q = q.filter(C.rol_id == int(val))
+
+        # ALL => sin filtro adicional
+
+        # -------------------------
+        # Filtros
+        # -------------------------
+        filtro_mes = (request.args.get("mes") or "").strip()
+        filtro_desde = (request.args.get("desde") or "").strip()
+        filtro_hasta = (request.args.get("hasta") or "").strip()
+        filtro_equipo = (request.args.get("equipo") or "").strip().upper()
+        filtro_consultor = (request.args.get("consultor") or "").strip()
+        filtro_modulo = (request.args.get("modulo") or "").strip()
+        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
+        filtro_ocupacion = (request.args.get("ocupacion") or "").strip()
+        filtro_tarea = (request.args.get("tarea") or "").strip()
+
+        if filtro_mes:
+            try:
+                y, m = filtro_mes.split("-")
+                y = int(y)
+                m = int(m)
+                if m < 1 or m > 12:
+                    raise ValueError()
+            except Exception:
+                return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
+
+            q = q.filter(extract("year", fecha_expr) == y)
+            q = q.filter(extract("month", fecha_expr) == m)
+
+        else:
+            filtro_desde, filtro_hasta = _normalize_iso_range(filtro_desde, filtro_hasta)
+
+            if filtro_desde:
+                q = q.filter(fecha_expr >= filtro_desde)
+
+            if filtro_hasta:
+                q = q.filter(fecha_expr <= filtro_hasta)
+
+        if filtro_equipo:
+            q = q.filter(func.upper(E.nombre) == filtro_equipo)
+
+        if filtro_consultor:
+            q = q.filter(C.nombre.ilike(f"%{filtro_consultor}%"))
+
+        if filtro_modulo:
+            q = q.filter(func.upper(Registro.modulo) == filtro_modulo.upper())
+
+        if filtro_ocupacion:
+            q = q.outerjoin(Ocupacion, Registro.ocupacion_id == Ocupacion.id).filter(
+                or_(
+                    Ocupacion.nombre.ilike(f"%{filtro_ocupacion}%"),
+                    Ocupacion.codigo.ilike(f"%{filtro_ocupacion}%")
+                )
+            )
+
+        if filtro_tarea:
+            q = q.outerjoin(Tarea, Registro.tarea_id == Tarea.id).filter(
+                or_(
+                    Tarea.nombre.ilike(f"%{filtro_tarea}%"),
+                    Registro.tipo_tarea.ilike(f"%{filtro_tarea}%")
+                )
+            )
+
+        if filtro_proyecto_id:
+            try:
+                q = _apply_project_filter_graficos(q, int(filtro_proyecto_id))
+            except Exception:
+                return jsonify({"error": "proyecto_id inválido"}), 400
+
+        # -------------------------
+        # Carga de registros
+        # -------------------------
+        tiene_filtro_temporal = bool(filtro_mes or filtro_desde or filtro_hasta)
+
+        if tiene_filtro_temporal:
+            registros = (
+                q.order_by(fecha_expr.desc(), Registro.id.desc())
+                 .all()
+            )
+        else:
+            max_rows = request.args.get("max_rows", type=int) or 15000
+            max_rows = min(max(max_rows, 1), 20000)
+
+            registros = (
+                q.order_by(fecha_expr.desc(), Registro.id.desc())
+                 .limit(max_rows)
+                 .all()
+            )
+
+        data = []
+
+        for r in registros:
+            tarea = getattr(r, "tarea", None)
+            ocup = getattr(r, "ocupacion", None)
+
+            if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
+                tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
+            else:
+                tipo_tarea_str = (getattr(r, "tipo_tarea", "") or "").strip() or None
+
+            equipo_nombre = None
+            if r.consultor and getattr(r.consultor, "equipo_obj", None):
+                equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
+
+            proyecto = getattr(r, "proyecto", None)
+            fase_proyecto = getattr(r, "fase_proyecto", None)
+
+            data.append({
+                "id": r.id,
+                "fecha": _safe_fecha_iso(r.fecha),
+                "modulo": r.modulo,
+                "cliente": r.cliente,
+                "equipo": equipo_nombre or (r.equipo or "").strip().upper() or "SIN EQUIPO",
+                "nroCasoCliente": r.nro_caso_cliente,
+                "nroCasoInterno": r.nro_caso_interno,
+                "nroCasoEscaladoSap": r.nro_caso_escalado,
+
+                "ocupacion_id": r.ocupacion_id,
+                "ocupacion_codigo": ocup.codigo if ocup else None,
+                "ocupacion_nombre": ocup.nombre if ocup else None,
+
+                "tarea_id": r.tarea_id,
+                "tipoTarea": tipo_tarea_str,
+                "tarea": {
+                    "id": tarea.id,
+                    "codigo": getattr(tarea, "codigo", None),
+                    "nombre": getattr(tarea, "nombre", None),
+                } if tarea else None,
+
+                "consultor": r.consultor.nombre if r.consultor else None,
+                "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+                "horaInicio": r.hora_inicio,
+                "horaFin": r.hora_fin,
+                "tiempoInvertido": r.tiempo_invertido,
+                "tiempoFacturable": r.tiempo_facturable,
+                "horasAdicionales": r.horas_adicionales,
+                "descripcion": r.descripcion,
+                "totalHoras": r.total_horas,
+                "bloqueado": bool(r.bloqueado),
+                "oncall": r.oncall,
+                "desborde": r.desborde,
+                "actividadMalla": r.actividad_malla,
+
+                "proyecto_id": r.proyecto_id,
+                "fase_proyecto_id": r.fase_proyecto_id,
+                "proyecto": {
+                    "id": proyecto.id,
+                    "codigo": proyecto.codigo,
+                    "nombre": proyecto.nombre,
+                    "activo": bool(getattr(proyecto, "activo", True)),
+                } if proyecto else None,
+                "fase_proyecto": {
+                    "id": fase_proyecto.id,
+                    "nombre": fase_proyecto.nombre,
+                } if fase_proyecto else None,
+                "proyecto_codigo": proyecto.codigo if proyecto else None,
+                "proyecto_nombre": proyecto.nombre if proyecto else None,
+                "proyecto_fase": fase_proyecto.nombre if fase_proyecto else None,
+            })
+
+        return jsonify({
+            "data": data,
+            "total": len(data)
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("❌ Error en /dashboard/proyectos-horas")
         return jsonify({"error": str(e)}), 500
