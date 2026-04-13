@@ -24,6 +24,7 @@ import ModulosAdmin from "./ModulosAdmin";
 import ProyectosHorasDashboard from './ProyectosHorasDashboard';
 import Graficos from './Graficos';
 import PerfilesPage from "./PerfilesPage";
+import CostoConsultorPage from "./CostoConsultorPage";
 
 function App() {
   const [userData, setUserData] = useState(null);
@@ -267,6 +268,15 @@ function App() {
               element={
                 <AdminRoute>
                   <PerfilesPage />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/reportes/costo-consultor"
+              element={
+                <AdminRoute allow={["ADMIN"]}>
+                  <CostoConsultorPage />
                 </AdminRoute>
               }
             />

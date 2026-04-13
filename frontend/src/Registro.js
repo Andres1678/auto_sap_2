@@ -2028,7 +2028,20 @@ const Registro = ({ userData }) => {
               <button
                 type="button"
                 className="btn btn-outline-primary"
-                onClick={() => setCostoModalOpen(true)}
+                onClick={() =>
+                  navigate("/reportes/costo-consultor", {
+                    state: {
+                      filtroEquipo: equipoLocked,
+                      filtroConsultor: Array.isArray(filtroConsultor) ? filtroConsultor[0] || "" : filtroConsultor,
+                      filtroMes,
+                      filtroAnio,
+                      filtroOcupacionIds,
+                      filtroOcupacionLabels: filtroOcupacion,
+                      equipoBloqueado: isAdminEquipo,
+                      rol,
+                    },
+                  })
+                }
               >
                 Ver costo por consultor
               </button>
@@ -2657,22 +2670,6 @@ const Registro = ({ userData }) => {
           filtroMes={filtroMes}
           filtroAnio={filtroAnio} 
         />
-
-        {canViewCostoConsultor && (
-          <CostoConsultorModal
-            isOpen={costoModalOpen}
-            onClose={() => setCostoModalOpen(false)}
-            filtroEquipo={equipoLocked}
-            filtroConsultor={Array.isArray(filtroConsultor) ? filtroConsultor[0] || "" : filtroConsultor}
-            filtroMes={filtroMes}
-            filtroAnio={filtroAnio}
-            filtroOcupacionIds={filtroOcupacionIds}
-            filtroOcupacionLabels={filtroOcupacion}
-            equipoBloqueado={isAdminEquipo}
-            isAdmin={isAdmin}
-            rol={rol}
-          />
-        )}
       </div>
     </div>
   );
