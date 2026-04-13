@@ -81,6 +81,7 @@ class Consultor(db.Model):
 
     usuario = db.Column(db.String(50), unique=True, nullable=False)
     nombre = db.Column(db.String(100), nullable=False)
+    cedula = db.Column(db.String(30), unique=True, nullable=True)
     password = db.Column(db.Text, nullable=False)
 
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id', ondelete='SET NULL'))
@@ -117,26 +118,6 @@ class Consultor(db.Model):
         cascade="all, delete-orphan",
         lazy="select"
     )
-
-    @hybrid_property
-    def permisos(self):
-        permisos_finales = set()
-
-        if self.rol_obj:
-            for rp in self.rol_obj.permisos_asignados:
-                if rp.permiso and rp.permiso.codigo:
-                    permisos_finales.add(rp.permiso.codigo)
-
-        if self.equipo_obj:
-            for ep in self.equipo_obj.permisos_asignados:
-                if ep.permiso and ep.permiso.codigo:
-                    permisos_finales.add(ep.permiso.codigo)
-
-        for cp in self.permisos_especiales:
-            if cp.permiso and cp.permiso.codigo:
-                permisos_finales.add(cp.permiso.codigo)
-
-        return list(permisos_finales)
 
 class Registro(db.Model):
     __tablename__ = 'registro'
@@ -536,7 +517,7 @@ class PresupuestoProyecto(db.Model):
     consultor = relationship("Consultor", backref="presupuesto_proyectos")
 
 class ConsultorPresupuesto(db.Model):
-    __tablename__ = "consultor_presupuesto"  
+    __tablename__ = "consultor_presupuesto"
 
     id = db.Column(db.Integer, primary_key=True)
     consultor_id = db.Column(db.Integer, db.ForeignKey("consultor.id"), nullable=False)
@@ -547,6 +528,12 @@ class ConsultorPresupuesto(db.Model):
     vr_perfil = db.Column(db.Numeric(14, 2), nullable=False, default=0)
     horas_base_mes = db.Column(db.Numeric(10, 2), nullable=False, default=160)
     vigente = db.Column(db.Boolean, default=True)
+
+    consultor = db.relationship("Consultor", backref="presupuestos")
+
+    __table_args__ = (
+        db.UniqueConstraint("consultor_id", "anio", "mes", name="uq_consultor_presupuesto_periodo"),
+    )
 
 ##Proyectos
 class ProyectoFase(db.Model):
