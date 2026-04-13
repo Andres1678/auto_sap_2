@@ -123,7 +123,7 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
         )}
 
         {can("PRESUPUESTO_CONSULTOR_IMPORTAR") && (
-          <Link to="/configuracion/importar-presupuesto">Importar Excel</Link>
+          <Link to="/configuracion/importar-presupuesto">Importar presupuesto</Link>
         )}
 
         {can("CONFIGURACION_VER") && (

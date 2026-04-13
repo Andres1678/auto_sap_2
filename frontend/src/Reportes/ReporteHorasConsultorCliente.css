@@ -351,3 +351,195 @@
     font-size: 12.5px;
   }
 }
+
+/* ====== bloque importador presupuesto integrado ====== */
+.rhc-import-wrap {
+  margin: 0 0 18px;
+}
+
+.rhc-import-wrap .pci-shell {
+  min-height: auto;
+  background: transparent;
+  padding: 0;
+  color: var(--rhc-text);
+}
+
+.rhc-import-wrap .pci-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  color: var(--rhc-text);
+}
+
+.rhc-import-wrap .pci-sub {
+  margin: 6px 0 0;
+  color: var(--rhc-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.rhc-import-wrap .pci-card {
+  margin-top: 12px;
+  background: var(--rhc-card);
+  border: 1px solid var(--rhc-line);
+  border-radius: var(--rhc-radius);
+  box-shadow: var(--rhc-shadow);
+  padding: 14px;
+  overflow: hidden;
+}
+
+.rhc-import-wrap .pci-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.rhc-import-wrap .pci-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rhc-import-wrap .pci-field label {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.75);
+}
+
+.rhc-import-wrap .pci-input,
+.rhc-import-wrap .pci-file {
+  width: 100%;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--rhc-line);
+  padding: 0 12px;
+  outline: none;
+  background: #fff;
+  color: var(--rhc-text);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.rhc-import-wrap .pci-file {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  height: auto;
+  min-height: 38px;
+}
+
+.rhc-import-wrap .pci-input:focus,
+.rhc-import-wrap .pci-file:focus {
+  border-color: rgba(14, 165, 233, 0.55);
+  box-shadow: 0 0 0 4px var(--rhc-focus);
+}
+
+.rhc-import-wrap .pci-btn {
+  height: 40px;
+  border-radius: 12px;
+  padding: 0 14px;
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  background: linear-gradient(180deg, rgba(220, 38, 38, 1) 0%, rgba(185, 28, 28, 1) 100%);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  box-shadow: 0 10px 18px rgba(220, 38, 38, 0.18);
+  transition: transform 0.05s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.rhc-import-wrap .pci-btn:hover {
+  filter: brightness(1.03);
+  box-shadow: 0 14px 22px rgba(220, 38, 38, 0.22);
+}
+
+.rhc-import-wrap .pci-btn:active {
+  transform: translateY(1px);
+}
+
+.rhc-import-wrap .pci-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+  box-shadow: none;
+}
+
+.rhc-import-wrap .pci-hint {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(14, 165, 233, 0.05);
+  border: 1px dashed rgba(14, 165, 233, 0.22);
+  color: var(--rhc-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* columnas del grid del importador */
+.rhc-import-wrap .col-2 {
+  grid-column: span 2;
+}
+
+.rhc-import-wrap .col-3 {
+  grid-column: span 3;
+}
+
+.rhc-import-wrap .col-4 {
+  grid-column: span 4;
+}
+
+.rhc-import-wrap .col-5 {
+  grid-column: span 5;
+}
+
+.rhc-import-wrap .col-6 {
+  grid-column: span 6;
+}
+
+.rhc-import-wrap .col-12 {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1200px) {
+  .rhc-import-wrap .pci-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .rhc-import-wrap .col-2,
+  .rhc-import-wrap .col-3,
+  .rhc-import-wrap .col-4,
+  .rhc-import-wrap .col-5,
+  .rhc-import-wrap .col-6 {
+    grid-column: span 3;
+  }
+}
+
+@media (max-width: 820px) {
+  .rhc-import-wrap .pci-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rhc-import-wrap .col-2,
+  .rhc-import-wrap .col-3,
+  .rhc-import-wrap .col-4,
+  .rhc-import-wrap .col-5,
+  .rhc-import-wrap .col-6 {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 520px) {
+  .rhc-import-wrap .pci-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rhc-import-wrap .col-2,
+  .rhc-import-wrap .col-3,
+  .rhc-import-wrap .col-4,
+  .rhc-import-wrap .col-5,
+  .rhc-import-wrap .col-6,
+  .rhc-import-wrap .col-12 {
+    grid-column: 1 / -1;
+  }
+}

@@ -140,6 +140,7 @@ export default function CostoConsultorModal({
   filtroConsultor = "",
   filtroMes = "",
   filtroAnio = "",
+  filtroOcupacion = [],
   equipoBloqueado = false,
   isAdmin = false,
   rol = "",
@@ -155,6 +156,9 @@ export default function CostoConsultorModal({
   const [modoFiltro, setModoFiltro] = useState("mes");
   const [selectedEquipo, setSelectedEquipo] = useState(normalizeUpper(filtroEquipo));
   const [selectedConsultor, setSelectedConsultor] = useState(normalizeText(filtroConsultor));
+  const [selectedOcupacion, setSelectedOcupacion] = useState(
+    Array.isArray(filtroOcupacion) ? filtroOcupacion[0] || "" : ""
+  );
   const [selectedMes, setSelectedMes] = useState(Number(filtroMes || currentMonth));
   const [selectedAnio, setSelectedAnio] = useState(Number(filtroAnio || currentYear));
   const [desde, setDesde] = useState("");
@@ -184,6 +188,7 @@ export default function CostoConsultorModal({
     setDesde("");
     setHasta("");
     setModoFiltro("mes");
+    setSelectedOcupacion(Array.isArray(filtroOcupacion) ? filtroOcupacion[0] || "" : "");
   }, [
     isOpen,
     isAdmin,
@@ -215,6 +220,7 @@ export default function CostoConsultorModal({
 
         if (selectedEquipo) qs.set("equipo", selectedEquipo);
         if (selectedConsultor) qs.set("consultor", selectedConsultor);
+        if (selectedOcupacion) qs.set("ocupacion", selectedOcupacion);
 
         const res = await jfetch(`/resumen-costo-consultor?${qs.toString()}`, {
           headers: getAuthHeaders(rol),
@@ -307,6 +313,7 @@ export default function CostoConsultorModal({
     setDesde("");
     setHasta("");
     setModoFiltro("mes");
+    setSelectedOcupacion(Array.isArray(filtroOcupacion) ? filtroOcupacion[0] || "" : "");
   };
 
   if (!isAdmin) return null;

@@ -6,7 +6,7 @@ import { jfetch } from './lib/api';
 import Resumen from './Resumen';
 import { exportRegistrosExcelXLSX_ALL } from "./lib/exportExcel";
 import CapacidadSemanalModal from "./CapacidadSemanalModal";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import CostoConsultorModal from "./CostoConsultorModal";
 
 Modal.setAppElement('#root');
@@ -501,6 +501,7 @@ const appendMultiValues = (params, key, values) => {
 };
 
 const Registro = ({ userData }) => {
+  const navigate = useNavigate();
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros] = useState([]);
   const [error, setError] = useState('');
@@ -2651,6 +2652,9 @@ const Registro = ({ userData }) => {
             filtroMes={filtroMes}
             filtroAnio={filtroAnio}
             equipoBloqueado={isAdminEquipo}
+            isAdmin={isAdmin}
+            rol={rol}
+            filtroOcupacion={filtroOcupacion}
           />
         )}
       </div>

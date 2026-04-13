@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { jfetch } from "../lib/api";
 import "./ReporteHorasConsultorCliente.css";
+import PresupuestoConsultorImport from "../PresupuestoConsultorImport";
 
 const moneyCOP = (n) => {
   const v = Number(n || 0);
@@ -32,13 +33,6 @@ export default function PresupuestoYCostoCliente() {
   const [totalesClienteCosto, setTotalesClienteCosto] = useState({});
   const [totalGeneralHoras, setTotalGeneralHoras] = useState(0);
   const [totalGeneralCosto, setTotalGeneralCosto] = useState(0);
-
-  // --------- presupuestos ----------
-  const today = new Date();
-  const [anio, setAnio] = useState(today.getFullYear());
-  const [mes, setMes] = useState(today.getMonth() + 1);
-  const [presupuestos, setPresupuestos] = useState([]);
-  const [saving, setSaving] = useState(false);
 
   const cols = useMemo(() => clientesCols || [], [clientesCols]);
 
@@ -80,79 +74,10 @@ export default function PresupuestoYCostoCliente() {
     }
   };
 
-  const cargarPresupuestos = async () => {
-    try {
-      const res = await jfetch(`/presupuestos/consultor?anio=${anio}&mes=${mes}`);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Error ${res.status}`);
-      }
-      const data = await res.json();
-      setPresupuestos(data || []);
-    } catch (e) {
-      Swal.fire({ icon: "error", title: "Error presupuestos", text: e.message });
-    }
-  };
-
-  const onChangePresupuesto = (consultorId, field, value) => {
-    setPresupuestos((prev) =>
-      prev.map((p) => {
-        if (p.consultorId !== consultorId) return p;
-        const next = { ...p, [field]: value };
-
-        const vr = Number(next.vrPerfil || 0);
-        const hb = Number(next.horasBaseMes || 0);
-        next.valorHora = hb > 0 ? Math.round((vr / hb) * 100) / 100 : 0;
-
-        return next;
-      })
-    );
-  };
-
-  const guardarPresupuestos = async () => {
-    setSaving(true);
-    try {
-      const items = presupuestos.map((p) => ({
-        consultorId: p.consultorId,
-        anio,
-        mes,
-        vrPerfil: Number(p.vrPerfil || 0),
-        horasBaseMes: Number(p.horasBaseMes || 0),
-      }));
-
-      const res = await jfetch(`/presupuestos/consultor`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Error ${res.status}`);
-      }
-
-      Swal.fire({ icon: "success", title: "OK", text: "Presupuestos guardados" });
-
-      // recargar reporte para reflejar costos nuevos
-      await cargarReporte();
-      await cargarPresupuestos();
-    } catch (e) {
-      Swal.fire({ icon: "error", title: "Error", text: e.message || "No se pudo guardar" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   useEffect(() => {
-    cargarPresupuestos();
     cargarReporte();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    cargarPresupuestos();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anio, mes]);
 
   const abrirDetalleConsultores = (r) => {
     const list = r?.consultoresList || [];
@@ -168,89 +93,28 @@ export default function PresupuestoYCostoCliente() {
 
   return (
     <div className="rhc-shell">
-      {/* ===================== PRESUPUESTOS ===================== */}
-      <div className="rhc-head">
-        <div>
-          <h2 className="rhc-title">Presupuesto consultores</h2>
-          <p className="rhc-sub">Carga VR perfil y horas base del mes. Se calcula automáticamente el valor/hora.</p>
-        </div>
-
-        <div className="rhc-actions" style={{ gap: 10 }}>
-          <div className="rhc-field" style={{ minWidth: 120 }}>
-            <label>Año</label>
-            <input type="number" value={anio} onChange={(e) => setAnio(Number(e.target.value || 0))} />
-          </div>
-          <div className="rhc-field" style={{ minWidth: 120 }}>
-            <label>Mes</label>
-            <input type="number" value={mes} min={1} max={12} onChange={(e) => setMes(Number(e.target.value || 0))} />
-          </div>
-
-          <button className="rhc-btn" onClick={guardarPresupuestos} disabled={saving}>
-            {saving ? "Guardando..." : "Guardar presupuestos"}
-          </button>
-        </div>
-      </div>
-
-      <div className="rhc-card" style={{ marginBottom: 18 }}>
-        <div className="rhc-tableWrap">
-          <table className="rhc-table">
-            <thead>
-              <tr>
-                <th className="sticky-left">Consultor</th>
-                <th>Usuario</th>
-                <th className="num">VR Perfil</th>
-                <th className="num">Horas base mes</th>
-                <th className="num sticky-right">Valor / hora</th>
-              </tr>
-            </thead>
-            <tbody>
-              {presupuestos.map((p) => (
-                <tr key={p.consultorId}>
-                  <td className="sticky-left">{p.nombre}</td>
-                  <td>{p.usuario}</td>
-
-                  <td className="num">
-                    <input
-                      style={{ width: 150 }}
-                      type="number"
-                      value={p.vrPerfil ?? 0}
-                      onChange={(e) => onChangePresupuesto(p.consultorId, "vrPerfil", e.target.value)}
-                    />
-                  </td>
-
-                  <td className="num">
-                    <input
-                      style={{ width: 120 }}
-                      type="number"
-                      value={p.horasBaseMes ?? 0}
-                      onChange={(e) => onChangePresupuesto(p.consultorId, "horasBaseMes", e.target.value)}
-                    />
-                  </td>
-
-                  <td className="num sticky-right">{moneyCOP(p.valorHora)}</td>
-                </tr>
-              ))}
-
-              {!presupuestos.length && (
-                <tr>
-                  <td colSpan={5} style={{ padding: 16, textAlign: "center" }}>Sin consultores</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      {/* ===================== IMPORTAR PRESUPUESTO EXCEL ===================== */}
+      <div className="rhc-import-wrap">
+        <PresupuestoConsultorImport />
       </div>
 
       {/* ===================== REPORTE CLIENTE/DÍA ===================== */}
       <div className="rhc-head">
         <div>
           <h2 className="rhc-title">Costo por cliente y por día (agregado)</h2>
-          <p className="rhc-sub">Horas y costos agregados por día. Totales al final por cliente (mensual en el rango).</p>
+          <p className="rhc-sub">
+            Horas y costos agregados por día. Totales al final por cliente
+            (mensual en el rango).
+          </p>
         </div>
 
         <div className="rhc-actions">
           <label className="rhc-check">
-            <input type="checkbox" checked={verCosto} onChange={(e) => setVerCosto(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={verCosto}
+              onChange={(e) => setVerCosto(e.target.checked)}
+            />
             <span>Ver costo</span>
           </label>
 
@@ -282,22 +146,38 @@ export default function PresupuestoYCostoCliente() {
 
         <div className="rhc-field">
           <label>Equipo</label>
-          <input value={equipo} onChange={(e) => setEquipo(e.target.value.toUpperCase())} placeholder="BASIS / FUNCIONAL" />
+          <input
+            value={equipo}
+            onChange={(e) => setEquipo(e.target.value.toUpperCase())}
+            placeholder="BASIS / FUNCIONAL"
+          />
         </div>
 
         <div className="rhc-field">
           <label>Módulo</label>
-          <input value={modulo} onChange={(e) => setModulo(e.target.value.toUpperCase())} placeholder="FI / CO / ..." />
+          <input
+            value={modulo}
+            onChange={(e) => setModulo(e.target.value.toUpperCase())}
+            placeholder="FI / CO / ..."
+          />
         </div>
 
         <div className="rhc-field">
           <label>Cliente</label>
-          <input value={cliente} onChange={(e) => setCliente(e.target.value.toUpperCase())} placeholder="CLARO / HITSS / ..." />
+          <input
+            value={cliente}
+            onChange={(e) => setCliente(e.target.value.toUpperCase())}
+            placeholder="CLARO / HITSS / ..."
+          />
         </div>
 
         <div className="rhc-field">
           <label>Consultor (filtro opcional)</label>
-          <input value={consultorNombre} onChange={(e) => setConsultorNombre(e.target.value)} placeholder="Ej: Andres" />
+          <input
+            value={consultorNombre}
+            onChange={(e) => setConsultorNombre(e.target.value)}
+            placeholder="Ej: Andres"
+          />
         </div>
       </div>
 
@@ -307,8 +187,6 @@ export default function PresupuestoYCostoCliente() {
             <thead>
               <tr>
                 <th className="sticky-left">Fecha</th>
-
-                {/* columna discreta */}
                 <th className="num">Consultores</th>
 
                 {cols.map((c) => (
@@ -329,7 +207,11 @@ export default function PresupuestoYCostoCliente() {
 
                   <td className="num">
                     {verConsultores ? (
-                      <button type="button" className="rhc-pill" onClick={() => abrirDetalleConsultores(r)}>
+                      <button
+                        type="button"
+                        className="rhc-pill"
+                        onClick={() => abrirDetalleConsultores(r)}
+                      >
                         {`Consultores: ${Number(r?.consultoresCount || 0)}`}
                       </button>
                     ) : (
@@ -340,6 +222,7 @@ export default function PresupuestoYCostoCliente() {
                   {cols.map((c) => {
                     const h = Number(r?.clientesHoras?.[c] || 0);
                     const cost = Number(r?.clientesCosto?.[c] || 0);
+
                     return (
                       <td key={c} className="num">
                         {verCosto ? (
@@ -354,14 +237,23 @@ export default function PresupuestoYCostoCliente() {
                     );
                   })}
 
-                  <td className="num sticky-right">{Number(r.totalHoras || 0).toFixed(2)}</td>
-                  {verCosto && <td className="num sticky-right-2">{moneyCOP(r.totalCosto)}</td>}
+                  <td className="num sticky-right">
+                    {Number(r.totalHoras || 0).toFixed(2)}
+                  </td>
+                  {verCosto && (
+                    <td className="num sticky-right-2">
+                      {moneyCOP(r.totalCosto)}
+                    </td>
+                  )}
                 </tr>
               ))}
 
               {!rows.length && (
                 <tr>
-                  <td colSpan={(verCosto ? 4 : 3) + cols.length} style={{ padding: 16, textAlign: "center" }}>
+                  <td
+                    colSpan={(verCosto ? 4 : 3) + cols.length}
+                    style={{ padding: 16, textAlign: "center" }}
+                  >
                     Sin datos
                   </td>
                 </tr>
@@ -377,6 +269,7 @@ export default function PresupuestoYCostoCliente() {
                   {cols.map((c) => {
                     const th = Number(totalesClienteHoras?.[c] || 0);
                     const tc = Number(totalesClienteCosto?.[c] || 0);
+
                     return (
                       <th key={c} className="num">
                         {verCosto ? (
@@ -391,8 +284,14 @@ export default function PresupuestoYCostoCliente() {
                     );
                   })}
 
-                  <th className="num sticky-right">{Number(totalGeneralHoras || 0).toFixed(2)}</th>
-                  {verCosto && <th className="num sticky-right-2">{moneyCOP(totalGeneralCosto)}</th>}
+                  <th className="num sticky-right">
+                    {Number(totalGeneralHoras || 0).toFixed(2)}
+                  </th>
+                  {verCosto && (
+                    <th className="num sticky-right-2">
+                      {moneyCOP(totalGeneralCosto)}
+                    </th>
+                  )}
                 </tr>
               </tfoot>
             )}
