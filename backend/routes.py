@@ -5295,10 +5295,6 @@ def get_presupuestos_consultor():
         if mes < 1 or mes > 12:
             return jsonify({"error": "Mes inválido"}), 400
 
-        meta_mes_info = _meta_horas_en_rango(*_month_bounds_local(anio, mes))
-        horas_base_default = meta_mes_info["horas"]
-        dias_habiles_mes = meta_mes_info["dias_laborables"]
-
         scope, val = scope_for(consultor_login, rol_req)
 
         q_cons = Consultor.query
@@ -5307,49 +5303,39 @@ def get_presupuestos_consultor():
             if not int(val or 0):
                 return jsonify({"error": "Consultor sin equipo asignado"}), 403
             q_cons = q_cons.filter(Consultor.equipo_id == int(val))
+
         elif scope == "ROLE_POOL":
             if not int(val or 0):
                 return jsonify({"error": "Consultor sin rol asignado"}), 403
             q_cons = q_cons.filter(Consultor.rol_id == int(val))
+
         elif scope == "ALL":
             pass
+
         else:
             return jsonify({"error": "Scope no permitido"}), 403
 
         consultores = q_cons.order_by(Consultor.nombre.asc()).all()
 
-        pres_rows = (
-            ConsultorPresupuesto.query
-            .filter(ConsultorPresupuesto.anio == anio)
-            .filter(ConsultorPresupuesto.mes == mes)
-            .order_by(ConsultorPresupuesto.consultor_id.asc(), ConsultorPresupuesto.id.desc())
-            .all()
-        )
-
-        pres_map = {}
-        for row in pres_rows:
-            if row.consultor_id not in pres_map:
-                pres_map[row.consultor_id] = row
-
         out = []
 
         for c in consultores:
-            row = pres_map.get(c.id)
+            presupuesto = _presupuesto_consultor_mes(c.id, anio, mes)
 
             vr_perfil = Decimal("0.00")
-            horas_base_mes = horas_base_default
-
-            if row:
-                vr_perfil = Decimal(str(row.vr_perfil or 0)).quantize(Decimal("0.01"))
-                if Decimal(str(row.horas_base_mes or 0)) > 0:
-                    horas_base_mes = Decimal(str(row.horas_base_mes or 0)).quantize(Decimal("0.01"))
-
+            horas_base_mes = Decimal("0.00")
             valor_hora = Decimal("0.00")
-            if horas_base_mes > 0:
-                valor_hora = (vr_perfil / horas_base_mes).quantize(
-                    Decimal("0.01"),
-                    rounding=ROUND_HALF_UP
-                )
+            dias_habiles_mes = 0
+
+            if presupuesto:
+                vr_perfil = presupuesto["vr_perfil"]
+                horas_base_mes = presupuesto["horas_base_mes"]
+                valor_hora = presupuesto["valor_hora"]
+                dias_habiles_mes = presupuesto["dias_habiles_mes"]
+            else:
+                meta_mes = _meta_horas_en_rango(*_month_bounds_local(anio, mes))
+                horas_base_mes = meta_mes["horas"]
+                dias_habiles_mes = meta_mes["dias_laborables"]
 
             out.append({
                 "consultorId": c.id,
@@ -8683,16 +8669,19 @@ def _meta_horas_en_rango(start_date: date, end_date: date):
 
 def _presupuesto_consultor_mes(consultor_id: int, anio: int, mes: int):
     """
-    Busca el presupuesto del consultor para un mes específico.
-    Prioriza vigente=True de ese mismo periodo.
+    Regla:
+    1. Busca presupuesto exacto del periodo.
+    2. Si no existe, busca el último presupuesto anterior o igual al periodo.
+    3. Si tampoco existe, usa el último presupuesto disponible del consultor.
+    4. horas_base_mes SIEMPRE se recalcula con el mes solicitado.
     """
+
     row = (
         ConsultorPresupuesto.query
         .filter(ConsultorPresupuesto.consultor_id == consultor_id)
         .filter(ConsultorPresupuesto.anio == anio)
         .filter(ConsultorPresupuesto.mes == mes)
-        .filter(ConsultorPresupuesto.vigente == True)
-        .order_by(ConsultorPresupuesto.id.desc())
+        .order_by(ConsultorPresupuesto.vigente.desc(), ConsultorPresupuesto.id.desc())
         .first()
     )
 
@@ -8700,31 +8689,58 @@ def _presupuesto_consultor_mes(consultor_id: int, anio: int, mes: int):
         row = (
             ConsultorPresupuesto.query
             .filter(ConsultorPresupuesto.consultor_id == consultor_id)
-            .filter(ConsultorPresupuesto.anio == anio)
-            .filter(ConsultorPresupuesto.mes == mes)
-            .order_by(ConsultorPresupuesto.id.desc())
+            .filter(
+                or_(
+                    ConsultorPresupuesto.anio < anio,
+                    and_(
+                        ConsultorPresupuesto.anio == anio,
+                        ConsultorPresupuesto.mes <= mes
+                    )
+                )
+            )
+            .order_by(
+                ConsultorPresupuesto.anio.desc(),
+                ConsultorPresupuesto.mes.desc(),
+                ConsultorPresupuesto.id.desc()
+            )
+            .first()
+        )
+
+    if not row:
+        row = (
+            ConsultorPresupuesto.query
+            .filter(ConsultorPresupuesto.consultor_id == consultor_id)
+            .order_by(
+                ConsultorPresupuesto.vigente.desc(),
+                ConsultorPresupuesto.anio.desc(),
+                ConsultorPresupuesto.mes.desc(),
+                ConsultorPresupuesto.id.desc()
+            )
             .first()
         )
 
     if not row:
         return None
 
+    meta_mes = _meta_horas_en_rango(*_month_bounds_local(anio, mes))
+    horas_base_mes = meta_mes["horas"]
+    dias_habiles_mes = meta_mes["dias_laborables"]
+
     vr = Decimal(str(row.vr_perfil or 0)).quantize(Decimal("0.01"))
-    horas_base = Decimal(str(row.horas_base_mes or 0)).quantize(Decimal("0.01"))
-
-    if horas_base <= 0:
-        meta_mes = _meta_horas_en_rango(*_month_bounds_local(anio, mes))
-        horas_base = meta_mes["horas"]
-
     valor_hora = Decimal("0.00")
-    if horas_base > 0:
-        valor_hora = (vr / horas_base).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    if horas_base_mes > 0:
+        valor_hora = (vr / horas_base_mes).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP
+        )
 
     return {
         "row": row,
         "vr_perfil": vr,
-        "horas_base_mes": horas_base,
+        "horas_base_mes": horas_base_mes,
         "valor_hora": valor_hora,
+        "dias_habiles_mes": dias_habiles_mes,
     }
 
 def _cost_parse_periodo_request():
