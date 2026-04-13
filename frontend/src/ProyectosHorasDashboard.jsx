@@ -832,7 +832,22 @@ export default function ProyectosHorasDashboard({
         params.set("mes", filtroMesActivo);
       }
 
-      const SAFE_MAX_ROWS = rangoActivo ? 900 : 500;
+      const totalFiltrosActivos =
+        filtroProyecto.length +
+        filtroCliente.length +
+        filtroModulo.length +
+        filtroOcupacion.length +
+        filtroTarea.length +
+        filtroConsultor.length +
+        filtroEquipo.length;
+
+      let SAFE_MAX_ROWS = 1800;
+
+      if (rangoActivo) SAFE_MAX_ROWS = 2600;
+      if (totalFiltrosActivos >= 1) SAFE_MAX_ROWS = 3500;
+      if (totalFiltrosActivos >= 2) SAFE_MAX_ROWS = 5000;
+      if (filtroProyecto.length > 0) SAFE_MAX_ROWS = 6500;
+
       params.set("max_rows", String(SAFE_MAX_ROWS));
 
       const qs = params.toString();
@@ -885,6 +900,13 @@ export default function ProyectosHorasDashboard({
     filtroRangoMesHasta,
     filtroFechaDesde,
     filtroFechaHasta,
+    filtroProyecto,
+    filtroCliente,
+    filtroModulo,
+    filtroOcupacion,
+    filtroTarea,
+    filtroConsultor,
+    filtroEquipo,
   ]);
 
   useEffect(() => {
@@ -1351,7 +1373,7 @@ export default function ProyectosHorasDashboard({
   const topProyectos = useMemo(() => horasPorProyecto.slice(0, TOP), [horasPorProyecto]);
 
   const rowsForFaseChart = useMemo(() => {
-    return datosFiltrados.slice(0, 500);
+    return datosFiltrados.slice(0, 1500);
   }, [datosFiltrados]);
 
   const limpiarFiltros = () => {
@@ -1572,8 +1594,8 @@ export default function ProyectosHorasDashboard({
               fontWeight: 600,
             }}
           >
-            Se muestran solo los primeros {backendMaxRows} registros para evitar sobrecarga.
-            Ajusta más los filtros si necesitas un detalle más específico.
+            Se cargaron los primeros {backendMaxRows} registros para mantener buen rendimiento.
+            Con los filtros actuales todavía hay más información disponible.
           </div>
         )}
 

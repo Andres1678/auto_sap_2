@@ -9827,10 +9827,49 @@ def obtener_proyectos_horas_dashboard():
         # Protección dura contra sobrecarga
         # Nunca usar q.all() directo
         # ----------------------------------------------------------
-        max_rows = request.args.get("max_rows", type=int) or 500
-        max_rows = min(max(max_rows, 100), 1200)
+        filtro_mes = (request.args.get("mes") or "").strip()
+        filtro_desde = (request.args.get("desde") or "").strip()
+        filtro_hasta = (request.args.get("hasta") or "").strip()
+        filtro_modulo = (request.args.get("modulo") or "").strip()
+        filtro_cliente = (request.args.get("cliente") or "").strip()
+        filtro_consultor = (request.args.get("consultor") or "").strip()
+        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
 
-        rows = q.limit(max_rows + 1).all()
+        filtros_activos = 0
+        for v in [
+            filtro_mes,
+            filtro_desde,
+            filtro_hasta,
+            filtro_modulo,
+            filtro_cliente,
+            filtro_consultor,
+            filtro_proyecto_id,
+            equipo_filter,
+        ]:
+            if str(v).strip():
+                filtros_activos += 1
+
+        requested_max = request.args.get("max_rows", type=int)
+
+        if requested_max:
+            max_rows = requested_max
+        else:
+            max_rows = 2500
+            if filtro_desde or filtro_hasta:
+                max_rows = 4000
+            if filtros_activos >= 2:
+                max_rows = 6000
+            if filtro_proyecto_id:
+                max_rows = 8000
+
+        max_rows = min(max(max_rows, 500), 8000)
+
+        rows = (
+            q.order_by(Registro.fecha.desc(), Registro.id.desc())
+            .limit(max_rows + 1)
+            .all()
+        )
         truncated = len(rows) > max_rows
         rows = rows[:max_rows]
 
