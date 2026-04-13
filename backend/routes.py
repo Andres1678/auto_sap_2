@@ -9232,6 +9232,7 @@ def dashboard_costos_resumen():
         consultores_filter = _get_multi("consultor")
         modulos_filter = [x.upper() for x in _get_multi("modulo")]
         estados_ot_filter = _get_multi("estado_ot")
+        servicios_filter = _get_multi("servicio")
 
         ocupacion_ids = [
             int(x) for x in request.args.getlist("ocupacion_id")
@@ -9441,7 +9442,8 @@ def dashboard_costos_resumen():
         # -----------------------------------------
         # OPORTUNIDADES GANADAS
         # No depende del rango del dashboard.
-        # Solo se filtra por cliente, estado_ot y proyecto.
+        # Se filtra por cliente, estado_ot, servicio y proyecto.
+        # Además se excluyen las que queden con valor 0.
         # -----------------------------------------
         qo = db.session.query(
             Oportunidad.id.label("id"),
@@ -9463,6 +9465,9 @@ def dashboard_costos_resumen():
 
         if estados_ot_filter:
             qo = qo.filter(Oportunidad.estado_ot.in_(estados_ot_filter))
+
+        if servicios_filter:
+            qo = qo.filter(Oportunidad.servicio.in_(servicios_filter))
 
         if filtro_proyecto_id:
             try:
@@ -9500,6 +9505,9 @@ def dashboard_costos_resumen():
                 Decimal("0.01"),
                 rounding=ROUND_HALF_UP
             )
+
+            if mrc_normalizado <= Decimal("0.00"):
+                continue
 
             prc = (op.codigo_prc or "SIN PRC").strip() or "SIN PRC"
 
@@ -9555,6 +9563,7 @@ def dashboard_costos_resumen():
                 "modulos": modulos_filter,
                 "ocupacion_ids": ocupacion_ids,
                 "estado_ot": estados_ot_filter,
+                "servicios": servicios_filter,
                 "proyecto_id": int(filtro_proyecto_id) if filtro_proyecto_id.isdigit() else None,
             },
         }), 200
@@ -9597,6 +9606,17 @@ def dashboard_costos_filtros():
         E = aliased(Equipo)
         fecha_expr = _registro_fecha_expr()
 
+        def _get_multi(name):
+            vals = request.args.getlist(name)
+            if vals:
+                return [str(v).strip() for v in vals if str(v).strip()]
+            single = (request.args.get(name) or "").strip()
+            return [single] if single else []
+
+        clientes_filter = _get_multi("cliente")
+        estados_ot_filter = _get_multi("estado_ot")
+        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
+
         q = (
             db.session.query(
                 Registro.cliente.label("cliente"),
@@ -9625,16 +9645,42 @@ def dashboard_costos_filtros():
         modulos = sorted({(r.modulo or "").strip().upper() for r in rows if (r.modulo or "").strip()})
         equipos = sorted({(r.equipo or "").strip().upper() for r in rows if (r.equipo or "").strip()})
 
-        estados_ot = [
-            x[0] for x in (
-                db.session.query(Oportunidad.estado_ot)
-                .filter(Oportunidad.estado_ot.isnot(None))
-                .filter(func.trim(Oportunidad.estado_ot) != "")
-                .distinct()
-                .order_by(Oportunidad.estado_ot.asc())
-                .all()
-            )
-        ]
+        qo = db.session.query(
+            Oportunidad.estado_ot.label("estado_ot"),
+            Oportunidad.servicio.label("servicio"),
+            Oportunidad.nombre_cliente.label("nombre_cliente"),
+        ).filter(
+            _sql_norm_estado(Oportunidad.estado_oferta) == _norm_key_for_match("GANADA")
+        )
+
+        if clientes_filter:
+            qo = qo.filter(Oportunidad.nombre_cliente.in_(clientes_filter))
+
+        if estados_ot_filter:
+            qo = qo.filter(Oportunidad.estado_ot.in_(estados_ot_filter))
+
+        if filtro_proyecto_id:
+            try:
+                qo = qo.join(
+                    Proyecto,
+                    Proyecto.oportunidad_id == Oportunidad.id
+                ).filter(Proyecto.id == int(filtro_proyecto_id))
+            except Exception:
+                pass
+
+        opp_rows = qo.all()
+
+        estados_ot = sorted({
+            (r.estado_ot or "").strip()
+            for r in opp_rows
+            if (r.estado_ot or "").strip()
+        })
+
+        servicios = sorted({
+            (r.servicio or "").strip()
+            for r in opp_rows
+            if (r.servicio or "").strip()
+        })
 
         return jsonify({
             "clientes": clientes,
@@ -9642,6 +9688,7 @@ def dashboard_costos_filtros():
             "modulos": modulos,
             "equipos": equipos,
             "estados_ot": estados_ot,
+            "servicios": servicios,
         }), 200
 
     except Exception as e:
@@ -9651,7 +9698,7 @@ def dashboard_costos_filtros():
 
 @bp.route('/dashboard/proyectos-horas', methods=['GET'])
 @permission_required("GRAFICOS_VER")
-def dashboard_proyectos_horas():
+def obtener_proyectos_horas_dashboard():
     try:
         usuario = _get_usuario_from_request()
         rol_req = _get_rol_from_request()
@@ -9659,7 +9706,7 @@ def dashboard_proyectos_horas():
         if not usuario:
             return jsonify({"error": "Usuario no enviado"}), 400
 
-        usuario_norm = usuario.strip().lower()
+        usuario_norm = (usuario or "").strip().lower()
 
         consultor_login = (
             Consultor.query.options(
@@ -9677,102 +9724,202 @@ def dashboard_proyectos_horas():
 
         C = aliased(Consultor)
         E = aliased(Equipo)
-        O = aliased(Ocupacion)
-        T = aliased(Tarea)
 
         q = (
-            db.session.query(
-                Registro.id,
-                Registro.fecha,
-                Registro.cliente,
-                Registro.modulo,
-                Registro.usuario_consultor,
-                Registro.nro_caso_cliente,
-                Registro.nro_caso_interno,
-                Registro.nro_caso_escalado,
-                Registro.descripcion,
-                Registro.total_horas,
-                Registro.tiempo_invertido,
-                Registro.proyecto_id,
-                Registro.fase_proyecto_id,
-                Registro.equipo,
-                C.nombre.label("consultor_nombre"),
-                E.nombre.label("equipo_nombre"),
-                O.id.label("ocupacion_id"),
-                O.codigo.label("ocupacion_codigo"),
-                O.nombre.label("ocupacion_nombre"),
-                T.id.label("tarea_id"),
-                T.codigo.label("tarea_codigo"),
-                T.nombre.label("tarea_nombre"),
+            Registro.query
+            .options(
+                joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
+                joinedload(Registro.tarea),
+                joinedload(Registro.ocupacion),
+                joinedload(Registro.proyecto),
+                joinedload(Registro.fase_proyecto),
             )
-            .select_from(Registro)
             .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
             .outerjoin(E, C.equipo_id == E.id)
-            .outerjoin(O, Registro.ocupacion_id == O.id)
-            .outerjoin(T, Registro.tarea_id == T.id)
         )
 
+        # ----------------------------------------------------------
+        # Scope
+        # ----------------------------------------------------------
         if scope == "SELF":
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+
         elif scope == "TEAM":
             if not int(val or 0):
                 return jsonify({"error": "Consultor sin equipo asignado"}), 403
             q = q.filter(C.equipo_id == int(val))
 
+        elif scope == "ALL":
+            pass
+
+        # ----------------------------------------------------------
+        # Filtros opcionales
+        # ----------------------------------------------------------
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
         filtro_mes = (request.args.get("mes") or "").strip()
         filtro_desde = (request.args.get("desde") or "").strip()
         filtro_hasta = (request.args.get("hasta") or "").strip()
+        filtro_modulo = (request.args.get("modulo") or "").strip()
+        filtro_cliente = (request.args.get("cliente") or "").strip()
+        filtro_consultor = (request.args.get("consultor") or "").strip()
+        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
 
+        if equipo_filter:
+            if scope in ("TEAM", "SELF"):
+                eq_login = ""
+                if consultor_login.equipo_obj:
+                    eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper()
+
+                if equipo_filter != eq_login:
+                    return jsonify({"error": "No autorizado para consultar otro equipo"}), 403
+
+            q = q.filter(func.upper(E.nombre) == equipo_filter)
+
+        # ----------------------------------------------------------
+        # Filtro por mes o rango
+        # ----------------------------------------------------------
         if filtro_mes:
-            q = q.filter(func.substr(func.cast(Registro.fecha, db.String), 1, 7) == filtro_mes)
+            partes = filtro_mes.split("-")
+            if len(partes) != 2:
+                return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
+
+            try:
+                y = int(partes[0])
+                m = int(partes[1])
+            except ValueError:
+                return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
+
+            if m < 1 or m > 12:
+                return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
+
+            prefijo_mes = f"{y:04d}-{m:02d}"
+
+            q = q.filter(
+                func.substr(func.cast(Registro.fecha, db.String), 1, 7) == prefijo_mes
+            )
         else:
             if filtro_desde:
                 q = q.filter(func.cast(Registro.fecha, db.String) >= filtro_desde)
             if filtro_hasta:
                 q = q.filter(func.cast(Registro.fecha, db.String) <= filtro_hasta)
 
-        max_rows = request.args.get("max_rows", type=int) or 3000
-        max_rows = min(max(max_rows, 1), 5000)
+        if filtro_modulo:
+            q = q.filter(func.upper(Registro.modulo) == filtro_modulo.upper())
 
-        rows = q.order_by(Registro.fecha.desc(), Registro.id.desc()).limit(max_rows + 1).all()
+        if filtro_cliente:
+            q = q.filter(Registro.cliente.ilike(f"%{filtro_cliente}%"))
+
+        if filtro_consultor:
+            q = q.filter(C.nombre.ilike(f"%{filtro_consultor}%"))
+
+        if filtro_proyecto_id:
+            try:
+                q = _apply_project_filter_graficos(q, int(filtro_proyecto_id))
+            except Exception:
+                return jsonify({"error": "proyecto_id inválido"}), 400
+
+        # ----------------------------------------------------------
+        # Orden
+        # ----------------------------------------------------------
+        q = q.order_by(Registro.fecha.desc(), Registro.id.desc())
+
+        # ----------------------------------------------------------
+        # Protección dura contra sobrecarga
+        # Nunca usar q.all() directo
+        # ----------------------------------------------------------
+        max_rows = request.args.get("max_rows", type=int) or 500
+        max_rows = min(max(max_rows, 100), 1200)
+
+        rows = q.limit(max_rows + 1).all()
         truncated = len(rows) > max_rows
         rows = rows[:max_rows]
 
+        # ----------------------------------------------------------
+        # Serialización
+        # ----------------------------------------------------------
         data = []
+
         for r in rows:
-            tipo_tarea = None
-            if r.tarea_codigo and r.tarea_nombre:
-                tipo_tarea = f"{r.tarea_codigo} - {r.tarea_nombre}"
+            tarea = getattr(r, "tarea", None)
+            ocup = getattr(r, "ocupacion", None)
+
+            if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
+                tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
+            else:
+                tipo_tarea_str = (getattr(r, "tipo_tarea", "") or "").strip() or None
+
+            equipo_nombre = None
+            if r.consultor and getattr(r.consultor, "equipo_obj", None):
+                equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
+
+            equipo_raw = getattr(r, "equipo", None)
+
+            proyecto = getattr(r, "proyecto", None)
+            fase_proyecto = getattr(r, "fase_proyecto", None)
 
             data.append({
                 "id": r.id,
                 "fecha": _safe_fecha_iso(r.fecha),
-                "cliente": r.cliente,
                 "modulo": r.modulo,
-                "equipo": (r.equipo_nombre or r.equipo or "SIN EQUIPO").strip().upper(),
-                "consultor": r.consultor_nombre,
-                "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+                "cliente": r.cliente,
+                "equipo": equipo_nombre or (str(equipo_raw).strip().upper() if equipo_raw else "SIN EQUIPO"),
                 "nroCasoCliente": r.nro_caso_cliente,
                 "nroCasoInterno": r.nro_caso_interno,
                 "nroCasoEscaladoSap": r.nro_caso_escalado,
+
+                "ocupacion_id": r.ocupacion_id,
+                "ocupacion_codigo": ocup.codigo if ocup else None,
+                "ocupacion_nombre": ocup.nombre if ocup else None,
+
+                "tarea_id": r.tarea_id,
+                "tipoTarea": tipo_tarea_str,
+                "tarea": {
+                    "id": tarea.id,
+                    "codigo": getattr(tarea, "codigo", None),
+                    "nombre": getattr(tarea, "nombre", None),
+                } if tarea else None,
+
+                "consultor": r.consultor.nombre if r.consultor else None,
+                "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+                "horaInicio": r.hora_inicio,
+                "horaFin": r.hora_fin,
+                "tiempoInvertido": r.tiempo_invertido,
+                "tiempoFacturable": r.tiempo_facturable,
+                "horasAdicionales": r.horas_adicionales,
                 "descripcion": r.descripcion,
                 "totalHoras": r.total_horas,
-                "tiempoInvertido": r.tiempo_invertido,
-                "ocupacion_id": r.ocupacion_id,
-                "ocupacion_codigo": r.ocupacion_codigo,
-                "ocupacion_nombre": r.ocupacion_nombre,
-                "tarea_id": r.tarea_id,
-                "tipoTarea": tipo_tarea,
+                "bloqueado": bool(r.bloqueado),
+                "oncall": r.oncall,
+                "desborde": r.desborde,
+                "actividadMalla": r.actividad_malla,
+
                 "proyecto_id": r.proyecto_id,
                 "fase_proyecto_id": r.fase_proyecto_id,
+                "proyecto": {
+                    "id": proyecto.id,
+                    "codigo": proyecto.codigo,
+                    "nombre": proyecto.nombre,
+                    "activo": bool(getattr(proyecto, "activo", True)),
+                } if proyecto else None,
+                "fase_proyecto": {
+                    "id": fase_proyecto.id,
+                    "nombre": fase_proyecto.nombre,
+                } if fase_proyecto else None,
+                "proyecto_codigo": proyecto.codigo if proyecto else None,
+                "proyecto_nombre": proyecto.nombre if proyecto else None,
+                "proyecto_fase": fase_proyecto.nombre if fase_proyecto else None,
             })
 
         return jsonify({
             "data": data,
             "truncated": truncated,
-            "max_rows": max_rows
+            "max_rows": max_rows,
         }), 200
 
     except Exception as e:
-        app.logger.exception("❌ Error en /dashboard/proyectos-horas")
-        return jsonify({"error": str(e)}), 500
+        err = traceback.format_exc()
+        app.logger.error(f"❌ Error en /dashboard/proyectos-horas: {e}\n{err}")
+        return jsonify({
+            "error": "Error interno del servidor",
+            "detalle": str(e)
+        }), 500

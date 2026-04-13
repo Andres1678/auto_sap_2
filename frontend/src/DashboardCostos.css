@@ -163,9 +163,10 @@
   border-color: #bfd0ea;
 }
 
+/* Cambiado para que el panel de filtros quede arriba y con más espacio */
 .dc-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: 1fr;
   gap: 18px;
   align-items: start;
 }
@@ -185,6 +186,7 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
+  order: -1;
 }
 
 .dc-card,
@@ -204,8 +206,7 @@
 }
 
 .dc-sidebar .dc-panel {
-  position: sticky;
-  top: 18px;
+  position: static;
 }
 
 .dc-cards {
@@ -483,15 +484,35 @@
   font-weight: 700;
 }
 
+/* Mejor distribución del formulario */
 .dc-filters-grid {
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 14px;
+  align-items: end;
 }
 
 .dc-filter-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+}
+
+.dc-filter-field--span-2 {
+  grid-column: span 2;
+}
+
+.dc-filter-section-title {
+  grid-column: 1 / -1;
+  margin: 6px 0 -2px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .dc-filter-field label {
@@ -561,8 +582,10 @@
 }
 
 .dc-filter-actions {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(180px, 220px));
+  justify-content: end;
   gap: 10px;
   margin-top: 6px;
 }
@@ -656,17 +679,13 @@
 }
 
 @media (max-width: 1180px) {
-  .dc-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .dc-sidebar .dc-panel {
-    position: static;
-  }
-
   .dc-charts-grid,
   .dc-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dc-filters-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -694,6 +713,21 @@
   }
 }
 
+@media (max-width: 760px) {
+  .dc-filters-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dc-filter-field--span-2 {
+    grid-column: auto;
+  }
+
+  .dc-filter-actions {
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+}
+
 @media (max-width: 640px) {
   .dc-shell {
     padding: 14px;
@@ -710,8 +744,7 @@
   }
 
   .dc-cards,
-  .dc-detail-cards,
-  .dc-filter-actions {
+  .dc-detail-cards {
     grid-template-columns: 1fr;
   }
 

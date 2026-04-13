@@ -8,7 +8,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
   LabelList,
 } from "recharts";
 import { jfetch } from "./lib/api";
@@ -105,19 +104,6 @@ const estaEnRangoFecha = (fechaISO, desde, hasta) => {
   if (desde && fecha < desde) return false;
   if (hasta && fecha > hasta) return false;
   return true;
-};
-
-const hasRangeActivo = (
-  tipoRango,
-  filtroRangoMesDesde,
-  filtroRangoMesHasta,
-  filtroFechaDesde,
-  filtroFechaHasta
-) => {
-  if (tipoRango === "mes") {
-    return !!(filtroRangoMesDesde || filtroRangoMesHasta);
-  }
-  return !!(filtroFechaDesde || filtroFechaHasta);
 };
 
 const cumpleFiltroFechaPrincipal = ({
@@ -236,36 +222,18 @@ const recordMatchesSelfScope = (r, usuario, nombreUser, equipoUser) => {
 const CHART_BLUE = "#0055B8";
 
 const getYAxisWidth = (kind, data = []) => {
-  const longest = Math.max(
-    18,
-    ...data.map((d) => String(d?.name || "").length)
-  );
+  const longest = Math.max(18, ...data.map((d) => String(d?.name || "").length));
 
   if (kind === "proyecto") return Math.min(Math.max(longest * 7.2, 320), 460);
   if (kind === "consultor") return Math.min(Math.max(longest * 6.9, 280), 400);
   return Math.min(Math.max(longest * 6.6, 260), 380);
 };
 
-const getChartHeight = (len) => {
-  return Math.min(Math.max(380, len * 34), 980);
-};
+const getChartHeight = (len) => Math.min(Math.max(380, len * 34), 980);
 
-/* =========================
-   Helpers gráfico por mes
-========================= */
 const MONTHS_ES = [
-  "ENE",
-  "FEB",
-  "MAR",
-  "ABR",
-  "MAY",
-  "JUN",
-  "JUL",
-  "AGO",
-  "SEP",
-  "OCT",
-  "NOV",
-  "DIC",
+  "ENE", "FEB", "MAR", "ABR", "MAY", "JUN",
+  "JUL", "AGO", "SEP", "OCT", "NOV", "DIC",
 ];
 
 const getMonthKeyFromFecha = (fechaISO) => {
@@ -280,6 +248,63 @@ const formatMonthLabel = (monthKey) => {
   const idx = Number(m) - 1;
   if (idx < 0 || idx > 11) return monthKey;
   return `${MONTHS_ES[idx]} ${y}`;
+};
+
+const isMonthStr = (value) => /^\d{4}-\d{2}$/.test(String(value || ""));
+const isDateStr = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+
+const normalizeMonthRange = (desdeMes, hastaMes) => {
+  const d = isMonthStr(desdeMes) ? desdeMes : "";
+  const h = isMonthStr(hastaMes) ? hastaMes : "";
+
+  if (!d && !h) return { desdeMes: "", hastaMes: "", activo: false };
+  if (d && !h) return { desdeMes: d, hastaMes: d, activo: true };
+  if (!d && h) return { desdeMes: h, hastaMes: h, activo: true };
+
+  return d <= h
+    ? { desdeMes: d, hastaMes: h, activo: true }
+    : { desdeMes: h, hastaMes: d, activo: true };
+};
+
+const normalizeDayRange = (desde, hasta) => {
+  const d = isDateStr(desde) ? desde : "";
+  const h = isDateStr(hasta) ? hasta : "";
+
+  if (!d && !h) return { desde: "", hasta: "", activo: false };
+  if (d && !h) return { desde: d, hasta: d, activo: true };
+  if (!d && h) return { desde: h, hasta: h, activo: true };
+
+  return d <= h
+    ? { desde: d, hasta: h, activo: true }
+    : { desde: h, hasta: d, activo: true };
+};
+
+const buildMonthSeries = (desdeMonthKey, hastaMonthKey) => {
+  if (!isMonthStr(desdeMonthKey) || !isMonthStr(hastaMonthKey)) return [];
+
+  let [y, m] = desdeMonthKey.split("-").map(Number);
+  const [endY, endM] = hastaMonthKey.split("-").map(Number);
+
+  const out = [];
+
+  while (y < endY || (y === endY && m <= endM)) {
+    const key = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`;
+    out.push({
+      key,
+      name: formatMonthLabel(key),
+      horas: 0,
+      totalModulos: 0,
+      modulosDetalle: [],
+    });
+
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+
+  return out;
 };
 
 function MesModuloTooltip({ active, payload, label }) {
@@ -335,9 +360,6 @@ function MesModuloTooltip({ active, payload, label }) {
   );
 }
 
-/* =========================
-   Tick custom: WRAP en YAxis
-========================= */
 function YAxisTickWrap(props) {
   const {
     x,
@@ -538,67 +560,6 @@ function MultiFiltro({
   );
 }
 
- const isMonthStr = (value) => /^\d{4}-\d{2}$/.test(String(value || ""));
-  const isDateStr = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
-
-  const normalizeMonthRange = (desdeMes, hastaMes) => {
-    const d = isMonthStr(desdeMes) ? desdeMes : "";
-    const h = isMonthStr(hastaMes) ? hastaMes : "";
-
-    if (!d && !h) return { desdeMes: "", hastaMes: "", activo: false };
-
-    // si solo selecciona uno, tomar ese mismo mes como inicio y fin
-    if (d && !h) return { desdeMes: d, hastaMes: d, activo: true };
-    if (!d && h) return { desdeMes: h, hastaMes: h, activo: true };
-
-    return d <= h
-      ? { desdeMes: d, hastaMes: h, activo: true }
-      : { desdeMes: h, hastaMes: d, activo: true };
-  };
-
-  const normalizeDayRange = (desde, hasta) => {
-    const d = isDateStr(desde) ? desde : "";
-    const h = isDateStr(hasta) ? hasta : "";
-
-    if (!d && !h) return { desde: "", hasta: "", activo: false };
-
-    // si solo selecciona una fecha, tomar ese mismo día
-    if (d && !h) return { desde: d, hasta: d, activo: true };
-    if (!d && h) return { desde: h, hasta: h, activo: true };
-
-    return d <= h
-      ? { desde: d, hasta: h, activo: true }
-      : { desde: h, hasta: d, activo: true };
-  };
-
-  const buildMonthSeries = (desdeMonthKey, hastaMonthKey) => {
-    if (!isMonthStr(desdeMonthKey) || !isMonthStr(hastaMonthKey)) return [];
-
-    let [y, m] = desdeMonthKey.split("-").map(Number);
-    const [endY, endM] = hastaMonthKey.split("-").map(Number);
-
-    const out = [];
-
-    while (y < endY || (y === endY && m <= endM)) {
-      const key = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`;
-      out.push({
-        key,
-        name: formatMonthLabel(key),
-        horas: 0,
-        totalModulos: 0,
-        modulosDetalle: [],
-      });
-
-      m += 1;
-      if (m > 12) {
-        m = 1;
-        y += 1;
-      }
-    }
-
-    return out;
-  };
-
 /* =========================
    Componente principal
 ========================= */
@@ -614,6 +575,8 @@ export default function ProyectosHorasDashboard({
   const [proyectos, setProyectos] = useState([]);
   const [mapeosProyecto, setMapeosProyecto] = useState([]);
   const [loadingMain, setLoadingMain] = useState(false);
+  const [wasTruncated, setWasTruncated] = useState(false);
+  const [backendMaxRows, setBackendMaxRows] = useState(0);
 
   const [filtroMes, setFiltroMes] = useState(initialMonth);
 
@@ -632,8 +595,9 @@ export default function ProyectosHorasDashboard({
   const [filtroProyecto, setFiltroProyecto] = useState([]);
 
   const [detailTitle, setDetailTitle] = useState("");
-  const [detailRows, setDetailRows] = useState([]);
+  const [detailRowsAll, setDetailRowsAll] = useState([]);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [detailVisibleCount, setDetailVisibleCount] = useState(100);
 
   const abortMainRef = useRef(null);
 
@@ -784,21 +748,6 @@ export default function ProyectosHorasDashboard({
     return map;
   }, [proyectos]);
 
-  const proyectoLabelToId = useMemo(() => {
-    const map = new Map();
-
-    (proyectos || []).forEach((p) => {
-      const label = buildProyectoLabel(p);
-      const id = Number(p?.id);
-
-      if (label && Number.isFinite(id) && id > 0) {
-        map.set(label, id);
-      }
-    });
-
-    return map;
-  }, [proyectos]);
-
   const mapeosProyectoPreparados = useMemo(() => {
     const exactMap = new Map();
     const containsRules = [];
@@ -840,17 +789,24 @@ export default function ProyectosHorasDashboard({
     if (Array.isArray(registrosOverride)) {
       setError("");
       setRegistros(registrosOverride);
+      setWasTruncated(false);
+      setBackendMaxRows(registrosOverride.length);
       return;
     }
 
     if (!usuario) return;
 
-    // no disparar consulta hasta que el rango esté completo
-    if (tipoRango === "mes" && (!filtroRangoMesDesde || !filtroRangoMesHasta)) {
+    const monthRangeStarted =
+      tipoRango === "mes" && (!!filtroRangoMesDesde || !!filtroRangoMesHasta);
+
+    const dayRangeStarted =
+      tipoRango === "dia" && (!!filtroFechaDesde || !!filtroFechaHasta);
+
+    if (monthRangeStarted && (!filtroRangoMesDesde || !filtroRangoMesHasta)) {
       return;
     }
 
-    if (tipoRango === "dia" && (!filtroFechaDesde || !filtroFechaHasta)) {
+    if (dayRangeStarted && (!filtroFechaDesde || !filtroFechaHasta)) {
       return;
     }
 
@@ -876,8 +832,8 @@ export default function ProyectosHorasDashboard({
         params.set("mes", filtroMesActivo);
       }
 
-      // bajar este límite
-      params.set("max_rows", rangoActivo ? "3000" : "1500");
+      const SAFE_MAX_ROWS = rangoActivo ? 900 : 500;
+      params.set("max_rows", String(SAFE_MAX_ROWS));
 
       const qs = params.toString();
       const url = qs ? `/dashboard/proyectos-horas?${qs}` : "/dashboard/proyectos-horas";
@@ -897,17 +853,21 @@ export default function ProyectosHorasDashboard({
       if (!res.ok) {
         throw new Error(
           json?.detalle ||
-          json?.mensaje ||
-          json?.error ||
-          `HTTP ${res.status}`
+            json?.mensaje ||
+            json?.error ||
+            `HTTP ${res.status}`
         );
       }
 
       setRegistros(toArrayResponse(json));
+      setWasTruncated(Boolean(json?.truncated));
+      setBackendMaxRows(Number(json?.max_rows || SAFE_MAX_ROWS));
     } catch (e) {
       if (e?.name === "AbortError") return;
       setRegistros([]);
       setError(String(e?.message || e));
+      setWasTruncated(false);
+      setBackendMaxRows(0);
     } finally {
       setLoadingMain(false);
     }
@@ -1279,12 +1239,7 @@ export default function ProyectosHorasDashboard({
   }, [datosFiltrados, rangoActivo, rangoDesde, rangoHasta, filtroMesActivo]);
 
   const horasPorProyecto = useMemo(
-    () =>
-      groupSum(
-        datosFiltrados,
-        (r) => r.proyectoKey,
-        (r) => r.proyectoOficial
-      ),
+    () => groupSum(datosFiltrados, (r) => r.proyectoKey, (r) => r.proyectoOficial),
     [datosFiltrados]
   );
 
@@ -1337,8 +1292,16 @@ export default function ProyectosHorasDashboard({
     [datosFiltrados]
   );
 
+  const detailRows = useMemo(() => {
+    return detailRowsAll.slice(0, detailVisibleCount);
+  }, [detailRowsAll, detailVisibleCount]);
+
+  const detailTotalHoras = useMemo(() => {
+    return detailRowsAll.reduce((s, r) => s + r.horasNum, 0);
+  }, [detailRowsAll]);
+
   const openDetail = useCallback(
-    (kind, value, extra = "") => {
+    (kind, value) => {
       let rows = [];
 
       if (kind === "proyecto") {
@@ -1377,14 +1340,19 @@ export default function ProyectosHorasDashboard({
       }
 
       setDetailTitle(`${kind.toUpperCase()}: ${label} — Total: ${subtotal.toFixed(2)} h`);
-      setDetailRows(rows);
+      setDetailRowsAll(rows);
+      setDetailVisibleCount(Math.min(100, rows.length));
       setDetailOpen(true);
     },
     [datosFiltrados]
   );
-  
+
   const TOP = 20;
   const topProyectos = useMemo(() => horasPorProyecto.slice(0, TOP), [horasPorProyecto]);
+
+  const rowsForFaseChart = useMemo(() => {
+    return datosFiltrados.slice(0, 500);
+  }, [datosFiltrados]);
 
   const limpiarFiltros = () => {
     const mesBase = defaultMonth || currentMonthStr();
@@ -1592,6 +1560,23 @@ export default function ProyectosHorasDashboard({
         {loadingMain && <div className="phd-loading-box">Cargando información...</div>}
         {error && <div className="phd-error">Error: {error}</div>}
 
+        {wasTruncated && (
+          <div
+            style={{
+              marginBottom: 16,
+              background: "#fff7ed",
+              color: "#9a3412",
+              border: "1px solid #fdba74",
+              borderRadius: 12,
+              padding: "12px 14px",
+              fontWeight: 600,
+            }}
+          >
+            Se muestran solo los primeros {backendMaxRows} registros para evitar sobrecarga.
+            Ajusta más los filtros si necesitas un detalle más específico.
+          </div>
+        )}
+
         <section className="phd-kpis">
           <div className="phd-kpi phd-kpi-blue">
             <span>Proyectos</span>
@@ -1711,7 +1696,7 @@ export default function ProyectosHorasDashboard({
             />
 
             <MultiFiltro
-              titulo="OCUPACIÓN"
+              titulo="OCUPACIONES"
               opciones={ocupacionesUnicas}
               seleccion={filtroOcupacion}
               onChange={setFiltroOcupacion}
@@ -1751,7 +1736,7 @@ export default function ProyectosHorasDashboard({
 
           <div className="phd-card-slot">
             <ProyectoFaseTopLineChart
-              rows={datosFiltrados}
+              rows={rowsForFaseChart}
               title="Proyecto vs fase más trabajada"
               top={10}
             />
@@ -1761,7 +1746,6 @@ export default function ProyectosHorasDashboard({
 
           {renderChartCard("Horas por Módulo", horasPorModulo, "modulo", { limit: 18 })}
           {renderChartCard("Horas por Consultor", horasPorConsultor, "consultor", { limit: 18 })}
-
           {renderChartCard("Horas por Tarea", horasPorTarea, "tarea", { limit: 20 })}
           {renderChartCard("Horas por Ocupación", horasPorOcupacion, "ocupacion", { limit: 20 })}
         </section>
@@ -1780,8 +1764,8 @@ export default function ProyectosHorasDashboard({
           <div className="phd-modalHeaderText">
             <h3 className="phd-modalTitle">{detailTitle || "Detalle"}</h3>
             <div className="phd-modalSub">
-              Filas: <b>{detailRows.length}</b> · Total:{" "}
-              <b>{detailRows.reduce((s, r) => s + r.horasNum, 0).toFixed(2)} h</b>
+              Filas: <b>{detailRowsAll.length}</b> · Mostrando: <b>{detailRows.length}</b> · Total:{" "}
+              <b>{detailTotalHoras.toFixed(2)} h</b>
             </div>
           </div>
 
@@ -1799,60 +1783,78 @@ export default function ProyectosHorasDashboard({
           {detailRows.length === 0 ? (
             <div className="phd-empty phd-empty-lg">Sin filas para mostrar.</div>
           ) : (
-            <div className="phd-modalTableWrap">
-              <table className="phd-table phd-table-detail">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Fecha</th>
-                    <th>Mes</th>
-                    <th>Consultor</th>
-                    <th>Cliente</th>
-                    <th>Proyecto (OFICIAL)</th>
-                    <th>Proyecto (Digitado)</th>
-                    <th>Módulo</th>
-                    <th>Ocupación</th>
-                    <th>Tarea</th>
-                    <th className="num">Horas</th>
-                    <th>Descripción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detailRows.map((r, i) => (
-                    <tr key={r.id ?? i}>
-                      <td className="num">{r.id ?? "—"}</td>
-                      <td>{r.fecha}</td>
-                      <td>{r.mesLabel || "—"}</td>
-                      <td className="phd-truncate" title={r.consultorNormalizado}>
-                        {r.consultorNormalizado}
-                      </td>
-                      <td className="phd-truncate" title={r.cliente}>
-                        {r.cliente}
-                      </td>
-                      <td className="phd-truncate" title={r.proyectoOficial}>
-                        {r.proyectoOficial}
-                      </td>
-                      <td className="phd-truncate" title={r.proyectoDigitado || ""}>
-                        {r.proyectoDigitado || "—"}
-                      </td>
-                      <td className="phd-truncate" title={r.moduloNormalizado}>
-                        {r.moduloNormalizado}
-                      </td>
-                      <td className="phd-truncate" title={r.ocupacionNormalizada}>
-                        {r.ocupacionNormalizada}
-                      </td>
-                      <td className="phd-truncate" title={r.tareaNormalizada}>
-                        {r.tareaNormalizada}
-                      </td>
-                      <td className="num">{r.horasNum.toFixed(2)}</td>
-                      <td className="phd-truncate phd-detail-desc" title={r.descripcion || ""}>
-                        {r.descripcion || ""}
-                      </td>
+            <>
+              <div className="phd-modalTableWrap">
+                <table className="phd-table phd-table-detail">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Fecha</th>
+                      <th>Mes</th>
+                      <th>Consultor</th>
+                      <th>Cliente</th>
+                      <th>Proyecto (OFICIAL)</th>
+                      <th>Proyecto (Digitado)</th>
+                      <th>Módulo</th>
+                      <th>Ocupación</th>
+                      <th>Tarea</th>
+                      <th className="num">Horas</th>
+                      <th>Descripción</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {detailRows.map((r, i) => (
+                      <tr key={r.id ?? i}>
+                        <td className="num">{r.id ?? "—"}</td>
+                        <td>{r.fecha}</td>
+                        <td>{r.mesLabel || "—"}</td>
+                        <td className="phd-truncate" title={r.consultorNormalizado}>
+                          {r.consultorNormalizado}
+                        </td>
+                        <td className="phd-truncate" title={r.clienteNormalizado}>
+                          {r.clienteNormalizado}
+                        </td>
+                        <td className="phd-truncate" title={r.proyectoOficial}>
+                          {r.proyectoOficial}
+                        </td>
+                        <td className="phd-truncate" title={r.proyectoDigitado || "—"}>
+                          {r.proyectoDigitado || "—"}
+                        </td>
+                        <td className="phd-truncate" title={r.moduloNormalizado}>
+                          {r.moduloNormalizado}
+                        </td>
+                        <td className="phd-truncate" title={r.ocupacionNormalizada}>
+                          {r.ocupacionNormalizada}
+                        </td>
+                        <td className="phd-truncate" title={r.tareaNormalizada}>
+                          {r.tareaNormalizada}
+                        </td>
+                        <td className="num">{Number(r.horasNum || 0).toFixed(2)}</td>
+                        <td className="phd-truncate" title={r.descripcion || "—"}>
+                          {r.descripcion || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {detailRows.length < detailRowsAll.length && (
+                <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+                  <button
+                    type="button"
+                    className="phd-btn phd-btn-dark"
+                    onClick={() =>
+                      setDetailVisibleCount((prev) =>
+                        Math.min(prev + 100, detailRowsAll.length)
+                      )
+                    }
+                  >
+                    Cargar 100 filas más
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </Modal>

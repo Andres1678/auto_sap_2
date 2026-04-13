@@ -145,6 +145,41 @@ function resolvePeriodParams(filters) {
   };
 }
 
+function buildDashboardQuery(filters) {
+  const qs = new URLSearchParams();
+  const periodParams = resolvePeriodParams(filters);
+
+  qs.set("modo", periodParams.modo);
+
+  if (periodParams.modo === "mes") {
+    qs.set("mes", periodParams.mes);
+    qs.set("anio", periodParams.anio);
+  } else if (periodParams.modo === "rango_meses") {
+    qs.set("mes_desde", periodParams.mes_desde);
+    qs.set("anio_desde", periodParams.anio_desde);
+    qs.set("mes_hasta", periodParams.mes_hasta);
+    qs.set("anio_hasta", periodParams.anio_hasta);
+  } else {
+    qs.set("desde", periodParams.desde);
+    qs.set("hasta", periodParams.hasta);
+  }
+
+  if (filters.equipo) qs.set("equipo", filters.equipo);
+  if (filters.cliente) qs.append("cliente", filters.cliente);
+  if (filters.consultor) qs.append("consultor", filters.consultor);
+  if (filters.modulo) qs.append("modulo", filters.modulo);
+  if (filters.estadoOT) qs.append("estado_ot", filters.estadoOT);
+  if (filters.servicio) qs.append("servicio", filters.servicio);
+  if (filters.proyectoId) qs.set("proyecto_id", String(filters.proyectoId));
+
+  (Array.isArray(filters.ocupacionIds) ? filters.ocupacionIds : [])
+    .map((id) => Number(id))
+    .filter(Boolean)
+    .forEach((id) => qs.append("ocupacion_id", String(id)));
+
+  return qs;
+}
+
 function toUniqueSorted(values) {
   return Array.from(
     new Set((Array.isArray(values) ? values : []).map((v) => normalizeText(v)).filter(Boolean))
@@ -202,7 +237,11 @@ function buildOpportunityLabel(op) {
 
 function OportunidadesGanadasChart({ rows = [] }) {
   const chartRows = (Array.isArray(rows) ? rows : [])
-    .filter((item) => normalizeUpper(item?.estado_oferta) === "GANADA")
+    .filter(
+      (item) =>
+        normalizeUpper(item?.estado_oferta) === "GANADA" &&
+        Number(item?.mrcNormalizado || 0) > 0
+    )
     .map((item) => ({
       id: item.id,
       name: buildOpportunityLabel(item),
@@ -221,7 +260,7 @@ function OportunidadesGanadasChart({ rows = [] }) {
 
       {!chartRows.length ? (
         <div className="dc-empty">
-          Sin oportunidades GANADAS para mostrar.
+          Sin oportunidades GANADAS con valor para mostrar.
         </div>
       ) : (
         <div className="dc-chart-list">
@@ -414,6 +453,9 @@ export default function DashboardCostos() {
     estadoOT: Array.isArray(navState?.filtroEstadoOT)
       ? normalizeText(navState.filtroEstadoOT[0] || "")
       : normalizeText(navState?.filtroEstadoOT || ""),
+    servicio: Array.isArray(navState?.filtroServicio)
+      ? normalizeText(navState.filtroServicio[0] || "")
+      : normalizeText(navState?.filtroServicio || ""),
     proyectoId: navState?.filtroProyectoId ? Number(navState.filtroProyectoId) : "",
     mes: navMes,
     anio: navAnio,
@@ -421,8 +463,12 @@ export default function DashboardCostos() {
     anioDesde: navAnio,
     mesHasta: navMes,
     anioHasta: navAnio,
-    ocupacionIds: Array.isArray(navState?.filtroOcupacionIds) ? navState.filtroOcupacionIds : [],
-    ocupacionLabels: Array.isArray(navState?.filtroOcupacionLabels) ? navState.filtroOcupacionLabels : [],
+    ocupacionIds: Array.isArray(navState?.filtroOcupacionIds)
+      ? navState.filtroOcupacionIds
+      : [],
+    ocupacionLabels: Array.isArray(navState?.filtroOcupacionLabels)
+      ? navState.filtroOcupacionLabels
+      : [],
     desde: navState?.filtroDesde || "",
     hasta: navState?.filtroHasta || "",
   };
@@ -449,7 +495,7 @@ export default function DashboardCostos() {
 
   const [oportunidadesGanadas, setOportunidadesGanadas] = useState({
     rows: [],
-    });
+  });
 
   const [proyectosOptions, setProyectosOptions] = useState([]);
   const [ocupacionesOptions, setOcupacionesOptions] = useState([]);
@@ -458,6 +504,7 @@ export default function DashboardCostos() {
   const [modulosOptions, setModulosOptions] = useState([]);
   const [equiposOptions, setEquiposOptions] = useState([]);
   const [estadosOTOptions, setEstadosOTOptions] = useState([]);
+  const [serviciosOptions, setServiciosOptions] = useState([]);
 
   const [modalRow, setModalRow] = useState(null);
 
@@ -468,10 +515,12 @@ export default function DashboardCostos() {
   useEffect(() => {
     const fetchCatalogos = async () => {
       const headers = getAuthHeaders(rol);
+      const qs = buildDashboardQuery(filters);
 
       const reqs = await Promise.allSettled([
         jfetch("/proyectos?include_fases=0", { headers }),
         jfetch("/ocupaciones", { headers }),
+        jfetch(`/dashboard/costos-filtros?${qs.toString()}`, { headers }),
         jfetch("/clientes", { headers }),
         jfetch("/consultores", { headers }),
         jfetch("/modulos", { headers }),
@@ -494,6 +543,7 @@ export default function DashboardCostos() {
       const [
         proyectosJson,
         ocupacionesJson,
+        dashboardFiltrosJson,
         clientesJson,
         consultoresJson,
         modulosJson,
@@ -509,27 +559,47 @@ export default function DashboardCostos() {
       const ocupaciones = (Array.isArray(ocupacionesJson) ? ocupacionesJson : [])
         .map((o) => ({
           value: Number(o.id),
-          label: [normalizeText(o?.codigo), normalizeText(o?.nombre)].filter(Boolean).join(" - "),
+          label: [normalizeText(o?.codigo), normalizeText(o?.nombre)]
+            .filter(Boolean)
+            .join(" - "),
         }))
         .filter((o) => Number.isFinite(o.value) && o.value > 0 && o.label);
 
       const clientes = toUniqueSorted(
-        (Array.isArray(clientesJson) ? clientesJson : []).map((c) => c?.nombre_cliente)
+        dashboardFiltrosJson?.clientes?.length
+          ? dashboardFiltrosJson.clientes
+          : (Array.isArray(clientesJson) ? clientesJson : []).map((c) => c?.nombre_cliente)
       );
 
       const consultores = toUniqueSorted(
-        (Array.isArray(consultoresJson) ? consultoresJson : []).map((c) => c?.nombre)
+        dashboardFiltrosJson?.consultores?.length
+          ? dashboardFiltrosJson.consultores
+          : (Array.isArray(consultoresJson) ? consultoresJson : []).map((c) => c?.nombre)
       );
 
       const modulos = toUniqueSorted(
-        (Array.isArray(modulosJson) ? modulosJson : []).map((m) => m?.nombre).map(normalizeUpper)
+        dashboardFiltrosJson?.modulos?.length
+          ? (dashboardFiltrosJson.modulos || []).map(normalizeUpper)
+          : (Array.isArray(modulosJson) ? modulosJson : []).map((m) => m?.nombre).map(normalizeUpper)
       );
 
       const equipos = toUniqueSorted(
-        (Array.isArray(equiposJson) ? equiposJson : []).map((e) => e?.nombre).map(normalizeUpper)
+        dashboardFiltrosJson?.equipos?.length
+          ? (dashboardFiltrosJson.equipos || []).map(normalizeUpper)
+          : (Array.isArray(equiposJson) ? equiposJson : []).map((e) => e?.nombre).map(normalizeUpper)
       );
 
-      const estadosOT = toUniqueSorted(oportunidadesFiltersJson?.estado_ot || []);
+      const estadosOT = toUniqueSorted(
+        dashboardFiltrosJson?.estados_ot?.length
+          ? dashboardFiltrosJson.estados_ot
+          : oportunidadesFiltersJson?.estado_ot || []
+      );
+
+      const servicios = toUniqueSorted(
+        dashboardFiltrosJson?.servicios?.length
+          ? dashboardFiltrosJson.servicios
+          : oportunidadesFiltersJson?.servicio || []
+      );
 
       setProyectosOptions(proyectos);
       setOcupacionesOptions(ocupaciones);
@@ -538,111 +608,99 @@ export default function DashboardCostos() {
       setModulosOptions(modulos);
       setEquiposOptions(equipos);
       setEstadosOTOptions(estadosOT);
+      setServiciosOptions(servicios);
+
+      setDraft((prev) => ({
+        ...prev,
+        cliente: prev.cliente && !clientes.includes(prev.cliente) ? "" : prev.cliente,
+        consultor: prev.consultor && !consultores.includes(prev.consultor) ? "" : prev.consultor,
+        modulo: prev.modulo && !modulos.includes(prev.modulo) ? "" : prev.modulo,
+        equipo: prev.equipo && !equipos.includes(prev.equipo) ? "" : prev.equipo,
+        estadoOT: prev.estadoOT && !estadosOT.includes(prev.estadoOT) ? "" : prev.estadoOT,
+        servicio: prev.servicio && !servicios.includes(prev.servicio) ? "" : prev.servicio,
+      }));
     };
 
     fetchCatalogos();
-  }, [rol]);
+  }, [filters, rol]);
 
   useEffect(() => {
     const fetchData = async () => {
-        try {
+      try {
         setLoading(true);
         setError("");
+        setModalRow(null);
 
-        const qs = new URLSearchParams();
-        const periodParams = resolvePeriodParams(filters);
-
-        qs.set("modo", periodParams.modo);
-
-        if (periodParams.modo === "mes") {
-            qs.set("mes", periodParams.mes);
-            qs.set("anio", periodParams.anio);
-        } else if (periodParams.modo === "rango_meses") {
-            qs.set("mes_desde", periodParams.mes_desde);
-            qs.set("anio_desde", periodParams.anio_desde);
-            qs.set("mes_hasta", periodParams.mes_hasta);
-            qs.set("anio_hasta", periodParams.anio_hasta);
-        } else {
-            qs.set("desde", periodParams.desde);
-            qs.set("hasta", periodParams.hasta);
-        }
-
-        if (filters.equipo) qs.set("equipo", filters.equipo);
-        if (filters.cliente) qs.append("cliente", filters.cliente);
-        if (filters.consultor) qs.append("consultor", filters.consultor);
-        if (filters.modulo) qs.append("modulo", filters.modulo);
-        if (filters.estadoOT) qs.append("estado_ot", filters.estadoOT);
-        if (filters.proyectoId) qs.set("proyecto_id", String(filters.proyectoId));
-
-        (Array.isArray(filters.ocupacionIds) ? filters.ocupacionIds : [])
-            .map((id) => Number(id))
-            .filter(Boolean)
-            .forEach((id) => qs.append("ocupacion_id", String(id)));
+        const qs = buildDashboardQuery(filters);
 
         const res = await jfetch(`/dashboard/costos-resumen?${qs.toString()}`, {
-            headers: getAuthHeaders(rol),
+          headers: getAuthHeaders(rol),
         });
 
         const json = await res.json().catch(() => ({}));
 
         if (!res.ok) {
-            throw new Error(json?.error || `HTTP ${res.status}`);
+          throw new Error(json?.error || `HTTP ${res.status}`);
         }
 
         setRows(Array.isArray(json?.rows) ? json.rows : []);
 
         setSummary({
-            totalCosto: Number(json?.totalCosto || 0),
-            totalHoras: Number(json?.totalHoras || 0),
-            totalClientes: Number(json?.totalClientes || 0),
-            totalOcupaciones: Number(json?.totalOcupaciones || 0),
-            totalConsultores: Number(json?.totalConsultores || 0),
+          totalCosto: Number(json?.totalCosto || 0),
+          totalHoras: Number(json?.totalHoras || 0),
+          totalClientes: Number(json?.totalClientes || 0),
+          totalOcupaciones: Number(json?.totalOcupaciones || 0),
+          totalConsultores: Number(json?.totalConsultores || 0),
         });
 
         setGraficos({
-            porCliente: Array.isArray(json?.graficos?.porCliente)
+          porCliente: Array.isArray(json?.graficos?.porCliente)
             ? json.graficos.porCliente.slice(0, 10)
             : [],
-            porOcupacion: Array.isArray(json?.graficos?.porOcupacion)
+          porOcupacion: Array.isArray(json?.graficos?.porOcupacion)
             ? json.graficos.porOcupacion.slice(0, 10)
             : [],
         });
 
         const oportunidadRows = (
-            Array.isArray(json?.oportunidadesGanadas?.rows)
+          Array.isArray(json?.oportunidadesGanadas?.rows)
             ? json.oportunidadesGanadas.rows
             : []
         )
-            .filter((item) => normalizeUpper(item?.estado_oferta) === "GANADA")
-            .sort((a, b) => Number(b?.mrcNormalizado || 0) - Number(a?.mrcNormalizado || 0));
+          .filter(
+            (item) =>
+              normalizeUpper(item?.estado_oferta) === "GANADA" &&
+              Number(item?.mrcNormalizado || 0) > 0
+          )
+          .sort((a, b) => Number(b?.mrcNormalizado || 0) - Number(a?.mrcNormalizado || 0));
 
         setOportunidadesGanadas({
-            rows: oportunidadRows,
+          rows: oportunidadRows,
         });
-        } catch (e) {
+      } catch (e) {
         setRows([]);
         setSummary({
-            totalCosto: 0,
-            totalHoras: 0,
-            totalClientes: 0,
-            totalOcupaciones: 0,
-            totalConsultores: 0,
+          totalCosto: 0,
+          totalHoras: 0,
+          totalClientes: 0,
+          totalOcupaciones: 0,
+          totalConsultores: 0,
         });
         setGraficos({
-            porCliente: [],
-            porOcupacion: [],
+          porCliente: [],
+          porOcupacion: [],
         });
         setOportunidadesGanadas({
-            rows: [],
+          rows: [],
         });
         setError(e?.message || "No se pudo cargar el dashboard de costos");
-        } finally {
+      } finally {
         setLoading(false);
-        }
+      }
     };
 
     fetchData();
-    }, [filters, rol]);
+  }, [filters, rol]);
 
   const handleDraftChange = (field, value) => {
     setDraft((prev) => ({
@@ -676,6 +734,7 @@ export default function DashboardCostos() {
       modulo: "",
       equipo: "",
       estadoOT: "",
+      servicio: "",
       proyectoId: "",
       ocupacionIds: [],
       ocupacionLabels: [],
@@ -692,6 +751,7 @@ export default function DashboardCostos() {
 
     setDraft(reset);
     setFilters(reset);
+    setModalRow(null);
   };
 
   return (
@@ -993,6 +1053,8 @@ export default function DashboardCostos() {
                 </>
               )}
 
+              <div className="dc-filter-section-title">Resumen operativo</div>
+
               <div className="dc-filter-field">
                 <label>Equipo</label>
                 <select
@@ -1053,22 +1115,7 @@ export default function DashboardCostos() {
                 </select>
               </div>
 
-              <div className="dc-filter-field">
-                <label>Estado OT</label>
-                <select
-                  value={draft.estadoOT}
-                  onChange={(e) => handleDraftChange("estadoOT", e.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {estadosOTOptions.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="dc-filter-field">
+              <div className="dc-filter-field dc-filter-field--span-2">
                 <label>Proyecto</label>
                 <select
                   value={draft.proyectoId}
@@ -1088,17 +1135,48 @@ export default function DashboardCostos() {
                 </select>
               </div>
 
-              <div className="dc-filter-field">
+              <div className="dc-filter-field dc-filter-field--span-2">
                 <label>Ocupación</label>
                 <select
                   multiple
                   value={(draft.ocupacionIds || []).map(String)}
                   onChange={handleOcupacionesChange}
-                  style={{ minHeight: 120 }}
                 >
                   {ocupacionesOptions.map((item) => (
                     <option key={item.value} value={item.value}>
                       {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="dc-filter-section-title">Oportunidades ganadas</div>
+
+              <div className="dc-filter-field">
+                <label>Estado OT</label>
+                <select
+                  value={draft.estadoOT}
+                  onChange={(e) => handleDraftChange("estadoOT", e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {estadosOTOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="dc-filter-field">
+                <label>Servicio</label>
+                <select
+                  value={draft.servicio}
+                  onChange={(e) => handleDraftChange("servicio", e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {serviciosOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
                     </option>
                   ))}
                 </select>
