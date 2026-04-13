@@ -9309,3 +9309,366 @@ def resumen_costo_consultor():
     except Exception as e:
         app.logger.exception("❌ Error en /resumen-costo-consultor")
         return jsonify({"error": str(e)}), 500
+
+# =========================================================
+# DASHBOARD COSTOS RESUMEN
+# Agrupa por cliente + ocupación y calcula costo real
+# usando valor hora del consultor según el periodo.
+# =========================================================
+
+@bp.route("/dashboard/costos-resumen", methods=["GET"])
+@permission_required("GRAFICOS_VER")
+def dashboard_costos_resumen():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
+
+        # mismo alcance de /registros/graficos
+        scope, val = _scope_for_graficos(consultor_login, rol_req)
+
+        # mismo parser de periodo de /resumen-costo-consultor
+        desde, hasta, modo = _cost_parse_periodo_request()
+
+        C = aliased(Consultor)
+        E = aliased(Equipo)
+
+        fecha_expr = _registro_fecha_expr()
+
+        q = (
+            Registro.query
+            .options(
+                joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
+                joinedload(Registro.tarea),
+                joinedload(Registro.ocupacion),
+                joinedload(Registro.proyecto),
+                joinedload(Registro.fase_proyecto),
+            )
+            .join(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .outerjoin(E, C.equipo_id == E.id)
+        )
+
+        # ----------------------------------------------------------
+        # Scope
+        # ----------------------------------------------------------
+        if scope == "SELF":
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+
+        elif scope == "TEAM":
+            if not int(val or 0):
+                return jsonify({"error": "Consultor sin equipo asignado"}), 403
+
+            q = q.filter(C.equipo_id == int(val))
+
+        elif scope == "ROLE_POOL":
+            if not int(val or 0):
+                return jsonify({"error": "Consultor sin rol asignado"}), 403
+
+            q = q.filter(C.rol_id == int(val))
+
+        elif scope == "ALL":
+            pass
+
+        else:
+            return jsonify({"error": "Scope no permitido"}), 403
+
+        # ----------------------------------------------------------
+        # Filtros request
+        # Soporta params simples y multiselect
+        # ----------------------------------------------------------
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
+
+        clientes_filter = [str(v).strip() for v in _get_list_arg("cliente") if str(v).strip()]
+        consultores_filter = [str(v).strip() for v in _get_list_arg("consultor") if str(v).strip()]
+        modulos_filter = [str(v).strip().upper() for v in _get_list_arg("modulo") if str(v).strip()]
+
+        # fallback si llega como string simple
+        cliente_single = (request.args.get("cliente") or "").strip()
+        consultor_single = (request.args.get("consultor") or "").strip()
+        modulo_single = (request.args.get("modulo") or "").strip().upper()
+
+        if not clientes_filter and cliente_single:
+            clientes_filter = [cliente_single]
+
+        if not consultores_filter and consultor_single:
+            consultores_filter = [consultor_single]
+
+        if not modulos_filter and modulo_single:
+            modulos_filter = [modulo_single]
+
+        ocupacion_ids = [
+            int(x) for x in request.args.getlist("ocupacion_id")
+            if str(x).strip().isdigit()
+        ]
+
+        tarea_ids = [
+            int(x) for x in request.args.getlist("tarea_id")
+            if str(x).strip().isdigit()
+        ]
+
+        # filtro por fecha robusto
+        q = q.filter(fecha_expr >= desde)
+        q = q.filter(fecha_expr <= hasta)
+
+        # equipo
+        if equipo_filter:
+            if scope in ("TEAM", "SELF"):
+                eq_login = (
+                    (consultor_login.equipo_obj.nombre or "").strip().upper()
+                    if consultor_login.equipo_obj else ""
+                )
+
+                if equipo_filter != eq_login:
+                    return jsonify({"error": "No autorizado para consultar otro equipo"}), 403
+
+            q = q.filter(func.upper(E.nombre) == equipo_filter)
+
+        # cliente
+        if clientes_filter:
+            q = q.filter(Registro.cliente.in_(clientes_filter))
+
+        # consultor
+        if consultores_filter:
+            q = q.filter(C.nombre.in_(consultores_filter))
+
+        # módulo
+        if modulos_filter:
+            q = q.filter(func.upper(Registro.modulo).in_(modulos_filter))
+
+        # ocupación
+        if ocupacion_ids:
+            q = q.filter(Registro.ocupacion_id.in_(ocupacion_ids))
+
+        # tarea
+        if tarea_ids:
+            q = q.filter(Registro.tarea_id.in_(tarea_ids))
+
+        registros = (
+            q.order_by(fecha_expr.desc(), C.nombre.asc(), Registro.id.desc())
+             .all()
+        )
+
+        # ----------------------------------------------------------
+        # Helpers internos
+        # ----------------------------------------------------------
+        def _dec_hours(v):
+            try:
+                return Decimal(str(v or 0)).quantize(Decimal("0.01"))
+            except Exception:
+                return Decimal("0.00")
+
+        def _json_money(v):
+            try:
+                return float(Decimal(str(v or 0)).quantize(Decimal("0.01")))
+            except Exception:
+                return 0.0
+
+        def _json_hours(v):
+            try:
+                return float(Decimal(str(v or 0)).quantize(Decimal("0.01")))
+            except Exception:
+                return 0.0
+
+        def _ocupacion_label(r):
+            ocup = getattr(r, "ocupacion", None)
+            if ocup and getattr(ocup, "codigo", None) and getattr(ocup, "nombre", None):
+                return f"{ocup.codigo} - {ocup.nombre}"
+            if ocup and getattr(ocup, "nombre", None):
+                return str(ocup.nombre).strip()
+            return "SIN OCUPACIÓN"
+
+        def _equipo_label(r):
+            if getattr(r, "consultor", None) and getattr(r.consultor, "equipo_obj", None):
+                return (r.consultor.equipo_obj.nombre or "SIN EQUIPO").strip().upper()
+            return (getattr(r, "equipo", None) or "SIN EQUIPO").strip().upper()
+
+        # ----------------------------------------------------------
+        # Acumuladores
+        # ----------------------------------------------------------
+        resumen_map = {}
+        graf_cliente = defaultdict(Decimal)
+        graf_ocupacion = defaultdict(Decimal)
+        graf_consultor = defaultdict(Decimal)
+
+        total_horas = Decimal("0.00")
+        total_costo = Decimal("0.00")
+
+        clientes_set = set()
+        ocupaciones_set = set()
+        consultores_set = set()
+
+        for r in registros:
+            fecha_reg = r.fecha if isinstance(r.fecha, date) else _to_date_safe(r.fecha)
+            if not fecha_reg:
+                continue
+
+            consultor_obj = getattr(r, "consultor", None)
+            if not consultor_obj or not getattr(consultor_obj, "id", None):
+                continue
+
+            consultor_id = int(consultor_obj.id)
+            consultor_nombre = consultor_obj.nombre or "SIN NOMBRE"
+            cliente = (r.cliente or "SIN CLIENTE").strip()
+            ocupacion = _ocupacion_label(r)
+            equipo = _equipo_label(r)
+
+            horas = _dec_hours(
+                r.total_horas if r.total_horas is not None else r.tiempo_invertido
+            )
+
+            presupuesto = _presupuesto_consultor_mes(
+                consultor_id,
+                fecha_reg.year,
+                fecha_reg.month
+            )
+
+            vr_perfil = Decimal("0.00")
+            horas_base_mes = Decimal("0.00")
+            valor_hora = Decimal("0.00")
+
+            if presupuesto:
+                vr_perfil = presupuesto["vr_perfil"]
+                horas_base_mes = presupuesto["horas_base_mes"]
+                valor_hora = presupuesto["valor_hora"]
+
+            costo = (horas * valor_hora).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP
+            )
+
+            key = f"{cliente}||{ocupacion}"
+
+            if key not in resumen_map:
+                resumen_map[key] = {
+                    "cliente": cliente,
+                    "ocupacion": ocupacion,
+                    "equipo": equipo,
+                    "horas": Decimal("0.00"),
+                    "costoTotal": Decimal("0.00"),
+                    "consultoresSet": set(),
+                    "valorHoraAcumulado": Decimal("0.00"),
+                    "registrosCount": 0,
+                    "detallePeriodos": defaultdict(lambda: {
+                        "horas": Decimal("0.00"),
+                        "costo": Decimal("0.00"),
+                    }),
+                }
+
+            bucket = resumen_map[key]
+            bucket["horas"] += horas
+            bucket["costoTotal"] += costo
+            bucket["consultoresSet"].add(consultor_nombre)
+            bucket["valorHoraAcumulado"] += valor_hora
+            bucket["registrosCount"] += 1
+
+            periodo_key = f"{fecha_reg.year:04d}-{fecha_reg.month:02d}"
+            bucket["detallePeriodos"][periodo_key]["horas"] += horas
+            bucket["detallePeriodos"][periodo_key]["costo"] += costo
+
+            graf_cliente[cliente] += costo
+            graf_ocupacion[ocupacion] += costo
+            graf_consultor[consultor_nombre] += costo
+
+            total_horas += horas
+            total_costo += costo
+
+            clientes_set.add(cliente)
+            ocupaciones_set.add(ocupacion)
+            consultores_set.add(consultor_nombre)
+
+        rows_out = []
+
+        for _, item in resumen_map.items():
+            horas_row = item["horas"].quantize(Decimal("0.01"))
+            costo_row = item["costoTotal"].quantize(Decimal("0.01"))
+
+            valor_hora_promedio = Decimal("0.00")
+            if horas_row > 0:
+                valor_hora_promedio = (costo_row / horas_row).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP
+                )
+
+            detalle_periodos = []
+            for periodo, vals in sorted(item["detallePeriodos"].items()):
+                detalle_periodos.append({
+                    "periodo": periodo,
+                    "horas": _json_hours(vals["horas"]),
+                    "costo": _json_money(vals["costo"]),
+                })
+
+            consultores_list = sorted(list(item["consultoresSet"]))
+
+            rows_out.append({
+                "cliente": item["cliente"],
+                "ocupacion": item["ocupacion"],
+                "equipo": item["equipo"],
+                "horas": _json_hours(horas_row),
+                "costoTotal": _json_money(costo_row),
+                "valorHoraPromedio": _json_money(valor_hora_promedio),
+                "consultoresCount": len(consultores_list),
+                "consultores": consultores_list,
+                "registrosCount": int(item["registrosCount"]),
+                "detallePeriodos": detalle_periodos,
+            })
+
+        rows_out.sort(key=lambda x: (-x["costoTotal"], x["cliente"], x["ocupacion"]))
+
+        graficos = {
+            "porCliente": [
+                {"name": k, "costo": _json_money(v)}
+                for k, v in sorted(graf_cliente.items(), key=lambda x: x[1], reverse=True)
+            ],
+            "porOcupacion": [
+                {"name": k, "costo": _json_money(v)}
+                for k, v in sorted(graf_ocupacion.items(), key=lambda x: x[1], reverse=True)
+            ],
+            "porConsultor": [
+                {"name": k, "costo": _json_money(v)}
+                for k, v in sorted(graf_consultor.items(), key=lambda x: x[1], reverse=True)
+            ],
+        }
+
+        return jsonify({
+            "modo": modo,
+            "desde": desde.isoformat(),
+            "hasta": hasta.isoformat(),
+            "totalHoras": _json_hours(total_horas),
+            "totalCosto": _json_money(total_costo),
+            "totalClientes": len(clientes_set),
+            "totalOcupaciones": len(ocupaciones_set),
+            "totalConsultores": len(consultores_set),
+            "rows": rows_out,
+            "graficos": graficos,
+            "filtrosAplicados": {
+                "equipo": equipo_filter,
+                "clientes": clientes_filter,
+                "consultores": consultores_filter,
+                "modulos": modulos_filter,
+                "ocupacion_ids": ocupacion_ids,
+                "tarea_ids": tarea_ids,
+            },
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    except Exception as e:
+        app.logger.exception("❌ Error en /dashboard/costos-resumen")
+        return jsonify({"error": str(e)}), 500

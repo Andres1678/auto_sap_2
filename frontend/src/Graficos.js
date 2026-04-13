@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import Modal from 'react-modal';
 import './PanelGraficos.css';
 import { jfetch } from './lib/api';
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 
 import HorasPorConsultorChart from './GraficosOperacion/HorasPorConsultorChart';
@@ -253,6 +253,7 @@ export default function Graficos() {
   const [filtroNroEscalado, setFiltroNroEscalado] = useState([]);
   const [filtroEquipo, setFiltroEquipo] = useState([]);
   const [ocupacionesCatalogo, setOcupacionesCatalogo] = useState([]);
+  const [ocupacionesCatalogoRaw, setOcupacionesCatalogoRaw] = useState([]);
   const [filtroOcupacion, setFiltroOcupacion] = useState([]);
   const [filtroDesde, setFiltroDesde] = useState("");
   const [filtroHasta, setFiltroHasta] = useState("");
@@ -382,10 +383,18 @@ export default function Graficos() {
   }, [fetchRegistros, usuario]);
 
   useEffect(() => {
-    const cached = sessionStorage.getItem("pgx_ocupaciones_catalogo");
-    if (cached) {
+    const cachedLabels = sessionStorage.getItem("pgx_ocupaciones_catalogo");
+    const cachedRaw = sessionStorage.getItem("pgx_ocupaciones_catalogo_raw");
+
+    if (cachedLabels) {
       try {
-        setOcupacionesCatalogo(JSON.parse(cached));
+        setOcupacionesCatalogo(JSON.parse(cachedLabels));
+      } catch {}
+    }
+
+    if (cachedRaw) {
+      try {
+        setOcupacionesCatalogoRaw(JSON.parse(cachedRaw));
       } catch {}
     }
 
@@ -396,6 +405,7 @@ export default function Graficos() {
         if (!res.ok) throw new Error(json?.mensaje || `HTTP ${res.status}`);
 
         const ocus = Array.isArray(json) ? json : [];
+
         const labels = ocus
           .map((o) => {
             const codigo = String(o?.codigo ?? "").trim();
@@ -407,13 +417,16 @@ export default function Graficos() {
           .sort((a, b) => a.localeCompare(b));
 
         setOcupacionesCatalogo(labels);
+        setOcupacionesCatalogoRaw(ocus);
+
         sessionStorage.setItem("pgx_ocupaciones_catalogo", JSON.stringify(labels));
+        sessionStorage.setItem("pgx_ocupaciones_catalogo_raw", JSON.stringify(ocus));
       } catch (err) {
         console.error("Error cargando /ocupaciones:", err);
       }
     };
 
-    if (!cached) fetchCatalogoOcupaciones();
+    if (!cachedLabels || !cachedRaw) fetchCatalogoOcupaciones();
   }, []);
 
   useEffect(() => {
@@ -881,6 +894,70 @@ export default function Graficos() {
     };
   }, [filtroMes]);
 
+  const filtroAnio = useMemo(() => {
+    if (filtroMes && /^\d{4}-\d{2}$/.test(filtroMes)) {
+      return Number(filtroMes.slice(0, 4));
+    }
+
+    if (filtroDesde && /^\d{4}-\d{2}-\d{2}$/.test(filtroDesde)) {
+      return Number(filtroDesde.slice(0, 4));
+    }
+
+    if (filtroHasta && /^\d{4}-\d{2}-\d{2}$/.test(filtroHasta)) {
+      return Number(filtroHasta.slice(0, 4));
+    }
+
+    return new Date().getFullYear();
+  }, [filtroMes, filtroDesde, filtroHasta]);
+
+  const filtroOcupacionIds = useMemo(() => {
+    const labelToId = new Map();
+
+    (ocupacionesCatalogoRaw || []).forEach((o) => {
+      const codigo = String(o?.codigo ?? "").trim();
+      const nombre = String(o?.nombre ?? "").trim();
+      const label = [codigo, nombre].filter(Boolean).join(" - ");
+      const id = Number(o?.id);
+
+      if (label && Number.isFinite(id) && id > 0) {
+        labelToId.set(label, id);
+      }
+    });
+
+    return (Array.isArray(filtroOcupacion) ? filtroOcupacion : [])
+      .map((label) => labelToId.get(label))
+      .filter((id) => Number.isFinite(id) && id > 0);
+  }, [filtroOcupacion, ocupacionesCatalogoRaw]);
+
+  const dashboardCostosState = useMemo(() => {
+      return {
+        filtroEquipo,
+        filtroCliente,
+        filtroConsultor,
+        filtroModulo,
+        filtroMes,
+        filtroAnio,
+        filtroDesde,
+        filtroHasta,
+        filtroOcupacionIds,
+        filtroOcupacionLabels: filtroOcupacion,
+        rol: rolUpper,
+        modoDashboard: filtroMes ? "mes" : "rango",
+      };
+    }, [
+      filtroEquipo,
+      filtroCliente,
+      filtroConsultor,
+      filtroModulo,
+      filtroMes,
+      filtroAnio,
+      filtroDesde,
+      filtroHasta,
+      filtroOcupacionIds,
+      filtroOcupacion,
+      rolUpper,
+    ]);
+
   const consultoresUnicosTeam = useMemo(() => {
     const set = new Set(
       (registros ?? [])
@@ -1078,6 +1155,18 @@ export default function Graficos() {
             onClick={() => { setFiltroDesde(""); setFiltroHasta(""); }}
           >
             Limpiar rango
+          </button>
+
+          <button
+            type="button"
+            className="pgx-btn pgx-btn-outline"
+            onClick={() =>
+              navigate("/dashboard-costos", {
+                state: dashboardCostosState,
+              })
+            }
+          >
+            Ver dashboard de costos
           </button>
         </div>
 
