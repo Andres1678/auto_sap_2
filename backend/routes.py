@@ -5362,24 +5362,17 @@ def _month_bounds_local(anio: int, mes: int):
     return start, end
 
 
-def _cap_colombia_holidays_for_years(years):
-    out = set()
-    for y in set(int(x) for x in years):
-        for h in holidays.CO(years=[y]).keys():
-            out.add(h)
-    return out
+def _cap_is_standard_workday(d: date, co_holidays=None):
+    co_holidays = co_holidays or set()
 
+    # Lunes=0 ... Domingo=6
+    if d.weekday() >= 5:
+        return False
 
-def _cap_is_standard_workday(d: date, co_holidays):
-    return d.weekday() < 5 and d not in co_holidays
+    if d in co_holidays:
+        return False
 
-
-def _cap_meta_hours_for_day(d: date):
-    # Regla actual del sistema:
-    # lunes = 8h, martes a viernes = 9h
-    if d.weekday() == 0:
-        return Decimal("8.00")
-    return Decimal("9.00")
+    return True
 
 
 def _meta_horas_en_rango(start_date: date, end_date: date):
@@ -7694,9 +7687,6 @@ def _cap_weeks_for_month(anio, mes):
     return out
 
 
-def _cap_colombia_holidays_for_years(years):
-    return holidays.country_holidays("CO", years=years)
-
 
 def _cap_is_holiday(fecha_obj, co_holidays):
     return fecha_obj in co_holidays
@@ -8492,12 +8482,19 @@ def _cap_is_standard_workday(d: date, co_holidays):
     # Lunes=0 ... Domingo=6
     return d.weekday() < 5 and d not in co_holidays
 
-def _cap_meta_hours_for_day(d: date):
-    # regla actual del sistema:
-    # lunes 8h, martes-viernes 9h
-    if d.weekday() == 0:
-        return Decimal("8.00")
-    return Decimal("9.00")
+def _cap_meta_hours_for_day(d: date, co_holidays=None):
+    """
+    Regla única:
+    - lunes: 8h
+    - martes a viernes: 9h
+    - fines de semana / festivos: 0h
+    """
+    co_holidays = co_holidays or set()
+
+    if not _cap_is_standard_workday(d, co_holidays):
+        return 0.0
+
+    return 8.0 if d.weekday() == 0 else 9.0
 
 def _cap_colombia_holidays_for_years(years):
     import holidays
@@ -8506,28 +8503,6 @@ def _cap_colombia_holidays_for_years(years):
         for h in holidays.CO(years=[y]).keys():
             out.add(h)
     return out
-
-def _meta_horas_en_rango(start_date: date, end_date: date):
-    years = {start_date.year, end_date.year}
-    co_holidays = _cap_colombia_holidays_for_years(years)
-    total = Decimal("0.00")
-    dias_laborables = 0
-    dias_festivos = 0
-
-    for d in _daterange(start_date, end_date):
-        if d.weekday() >= 5:
-            continue
-        if d in co_holidays:
-            dias_festivos += 1
-            continue
-        dias_laborables += 1
-        total += _cap_meta_hours_for_day(d)
-
-    return {
-        "horas": total.quantize(Decimal("0.01")),
-        "dias_laborables": dias_laborables,
-        "dias_festivos": dias_festivos,
-    }
 
 def _presupuesto_consultor_mes(consultor_id: int, anio: int, mes: int):
     """
