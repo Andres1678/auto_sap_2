@@ -7,7 +7,7 @@ import Resumen from './Resumen';
 import { exportRegistrosExcelXLSX_ALL } from "./lib/exportExcel";
 import CapacidadSemanalModal from "./CapacidadSemanalModal";
 import { Navigate, useNavigate } from "react-router-dom";
-import CostoConsultorModal from "./CostoConsultorModal";
+import CostoConsultorPage from './CostoConsultorPage';
 
 Modal.setAppElement('#root');
 
