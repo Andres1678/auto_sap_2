@@ -186,6 +186,12 @@ function toUniqueSorted(values) {
   ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
 }
 
+function getOpportunityChartValue(item) {
+  const otc = Number(item?.otc || 0);
+  const mrc = Number(item?.mrc || 0);
+  return otc + mrc;
+}
+
 function SimpleBarChart({ title, rows = [], subtitle = "" }) {
   const max = Math.max(...rows.map((r) => Number(r?.costo || 0)), 0);
 
@@ -234,7 +240,7 @@ function aggregateWonByClient(rows = []) {
     .filter(
       (item) =>
         normalizeUpper(item?.estado_oferta) === "GANADA" &&
-        Number(item?.mrcNormalizado || 0) > 0
+        getOpportunityChartValue(item) > 0
     )
     .forEach((item) => {
       const cliente = normalizeText(item?.cliente || "SIN CLIENTE");
@@ -244,7 +250,7 @@ function aggregateWonByClient(rows = []) {
         oportunidades: 0,
       };
 
-      current.costo += Number(item?.mrcNormalizado || 0);
+      current.costo += getOpportunityChartValue(item);
       current.oportunidades += 1;
 
       map.set(cliente, current);
@@ -265,7 +271,7 @@ function aggregateWonByResult(rows = []) {
     .filter(
       (item) =>
         normalizeUpper(item?.estado_oferta) === "GANADA" &&
-        Number(item?.mrcNormalizado || 0) > 0
+        getOpportunityChartValue(item) > 0
     )
     .forEach((item) => {
       const resultado = normalizeText(item?.resultado_oferta || "SIN RESULTADO");
@@ -275,7 +281,7 @@ function aggregateWonByResult(rows = []) {
         oportunidades: 0,
       };
 
-      current.costo += Number(item?.mrcNormalizado || 0);
+      current.costo += getOpportunityChartValue(item);
       current.oportunidades += 1;
 
       map.set(resultado, current);
@@ -692,9 +698,12 @@ export default function DashboardCostos() {
           .filter(
             (item) =>
               normalizeUpper(item?.estado_oferta) === "GANADA" &&
-              Number(item?.mrcNormalizado || 0) > 0
+              getOpportunityChartValue(item) > 0
           )
-          .sort((a, b) => Number(b?.mrcNormalizado || 0) - Number(a?.mrcNormalizado || 0));
+          .sort(
+            (a, b) =>
+              getOpportunityChartValue(b) - getOpportunityChartValue(a)
+          );
 
         setOportunidadesGanadas({
           rows: oportunidadRows,
