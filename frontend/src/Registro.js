@@ -1952,6 +1952,21 @@ const Registro = ({ userData }) => {
     return cols;
   }, [isBASISTable, isAdmin]);
 
+  const filtroOcupacionIds = useMemo(() => {
+    return [
+      ...new Set(
+        (Array.isArray(filtroOcupacion) ? filtroOcupacion : [])
+          .map((label) =>
+            (ocupaciones || []).find(
+              (o) => `${o.codigo} - ${o.nombre}` === String(label || "").trim()
+            )?.id
+          )
+          .filter(Boolean)
+          .map((id) => Number(id))
+      ),
+    ];
+  }, [filtroOcupacion, ocupaciones]);
+
   if (!canAccessRegistro) {
     return <Navigate to="/panel-grafico" replace />;
   }
@@ -2651,10 +2666,11 @@ const Registro = ({ userData }) => {
             filtroConsultor={Array.isArray(filtroConsultor) ? filtroConsultor[0] || "" : filtroConsultor}
             filtroMes={filtroMes}
             filtroAnio={filtroAnio}
+            filtroOcupacionIds={filtroOcupacionIds}
+            filtroOcupacionLabels={filtroOcupacion}
             equipoBloqueado={isAdminEquipo}
             isAdmin={isAdmin}
             rol={rol}
-            filtroOcupacion={filtroOcupacion}
           />
         )}
       </div>

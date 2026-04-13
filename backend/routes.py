@@ -5254,34 +5254,118 @@ def _col_idx(headers: dict, wanted: str):
     return None
 
 @bp.route("/presupuestos/consultor", methods=["GET"])
-def presupuestos_consultor_vigentes():
-    items = (
-        db.session.query(Consultor, ConsultorPresupuesto)
-        .outerjoin(
-            ConsultorPresupuesto,
-            (ConsultorPresupuesto.consultor_id == Consultor.id) & (ConsultorPresupuesto.vigente == True)
+def get_presupuestos_consultor():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
         )
-        .order_by(Consultor.nombre.asc())
-        .all()
-    )
 
-    out = []
-    for c, p in items:
-        vr = Decimal(str(p.vr_perfil)) if p else Decimal("0.00")
-        hb = Decimal(str(p.horas_base_mes)) if p else Decimal("0.00")
-        valor_hora = (vr / hb).quantize(Decimal("0.01")) if hb and hb > 0 else Decimal("0.00")
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
 
-        out.append({
-            "consultorId": c.id,
-            "nombre": c.nombre,
-            "usuario": c.usuario,
-            "vrPerfil": float(vr),
-            "horasBaseMes": float(hb),
-            "valorHora": float(valor_hora),
-            "vigente": True if p else False
-        })
+        rol_real = ""
+        if getattr(consultor_login, "rol_obj", None) and getattr(consultor_login.rol_obj, "nombre", None):
+            rol_real = consultor_login.rol_obj.nombre
+        else:
+            rol_real = getattr(consultor_login, "rol", "") or ""
 
-    return jsonify(out), 200
+        if not _is_admin_request(rol_real, consultor_login):
+            return jsonify({"error": "No autorizado. Solo administradores."}), 403
+
+        anio_raw = (request.args.get("anio") or "").strip()
+        mes_raw = (request.args.get("mes") or "").strip()
+
+        today = date.today()
+        anio = int(anio_raw) if anio_raw.isdigit() else today.year
+        mes = int(mes_raw) if mes_raw.isdigit() else today.month
+
+        if mes < 1 or mes > 12:
+            return jsonify({"error": "Mes inválido"}), 400
+
+        meta_mes_info = _meta_horas_en_rango(*_month_bounds_local(anio, mes))
+        horas_base_default = meta_mes_info["horas"]
+        dias_habiles_mes = meta_mes_info["dias_laborables"]
+
+        scope, val = scope_for(consultor_login, rol_req)
+
+        q_cons = Consultor.query
+
+        if scope == "TEAM":
+            if not int(val or 0):
+                return jsonify({"error": "Consultor sin equipo asignado"}), 403
+            q_cons = q_cons.filter(Consultor.equipo_id == int(val))
+        elif scope == "ROLE_POOL":
+            if not int(val or 0):
+                return jsonify({"error": "Consultor sin rol asignado"}), 403
+            q_cons = q_cons.filter(Consultor.rol_id == int(val))
+        elif scope == "ALL":
+            pass
+        else:
+            return jsonify({"error": "Scope no permitido"}), 403
+
+        consultores = q_cons.order_by(Consultor.nombre.asc()).all()
+
+        pres_rows = (
+            ConsultorPresupuesto.query
+            .filter(ConsultorPresupuesto.anio == anio)
+            .filter(ConsultorPresupuesto.mes == mes)
+            .order_by(ConsultorPresupuesto.consultor_id.asc(), ConsultorPresupuesto.id.desc())
+            .all()
+        )
+
+        pres_map = {}
+        for row in pres_rows:
+            if row.consultor_id not in pres_map:
+                pres_map[row.consultor_id] = row
+
+        out = []
+
+        for c in consultores:
+            row = pres_map.get(c.id)
+
+            vr_perfil = Decimal("0.00")
+            horas_base_mes = horas_base_default
+
+            if row:
+                vr_perfil = Decimal(str(row.vr_perfil or 0)).quantize(Decimal("0.01"))
+                if Decimal(str(row.horas_base_mes or 0)) > 0:
+                    horas_base_mes = Decimal(str(row.horas_base_mes or 0)).quantize(Decimal("0.01"))
+
+            valor_hora = Decimal("0.00")
+            if horas_base_mes > 0:
+                valor_hora = (vr_perfil / horas_base_mes).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP
+                )
+
+            out.append({
+                "consultorId": c.id,
+                "nombre": c.nombre,
+                "usuario": c.usuario,
+                "vrPerfil": float(vr_perfil),
+                "diasHabilesMes": dias_habiles_mes,
+                "horasBaseMes": float(horas_base_mes),
+                "valorHora": float(valor_hora),
+            })
+
+        return jsonify(out), 200
+
+    except Exception as e:
+        app.logger.exception("❌ Error en /presupuestos/consultor")
+        return jsonify({"error": str(e)}), 500
 
 def _month_bounds_local(anio: int, mes: int):
     start = date(anio, mes, 1)
@@ -8944,9 +9028,6 @@ def import_presupuesto_consultor_excel():
 @bp.route("/resumen-costo-consultor", methods=["GET"])
 def resumen_costo_consultor():
     try:
-        # ----------------------------------------------------------
-        # 1) Usuario / rol desde request
-        # ----------------------------------------------------------
         usuario = _get_usuario_from_request()
         rol_req = _get_rol_from_request()
 
@@ -8955,9 +9036,6 @@ def resumen_costo_consultor():
 
         usuario_norm = (usuario or "").strip().lower()
 
-        # ----------------------------------------------------------
-        # 2) Consultor logueado
-        # ----------------------------------------------------------
         consultor_login = (
             Consultor.query.options(
                 joinedload(Consultor.rol_obj),
@@ -8970,9 +9048,6 @@ def resumen_costo_consultor():
         if not consultor_login:
             return jsonify({"error": "Consultor no encontrado"}), 404
 
-        # ----------------------------------------------------------
-        # 3) Seguridad: SOLO ADMIN
-        # ----------------------------------------------------------
         rol_real = ""
         if getattr(consultor_login, "rol_obj", None) and getattr(consultor_login.rol_obj, "nombre", None):
             rol_real = consultor_login.rol_obj.nombre
@@ -8982,18 +9057,17 @@ def resumen_costo_consultor():
         if not _is_admin_request(rol_real, consultor_login):
             return jsonify({"error": "No autorizado. Solo administradores."}), 403
 
-        # ----------------------------------------------------------
-        # 4) Scope + periodo
-        # ----------------------------------------------------------
         scope, val = scope_for(consultor_login, rol_req)
         desde, hasta, modo = _cost_parse_periodo_request()
 
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
         consultor_filter = (request.args.get("consultor") or "").strip().lower()
 
-        # ----------------------------------------------------------
-        # 5) Query base: horas agrupadas por consultor y periodo YYYY-MM
-        # ----------------------------------------------------------
+        ocupacion_ids = [
+            int(x) for x in request.args.getlist("ocupacion_id")
+            if str(x).strip().isdigit()
+        ]
+
         q = (
             db.session.query(
                 Consultor.id.label("consultor_id"),
@@ -9013,9 +9087,9 @@ def resumen_costo_consultor():
             .filter(Registro.fecha <= hasta.isoformat())
         )
 
-        # ----------------------------------------------------------
-        # 6) Scope real del admin
-        # ----------------------------------------------------------
+        if ocupacion_ids:
+            q = q.filter(Registro.ocupacion_id.in_(ocupacion_ids))
+
         if scope == "TEAM":
             if not int(val or 0):
                 return jsonify({"error": "Consultor sin equipo asignado"}), 403
@@ -9046,9 +9120,6 @@ def resumen_costo_consultor():
         else:
             return jsonify({"error": "Scope no permitido"}), 403
 
-        # ----------------------------------------------------------
-        # 7) Filtros opcionales
-        # ----------------------------------------------------------
         if equipo_filter:
             q = q.filter(func.upper(Equipo.nombre) == equipo_filter)
 
@@ -9065,9 +9136,6 @@ def resumen_costo_consultor():
 
         raw = q.all()
 
-        # ----------------------------------------------------------
-        # 8) Consolidación por consultor
-        # ----------------------------------------------------------
         rows_map = {}
         total_horas_general = Decimal("0.00")
         total_meta_general = Decimal("0.00")
@@ -9100,6 +9168,7 @@ def resumen_costo_consultor():
             vr_perfil = Decimal("0.00")
             horas_base_mes = Decimal("0.00")
             valor_hora_mes = Decimal("0.00")
+            dias_habiles_mes = _meta_horas_en_rango(*_month_bounds_local(anio, mes))["dias_laborables"]
 
             if presupuesto:
                 vr_perfil = presupuesto["vr_perfil"]
@@ -9130,6 +9199,7 @@ def resumen_costo_consultor():
                 "anio": anio,
                 "mes": mes,
                 "vrPerfil": float(vr_perfil),
+                "diasHabilesMes": dias_habiles_mes,
                 "horasBaseMes": float(horas_base_mes),
                 "valorHoraMes": float(valor_hora_mes),
                 "horasRegistradasMesEnFiltro": float(horas_reg_mes),
@@ -9143,9 +9213,6 @@ def resumen_costo_consultor():
             total_meta_general += meta_tramo
             total_costo_general += costo_mes
 
-        # ----------------------------------------------------------
-        # 9) Respuesta final por consultor
-        # ----------------------------------------------------------
         rows_out = []
 
         for _, item in rows_map.items():
@@ -9192,9 +9259,6 @@ def resumen_costo_consultor():
                 rounding=ROUND_HALF_UP
             )
 
-        # ----------------------------------------------------------
-        # 10) Respuesta
-        # ----------------------------------------------------------
         return jsonify({
             "modo": modo,
             "desde": desde.isoformat(),

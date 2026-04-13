@@ -594,3 +594,22 @@
     min-width: 980px;
   }
 }
+
+.cost-active-filter {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.cost-months-row--8,
+.cost-months-head {
+  grid-template-columns: 120px 160px 130px 150px 140px 140px 140px 160px;
+}

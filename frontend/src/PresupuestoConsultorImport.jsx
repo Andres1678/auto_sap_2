@@ -22,7 +22,7 @@ const hasPerm = (code) => {
   return codes.includes(code);
 };
 
-export default function PresupuestoConsultorImport() {
+export default function PresupuestoConsultorImport({ onImported }) {
   const today = new Date();
   const [anio, setAnio] = useState(today.getFullYear());
   const [mes, setMes] = useState(today.getMonth() + 1);
@@ -136,6 +136,10 @@ export default function PresupuestoConsultorImport() {
         `,
         width: 760,
       });
+
+      if (typeof onImported === "function") {
+        await Promise.resolve(onImported({ anio: anioNum, mes: mesNum }));
+      }
 
       resetInput();
     } catch (e) {

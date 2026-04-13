@@ -140,7 +140,8 @@ export default function CostoConsultorModal({
   filtroConsultor = "",
   filtroMes = "",
   filtroAnio = "",
-  filtroOcupacion = [],
+  filtroOcupacionIds = [],
+  filtroOcupacionLabels = [],
   equipoBloqueado = false,
   isAdmin = false,
   rol = "",
@@ -156,11 +157,11 @@ export default function CostoConsultorModal({
   const [modoFiltro, setModoFiltro] = useState("mes");
   const [selectedEquipo, setSelectedEquipo] = useState(normalizeUpper(filtroEquipo));
   const [selectedConsultor, setSelectedConsultor] = useState(normalizeText(filtroConsultor));
-  const [selectedOcupacion, setSelectedOcupacion] = useState(
-    Array.isArray(filtroOcupacion) ? filtroOcupacion[0] || "" : ""
-  );
   const [selectedMes, setSelectedMes] = useState(Number(filtroMes || currentMonth));
   const [selectedAnio, setSelectedAnio] = useState(Number(filtroAnio || currentYear));
+  const [selectedOcupacionIds, setSelectedOcupacionIds] = useState(
+    Array.isArray(filtroOcupacionIds) ? filtroOcupacionIds : []
+  );
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
 
@@ -185,10 +186,10 @@ export default function CostoConsultorModal({
     setSelectedConsultor(normalizeText(filtroConsultor));
     setSelectedMes(Number(filtroMes || currentMonth));
     setSelectedAnio(Number(filtroAnio || currentYear));
+    setSelectedOcupacionIds(Array.isArray(filtroOcupacionIds) ? filtroOcupacionIds : []);
     setDesde("");
     setHasta("");
     setModoFiltro("mes");
-    setSelectedOcupacion(Array.isArray(filtroOcupacion) ? filtroOcupacion[0] || "" : "");
   }, [
     isOpen,
     isAdmin,
@@ -196,6 +197,7 @@ export default function CostoConsultorModal({
     filtroConsultor,
     filtroMes,
     filtroAnio,
+    filtroOcupacionIds,
     currentMonth,
     currentYear,
   ]);
@@ -220,7 +222,11 @@ export default function CostoConsultorModal({
 
         if (selectedEquipo) qs.set("equipo", selectedEquipo);
         if (selectedConsultor) qs.set("consultor", selectedConsultor);
-        if (selectedOcupacion) qs.set("ocupacion", selectedOcupacion);
+
+        (Array.isArray(selectedOcupacionIds) ? selectedOcupacionIds : [])
+          .map((id) => Number(id))
+          .filter(Boolean)
+          .forEach((id) => qs.append("ocupacion_id", String(id)));
 
         const res = await jfetch(`/resumen-costo-consultor?${qs.toString()}`, {
           headers: getAuthHeaders(rol),
@@ -264,6 +270,7 @@ export default function CostoConsultorModal({
     selectedConsultor,
     selectedMes,
     selectedAnio,
+    selectedOcupacionIds,
     desde,
     hasta,
     rol,
@@ -310,10 +317,10 @@ export default function CostoConsultorModal({
     setSelectedConsultor("");
     setSelectedMes(Number(filtroMes || currentMonth));
     setSelectedAnio(Number(filtroAnio || currentYear));
+    setSelectedOcupacionIds(Array.isArray(filtroOcupacionIds) ? filtroOcupacionIds : []);
     setDesde("");
     setHasta("");
     setModoFiltro("mes");
-    setSelectedOcupacion(Array.isArray(filtroOcupacion) ? filtroOcupacion[0] || "" : "");
   };
 
   if (!isAdmin) return null;
@@ -339,6 +346,12 @@ export default function CostoConsultorModal({
               El salario se carga por periodo vía Excel. El valor hora se calcula
               automáticamente según el mes y las horas hábiles reales.
             </p>
+
+            {!!(Array.isArray(filtroOcupacionLabels) && filtroOcupacionLabels.length) && (
+              <div className="cost-active-filter">
+                Ocupación activa: {filtroOcupacionLabels.join(", ")}
+              </div>
+            )}
           </div>
 
           <button type="button" className="cost-close" onClick={onClose}>
@@ -569,6 +582,7 @@ export default function CostoConsultorModal({
                   <div className="cost-months-head">
                     <span>Periodo</span>
                     <span>Salario</span>
+                    <span>Días hábiles</span>
                     <span>Horas base mes</span>
                     <span>Valor hora</span>
                     <span>Horas filtro</span>
@@ -578,11 +592,12 @@ export default function CostoConsultorModal({
 
                   {(item.presupuestos || []).map((p) => (
                     <div
-                      className="cost-months-row"
+                      className="cost-months-row cost-months-row--8"
                       key={`${item.consultorId}-${p.anio}-${p.mes}`}
                     >
                       <span>{p.anio}-{String(p.mes).padStart(2, "0")}</span>
                       <span>{fmtMoney(p.vrPerfil)}</span>
+                      <span>{p.diasHabilesMes ?? "—"}</span>
                       <span>{fmtHours(p.horasBaseMes)}</span>
                       <span>{fmtMoney(p.valorHoraMes)}</span>
                       <span>{fmtHours(p.horasRegistradasMesEnFiltro)}</span>
