@@ -845,6 +845,15 @@ export default function ProyectosHorasDashboard({
 
     if (!usuario) return;
 
+    // no disparar consulta hasta que el rango esté completo
+    if (tipoRango === "mes" && (!filtroRangoMesDesde || !filtroRangoMesHasta)) {
+      return;
+    }
+
+    if (tipoRango === "dia" && (!filtroFechaDesde || !filtroFechaHasta)) {
+      return;
+    }
+
     if (abortMainRef.current) {
       try {
         abortMainRef.current.abort();
@@ -867,7 +876,8 @@ export default function ProyectosHorasDashboard({
         params.set("mes", filtroMesActivo);
       }
 
-      params.set("max_rows", "10000");
+      // bajar este límite
+      params.set("max_rows", rangoActivo ? "3000" : "1500");
 
       const qs = params.toString();
       const url = qs ? `/dashboard/proyectos-horas?${qs}` : "/dashboard/proyectos-horas";
@@ -887,9 +897,9 @@ export default function ProyectosHorasDashboard({
       if (!res.ok) {
         throw new Error(
           json?.detalle ||
-            json?.mensaje ||
-            json?.error ||
-            `HTTP ${res.status}`
+          json?.mensaje ||
+          json?.error ||
+          `HTTP ${res.status}`
         );
       }
 
@@ -910,6 +920,11 @@ export default function ProyectosHorasDashboard({
     rangoActivo,
     rangoDesde,
     rangoHasta,
+    tipoRango,
+    filtroRangoMesDesde,
+    filtroRangoMesHasta,
+    filtroFechaDesde,
+    filtroFechaHasta,
   ]);
 
   useEffect(() => {

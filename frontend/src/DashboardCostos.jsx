@@ -65,26 +65,13 @@ function getStoredUser() {
 function getAuthHeaders(rolProp = "") {
   const u = getStoredUser();
 
-  const usuario =
-    u?.usuario ||
-    u?.user?.usuario ||
-    "";
-
-  const rol =
-    rolProp ||
-    u?.rol ||
-    u?.user?.rol ||
-    u?.rol_ref?.nombre ||
-    "";
+  const usuario = u?.usuario || u?.user?.usuario || "";
+  const rol = rolProp || u?.rol || u?.user?.rol || u?.rol_ref?.nombre || "";
 
   return {
     "X-User-Usuario": String(usuario || "").trim().toLowerCase(),
     "X-User-Rol": String(rol || "").trim().toUpperCase(),
   };
-}
-
-function pad2(n) {
-  return String(Number(n || 0)).padStart(2, "0");
 }
 
 function monthIndex(year, month) {
@@ -204,69 +191,62 @@ function SimpleBarChart({ title, rows = [] }) {
   );
 }
 
+function buildOpportunityLabel(op) {
+  const prc = normalizeText(op?.codigo_prc || "SIN PRC");
+  const cliente = normalizeText(op?.cliente || "SIN CLIENTE");
+  const estadoOferta = normalizeText(op?.estado_oferta || "-");
+  const estadoOT = normalizeText(op?.estado_ot || "-");
+
+  return `${prc} · ${cliente} · ${estadoOferta} · OT: ${estadoOT}`;
+}
+
 function OportunidadesGanadasChart({ rows = [] }) {
-  const max = Math.max(...rows.map((r) => Number(r?.mrcNormalizado || 0)), 0);
+  const chartRows = (Array.isArray(rows) ? rows : [])
+    .filter((item) => normalizeUpper(item?.estado_oferta) === "GANADA")
+    .map((item) => ({
+      id: item.id,
+      name: buildOpportunityLabel(item),
+      costo: Number(item?.mrcNormalizado || 0),
+    }))
+    .sort((a, b) => Number(b.costo || 0) - Number(a.costo || 0));
+
+  const max = Math.max(...chartRows.map((r) => Number(r?.costo || 0)), 0);
 
   return (
-    <section className="dc-panel">
+    <section className="dc-chart-card">
       <div className="dc-section-head">
-        <h3>Oportunidades ganadas por PRC</h3>
-        <span>{rows.length} PRC</span>
+        <h3>Oportunidades ganadas por oportunidad</h3>
+        <span>{chartRows.length} oportunidades</span>
       </div>
 
-      {!rows.length ? (
-        <div className="dc-empty">Sin oportunidades ganadas para los filtros aplicados.</div>
+      {!chartRows.length ? (
+        <div className="dc-empty">
+          Sin oportunidades GANADAS para mostrar.
+        </div>
       ) : (
-        <>
-          <div className="dc-chart-list">
-            {rows.map((item) => {
-              const value = Number(item?.mrcNormalizado || 0);
-              const width = max > 0 ? (value / max) * 100 : 0;
+        <div className="dc-chart-list">
+          {chartRows.map((item) => {
+            const value = Number(item?.costo || 0);
+            const width = max > 0 ? (value / max) * 100 : 0;
 
-              return (
-                <div className="dc-chart-row" key={item.name}>
-                  <div className="dc-chart-label" title={item.name}>
-                    {item.name}
-                  </div>
-
-                  <div className="dc-chart-bar-wrap">
-                    <div
-                      className="dc-chart-bar"
-                      style={{ width: `${Math.max(width, 4)}%` }}
-                    />
-                  </div>
-
-                  <div className="dc-chart-value">{fmtMoney(value)}</div>
+            return (
+              <div className="dc-chart-row" key={`opp-chart-${item.id}`}>
+                <div className="dc-chart-label" title={item.name}>
+                  {item.name}
                 </div>
-              );
-            })}
-          </div>
 
-          <div className="dc-table-wrap" style={{ marginTop: 16 }}>
-            <table className="dc-table dc-table-small">
-              <thead>
-                <tr>
-                  <th>PRC</th>
-                  <th className="num">Cant.</th>
-                  <th className="num">OTC</th>
-                  <th className="num">MRC</th>
-                  <th className="num">MRC Normalizado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((item) => (
-                  <tr key={`prc-${item.name}`}>
-                    <td>{item.name}</td>
-                    <td className="num">{item.count || 0}</td>
-                    <td className="num">{fmtMoney(item.otc)}</td>
-                    <td className="num">{fmtMoney(item.mrc)}</td>
-                    <td className="num">{fmtMoney(item.mrcNormalizado)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+                <div className="dc-chart-bar-wrap">
+                  <div
+                    className="dc-chart-bar"
+                    style={{ width: `${Math.max(width, 4)}%` }}
+                  />
+                </div>
+
+                <div className="dc-chart-value">{fmtMoney(value)}</div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </section>
   );
@@ -469,8 +449,7 @@ export default function DashboardCostos() {
 
   const [oportunidadesGanadas, setOportunidadesGanadas] = useState({
     rows: [],
-    chart: [],
-  });
+    });
 
   const [proyectosOptions, setProyectosOptions] = useState([]);
   const [ocupacionesOptions, setOcupacionesOptions] = useState([]);
@@ -566,7 +545,7 @@ export default function DashboardCostos() {
 
   useEffect(() => {
     const fetchData = async () => {
-      try {
+        try {
         setLoading(true);
         setError("");
 
@@ -576,16 +555,16 @@ export default function DashboardCostos() {
         qs.set("modo", periodParams.modo);
 
         if (periodParams.modo === "mes") {
-          qs.set("mes", periodParams.mes);
-          qs.set("anio", periodParams.anio);
+            qs.set("mes", periodParams.mes);
+            qs.set("anio", periodParams.anio);
         } else if (periodParams.modo === "rango_meses") {
-          qs.set("mes_desde", periodParams.mes_desde);
-          qs.set("anio_desde", periodParams.anio_desde);
-          qs.set("mes_hasta", periodParams.mes_hasta);
-          qs.set("anio_hasta", periodParams.anio_hasta);
+            qs.set("mes_desde", periodParams.mes_desde);
+            qs.set("anio_desde", periodParams.anio_desde);
+            qs.set("mes_hasta", periodParams.mes_hasta);
+            qs.set("anio_hasta", periodParams.anio_hasta);
         } else {
-          qs.set("desde", periodParams.desde);
-          qs.set("hasta", periodParams.hasta);
+            qs.set("desde", periodParams.desde);
+            qs.set("hasta", periodParams.hasta);
         }
 
         if (filters.equipo) qs.set("equipo", filters.equipo);
@@ -596,71 +575,74 @@ export default function DashboardCostos() {
         if (filters.proyectoId) qs.set("proyecto_id", String(filters.proyectoId));
 
         (Array.isArray(filters.ocupacionIds) ? filters.ocupacionIds : [])
-          .map((id) => Number(id))
-          .filter(Boolean)
-          .forEach((id) => qs.append("ocupacion_id", String(id)));
+            .map((id) => Number(id))
+            .filter(Boolean)
+            .forEach((id) => qs.append("ocupacion_id", String(id)));
 
         const res = await jfetch(`/dashboard/costos-resumen?${qs.toString()}`, {
-          headers: getAuthHeaders(rol),
+            headers: getAuthHeaders(rol),
         });
 
         const json = await res.json().catch(() => ({}));
 
         if (!res.ok) {
-          throw new Error(json?.error || `HTTP ${res.status}`);
+            throw new Error(json?.error || `HTTP ${res.status}`);
         }
 
         setRows(Array.isArray(json?.rows) ? json.rows : []);
+
         setSummary({
-          totalCosto: Number(json?.totalCosto || 0),
-          totalHoras: Number(json?.totalHoras || 0),
-          totalClientes: Number(json?.totalClientes || 0),
-          totalOcupaciones: Number(json?.totalOcupaciones || 0),
-          totalConsultores: Number(json?.totalConsultores || 0),
+            totalCosto: Number(json?.totalCosto || 0),
+            totalHoras: Number(json?.totalHoras || 0),
+            totalClientes: Number(json?.totalClientes || 0),
+            totalOcupaciones: Number(json?.totalOcupaciones || 0),
+            totalConsultores: Number(json?.totalConsultores || 0),
         });
 
         setGraficos({
-          porCliente: Array.isArray(json?.graficos?.porCliente)
+            porCliente: Array.isArray(json?.graficos?.porCliente)
             ? json.graficos.porCliente.slice(0, 10)
             : [],
-          porOcupacion: Array.isArray(json?.graficos?.porOcupacion)
+            porOcupacion: Array.isArray(json?.graficos?.porOcupacion)
             ? json.graficos.porOcupacion.slice(0, 10)
             : [],
         });
 
-        setOportunidadesGanadas({
-          rows: Array.isArray(json?.oportunidadesGanadas?.rows)
+        const oportunidadRows = (
+            Array.isArray(json?.oportunidadesGanadas?.rows)
             ? json.oportunidadesGanadas.rows
-            : [],
-          chart: Array.isArray(json?.oportunidadesGanadas?.chart)
-            ? json.oportunidadesGanadas.chart
-            : [],
+            : []
+        )
+            .filter((item) => normalizeUpper(item?.estado_oferta) === "GANADA")
+            .sort((a, b) => Number(b?.mrcNormalizado || 0) - Number(a?.mrcNormalizado || 0));
+
+        setOportunidadesGanadas({
+            rows: oportunidadRows,
         });
-      } catch (e) {
+        } catch (e) {
         setRows([]);
         setSummary({
-          totalCosto: 0,
-          totalHoras: 0,
-          totalClientes: 0,
-          totalOcupaciones: 0,
-          totalConsultores: 0,
+            totalCosto: 0,
+            totalHoras: 0,
+            totalClientes: 0,
+            totalOcupaciones: 0,
+            totalConsultores: 0,
         });
         setGraficos({
-          porCliente: [],
-          porOcupacion: [],
+            porCliente: [],
+            porOcupacion: [],
         });
         setOportunidadesGanadas({
-          rows: [],
-          chart: [],
+            rows: [],
         });
         setError(e?.message || "No se pudo cargar el dashboard de costos");
-      } finally {
+        } finally {
         setLoading(false);
-      }
+        }
     };
 
     fetchData();
-  }, [filters, rol]);
+    }, [filters, rol]);
 
   const handleDraftChange = (field, value) => {
     setDraft((prev) => ({
@@ -775,7 +757,53 @@ export default function DashboardCostos() {
             <SimpleBarChart title="Top costo por ocupación" rows={graficos.porOcupacion} />
           </section>
 
-          <OportunidadesGanadasChart rows={oportunidadesGanadas.chart} />
+          <OportunidadesGanadasChart rows={oportunidadesGanadas.rows} />
+
+          <section className="dc-panel">
+            <div className="dc-section-head">
+              <h3>Detalle de oportunidades ganadas</h3>
+              <span>{oportunidadesGanadas.rows.length} filas</span>
+            </div>
+
+            {!oportunidadesGanadas.rows.length ? (
+              <div className="dc-empty">Sin oportunidades ganadas para los filtros actuales.</div>
+            ) : (
+              <div className="dc-table-wrap">
+                <table className="dc-table">
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Servicio</th>
+                      <th>PRC</th>
+                      <th>Fecha creación</th>
+                      <th>Estado oferta</th>
+                      <th>Resultado</th>
+                      <th>Estado OT</th>
+                      <th className="num">OTC</th>
+                      <th className="num">MRC</th>
+                      <th className="num">MRC Normalizado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {oportunidadesGanadas.rows.map((op) => (
+                      <tr key={`opp-${op.id}`}>
+                        <td>{op.cliente}</td>
+                        <td>{op.servicio}</td>
+                        <td>{op.codigo_prc}</td>
+                        <td>{op.fecha_creacion || "-"}</td>
+                        <td>{op.estado_oferta || "-"}</td>
+                        <td>{op.resultado_oferta || "-"}</td>
+                        <td>{op.estado_ot || "-"}</td>
+                        <td className="num">{fmtMoney(op.otc)}</td>
+                        <td className="num">{fmtMoney(op.mrc)}</td>
+                        <td className="num">{fmtMoney(op.mrcNormalizado)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
           <section className="dc-panel">
             <div className="dc-section-head">
@@ -825,52 +853,6 @@ export default function DashboardCostos() {
                         </tr>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          <section className="dc-panel">
-            <div className="dc-section-head">
-              <h3>Detalle de oportunidades ganadas</h3>
-              <span>{oportunidadesGanadas.rows.length} filas</span>
-            </div>
-
-            {!oportunidadesGanadas.rows.length ? (
-              <div className="dc-empty">Sin oportunidades ganadas para los filtros actuales.</div>
-            ) : (
-              <div className="dc-table-wrap">
-                <table className="dc-table">
-                  <thead>
-                    <tr>
-                      <th>Cliente</th>
-                      <th>Servicio</th>
-                      <th>PRC</th>
-                      <th>Fecha creación</th>
-                      <th>Estado oferta</th>
-                      <th>Resultado</th>
-                      <th>Estado OT</th>
-                      <th className="num">OTC</th>
-                      <th className="num">MRC</th>
-                      <th className="num">MRC Normalizado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {oportunidadesGanadas.rows.map((op) => (
-                      <tr key={`opp-${op.id}`}>
-                        <td>{op.cliente}</td>
-                        <td>{op.servicio}</td>
-                        <td>{op.codigo_prc}</td>
-                        <td>{op.fecha_creacion || "-"}</td>
-                        <td>{op.estado_oferta || "-"}</td>
-                        <td>{op.resultado_oferta || "-"}</td>
-                        <td>{op.estado_ot || "-"}</td>
-                        <td className="num">{fmtMoney(op.otc)}</td>
-                        <td className="num">{fmtMoney(op.mrc)}</td>
-                        <td className="num">{fmtMoney(op.mrcNormalizado)}</td>
-                      </tr>
-                    ))}
                   </tbody>
                 </table>
               </div>
