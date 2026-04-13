@@ -8836,9 +8836,6 @@ def import_presupuesto_consultor_excel():
         if not f:
             return jsonify({"error": "Falta archivo (file)"}), 400
 
-        # -------------------------
-        # anio / mes
-        # -------------------------
         anio = request.form.get("anio")
         mes = request.form.get("mes")
 
@@ -8858,19 +8855,10 @@ def import_presupuesto_consultor_excel():
         if not mes or mes < 1 or mes > 12:
             mes = now.month
 
-        # -------------------------
-        # horas base calculadas automáticamente
-        # -------------------------
         meta_mes_info = _meta_horas_en_rango(*_month_bounds_local(anio, mes))
         horas_base = meta_mes_info["horas"]
 
-        # -------------------------
-        # columnas / sheet
-        # -------------------------
         sheet_name = (request.form.get("sheet") or "").strip() or None
-        col_nombre = (request.form.get("col_nombre") or "NOMBRE COLABORADOR").strip()
-        col_valor = (request.form.get("col_valor") or "VR PERFIL").strip()
-        col_cedula = (request.form.get("col_cedula") or "CEDULA").strip()
 
         wb = load_workbook(f, data_only=True)
         ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb.worksheets[0]
@@ -8881,21 +8869,51 @@ def import_presupuesto_consultor_excel():
             if key:
                 headers[key.upper()] = idx
 
-        ci_nombre = _col_idx(headers, col_nombre)
-        ci_valor = _col_idx(headers, col_valor)
-        ci_cedula = _col_idx(headers, col_cedula)
+        meses_nombre = {
+            1: "ENERO",
+            2: "FEBRERO",
+            3: "MARZO",
+            4: "ABRIL",
+            5: "MAYO",
+            6: "JUNIO",
+            7: "JULIO",
+            8: "AGOSTO",
+            9: "SEPTIEMBRE",
+            10: "OCTUBRE",
+            11: "NOVIEMBRE",
+            12: "DICIEMBRE",
+        }
 
-        if ci_valor is None:
-            ci_valor = _col_idx(headers, "VR PERFIL")
+        mes_nombre = meses_nombre.get(mes, "")
+        posibles_col_total = [
+            f"TOTAL {mes_nombre}",
+            f"TOTAL_{mes_nombre}",
+            f"TOTAL-{mes_nombre}",
+            "TOTAL",
+            "VR PERFIL",
+        ]
 
-        if ci_nombre is None or ci_valor is None:
+        ci_nombre = _col_idx(headers, "NOMBRE COLABORADOR")
+        ci_cedula = _col_idx(headers, "CEDULA")
+
+        ci_total = None
+        total_header_detectado = None
+        for cand in posibles_col_total:
+            ci_total = _col_idx(headers, cand)
+            if ci_total is not None:
+                total_header_detectado = cand
+                break
+
+        if ci_nombre is None or ci_cedula is None or ci_total is None:
             return jsonify({
-                "error": "No encontré columnas requeridas",
+                "error": "No encontré las columnas requeridas",
                 "detalle": {
-                    "col_nombre": col_nombre,
-                    "col_valor": col_valor,
-                    "col_cedula": col_cedula,
-                    "headers_encontrados": list(headers.keys())[:60]
+                    "requeridas": [
+                        "NOMBRE COLABORADOR",
+                        "CEDULA",
+                        f"TOTAL {mes_nombre}"
+                    ],
+                    "headers_encontrados": list(headers.keys())[:100]
                 }
             }), 400
 
@@ -8905,13 +8923,13 @@ def import_presupuesto_consultor_excel():
         by_doc = {}
 
         for c in consultores:
-            nombre_norm = _norm_name(c.nombre) if getattr(c, "nombre", None) else ""
-            if nombre_norm:
-                by_name[nombre_norm] = c
+          nombre_norm = _norm_name(c.nombre) if getattr(c, "nombre", None) else ""
+          if nombre_norm:
+              by_name[nombre_norm] = c
 
-            cedula_norm = _norm_doc(str(getattr(c, "cedula", "") or ""))
-            if cedula_norm:
-                by_doc[cedula_norm] = c
+          cedula_norm = _norm_doc(str(getattr(c, "cedula", "") or ""))
+          if cedula_norm:
+              by_doc[cedula_norm] = c
 
         updated = 0
         created = 0
@@ -8919,23 +8937,21 @@ def import_presupuesto_consultor_excel():
         invalid_rows = []
         seen = set()
 
-        # -------------------------
-        # recorrido excel
-        # -------------------------
         for r in range(2, ws.max_row + 1):
             raw_name = ws.cell(row=r, column=ci_nombre).value
-            raw_val = ws.cell(row=r, column=ci_valor).value
-            raw_doc = ws.cell(row=r, column=ci_cedula).value if ci_cedula else None
+            raw_doc = ws.cell(row=r, column=ci_cedula).value
+            raw_total = ws.cell(row=r, column=ci_total).value
 
-            if raw_name is None and raw_val is None and raw_doc is None:
+            if raw_name is None and raw_doc is None and raw_total is None:
                 continue
 
-            vr = _parse_money_to_decimal(raw_val)
+            vr = _parse_money_to_decimal(raw_total)
             if vr <= 0:
                 invalid_rows.append({
                     "row": r,
                     "nombre": str(raw_name or ""),
-                    "valor": str(raw_val or "")
+                    "cedula": str(raw_doc or ""),
+                    "valor": str(raw_total or "")
                 })
                 continue
 
@@ -8955,7 +8971,7 @@ def import_presupuesto_consultor_excel():
                     "row": r,
                     "nombre": str(raw_name or ""),
                     "cedula": str(raw_doc or ""),
-                    "valor": str(raw_val or "")
+                    "valor": str(raw_total or "")
                 })
                 continue
 
@@ -8981,7 +8997,6 @@ def import_presupuesto_consultor_excel():
                 existente.horas_base_mes = horas_base
                 updated += 1
             else:
-                # apagar vigentes SOLO del mismo periodo
                 db.session.query(ConsultorPresupuesto).filter_by(
                     consultor_id=c.id,
                     anio=anio,
@@ -9005,6 +9020,7 @@ def import_presupuesto_consultor_excel():
             "ok": True,
             "anio": anio,
             "mes": mes,
+            "columnaValorDetectada": total_header_detectado,
             "horasBaseCalculadas": float(horas_base),
             "diasLaborablesMes": meta_mes_info["dias_laborables"],
             "diasFestivosMes": meta_mes_info["dias_festivos"],

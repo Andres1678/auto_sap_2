@@ -29,11 +29,7 @@ export default function PresupuestoConsultorImport({ onImported }) {
 
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
-
   const [sheet, setSheet] = useState("");
-  const [colNombre, setColNombre] = useState("NOMBRE COLABORADOR");
-  const [colCedula, setColCedula] = useState("CEDULA");
-  const [colValor, setColValor] = useState("VR PERFIL");
 
   const disabled = useMemo(() => loading || !file, [loading, file]);
 
@@ -87,11 +83,7 @@ export default function PresupuestoConsultorImport({ onImported }) {
     fd.append("file", file);
     fd.append("anio", String(anioNum));
     fd.append("mes", String(mesNum));
-
     if (sheet.trim()) fd.append("sheet", sheet.trim());
-    if (colNombre.trim()) fd.append("col_nombre", colNombre.trim());
-    if (colCedula.trim()) fd.append("col_cedula", colCedula.trim());
-    if (colValor.trim()) fd.append("col_valor", colValor.trim());
 
     setLoading(true);
 
@@ -123,6 +115,7 @@ export default function PresupuestoConsultorImport({ onImported }) {
         html: `
           <div style="text-align:left">
             <b>Periodo:</b> ${data?.anio ?? anioNum}-${String(data?.mes ?? mesNum).padStart(2, "0")}<br/>
+            <b>Columna valor detectada:</b> ${data?.columnaValorDetectada ?? "N/D"}<br/>
             <b>Horas base calculadas:</b> ${data?.horasBaseCalculadas ?? "N/D"}<br/>
             <b>Días laborables:</b> ${data?.diasLaborablesMes ?? "N/D"}<br/>
             <b>Festivos:</b> ${data?.diasFestivosMes ?? "N/D"}<br/>
@@ -158,9 +151,9 @@ export default function PresupuestoConsultorImport({ onImported }) {
       <h2 className="pci-title">Importar presupuesto por consultor y periodo</h2>
 
       <p className="pci-sub">
-        Sube el Excel con <b>{colNombre}</b>, <b>{colCedula}</b> y{" "}
-        <b>{colValor}</b>. El sistema calculará automáticamente las horas base
-        del mes usando días hábiles y festivos de Colombia.
+        El Excel debe contener estas columnas:
+        <b> NOMBRE COLABORADOR</b>, <b>CEDULA</b> y <b>TOTAL del mes</b>.
+        El sistema calculará automáticamente horas base y valor hora.
       </p>
 
       <div className="pci-card">
@@ -214,48 +207,17 @@ export default function PresupuestoConsultorImport({ onImported }) {
               placeholder="Ej: Hoja1"
             />
           </div>
-
-          <div className="pci-field col-3">
-            <label>Columna Nombre</label>
-            <input
-              className="pci-input"
-              value={colNombre}
-              onChange={(e) => setColNombre(e.target.value)}
-              placeholder="NOMBRE COLABORADOR"
-            />
-          </div>
-
-          <div className="pci-field col-3">
-            <label>Columna Cédula</label>
-            <input
-              className="pci-input"
-              value={colCedula}
-              onChange={(e) => setColCedula(e.target.value)}
-              placeholder="CEDULA"
-            />
-          </div>
-
-          <div className="pci-field col-3">
-            <label>Columna VR Perfil</label>
-            <input
-              className="pci-input"
-              value={colValor}
-              onChange={(e) => setColValor(e.target.value)}
-              placeholder="VR PERFIL"
-            />
-          </div>
         </div>
 
         <div className="pci-hint">
-          <b>Qué hace este cargue:</b>
+          <b>Columnas esperadas del Excel:</b>
           <br />
-          Guarda el salario o presupuesto del consultor para el periodo indicado.
+          <b>NOMBRE COLABORADOR</b>, <b>CEDULA</b> y <b>TOTAL MES</b>.
           <br />
-          <b>Qué ya no hace:</b>
-          no fija manualmente el valor hora.
+          Ejemplo válido: <b>TOTAL ABRIL</b>.
           <br />
-          <b>Qué hará el sistema después:</b>
-          calculará el valor hora automáticamente cuando filtres por mes o por rango.
+          <b>Importante:</b> el sistema no tomará como fuente principal
+          <b> DIAS HABILES</b>, <b>VALOR DIA</b> ni <b>VALOR HORA</b>.
         </div>
       </div>
     </div>
