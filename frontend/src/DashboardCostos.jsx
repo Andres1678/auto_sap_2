@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { jfetch } from "./lib/api";
+import GraficoCantidadGanadas from "./GraficoCantidadGanadas";
 import "./DashboardCostos.css";
 
 const MONTHS = [
@@ -82,6 +83,111 @@ function getAuthHeaders(rolProp = "") {
   };
 }
 
+function pad2(n) {
+  return String(Number(n || 0)).padStart(2, "0");
+}
+
+function buildMonthStartISO(year, month) {
+  return `${year}-${pad2(month)}-01`;
+}
+
+function buildMonthEndISO(year, month) {
+  const lastDay = new Date(Number(year), Number(month), 0).getDate();
+  return `${year}-${pad2(month)}-${pad2(lastDay)}`;
+}
+
+function monthIndex(year, month) {
+  return Number(year) * 12 + Number(month);
+}
+
+function parseNavMonth(value, fallbackMonth) {
+  if (typeof value === "string" && /^\d{4}-\d{2}$/.test(value)) {
+    return Number(value.slice(5, 7));
+  }
+
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 1 && n <= 12 ? n : fallbackMonth;
+}
+
+function parseNavYear(value, fallbackYear, monthLike = "") {
+  if (typeof monthLike === "string" && /^\d{4}-\d{2}$/.test(monthLike)) {
+    return Number(monthLike.slice(0, 4));
+  }
+
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 2000 ? n : fallbackYear;
+}
+
+function toIsoDateSafe(v) {
+  if (!v) return "";
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function inMonth(fechaIso, month, year) {
+  if (!fechaIso) return false;
+  const [y, m] = fechaIso.split("-");
+  return Number(y) === Number(year) && Number(m) === Number(month);
+}
+
+function inRange(fechaIso, desde, hasta) {
+  if (!fechaIso) return false;
+  if (desde && fechaIso < desde) return false;
+  if (hasta && fechaIso > hasta) return false;
+  return true;
+}
+
+function resolvePeriodParams(filters) {
+  if (filters.modo === "mes") {
+    return {
+      mes: String(filters.mes),
+      anio: String(filters.anio),
+    };
+  }
+
+  if (filters.modo === "rango_meses") {
+    const startIdx = monthIndex(filters.anioDesde, filters.mesDesde);
+    const endIdx = monthIndex(filters.anioHasta, filters.mesHasta);
+
+    if (endIdx < startIdx) {
+      throw new Error("El mes final no puede ser menor al mes inicial.");
+    }
+
+    return {
+      desde: buildMonthStartISO(filters.anioDesde, filters.mesDesde),
+      hasta: buildMonthEndISO(filters.anioHasta, filters.mesHasta),
+    };
+  }
+
+  if (filters.modo === "rango_fechas") {
+    if (!filters.desde || !filters.hasta) {
+      throw new Error("Debes seleccionar fecha inicial y fecha final.");
+    }
+
+    if (filters.hasta < filters.desde) {
+      throw new Error("La fecha final no puede ser menor a la fecha inicial.");
+    }
+
+    return {
+      desde: filters.desde,
+      hasta: filters.hasta,
+    };
+  }
+
+  return {
+    mes: String(filters.mes),
+    anio: String(filters.anio),
+  };
+}
+
 function SimpleBarChart({ title, rows = [] }) {
   const max = Math.max(...rows.map((r) => Number(r?.costo || 0)), 0);
 
@@ -139,27 +245,35 @@ export default function DashboardCostos() {
       ""
   ).toUpperCase();
 
+  const navMes = parseNavMonth(navState?.filtroMes, currentMonth);
+  const navAnio = parseNavYear(navState?.filtroAnio, currentYear, navState?.filtroMes);
+
   const initialDraft = {
     modo: navState?.modoDashboard || "mes",
     equipo: Array.isArray(navState?.filtroEquipo)
-        ? normalizeUpper(navState.filtroEquipo[0] || "")
-        : normalizeUpper(navState?.filtroEquipo || ""),
+      ? normalizeUpper(navState.filtroEquipo[0] || "")
+      : normalizeUpper(navState?.filtroEquipo || ""),
     cliente: Array.isArray(navState?.filtroCliente)
-        ? navState.filtroCliente[0] || ""
-        : normalizeText(navState?.filtroCliente || ""),
+      ? navState.filtroCliente[0] || ""
+      : normalizeText(navState?.filtroCliente || ""),
     consultor: Array.isArray(navState?.filtroConsultor)
-        ? navState.filtroConsultor[0] || ""
-        : normalizeText(navState?.filtroConsultor || ""),
+      ? navState.filtroConsultor[0] || ""
+      : normalizeText(navState?.filtroConsultor || ""),
     modulo: Array.isArray(navState?.filtroModulo)
-        ? normalizeUpper(navState.filtroModulo[0] || "")
-        : normalizeUpper(navState?.filtroModulo || ""),
-    mes: Number(navState?.filtroMes || currentMonth),
-    anio: Number(navState?.filtroAnio || currentYear),
+      ? normalizeUpper(navState.filtroModulo[0] || "")
+      : normalizeUpper(navState?.filtroModulo || ""),
+    proyectoId: navState?.filtroProyectoId ? Number(navState.filtroProyectoId) : "",
+    mes: navMes,
+    anio: navAnio,
+    mesDesde: navMes,
+    anioDesde: navAnio,
+    mesHasta: navMes,
+    anioHasta: navAnio,
     ocupacionIds: Array.isArray(navState?.filtroOcupacionIds) ? navState.filtroOcupacionIds : [],
     ocupacionLabels: Array.isArray(navState?.filtroOcupacionLabels) ? navState.filtroOcupacionLabels : [],
     desde: navState?.filtroDesde || "",
     hasta: navState?.filtroHasta || "",
-    };
+  };
 
   const [draft, setDraft] = useState(initialDraft);
   const [filters, setFilters] = useState(initialDraft);
@@ -182,8 +296,55 @@ export default function DashboardCostos() {
   });
 
   const [selectedRowKey, setSelectedRowKey] = useState("");
+  const [proyectosOptions, setProyectosOptions] = useState([]);
+  const [oportunidadesRows, setOportunidadesRows] = useState([]);
 
   const yearOptions = useMemo(() => buildYearOptions(draft.anio), [draft.anio]);
+  const yearOptionsFrom = useMemo(() => buildYearOptions(draft.anioDesde), [draft.anioDesde]);
+  const yearOptionsTo = useMemo(() => buildYearOptions(draft.anioHasta), [draft.anioHasta]);
+
+  useEffect(() => {
+    const fetchProyectos = async () => {
+      try {
+        const res = await jfetch("/proyectos?include_fases=0", {
+          headers: getAuthHeaders(rol),
+        });
+
+        const json = await res.json().catch(() => []);
+        if (!res.ok) throw new Error();
+
+        const opts = (Array.isArray(json) ? json : []).map((p) => ({
+          value: Number(p.id),
+          label: `${p.codigo || "SIN CODIGO"} - ${p.nombre || "SIN NOMBRE"}`,
+        }));
+
+        setProyectosOptions(opts);
+      } catch {
+        setProyectosOptions([]);
+      }
+    };
+
+    fetchProyectos();
+  }, [rol]);
+
+  useEffect(() => {
+    const fetchOportunidades = async () => {
+      try {
+        const res = await jfetch("/oportunidades", {
+          headers: getAuthHeaders(rol),
+        });
+
+        const json = await res.json().catch(() => []);
+        if (!res.ok) throw new Error();
+
+        setOportunidadesRows(Array.isArray(json) ? json : []);
+      } catch {
+        setOportunidadesRows([]);
+      }
+    };
+
+    fetchOportunidades();
+  }, [rol]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -192,19 +353,21 @@ export default function DashboardCostos() {
         setError("");
 
         const qs = new URLSearchParams();
+        const periodParams = resolvePeriodParams(filters);
 
-        if (filters.modo === "mes") {
-          qs.set("mes", String(filters.mes));
-          qs.set("anio", String(filters.anio));
+        if (periodParams.mes && periodParams.anio) {
+          qs.set("mes", periodParams.mes);
+          qs.set("anio", periodParams.anio);
         } else {
-          if (filters.desde) qs.set("desde", filters.desde);
-          if (filters.hasta) qs.set("hasta", filters.hasta);
+          qs.set("desde", periodParams.desde);
+          qs.set("hasta", periodParams.hasta);
         }
 
         if (filters.equipo) qs.set("equipo", filters.equipo);
         if (filters.cliente) qs.append("cliente", filters.cliente);
         if (filters.consultor) qs.append("consultor", filters.consultor);
         if (filters.modulo) qs.append("modulo", filters.modulo);
+        if (filters.proyectoId) qs.set("proyecto_id", String(filters.proyectoId));
 
         (Array.isArray(filters.ocupacionIds) ? filters.ocupacionIds : [])
           .map((id) => Number(id))
@@ -271,6 +434,34 @@ export default function DashboardCostos() {
     return rows.find((r) => `${r.cliente}||${r.ocupacion}` === selectedRowKey) || null;
   }, [rows, selectedRowKey]);
 
+  const oportunidadesFiltradas = useMemo(() => {
+    return (Array.isArray(oportunidadesRows) ? oportunidadesRows : []).filter((op) => {
+      const clienteOp = normalizeText(op?.nombre_cliente || "");
+      const fechaOp =
+        toIsoDateSafe(op?.fecha_creacion) ||
+        toIsoDateSafe(op?.fecha_cierre_oportunidad) ||
+        toIsoDateSafe(op?.fecha_cierre_sm);
+
+      if (filters.cliente && normalizeUpper(clienteOp) !== normalizeUpper(filters.cliente)) {
+        return false;
+      }
+
+      if (filters.modo === "mes") {
+        return inMonth(fechaOp, filters.mes, filters.anio);
+      }
+
+      if (filters.modo === "rango_meses") {
+        return inRange(
+          fechaOp,
+          buildMonthStartISO(filters.anioDesde, filters.mesDesde),
+          buildMonthEndISO(filters.anioHasta, filters.mesHasta)
+        );
+      }
+
+      return inRange(fechaOp, filters.desde, filters.hasta);
+    });
+  }, [oportunidadesRows, filters]);
+
   const applyFilters = () => {
     setFilters({ ...draft });
   };
@@ -281,8 +472,14 @@ export default function DashboardCostos() {
       cliente: "",
       consultor: "",
       modulo: "",
+      proyectoId: "",
       desde: "",
       hasta: "",
+      modo: "mes",
+      mesDesde: currentMonth,
+      anioDesde: currentYear,
+      mesHasta: currentMonth,
+      anioHasta: currentYear,
     };
     setDraft(reset);
     setFilters(reset);
@@ -348,6 +545,15 @@ export default function DashboardCostos() {
           <section className="dc-charts-grid">
             <SimpleBarChart title="Top costo por cliente" rows={graficos.porCliente} />
             <SimpleBarChart title="Top costo por ocupación" rows={graficos.porOcupacion} />
+          </section>
+
+          <section className="dc-panel">
+            <div className="dc-section-head">
+              <h3>Oportunidades ganadas / adjudicadas</h3>
+              <span>{oportunidadesFiltradas.length} oportunidades</span>
+            </div>
+
+            <GraficoCantidadGanadas data={oportunidadesFiltradas} />
           </section>
 
           <section className="dc-panel">
@@ -500,7 +706,8 @@ export default function DashboardCostos() {
                   onChange={(e) => setDraft((s) => ({ ...s, modo: e.target.value }))}
                 >
                   <option value="mes">Mes / año</option>
-                  <option value="rango">Rango de fechas</option>
+                  <option value="rango_meses">Rango de meses</option>
+                  <option value="rango_fechas">Rango de fechas</option>
                 </select>
               </div>
 
@@ -540,7 +747,27 @@ export default function DashboardCostos() {
                 />
               </div>
 
-              {draft.modo === "mes" ? (
+              <div className="dc-field">
+                <label>Proyecto creado</label>
+                <select
+                  value={draft.proyectoId}
+                  onChange={(e) =>
+                    setDraft((s) => ({
+                      ...s,
+                      proyectoId: e.target.value ? Number(e.target.value) : "",
+                    }))
+                  }
+                >
+                  <option value="">Todos</option>
+                  {proyectosOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {draft.modo === "mes" && (
                 <>
                   <div className="dc-field">
                     <label>Mes</label>
@@ -570,7 +797,69 @@ export default function DashboardCostos() {
                     </select>
                   </div>
                 </>
-              ) : (
+              )}
+
+              {draft.modo === "rango_meses" && (
+                <>
+                  <div className="dc-field">
+                    <label>Mes inicial</label>
+                    <select
+                      value={draft.mesDesde}
+                      onChange={(e) => setDraft((s) => ({ ...s, mesDesde: Number(e.target.value) }))}
+                    >
+                      {MONTHS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="dc-field">
+                    <label>Año inicial</label>
+                    <select
+                      value={draft.anioDesde}
+                      onChange={(e) => setDraft((s) => ({ ...s, anioDesde: Number(e.target.value) }))}
+                    >
+                      {yearOptionsFrom.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="dc-field">
+                    <label>Mes final</label>
+                    <select
+                      value={draft.mesHasta}
+                      onChange={(e) => setDraft((s) => ({ ...s, mesHasta: Number(e.target.value) }))}
+                    >
+                      {MONTHS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="dc-field">
+                    <label>Año final</label>
+                    <select
+                      value={draft.anioHasta}
+                      onChange={(e) => setDraft((s) => ({ ...s, anioHasta: Number(e.target.value) }))}
+                    >
+                      {yearOptionsTo.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {draft.modo === "rango_fechas" && (
                 <>
                   <div className="dc-field">
                     <label>Desde</label>
