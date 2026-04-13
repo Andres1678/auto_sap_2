@@ -5390,7 +5390,7 @@ def _meta_horas_en_rango(start_date: date, end_date: date):
                 dias_festivos += 1
             else:
                 dias_laborables += 1
-                total += _cap_meta_hours_for_day(cur)
+                total += Decimal(str(_cap_meta_hours_for_day(cur, co_holidays)))
         cur += timedelta(days=1)
 
     return {
@@ -7707,20 +7707,14 @@ def _cap_is_standard_workday(fecha_obj, co_holidays):
     return True
 
 
-def _cap_meta_hours_for_day(fecha_obj, co_holidays):
-    """
-    Meta única para todos:
-    - lunes: 8 h
-    - martes a viernes: 9 h
-    - fines de semana / festivos: 0 h
-    """
-    if not _cap_is_standard_workday(fecha_obj, co_holidays):
-        return 0.0
+def _cap_meta_hours_for_day(d: date, co_holidays=None):
+    co_holidays = co_holidays or set()
 
-    if fecha_obj.weekday() == 0:
-        return 8.0
+    if not _cap_is_standard_workday(d, co_holidays):
+        return Decimal("0.00")
 
-    return 9.0
+    return Decimal("8.00") if d.weekday() == 0 else Decimal("9.00")
+
 
 
 def _cap_work_days_text():
@@ -8478,8 +8472,8 @@ def _iter_months_between(start_date: date, end_date: date):
         else:
             cur = date(cur.year, cur.month + 1, 1)
 
-def _cap_is_standard_workday(d: date, co_holidays):
-    # Lunes=0 ... Domingo=6
+def _cap_is_standard_workday(d: date, co_holidays=None):
+    co_holidays = co_holidays or set()
     return d.weekday() < 5 and d not in co_holidays
 
 def _cap_meta_hours_for_day(d: date, co_holidays=None):
