@@ -139,6 +139,13 @@
   box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
 }
 
+.dc-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
 .dc-btn-primary {
   color: #fff;
   border-color: transparent;
@@ -163,7 +170,6 @@
   border-color: #bfd0ea;
 }
 
-/* Cambiado para que el panel de filtros quede arriba y con más espacio */
 .dc-layout {
   display: grid;
   grid-template-columns: 1fr;
@@ -277,6 +283,11 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  align-items: stretch;
+}
+
+.dc-chart-card {
+  height: 100%;
 }
 
 .dc-chart-list {
@@ -333,6 +344,10 @@
   background: #fff;
 }
 
+.dc-panel .dc-table-wrap + .dc-table-wrap {
+  margin-top: 14px;
+}
+
 .dc-table {
   width: 100%;
   min-width: 980px;
@@ -387,7 +402,7 @@
 
 .dc-row-clickable,
 .dc-table tbody tr {
-  transition: background 0.18s ease, transform 0.18s ease;
+  transition: background 0.18s ease, transform 0.18s ease, outline-color 0.18s ease;
 }
 
 .dc-row-clickable {
@@ -401,6 +416,22 @@
 
 .dc-row-clickable:active {
   transform: scale(0.998);
+}
+
+.dc-table tbody tr[style*="outline"] {
+  position: relative;
+}
+
+.dc-table input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--dc-blue);
+  cursor: pointer;
+}
+
+.dc-table input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .dc-detail-cards {
@@ -484,7 +515,6 @@
   font-weight: 700;
 }
 
-/* Mejor distribución del formulario */
 .dc-filters-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(220px, 1fr));
