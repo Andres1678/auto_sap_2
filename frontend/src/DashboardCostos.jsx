@@ -237,6 +237,50 @@ function aggregateOperationalByMonth(rows = []) {
   return Array.from(map.values()).sort((a, b) => a.periodo.localeCompare(b.periodo));
 }
 
+function getSummaryRowKey(row) {
+  return [
+    normalizeUpper(row?.cliente),
+    normalizeUpper(row?.ocupacion),
+    normalizeUpper(row?.equipo),
+  ].join("||");
+}
+
+function getLinkedMarginAnalysisFromSelection(opportunity, selectedRows = []) {
+  if (!opportunity) {
+    return {
+      hasLink: false,
+      ingreso: 0,
+      costo: 0,
+      margen: 0,
+      margenPct: 0,
+      client: "",
+      servicio: "",
+      codigo_prc: "",
+      selectedCount: 0,
+    };
+  }
+
+  const ingreso = getOpportunityChartValue(opportunity);
+  const costo = (Array.isArray(selectedRows) ? selectedRows : []).reduce(
+    (acc, row) => acc + Number(row?.costoTotal || 0),
+    0
+  );
+  const margen = ingreso - costo;
+  const margenPct = ingreso > 0 ? (margen / ingreso) * 100 : 0;
+
+  return {
+    hasLink: true,
+    ingreso,
+    costo,
+    margen,
+    margenPct,
+    client: opportunity?.cliente || "",
+    servicio: opportunity?.servicio || "",
+    codigo_prc: opportunity?.codigo_prc || "",
+    selectedCount: (Array.isArray(selectedRows) ? selectedRows : []).length,
+  };
+}
+
 function getLinkedMarginAnalysis(opRows = [], summaryRows = [], linkedClient = "") {
   const client = normalizeText(linkedClient);
 
@@ -706,8 +750,9 @@ export default function DashboardCostos() {
   const [serviciosOptions, setServiciosOptions] = useState([]);
 
   const [modalRow, setModalRow] = useState(null);
-  const [linkedClient, setLinkedClient] = useState("");
-  const [showOnlyLinkedSummary, setShowOnlyLinkedSummary] = useState(false);
+  const [linkMode, setLinkMode] = useState(false);
+  const [linkedOpportunity, setLinkedOpportunity] = useState(null);
+  const [linkedSummaryKeys, setLinkedSummaryKeys] = useState([]);
 
   const yearOptions = useMemo(() => buildYearOptions(draft.anio), [draft.anio]);
   const yearOptionsFrom = useMemo(() => buildYearOptions(draft.anioDesde), [draft.anioDesde]);
@@ -909,38 +954,56 @@ export default function DashboardCostos() {
   }, [filters, rol]);
 
   useEffect(() => {
-    if (!linkedClient) return;
+    if (!linkedOpportunity) return;
 
-    const existsInOpp = (oportunidadesGanadas.rows || []).some((item) =>
-      sameClient(item?.cliente, linkedClient)
+    const existsInOpp = (oportunidadesGanadas.rows || []).some(
+      (item) => Number(item?.id) === Number(linkedOpportunity?.id)
     );
 
-    const existsInSummary = (rows || []).some((item) =>
-      sameClient(item?.cliente, linkedClient)
-    );
-
-    if (!existsInOpp && !existsInSummary) {
-      setLinkedClient("");
-      setShowOnlyLinkedSummary(false);
+    if (!existsInOpp) {
+      setLinkMode(false);
+      setLinkedOpportunity(null);
+      setLinkedSummaryKeys([]);
+      return;
     }
-  }, [linkedClient, oportunidadesGanadas.rows, rows]);
+
+    const validKeys = new Set(
+      (rows || [])
+        .filter((item) => sameClient(item?.cliente, linkedOpportunity?.cliente))
+        .map((item) => getSummaryRowKey(item))
+    );
+
+    setLinkedSummaryKeys((prev) => prev.filter((key) => validKeys.has(key)));
+  }, [linkedOpportunity, oportunidadesGanadas.rows, rows]);
 
   const displayedSummaryRows = useMemo(() => {
-    if (!showOnlyLinkedSummary || !linkedClient) return rows;
-    return rows.filter((item) => sameClient(item?.cliente, linkedClient));
-  }, [rows, linkedClient, showOnlyLinkedSummary]);
+    if (!linkedOpportunity?.cliente) return rows;
+
+    return rows.filter((item) =>
+      sameClient(item?.cliente, linkedOpportunity?.cliente)
+    );
+  }, [rows, linkedOpportunity]);
+
+  const selectedSummaryRows = useMemo(() => {
+    const selected = new Set(linkedSummaryKeys);
+    return displayedSummaryRows.filter((item) =>
+      selected.has(getSummaryRowKey(item))
+    );
+  }, [displayedSummaryRows, linkedSummaryKeys]);
 
   const linkedAnalysis = useMemo(() => {
-    return getLinkedMarginAnalysis(
-      oportunidadesGanadas.rows,
-      rows,
-      linkedClient
+    return getLinkedMarginAnalysisFromSelection(
+      linkedOpportunity,
+      selectedSummaryRows
     );
-  }, [oportunidadesGanadas.rows, rows, linkedClient]);
+  }, [linkedOpportunity, selectedSummaryRows]);
 
   const monthlyRows = useMemo(() => {
-    return aggregateOperationalByMonth(displayedSummaryRows);
-  }, [displayedSummaryRows]);
+    const base =
+      selectedSummaryRows.length > 0 ? selectedSummaryRows : displayedSummaryRows;
+
+    return aggregateOperationalByMonth(base);
+  }, [selectedSummaryRows, displayedSummaryRows]);
 
   const handleDraftChange = (field, value) => {
     setDraft((prev) => ({
@@ -992,16 +1055,18 @@ export default function DashboardCostos() {
     setDraft(reset);
     setFilters(reset);
     setModalRow(null);
-    setLinkedClient("");
-    setShowOnlyLinkedSummary(false);
+    setLinkMode(false);
+    setLinkedOpportunity(null);
+    setLinkedSummaryKeys([]);
   };
 
-  const handleLinkClient = (client) => {
-    const clientName = normalizeText(client);
-    if (!clientName) return;
+  const handleStartLink = (opportunity) => {
+    if (!opportunity) return;
 
-    setLinkedClient(clientName);
-    setShowOnlyLinkedSummary(true);
+    setLinkedOpportunity(opportunity);
+    setLinkedSummaryKeys([]);
+    setLinkMode(true);
+    setModalRow(null);
 
     window.requestAnimationFrame(() => {
       summarySectionRef.current?.scrollIntoView({
@@ -1011,18 +1076,41 @@ export default function DashboardCostos() {
     });
   };
 
-  const clearLinkedAnalysis = () => {
-    setLinkedClient("");
-    setShowOnlyLinkedSummary(false);
+  const handleToggleSummaryRow = (row) => {
+    const key = getSummaryRowKey(row);
+
+    setLinkedSummaryKeys((prev) =>
+      prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]
+    );
   };
 
-  const monthlyChartTitle =
-    linkedClient && showOnlyLinkedSummary
-      ? `Costo total registrado por mes · ${linkedClient}`
-      : "Costo total registrado por mes";
+  const handleFinishLink = () => {
+    setLinkMode(false);
+  };
 
-  const monthlyChartSubtitle = linkedClient && showOnlyLinkedSummary
-    ? "Vista mensual del cliente vinculado"
+  const handleEditLink = () => {
+    if (!linkedOpportunity) return;
+    setLinkMode(true);
+  };
+
+  const clearLinkedAnalysis = () => {
+    setLinkMode(false);
+    setLinkedOpportunity(null);
+    setLinkedSummaryKeys([]);
+    setModalRow(null);
+  };
+
+  const openSummaryDetail = (row) => {
+    if (linkMode) return;
+    setModalRow(row);
+  };
+
+  const monthlyChartTitle = linkedOpportunity?.cliente
+    ? `Costo total registrado por mes · ${linkedOpportunity.cliente}`
+    : "Costo total registrado por mes";
+
+  const monthlyChartSubtitle = linkedOpportunity?.cliente
+    ? "Se recalcula con la selección vinculada"
     : "Se recalcula con el período y filtros activos";
 
   return (
@@ -1042,9 +1130,9 @@ export default function DashboardCostos() {
             </div>
           )}
 
-          {!!linkedClient && (
+          {!!linkedOpportunity && (
             <div className="dc-tag" style={{ marginTop: 8 }}>
-              Cliente vinculado: {linkedClient}
+              Oportunidad vinculada: {linkedOpportunity.cliente} · {linkedOpportunity.codigo_prc || "SIN PRC"}
             </div>
           )}
         </div>
@@ -1105,7 +1193,7 @@ export default function DashboardCostos() {
             <OportunidadesGanadasPorResultadoChart rows={oportunidadesGanadas.rows} />
           </section>
 
-          {linkedAnalysis.hasClient && (
+          {linkedAnalysis.hasLink && (
             <section className="dc-panel">
               <div className="dc-section-head">
                 <h3>Análisis vinculado de margen</h3>
@@ -1114,12 +1202,12 @@ export default function DashboardCostos() {
 
               <div className="dc-detail-cards">
                 <article className="dc-mini-card">
-                  <span>Ingreso</span>
+                  <span>Ingreso oportunidad</span>
                   <strong>{fmtMoney(linkedAnalysis.ingreso)}</strong>
                 </article>
 
                 <article className="dc-mini-card">
-                  <span>Costo</span>
+                  <span>Costo seleccionado</span>
                   <strong>{fmtMoney(linkedAnalysis.costo)}</strong>
                 </article>
 
@@ -1144,22 +1232,34 @@ export default function DashboardCostos() {
                 }}
               >
                 <span className="dc-tag">
-                  {fmtInt(linkedAnalysis.oportunidadesCount)} oportunidad(es) vinculada(s)
+                  Servicio: {linkedAnalysis.servicio || "-"}
                 </span>
 
                 <span className="dc-tag">
-                  {fmtInt(linkedAnalysis.resumenRowsCount)} fila(s) en resumen
+                  PRC: {linkedAnalysis.codigo_prc || "SIN PRC"}
                 </span>
 
-                <button
-                  type="button"
-                  className="dc-btn dc-btn-primary"
-                  onClick={() => setShowOnlyLinkedSummary((prev) => !prev)}
-                >
-                  {showOnlyLinkedSummary
-                    ? "Mostrar todo el resumen"
-                    : "Mostrar solo filas vinculadas"}
-                </button>
+                <span className="dc-tag">
+                  {fmtInt(linkedAnalysis.selectedCount)} fila(s) seleccionada(s)
+                </span>
+
+                {linkMode ? (
+                  <button
+                    type="button"
+                    className="dc-btn dc-btn-primary"
+                    onClick={handleFinishLink}
+                  >
+                    Finalizar vínculo
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="dc-btn dc-btn-primary"
+                    onClick={handleEditLink}
+                  >
+                    Editar selección
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -1171,9 +1271,8 @@ export default function DashboardCostos() {
               </div>
 
               <p style={{ marginTop: 14, opacity: 0.8 }}>
-                Ingreso = suma de OTC + MRC del cliente en oportunidades ganadas filtradas.
-                Costo = suma de costo total del resumen por cliente, ocupación y equipo.
-                Margen = Ingreso - Costo.
+                Selecciona con checkbox las filas del resumen que pertenecen a esta oportunidad.
+                El margen se calcula como Ingreso oportunidad - Costo seleccionado.
               </p>
             </section>
           )}
@@ -1206,7 +1305,7 @@ export default function DashboardCostos() {
                   </thead>
                   <tbody>
                     {oportunidadesGanadas.rows.map((op) => {
-                      const isLinked = linkedClient && sameClient(op.cliente, linkedClient);
+                      const isLinked = Number(linkedOpportunity?.id) === Number(op?.id);
 
                       return (
                         <tr
@@ -1234,9 +1333,9 @@ export default function DashboardCostos() {
                             <button
                               type="button"
                               className={isLinked ? "dc-btn dc-btn-primary" : "dc-btn dc-btn-ghost"}
-                              onClick={() => handleLinkClient(op.cliente)}
+                              onClick={() => handleStartLink(op)}
                             >
-                              {isLinked ? "Vinculado" : "Vincular"}
+                              {isLinked ? (linkMode ? "Seleccionando" : "Vinculado") : "Vincular"}
                             </button>
                           </td>
                         </tr>
@@ -1251,7 +1350,10 @@ export default function DashboardCostos() {
           <section className="dc-panel" ref={summarySectionRef}>
             <div className="dc-section-head">
               <h3>Resumen por cliente, ocupación y equipo</h3>
-              <span>{displayedSummaryRows.length} filas</span>
+              <span>
+                {displayedSummaryRows.length} filas
+                {linkedOpportunity ? ` · cliente ${linkedOpportunity.cliente}` : ""}
+              </span>
             </div>
 
             {loading && <div className="dc-empty">Cargando información…</div>}
@@ -1265,6 +1367,8 @@ export default function DashboardCostos() {
                 <table className="dc-table">
                   <thead>
                     <tr>
+                      <th>Detalle</th>
+                      {linkedOpportunity && <th>Vincular</th>}
                       <th>Cliente</th>
                       <th>Ocupación</th>
                       <th>Equipo</th>
@@ -1277,16 +1381,17 @@ export default function DashboardCostos() {
                   </thead>
                   <tbody>
                     {displayedSummaryRows.map((item, idx) => {
-                      const rowKey = `${item.cliente}||${item.ocupacion}||${item.equipo || "SIN EQUIPO"}||${idx}`;
-                      const isLinked = linkedClient && sameClient(item.cliente, linkedClient);
+                      const rowKey = getSummaryRowKey(item);
+                      const isSelected = linkedSummaryKeys.includes(rowKey);
+                      const sameClientRow = linkedOpportunity
+                        ? sameClient(item?.cliente, linkedOpportunity?.cliente)
+                        : false;
 
                       return (
                         <tr
-                          key={rowKey}
-                          className="dc-row-clickable"
-                          onClick={() => setModalRow(item)}
+                          key={`${rowKey}-${idx}`}
                           style={
-                            isLinked
+                            isSelected
                               ? {
                                   outline: "2px solid rgba(37, 99, 235, 0.35)",
                                   background: "rgba(37, 99, 235, 0.05)",
@@ -1294,6 +1399,28 @@ export default function DashboardCostos() {
                               : undefined
                           }
                         >
+                          <td className="num">
+                            <button
+                              type="button"
+                              className="dc-btn dc-btn-ghost"
+                              onClick={() => openSummaryDetail(item)}
+                              disabled={linkMode}
+                            >
+                              Detalle
+                            </button>
+                          </td>
+
+                          {linkedOpportunity && (
+                            <td className="num">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={!sameClientRow}
+                                onChange={() => handleToggleSummaryRow(item)}
+                              />
+                            </td>
+                          )}
+
                           <td>{item.cliente}</td>
                           <td>{item.ocupacion}</td>
                           <td>{item.equipo || "—"}</td>
