@@ -9228,6 +9228,9 @@ def dashboard_costos_resumen():
             except Exception:
                 return Decimal("0.00")
 
+        def _client_norm(v):
+            return " ".join(str(v or "").strip().upper().split())
+
         clientes_filter = _get_multi("cliente")
         consultores_filter = _get_multi("consultor")
         modulos_filter = [x.upper() for x in _get_multi("modulo")]
@@ -9241,7 +9244,11 @@ def dashboard_costos_resumen():
 
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
         filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
+        cliente_vinculado = (request.args.get("cliente_vinculado") or "").strip()
 
+        # -------------------------------------------------
+        # 1) RESUMEN OPERATIVO (Registro)
+        # -------------------------------------------------
         q = (
             db.session.query(
                 Registro.id.label("registro_id"),
@@ -9295,8 +9302,12 @@ def dashboard_costos_resumen():
         registros = q.all()
 
         resumen_map = {}
-        graf_cliente = defaultdict(lambda: Decimal("0.00"))
+        graf_cliente_operativo = defaultdict(lambda: Decimal("0.00"))
         graf_ocupacion = defaultdict(lambda: Decimal("0.00"))
+        graf_mensual_operativo = defaultdict(lambda: {
+            "horas": Decimal("0.00"),
+            "costo": Decimal("0.00"),
+        })
 
         total_horas = Decimal("0.00")
         total_costo = Decimal("0.00")
@@ -9304,6 +9315,9 @@ def dashboard_costos_resumen():
         clientes_set = set()
         ocupaciones_set = set()
         consultores_set = set()
+
+        costo_operativo_por_cliente = defaultdict(lambda: Decimal("0.00"))
+        horas_operativas_por_cliente = defaultdict(lambda: Decimal("0.00"))
 
         for r in registros:
             fecha_reg = r.fecha_real
@@ -9318,6 +9332,8 @@ def dashboard_costos_resumen():
                 continue
 
             cliente = (r.cliente or "SIN CLIENTE").strip() or "SIN CLIENTE"
+            cliente_norm = _client_norm(cliente)
+
             ocupacion = (
                 f"{(r.ocupacion_codigo or '').strip()} - {(r.ocupacion_nombre or '').strip()}".strip(" -")
                 if (r.ocupacion_codigo or r.ocupacion_nombre)
@@ -9349,6 +9365,7 @@ def dashboard_costos_resumen():
             if key not in resumen_map:
                 resumen_map[key] = {
                     "cliente": cliente,
+                    "clienteNorm": cliente_norm,
                     "ocupacion": ocupacion,
                     "equipo": equipo,
                     "horas": Decimal("0.00"),
@@ -9380,8 +9397,14 @@ def dashboard_costos_resumen():
             bucket["detalleConsultores"][consultor_nombre]["costo"] = _dec(bucket["detalleConsultores"][consultor_nombre]["costo"]) + costo
             bucket["detalleConsultores"][consultor_nombre]["registrosCount"] += 1
 
-            graf_cliente[cliente] = _dec(graf_cliente[cliente]) + costo
+            graf_cliente_operativo[cliente] = _dec(graf_cliente_operativo[cliente]) + costo
             graf_ocupacion[ocupacion] = _dec(graf_ocupacion[ocupacion]) + costo
+
+            graf_mensual_operativo[periodo]["horas"] = _dec(graf_mensual_operativo[periodo]["horas"]) + horas
+            graf_mensual_operativo[periodo]["costo"] = _dec(graf_mensual_operativo[periodo]["costo"]) + costo
+
+            costo_operativo_por_cliente[cliente_norm] = _dec(costo_operativo_por_cliente[cliente_norm]) + costo
+            horas_operativas_por_cliente[cliente_norm] = _dec(horas_operativas_por_cliente[cliente_norm]) + horas
 
             total_horas = _dec(total_horas) + horas
             total_costo = _dec(total_costo) + costo
@@ -9425,6 +9448,7 @@ def dashboard_costos_resumen():
 
             rows_out.append({
                 "cliente": item["cliente"],
+                "clienteNorm": item["clienteNorm"],
                 "ocupacion": item["ocupacion"],
                 "equipo": item["equipo"],
                 "horas": float(horas_row),
@@ -9440,10 +9464,8 @@ def dashboard_costos_resumen():
         rows_out.sort(key=lambda x: (-x["costoTotal"], x["cliente"], x["ocupacion"], x["equipo"]))
 
         # -----------------------------------------
-        # OPORTUNIDADES GANADAS
-        # No depende del rango del dashboard.
-        # Se filtra por cliente, estado_ot, servicio y proyecto.
-        # Además se excluyen las que queden con valor 0.
+        # 2) OPORTUNIDADES GANADAS
+        #    Ahora se calcula valor comercial = OTC + MRC
         # -----------------------------------------
         qo = db.session.query(
             Oportunidad.id.label("id"),
@@ -9484,6 +9506,12 @@ def dashboard_costos_resumen():
         ).all()
 
         opp_rows_out = []
+        valor_comercial_por_cliente = defaultdict(lambda: Decimal("0.00"))
+        oportunidades_por_cliente = defaultdict(int)
+        valor_por_resultado = defaultdict(lambda: {
+            "valor": Decimal("0.00"),
+            "oportunidades": 0,
+        })
 
         for op in opp_rows_db:
             fecha_op = op.fecha_creacion
@@ -9501,37 +9529,174 @@ def dashboard_costos_resumen():
 
             otc = _money_num(op.otc)
             mrc = _money_num(op.mrc)
+
+            valor_oportunidad = (otc + mrc).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP
+            )
+
             mrc_normalizado = (mrc + (otc / Decimal("12"))).quantize(
                 Decimal("0.01"),
                 rounding=ROUND_HALF_UP
             )
 
-            if mrc_normalizado <= Decimal("0.00"):
+            if valor_oportunidad <= Decimal("0.00"):
                 continue
 
+            cliente_opp = (op.nombre_cliente or "SIN CLIENTE").strip() or "SIN CLIENTE"
+            cliente_opp_norm = _client_norm(cliente_opp)
             prc = (op.codigo_prc or "SIN PRC").strip() or "SIN PRC"
+            resultado = (op.resultado_oferta or "SIN RESULTADO").strip() or "SIN RESULTADO"
+
+            valor_comercial_por_cliente[cliente_opp_norm] = _dec(valor_comercial_por_cliente[cliente_opp_norm]) + valor_oportunidad
+            oportunidades_por_cliente[cliente_opp_norm] += 1
+
+            valor_por_resultado[resultado]["valor"] = _dec(valor_por_resultado[resultado]["valor"]) + valor_oportunidad
+            valor_por_resultado[resultado]["oportunidades"] += 1
 
             opp_rows_out.append({
                 "id": op.id,
-                "cliente": (op.nombre_cliente or "SIN CLIENTE").strip() or "SIN CLIENTE",
+                "cliente": cliente_opp,
+                "clienteNorm": cliente_opp_norm,
                 "servicio": (op.servicio or "-").strip() or "-",
                 "codigo_prc": prc,
                 "fecha_creacion": fecha_iso,
                 "estado_oferta": op.estado_oferta or "GANADA",
-                "resultado_oferta": op.resultado_oferta or "-",
+                "resultado_oferta": resultado,
                 "estado_ot": op.estado_ot or "-",
                 "otc": float(otc),
                 "mrc": float(mrc),
+                "valorOportunidad": float(valor_oportunidad),
                 "mrcNormalizado": float(mrc_normalizado),
             })
 
         opp_rows_out.sort(
             key=lambda x: (
-                -float(x["mrcNormalizado"] or 0),
+                -float(x["valorOportunidad"] or 0),
                 x["cliente"],
                 x["codigo_prc"]
             )
         )
+
+        # -----------------------------------------
+        # 3) MÁRGENES POR CLIENTE
+        #    Ingreso = OTC + MRC
+        #    Costo = suma del resumen operativo
+        # -----------------------------------------
+        clientes_margin_keys = sorted(
+            set(list(valor_comercial_por_cliente.keys()) + list(costo_operativo_por_cliente.keys()))
+        )
+
+        margenes_por_cliente = []
+        for cliente_norm in clientes_margin_keys:
+            ingreso = _dec(valor_comercial_por_cliente.get(cliente_norm))
+            costo = _dec(costo_operativo_por_cliente.get(cliente_norm))
+            horas = _dec(horas_operativas_por_cliente.get(cliente_norm))
+            margen = (ingreso - costo).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+            margen_pct = None
+            if ingreso > 0:
+                margen_pct = float(
+                    ((margen / ingreso) * Decimal("100")).quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP
+                    )
+                )
+
+            display_name = next(
+                (
+                    r["cliente"] for r in rows_out
+                    if r.get("clienteNorm") == cliente_norm
+                ),
+                next(
+                    (
+                        o["cliente"] for o in opp_rows_out
+                        if o.get("clienteNorm") == cliente_norm
+                    ),
+                    cliente_norm
+                )
+            )
+
+            margenes_por_cliente.append({
+                "cliente": display_name,
+                "clienteNorm": cliente_norm,
+                "ingreso": float(ingreso),
+                "costo": float(costo),
+                "horas": float(horas),
+                "margen": float(margen),
+                "margenPct": margen_pct,
+                "oportunidadesCount": int(oportunidades_por_cliente.get(cliente_norm, 0)),
+            })
+
+        margenes_por_cliente.sort(key=lambda x: (-x["ingreso"], x["cliente"]))
+
+        # -----------------------------------------
+        # 4) RESUMEN FINANCIERO GLOBAL
+        # -----------------------------------------
+        ingreso_total = sum((_dec(v) for v in valor_comercial_por_cliente.values()), Decimal("0.00"))
+        costo_total = _dec(total_costo)
+        margen_total = (ingreso_total - costo_total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        margen_pct_total = None
+        if ingreso_total > 0:
+            margen_pct_total = float(
+                ((margen_total / ingreso_total) * Decimal("100")).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP
+                )
+            )
+
+        resumen_financiero = {
+            "ingreso": float(ingreso_total),
+            "costo": float(costo_total),
+            "margen": float(margen_total),
+            "margenPct": margen_pct_total,
+        }
+
+        # -----------------------------------------
+        # 5) VÍNCULO DIRECTO POR CLIENTE
+        #    usar ?cliente_vinculado=JGB
+        # -----------------------------------------
+        vinculo_cliente = None
+        if cliente_vinculado:
+            cliente_vinculado_norm = _client_norm(cliente_vinculado)
+            resumen_rows_cliente = [
+                r for r in rows_out
+                if r.get("clienteNorm") == cliente_vinculado_norm
+            ]
+            oportunidades_cliente = [
+                o for o in opp_rows_out
+                if o.get("clienteNorm") == cliente_vinculado_norm
+            ]
+
+            ingreso_cliente = _dec(valor_comercial_por_cliente.get(cliente_vinculado_norm))
+            costo_cliente = _dec(costo_operativo_por_cliente.get(cliente_vinculado_norm))
+            margen_cliente = (ingreso_cliente - costo_cliente).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP
+            )
+
+            margen_pct_cliente = None
+            if ingreso_cliente > 0:
+                margen_pct_cliente = float(
+                    ((margen_cliente / ingreso_cliente) * Decimal("100")).quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP
+                    )
+                )
+
+            vinculo_cliente = {
+                "cliente": cliente_vinculado,
+                "clienteNorm": cliente_vinculado_norm,
+                "ingreso": float(ingreso_cliente),
+                "costo": float(costo_cliente),
+                "margen": float(margen_cliente),
+                "margenPct": margen_pct_cliente,
+                "resumenRowsCount": len(resumen_rows_cliente),
+                "oportunidadesCount": len(oportunidades_cliente),
+                "resumenRows": resumen_rows_cliente,
+                "oportunidadesRows": oportunidades_cliente,
+            }
 
         return jsonify({
             "modo": modo,
@@ -9542,20 +9707,76 @@ def dashboard_costos_resumen():
             "totalClientes": len(clientes_set),
             "totalOcupaciones": len(ocupaciones_set),
             "totalConsultores": len(consultores_set),
+
+            "resumenFinanciero": resumen_financiero,
+            "margenesPorCliente": margenes_por_cliente,
+            "vinculoCliente": vinculo_cliente,
+
             "rows": rows_out,
+
             "graficos": {
+                # Comercial: OTC + MRC por cliente
                 "porCliente": [
-                    {"name": k, "costo": float(_dec(v))}
-                    for k, v in sorted(graf_cliente.items(), key=lambda x: x[1], reverse=True)
+                    {
+                        "name": item["cliente"],
+                        "costo": item["ingreso"],
+                        "margen": item["margen"],
+                        "margenPct": item["margenPct"],
+                        "oportunidadesCount": item["oportunidadesCount"],
+                    }
+                    for item in margenes_por_cliente
                 ],
+
+                # Operativo por cliente, por si lo quieres aparte
+                "porClienteOperativo": [
+                    {"name": k, "costo": float(_dec(v))}
+                    for k, v in sorted(graf_cliente_operativo.items(), key=lambda x: x[1], reverse=True)
+                ],
+
                 "porOcupacion": [
                     {"name": k, "costo": float(_dec(v))}
                     for k, v in sorted(graf_ocupacion.items(), key=lambda x: x[1], reverse=True)
                 ],
+
+                # NUEVO: gráfico vertical mensual
+                "porMes": [
+                    {
+                        "periodo": periodo,
+                        "horas": float(_dec(vals["horas"])),
+                        "costo": float(_dec(vals["costo"])),
+                    }
+                    for periodo, vals in sorted(graf_mensual_operativo.items(), key=lambda x: x[0])
+                ],
+
+                # NUEVO: oportunidades ganadas por resultado
+                "oportunidadesPorResultado": [
+                    {
+                        "name": resultado,
+                        "costo": float(_dec(vals["valor"])),
+                        "oportunidades": int(vals["oportunidades"]),
+                    }
+                    for resultado, vals in sorted(
+                        valor_por_resultado.items(),
+                        key=lambda x: x[1]["valor"],
+                        reverse=True
+                    )
+                ],
             },
+
             "oportunidadesGanadas": {
                 "rows": opp_rows_out,
+                "resumenPorCliente": [
+                    {
+                        "cliente": item["cliente"],
+                        "clienteNorm": item["clienteNorm"],
+                        "valorTotal": item["ingreso"],
+                        "oportunidadesCount": item["oportunidadesCount"],
+                    }
+                    for item in margenes_por_cliente
+                    if item["ingreso"] > 0
+                ],
             },
+
             "filtrosAplicados": {
                 "equipo": equipo_filter,
                 "clientes": clientes_filter,
@@ -9565,6 +9786,7 @@ def dashboard_costos_resumen():
                 "estado_ot": estados_ot_filter,
                 "servicios": servicios_filter,
                 "proyecto_id": int(filtro_proyecto_id) if filtro_proyecto_id.isdigit() else None,
+                "cliente_vinculado": cliente_vinculado or None,
             },
         }), 200
 
@@ -9573,126 +9795,6 @@ def dashboard_costos_resumen():
 
     except Exception as e:
         app.logger.exception("❌ Error en /dashboard/costos-resumen")
-        return jsonify({"error": str(e)}), 500
-    
-@bp.route("/dashboard/costos-filtros", methods=["GET"])
-@permission_required("GRAFICOS_VER")
-def dashboard_costos_filtros():
-    try:
-        usuario = _get_usuario_from_request()
-        rol_req = _rol_from_request()
-
-        if not usuario:
-            return jsonify({"error": "Usuario no enviado"}), 400
-
-        usuario_norm = (usuario or "").strip().lower()
-
-        consultor_login = (
-            Consultor.query.options(
-                joinedload(Consultor.rol_obj),
-                joinedload(Consultor.equipo_obj),
-            )
-            .filter(func.lower(Consultor.usuario) == usuario_norm)
-            .first()
-        )
-
-        if not consultor_login:
-            return jsonify({"error": "Consultor no encontrado"}), 404
-
-        scope, val = _scope_for_graficos(consultor_login, rol_req)
-        desde, hasta, _modo = _dashboard_costos_parse_periodo_request()
-
-        C = aliased(Consultor)
-        E = aliased(Equipo)
-        fecha_expr = _registro_fecha_expr()
-
-        def _get_multi(name):
-            vals = request.args.getlist(name)
-            if vals:
-                return [str(v).strip() for v in vals if str(v).strip()]
-            single = (request.args.get(name) or "").strip()
-            return [single] if single else []
-
-        clientes_filter = _get_multi("cliente")
-        estados_ot_filter = _get_multi("estado_ot")
-        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
-
-        q = (
-            db.session.query(
-                Registro.cliente.label("cliente"),
-                C.nombre.label("consultor"),
-                Registro.modulo.label("modulo"),
-                E.nombre.label("equipo"),
-            )
-            .select_from(Registro)
-            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
-            .outerjoin(E, C.equipo_id == E.id)
-            .filter(fecha_expr >= desde)
-            .filter(fecha_expr <= hasta)
-        )
-
-        if scope == "SELF":
-            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
-        elif scope == "TEAM":
-            if not int(val or 0):
-                return jsonify({"error": "Consultor sin equipo asignado"}), 403
-            q = q.filter(C.equipo_id == int(val))
-
-        rows = q.all()
-
-        clientes = sorted({(r.cliente or "").strip() for r in rows if (r.cliente or "").strip()})
-        consultores = sorted({(r.consultor or "").strip() for r in rows if (r.consultor or "").strip()})
-        modulos = sorted({(r.modulo or "").strip().upper() for r in rows if (r.modulo or "").strip()})
-        equipos = sorted({(r.equipo or "").strip().upper() for r in rows if (r.equipo or "").strip()})
-
-        qo = db.session.query(
-            Oportunidad.estado_ot.label("estado_ot"),
-            Oportunidad.servicio.label("servicio"),
-            Oportunidad.nombre_cliente.label("nombre_cliente"),
-        ).filter(
-            _sql_norm_estado(Oportunidad.estado_oferta) == _norm_key_for_match("GANADA")
-        )
-
-        if clientes_filter:
-            qo = qo.filter(Oportunidad.nombre_cliente.in_(clientes_filter))
-
-        if estados_ot_filter:
-            qo = qo.filter(Oportunidad.estado_ot.in_(estados_ot_filter))
-
-        if filtro_proyecto_id:
-            try:
-                qo = qo.join(
-                    Proyecto,
-                    Proyecto.oportunidad_id == Oportunidad.id
-                ).filter(Proyecto.id == int(filtro_proyecto_id))
-            except Exception:
-                pass
-
-        opp_rows = qo.all()
-
-        estados_ot = sorted({
-            (r.estado_ot or "").strip()
-            for r in opp_rows
-            if (r.estado_ot or "").strip()
-        })
-
-        servicios = sorted({
-            (r.servicio or "").strip()
-            for r in opp_rows
-            if (r.servicio or "").strip()
-        })
-
-        return jsonify({
-            "clientes": clientes,
-            "consultores": consultores,
-            "modulos": modulos,
-            "equipos": equipos,
-            "estados_ot": estados_ot,
-            "servicios": servicios,
-        }), 200
-
-    except Exception as e:
-        app.logger.exception("❌ Error en /dashboard/costos-filtros")
         return jsonify({"error": str(e)}), 500
     
 

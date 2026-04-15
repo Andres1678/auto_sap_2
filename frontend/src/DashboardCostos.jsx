@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { jfetch } from "./lib/api";
 import "./DashboardCostos.css";
@@ -41,12 +41,20 @@ function fmtInt(v) {
   return new Intl.NumberFormat("es-CO").format(Number(v || 0));
 }
 
+function fmtPercent(v) {
+  return `${numberFmt.format(Number(v || 0))}%`;
+}
+
 function normalizeText(v) {
   return String(v || "").trim();
 }
 
 function normalizeUpper(v) {
   return normalizeText(v).toUpperCase();
+}
+
+function sameClient(a, b) {
+  return normalizeUpper(a) === normalizeUpper(b);
 }
 
 function buildYearOptions(baseYear) {
@@ -192,6 +200,84 @@ function getOpportunityChartValue(item) {
   return otc + mrc;
 }
 
+function formatPeriodoLabel(periodo) {
+  const txt = normalizeText(periodo);
+  if (!/^\d{4}-\d{2}$/.test(txt)) return txt || "-";
+
+  const anio = txt.slice(0, 4);
+  const mes = Number(txt.slice(5, 7));
+  const month = MONTHS.find((m) => m.value === mes)?.label || txt;
+
+  return `${month.slice(0, 3)} ${anio}`;
+}
+
+function aggregateOperationalByMonth(rows = []) {
+  const map = new Map();
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const detalle = Array.isArray(row?.detallePeriodos) ? row.detallePeriodos : [];
+
+    detalle.forEach((item) => {
+      const periodo = normalizeText(item?.periodo);
+      if (!periodo) return;
+
+      const current = map.get(periodo) || {
+        periodo,
+        costo: 0,
+        horas: 0,
+      };
+
+      current.costo += Number(item?.costo || 0);
+      current.horas += Number(item?.horas || 0);
+
+      map.set(periodo, current);
+    });
+  });
+
+  return Array.from(map.values()).sort((a, b) => a.periodo.localeCompare(b.periodo));
+}
+
+function getLinkedMarginAnalysis(opRows = [], summaryRows = [], linkedClient = "") {
+  const client = normalizeText(linkedClient);
+
+  if (!client) {
+    return {
+      hasClient: false,
+      client: "",
+      ingreso: 0,
+      costo: 0,
+      margen: 0,
+      margenPct: 0,
+      oportunidadesCount: 0,
+      resumenRowsCount: 0,
+    };
+  }
+
+  const oppRows = (Array.isArray(opRows) ? opRows : []).filter((item) =>
+    sameClient(item?.cliente, client)
+  );
+
+  const summary = (Array.isArray(summaryRows) ? summaryRows : []).filter((item) =>
+    sameClient(item?.cliente, client)
+  );
+
+  const ingreso = oppRows.reduce((acc, item) => acc + getOpportunityChartValue(item), 0);
+  const costo = summary.reduce((acc, item) => acc + Number(item?.costoTotal || 0), 0);
+  const margen = ingreso - costo;
+  const margenPct = ingreso > 0 ? (margen / ingreso) * 100 : 0;
+
+  return {
+    hasClient: true,
+    client,
+    ingreso,
+    costo,
+    margen,
+    margenPct,
+    oportunidadesCount: oppRows.length,
+    resumenRowsCount: summary.length,
+  };
+}
+
 function SimpleBarChart({ title, rows = [], subtitle = "" }) {
   const max = Math.max(...rows.map((r) => Number(r?.costo || 0)), 0);
 
@@ -227,6 +313,90 @@ function SimpleBarChart({ title, rows = [], subtitle = "" }) {
               </div>
             );
           })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function VerticalMonthlyBarChart({ title, rows = [], subtitle = "" }) {
+  const max = Math.max(...rows.map((r) => Number(r?.costo || 0)), 0);
+
+  return (
+    <section className="dc-panel">
+      <div className="dc-section-head">
+        <h3>{title}</h3>
+        {!!subtitle && <span>{subtitle}</span>}
+      </div>
+
+      {!rows.length ? (
+        <div className="dc-empty">Sin datos por mes para el filtro actual.</div>
+      ) : (
+        <div style={{ overflowX: "auto", paddingBottom: 8 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${rows.length}, minmax(96px, 1fr))`,
+              gap: 14,
+              alignItems: "end",
+              minWidth: Math.max(rows.length * 110, 320),
+            }}
+          >
+            {rows.map((item) => {
+              const value = Number(item?.costo || 0);
+              const height = max > 0 ? Math.max((value / max) * 220, 12) : 12;
+
+              return (
+                <div
+                  key={item.periodo}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  <div
+                    title={`${formatPeriodoLabel(item.periodo)} · ${fmtMoney(value)}`}
+                    style={{
+                      height: 240,
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "flex-end",
+                      justifyContent: "center",
+                      padding: "0 8px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "100%",
+                        maxWidth: 64,
+                        height,
+                        borderRadius: 12,
+                        background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)",
+                        boxShadow: "0 8px 18px rgba(37, 99, 235, 0.18)",
+                      }}
+                    />
+                  </div>
+
+                  <strong style={{ fontSize: 12, textAlign: "center" }}>
+                    {formatPeriodoLabel(item.periodo)}
+                  </strong>
+
+                  <span
+                    style={{
+                      fontSize: 12,
+                      textAlign: "center",
+                      opacity: 0.85,
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {fmtMoney(value)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </section>
@@ -448,6 +618,7 @@ export default function DashboardCostos() {
   const navigate = useNavigate();
   const location = useLocation();
   const navState = location.state || {};
+  const summarySectionRef = useRef(null);
 
   const today = new Date();
   const currentMonth = today.getMonth() + 1;
@@ -535,6 +706,8 @@ export default function DashboardCostos() {
   const [serviciosOptions, setServiciosOptions] = useState([]);
 
   const [modalRow, setModalRow] = useState(null);
+  const [linkedClient, setLinkedClient] = useState("");
+  const [showOnlyLinkedSummary, setShowOnlyLinkedSummary] = useState(false);
 
   const yearOptions = useMemo(() => buildYearOptions(draft.anio), [draft.anio]);
   const yearOptionsFrom = useMemo(() => buildYearOptions(draft.anioDesde), [draft.anioDesde]);
@@ -671,7 +844,9 @@ export default function DashboardCostos() {
           throw new Error(json?.error || `HTTP ${res.status}`);
         }
 
-        setRows(Array.isArray(json?.rows) ? json.rows : []);
+        const rowsData = Array.isArray(json?.rows) ? json.rows : [];
+
+        setRows(rowsData);
 
         setSummary({
           totalCosto: Number(json?.totalCosto || 0),
@@ -733,6 +908,40 @@ export default function DashboardCostos() {
     fetchData();
   }, [filters, rol]);
 
+  useEffect(() => {
+    if (!linkedClient) return;
+
+    const existsInOpp = (oportunidadesGanadas.rows || []).some((item) =>
+      sameClient(item?.cliente, linkedClient)
+    );
+
+    const existsInSummary = (rows || []).some((item) =>
+      sameClient(item?.cliente, linkedClient)
+    );
+
+    if (!existsInOpp && !existsInSummary) {
+      setLinkedClient("");
+      setShowOnlyLinkedSummary(false);
+    }
+  }, [linkedClient, oportunidadesGanadas.rows, rows]);
+
+  const displayedSummaryRows = useMemo(() => {
+    if (!showOnlyLinkedSummary || !linkedClient) return rows;
+    return rows.filter((item) => sameClient(item?.cliente, linkedClient));
+  }, [rows, linkedClient, showOnlyLinkedSummary]);
+
+  const linkedAnalysis = useMemo(() => {
+    return getLinkedMarginAnalysis(
+      oportunidadesGanadas.rows,
+      rows,
+      linkedClient
+    );
+  }, [oportunidadesGanadas.rows, rows, linkedClient]);
+
+  const monthlyRows = useMemo(() => {
+    return aggregateOperationalByMonth(displayedSummaryRows);
+  }, [displayedSummaryRows]);
+
   const handleDraftChange = (field, value) => {
     setDraft((prev) => ({
       ...prev,
@@ -783,7 +992,38 @@ export default function DashboardCostos() {
     setDraft(reset);
     setFilters(reset);
     setModalRow(null);
+    setLinkedClient("");
+    setShowOnlyLinkedSummary(false);
   };
+
+  const handleLinkClient = (client) => {
+    const clientName = normalizeText(client);
+    if (!clientName) return;
+
+    setLinkedClient(clientName);
+    setShowOnlyLinkedSummary(true);
+
+    window.requestAnimationFrame(() => {
+      summarySectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
+
+  const clearLinkedAnalysis = () => {
+    setLinkedClient("");
+    setShowOnlyLinkedSummary(false);
+  };
+
+  const monthlyChartTitle =
+    linkedClient && showOnlyLinkedSummary
+      ? `Costo total registrado por mes · ${linkedClient}`
+      : "Costo total registrado por mes";
+
+  const monthlyChartSubtitle = linkedClient && showOnlyLinkedSummary
+    ? "Vista mensual del cliente vinculado"
+    : "Se recalcula con el período y filtros activos";
 
   return (
     <div className="dc-shell">
@@ -799,6 +1039,12 @@ export default function DashboardCostos() {
           {!!draft.ocupacionLabels.length && (
             <div className="dc-tag">
               Ocupación activa: {draft.ocupacionLabels.join(", ")}
+            </div>
+          )}
+
+          {!!linkedClient && (
+            <div className="dc-tag" style={{ marginTop: 8 }}>
+              Cliente vinculado: {linkedClient}
             </div>
           )}
         </div>
@@ -844,14 +1090,93 @@ export default function DashboardCostos() {
           </section>
 
           <section className="dc-charts-grid">
-            <SimpleBarChart title="Top costo por cliente" rows={graficos.porCliente} />
+            <SimpleBarChart title="Top valor por cliente" rows={graficos.porCliente} />
             <SimpleBarChart title="Top costo por ocupación" rows={graficos.porOcupacion} />
           </section>
+
+          <VerticalMonthlyBarChart
+            title={monthlyChartTitle}
+            subtitle={monthlyChartSubtitle}
+            rows={monthlyRows}
+          />
 
           <section className="dc-charts-grid">
             <OportunidadesGanadasPorClienteChart rows={oportunidadesGanadas.rows} />
             <OportunidadesGanadasPorResultadoChart rows={oportunidadesGanadas.rows} />
           </section>
+
+          {linkedAnalysis.hasClient && (
+            <section className="dc-panel">
+              <div className="dc-section-head">
+                <h3>Análisis vinculado de margen</h3>
+                <span>{linkedAnalysis.client}</span>
+              </div>
+
+              <div className="dc-detail-cards">
+                <article className="dc-mini-card">
+                  <span>Ingreso</span>
+                  <strong>{fmtMoney(linkedAnalysis.ingreso)}</strong>
+                </article>
+
+                <article className="dc-mini-card">
+                  <span>Costo</span>
+                  <strong>{fmtMoney(linkedAnalysis.costo)}</strong>
+                </article>
+
+                <article className="dc-mini-card">
+                  <span>Margen</span>
+                  <strong>{fmtMoney(linkedAnalysis.margen)}</strong>
+                </article>
+
+                <article className="dc-mini-card">
+                  <span>% margen</span>
+                  <strong>{fmtPercent(linkedAnalysis.margenPct)}</strong>
+                </article>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginTop: 14,
+                  alignItems: "center",
+                }}
+              >
+                <span className="dc-tag">
+                  {fmtInt(linkedAnalysis.oportunidadesCount)} oportunidad(es) vinculada(s)
+                </span>
+
+                <span className="dc-tag">
+                  {fmtInt(linkedAnalysis.resumenRowsCount)} fila(s) en resumen
+                </span>
+
+                <button
+                  type="button"
+                  className="dc-btn dc-btn-primary"
+                  onClick={() => setShowOnlyLinkedSummary((prev) => !prev)}
+                >
+                  {showOnlyLinkedSummary
+                    ? "Mostrar todo el resumen"
+                    : "Mostrar solo filas vinculadas"}
+                </button>
+
+                <button
+                  type="button"
+                  className="dc-btn dc-btn-ghost"
+                  onClick={clearLinkedAnalysis}
+                >
+                  Quitar vínculo
+                </button>
+              </div>
+
+              <p style={{ marginTop: 14, opacity: 0.8 }}>
+                Ingreso = suma de OTC + MRC del cliente en oportunidades ganadas filtradas.
+                Costo = suma de costo total del resumen por cliente, ocupación y equipo.
+                Margen = Ingreso - Costo.
+              </p>
+            </section>
+          )}
 
           <section className="dc-panel">
             <div className="dc-section-head">
@@ -876,42 +1201,66 @@ export default function DashboardCostos() {
                       <th className="num">OTC</th>
                       <th className="num">MRC</th>
                       <th className="num">MRC Normalizado</th>
+                      <th className="num">Acción</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {oportunidadesGanadas.rows.map((op) => (
-                      <tr key={`opp-${op.id}`}>
-                        <td>{op.cliente}</td>
-                        <td>{op.servicio}</td>
-                        <td>{op.codigo_prc}</td>
-                        <td>{op.fecha_creacion || "-"}</td>
-                        <td>{op.estado_oferta || "-"}</td>
-                        <td>{op.resultado_oferta || "-"}</td>
-                        <td>{op.estado_ot || "-"}</td>
-                        <td className="num">{fmtMoney(op.otc)}</td>
-                        <td className="num">{fmtMoney(op.mrc)}</td>
-                        <td className="num">{fmtMoney(op.mrcNormalizado)}</td>
-                      </tr>
-                    ))}
+                    {oportunidadesGanadas.rows.map((op) => {
+                      const isLinked = linkedClient && sameClient(op.cliente, linkedClient);
+
+                      return (
+                        <tr
+                          key={`opp-${op.id}`}
+                          style={
+                            isLinked
+                              ? {
+                                  outline: "2px solid rgba(37, 99, 235, 0.35)",
+                                  background: "rgba(37, 99, 235, 0.05)",
+                                }
+                              : undefined
+                          }
+                        >
+                          <td>{op.cliente}</td>
+                          <td>{op.servicio}</td>
+                          <td>{op.codigo_prc}</td>
+                          <td>{op.fecha_creacion || "-"}</td>
+                          <td>{op.estado_oferta || "-"}</td>
+                          <td>{op.resultado_oferta || "-"}</td>
+                          <td>{op.estado_ot || "-"}</td>
+                          <td className="num">{fmtMoney(op.otc)}</td>
+                          <td className="num">{fmtMoney(op.mrc)}</td>
+                          <td className="num">{fmtMoney(op.mrcNormalizado)}</td>
+                          <td className="num">
+                            <button
+                              type="button"
+                              className={isLinked ? "dc-btn dc-btn-primary" : "dc-btn dc-btn-ghost"}
+                              onClick={() => handleLinkClient(op.cliente)}
+                            >
+                              {isLinked ? "Vinculado" : "Vincular"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             )}
           </section>
 
-          <section className="dc-panel">
+          <section className="dc-panel" ref={summarySectionRef}>
             <div className="dc-section-head">
               <h3>Resumen por cliente, ocupación y equipo</h3>
-              <span>{rows.length} filas</span>
+              <span>{displayedSummaryRows.length} filas</span>
             </div>
 
             {loading && <div className="dc-empty">Cargando información…</div>}
             {!loading && error && <div className="dc-empty dc-empty-error">{error}</div>}
-            {!loading && !error && !rows.length && (
+            {!loading && !error && !displayedSummaryRows.length && (
               <div className="dc-empty">No hay información para los filtros seleccionados.</div>
             )}
 
-            {!loading && !error && !!rows.length && (
+            {!loading && !error && !!displayedSummaryRows.length && (
               <div className="dc-table-wrap">
                 <table className="dc-table">
                   <thead>
@@ -927,14 +1276,23 @@ export default function DashboardCostos() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((item, idx) => {
+                    {displayedSummaryRows.map((item, idx) => {
                       const rowKey = `${item.cliente}||${item.ocupacion}||${item.equipo || "SIN EQUIPO"}||${idx}`;
+                      const isLinked = linkedClient && sameClient(item.cliente, linkedClient);
 
                       return (
                         <tr
                           key={rowKey}
                           className="dc-row-clickable"
                           onClick={() => setModalRow(item)}
+                          style={
+                            isLinked
+                              ? {
+                                  outline: "2px solid rgba(37, 99, 235, 0.35)",
+                                  background: "rgba(37, 99, 235, 0.05)",
+                                }
+                              : undefined
+                          }
                         >
                           <td>{item.cliente}</td>
                           <td>{item.ocupacion}</td>
