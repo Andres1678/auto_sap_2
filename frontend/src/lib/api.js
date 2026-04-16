@@ -10,17 +10,25 @@ const origin =
 export const API_URL = `${origin}/api`;
 
 // ============================================================
-// HEADERS DEL USUARIO (token, rol, consultor_id, nombre)
+// Obtener token
+// ============================================================
+function getToken() {
+  return localStorage.getItem("token") || "";
+}
+
+// ============================================================
+// HEADERS DEL USUARIO (compatibilidad temporal)
 // ============================================================
 function getUserHeaders() {
   const user = JSON.parse(localStorage.getItem("userData") || "{}");
+  const token = getToken();
 
   return {
     "X-User-Usuario": user.usuario || "",
     "X-User-Name": user.nombre || "",
     "X-User-Rol": user.rol || "",
     "X-Consultor-Id": user.id || "",
-    Authorization: localStorage.getItem("token") || "",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
 
@@ -52,14 +60,19 @@ export function jfetch(path, options = {}) {
   const isFormData =
     typeof FormData !== "undefined" && options.body instanceof FormData;
 
-  // headers base
-  const headers = {
+  const baseHeaders = {
     Accept: "application/json",
-    ...(options.headers || {}),
     ...getUserHeaders(),
   };
 
-  // Si NO es FormData, mandamos JSON (Content-Type + stringify)
+  const customHeaders = options.headers || {};
+
+  // customHeaders sobreescribe baseHeaders si hace falta
+  const headers = {
+    ...baseHeaders,
+    ...customHeaders,
+  };
+
   let body = options.body;
 
   if (!isFormData) {
@@ -69,7 +82,6 @@ export function jfetch(path, options = {}) {
       body = JSON.stringify(body);
     }
   } else {
-    // FormData: NO setear Content-Type (el browser pone boundary)
     if (headers["Content-Type"]) delete headers["Content-Type"];
   }
 
@@ -88,6 +100,14 @@ export function jpost(path, body, options = {}) {
   return jfetch(path, { method: "POST", body, ...options });
 }
 
+export function jput(path, body, options = {}) {
+  return jfetch(path, { method: "PUT", body, ...options });
+}
+
+export function jdelete(path, options = {}) {
+  return jfetch(path, { method: "DELETE", ...options });
+}
+
 // ============================================================
 // Parser seguro de JSON — jsonOrThrow
 // ============================================================
@@ -100,7 +120,7 @@ export async function jsonOrThrow(res) {
 
   if (!res.ok) {
     const msg =
-      (data && (data.mensaje || data.error)) ||
+      (data && (data.mensaje || data.error || data.detalle)) ||
       res.statusText ||
       `HTTP ${res.status}`;
 

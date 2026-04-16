@@ -4,7 +4,6 @@ import './Login.css';
 import coraLogo from './assets/cora-logo.png';
 import { jfetch } from './lib/api';
 
-
 const Login = ({ onLoginSuccess }) => {
   const [usuario, setUsuario] = useState('');
   const [password, setPassword] = useState('');
@@ -12,17 +11,18 @@ const Login = ({ onLoginSuccess }) => {
   const [horarios, setHorarios] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // ===========================
-  // CARGAR HORARIOS
-  // ===========================
   useEffect(() => {
     const u = usuario.trim();
-    if (!u) { setHorarios([]); setHorario(""); return; }
+    if (!u) {
+      setHorarios([]);
+      setHorario("");
+      return;
+    }
 
     const id = setTimeout(async () => {
       try {
         const res = await jfetch(`/horarios-permitidos?usuario=${encodeURIComponent(u)}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setHorarios(Array.isArray(data?.horarios) ? data.horarios : []);
       } catch {
         setHorarios([]);
@@ -32,11 +32,6 @@ const Login = ({ onLoginSuccess }) => {
     return () => clearTimeout(id);
   }, [usuario]);
 
-
-
-  // ===========================
-  // LOGIN
-  // ===========================
   const handleLogin = async (e) => {
     e.preventDefault();
 
@@ -57,33 +52,27 @@ const Login = ({ onLoginSuccess }) => {
         body: JSON.stringify({ usuario, password, horario }),
       });
 
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData?.mensaje || `Error ${res.status}`);
+        throw new Error(data?.mensaje || `Error ${res.status}`);
       }
 
-      const data = await res.json();
-      setHorarios(Array.isArray(data?.horarios) ? data.horarios : []);
-
-    
-      const user = data.user; 
+      const user = data?.user;
+      const token = data?.token;
 
       if (!user) {
         throw new Error("La respuesta del servidor no contiene 'user'");
       }
 
-      // LIMPIAR TODO
-      localStorage.clear();
-
-      // Guardar token
-      if (data.token) {
-        localStorage.setItem("token", data.token);
+      if (!token) {
+        throw new Error("La respuesta del servidor no contiene 'token'");
       }
 
-      // Guardar usuario completo
-      localStorage.setItem("userData", JSON.stringify(user));
+      localStorage.clear();
 
-      // Opcional: guardar datos separados
+      localStorage.setItem("token", token);
+      localStorage.setItem("userData", JSON.stringify(user));
       localStorage.setItem("userRol", user.rol || "");
       localStorage.setItem("userUsuario", user.usuario || "");
 
@@ -91,7 +80,6 @@ const Login = ({ onLoginSuccess }) => {
         localStorage.setItem("consultorId", user.consultor_id);
       }
 
-      // Guardar horario seleccionado
       if (horario) {
         localStorage.setItem("horarioSesion", horario);
       }
@@ -103,9 +91,10 @@ const Login = ({ onLoginSuccess }) => {
         showConfirmButton: false
       });
 
-      // Notificar al padre
-      onLoginSuccess?.(user);
-
+      onLoginSuccess?.({
+        token,
+        user
+      });
     } catch (err) {
       console.error('Error en login:', err);
       Swal.fire({
@@ -113,7 +102,6 @@ const Login = ({ onLoginSuccess }) => {
         title: 'Error al iniciar sesión',
         text: err.message || 'No se pudo conectar con el servidor'
       });
-
     } finally {
       setLoading(false);
     }

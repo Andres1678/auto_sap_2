@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import Swal from 'sweetalert2';
 
 import Login from './Login';
 import Registro from './Registro';
@@ -26,11 +27,80 @@ import Graficos from './Graficos';
 import PerfilesPage from "./PerfilesPage";
 import CostoConsultorPage from "./CostoConsultorPage";
 import DashboardCostos from "./DashboardCostos";
+import { jfetch } from './lib/api';
+
+const AUTO_LOGOUT_HOURS = [6, 7, 8, 10, 18, 22];
+
+function getNextScheduledLogout(now = new Date()) {
+  for (const hour of AUTO_LOGOUT_HOURS) {
+    const candidate = new Date(now);
+    candidate.setHours(hour, 0, 0, 0);
+
+    if (candidate > now) {
+      return candidate;
+    }
+  }
+
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(AUTO_LOGOUT_HOURS[0], 0, 0, 0);
+  return tomorrow;
+}
+
+function getSchedulesBetween(start, end) {
+  if (!start || !end || end <= start) return [];
+
+  const matches = [];
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+
+  const endDay = new Date(end);
+  endDay.setHours(0, 0, 0, 0);
+
+  while (cursor <= endDay) {
+    AUTO_LOGOUT_HOURS.forEach((hour) => {
+      const candidate = new Date(cursor);
+      candidate.setHours(hour, 0, 0, 0);
+
+      if (candidate > start && candidate <= end) {
+        matches.push(candidate);
+      }
+    });
+
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return matches.sort((a, b) => a.getTime() - b.getTime());
+}
+
+function formatHour(date) {
+  return date.toLocaleTimeString('es-CO', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
 
 function App() {
   const [userData, setUserData] = useState(null);
 
-  // -------------------- LOAD USER DATA --------------------
+  const autoLogoutTimerRef = useRef(null);
+  const lastCheckRef = useRef(new Date());
+  const lastAutoLogoutKeyRef = useRef('');
+
+  const clearClientSession = useCallback(() => {
+    try {
+      localStorage.removeItem("token");
+      localStorage.removeItem("userData");
+      localStorage.removeItem("user");
+      localStorage.removeItem("userRol");
+      localStorage.removeItem("userUsuario");
+      localStorage.removeItem("consultorId");
+      localStorage.removeItem("horarioSesion");
+      sessionStorage.clear();
+    } catch {}
+  }, []);
+
   useEffect(() => {
     try {
       const rawUser = localStorage.getItem("userData");
@@ -38,40 +108,131 @@ function App() {
     } catch {}
   }, []);
 
-  // Detect logout from another tab
   useEffect(() => {
     const onStorage = (e) => {
       if (e.key === "userData" && !e.newValue) setUserData(null);
       if (e.key === "token" && !e.newValue) setUserData(null);
     };
+
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // -------------------- LOGIN / LOGOUT --------------------
   const handleLoginSuccess = (payload) => {
     const token = payload?.token || null;
     const user = payload?.user || payload || null;
 
     if (token) localStorage.setItem("token", token);
+
     if (user) {
       localStorage.setItem("userData", JSON.stringify(user));
       setUserData(user);
     }
+
+    lastCheckRef.current = new Date();
+    lastAutoLogoutKeyRef.current = '';
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(async (showMessage = false, messageText = 'Sesión cerrada correctamente.') => {
     try {
-      localStorage.removeItem("token");
-      localStorage.removeItem("userData");
-      localStorage.removeItem("user");
-      localStorage.removeItem("horarioSesion");
-      sessionStorage.clear();
-    } catch {}
-    setUserData(null);
-  };
+      await jfetch('/logout', {
+        method: 'POST',
+      });
+    } catch (e) {
+      console.error('Error cerrando sesión en backend:', e);
+    }
 
-  // -------------------- CURRENT USER INFO --------------------
+    clearClientSession();
+    setUserData(null);
+
+    if (showMessage) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Sesión finalizada',
+        text: messageText,
+        confirmButtonText: 'Entendido',
+      });
+    }
+  }, [clearClientSession]);
+
+  useEffect(() => {
+    if (!userData) {
+      if (autoLogoutTimerRef.current) {
+        clearTimeout(autoLogoutTimerRef.current);
+        autoLogoutTimerRef.current = null;
+      }
+      return;
+    }
+
+    const doAutoLogout = async (scheduledDate) => {
+      const key = scheduledDate.toISOString();
+
+      if (lastAutoLogoutKeyRef.current === key) return;
+      lastAutoLogoutKeyRef.current = key;
+
+      await handleLogout(
+        true,
+        `La sesión se cerró automáticamente por política horaria de las ${formatHour(scheduledDate)}.`
+      );
+    };
+
+    const scheduleNextCheck = () => {
+      if (autoLogoutTimerRef.current) {
+        clearTimeout(autoLogoutTimerRef.current);
+      }
+
+      const now = new Date();
+      const nextLogout = getNextScheduledLogout(now);
+      const delay = Math.max(1000, nextLogout.getTime() - now.getTime() + 500);
+
+      autoLogoutTimerRef.current = setTimeout(() => {
+        doAutoLogout(nextLogout);
+      }, delay);
+    };
+
+    const checkMissedSchedules = async () => {
+      const now = new Date();
+      const passedSchedules = getSchedulesBetween(lastCheckRef.current, now);
+      lastCheckRef.current = now;
+
+      if (passedSchedules.length > 0) {
+        await doAutoLogout(passedSchedules[0]);
+        return true;
+      }
+
+      return false;
+    };
+
+    const revalidateSchedule = async () => {
+      if (!userData) return;
+      const loggedOut = await checkMissedSchedules();
+      if (!loggedOut) {
+        scheduleNextCheck();
+      }
+    };
+
+    revalidateSchedule();
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        revalidateSchedule();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+
+      if (autoLogoutTimerRef.current) {
+        clearTimeout(autoLogoutTimerRef.current);
+        autoLogoutTimerRef.current = null;
+      }
+    };
+  }, [userData, handleLogout]);
+
   const rol = (
     userData?.rol_ref?.nombre ||
     userData?.rol ||
@@ -82,9 +243,6 @@ function App() {
   const equipo = userData?.equipo || '';
   const isAdmin = rol === "ADMIN";
 
-  // ======================================================
-  //                     ROUTES
-  // ======================================================
   return (
     <Router>
       {!userData ? (
@@ -93,39 +251,16 @@ function App() {
         </Routes>
       ) : (
         <>
-          {/* NAVBAR */}
           <Navbar
             isAdmin={isAdmin}
             rol={rol}
             equipo={equipo}
             nombre={nombre}
-            onLogout={handleLogout}
+            onLogout={() => handleLogout(true)}
           />
 
           <Routes>
-            {/* DEFAULT VIEW */}
             <Route path="/" element={<Registro userData={userData} />} />
-
-            {/* ==================== ADMIN ROUTES ==================== */}
-
-            {/*<Route
-              path="/GraficoBase"
-              element={
-                <AdminRoute allow={['ADMIN']} requirePermiso="GRAFICOS_VER">
-                  <GraficoBase userData={userData} />
-                </AdminRoute>
-              }
-            />
-
-            <Route
-              path="/BaseRegistros"
-              element={
-                <AdminRoute allow={['ADMIN']} requirePermiso="REGISTROS_VER">
-                  <BaseRegistros />
-                </AdminRoute>
-              }
-            />
-            */}
 
             <Route
               path="/Oportunidades"
@@ -216,7 +351,7 @@ function App() {
                 </AdminRoute>
               }
             />
-            
+
             <Route
               path="/configuracion/equipos"
               element={
@@ -247,14 +382,12 @@ function App() {
             <Route
               path="/reportes/horas-consultor-cliente"
               element={
-                <AdminRoute
-                  allow={["ADMIN"]}
-                >
+                <AdminRoute allow={["ADMIN"]}>
                   <ReporteHorasConsultorCliente />
                 </AdminRoute>
               }
             />
-            
+
             <Route
               path="/configuracion/importar-presupuesto"
               element={
@@ -291,7 +424,6 @@ function App() {
               }
             />
 
-            {/* CATCH ALL */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </>
@@ -301,4 +433,3 @@ function App() {
 }
 
 export default App;
-

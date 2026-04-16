@@ -1,4 +1,4 @@
-from flask import request, jsonify, Blueprint, current_app as app
+from flask import request, jsonify, Blueprint, current_app as app, g
 from backend.models import (
     db, Modulo, Consultor, Registro, BaseRegistro, Login,
     Rol, Equipo, Horario, Oportunidad, Cliente,
@@ -26,7 +26,7 @@ from openpyxl import load_workbook
 from zoneinfo import ZoneInfo
 import bcrypt
 import holidays
-
+import secrets
 
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
@@ -84,20 +84,12 @@ def apply_scope(query, rol, usuario_login):
 
 def permission_required(codigo_permiso):
     def decorator(fn):
+        @auth_required
         @wraps(fn)
         def wrapper(*args, **kwargs):
-            if request.method == "OPTIONS":
-                return ("", 204)
-
-            usuario = request.headers.get("X-User-Usuario")
-            if not usuario:
-                return jsonify({"mensaje": "Usuario no enviado"}), 401
-
-            consultor = Consultor.query.filter_by(usuario=usuario).first()
-            if not consultor:
-                return jsonify({"mensaje": "Usuario no encontrado"}), 404
-
+            consultor = g.current_user
             permisos = obtener_permisos_finales(consultor)
+
             if codigo_permiso not in permisos:
                 return jsonify({"mensaje": f"Permiso '{codigo_permiso}' requerido"}), 403
 
@@ -294,6 +286,68 @@ def _client_ip():
         return fwd.split(",")[0].strip()
     return request.remote_addr
 
+def _extract_bearer_token():
+    auth = request.headers.get("Authorization", "")
+    if not auth or not auth.startswith("Bearer "):
+        return None
+    return auth.replace("Bearer ", "", 1).strip() or None
+
+
+def _get_session_from_token():
+    token = _extract_bearer_token()
+    if not token:
+        return None
+
+    sesion = Login.query.filter_by(token=token, activo=True).first()
+    return sesion
+
+
+def _get_consultor_from_token():
+    sesion = _get_session_from_token()
+    if not sesion:
+        return None, None
+
+    consultor = (
+        Consultor.query.options(
+            joinedload(Consultor.rol_obj)
+                .joinedload(Rol.permisos_asignados)
+                .joinedload(RolPermiso.permiso),
+            joinedload(Consultor.equipo_obj)
+                .joinedload(Equipo.permisos_asignados)
+                .joinedload(EquipoPermiso.permiso),
+            joinedload(Consultor.permisos_especiales)
+                .joinedload(ConsultorPermiso.permiso),
+            joinedload(Consultor.modulos),
+            joinedload(Consultor.horario_obj),
+        )
+        .filter(Consultor.id == sesion.consultor_id)
+        .first()
+    )
+
+    return sesion, consultor
+
+
+def auth_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if request.method == "OPTIONS":
+            return ("", 204)
+
+        sesion, consultor = _get_consultor_from_token()
+        if not sesion or not consultor:
+            return jsonify({"mensaje": "Sesión no válida o expirada"}), 401
+
+        if not bool(getattr(consultor, "activo", True)):
+            sesion.activo = False
+            sesion.fecha_logout = datetime.utcnow()
+            db.session.commit()
+            return jsonify({"mensaje": "Usuario inactivo. Contacte al administrador."}), 403
+
+        g.current_session = sesion
+        g.current_user = consultor
+        return fn(*args, **kwargs)
+    return wrapper
+
 def pick(d: dict, *keys, default=None):
     """Devuelve el primer valor no vacío encontrado en las claves dadas."""
     for k in keys:
@@ -309,21 +363,18 @@ def _rol_from_request():
             or '').strip().upper()
 
 def admin_required(fn):
+    @auth_required
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        if request.method == "OPTIONS":
-            return ("", 204)
+        consultor = g.current_user
 
-        usuario = (request.headers.get("X-User-Usuario") or "").strip().lower()
-        if not usuario:
-            return jsonify({"mensaje": "Usuario no enviado"}), 401
+        rol_real = (
+            consultor.rol_obj.nombre
+            if getattr(consultor, "rol_obj", None) and getattr(consultor.rol_obj, "nombre", None)
+            else (getattr(consultor, "rol", "") or "")
+        )
 
-        c = Consultor.query.filter(func.lower(Consultor.usuario) == usuario).first()
-        if not c:
-            return jsonify({"mensaje": "Usuario no encontrado"}), 404
-
-        rol_real = (c.rol_obj.nombre if (c and c.rol_obj) else (getattr(c, "rol", "") or ""))
-        if not _is_admin_request(rol_real, c):
+        if not _is_admin_request(rol_real, consultor):
             return jsonify({"mensaje": "Solo ADMIN"}), 403
 
         return fn(*args, **kwargs)
@@ -513,6 +564,20 @@ def consultor_perfil_to_dict(x: ConsultorPerfil):
 # ===============================
 # Catálogos
 # ===============================
+@bp.route('/logout', methods=['POST'])
+@auth_required
+def logout():
+    try:
+        sesion = g.current_session
+        sesion.activo = False
+        sesion.fecha_logout = datetime.utcnow()
+        db.session.commit()
+
+        return jsonify({"mensaje": "Sesión cerrada correctamente"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"mensaje": f"Error cerrando sesión: {str(e)}"}), 500
+
 @bp.route('/roles', methods=['GET'])
 @permission_required("ROLES_ADMIN")  
 def listar_roles():
@@ -538,33 +603,26 @@ def listar_horarios():
 def login():
     data = request.get_json(silent=True) or {}
 
-    # Normaliza inputs
     usuario = (data.get("usuario") or "").strip().lower()
     password = data.get("password") or ""
-    horario  = data.get("horario")
+    horario = data.get("horario")
 
     if not usuario or not password:
         return jsonify({"mensaje": "Usuario y password son obligatorios"}), 400
 
-    # ===========================
-    #   Cargar consultor + roles
-    # ===========================
     consultor = (
         Consultor.query.options(
             joinedload(Consultor.rol_obj)
                 .joinedload(Rol.permisos_asignados)
                 .joinedload(RolPermiso.permiso),
-
             joinedload(Consultor.equipo_obj)
                 .joinedload(Equipo.permisos_asignados)
                 .joinedload(EquipoPermiso.permiso),
-
             joinedload(Consultor.permisos_especiales)
                 .joinedload(ConsultorPermiso.permiso),
-
-            joinedload(Consultor.modulos)
+            joinedload(Consultor.modulos),
+            joinedload(Consultor.horario_obj),
         )
-        # Búsqueda case-insensitive
         .filter(func.lower(Consultor.usuario) == usuario)
         .first()
     )
@@ -572,89 +630,72 @@ def login():
     if not consultor:
         return jsonify({"mensaje": "Credenciales incorrectas"}), 401
 
-    # ✅ Validar usuario activo (ajusta el nombre del campo si es distinto)
     if not bool(getattr(consultor, "activo", True)):
         return jsonify({"mensaje": "Usuario inactivo. Contacte al administrador."}), 403
 
-    # ===========================
-    #   Validación de contraseña
-    # ===========================
     stored = (consultor.password or "")
 
-    # Si está hasheada con bcrypt ($2a/$2b/$2y)
     if stored.startswith("$2"):
         ok_pass = bcrypt.checkpw(password.encode("utf-8"), stored.encode("utf-8"))
     else:
-        # Fallback: si aún guardas en texto plano (no recomendado)
         ok_pass = (stored == password)
 
     if not ok_pass:
         return jsonify({"mensaje": "Credenciales incorrectas"}), 401
 
-    # ==================================================
-    #   ACTUALIZAR/CREAR HORARIO ASIGNADO AL CONSULTOR
-    # ==================================================
     if horario:
-        ok, _ = _validar_horario(horario)
-        if ok:
-            rango = horario.strip()
-            h = Horario.query.filter_by(rango=rango).first()
-            if not h:
-                h = Horario(rango=rango)
-                db.session.add(h)
-                db.session.flush()
+        ok, msg = _validar_horario(horario)
+        if not ok:
+            return jsonify({"mensaje": msg or "Horario inválido"}), 400
 
-            consultor.horario_id = h.id
-            db.session.commit()
+        rango = horario.strip()
+        h = Horario.query.filter_by(rango=rango).first()
+        if not h:
+            h = Horario(rango=rango)
+            db.session.add(h)
+            db.session.flush()
 
-    # ======================
-    #   Registrar el Login
-    # ======================
-    try:
-        login_log = Login(
-            usuario=consultor.usuario,
-            horario_asignado=(consultor.horario_obj.rango if consultor.horario_obj else "N/D"),
-            ip_address=_client_ip(),
-            user_agent=request.headers.get("User-Agent", ""),
-            fecha_login=datetime.utcnow()
-        )
-        db.session.add(login_log)
-        db.session.commit()
-    except Exception as e:
-        print("⚠️ Error guardando log de login:", e)
-        db.session.rollback()
+        consultor.horario_id = h.id
 
-    # ============================================
-    #   🔥 RECOLECCIÓN DE PERMISOS COMPLETA 🔥
-    # ============================================
-    permisos_set = set()
+    # Cerrar sesiones activas anteriores del mismo consultor
+    Login.query.filter_by(consultor_id=consultor.id, activo=True).update({
+        "activo": False,
+        "fecha_logout": datetime.utcnow()
+    })
 
-    if consultor.rol_obj:
-        for rp in consultor.rol_obj.permisos_asignados:
-            permisos_set.add(rp.permiso.codigo)
+    token = secrets.token_urlsafe(48)
 
-    if consultor.equipo_obj:
-        for ep in consultor.equipo_obj.permisos_asignados:
-            permisos_set.add(ep.permiso.codigo)
+    login_log = Login(
+        consultor_id=consultor.id,
+        usuario=consultor.usuario,
+        horario_asignado=(consultor.horario_obj.rango if consultor.horario_obj else (horario or "N/D")),
+        ip_address=_client_ip(),
+        user_agent=request.headers.get("User-Agent", ""),
+        fecha_login=datetime.utcnow(),
+        token=token,
+        activo=True
+    )
 
-    for cp in consultor.permisos_especiales:
-        permisos_set.add(cp.permiso.codigo)
+    db.session.add(login_log)
+    db.session.commit()
 
-    permisos_list = sorted(list(permisos_set))
+    permisos_list = sorted(list(obtener_permisos_finales(consultor)))
+
+    user_payload = {
+        "id": consultor.id,
+        "usuario": consultor.usuario,
+        "nombre": consultor.nombre,
+        "rol": consultor.rol_obj.nombre.upper() if consultor.rol_obj else "CONSULTOR",
+        "equipo": consultor.equipo_obj.nombre.upper() if consultor.equipo_obj else "SIN EQUIPO",
+        "horario": consultor.horario_obj.rango if consultor.horario_obj else (horario or "N/D"),
+        "consultor_id": consultor.id,
+        "modulos": [{"id": m.id, "nombre": m.nombre} for m in consultor.modulos],
+        "permisos": permisos_list
+    }
 
     return jsonify({
-        "token": "token-demo",
-        "user": {
-            "id": consultor.id,
-            "usuario": consultor.usuario,
-            "nombre": consultor.nombre,
-            "rol": consultor.rol_obj.nombre.upper() if consultor.rol_obj else "CONSULTOR",
-            "equipo": consultor.equipo_obj.nombre.upper() if consultor.equipo_obj else "SIN EQUIPO",
-            "horario": consultor.horario_obj.rango if consultor.horario_obj else "N/D",
-            "consultor_id": consultor.id,
-            "modulos": [{"id": m.id, "nombre": m.nombre} for m in consultor.modulos],
-            "permisos": permisos_list
-        }
+        "token": token,
+        "user": user_payload
     }), 200
 
 def _to_bool(v, default=True):
@@ -1193,9 +1234,29 @@ def _norm_role(r: str) -> str:
     return (r or "").strip().upper()
 
 def _get_usuario_from_request() -> str:
+    try:
+        sesion, consultor = _get_consultor_from_token()
+        if consultor:
+            return (consultor.usuario or "").strip().lower()
+    except Exception:
+        pass
+
     return (request.headers.get("X-User-Usuario") or "").strip().lower()
 
+
 def _get_rol_from_request() -> str:
+    try:
+        sesion, consultor = _get_consultor_from_token()
+        if consultor:
+            rol = (
+                consultor.rol_obj.nombre
+                if getattr(consultor, "rol_obj", None) and getattr(consultor.rol_obj, "nombre", None)
+                else (getattr(consultor, "rol", "") or "")
+            )
+            return str(rol).strip().upper()
+    except Exception:
+        pass
+
     return (request.headers.get("X-User-Rol") or "").strip().upper()
 
 
@@ -5406,32 +5467,9 @@ def _norm_doc(s: str) -> str:
 
     
 @bp.route("/me", methods=["GET"])
+@auth_required
 def me():
-    usuario = request.headers.get("X-User-Usuario", "").strip().lower()
-    if not usuario:
-        return jsonify({"mensaje": "Usuario no enviado"}), 401
-
-    consultor = (
-        Consultor.query
-        .options(
-            joinedload(Consultor.rol_obj)
-                .joinedload(Rol.permisos_asignados)
-                .joinedload(RolPermiso.permiso),
-            joinedload(Consultor.equipo_obj)
-                .joinedload(Equipo.permisos_asignados)
-                .joinedload(EquipoPermiso.permiso),
-            joinedload(Consultor.permisos_especiales)
-                .joinedload(ConsultorPermiso.permiso),
-            joinedload(Consultor.horario_obj),
-            joinedload(Consultor.modulos),
-        )
-        .filter(func.lower(Consultor.usuario) == usuario)
-        .first()
-    )
-
-    if not consultor:
-        return jsonify({"mensaje": "Usuario no encontrado"}), 404
-
+    consultor = g.current_user
     permisos = sorted(list(obtener_permisos_finales(consultor)))
 
     return jsonify({

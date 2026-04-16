@@ -216,7 +216,7 @@ class Login(db.Model):
     user_agent = db.Column(db.Text)
     fecha_login = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     fecha_logout = db.Column(db.DateTime)
-    token = db.Column(db.String(255))
+    token = db.Column(db.String(255), unique=True, index=True)
     activo = db.Column(db.Boolean, default=True)
 
     consultor = relationship('Consultor', backref=backref('logins', lazy=True))
