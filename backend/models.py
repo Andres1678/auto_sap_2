@@ -157,11 +157,16 @@ class Registro(db.Model):
     modulo = db.Column(db.String(100))
     horario_trabajo = db.Column(db.String(20))
     bloqueado = db.Column(db.Boolean, default=False)
+    split_group = db.Column(db.String(36), nullable=True, index=True)
+    split_tipo = db.Column(db.String(20), nullable=False, default='NORMAL')
 
-    proyecto_id = db.Column(db.Integer, db.ForeignKey("proyecto.id", ondelete="SET NULL"), nullable=True)
+    proyecto_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto.id", ondelete="SET NULL"),
+        nullable=True
+    )
     proyecto = relationship("Proyecto", lazy="joined")
 
-    # SOLO si quieres permitir elegir fase en el registro (opcional)
     fase_proyecto_id = db.Column(
         db.BigInteger,
         db.ForeignKey("proyecto_fase.id", ondelete="SET NULL"),
@@ -169,13 +174,17 @@ class Registro(db.Model):
     )
     fase_proyecto = relationship("ProyectoFase", lazy="joined")
 
-    usuario_consultor = db.Column(db.String(50), db.ForeignKey('consultor.usuario'))
+    usuario_consultor = db.Column(
+        db.String(50),
+        db.ForeignKey('consultor.usuario')
+    )
 
     consultor = relationship(
         'Consultor',
         back_populates='registros',
         primaryjoin="Registro.usuario_consultor == Consultor.usuario"
     )
+
 
 class BaseRegistro(db.Model):
     __tablename__ = 'base_registro'

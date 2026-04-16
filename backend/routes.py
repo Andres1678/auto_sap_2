@@ -956,6 +956,103 @@ def _buscar_registro_traslapado(fecha, usuario_consultor, hora_inicio, hora_fin,
 
     return None
 
+def _minutes_to_hhmm(value: int) -> str:
+    h = value // 60
+    m = value % 60
+    return f"{h:02d}:{m:02d}"
+
+
+def _parse_horario_range_to_minutes(horario_trabajo: str):
+    if not horario_trabajo:
+        return None
+
+    s = str(horario_trabajo).strip()
+    if not re.match(r"^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$", s):
+        return None
+
+    ini_txt, fin_txt = [x.strip() for x in s.split("-")]
+    ini = _parse_hhmm_to_minutes(ini_txt)
+    fin = _parse_hhmm_to_minutes(fin_txt)
+
+    if ini is None or fin is None:
+        return None
+
+    if fin <= ini:
+        return None
+
+    return {"start": ini, "end": fin}
+
+
+def _dividir_registro_por_horario(hora_inicio: str, hora_fin: str, horario_trabajo: str):
+    """
+    Retorna una lista de fragmentos:
+    [
+      {"hora_inicio": "13:00", "hora_fin": "18:00", "horas_adicionales": "No"},
+      {"hora_inicio": "18:00", "hora_fin": "19:00", "horas_adicionales": "Sí"},
+    ]
+    """
+    ini = _parse_hhmm_to_minutes(hora_inicio)
+    fin = _parse_hhmm_to_minutes(hora_fin)
+
+    if ini is None or fin is None or fin <= ini:
+        return []
+
+    rango = _parse_horario_range_to_minutes(horario_trabajo)
+
+    # si no hay horario válido, deja un solo registro
+    if not rango:
+        return [{
+            "hora_inicio": hora_inicio,
+            "hora_fin": hora_fin,
+            "horas_adicionales": "N/D",
+        }]
+
+    work_start = rango["start"]
+    work_end = rango["end"]
+
+    fragmentos = []
+
+    # Parte antes del horario laboral => extra
+    if ini < work_start:
+        extra_fin = min(fin, work_start)
+        if extra_fin > ini:
+            fragmentos.append({
+                "hora_inicio": _minutes_to_hhmm(ini),
+                "hora_fin": _minutes_to_hhmm(extra_fin),
+                "horas_adicionales": "Sí",
+            })
+
+    # Parte dentro del horario laboral => normal
+    normal_ini = max(ini, work_start)
+    normal_fin = min(fin, work_end)
+    if normal_fin > normal_ini:
+        fragmentos.append({
+            "hora_inicio": _minutes_to_hhmm(normal_ini),
+            "hora_fin": _minutes_to_hhmm(normal_fin),
+            "horas_adicionales": "No",
+        })
+
+    # Parte después del horario laboral => extra
+    if fin > work_end:
+        extra_ini = max(ini, work_end)
+        if fin > extra_ini:
+            fragmentos.append({
+                "hora_inicio": _minutes_to_hhmm(extra_ini),
+                "hora_fin": _minutes_to_hhmm(fin),
+                "horas_adicionales": "Sí",
+            })
+
+    # fallback
+    if not fragmentos:
+        fragmentos.append({
+            "hora_inicio": hora_inicio,
+            "hora_fin": hora_fin,
+            "horas_adicionales": "No",
+        })
+
+    return fragmentos
+
+
 @bp.route('/registrar-hora', methods=['POST'])
 def registrar_hora():
     data = request.get_json(force=True, silent=True) or {}
@@ -1071,6 +1168,31 @@ def registrar_hora():
     )
 
     # ------------------------------------------------------------------
+    # 7.1) DIVIDIR EL REGISTRO SEGÚN EL HORARIO
+    # ------------------------------------------------------------------
+    fragmentos = _dividir_registro_por_horario(hora_inicio, hora_fin, horario_trabajo)
+
+    if not fragmentos:
+        return jsonify({'mensaje': 'No se pudo dividir el rango horario'}), 400
+
+    # validar traslape por cada fragmento
+    for frag in fragmentos:
+        conflicto = _buscar_registro_traslapado(
+            fecha=fecha,
+            usuario_consultor=consultor.usuario,
+            hora_inicio=frag["hora_inicio"],
+            hora_fin=frag["hora_fin"],
+            exclude_id=None
+        )
+        if conflicto:
+            return jsonify({
+                'mensaje': (
+                    f'Ya existe un registro que se cruza con este rango: '
+                    f'{conflicto.hora_inicio} - {conflicto.hora_fin} (ID: {conflicto.id})'
+                )
+            }), 409
+
+    # ------------------------------------------------------------------
     # 8) EQUIPO
     # ------------------------------------------------------------------
     equipo_final = pick(data, 'equipo')
@@ -1166,52 +1288,69 @@ def registrar_hora():
         fase_proyecto_id = getattr(p, "fase_id", None) if p else None
 
     # ------------------------------------------------------------------
-    # 12) CREAR REGISTRO
+    # 12) CREAR UNO O VARIOS REGISTROS
     # ------------------------------------------------------------------
     try:
-        nuevo = Registro(
-            fecha=fecha,
-            cliente=cliente,
-            nro_caso_cliente=_norm_default(pick(data, 'nroCasoCliente', 'nro_caso_cliente'), '0'),
-            nro_caso_interno=_norm_default(pick(data, 'nroCasoInterno', 'nro_caso_interno'), '0'),
-            nro_caso_escalado=bd["nro_escalado"],
+        nuevos = []
 
-            tarea_id=tarea_id,
-            ocupacion_id=ocupacion_id,
+        for frag in fragmentos:
+            frag_hora_inicio = frag["hora_inicio"]
+            frag_hora_fin = frag["hora_fin"]
+            frag_horas_adic = frag["horas_adicionales"]
 
-            proyecto_id=proyecto_id,
-            fase_proyecto_id=fase_proyecto_id,
+            frag_tiempo = _calcular_tiempo_horas(frag_hora_inicio, frag_hora_fin)
 
-            hora_inicio=hora_inicio,
-            hora_fin=hora_fin,
-            tiempo_invertido=tiempo_invertido,
-            tiempo_facturable=tiempo_facturable,
+            nuevo = Registro(
+                fecha=fecha,
+                cliente=cliente,
+                nro_caso_cliente=_norm_default(pick(data, 'nroCasoCliente', 'nro_caso_cliente'), '0'),
+                nro_caso_interno=_norm_default(pick(data, 'nroCasoInterno', 'nro_caso_interno'), '0'),
+                nro_caso_escalado=bd["nro_escalado"],
 
-            actividad_malla=bd["actividad_malla"],
-            oncall=bd["oncall"],
-            desborde=bd["desborde"],
+                tarea_id=tarea_id,
+                ocupacion_id=ocupacion_id,
 
-            horas_adicionales=_norm_default(pick(data, 'horasAdicionales', 'horas_adicionales'), 'No'),
-            descripcion=_norm_default(pick(data, 'descripcion'), ''),
+                proyecto_id=proyecto_id,
+                fase_proyecto_id=fase_proyecto_id,
 
-            total_horas=total_horas,
-            modulo=modulo_final,
-            horario_trabajo=horario_trabajo,
-            usuario_consultor=consultor.usuario,
-            equipo=equipo_final,
-        )
+                hora_inicio=frag_hora_inicio,
+                hora_fin=frag_hora_fin,
+                tiempo_invertido=frag_tiempo,
+                tiempo_facturable=tiempo_facturable,
 
-        db.session.add(nuevo)
+                actividad_malla=bd["actividad_malla"],
+                oncall=bd["oncall"],
+                desborde=bd["desborde"],
+
+                horas_adicionales=frag_horas_adic,
+                descripcion=_norm_default(pick(data, 'descripcion'), ''),
+
+                total_horas=frag_tiempo,
+                modulo=modulo_final,
+                horario_trabajo=horario_trabajo,
+                usuario_consultor=consultor.usuario,
+                equipo=equipo_final,
+            )
+
+            db.session.add(nuevo)
+            nuevos.append(nuevo)
+
         db.session.commit()
 
         return jsonify({
             'mensaje': 'Registro guardado correctamente',
-            'registro': {
-                'id': nuevo.id,
-                'fecha': nuevo.fecha,
-                'horaInicio': nuevo.hora_inicio,
-                'horaFin': nuevo.hora_fin
-            }
+            'cantidad_registros': len(nuevos),
+            'registros': [
+                {
+                    'id': r.id,
+                    'fecha': r.fecha,
+                    'horaInicio': r.hora_inicio,
+                    'horaFin': r.hora_fin,
+                    'horasAdicionales': r.horas_adicionales,
+                    'totalHoras': r.total_horas,
+                }
+                for r in nuevos
+            ]
         }), 201
 
     except IntegrityError as e:
@@ -9833,6 +9972,238 @@ def dashboard_costos_resumen():
 
     except Exception as e:
         app.logger.exception("❌ Error en /dashboard/costos-resumen")
+        return jsonify({"error": str(e)}), 500
+
+@bp.route("/dashboard/costos-filtros", methods=["GET"])
+@permission_required("GRAFICOS_VER")
+def dashboard_costos_filtros():
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _rol_from_request()
+
+        if not usuario:
+            return jsonify({"error": "Usuario no enviado"}), 400
+
+        usuario_norm = (usuario or "").strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+
+        if not consultor_login:
+            return jsonify({"error": "Consultor no encontrado"}), 404
+
+        # mismo alcance que el resumen
+        scope, val = _scope_for_graficos(consultor_login, rol_req)
+
+        # mismo parser de período que usa /dashboard/costos-resumen
+        desde, hasta, modo = _dashboard_costos_parse_periodo_request()
+
+        C = aliased(Consultor)
+        E = aliased(Equipo)
+        fecha_expr = _registro_fecha_expr()
+
+        def _get_multi(name):
+            vals = request.args.getlist(name)
+            if vals:
+                return [str(v).strip() for v in vals if str(v).strip()]
+            single = (request.args.get(name) or "").strip()
+            return [single] if single else []
+
+        def _norm(v):
+            return " ".join(str(v or "").strip().upper().split())
+
+        # -----------------------------
+        # filtros recibidos
+        # -----------------------------
+        equipo_filter = _norm(request.args.get("equipo"))
+        clientes_filter = [_norm(v) for v in _get_multi("cliente")]
+        consultores_filter = [_norm(v) for v in _get_multi("consultor")]
+        modulos_filter = [_norm(v) for v in _get_multi("modulo")]
+        estados_ot_filter = [_norm(v) for v in _get_multi("estado_ot")]
+        servicios_filter = [_norm(v) for v in _get_multi("servicio")]
+
+        ocupacion_ids = []
+        for v in request.args.getlist("ocupacion_id"):
+            try:
+                ocupacion_ids.append(int(v))
+            except Exception:
+                pass
+
+        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
+
+        # =========================================================
+        # 1) CATÁLOGOS OPERATIVOS DESDE REGISTRO
+        #    cliente / consultor / modulo / equipo
+        # =========================================================
+        q = (
+            db.session.query(
+                Registro.cliente.label("cliente"),
+                C.nombre.label("consultor"),
+                Registro.modulo.label("modulo"),
+                E.nombre.label("equipo"),
+            )
+            .select_from(Registro)
+            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .outerjoin(E, C.equipo_id == E.id)
+            .filter(fecha_expr >= desde, fecha_expr <= hasta)
+        )
+
+        # alcance
+        if scope == "SELF":
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+
+        elif scope == "TEAM":
+            if not int(val or 0):
+                return jsonify({"error": "Consultor sin equipo asignado"}), 403
+            q = q.filter(C.equipo_id == int(val))
+
+        elif scope == "ALL":
+            pass
+
+        # filtros contextuales
+        if equipo_filter:
+            if scope in ("TEAM", "SELF"):
+                eq_login = ""
+                if consultor_login.equipo_obj:
+                    eq_login = _norm(consultor_login.equipo_obj.nombre)
+
+                if equipo_filter != eq_login:
+                    return jsonify({"error": "No autorizado para consultar otro equipo"}), 403
+
+            q = q.filter(func.upper(E.nombre) == equipo_filter)
+
+        if clientes_filter:
+            q = q.filter(func.upper(Registro.cliente).in_(clientes_filter))
+
+        if consultores_filter:
+            q = q.filter(func.upper(C.nombre).in_(consultores_filter))
+
+        if modulos_filter:
+            q = q.filter(func.upper(Registro.modulo).in_(modulos_filter))
+
+        if ocupacion_ids:
+            q = q.filter(Registro.ocupacion_id.in_(ocupacion_ids))
+
+        if filtro_proyecto_id:
+            try:
+                q = q.filter(Registro.proyecto_id == int(filtro_proyecto_id))
+            except Exception:
+                return jsonify({"error": "proyecto_id inválido"}), 400
+
+        rows = q.all()
+
+        clientes = sorted({
+            str(r.cliente).strip()
+            for r in rows
+            if r.cliente and str(r.cliente).strip()
+        })
+
+        consultores = sorted({
+            str(r.consultor).strip()
+            for r in rows
+            if r.consultor and str(r.consultor).strip()
+        })
+
+        modulos = sorted({
+            _norm(r.modulo)
+            for r in rows
+            if r.modulo and str(r.modulo).strip()
+        })
+
+        equipos = sorted({
+            _norm(r.equipo)
+            for r in rows
+            if r.equipo and str(r.equipo).strip()
+        })
+
+        # =========================================================
+        # 2) CATÁLOGOS DE OPORTUNIDADES
+        #    estado_ot / servicio
+        # =========================================================
+        oq = (
+            db.session.query(
+                Oportunidad.estado_ot.label("estado_ot"),
+                Oportunidad.servicio.label("servicio"),
+                Oportunidad.nombre_cliente.label("cliente"),
+            )
+            .select_from(Oportunidad)
+        )
+
+        # filtrar por período de creación de oportunidad
+        oq = oq.filter(
+            Oportunidad.fecha_creacion.isnot(None),
+            Oportunidad.fecha_creacion >= desde,
+            Oportunidad.fecha_creacion <= hasta,
+        )
+
+        if clientes_filter:
+            oq = oq.filter(func.upper(Oportunidad.nombre_cliente).in_(clientes_filter))
+
+        if estados_ot_filter:
+            oq = oq.filter(func.upper(Oportunidad.estado_ot).in_(estados_ot_filter))
+
+        if servicios_filter:
+            oq = oq.filter(func.upper(Oportunidad.servicio).in_(servicios_filter))
+
+        if filtro_proyecto_id:
+            try:
+                proyecto_id_int = int(filtro_proyecto_id)
+                oq = oq.join(
+                    Proyecto,
+                    Proyecto.oportunidad_id == Oportunidad.id
+                ).filter(Proyecto.id == proyecto_id_int)
+            except Exception:
+                return jsonify({"error": "proyecto_id inválido"}), 400
+
+        opp_rows = oq.all()
+
+        estados_ot = sorted({
+            str(r.estado_ot).strip()
+            for r in opp_rows
+            if r.estado_ot and str(r.estado_ot).strip()
+        })
+
+        servicios = sorted({
+            str(r.servicio).strip()
+            for r in opp_rows
+            if r.servicio and str(r.servicio).strip()
+        })
+
+        return jsonify({
+            "modo": modo,
+            "desde": desde.isoformat(),
+            "hasta": hasta.isoformat(),
+
+            "clientes": clientes,
+            "consultores": consultores,
+            "modulos": modulos,
+            "equipos": equipos,
+            "estados_ot": estados_ot,
+            "servicios": servicios,
+
+            "filtrosAplicados": {
+                "equipo": equipo_filter or None,
+                "clientes": clientes_filter,
+                "consultores": consultores_filter,
+                "modulos": modulos_filter,
+                "ocupacion_ids": ocupacion_ids,
+                "estado_ot": estados_ot_filter,
+                "servicios": servicios_filter,
+                "proyecto_id": int(filtro_proyecto_id) if filtro_proyecto_id.isdigit() else None,
+            }
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    except Exception as e:
+        app.logger.exception("❌ Error en /dashboard/costos-filtros")
         return jsonify({"error": str(e)}), 500
     
 

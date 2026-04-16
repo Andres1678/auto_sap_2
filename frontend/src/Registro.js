@@ -1418,6 +1418,9 @@ const Registro = ({ userData }) => {
       Swal.fire({
         icon: "success",
         title: modoEdicion ? "Registro actualizado" : "Registro guardado",
+        text: j?.cantidad_registros > 1
+          ? `Se generaron ${j.cantidad_registros} registros por división de horario.`
+          : undefined,
       });
 
       window.dispatchEvent(new Event("resumen-actualizar"));
