@@ -230,6 +230,67 @@ function formatPeriodoCompact(periodo) {
   return `${month}-${anio}`;
 }
 
+function formatPeriodoFull(periodo) {
+  const txt = normalizeText(periodo);
+  if (!/^\d{4}-\d{2}$/.test(txt)) return txt || "-";
+
+  const anio = txt.slice(0, 4);
+  const mes = Number(txt.slice(5, 7));
+  const month = MONTHS.find((m) => m.value === mes)?.label || txt;
+
+  return `${month.toLowerCase()} ${anio}`;
+}
+
+function buildRangeLabel(periodKeys = []) {
+  const keys = Array.isArray(periodKeys) ? periodKeys.filter(Boolean) : [];
+  if (!keys.length) return "Período actual";
+  if (keys.length === 1) return formatPeriodoFull(keys[0]);
+
+  const first = normalizeText(keys[0]);
+  const last = normalizeText(keys[keys.length - 1]);
+
+  if (!/^\d{4}-\d{2}$/.test(first) || !/^\d{4}-\d{2}$/.test(last)) {
+    return "Período actual";
+  }
+
+  const firstYear = first.slice(0, 4);
+  const lastYear = last.slice(0, 4);
+
+  const firstMonth = MONTHS.find((m) => m.value === Number(first.slice(5, 7)))?.label?.toLowerCase() || first;
+  const lastMonth = MONTHS.find((m) => m.value === Number(last.slice(5, 7)))?.label?.toLowerCase() || last;
+
+  if (firstYear === lastYear) {
+    return `${firstMonth}-${lastMonth} ${firstYear}`;
+  }
+
+  return `${firstMonth} ${firstYear} - ${lastMonth} ${lastYear}`;
+}
+
+function uniqSortedPeriods(values = []) {
+  return Array.from(new Set((Array.isArray(values) ? values : []).map(normalizeText).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function buildFinancialSummaryRow(label, periodKeys, ingresoMensual, costByMonth) {
+  const keys = uniqSortedPeriods(periodKeys);
+  const valor = Number(ingresoMensual || 0) * keys.length;
+  const costo = keys.reduce((acc, periodo) => acc + Number(costByMonth?.[periodo] || 0), 0);
+  const margen = valor - costo;
+  const porcentajeMargen = valor > 0 ? (margen / valor) * 100 : 0;
+  const porcentajeMarkup = costo > 0 ? (margen / costo) * 100 : 0;
+
+  return {
+    label,
+    periodKeys: keys,
+    periodCount: keys.length,
+    valor,
+    costo,
+    margen,
+    porcentajeMargen,
+    porcentajeMarkup,
+  };
+}
+
 function aggregateOperationalByMonth(rows = []) {
   const map = new Map();
 
@@ -308,8 +369,9 @@ function buildLinkedAnalysis(linkItem, allRows, filters) {
     rowKeys.includes(getSummaryRowKey(row))
   );
 
-  const periodKeys = buildPeriodKeys(filters);
+  const activePeriodKeys = buildPeriodKeys(filters);
   const costByMonth = {};
+  const allDetailPeriods = [];
 
   selectedRows.forEach((row) => {
     const detalle = Array.isArray(row?.detallePeriodos) ? row.detallePeriodos : [];
@@ -317,31 +379,42 @@ function buildLinkedAnalysis(linkItem, allRows, filters) {
       const periodo = normalizeText(item?.periodo);
       if (!periodo) return;
       costByMonth[periodo] = (costByMonth[periodo] || 0) + Number(item?.costo || 0);
+      allDetailPeriods.push(periodo);
     });
   });
 
+  const allPeriodKeys = uniqSortedPeriods(allDetailPeriods);
   const ingresoMensual = Number(opportunity?.mrcNormalizado || 0);
   const valorComercial = getOpportunityChartValue(opportunity);
 
-  const monthlyRows = periodKeys.map((periodo) => {
-    const ingreso = ingresoMensual;
-    const costo = Number(costByMonth[periodo] || 0);
-    const margen = ingreso - costo;
-    const porcentaje = ingreso > 0 ? (costo / ingreso) * 100 : 0;
+  const todoRow = buildFinancialSummaryRow("Todo", allPeriodKeys, ingresoMensual, costByMonth);
+  const activeLabel = buildRangeLabel(activePeriodKeys);
+  const activeRow = buildFinancialSummaryRow(
+    activeLabel,
+    activePeriodKeys,
+    ingresoMensual,
+    costByMonth
+  );
 
-    return {
-      periodo,
-      ingreso,
-      costo,
-      margen,
-      porcentaje,
-    };
-  });
+  const summaryRows = [todoRow];
 
-  const ingresoTotal = monthlyRows.reduce((acc, row) => acc + Number(row.ingreso || 0), 0);
-  const costoTotal = monthlyRows.reduce((acc, row) => acc + Number(row.costo || 0), 0);
-  const margenTotal = ingresoTotal - costoTotal;
-  const porcentajeTotal = ingresoTotal > 0 ? (costoTotal / ingresoTotal) * 100 : 0;
+  if (
+    activeRow.label !== todoRow.label ||
+    activeRow.periodCount !== todoRow.periodCount ||
+    Number(activeRow.valor || 0) !== Number(todoRow.valor || 0) ||
+    Number(activeRow.costo || 0) !== Number(todoRow.costo || 0)
+  ) {
+    summaryRows.push(activeRow);
+  }
+
+  const monthlyRows = activePeriodKeys.map((periodo) =>
+    buildFinancialSummaryRow(
+      formatPeriodoFull(periodo),
+      [periodo],
+      ingresoMensual,
+      costByMonth
+    )
+  );
 
   return {
     opportunityId: opportunity?.id,
@@ -351,11 +424,18 @@ function buildLinkedAnalysis(linkItem, allRows, filters) {
     valorComercial,
     ingresoMensual,
     selectedCount: selectedRows.length,
+    allPeriodKeys,
+    activePeriodKeys,
+    summaryRows,
     monthlyRows,
-    ingresoTotal,
-    costoTotal,
-    margenTotal,
-    porcentajeTotal,
+    activeLabel,
+    todoRow,
+    activeRow,
+    ingresoTotal: activeRow.valor,
+    costoTotal: activeRow.costo,
+    margenTotal: activeRow.margen,
+    porcentajeTotal: activeRow.porcentajeMargen,
+    porcentajeMarkupTotal: activeRow.porcentajeMarkup,
     selectedRows,
     opportunity,
   };
@@ -668,18 +748,18 @@ function LinkedAnalysisPanel({ analysis, onEdit, onRemove }) {
         </article>
 
         <article className="dc-mini-card">
-          <span>Costo total</span>
-          <strong>{fmtMoney(analysis.costoTotal)}</strong>
+          <span>Valor período actual</span>
+          <strong>{fmtMoney(analysis.activeRow?.valor || 0)}</strong>
         </article>
 
         <article className="dc-mini-card">
-          <span>Margen total</span>
-          <strong>{fmtMoney(analysis.margenTotal)}</strong>
+          <span>Costo período actual</span>
+          <strong>{fmtMoney(analysis.activeRow?.costo || 0)}</strong>
         </article>
 
         <article className="dc-mini-card">
-          <span>%</span>
-          <strong>{fmtPercent(analysis.porcentajeTotal)}</strong>
+          <span>Margen período actual</span>
+          <strong>{fmtMoney(analysis.activeRow?.margen || 0)}</strong>
         </article>
       </div>
 
@@ -694,6 +774,7 @@ function LinkedAnalysisPanel({ analysis, onEdit, onRemove }) {
       >
         <span className="dc-tag">Servicio: {analysis.servicio || "-"}</span>
         <span className="dc-tag">{fmtInt(analysis.selectedCount)} fila(s) vinculada(s)</span>
+        <span className="dc-tag">Filtro activo: {analysis.activeLabel}</span>
 
         <button type="button" className="dc-btn dc-btn-primary" onClick={onEdit}>
           Editar vínculo
@@ -704,36 +785,67 @@ function LinkedAnalysisPanel({ analysis, onEdit, onRemove }) {
         </button>
       </div>
 
-      <div className="dc-table-wrap" style={{ marginTop: 16 }}>
-        <table className="dc-table">
-          <thead>
-            <tr>
-              <th>Mes</th>
-              <th className="num">Ingreso</th>
-              <th className="num">Costo</th>
-              <th className="num">Margen</th>
-              <th className="num">%</th>
-            </tr>
-          </thead>
-          <tbody>
-            {analysis.monthlyRows.map((row) => (
-              <tr key={`${analysis.opportunityId}-${row.periodo}`}>
-                <td>{formatPeriodoCompact(row.periodo)}</td>
-                <td className="num">{fmtMoney(row.ingreso)}</td>
-                <td className="num">{fmtMoney(row.costo)}</td>
-                <td className="num">{fmtMoney(row.margen)}</td>
-                <td className="num">{fmtPercent(row.porcentaje)}</td>
+      <div className="dc-linked-tables">
+        <div className="dc-table-wrap" style={{ marginTop: 16 }}>
+          <table className="dc-table dc-table-linked-summary">
+            <thead>
+              <tr>
+                <th>Período</th>
+                <th className="num">Valor</th>
+                <th className="num">Costo</th>
+                <th className="num">Margen</th>
+                <th className="num">% Margen</th>
+                <th className="num">% Markup</th>
               </tr>
-            ))}
-            <tr>
-              <td><strong>Total</strong></td>
-              <td className="num"><strong>{fmtMoney(analysis.ingresoTotal)}</strong></td>
-              <td className="num"><strong>{fmtMoney(analysis.costoTotal)}</strong></td>
-              <td className="num"><strong>{fmtMoney(analysis.margenTotal)}</strong></td>
-              <td className="num"><strong>{fmtPercent(analysis.porcentajeTotal)}</strong></td>
-            </tr>
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {analysis.summaryRows.map((row, idx) => (
+                <tr
+                  key={`${analysis.opportunityId}-summary-${row.label}-${idx}`}
+                  className={idx === 0 ? "dc-linked-summary-row" : ""}
+                >
+                  <td>
+                    <strong>{row.label}</strong>
+                  </td>
+                  <td className="num">{fmtMoney(row.valor)}</td>
+                  <td className="num">{fmtMoney(row.costo)}</td>
+                  <td className="num">{fmtMoney(row.margen)}</td>
+                  <td className="num">{fmtPercent(row.porcentajeMargen)}</td>
+                  <td className="num">{fmtPercent(row.porcentajeMarkup)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {analysis.monthlyRows.length > 1 && (
+          <div className="dc-table-wrap" style={{ marginTop: 16 }}>
+            <table className="dc-table dc-table-linked-summary">
+              <thead>
+                <tr>
+                  <th>Mes</th>
+                  <th className="num">Valor</th>
+                  <th className="num">Costo</th>
+                  <th className="num">Margen</th>
+                  <th className="num">% Margen</th>
+                  <th className="num">% Markup</th>
+                </tr>
+              </thead>
+              <tbody>
+                {analysis.monthlyRows.map((row, idx) => (
+                  <tr key={`${analysis.opportunityId}-month-${idx}`}>
+                    <td>{row.label}</td>
+                    <td className="num">{fmtMoney(row.valor)}</td>
+                    <td className="num">{fmtMoney(row.costo)}</td>
+                    <td className="num">{fmtMoney(row.margen)}</td>
+                    <td className="num">{fmtPercent(row.porcentajeMargen)}</td>
+                    <td className="num">{fmtPercent(row.porcentajeMarkup)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </section>
   );

@@ -422,6 +422,24 @@
   position: relative;
 }
 
+.dc-linked-tables {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.dc-table.dc-table-linked-summary {
+  min-width: 820px;
+}
+
+.dc-linked-summary-row td {
+  background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+}
+
+.dc-linked-summary-row td:first-child strong {
+  color: var(--dc-blue-dark);
+}
+
 .dc-table input[type="checkbox"] {
   width: 18px;
   height: 18px;
