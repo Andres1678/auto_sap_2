@@ -45,7 +45,7 @@ const CLIENTE_RESTRINGIDO = 'HITSS/CLARO';
 const OCCUPATIONS_FORBID_HITSS = new Set(['01', '02', '06']);
 const CODES_RESTRICTED_CLIENT_9H = new Set(['09', '13', '14', '15']);
 const CODE_SUPERVISION_EQUIPO = '06';
-const OCCUPATIONS_ONLY_HITSS = new Set(['03']);
+const OCCUPATIONS_ONLY_HITSS = new Set(['03','08']);
 
 const parseHHMM = (s) => {
   if (!s || typeof s !== "string") return null;
