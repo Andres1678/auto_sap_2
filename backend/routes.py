@@ -9682,7 +9682,6 @@ def dashboard_costos_resumen():
                 pass
 
         opp_rows_db = qo.order_by(
-            Oportunidad.fecha_creacion.desc(),
             Oportunidad.id.desc()
         ).all()
 
@@ -9750,14 +9749,6 @@ def dashboard_costos_resumen():
                 "valorOportunidad": float(valor_oportunidad),
                 "mrcNormalizado": float(mrc_normalizado),
             })
-
-        opp_rows_out.sort(
-            key=lambda x: (
-                -float(x["valorOportunidad"] or 0),
-                x["cliente"],
-                x["codigo_prc"]
-            )
-        )
 
         # -----------------------------------------
         # 3) MÁRGENES POR CLIENTE

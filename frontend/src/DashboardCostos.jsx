@@ -1126,10 +1126,6 @@ export default function DashboardCostos() {
             : []
         )
           .filter((item) => isWonOrOtOpportunity(item))
-          .sort(
-            (a, b) =>
-              getOpportunityChartValue(b) - getOpportunityChartValue(a)
-          );
 
         setOportunidadesGanadas({
           rows: oportunidadRows,
