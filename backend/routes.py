@@ -7304,8 +7304,18 @@ def get_proyecto_costos_resumen(proyecto_id):
             }
 
         horas = Decimal(str(reg.total_horas or reg.tiempo_invertido or 0))
-        valor_hora = _valor_hora_consultor(consultor_id, anio, mes)
-        costo_real = horas * valor_hora
+
+        presupuesto = _presupuesto_consultor_mes(consultor_id, anio, mes)
+
+        if presupuesto:
+            valor_hora = Decimal(str(presupuesto.get("valor_hora") or 0))
+        else:
+            valor_hora = Decimal("0.00")
+
+        costo_real = (horas * valor_hora).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP
+        )
 
         plan_mensual[key]["horas_reales"] += horas
         plan_mensual[key]["costo_real"] += costo_real
