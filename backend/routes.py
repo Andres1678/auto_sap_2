@@ -7209,6 +7209,46 @@ def save_proyecto_costos_adicionales(proyecto_id):
 @bp.route("/proyectos/<int:proyecto_id>/costos/resumen", methods=["GET"])
 @permission_required("PROYECTOS_VER")
 def get_proyecto_costos_resumen(proyecto_id):
+    def _dec(v):
+        try:
+            if v is None or v == "":
+                return Decimal("0.00")
+            if isinstance(v, Decimal):
+                return v
+            return Decimal(str(v))
+        except Exception:
+            return Decimal("0.00")
+
+    def _money(v):
+        return float(_dec(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+    def _fecha_to_parts(v):
+        if v is None:
+            return None, None
+
+        if isinstance(v, datetime):
+            return v.year, v.month
+
+        if isinstance(v, date):
+            return v.year, v.month
+
+        s = str(v).strip()
+        if not s:
+            return None, None
+
+        # YYYY-MM-DD...
+        if len(s) >= 7 and s[4] == "-" and s[7:8] in ("", "-", "T", " "):
+            try:
+                return int(s[:4]), int(s[5:7])
+            except Exception:
+                return None, None
+
+        try:
+            dt = datetime.fromisoformat(s[:19])
+            return dt.year, dt.month
+        except Exception:
+            return None, None
+
     p = (
         Proyecto.query.options(
             joinedload(Proyecto.presupuestos_mensuales),
@@ -7218,151 +7258,268 @@ def get_proyecto_costos_resumen(proyecto_id):
         .get_or_404(proyecto_id)
     )
 
+    # =========================================================
+    # 1) Base mensual planeada
+    # =========================================================
     plan_mensual = {}
+
     for x in (p.presupuestos_mensuales or []):
-        key = f"{x.anio:04d}-{x.mes:02d}"
+        key = f"{int(x.anio):04d}-{int(x.mes):02d}"
         plan_mensual[key] = {
-            "anio": x.anio,
-            "mes": x.mes,
-            "ingreso_planeado": Decimal(str(x.ingreso_planeado or 0)),
-            "costo_planeado": Decimal(str(x.costo_planeado or 0)),
-            "gasto_operativo_planeado": Decimal(str(x.gasto_operativo_planeado or 0)),
-            "costo_administrativo_planeado": Decimal(str(x.costo_administrativo_planeado or 0)),
-            "ebitda_planeado": Decimal(str(x.ebitda_planeado or 0)),
-            "margen_planeado_pct": Decimal(str(x.margen_planeado_pct or 0)),
-            "horas_planeadas": Decimal("0"),
-            "costo_adicional": Decimal("0"),
-            "horas_reales": Decimal("0"),
-            "costo_real": Decimal("0"),
+            "anio": int(x.anio),
+            "mes": int(x.mes),
+            "ingreso_planeado": _dec(x.ingreso_planeado),
+            "costo_planeado": _dec(x.costo_planeado),
+            "gasto_operativo_planeado": _dec(x.gasto_operativo_planeado),
+            "costo_administrativo_planeado": _dec(x.costo_administrativo_planeado),
+            "ebitda_planeado": _dec(x.ebitda_planeado),
+            "margen_planeado_pct": _dec(x.margen_planeado_pct),
+            "horas_planeadas": Decimal("0.00"),
+            "costo_adicional": Decimal("0.00"),
+            "horas_reales": Decimal("0.00"),
+            "costo_real": Decimal("0.00"),
         }
 
+    # =========================================================
+    # 2) Planeación por perfil -> horas planeadas
+    # =========================================================
     for x in (p.perfiles_plan or []):
-        key = f"{x.anio:04d}-{x.mes:02d}"
+        key = f"{int(x.anio):04d}-{int(x.mes):02d}"
+
         if key not in plan_mensual:
             plan_mensual[key] = {
-                "anio": x.anio,
-                "mes": x.mes,
-                "ingreso_planeado": Decimal("0"),
-                "costo_planeado": Decimal("0"),
-                "gasto_operativo_planeado": Decimal("0"),
-                "costo_administrativo_planeado": Decimal("0"),
-                "ebitda_planeado": Decimal("0"),
-                "margen_planeado_pct": Decimal("0"),
-                "horas_planeadas": Decimal("0"),
-                "costo_adicional": Decimal("0"),
-                "horas_reales": Decimal("0"),
-                "costo_real": Decimal("0"),
+                "anio": int(x.anio),
+                "mes": int(x.mes),
+                "ingreso_planeado": Decimal("0.00"),
+                "costo_planeado": Decimal("0.00"),
+                "gasto_operativo_planeado": Decimal("0.00"),
+                "costo_administrativo_planeado": Decimal("0.00"),
+                "ebitda_planeado": Decimal("0.00"),
+                "margen_planeado_pct": Decimal("0.00"),
+                "horas_planeadas": Decimal("0.00"),
+                "costo_adicional": Decimal("0.00"),
+                "horas_reales": Decimal("0.00"),
+                "costo_real": Decimal("0.00"),
             }
-        plan_mensual[key]["horas_planeadas"] += Decimal(str(x.horas_estimadas or 0))
 
+        plan_mensual[key]["horas_planeadas"] += _dec(x.horas_estimadas)
+
+    # =========================================================
+    # 3) Costos adicionales
+    # =========================================================
     for x in (p.costos_adicionales or []):
-        key = f"{x.anio:04d}-{x.mes:02d}"
+        key = f"{int(x.anio):04d}-{int(x.mes):02d}"
+
         if key not in plan_mensual:
             plan_mensual[key] = {
-                "anio": x.anio,
-                "mes": x.mes,
-                "ingreso_planeado": Decimal("0"),
-                "costo_planeado": Decimal("0"),
-                "gasto_operativo_planeado": Decimal("0"),
-                "costo_administrativo_planeado": Decimal("0"),
-                "ebitda_planeado": Decimal("0"),
-                "margen_planeado_pct": Decimal("0"),
-                "horas_planeadas": Decimal("0"),
-                "costo_adicional": Decimal("0"),
-                "horas_reales": Decimal("0"),
-                "costo_real": Decimal("0"),
+                "anio": int(x.anio),
+                "mes": int(x.mes),
+                "ingreso_planeado": Decimal("0.00"),
+                "costo_planeado": Decimal("0.00"),
+                "gasto_operativo_planeado": Decimal("0.00"),
+                "costo_administrativo_planeado": Decimal("0.00"),
+                "ebitda_planeado": Decimal("0.00"),
+                "margen_planeado_pct": Decimal("0.00"),
+                "horas_planeadas": Decimal("0.00"),
+                "costo_adicional": Decimal("0.00"),
+                "horas_reales": Decimal("0.00"),
+                "costo_real": Decimal("0.00"),
             }
-        plan_mensual[key]["costo_adicional"] += Decimal(str(x.valor or 0))
 
-    regs = (
-        db.session.query(Registro, Consultor.id.label("consultor_id"))
-        .outerjoin(Consultor, func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario))
+        plan_mensual[key]["costo_adicional"] += _dec(x.valor)
+
+    # =========================================================
+    # 4) Registros reales SOLO del proyecto
+    # =========================================================
+    # No usar mapeos ni dashboard general.
+    rows_reg = (
+        db.session.query(Registro, Consultor)
+        .outerjoin(
+            Consultor,
+            func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
+        )
         .filter(Registro.proyecto_id == proyecto_id)
         .all()
     )
 
-    for reg, consultor_id in regs:
-        anio, mes = _ym_from_registro_fecha(reg.fecha)
+    detalle_consultores_mes = {}
+
+    for reg, consultor in rows_reg:
+        anio, mes = _fecha_to_parts(reg.fecha)
         if not anio or not mes:
             continue
 
-        key = f"{anio:04d}-{mes:02d}"
-        if key not in plan_mensual:
-            plan_mensual[key] = {
-                "anio": anio,
-                "mes": mes,
-                "ingreso_planeado": Decimal("0"),
-                "costo_planeado": Decimal("0"),
-                "gasto_operativo_planeado": Decimal("0"),
-                "costo_administrativo_planeado": Decimal("0"),
-                "ebitda_planeado": Decimal("0"),
-                "margen_planeado_pct": Decimal("0"),
-                "horas_planeadas": Decimal("0"),
-                "costo_adicional": Decimal("0"),
-                "horas_reales": Decimal("0"),
-                "costo_real": Decimal("0"),
-            }
+        periodo = f"{anio:04d}-{mes:02d}"
 
-        horas = Decimal(str(reg.total_horas or reg.tiempo_invertido or 0))
+        horas = _dec(
+            reg.total_horas
+            if reg.total_horas is not None
+            else (reg.tiempo_invertido if reg.tiempo_invertido is not None else 0)
+        )
 
-        presupuesto = _presupuesto_consultor_mes(consultor_id, anio, mes)
+        if horas <= 0:
+            continue
+
+        consultor_id = getattr(consultor, "id", None)
+        consultor_nombre = (
+            getattr(consultor, "nombre", None)
+            or getattr(reg, "consultor", None)
+            or "SIN NOMBRE"
+        )
+        usuario_consultor = (getattr(reg, "usuario_consultor", None) or "").strip().lower()
+
+        presupuesto = None
+        valor_hora = Decimal("0.00")
+
+        if consultor_id:
+            try:
+                presupuesto = _presupuesto_consultor_mes(consultor_id, anio, mes)
+            except Exception:
+                presupuesto = None
 
         if presupuesto:
-            valor_hora = Decimal(str(presupuesto.get("valor_hora") or 0))
-        else:
-            valor_hora = Decimal("0.00")
+            valor_hora = _dec(presupuesto.get("valor_hora"))
 
-        costo_real = (horas * valor_hora).quantize(
+        costo_real_reg = (horas * valor_hora).quantize(
             Decimal("0.01"),
             rounding=ROUND_HALF_UP
         )
 
-        plan_mensual[key]["horas_reales"] += horas
-        plan_mensual[key]["costo_real"] += costo_real
+        if periodo not in plan_mensual:
+            plan_mensual[periodo] = {
+                "anio": anio,
+                "mes": mes,
+                "ingreso_planeado": Decimal("0.00"),
+                "costo_planeado": Decimal("0.00"),
+                "gasto_operativo_planeado": Decimal("0.00"),
+                "costo_administrativo_planeado": Decimal("0.00"),
+                "ebitda_planeado": Decimal("0.00"),
+                "margen_planeado_pct": Decimal("0.00"),
+                "horas_planeadas": Decimal("0.00"),
+                "costo_adicional": Decimal("0.00"),
+                "horas_reales": Decimal("0.00"),
+                "costo_real": Decimal("0.00"),
+            }
 
-    meses = []
+        plan_mensual[periodo]["horas_reales"] += horas
+        plan_mensual[periodo]["costo_real"] += costo_real_reg
+
+        detail_key = f"{periodo}||{consultor_id or usuario_consultor or 'SIN_USUARIO'}"
+
+        if detail_key not in detalle_consultores_mes:
+            detalle_consultores_mes[detail_key] = {
+                "periodo": periodo,
+                "consultor_id": consultor_id,
+                "consultor": consultor_nombre,
+                "usuario_consultor": usuario_consultor or None,
+                "horas_reales": Decimal("0.00"),
+                "valor_hora": valor_hora,
+                "costo_real": Decimal("0.00"),
+            }
+
+        detalle_consultores_mes[detail_key]["horas_reales"] += horas
+        detalle_consultores_mes[detail_key]["costo_real"] += costo_real_reg
+
+        # si por alguna razón el valor hora venía 0 y luego aparece uno válido
+        if detalle_consultores_mes[detail_key]["valor_hora"] <= 0 and valor_hora > 0:
+            detalle_consultores_mes[detail_key]["valor_hora"] = valor_hora
+
+    # =========================================================
+    # 5) Construcción de salida mensual
+    # =========================================================
+    meses_out = []
+    total_ingreso_planeado = Decimal("0.00")
+    total_costo_planeado = Decimal("0.00")
+    total_costo_adicional = Decimal("0.00")
+    total_costo_real = Decimal("0.00")
+
     for key in sorted(plan_mensual.keys()):
-        row = plan_mensual[key]
-        costo_planeado_total = row["costo_planeado"] + row["costo_adicional"]
-        variacion_costo = row["costo_real"] - costo_planeado_total
+        item = plan_mensual[key]
+
+        ingreso_planeado = _dec(item["ingreso_planeado"])
+        costo_planeado = _dec(item["costo_planeado"])
+        costo_adicional = _dec(item["costo_adicional"])
+        costo_planeado_total = costo_planeado + costo_adicional
+        costo_real = _dec(item["costo_real"])
+        variacion_costo = costo_real - costo_planeado_total
+
         pct_uso = None
         if costo_planeado_total > 0:
-            pct_uso = float((row["costo_real"] / costo_planeado_total) * Decimal("100"))
+            pct_uso = float(
+                ((costo_real / costo_planeado_total) * Decimal("100")).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP
+                )
+            )
 
-        meses.append({
+        meses_out.append({
             "periodo": key,
-            "anio": row["anio"],
-            "mes": row["mes"],
-            "ingreso_planeado": float(row["ingreso_planeado"]),
-            "costo_planeado": float(row["costo_planeado"]),
-            "costo_adicional": float(row["costo_adicional"]),
-            "costo_planeado_total": float(costo_planeado_total),
-            "horas_planeadas": float(row["horas_planeadas"]),
-            "horas_reales": float(row["horas_reales"]),
-            "costo_real": float(row["costo_real"]),
-            "variacion_costo": float(variacion_costo),
+            "anio": item["anio"],
+            "mes": item["mes"],
+            "ingreso_planeado": _money(ingreso_planeado),
+            "costo_planeado": _money(costo_planeado),
+            "costo_adicional": _money(costo_adicional),
+            "costo_planeado_total": _money(costo_planeado_total),
+            "horas_planeadas": _money(item["horas_planeadas"]),
+            "horas_reales": _money(item["horas_reales"]),
+            "costo_real": _money(costo_real),
+            "variacion_costo": _money(variacion_costo),
             "pct_uso": pct_uso,
         })
 
-    costo_real_acumulado = sum(Decimal(str(x["costo_real"])) for x in meses)
-    costo_planeado_acumulado = sum(Decimal(str(x["costo_planeado_total"])) for x in meses)
-    ingreso_total = Decimal(str(getattr(p, "ingreso_total", 0) or 0))
-    margen_real = ingreso_total - costo_real_acumulado
+        total_ingreso_planeado += ingreso_planeado
+        total_costo_planeado += costo_planeado_total
+        total_costo_adicional += costo_adicional
+        total_costo_real += costo_real
+
+    # =========================================================
+    # 6) Cards resumen
+    # =========================================================
+    ingreso_total = _dec(getattr(p, "ingreso_total", None))
+    costo_objetivo_total = _dec(getattr(p, "costo_objetivo_total", None))
+
+    if ingreso_total <= 0:
+        ingreso_total = total_ingreso_planeado
+
+    if costo_objetivo_total <= 0:
+        costo_objetivo_total = total_costo_planeado
+
+    costo_planeado_acumulado = total_costo_planeado
+    costo_real_acumulado = total_costo_real
+
     margen_planeado = ingreso_total - costo_planeado_acumulado
+    margen_real = ingreso_total - costo_real_acumulado
+
+    # =========================================================
+    # 7) Detalle por consultor/mes
+    # =========================================================
+    detalle_out = []
+    for _, x in sorted(
+        detalle_consultores_mes.items(),
+        key=lambda kv: (kv[1]["periodo"], (kv[1]["consultor"] or "").upper())
+    ):
+        detalle_out.append({
+            "periodo": x["periodo"],
+            "consultor_id": x["consultor_id"],
+            "consultor": x["consultor"],
+            "usuario_consultor": x["usuario_consultor"],
+            "horas_reales": _money(x["horas_reales"]),
+            "valor_hora": _money(x["valor_hora"]),
+            "costo_real": _money(x["costo_real"]),
+        })
 
     return jsonify({
         "cards": {
-            "ingreso_total": _money_to_json(getattr(p, "ingreso_total", None)),
-            "costo_objetivo_total": _money_to_json(getattr(p, "costo_objetivo_total", None)),
-            "costo_planeado_acumulado": float(costo_planeado_acumulado),
-            "costo_real_acumulado": float(costo_real_acumulado),
-            "margen_planeado": float(margen_planeado),
-            "margen_real": float(margen_real),
-            "estado_financiero": getattr(p, "estado_financiero", "BORRADOR"),
+            "ingreso_total": _money(ingreso_total),
+            "costo_objetivo_total": _money(costo_objetivo_total),
+            "costo_planeado_acumulado": _money(costo_planeado_acumulado),
+            "costo_real_acumulado": _money(costo_real_acumulado),
+            "margen_planeado": _money(margen_planeado),
+            "margen_real": _money(margen_real),
         },
-        "meses": meses,
+        "meses": meses_out,
+        "detalle_consultores_mes": detalle_out,
     }), 200
-
 
 ## -------------------------------
 ## Modulos (para categorizar proyectos y reportes)

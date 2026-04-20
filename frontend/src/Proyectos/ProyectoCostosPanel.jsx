@@ -505,6 +505,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
   const cards = resumen?.cards || {};
   const mesesResumen = Array.isArray(resumen?.meses) ? resumen.meses : [];
+  const detalleConsultoresMes = Array.isArray(resumen?.detalle_consultores_mes)
+    ? resumen.detalle_consultores_mes
+    : [];
 
   const totalsPresupuesto = useMemo(() => {
     return presupuestoMensual.reduce(
@@ -1129,6 +1132,50 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 );
               })}
             </tbody>
+
+            <section className="pcp-section">
+              <div className="pcp-section-head">
+                <div>
+                  <h3>Detalle real por consultor</h3>
+                  <p className="pcp-note">
+                    Horas reales y costo real calculado solo con registros del proyecto.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pcp-table-wrap">
+                <table className="pcp-table">
+                  <thead>
+                    <tr>
+                      <th>Período</th>
+                      <th>Consultor</th>
+                      <th>Usuario</th>
+                      <th>Horas reales</th>
+                      <th>Valor hora</th>
+                      <th>Costo real</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detalleConsultoresMes.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="pcp-empty">Sin detalle real por consultor</td>
+                      </tr>
+                    )}
+
+                    {detalleConsultoresMes.map((row, idx) => (
+                      <tr key={`${row.periodo}-${row.consultor_id || row.usuario_consultor || idx}`}>
+                        <td>{row.periodo}</td>
+                        <td>{row.consultor}</td>
+                        <td>{row.usuario_consultor || "—"}</td>
+                        <td>{formatNumber(row.horas_reales)}</td>
+                        <td>{formatMoney(row.valor_hora, cabecera.moneda)}</td>
+                        <td>{formatMoney(row.costo_real, cabecera.moneda)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </table>
         </div>
       </section>
