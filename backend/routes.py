@@ -8315,19 +8315,7 @@ def capacidad_semanal_ocupaciones():
     except Exception as e:
         app.logger.exception("❌ Error en /capacidad-semanal-ocupaciones")
         return jsonify({"error": str(e)}), 500
-    
 
-@bp.route("/perfiles/<int:perfil_id>", methods=["GET"])
-@permission_required("PERFILES_VER")
-def get_perfil(perfil_id):
-    x = (
-        Perfil.query.options(
-            joinedload(Perfil.modulos).joinedload(ModuloPerfil.modulo)
-        )
-        .get_or_404(perfil_id)
-    )
-
-    return jsonify(perfil_to_dict(x, include_modulos=True)), 200
 
 @bp.route("/modulos/<int:modulo_id>/perfiles", methods=["GET"])
 @permission_required("MODULOS_VER")
