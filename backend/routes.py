@@ -7,7 +7,7 @@ from backend.models import (
     ConsultorPresupuesto, Proyecto, ProyectoFase, ProyectoModulo, ProyectoFaseProyecto,
     ProyectoMapeo,
     ProyectoPresupuestoMensual, ProyectoPerfilPlan, ProyectoCostoAdicional,
-    Perfil, ModuloPerfil, ConsultorPerfil
+    Perfil, ModuloPerfil, ConsultorPerfil, ProyectoModulo
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
@@ -497,11 +497,20 @@ def role_scope(rol_nombre: str, user_equipo: str = ""):
     # CONSULTOR o cualquier otro => usuario
     return {"mode": "USER"}
 
+def _perfil_build_code(nombre):
+    s = str(nombre or "").strip()
+    s = unicodedata.normalize("NFD", s)
+    s = s.encode("ascii", "ignore").decode("ascii")
+    s = re.sub(r"[^A-Za-z0-9]+", "_", s.upper()).strip("_")
+    return s[:50] or "PERFIL"
+
+
 def perfil_to_dict(x: Perfil, include_modulos=False):
     out = {
         "id": x.id,
         "codigo": x.codigo,
         "nombre": x.nombre,
+        "descripcion": x.descripcion,
         "activo": bool(x.activo),
         "orden": int(x.orden or 0),
     }
@@ -519,6 +528,17 @@ def perfil_to_dict(x: Perfil, include_modulos=False):
         ]
 
     return out
+
+
+def _perfil_to_dict(x: Perfil):
+    return {
+        "id": x.id,
+        "codigo": x.codigo,
+        "nombre": x.nombre,
+        "descripcion": x.descripcion,
+        "activo": bool(x.activo),
+        "orden": int(x.orden or 0),
+    }
 
 
 def modulo_perfil_to_dict(x: ModuloPerfil):
@@ -6535,6 +6555,11 @@ def _perfil_plan_to_dict(x: ProyectoPerfilPlan):
         "mes": x.mes,
         "perfil_id": x.perfil_id,
         "perfil": _perfil_to_dict(x.perfil) if x.perfil else None,
+        "modulo_id": x.modulo_id,
+        "modulo": {
+            "id": x.modulo.id,
+            "nombre": x.modulo.nombre,
+        } if x.modulo else None,
         "consultor_id": x.consultor_id,
         "consultor": {
             "id": x.consultor.id,
@@ -6847,44 +6872,34 @@ def get_proyecto_costos(proyecto_id):
             joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase),
             joinedload(Proyecto.presupuestos_mensuales),
             joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.perfil),
+            joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.modulo),
             joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.consultor),
             joinedload(Proyecto.costos_adicionales),
         )
         .get_or_404(proyecto_id)
     )
 
-    # Perfiles permitidos según los módulos del proyecto
-    perfiles_permitidos = _get_perfiles_permitidos_proyecto(proyecto_id)
-    perfiles_permitidos_map = {x.id: x for x in perfiles_permitidos}
-
-    # Si ya hay filas guardadas con perfiles que hoy no están permitidos por módulo,
-    # se agregan al catálogo para no romper la edición del formulario.
-    perfiles_guardados_ids = {
-        int(x.perfil_id)
-        for x in (p.perfiles_plan or [])
-        if x.perfil_id
-    }
-
-    faltantes_ids = perfiles_guardados_ids - set(perfiles_permitidos_map.keys())
-    if faltantes_ids:
-        extras = (
-            Perfil.query
-            .filter(Perfil.id.in_(list(faltantes_ids)))
-            .order_by(Perfil.orden.asc(), Perfil.nombre.asc())
-            .all()
-        )
-        for x in extras:
-            perfiles_permitidos_map[x.id] = x
-
-    perfiles_catalogo = sorted(
-        perfiles_permitidos_map.values(),
-        key=lambda r: (int(r.orden or 0), r.nombre or "")
+    perfiles_catalogo = (
+        Perfil.query
+        .filter(Perfil.activo == True)
+        .order_by(Perfil.orden.asc(), Perfil.nombre.asc())
+        .all()
     )
+
+    modulos_catalogo = [
+        {
+            "id": pm.modulo.id,
+            "nombre": pm.modulo.nombre,
+        }
+        for pm in (p.modulos or [])
+        if pm.modulo and pm.activo
+    ]
 
     return jsonify({
         "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True),
         "catalogos": {
             "perfiles": [_perfil_to_dict(x) for x in perfiles_catalogo],
+            "modulos": modulos_catalogo,
         },
         "presupuesto_mensual": [
             _presupuesto_mensual_to_dict(x)
@@ -7035,12 +7050,20 @@ def save_proyecto_perfil_plan(proyecto_id):
     data = request.get_json(silent=True) or {}
     rows = data.get("rows") or []
 
-    perfiles_permitidos = _get_perfiles_permitidos_proyecto(proyecto_id)
-    perfiles_permitidos_ids = {int(x.id) for x in perfiles_permitidos}
+    proyecto_modulo_ids = {
+        int(x.modulo_id)
+        for x in (
+            ProyectoModulo.query
+            .filter(ProyectoModulo.proyecto_id == proyecto_id)
+            .filter(ProyectoModulo.activo == True)
+            .all()
+        )
+        if x.modulo_id
+    }
 
-    if rows and not perfiles_permitidos_ids:
+    if rows and not proyecto_modulo_ids:
         return jsonify({
-            "mensaje": "El proyecto no tiene perfiles permitidos porque no tiene módulos configurados o esos módulos no tienen perfiles asociados."
+            "mensaje": "El proyecto no tiene módulos configurados. No se puede planear perfiles sin seleccionar un módulo del proyecto."
         }), 400
 
     seen = set()
@@ -7048,13 +7071,16 @@ def save_proyecto_perfil_plan(proyecto_id):
         anio = int(row.get("anio") or 0)
         mes = int(row.get("mes") or 0)
         perfil_id = int(row.get("perfil_id") or 0) if row.get("perfil_id") else 0
+        modulo_id = int(row.get("modulo_id") or 0) if row.get("modulo_id") else 0
 
-        if anio <= 0 or mes < 1 or mes > 12 or perfil_id <= 0:
+        if anio <= 0 or mes < 1 or mes > 12 or perfil_id <= 0 or modulo_id <= 0:
             return jsonify({"mensaje": f"Fila inválida en planeación por perfil (índice {idx})"}), 400
 
-        key = (anio, mes, perfil_id)
+        key = (anio, mes, perfil_id, modulo_id)
         if key in seen:
-            return jsonify({"mensaje": f"Perfil duplicado para el mismo periodo: {anio}-{mes}, perfil {perfil_id}"}), 400
+            return jsonify({
+                "mensaje": f"Fila duplicada para el mismo periodo/perfil/módulo: {anio}-{mes}, perfil {perfil_id}, módulo {modulo_id}"
+            }), 400
         seen.add(key)
 
         perfil = Perfil.query.get(perfil_id)
@@ -7064,9 +7090,13 @@ def save_proyecto_perfil_plan(proyecto_id):
         if not perfil.activo:
             return jsonify({"mensaje": f"El perfil está inactivo: {perfil.nombre}"}), 400
 
-        if perfil_id not in perfiles_permitidos_ids:
+        modulo = Modulo.query.get(modulo_id)
+        if not modulo:
+            return jsonify({"mensaje": f"Módulo no existe: {modulo_id}"}), 400
+
+        if modulo_id not in proyecto_modulo_ids:
             return jsonify({
-                "mensaje": f"El perfil '{perfil.nombre}' no está permitido para los módulos configurados en este proyecto."
+                "mensaje": f"El módulo '{modulo.nombre}' no está asociado al proyecto."
             }), 400
 
     ProyectoPerfilPlan.query.filter_by(proyecto_id=proyecto_id).delete()
@@ -7085,6 +7115,7 @@ def save_proyecto_perfil_plan(proyecto_id):
             anio=int(row.get("anio")),
             mes=int(row.get("mes")),
             perfil_id=int(row.get("perfil_id")),
+            modulo_id=int(row.get("modulo_id")),
             consultor_id=consultor_id,
             horas_estimadas=_cost_parse_decimal(row.get("horas_estimadas")),
             fte_estimado=_cost_parse_decimal(row.get("fte_estimado")),
@@ -7102,6 +7133,7 @@ def save_proyecto_perfil_plan(proyecto_id):
         ProyectoPerfilPlan.query
         .options(
             joinedload(ProyectoPerfilPlan.perfil),
+            joinedload(ProyectoPerfilPlan.modulo),
             joinedload(ProyectoPerfilPlan.consultor),
         )
         .filter_by(proyecto_id=proyecto_id)
@@ -10618,3 +10650,152 @@ def dashboard_proyectos():
 
     except Exception as e:
         return jsonify({"mensaje": str(e)}), 500
+
+## Perfiles
+
+@bp.route("/perfiles", methods=["GET"])
+@permission_required("PERFILES_VER")
+def listar_perfiles():
+    q = (request.args.get("q") or "").strip()
+    solo_activos = request.args.get("solo_activos")
+
+    query = Perfil.query
+
+    if solo_activos in ("1", "true", "TRUE"):
+        query = query.filter(Perfil.activo == True)
+
+    if q:
+        q_like = f"%{q.lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(Perfil.codigo).like(q_like),
+                func.lower(Perfil.nombre).like(q_like),
+                func.lower(Perfil.descripcion).like(q_like),
+            )
+        )
+
+    rows = query.order_by(Perfil.orden.asc(), Perfil.nombre.asc()).all()
+
+    return jsonify([perfil_to_dict(x) for x in rows]), 200
+
+@bp.route("/perfiles/<int:perfil_id>", methods=["GET"])
+@permission_required("PERFILES_VER")
+def get_perfil(perfil_id):
+    x = (
+        Perfil.query.options(
+            joinedload(Perfil.modulos).joinedload(ModuloPerfil.modulo)
+        )
+        .get_or_404(perfil_id)
+    )
+
+    return jsonify(perfil_to_dict(x, include_modulos=True)), 200
+
+@bp.route("/perfiles", methods=["POST"])
+@permission_required("PERFILES_CREAR")
+def crear_perfil():
+    data = request.get_json(silent=True) or {}
+
+    nombre = (data.get("nombre") or "").strip()
+    descripcion = (data.get("descripcion") or "").strip() or None
+    activo = _to_bool2(data.get("activo"), default=True)
+    orden = int(data.get("orden") or 0)
+
+    if not nombre:
+        return jsonify({"mensaje": "nombre requerido"}), 400
+
+    codigo = (data.get("codigo") or "").strip().upper()
+    if not codigo:
+        codigo = _perfil_build_code(nombre)
+
+    dupe = Perfil.query.filter(
+        or_(
+            func.lower(Perfil.codigo) == codigo.lower(),
+            func.lower(Perfil.nombre) == nombre.lower(),
+        )
+    ).first()
+
+    if dupe:
+        return jsonify({"mensaje": "Ya existe un perfil con ese código o nombre"}), 400
+
+    x = Perfil(
+        codigo=codigo,
+        nombre=nombre,
+        descripcion=descripcion,
+        activo=activo,
+        orden=orden,
+    )
+
+    db.session.add(x)
+    db.session.commit()
+
+    return jsonify({
+        "mensaje": "Perfil creado",
+        "perfil": perfil_to_dict(x)
+    }), 201
+
+@bp.route("/perfiles/<int:perfil_id>", methods=["PUT"])
+@permission_required("PERFILES_EDITAR")
+def editar_perfil(perfil_id):
+    x = Perfil.query.get_or_404(perfil_id)
+    data = request.get_json(silent=True) or {}
+
+    if "nombre" in data:
+        nombre = (data.get("nombre") or "").strip()
+        if not nombre:
+            return jsonify({"mensaje": "nombre inválido"}), 400
+
+        dupe = Perfil.query.filter(
+            Perfil.id != perfil_id,
+            func.lower(Perfil.nombre) == nombre.lower()
+        ).first()
+        if dupe:
+            return jsonify({"mensaje": "Ya existe otro perfil con ese nombre"}), 400
+
+        x.nombre = nombre
+
+    if "descripcion" in data:
+        x.descripcion = (data.get("descripcion") or "").strip() or None
+
+    if "codigo" in data:
+        codigo = (data.get("codigo") or "").strip().upper()
+        if codigo:
+            dupe = Perfil.query.filter(
+                Perfil.id != perfil_id,
+                func.lower(Perfil.codigo) == codigo.lower()
+            ).first()
+            if dupe:
+                return jsonify({"mensaje": "Ya existe otro perfil con ese código"}), 400
+            x.codigo = codigo
+
+    if "activo" in data:
+        x.activo = _to_bool2(data.get("activo"), default=True)
+
+    if "orden" in data:
+        x.orden = int(data.get("orden") or 0)
+
+    db.session.commit()
+
+    return jsonify({
+        "mensaje": "Perfil actualizado",
+        "perfil": perfil_to_dict(x)
+    }), 200
+
+@bp.route("/perfiles/<int:perfil_id>", methods=["DELETE"])
+@permission_required("PERFILES_ELIMINAR")
+def eliminar_perfil(perfil_id):
+    x = Perfil.query.get_or_404(perfil_id)
+
+    en_proyecto = ProyectoPerfilPlan.query.filter_by(perfil_id=perfil_id).count()
+    en_consultores = ConsultorPerfil.query.filter_by(perfil_id=perfil_id).count()
+    en_modulos = ModuloPerfil.query.filter_by(perfil_id=perfil_id).count()
+
+    if en_proyecto > 0 or en_consultores > 0 or en_modulos > 0:
+        return jsonify({
+            "mensaje": "No se puede eliminar el perfil porque ya está asociado a proyectos, consultores o módulos. Inactívalo primero."
+        }), 400
+
+    db.session.delete(x)
+    db.session.commit()
+
+    return jsonify({"mensaje": "Perfil eliminado"}), 200
+

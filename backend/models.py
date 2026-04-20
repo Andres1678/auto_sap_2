@@ -855,6 +855,12 @@ class ProyectoPerfilPlan(db.Model):
         nullable=False
     )
 
+    modulo_id = db.Column(
+        db.Integer,
+        db.ForeignKey("modulo.id", ondelete="RESTRICT"),
+        nullable=True  
+    )
+
     consultor_id = db.Column(
         db.Integer,
         db.ForeignKey("consultor.id", ondelete="SET NULL"),
@@ -881,10 +887,11 @@ class ProyectoPerfilPlan(db.Model):
 
     proyecto = relationship("Proyecto", back_populates="perfiles_plan")
     perfil = relationship("Perfil", lazy="joined")
+    modulo = relationship("Modulo", lazy="joined")
     consultor = relationship("Consultor", lazy="joined")
 
     __table_args__ = (
-        UniqueConstraint("proyecto_id", "anio", "mes", "perfil_id", name="uq_proyecto_perfil_plan"),
+        UniqueConstraint("proyecto_id", "anio", "mes", "perfil_id", "modulo_id", name="uq_proyecto_perfil_plan"),
     )
 
 
@@ -927,6 +934,7 @@ class Perfil(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     codigo = db.Column(db.String(50), nullable=False, unique=True)
     nombre = db.Column(db.String(150), nullable=False, unique=True)
+    descripcion = db.Column(db.Text, nullable=True)
     activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
     orden = db.Column(db.Integer, nullable=False, server_default=text("0"))
 

@@ -1449,79 +1449,6 @@ export default function DashboardCostos() {
             <SimpleBarChart title="Top costo por ocupación" rows={graficos.porOcupacion} />
           </section>
 
-          <section className="dc-panel">
-            <div className="dc-section-head">
-              <h3>Detalle de oportunidades ganadas / OT</h3>
-              <span>{oportunidadesGanadas.rows.length} filas</span>
-            </div>
-
-            {!oportunidadesGanadas.rows.length ? (
-              <div className="dc-empty">Sin oportunidades ganadas u OT para los filtros actuales.</div>
-            ) : (
-              <div className="dc-table-wrap">
-                <table className="dc-table">
-                  <thead>
-                    <tr>
-                      <th>Cliente</th>
-                      <th>Servicio</th>
-                      <th>PRC</th>
-                      <th>Fecha creación</th>
-                      <th>Estado oferta</th>
-                      <th>Resultado</th>
-                      <th>Estado OT</th>
-                      <th className="num">OTC</th>
-                      <th className="num">MRC</th>
-                      <th className="num">MRC Normalizado</th>
-                      <th className="num">Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {oportunidadesGanadas.rows.map((op) => {
-                      const isEditing = Number(linkTargetOpportunity?.id) === Number(op?.id) && linkMode;
-                      const isLinked = linkedItems.some(
-                        (item) => Number(item?.opportunity?.id) === Number(op?.id)
-                      );
-
-                      return (
-                        <tr
-                          key={`opp-${op.id}`}
-                          style={
-                            isEditing || isLinked
-                              ? {
-                                  outline: "2px solid rgba(37, 99, 235, 0.35)",
-                                  background: "rgba(37, 99, 235, 0.05)",
-                                }
-                              : undefined
-                          }
-                        >
-                          <td>{op.cliente}</td>
-                          <td>{op.servicio}</td>
-                          <td>{op.codigo_prc}</td>
-                          <td>{op.fecha_creacion || "-"}</td>
-                          <td>{op.estado_oferta || "-"}</td>
-                          <td>{op.resultado_oferta || "-"}</td>
-                          <td>{op.estado_ot || "-"}</td>
-                          <td className="num">{fmtMoney(op.otc)}</td>
-                          <td className="num">{fmtMoney(op.mrc)}</td>
-                          <td className="num">{fmtMoney(op.mrcNormalizado)}</td>
-                          <td className="num">
-                            <button
-                              type="button"
-                              className={isEditing ? "dc-btn dc-btn-primary" : "dc-btn dc-btn-ghost"}
-                              onClick={() => handleStartLink(op)}
-                            >
-                              {isEditing ? "Seleccionando" : isLinked ? "Editar vínculo" : "Vincular"}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
           {!!linkedItems.length && (
             <section className="dc-panel">
               <div className="dc-section-head">
@@ -1615,6 +1542,79 @@ export default function DashboardCostos() {
               </div>
             </section>
           )}
+
+          <section className="dc-panel">
+            <div className="dc-section-head">
+              <h3>Detalle de oportunidades ganadas / OT</h3>
+              <span>{oportunidadesGanadas.rows.length} filas</span>
+            </div>
+
+            {!oportunidadesGanadas.rows.length ? (
+              <div className="dc-empty">Sin oportunidades ganadas u OT para los filtros actuales.</div>
+            ) : (
+              <div className="dc-table-wrap">
+                <table className="dc-table">
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Servicio</th>
+                      <th>PRC</th>
+                      <th>Fecha creación</th>
+                      <th>Estado oferta</th>
+                      <th>Resultado</th>
+                      <th>Estado OT</th>
+                      <th className="num">OTC</th>
+                      <th className="num">MRC</th>
+                      <th className="num">MRC Normalizado</th>
+                      <th className="num">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {oportunidadesGanadas.rows.map((op) => {
+                      const isEditing = Number(linkTargetOpportunity?.id) === Number(op?.id) && linkMode;
+                      const isLinked = linkedItems.some(
+                        (item) => Number(item?.opportunity?.id) === Number(op?.id)
+                      );
+
+                      return (
+                        <tr
+                          key={`opp-${op.id}`}
+                          style={
+                            isEditing || isLinked
+                              ? {
+                                  outline: "2px solid rgba(37, 99, 235, 0.35)",
+                                  background: "rgba(37, 99, 235, 0.05)",
+                                }
+                              : undefined
+                          }
+                        >
+                          <td>{op.cliente}</td>
+                          <td>{op.servicio}</td>
+                          <td>{op.codigo_prc}</td>
+                          <td>{op.fecha_creacion || "-"}</td>
+                          <td>{op.estado_oferta || "-"}</td>
+                          <td>{op.resultado_oferta || "-"}</td>
+                          <td>{op.estado_ot || "-"}</td>
+                          <td className="num">{fmtMoney(op.otc)}</td>
+                          <td className="num">{fmtMoney(op.mrc)}</td>
+                          <td className="num">{fmtMoney(op.mrcNormalizado)}</td>
+                          <td className="num">
+                            <button
+                              type="button"
+                              className={isEditing ? "dc-btn dc-btn-primary" : "dc-btn dc-btn-ghost"}
+                              onClick={() => handleStartLink(op)}
+                            >
+                              {isEditing ? "Seleccionando" : isLinked ? "Editar vínculo" : "Vincular"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
           <section className="dc-panel" ref={summarySectionRef}>
             <div className="dc-section-head">

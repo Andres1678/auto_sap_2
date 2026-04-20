@@ -44,6 +44,7 @@ const newPerfilRow = () => ({
   anio: yearNow,
   mes: monthNow,
   perfil_id: "",
+  modulo_id: "",
   consultor_id: "",
   horas_estimadas: "",
   fte_estimado: "",
@@ -161,6 +162,12 @@ const getAlertClass = (pct, thresholds) => {
   return "ok";
 };
 
+const perfilLabel = (p) => {
+  const nombre = String(p?.nombre || "").trim();
+  const descripcion = String(p?.descripcion || "").trim();
+  return descripcion ? `${nombre} — ${descripcion}` : nombre;
+};
+
 export default function ProyectoCostosPanel({ proyectoId }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState({
@@ -172,7 +179,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
   const [proyecto, setProyecto] = useState(null);
   const [cabecera, setCabecera] = useState(emptyCabecera);
-  const [catalogos, setCatalogos] = useState({ perfiles: [] });
+  const [catalogos, setCatalogos] = useState({ perfiles: [], modulos: [] });
 
   const [presupuestoMensual, setPresupuestoMensual] = useState([]);
   const [perfilPlan, setPerfilPlan] = useState([]);
@@ -198,7 +205,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       const p = cfg.proyecto || {};
 
       setProyecto(p);
-      setCatalogos(cfg.catalogos || { perfiles: [] });
+      setCatalogos(cfg.catalogos || { perfiles: [], modulos: [] });
 
       setCabecera({
         oportunidad_id: p.oportunidad_id ?? "",
@@ -253,9 +260,17 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
   const onPerfilChange = (index, key, value) => {
     setPerfilPlan((prev) =>
-      prev.map((row, i) =>
-        i === index ? recalcPerfilRow({ ...row, [key]: value }) : row
-      )
+      prev.map((row, i) => {
+        if (i !== index) return row;
+
+        const next = { ...row, [key]: value };
+
+        if (key === "perfil_id" && !value) {
+          next.modulo_id = "";
+        }
+
+        return recalcPerfilRow(next);
+      })
     );
   };
 
@@ -699,7 +714,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           <div>
             <h3>Planeación por perfil</h3>
             <p className="pcp-note">
-              Solo se muestran perfiles permitidos por los módulos configurados en este proyecto.
+              Selecciona un perfil general y luego el módulo del proyecto al que aplica la fila.
             </p>
           </div>
 
@@ -713,6 +728,12 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           </div>
         </div>
 
+        {(catalogos.modulos || []).length === 0 && (
+          <div className="pcp-empty" style={{ marginBottom: 12 }}>
+            Este proyecto no tiene módulos configurados. Primero asocia módulos al proyecto para poder planear perfiles.
+          </div>
+        )}
+
         <div className="pcp-table-wrap">
           <table className="pcp-table">
             <thead>
@@ -720,6 +741,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 <th>Año</th>
                 <th>Mes</th>
                 <th>Perfil</th>
+                <th>Módulo</th>
                 <th>Horas estimadas</th>
                 <th>FTE</th>
                 <th>Valor hora planeado</th>
@@ -731,16 +753,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               </tr>
             </thead>
 
-            {(catalogos.perfiles || []).length === 0 && (
-              <div className="pcp-empty" style={{ marginBottom: 12 }}>
-                Este proyecto no tiene perfiles disponibles porque sus módulos aún no tienen perfiles asociados.
-              </div>
-            )}
-
             <tbody>
               {perfilPlan.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="pcp-empty">Sin planeación por perfil</td>
+                  <td colSpan={12} className="pcp-empty">Sin planeación por perfil</td>
                 </tr>
               )}
 
@@ -756,7 +772,21 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                       <option value="">Seleccione</option>
                       {(catalogos.perfiles || []).map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.codigo} - {p.nombre}
+                          {perfilLabel(p)}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={row.modulo_id ?? ""}
+                      onChange={(e) => onPerfilChange(index, "modulo_id", e.target.value)}
+                      disabled={!row.perfil_id}
+                    >
+                      <option value="">Seleccione</option>
+                      {(catalogos.modulos || []).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.nombre}
                         </option>
                       ))}
                     </select>
@@ -785,7 +815,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
             <tfoot>
               <tr>
-                <th colSpan={3}>Totales</th>
+                <th colSpan={4}>Totales</th>
                 <th>{formatNumber(totalsPerfil.horas)}</th>
                 <th>{formatNumber(totalsPerfil.fte)}</th>
                 <th></th>
