@@ -210,16 +210,6 @@ function isWonOrOtOpportunity(item) {
   );
 }
 
-function isWonOrOtOpportunity(item) {
-  const estado = normalizeUpper(item?.estado_oferta);
-  const resultado = normalizeUpper(item?.resultado_oferta);
-
-  return (
-    (estado === "GANADA" || estado === "OT" || resultado === "OT") &&
-    getOpportunityChartValue(item) > 0
-  );
-}
-
 function getSummaryRowKey(row) {
   return [
     normalizeUpper(row?.cliente),
