@@ -9656,7 +9656,11 @@ def dashboard_costos_resumen():
             Oportunidad.otc.label("otc"),
             Oportunidad.mrc.label("mrc"),
         ).filter(
-            _sql_norm_estado(Oportunidad.estado_oferta) == _norm_key_for_match("GANADA")
+            or_(
+                _sql_norm_estado(Oportunidad.estado_oferta) == _norm_key_for_match("GANADA"),
+                _sql_norm_estado(Oportunidad.estado_oferta) == _norm_key_for_match("OT"),
+                _sql_norm_estado(Oportunidad.resultado_oferta) == _norm_key_for_match("OT"),
+            )
         )
 
         if clientes_filter:
