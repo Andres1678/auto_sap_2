@@ -200,6 +200,16 @@ function getOpportunityChartValue(item) {
   return otc + mrc;
 }
 
+function isWonOrOtOpportunity(item) {
+  const estado = normalizeUpper(item?.estado_oferta);
+  const resultado = normalizeUpper(item?.resultado_oferta);
+
+  return (
+    (estado === "GANADA" || estado === "OT" || resultado === "OT") &&
+    getOpportunityChartValue(item) > 0
+  );
+}
+
 function getSummaryRowKey(row) {
   return [
     normalizeUpper(row?.cliente),
@@ -597,12 +607,48 @@ function aggregateWonByResult(rows = []) {
     }));
 }
 
+function aggregateWonByResult(rows = []) {
+  const map = new Map();
+
+  (Array.isArray(rows) ? rows : [])
+    .filter((item) => isWonOrOtOpportunity(item))
+    .forEach((item) => {
+      const estado = normalizeUpper(item?.estado_oferta);
+      const resultado = normalizeUpper(item?.resultado_oferta);
+
+      const etiquetaResultado =
+        resultado === "OT"
+          ? "OT"
+          : estado === "OT"
+          ? "OT"
+          : normalizeText(item?.resultado_oferta || "SIN RESULTADO");
+
+      const current = map.get(etiquetaResultado) || {
+        name: etiquetaResultado,
+        costo: 0,
+        oportunidades: 0,
+      };
+
+      current.costo += getOpportunityChartValue(item);
+      current.oportunidades += 1;
+
+      map.set(etiquetaResultado, current);
+    });
+
+  return Array.from(map.values())
+    .sort((a, b) => Number(b.costo || 0) - Number(a.costo || 0))
+    .map((item) => ({
+      ...item,
+      name: `${item.name} · ${fmtInt(item.oportunidades)} oportunidad(es)`,
+    }));
+}
+
 function OportunidadesGanadasPorResultadoChart({ rows = [] }) {
   const chartRows = useMemo(() => aggregateWonByResult(rows), [rows]);
 
   return (
     <SimpleBarChart
-      title="Oportunidades ganadas por resultado"
+      title="Oportunidades ganadas / OT por resultado"
       subtitle={`${chartRows.length} resultados`}
       rows={chartRows}
     />
@@ -1110,11 +1156,7 @@ export default function DashboardCostos() {
             ? json.oportunidadesGanadas.rows
             : []
         )
-          .filter(
-            (item) =>
-              normalizeUpper(item?.estado_oferta) === "GANADA" &&
-              getOpportunityChartValue(item) > 0
-          )
+          .filter((item) => isWonOrOtOpportunity(item))
           .sort(
             (a, b) =>
               getOpportunityChartValue(b) - getOpportunityChartValue(a)
@@ -1444,12 +1486,12 @@ export default function DashboardCostos() {
 
           <section className="dc-panel">
             <div className="dc-section-head">
-              <h3>Detalle de oportunidades ganadas</h3>
+              <h3>Detalle de oportunidades ganadas / OT</h3>
               <span>{oportunidadesGanadas.rows.length} filas</span>
             </div>
 
             {!oportunidadesGanadas.rows.length ? (
-              <div className="dc-empty">Sin oportunidades ganadas para los filtros actuales.</div>
+              <div className="dc-empty">Sin oportunidades ganadas u OT para los filtros actuales.</div>
             ) : (
               <div className="dc-table-wrap">
                 <table className="dc-table">

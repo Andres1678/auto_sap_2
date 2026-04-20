@@ -821,10 +821,12 @@ export default function ProyectosHorasDashboard({
     if (!usuario) return;
 
     const monthRangeStarted =
-      appliedTipoRango === "mes" && (!!appliedFiltroRangoMesDesde || !!appliedFiltroRangoMesHasta);
+      appliedTipoRango === "mes" &&
+      (!!appliedFiltroRangoMesDesde || !!appliedFiltroRangoMesHasta);
 
     const dayRangeStarted =
-      appliedTipoRango === "dia" && (!!appliedFiltroFechaDesde || !!appliedFiltroFechaHasta);
+      appliedTipoRango === "dia" &&
+      (!!appliedFiltroFechaDesde || !!appliedFiltroFechaHasta);
 
     if (monthRangeStarted && (!appliedFiltroRangoMesDesde || !appliedFiltroRangoMesHasta)) {
       return;
@@ -856,28 +858,48 @@ export default function ProyectosHorasDashboard({
         params.set("mes", filtroMesActivo);
       }
 
-      const totalFiltrosActivos =
-        appliedFiltroProyecto.length +
-        appliedFiltroCliente.length +
-        appliedFiltroModulo.length +
-        appliedFiltroOcupacion.length +
-        appliedFiltroTarea.length +
-        appliedFiltroConsultor.length +
-        appliedFiltroEquipo.length;
+      // filtros que deben llegar al backend
+      if (appliedFiltroEquipo.length === 1) {
+        params.set("equipo", appliedFiltroEquipo[0]);
+      }
 
+      if (appliedFiltroCliente.length === 1) {
+        params.set("cliente", appliedFiltroCliente[0]);
+      }
+
+      if (appliedFiltroModulo.length === 1) {
+        params.set("modulo", appliedFiltroModulo[0]);
+      }
+
+      if (appliedFiltroConsultor.length === 1) {
+        params.set("consultor", appliedFiltroConsultor[0]);
+      }
+
+      // convertir label de proyecto a id real
+      const proyectoIds = appliedFiltroProyecto
+        .map((label) => {
+          const encontrado = (proyectos || []).find(
+            (p) => buildProyectoLabel(p) === label
+          );
+          return encontrado?.id || null;
+        })
+        .filter(Boolean);
+
+      if (proyectoIds.length === 1) {
+        params.set("proyecto_id", String(proyectoIds[0]));
+      }
+
+      // de momento deja un tope siempre, incluso con rango,
+      // para evitar que una ventana muy grande vuelva a tumbar el endpoint
       let SAFE_MAX_ROWS = 1800;
 
-      if (totalFiltrosActivos >= 1) SAFE_MAX_ROWS = 3500;
-      if (totalFiltrosActivos >= 2) SAFE_MAX_ROWS = 5000;
-      if (appliedFiltroProyecto.length > 0) SAFE_MAX_ROWS = 6500;
+      if (rangoActivo) SAFE_MAX_ROWS = 2500;
+      if (appliedFiltroCliente.length > 0) SAFE_MAX_ROWS = 3000;
+      if (appliedFiltroModulo.length > 0) SAFE_MAX_ROWS = 3000;
+      if (appliedFiltroConsultor.length > 0) SAFE_MAX_ROWS = 3000;
+      if (proyectoIds.length > 0) SAFE_MAX_ROWS = 2000;
 
-      const tieneFiltroTemporal = Boolean(
-        (rangoActivo && (rangoDesde || rangoHasta)) || filtroMesActivo
-      );
-
-      if (!tieneFiltroTemporal) {
-        params.set("max_rows", String(SAFE_MAX_ROWS));
-      }
+      params.set("max_rows", String(SAFE_MAX_ROWS));
 
       const qs = params.toString();
       const url = qs ? `/dashboard/proyectos-horas?${qs}` : "/dashboard/proyectos-horas";
@@ -905,7 +927,7 @@ export default function ProyectosHorasDashboard({
 
       setRegistros(toArrayResponse(json));
       setWasTruncated(Boolean(json?.truncated));
-      setBackendMaxRows(Number(json?.max_rows || 0));
+      setBackendMaxRows(Number(json?.max_rows || SAFE_MAX_ROWS));
     } catch (e) {
       if (e?.name === "AbortError") return;
       setRegistros([]);
@@ -936,6 +958,7 @@ export default function ProyectosHorasDashboard({
     appliedFiltroTarea,
     appliedFiltroConsultor,
     appliedFiltroEquipo,
+    proyectos,
   ]);
 
   useEffect(() => {
