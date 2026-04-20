@@ -203,9 +203,34 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       if (!resumenRes.ok) throw new Error(sum?.mensaje || `HTTP ${resumenRes.status}`);
 
       const p = cfg.proyecto || {};
+      const rawCatalogos = cfg.catalogos || { perfiles: [], modulos: [] };
+      const rawPerfilPlan = Array.isArray(cfg.perfil_plan) ? cfg.perfil_plan : [];
+
+      const modulosMap = new Map();
+
+      (rawCatalogos.modulos || []).forEach((m) => {
+        if (!m?.id) return;
+        modulosMap.set(String(m.id), {
+          id: String(m.id),
+          nombre: m.nombre || `Módulo ${m.id}`,
+        });
+      });
+
+      rawPerfilPlan.forEach((row) => {
+        if (row?.modulo_id) {
+          modulosMap.set(String(row.modulo_id), {
+            id: String(row.modulo_id),
+            nombre: row?.modulo?.nombre || `Módulo ${row.modulo_id}`,
+          });
+        }
+      });
 
       setProyecto(p);
-      setCatalogos(cfg.catalogos || { perfiles: [], modulos: [] });
+
+      setCatalogos({
+        perfiles: Array.isArray(rawCatalogos.perfiles) ? rawCatalogos.perfiles : [],
+        modulos: Array.from(modulosMap.values()),
+      });
 
       setCabecera({
         oportunidad_id: p.oportunidad_id ?? "",
@@ -227,9 +252,22 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         alerta_umbral_3: p.alerta_umbral_3 ?? 95,
       });
 
-      setPresupuestoMensual(Array.isArray(cfg.presupuesto_mensual) ? cfg.presupuesto_mensual : []);
-      setPerfilPlan(Array.isArray(cfg.perfil_plan) ? cfg.perfil_plan : []);
-      setCostosAdicionales(Array.isArray(cfg.costos_adicionales) ? cfg.costos_adicionales : []);
+      setPresupuestoMensual(
+        Array.isArray(cfg.presupuesto_mensual) ? cfg.presupuesto_mensual : []
+      );
+
+      setPerfilPlan(
+        rawPerfilPlan.map((row) => ({
+          ...row,
+          perfil_id: row?.perfil_id ? String(row.perfil_id) : "",
+          modulo_id: row?.modulo_id ? String(row.modulo_id) : "",
+        }))
+      );
+
+      setCostosAdicionales(
+        Array.isArray(cfg.costos_adicionales) ? cfg.costos_adicionales : []
+      );
+
       setResumen(sum || null);
     } catch (e) {
       Swal.fire({
@@ -272,6 +310,23 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         return recalcPerfilRow(next);
       })
     );
+  };
+
+  const copyPerfilRow = (index) => {
+    setPerfilPlan((prev) => {
+      const row = prev[index];
+      if (!row) return prev;
+
+      const clone = {
+        ...row,
+        id: null,
+        orden: (Number(row.orden || index) + 1),
+      };
+
+      const next = [...prev];
+      next.splice(index + 1, 0, clone);
+      return next;
+    });
   };
 
   const onAdicionalChange = (index, key, value) => {
@@ -686,9 +741,23 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                     />
                   </td>
                   <td className="center">
-                    <button className="danger ghost" onClick={() => removePresupuestoRow(index)}>
-                      Eliminar
-                    </button>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                      <button
+                        type="button"
+                        className="secondary ghost"
+                        onClick={() => copyPerfilRow(index)}
+                      >
+                        Copiar
+                      </button>
+
+                      <button
+                        type="button"
+                        className="danger ghost"
+                        onClick={() => removePerfilRow(index)}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -785,7 +854,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                     >
                       <option value="">Seleccione</option>
                       {(catalogos.modulos || []).map((m) => (
-                        <option key={m.id} value={m.id}>
+                        <option key={String(m.id)} value={String(m.id)}>
                           {m.nombre}
                         </option>
                       ))}

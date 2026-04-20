@@ -6886,14 +6886,28 @@ def get_proyecto_costos(proyecto_id):
         .all()
     )
 
-    modulos_catalogo = [
-        {
-            "id": pm.modulo.id,
-            "nombre": pm.modulo.nombre,
-        }
-        for pm in (p.modulos or [])
-        if pm.modulo and pm.activo
-    ]
+    modulos_map = {}
+
+    # módulos asociados al proyecto
+    for pm in (p.modulos or []):
+        if pm.modulo:
+            modulos_map[int(pm.modulo.id)] = {
+                "id": int(pm.modulo.id),
+                "nombre": pm.modulo.nombre,
+            }
+
+    # módulos que ya estén guardados en filas de perfil_plan
+    for row in (p.perfiles_plan or []):
+        if getattr(row, "modulo", None):
+            modulos_map[int(row.modulo.id)] = {
+                "id": int(row.modulo.id),
+                "nombre": row.modulo.nombre,
+            }
+
+    modulos_catalogo = sorted(
+        modulos_map.values(),
+        key=lambda x: (x["nombre"] or "").upper()
+    )
 
     return jsonify({
         "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True),
