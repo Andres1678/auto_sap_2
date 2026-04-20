@@ -580,37 +580,6 @@ function aggregateWonByResult(rows = []) {
   const map = new Map();
 
   (Array.isArray(rows) ? rows : [])
-    .filter(
-      (item) =>
-        normalizeUpper(item?.estado_oferta) === "GANADA" &&
-        getOpportunityChartValue(item) > 0
-    )
-    .forEach((item) => {
-      const resultado = normalizeText(item?.resultado_oferta || "SIN RESULTADO");
-      const current = map.get(resultado) || {
-        name: resultado,
-        costo: 0,
-        oportunidades: 0,
-      };
-
-      current.costo += getOpportunityChartValue(item);
-      current.oportunidades += 1;
-
-      map.set(resultado, current);
-    });
-
-  return Array.from(map.values())
-    .sort((a, b) => Number(b.costo || 0) - Number(a.costo || 0))
-    .map((item) => ({
-      ...item,
-      name: `${item.name} · ${fmtInt(item.oportunidades)} oportunidad(es)`,
-    }));
-}
-
-function aggregateWonByResult(rows = []) {
-  const map = new Map();
-
-  (Array.isArray(rows) ? rows : [])
     .filter((item) => isWonOrOtOpportunity(item))
     .forEach((item) => {
       const estado = normalizeUpper(item?.estado_oferta);
