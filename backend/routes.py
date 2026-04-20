@@ -10264,30 +10264,91 @@ def obtener_proyectos_horas_dashboard():
             pass
 
         # ----------------------------------------------------------
+        # Helpers locales
+        # ----------------------------------------------------------
+        def _get_list_param(name, upper=False):
+            vals = request.args.getlist(name)
+            if not vals:
+                vals = request.args.getlist(f"{name}[]")
+
+            # soporte adicional por si llega un solo valor como query simple
+            one = request.args.get(name)
+            if one and not vals:
+                vals = [one]
+
+            out = []
+            for v in vals:
+                s = str(v or "").strip()
+                if not s:
+                    continue
+                out.append(s.upper() if upper else s)
+
+            # deduplicar manteniendo orden
+            seen = set()
+            cleaned = []
+            for v in out:
+                if v not in seen:
+                    seen.add(v)
+                    cleaned.append(v)
+            return cleaned
+
+        def _get_int_list_param(name):
+            vals = request.args.getlist(name)
+            if not vals:
+                vals = request.args.getlist(f"{name}[]")
+
+            one = request.args.get(name)
+            if one and not vals:
+                vals = [one]
+
+            out = []
+            for v in vals:
+                try:
+                    out.append(int(v))
+                except Exception:
+                    pass
+
+            # deduplicar
+            seen = set()
+            cleaned = []
+            for v in out:
+                if v not in seen:
+                    seen.add(v)
+                    cleaned.append(v)
+            return cleaned
+
+        # ----------------------------------------------------------
         # Filtros opcionales
         # ----------------------------------------------------------
-        equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        equipos_filter = _get_list_param("equipo", upper=True)
+        clientes_filter = _get_list_param("cliente", upper=False)
+        consultores_filter = _get_list_param("consultor", upper=False)
+        modulos_filter = _get_list_param("modulo", upper=True)
+
+        ocupacion_ids = _get_int_list_param("ocupacion_id")
+        tarea_ids = _get_int_list_param("tarea_id")
+
         filtro_mes = (request.args.get("mes") or "").strip()
         filtro_desde = (request.args.get("desde") or "").strip()
         filtro_hasta = (request.args.get("hasta") or "").strip()
-        filtro_modulo = (request.args.get("modulo") or "").strip()
-        filtro_cliente = (request.args.get("cliente") or "").strip()
-        filtro_consultor = (request.args.get("consultor") or "").strip()
         filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
 
-        if equipo_filter:
+        # ----------------------------------------------------------
+        # Validación filtro de equipo según scope
+        # ----------------------------------------------------------
+        if equipos_filter:
             if scope in ("TEAM", "SELF"):
                 eq_login = ""
                 if consultor_login.equipo_obj:
                     eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper()
 
-                if equipo_filter != eq_login:
+                if any(eq != eq_login for eq in equipos_filter):
                     return jsonify({"error": "No autorizado para consultar otro equipo"}), 403
 
-            q = q.filter(func.upper(E.nombre) == equipo_filter)
+            q = q.filter(func.upper(E.nombre).in_(equipos_filter))
 
         # ----------------------------------------------------------
-        # Filtro por mes o rango
+        # Filtro temporal
         # ----------------------------------------------------------
         if filtro_mes:
             partes = filtro_mes.split("-")
@@ -10314,14 +10375,23 @@ def obtener_proyectos_horas_dashboard():
             if filtro_hasta:
                 q = q.filter(func.cast(Registro.fecha, db.String) <= filtro_hasta)
 
-        if filtro_modulo:
-            q = q.filter(func.upper(Registro.modulo) == filtro_modulo.upper())
+        # ----------------------------------------------------------
+        # Filtros adicionales que sí deben bajar la consulta
+        # ----------------------------------------------------------
+        if clientes_filter:
+            q = q.filter(Registro.cliente.in_(clientes_filter))
 
-        if filtro_cliente:
-            q = q.filter(Registro.cliente.ilike(f"%{filtro_cliente}%"))
+        if consultores_filter:
+            q = q.filter(C.nombre.in_(consultores_filter))
 
-        if filtro_consultor:
-            q = q.filter(C.nombre.ilike(f"%{filtro_consultor}%"))
+        if modulos_filter:
+            q = q.filter(func.upper(Registro.modulo).in_(modulos_filter))
+
+        if ocupacion_ids:
+            q = q.filter(Registro.ocupacion_id.in_(ocupacion_ids))
+
+        if tarea_ids:
+            q = q.filter(Registro.tarea_id.in_(tarea_ids))
 
         if filtro_proyecto_id:
             try:
@@ -10336,50 +10406,55 @@ def obtener_proyectos_horas_dashboard():
 
         # ----------------------------------------------------------
         # Protección contra sobrecarga
-        # Si ya hay filtro temporal (mes o rango), NO truncar.
-        # El truncado solo aplica a la vista general sin período.
+        # IMPORTANTE:
+        # incluso con filtro temporal, no hacemos q.all()
+        # para evitar 504 en rangos amplios.
         # ----------------------------------------------------------
         tiene_filtro_temporal = bool(filtro_mes or filtro_desde or filtro_hasta)
 
-        if tiene_filtro_temporal:
-            rows = (
-                q.order_by(Registro.fecha.desc(), Registro.id.desc())
-                .all()
-            )
-            truncated = False
-            max_rows = 0
+        filtros_activos = 0
+        if equipos_filter:
+            filtros_activos += 1
+        if clientes_filter:
+            filtros_activos += 1
+        if consultores_filter:
+            filtros_activos += 1
+        if modulos_filter:
+            filtros_activos += 1
+        if ocupacion_ids:
+            filtros_activos += 1
+        if tarea_ids:
+            filtros_activos += 1
+        if filtro_proyecto_id:
+            filtros_activos += 1
+
+        requested_max = request.args.get("max_rows", type=int)
+
+        if requested_max:
+            max_rows = requested_max
         else:
-            filtros_activos = 0
-            for v in [
-                filtro_modulo,
-                filtro_cliente,
-                filtro_consultor,
-                filtro_proyecto_id,
-                equipo_filter,
-            ]:
-                if str(v).strip():
-                    filtros_activos += 1
-
-            requested_max = request.args.get("max_rows", type=int)
-
-            if requested_max:
-                max_rows = requested_max
-            else:
+            if tiene_filtro_temporal:
                 max_rows = 2500
+                if filtros_activos >= 1:
+                    max_rows = 3500
                 if filtros_activos >= 2:
-                    max_rows = 6000
+                    max_rows = 5000
                 if filtro_proyecto_id:
-                    max_rows = 8000
+                    max_rows = 6500
+            else:
+                max_rows = 1800
+                if filtros_activos >= 1:
+                    max_rows = 2500
+                if filtros_activos >= 2:
+                    max_rows = 3500
+                if filtro_proyecto_id:
+                    max_rows = 5000
 
-            max_rows = min(max(max_rows, 500), 8000)
+        max_rows = min(max(max_rows, 500), 8000)
 
-            rows = (
-                q.order_by(Registro.fecha.desc(), Registro.id.desc())
-                .limit(max_rows + 1)
-                .all()
-            )
-            truncated = len(rows) > max_rows
-            rows = rows[:max_rows]
+        rows = q.limit(max_rows + 1).all()
+        truncated = len(rows) > max_rows
+        rows = rows[:max_rows]
 
         # ----------------------------------------------------------
         # Serialización
@@ -10465,7 +10540,7 @@ def obtener_proyectos_horas_dashboard():
 
     except Exception as e:
         err = traceback.format_exc()
-        app.logger.error(f"❌ Error en /dashboard/proyectos-horas: {e}{err}")
+        app.logger.error(f"❌ Error en /dashboard/proyectos-horas: {e}\n{err}")
         return jsonify({
             "error": "Error interno del servidor",
             "detalle": str(e)
