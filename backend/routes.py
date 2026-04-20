@@ -8317,30 +8317,6 @@ def capacidad_semanal_ocupaciones():
         return jsonify({"error": str(e)}), 500
     
 
-@bp.route("/perfiles", methods=["GET"])
-@permission_required("PERFILES_VER")
-def listar_perfiles():
-    q = (request.args.get("q") or "").strip()
-    solo_activos = request.args.get("solo_activos")
-
-    query = Perfil.query
-
-    if solo_activos in ("1", "true", "TRUE"):
-        query = query.filter(Perfil.activo == True)
-
-    if q:
-        q_like = f"%{q.lower()}%"
-        query = query.filter(
-            or_(
-                func.lower(Perfil.codigo).like(q_like),
-                func.lower(Perfil.nombre).like(q_like),
-            )
-        )
-
-    rows = query.order_by(Perfil.orden.asc(), Perfil.nombre.asc()).all()
-
-    return jsonify([perfil_to_dict(x) for x in rows]), 200
-
 @bp.route("/perfiles/<int:perfil_id>", methods=["GET"])
 @permission_required("PERFILES_VER")
 def get_perfil(perfil_id):
