@@ -10335,54 +10335,51 @@ def obtener_proyectos_horas_dashboard():
         q = q.order_by(Registro.fecha.desc(), Registro.id.desc())
 
         # ----------------------------------------------------------
-        # Protección dura contra sobrecarga
-        # Nunca usar q.all() directo
+        # Protección contra sobrecarga
+        # Si ya hay filtro temporal (mes o rango), NO truncar.
+        # El truncado solo aplica a la vista general sin período.
         # ----------------------------------------------------------
-        filtro_mes = (request.args.get("mes") or "").strip()
-        filtro_desde = (request.args.get("desde") or "").strip()
-        filtro_hasta = (request.args.get("hasta") or "").strip()
-        filtro_modulo = (request.args.get("modulo") or "").strip()
-        filtro_cliente = (request.args.get("cliente") or "").strip()
-        filtro_consultor = (request.args.get("consultor") or "").strip()
-        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
-        equipo_filter = (request.args.get("equipo") or "").strip().upper()
+        tiene_filtro_temporal = bool(filtro_mes or filtro_desde or filtro_hasta)
 
-        filtros_activos = 0
-        for v in [
-            filtro_mes,
-            filtro_desde,
-            filtro_hasta,
-            filtro_modulo,
-            filtro_cliente,
-            filtro_consultor,
-            filtro_proyecto_id,
-            equipo_filter,
-        ]:
-            if str(v).strip():
-                filtros_activos += 1
-
-        requested_max = request.args.get("max_rows", type=int)
-
-        if requested_max:
-            max_rows = requested_max
+        if tiene_filtro_temporal:
+            rows = (
+                q.order_by(Registro.fecha.desc(), Registro.id.desc())
+                .all()
+            )
+            truncated = False
+            max_rows = 0
         else:
-            max_rows = 2500
-            if filtro_desde or filtro_hasta:
-                max_rows = 4000
-            if filtros_activos >= 2:
-                max_rows = 6000
-            if filtro_proyecto_id:
-                max_rows = 8000
+            filtros_activos = 0
+            for v in [
+                filtro_modulo,
+                filtro_cliente,
+                filtro_consultor,
+                filtro_proyecto_id,
+                equipo_filter,
+            ]:
+                if str(v).strip():
+                    filtros_activos += 1
 
-        max_rows = min(max(max_rows, 500), 8000)
+            requested_max = request.args.get("max_rows", type=int)
 
-        rows = (
-            q.order_by(Registro.fecha.desc(), Registro.id.desc())
-            .limit(max_rows + 1)
-            .all()
-        )
-        truncated = len(rows) > max_rows
-        rows = rows[:max_rows]
+            if requested_max:
+                max_rows = requested_max
+            else:
+                max_rows = 2500
+                if filtros_activos >= 2:
+                    max_rows = 6000
+                if filtro_proyecto_id:
+                    max_rows = 8000
+
+            max_rows = min(max(max_rows, 500), 8000)
+
+            rows = (
+                q.order_by(Registro.fecha.desc(), Registro.id.desc())
+                .limit(max_rows + 1)
+                .all()
+            )
+            truncated = len(rows) > max_rows
+            rows = rows[:max_rows]
 
         # ----------------------------------------------------------
         # Serialización
@@ -10468,8 +10465,86 @@ def obtener_proyectos_horas_dashboard():
 
     except Exception as e:
         err = traceback.format_exc()
-        app.logger.error(f"❌ Error en /dashboard/proyectos-horas: {e}\n{err}")
+        app.logger.error(f"❌ Error en /dashboard/proyectos-horas: {e}{err}")
         return jsonify({
             "error": "Error interno del servidor",
             "detalle": str(e)
         }), 500
+
+
+@bp.route('/proyectos/dashboard', methods=['GET'])
+@auth_required
+def dashboard_proyectos():
+    try:
+        # =========================
+        # PARAMETROS
+        # =========================
+        desde = request.args.get("desde")
+        hasta = request.args.get("hasta")
+
+        equipo = request.args.getlist("equipo")
+        consultor = request.args.getlist("consultor")
+        cliente = request.args.getlist("cliente")
+        modulo = request.args.getlist("modulo")
+        proyecto = request.args.getlist("proyecto")
+
+        page = int(request.args.get("page", 1))
+        page_size = int(request.args.get("page_size", 500))
+
+        # =========================
+        # QUERY BASE
+        # =========================
+        query = Registro.query
+
+        # 👉 SOLO registros que tengan proyecto
+        query = query.filter(Registro.proyecto_id.isnot(None))
+
+        # =========================
+        # FILTRO FECHA 🔥
+        # =========================
+        if desde:
+            query = query.filter(Registro.fecha >= desde)
+
+        if hasta:
+            query = query.filter(Registro.fecha <= hasta)
+
+        # =========================
+        # FILTROS DINÁMICOS
+        # =========================
+        if equipo:
+            query = query.filter(Registro.equipo.in_(equipo))
+
+        if consultor:
+            query = query.filter(Registro.usuario_consultor.in_(consultor))
+
+        if cliente:
+            query = query.filter(Registro.cliente.in_(cliente))
+
+        if modulo:
+            query = query.filter(Registro.modulo.in_(modulo))
+
+        if proyecto:
+            query = query.filter(Registro.proyecto_id.in_(proyecto))
+
+        # =========================
+        # PAGINACIÓN
+        # =========================
+        total = query.count()
+
+        registros = (
+            query
+            .order_by(Registro.fecha.asc())  # importante para gráficas
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
+        return jsonify({
+            "data": [registro_to_dict(r) for r in registros],
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        }), 200
+
+    except Exception as e:
+        return jsonify({"mensaje": str(e)}), 500

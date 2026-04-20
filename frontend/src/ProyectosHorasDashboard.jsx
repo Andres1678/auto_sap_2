@@ -594,6 +594,22 @@ export default function ProyectosHorasDashboard({
   const [filtroTarea, setFiltroTarea] = useState([]);
   const [filtroProyecto, setFiltroProyecto] = useState([]);
 
+  const [appliedFiltroMes, setAppliedFiltroMes] = useState(initialMonth);
+
+  const [appliedTipoRango, setAppliedTipoRango] = useState("mes");
+  const [appliedFiltroRangoMesDesde, setAppliedFiltroRangoMesDesde] = useState("");
+  const [appliedFiltroRangoMesHasta, setAppliedFiltroRangoMesHasta] = useState("");
+  const [appliedFiltroFechaDesde, setAppliedFiltroFechaDesde] = useState("");
+  const [appliedFiltroFechaHasta, setAppliedFiltroFechaHasta] = useState("");
+
+  const [appliedFiltroEquipo, setAppliedFiltroEquipo] = useState([]);
+  const [appliedFiltroConsultor, setAppliedFiltroConsultor] = useState([]);
+  const [appliedFiltroCliente, setAppliedFiltroCliente] = useState([]);
+  const [appliedFiltroModulo, setAppliedFiltroModulo] = useState([]);
+  const [appliedFiltroOcupacion, setAppliedFiltroOcupacion] = useState([]);
+  const [appliedFiltroTarea, setAppliedFiltroTarea] = useState([]);
+  const [appliedFiltroProyecto, setAppliedFiltroProyecto] = useState([]);
+
   const [detailTitle, setDetailTitle] = useState("");
   const [detailRowsAll, setDetailRowsAll] = useState([]);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -625,15 +641,27 @@ export default function ProyectosHorasDashboard({
   const scope = isAdminAll ? "ALL" : isAdminTeam ? "TEAM" : "SELF";
 
   const initFiltrosPorScope = useCallback(() => {
+    const equipoBase = equipoUser ? [equipoUser] : [];
+    const consultorBase = nombreUser ? [nombreUser] : [];
+
     if (scope === "SELF") {
-      setFiltroConsultor(nombreUser ? [nombreUser] : []);
-      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+      setFiltroConsultor(consultorBase);
+      setFiltroEquipo(equipoBase);
+
+      setAppliedFiltroConsultor(consultorBase);
+      setAppliedFiltroEquipo(equipoBase);
     } else if (scope === "TEAM") {
-      setFiltroEquipo(equipoUser ? [equipoUser] : []);
+      setFiltroEquipo(equipoBase);
       setFiltroConsultor([]);
+
+      setAppliedFiltroEquipo(equipoBase);
+      setAppliedFiltroConsultor([]);
     } else {
       setFiltroEquipo([]);
       setFiltroConsultor([]);
+
+      setAppliedFiltroEquipo([]);
+      setAppliedFiltroConsultor([]);
     }
   }, [scope, nombreUser, equipoUser]);
 
@@ -642,40 +670,34 @@ export default function ProyectosHorasDashboard({
   }, [initFiltrosPorScope]);
 
   const rangoMesNormalizado = useMemo(
-    () => normalizeMonthRange(filtroRangoMesDesde, filtroRangoMesHasta),
-    [filtroRangoMesDesde, filtroRangoMesHasta]
+    () => normalizeMonthRange(appliedFiltroRangoMesDesde, appliedFiltroRangoMesHasta),
+    [appliedFiltroRangoMesDesde, appliedFiltroRangoMesHasta]
   );
 
   const rangoDiaNormalizado = useMemo(
-    () => normalizeDayRange(filtroFechaDesde, filtroFechaHasta),
-    [filtroFechaDesde, filtroFechaHasta]
+    () => normalizeDayRange(appliedFiltroFechaDesde, appliedFiltroFechaHasta),
+    [appliedFiltroFechaDesde, appliedFiltroFechaHasta]
   );
 
   const rangoActivo = useMemo(() => {
-    return tipoRango === "mes"
+    return appliedTipoRango === "mes"
       ? rangoMesNormalizado.activo
       : rangoDiaNormalizado.activo;
-  }, [tipoRango, rangoMesNormalizado, rangoDiaNormalizado]);
+  }, [appliedTipoRango, rangoMesNormalizado, rangoDiaNormalizado]);
 
   const rangoDesde = useMemo(() => {
-    if (tipoRango === "mes") return monthToDateStart(rangoMesNormalizado.desdeMes);
+    if (appliedTipoRango === "mes") return monthToDateStart(rangoMesNormalizado.desdeMes);
     return rangoDiaNormalizado.desde;
-  }, [tipoRango, rangoMesNormalizado, rangoDiaNormalizado]);
+  }, [appliedTipoRango, rangoMesNormalizado, rangoDiaNormalizado]);
 
   const rangoHasta = useMemo(() => {
-    if (tipoRango === "mes") return monthToDateEnd(rangoMesNormalizado.hastaMes);
+    if (appliedTipoRango === "mes") return monthToDateEnd(rangoMesNormalizado.hastaMes);
     return rangoDiaNormalizado.hasta;
-  }, [tipoRango, rangoMesNormalizado, rangoDiaNormalizado]);
+  }, [appliedTipoRango, rangoMesNormalizado, rangoDiaNormalizado]);
 
   const filtroMesActivo = useMemo(() => {
-    return rangoActivo ? "" : filtroMes;
-  }, [rangoActivo, filtroMes]);
-
-  useEffect(() => {
-    if (rangoActivo && filtroMes) {
-      setFiltroMes("");
-    }
-  }, [rangoActivo, filtroMes]);
+    return rangoActivo ? "" : appliedFiltroMes;
+  }, [rangoActivo, appliedFiltroMes]);
 
   useEffect(() => {
     const fetchCatalogosProyecto = async () => {
@@ -721,7 +743,9 @@ export default function ProyectosHorasDashboard({
   }, []);
 
   useEffect(() => {
-    setFiltroMes(defaultMonth || currentMonthStr());
+    const mesBase = defaultMonth || currentMonthStr();
+    setFiltroMes(mesBase);
+    setAppliedFiltroMes(mesBase);
   }, [defaultMonth]);
 
   const proyectosByCodigo = useMemo(() => {
@@ -797,16 +821,16 @@ export default function ProyectosHorasDashboard({
     if (!usuario) return;
 
     const monthRangeStarted =
-      tipoRango === "mes" && (!!filtroRangoMesDesde || !!filtroRangoMesHasta);
+      appliedTipoRango === "mes" && (!!appliedFiltroRangoMesDesde || !!appliedFiltroRangoMesHasta);
 
     const dayRangeStarted =
-      tipoRango === "dia" && (!!filtroFechaDesde || !!filtroFechaHasta);
+      appliedTipoRango === "dia" && (!!appliedFiltroFechaDesde || !!appliedFiltroFechaHasta);
 
-    if (monthRangeStarted && (!filtroRangoMesDesde || !filtroRangoMesHasta)) {
+    if (monthRangeStarted && (!appliedFiltroRangoMesDesde || !appliedFiltroRangoMesHasta)) {
       return;
     }
 
-    if (dayRangeStarted && (!filtroFechaDesde || !filtroFechaHasta)) {
+    if (dayRangeStarted && (!appliedFiltroFechaDesde || !appliedFiltroFechaHasta)) {
       return;
     }
 
@@ -833,22 +857,27 @@ export default function ProyectosHorasDashboard({
       }
 
       const totalFiltrosActivos =
-        filtroProyecto.length +
-        filtroCliente.length +
-        filtroModulo.length +
-        filtroOcupacion.length +
-        filtroTarea.length +
-        filtroConsultor.length +
-        filtroEquipo.length;
+        appliedFiltroProyecto.length +
+        appliedFiltroCliente.length +
+        appliedFiltroModulo.length +
+        appliedFiltroOcupacion.length +
+        appliedFiltroTarea.length +
+        appliedFiltroConsultor.length +
+        appliedFiltroEquipo.length;
 
       let SAFE_MAX_ROWS = 1800;
 
-      if (rangoActivo) SAFE_MAX_ROWS = 2600;
       if (totalFiltrosActivos >= 1) SAFE_MAX_ROWS = 3500;
       if (totalFiltrosActivos >= 2) SAFE_MAX_ROWS = 5000;
-      if (filtroProyecto.length > 0) SAFE_MAX_ROWS = 6500;
+      if (appliedFiltroProyecto.length > 0) SAFE_MAX_ROWS = 6500;
 
-      params.set("max_rows", String(SAFE_MAX_ROWS));
+      const tieneFiltroTemporal = Boolean(
+        (rangoActivo && (rangoDesde || rangoHasta)) || filtroMesActivo
+      );
+
+      if (!tieneFiltroTemporal) {
+        params.set("max_rows", String(SAFE_MAX_ROWS));
+      }
 
       const qs = params.toString();
       const url = qs ? `/dashboard/proyectos-horas?${qs}` : "/dashboard/proyectos-horas";
@@ -876,7 +905,7 @@ export default function ProyectosHorasDashboard({
 
       setRegistros(toArrayResponse(json));
       setWasTruncated(Boolean(json?.truncated));
-      setBackendMaxRows(Number(json?.max_rows || SAFE_MAX_ROWS));
+      setBackendMaxRows(Number(json?.max_rows || 0));
     } catch (e) {
       if (e?.name === "AbortError") return;
       setRegistros([]);
@@ -895,18 +924,18 @@ export default function ProyectosHorasDashboard({
     rangoActivo,
     rangoDesde,
     rangoHasta,
-    tipoRango,
-    filtroRangoMesDesde,
-    filtroRangoMesHasta,
-    filtroFechaDesde,
-    filtroFechaHasta,
-    filtroProyecto,
-    filtroCliente,
-    filtroModulo,
-    filtroOcupacion,
-    filtroTarea,
-    filtroConsultor,
-    filtroEquipo,
+    appliedTipoRango,
+    appliedFiltroRangoMesDesde,
+    appliedFiltroRangoMesHasta,
+    appliedFiltroFechaDesde,
+    appliedFiltroFechaHasta,
+    appliedFiltroProyecto,
+    appliedFiltroCliente,
+    appliedFiltroModulo,
+    appliedFiltroOcupacion,
+    appliedFiltroTarea,
+    appliedFiltroConsultor,
+    appliedFiltroEquipo,
   ]);
 
   useEffect(() => {
@@ -1165,13 +1194,13 @@ export default function ProyectosHorasDashboard({
         return false;
       }
 
-      if (filtroEquipo.length > 0 && !filtroEquipo.includes(r.equipoNormalizado)) return false;
-      if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultorNormalizado)) return false;
-      if (filtroCliente.length > 0 && !filtroCliente.includes(r.clienteNormalizado)) return false;
-      if (filtroModulo.length > 0 && !filtroModulo.includes(r.moduloNormalizado)) return false;
-      if (filtroOcupacion.length > 0 && !filtroOcupacion.includes(r.ocupacionNormalizada)) return false;
-      if (filtroTarea.length > 0 && !filtroTarea.includes(r.tareaNormalizada)) return false;
-      if (filtroProyecto.length > 0 && !filtroProyecto.includes(r.proyectoOficial)) return false;
+      if (appliedFiltroEquipo.length > 0 && !appliedFiltroEquipo.includes(r.equipoNormalizado)) return false;
+      if (appliedFiltroConsultor.length > 0 && !appliedFiltroConsultor.includes(r.consultorNormalizado)) return false;
+      if (appliedFiltroCliente.length > 0 && !appliedFiltroCliente.includes(r.clienteNormalizado)) return false;
+      if (appliedFiltroModulo.length > 0 && !appliedFiltroModulo.includes(r.moduloNormalizado)) return false;
+      if (appliedFiltroOcupacion.length > 0 && !appliedFiltroOcupacion.includes(r.ocupacionNormalizada)) return false;
+      if (appliedFiltroTarea.length > 0 && !appliedFiltroTarea.includes(r.tareaNormalizada)) return false;
+      if (appliedFiltroProyecto.length > 0 && !appliedFiltroProyecto.includes(r.proyectoOficial)) return false;
 
       return true;
     });
@@ -1181,13 +1210,13 @@ export default function ProyectosHorasDashboard({
     rangoActivo,
     rangoDesde,
     rangoHasta,
-    filtroEquipo,
-    filtroConsultor,
-    filtroCliente,
-    filtroModulo,
-    filtroOcupacion,
-    filtroTarea,
-    filtroProyecto,
+    appliedFiltroEquipo,
+    appliedFiltroConsultor,
+    appliedFiltroCliente,
+    appliedFiltroModulo,
+    appliedFiltroOcupacion,
+    appliedFiltroTarea,
+    appliedFiltroProyecto,
     scope,
     usuario,
     nombreUser,
@@ -1376,32 +1405,99 @@ export default function ProyectosHorasDashboard({
     return datosFiltrados.slice(0, 1500);
   }, [datosFiltrados]);
 
+  const aplicarFiltros = useCallback(() => {
+    const equipoBase =
+      scope === "ALL"
+        ? [...filtroEquipo]
+        : equipoUser
+          ? [equipoUser]
+          : [];
+
+    const consultorBase =
+      scope === "SELF"
+        ? (nombreUser ? [nombreUser] : [])
+        : [...filtroConsultor];
+
+    setAppliedTipoRango(tipoRango);
+    setAppliedFiltroMes(filtroMes);
+    setAppliedFiltroRangoMesDesde(filtroRangoMesDesde);
+    setAppliedFiltroRangoMesHasta(filtroRangoMesHasta);
+    setAppliedFiltroFechaDesde(filtroFechaDesde);
+    setAppliedFiltroFechaHasta(filtroFechaHasta);
+
+    setAppliedFiltroProyecto([...filtroProyecto]);
+    setAppliedFiltroCliente([...filtroCliente]);
+    setAppliedFiltroModulo([...filtroModulo]);
+    setAppliedFiltroOcupacion([...filtroOcupacion]);
+    setAppliedFiltroTarea([...filtroTarea]);
+    setAppliedFiltroConsultor(consultorBase);
+    setAppliedFiltroEquipo(equipoBase);
+  }, [
+    scope,
+    equipoUser,
+    nombreUser,
+    tipoRango,
+    filtroMes,
+    filtroRangoMesDesde,
+    filtroRangoMesHasta,
+    filtroFechaDesde,
+    filtroFechaHasta,
+    filtroProyecto,
+    filtroCliente,
+    filtroModulo,
+    filtroOcupacion,
+    filtroTarea,
+    filtroConsultor,
+    filtroEquipo,
+  ]);
+
   const limpiarFiltros = () => {
     const mesBase = defaultMonth || currentMonthStr();
 
+    const equipoBase =
+      scope === "ALL" ? [] : (equipoUser ? [equipoUser] : []);
+
+    const consultorBase =
+      scope === "SELF" ? (nombreUser ? [nombreUser] : []) : [];
+
     setFiltroMes(mesBase);
+    setAppliedFiltroMes(mesBase);
+
     setTipoRango("mes");
+    setAppliedTipoRango("mes");
+
     setFiltroRangoMesDesde("");
+    setAppliedFiltroRangoMesDesde("");
+
     setFiltroRangoMesHasta("");
+    setAppliedFiltroRangoMesHasta("");
+
     setFiltroFechaDesde("");
+    setAppliedFiltroFechaDesde("");
+
     setFiltroFechaHasta("");
+    setAppliedFiltroFechaHasta("");
 
     setFiltroModulo([]);
-    setFiltroOcupacion([]);
-    setFiltroTarea([]);
-    setFiltroProyecto([]);
-    setFiltroCliente([]);
+    setAppliedFiltroModulo([]);
 
-    if (scope === "ALL") {
-      setFiltroEquipo([]);
-      setFiltroConsultor([]);
-    } else if (scope === "TEAM") {
-      setFiltroEquipo(equipoUser ? [equipoUser] : []);
-      setFiltroConsultor([]);
-    } else {
-      setFiltroEquipo(equipoUser ? [equipoUser] : []);
-      setFiltroConsultor(nombreUser ? [nombreUser] : []);
-    }
+    setFiltroOcupacion([]);
+    setAppliedFiltroOcupacion([]);
+
+    setFiltroTarea([]);
+    setAppliedFiltroTarea([]);
+
+    setFiltroProyecto([]);
+    setAppliedFiltroProyecto([]);
+
+    setFiltroCliente([]);
+    setAppliedFiltroCliente([]);
+
+    setFiltroEquipo(equipoBase);
+    setAppliedFiltroEquipo(equipoBase);
+
+    setFiltroConsultor(consultorBase);
+    setAppliedFiltroConsultor(consultorBase);
   };
 
   const renderChartCard = (title, data, kind, opts = {}) => {
@@ -1624,9 +1720,25 @@ export default function ProyectosHorasDashboard({
               <h3>Filtros</h3>
               <p>Aplica filtros para refinar las gráficas y el detalle.</p>
             </div>
-            <button className="phd-btn phd-btn-dark" onClick={limpiarFiltros} type="button">
-              Limpiar filtros
-            </button>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                className="phd-btn phd-btn-primary"
+                onClick={aplicarFiltros}
+                type="button"
+                disabled={loadingMain}
+              >
+                Aplicar filtros
+              </button>
+
+              <button
+                className="phd-btn phd-btn-dark"
+                onClick={limpiarFiltros}
+                type="button"
+                disabled={loadingMain}
+              >
+                Limpiar filtros
+              </button>
+            </div>
           </div>
 
           <div className="phd-filtros-grid">
