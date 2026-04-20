@@ -26,8 +26,12 @@ const emptyCabecera = {
 const monthNow = new Date().getMonth() + 1;
 const yearNow = new Date().getFullYear();
 
+const makeRowKey = (prefix = "row") =>
+  `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
 const newMes = () => ({
   id: null,
+  __rowKey: makeRowKey("pm"),
   anio: yearNow,
   mes: monthNow,
   ingreso_planeado: "",
@@ -41,6 +45,7 @@ const newMes = () => ({
 
 const newPerfilRow = () => ({
   id: null,
+  __rowKey: makeRowKey("pp"),
   anio: yearNow,
   mes: monthNow,
   perfil_id: "",
@@ -57,6 +62,7 @@ const newPerfilRow = () => ({
 
 const newCostoAdicional = () => ({
   id: null,
+  __rowKey: makeRowKey("ca"),
   anio: yearNow,
   mes: monthNow,
   tipo_costo: "OTRO",
@@ -253,19 +259,26 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       });
 
       setPresupuestoMensual(
-        Array.isArray(cfg.presupuesto_mensual) ? cfg.presupuesto_mensual : []
+        (Array.isArray(cfg.presupuesto_mensual) ? cfg.presupuesto_mensual : []).map((row) => ({
+          ...row,
+          __rowKey: makeRowKey("pm"),
+        }))
       );
 
       setPerfilPlan(
         rawPerfilPlan.map((row) => ({
           ...row,
+          __rowKey: makeRowKey("pp"),
           perfil_id: row?.perfil_id ? String(row.perfil_id) : "",
           modulo_id: row?.modulo_id ? String(row.modulo_id) : "",
         }))
       );
 
       setCostosAdicionales(
-        Array.isArray(cfg.costos_adicionales) ? cfg.costos_adicionales : []
+        (Array.isArray(cfg.costos_adicionales) ? cfg.costos_adicionales : []).map((row) => ({
+          ...row,
+          __rowKey: makeRowKey("ca"),
+        }))
       );
 
       setResumen(sum || null);
@@ -312,15 +325,21 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     );
   };
 
-  const copyPerfilRow = (index) => {
-    setPerfilPlan((prev) => {
+  const onAdicionalChange = (index, key, value) => {
+    setCostosAdicionales((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, [key]: value } : row))
+    );
+  };
+
+  const copyPresupuestoRow = (index) => {
+    setPresupuestoMensual((prev) => {
       const row = prev[index];
       if (!row) return prev;
 
       const clone = {
         ...row,
         id: null,
-        orden: (Number(row.orden || index) + 1),
+        __rowKey: makeRowKey("pm"),
       };
 
       const next = [...prev];
@@ -329,10 +348,41 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     });
   };
 
-  const onAdicionalChange = (index, key, value) => {
-    setCostosAdicionales((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, [key]: value } : row))
-    );
+  const copyPerfilRow = (index) => {
+    setPerfilPlan((prev) => {
+      const row = prev[index];
+      if (!row) return prev;
+
+      const clone = {
+        ...row,
+        id: null,
+        __rowKey: makeRowKey("pp"),
+        perfil_id: row?.perfil_id ? String(row.perfil_id) : "",
+        modulo_id: row?.modulo_id ? String(row.modulo_id) : "",
+        orden: Number(row.orden ?? index) + 1,
+      };
+
+      const next = [...prev];
+      next.splice(index + 1, 0, clone);
+      return next;
+    });
+  };
+
+  const copyCostoAdicionalRow = (index) => {
+    setCostosAdicionales((prev) => {
+      const row = prev[index];
+      if (!row) return prev;
+
+      const clone = {
+        ...row,
+        id: null,
+        __rowKey: makeRowKey("ca"),
+      };
+
+      const next = [...prev];
+      next.splice(index + 1, 0, clone);
+      return next;
+    });
   };
 
   const addPresupuestoRow = () => {
@@ -385,10 +435,12 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     try {
       setSaving((s) => ({ ...s, presupuesto: true }));
 
+      const payload = presupuestoMensual.map(({ __rowKey, ...row }) => row);
+
       const res = await jfetch(`/proyectos/${proyectoId}/costos/presupuesto-mensual`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: presupuestoMensual }),
+        body: JSON.stringify({ rows: payload }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -407,10 +459,12 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     try {
       setSaving((s) => ({ ...s, perfiles: true }));
 
+      const payload = perfilPlan.map(({ __rowKey, ...row }) => row);
+
       const res = await jfetch(`/proyectos/${proyectoId}/costos/perfil-plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: perfilPlan }),
+        body: JSON.stringify({ rows: payload }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -429,10 +483,12 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     try {
       setSaving((s) => ({ ...s, adicionales: true }));
 
+      const payload = costosAdicionales.map(({ __rowKey, ...row }) => row);
+
       const res = await jfetch(`/proyectos/${proyectoId}/costos/costos-adicionales`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: costosAdicionales }),
+        body: JSON.stringify({ rows: payload }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -493,7 +549,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           </p>
         </div>
 
-        <button className="pcp-refresh" onClick={fetchAll} disabled={loading}>
+        <button type="button" className="pcp-refresh" onClick={fetchAll} disabled={loading}>
           {loading ? "Actualizando..." : "Refrescar"}
         </button>
       </div>
@@ -533,7 +589,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       <section className="pcp-section">
         <div className="pcp-section-head">
           <h3>Cabecera financiera</h3>
-          <button onClick={guardarCabecera} disabled={saving.cabecera || loading}>
+          <button type="button" onClick={guardarCabecera} disabled={saving.cabecera || loading}>
             {saving.cabecera ? "Guardando..." : "Guardar cabecera"}
           </button>
         </div>
@@ -690,10 +746,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           </div>
 
           <div className="pcp-section-actions">
-            <button className="secondary" onClick={addPresupuestoRow}>
+            <button type="button" className="secondary" onClick={addPresupuestoRow}>
               + Agregar mes
             </button>
-            <button onClick={guardarPresupuestoMensual} disabled={saving.presupuesto || loading}>
+            <button type="button" onClick={guardarPresupuestoMensual} disabled={saving.presupuesto || loading}>
               {saving.presupuesto ? "Guardando..." : "Guardar presupuesto"}
             </button>
           </div>
@@ -724,7 +780,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               )}
 
               {presupuestoMensual.map((row, index) => (
-                <tr key={`pm-${index}`}>
+                <tr key={row.__rowKey || row.id || `pm-${index}`}>
                   <td><input value={row.anio} onChange={(e) => onPresupuestoChange(index, "anio", e.target.value)} /></td>
                   <td><input value={row.mes} onChange={(e) => onPresupuestoChange(index, "mes", e.target.value)} /></td>
                   <td><input value={row.ingreso_planeado ?? ""} onChange={(e) => onPresupuestoChange(index, "ingreso_planeado", e.target.value)} /></td>
@@ -745,7 +801,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                       <button
                         type="button"
                         className="secondary ghost"
-                        onClick={() => copyPerfilRow(index)}
+                        onClick={() => copyPresupuestoRow(index)}
                       >
                         Copiar
                       </button>
@@ -753,7 +809,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                       <button
                         type="button"
                         className="danger ghost"
-                        onClick={() => removePerfilRow(index)}
+                        onClick={() => removePresupuestoRow(index)}
                       >
                         Eliminar
                       </button>
@@ -788,10 +844,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           </div>
 
           <div className="pcp-section-actions">
-            <button className="secondary" onClick={addPerfilRow}>
+            <button type="button" className="secondary" onClick={addPerfilRow}>
               + Agregar perfil
             </button>
-            <button onClick={guardarPerfilPlan} disabled={saving.perfiles || loading}>
+            <button type="button" onClick={guardarPerfilPlan} disabled={saving.perfiles || loading}>
               {saving.perfiles ? "Guardando..." : "Guardar perfiles"}
             </button>
           </div>
@@ -830,7 +886,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               )}
 
               {perfilPlan.map((row, index) => (
-                <tr key={`pp-${index}`}>
+                <tr key={row.__rowKey || row.id || `pp-${index}`}>
                   <td><input value={row.anio} onChange={(e) => onPerfilChange(index, "anio", e.target.value)} /></td>
                   <td><input value={row.mes} onChange={(e) => onPerfilChange(index, "mes", e.target.value)} /></td>
                   <td>
@@ -840,7 +896,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                     >
                       <option value="">Seleccione</option>
                       {(catalogos.perfiles || []).map((p) => (
-                        <option key={p.id} value={p.id}>
+                        <option key={String(p.id)} value={String(p.id)}>
                           {perfilLabel(p)}
                         </option>
                       ))}
@@ -874,9 +930,23 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                     />
                   </td>
                   <td className="center">
-                    <button className="danger ghost" onClick={() => removePerfilRow(index)}>
-                      Eliminar
-                    </button>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                      <button
+                        type="button"
+                        className="secondary ghost"
+                        onClick={() => copyPerfilRow(index)}
+                      >
+                        Copiar
+                      </button>
+
+                      <button
+                        type="button"
+                        className="danger ghost"
+                        onClick={() => removePerfilRow(index)}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -905,10 +975,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           </div>
 
           <div className="pcp-section-actions">
-            <button className="secondary" onClick={addCostoAdicionalRow}>
+            <button type="button" className="secondary" onClick={addCostoAdicionalRow}>
               + Agregar costo
             </button>
-            <button onClick={guardarCostosAdicionales} disabled={saving.adicionales || loading}>
+            <button type="button" onClick={guardarCostosAdicionales} disabled={saving.adicionales || loading}>
               {saving.adicionales ? "Guardando..." : "Guardar adicionales"}
             </button>
           </div>
@@ -937,7 +1007,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               )}
 
               {costosAdicionales.map((row, index) => (
-                <tr key={`ca-${index}`}>
+                <tr key={row.__rowKey || row.id || `ca-${index}`}>
                   <td><input value={row.anio} onChange={(e) => onAdicionalChange(index, "anio", e.target.value)} /></td>
                   <td><input value={row.mes} onChange={(e) => onAdicionalChange(index, "mes", e.target.value)} /></td>
                   <td>
@@ -961,9 +1031,23 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                     />
                   </td>
                   <td className="center">
-                    <button className="danger ghost" onClick={() => removeCostoAdicionalRow(index)}>
-                      Eliminar
-                    </button>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                      <button
+                        type="button"
+                        className="secondary ghost"
+                        onClick={() => copyCostoAdicionalRow(index)}
+                      >
+                        Copiar
+                      </button>
+
+                      <button
+                        type="button"
+                        className="danger ghost"
+                        onClick={() => removeCostoAdicionalRow(index)}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
