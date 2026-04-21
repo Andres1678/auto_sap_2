@@ -7236,8 +7236,7 @@ def get_proyecto_costos_resumen(proyecto_id):
         if not s:
             return None, None
 
-        # YYYY-MM-DD...
-        if len(s) >= 7 and s[4] == "-" and s[7:8] in ("", "-", "T", " "):
+        if len(s) >= 7 and s[4] == "-":
             try:
                 return int(s[:4]), int(s[5:7])
             except Exception:
@@ -7258,11 +7257,9 @@ def get_proyecto_costos_resumen(proyecto_id):
         .get_or_404(proyecto_id)
     )
 
-    # =========================================================
-    # 1) Base mensual planeada
-    # =========================================================
     plan_mensual = {}
 
+    # 1. Base presupuestada
     for x in (p.presupuestos_mensuales or []):
         key = f"{int(x.anio):04d}-{int(x.mes):02d}"
         plan_mensual[key] = {
@@ -7280,9 +7277,7 @@ def get_proyecto_costos_resumen(proyecto_id):
             "costo_real": Decimal("0.00"),
         }
 
-    # =========================================================
-    # 2) Planeación por perfil -> horas planeadas
-    # =========================================================
+    # 2. Horas planeadas desde perfil plan
     for x in (p.perfiles_plan or []):
         key = f"{int(x.anio):04d}-{int(x.mes):02d}"
 
@@ -7304,9 +7299,7 @@ def get_proyecto_costos_resumen(proyecto_id):
 
         plan_mensual[key]["horas_planeadas"] += _dec(x.horas_estimadas)
 
-    # =========================================================
-    # 3) Costos adicionales
-    # =========================================================
+    # 3. Costos adicionales
     for x in (p.costos_adicionales or []):
         key = f"{int(x.anio):04d}-{int(x.mes):02d}"
 
@@ -7328,10 +7321,7 @@ def get_proyecto_costos_resumen(proyecto_id):
 
         plan_mensual[key]["costo_adicional"] += _dec(x.valor)
 
-    # =========================================================
-    # 4) Registros reales SOLO del proyecto
-    # =========================================================
-    # No usar mapeos ni dashboard general.
+    # 4. Registros reales SOLO del proyecto
     rows_reg = (
         db.session.query(Registro, Consultor)
         .outerjoin(
@@ -7420,17 +7410,12 @@ def get_proyecto_costos_resumen(proyecto_id):
         detalle_consultores_mes[detail_key]["horas_reales"] += horas
         detalle_consultores_mes[detail_key]["costo_real"] += costo_real_reg
 
-        # si por alguna razón el valor hora venía 0 y luego aparece uno válido
         if detalle_consultores_mes[detail_key]["valor_hora"] <= 0 and valor_hora > 0:
             detalle_consultores_mes[detail_key]["valor_hora"] = valor_hora
 
-    # =========================================================
-    # 5) Construcción de salida mensual
-    # =========================================================
     meses_out = []
     total_ingreso_planeado = Decimal("0.00")
     total_costo_planeado = Decimal("0.00")
-    total_costo_adicional = Decimal("0.00")
     total_costo_real = Decimal("0.00")
 
     for key in sorted(plan_mensual.keys()):
@@ -7469,12 +7454,8 @@ def get_proyecto_costos_resumen(proyecto_id):
 
         total_ingreso_planeado += ingreso_planeado
         total_costo_planeado += costo_planeado_total
-        total_costo_adicional += costo_adicional
         total_costo_real += costo_real
 
-    # =========================================================
-    # 6) Cards resumen
-    # =========================================================
     ingreso_total = _dec(getattr(p, "ingreso_total", None))
     costo_objetivo_total = _dec(getattr(p, "costo_objetivo_total", None))
 
@@ -7484,15 +7465,6 @@ def get_proyecto_costos_resumen(proyecto_id):
     if costo_objetivo_total <= 0:
         costo_objetivo_total = total_costo_planeado
 
-    costo_planeado_acumulado = total_costo_planeado
-    costo_real_acumulado = total_costo_real
-
-    margen_planeado = ingreso_total - costo_planeado_acumulado
-    margen_real = ingreso_total - costo_real_acumulado
-
-    # =========================================================
-    # 7) Detalle por consultor/mes
-    # =========================================================
     detalle_out = []
     for _, x in sorted(
         detalle_consultores_mes.items(),
@@ -7512,10 +7484,10 @@ def get_proyecto_costos_resumen(proyecto_id):
         "cards": {
             "ingreso_total": _money(ingreso_total),
             "costo_objetivo_total": _money(costo_objetivo_total),
-            "costo_planeado_acumulado": _money(costo_planeado_acumulado),
-            "costo_real_acumulado": _money(costo_real_acumulado),
-            "margen_planeado": _money(margen_planeado),
-            "margen_real": _money(margen_real),
+            "costo_planeado_acumulado": _money(total_costo_planeado),
+            "costo_real_acumulado": _money(total_costo_real),
+            "margen_planeado": _money(ingreso_total - total_costo_planeado),
+            "margen_real": _money(ingreso_total - total_costo_real),
         },
         "meses": meses_out,
         "detalle_consultores_mes": detalle_out,
@@ -10463,7 +10435,8 @@ def obtener_proyectos_horas_dashboard():
 
         if filtro_proyecto_id:
             try:
-                q = _apply_project_filter_graficos(q, int(filtro_proyecto_id))
+                proyecto_id_int = int(filtro_proyecto_id)
+                q = q.filter(Registro.proyecto_id == proyecto_id_int)
             except Exception:
                 return jsonify({"error": "proyecto_id inválido"}), 400
 
