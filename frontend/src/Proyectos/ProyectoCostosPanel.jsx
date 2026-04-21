@@ -52,7 +52,7 @@ const newPerfilRow = () => ({
   modulo_id: "",
   consultor_id: "",
   horas_estimadas: "",
-  fte_estimado: "",
+  valor_hora_ingreso: "",
   valor_hora_planeado: "",
   costo_estimado: "",
   ingreso_estimado: "",
@@ -146,12 +146,20 @@ const recalcPresupuestoRow = (row) => {
 
 const recalcPerfilRow = (row) => {
   const horas = toNumber(row.horas_estimadas);
-  const valorHora = toNumber(row.valor_hora_planeado);
-  const costo = horas * valorHora;
+  const valorHoraCosto = toNumber(row.valor_hora_planeado);
+  const valorHoraIngreso = toNumber(
+    row.valor_hora_ingreso ?? row.fte_estimado ?? 0
+  );
+
+  const costo = horas * valorHoraCosto;
+  const ingreso = horas * valorHoraIngreso;
 
   return {
     ...row,
+    valor_hora_ingreso: row.valor_hora_ingreso ?? row.fte_estimado ?? "",
+    fte_estimado: row.valor_hora_ingreso ?? row.fte_estimado ?? "",
     costo_estimado: toFixedIfNeeded(costo),
+    ingreso_estimado: toFixedIfNeeded(ingreso),
   };
 };
 
@@ -166,6 +174,14 @@ const getAlertClass = (pct, thresholds) => {
   if (pct >= t2) return "warn";
   if (pct >= t1) return "info";
   return "ok";
+};
+
+const estadoLabelByClass = (cls) => {
+  if (cls === "danger") return "Crítico";
+  if (cls === "warn") return "Alerta";
+  if (cls === "info") return "Seguimiento";
+  if (cls === "ok") return "Controlado";
+  return "Sin dato";
 };
 
 const perfilLabel = (p) => {
@@ -266,12 +282,17 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       );
 
       setPerfilPlan(
-        rawPerfilPlan.map((row) => ({
-          ...row,
-          __rowKey: makeRowKey("pp"),
-          perfil_id: row?.perfil_id ? String(row.perfil_id) : "",
-          modulo_id: row?.modulo_id ? String(row.modulo_id) : "",
-        }))
+        rawPerfilPlan.map((row) => {
+          const normalized = {
+            ...row,
+            __rowKey: makeRowKey("pp"),
+            perfil_id: row?.perfil_id ? String(row.perfil_id) : "",
+            modulo_id: row?.modulo_id ? String(row.modulo_id) : "",
+            valor_hora_ingreso: row?.valor_hora_ingreso ?? row?.fte_estimado ?? "",
+          };
+
+          return recalcPerfilRow(normalized);
+        })
       );
 
       setCostosAdicionales(
@@ -318,6 +339,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
         if (key === "perfil_id" && !value) {
           next.modulo_id = "";
+        }
+
+        if (key === "valor_hora_ingreso") {
+          next.fte_estimado = value;
         }
 
         return recalcPerfilRow(next);
@@ -459,7 +484,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     try {
       setSaving((s) => ({ ...s, perfiles: true }));
 
-      const payload = perfilPlan.map(({ __rowKey, ...row }) => row);
+      const payload = perfilPlan.map(({ __rowKey, ...row }) => ({
+        ...row,
+        fte_estimado: row.valor_hora_ingreso ?? row.fte_estimado ?? "",
+      }));
 
       const res = await jfetch(`/proyectos/${proyectoId}/costos/perfil-plan`, {
         method: "POST",
@@ -505,9 +533,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
   const cards = resumen?.cards || {};
   const mesesResumen = Array.isArray(resumen?.meses) ? resumen.meses : [];
-  const detalleConsultoresMes = Array.isArray(resumen?.detalle_consultores_mes)
-    ? resumen.detalle_consultores_mes
-    : [];
 
   const totalsPresupuesto = useMemo(() => {
     return presupuestoMensual.reduce(
@@ -527,18 +552,158 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     return perfilPlan.reduce(
       (acc, row) => {
         acc.horas += toNumber(row.horas_estimadas);
-        acc.fte += toNumber(row.fte_estimado);
         acc.costo += toNumber(row.costo_estimado);
         acc.ingreso += toNumber(row.ingreso_estimado);
         return acc;
       },
-      { horas: 0, fte: 0, costo: 0, ingreso: 0 }
+      { horas: 0, costo: 0, ingreso: 0 }
     );
   }, [perfilPlan]);
 
   const totalsAdicionales = useMemo(() => {
     return costosAdicionales.reduce((acc, row) => acc + toNumber(row.valor), 0);
   }, [costosAdicionales]);
+
+  const totalsResumenMensual = useMemo(() => {
+    return mesesResumen.reduce(
+      (acc, row) => {
+        acc.ingreso_planeado += toNumber(row.ingreso_planeado);
+        acc.costo_planeado += toNumber(row.costo_planeado);
+        acc.costo_adicional += toNumber(row.costo_adicional);
+        acc.costo_planeado_total += toNumber(row.costo_planeado_total);
+        acc.horas_planeadas += toNumber(row.horas_planeadas);
+        acc.horas_reales += toNumber(row.horas_reales);
+        acc.costo_real += toNumber(row.costo_real);
+        return acc;
+      },
+      {
+        ingreso_planeado: 0,
+        costo_planeado: 0,
+        costo_adicional: 0,
+        costo_planeado_total: 0,
+        horas_planeadas: 0,
+        horas_reales: 0,
+        costo_real: 0,
+      }
+    );
+  }, [mesesResumen]);
+
+  const comparativoHorasCosto = useMemo(() => {
+    const map = new Map();
+
+    (perfilPlan || []).forEach((row) => {
+      if (!row?.activo) return;
+
+      const anio = String(row.anio || "").trim();
+      const mes = String(row.mes || "").padStart(2, "0");
+      if (!anio || !mes) return;
+
+      const periodo = `${anio}-${mes}`;
+
+      if (!map.has(periodo)) {
+        map.set(periodo, {
+          periodo,
+          horas_estimadas: 0,
+          costo_estimado: 0,
+          ingreso_estimado: 0,
+          horas_reales: 0,
+          costo_real: 0,
+        });
+      }
+
+      const item = map.get(periodo);
+      item.horas_estimadas += toNumber(row.horas_estimadas);
+      item.costo_estimado += toNumber(row.costo_estimado);
+      item.ingreso_estimado += toNumber(row.ingreso_estimado);
+    });
+
+    (mesesResumen || []).forEach((row) => {
+      const periodo = row.periodo;
+      if (!periodo) return;
+
+      if (!map.has(periodo)) {
+        map.set(periodo, {
+          periodo,
+          horas_estimadas: 0,
+          costo_estimado: 0,
+          ingreso_estimado: 0,
+          horas_reales: 0,
+          costo_real: 0,
+        });
+      }
+
+      const item = map.get(periodo);
+      item.horas_reales += toNumber(row.horas_reales);
+      item.costo_real += toNumber(row.costo_real);
+    });
+
+    return Array.from(map.values())
+      .map((item) => {
+        const precioEstimado =
+          item.horas_estimadas > 0 ? item.ingreso_estimado / item.horas_estimadas : 0;
+
+        const precioReal =
+          item.horas_reales > 0 ? item.costo_real / item.horas_reales : 0;
+
+        const variacionCosto = item.costo_real - item.costo_estimado;
+        const variacionHoras = item.horas_reales - item.horas_estimadas;
+
+        const pctUso =
+          item.horas_estimadas > 0
+            ? (item.horas_reales / item.horas_estimadas) * 100
+            : null;
+
+        const estadoCls = getAlertClass(pctUso, cabecera);
+
+        return {
+          ...item,
+          precio_estimado: precioEstimado,
+          precio_real: precioReal,
+          variacion_costo: variacionCosto,
+          variacion_horas: variacionHoras,
+          pct_uso: pctUso,
+          estadoCls,
+          estadoLabel: estadoLabelByClass(estadoCls),
+        };
+      })
+      .sort((a, b) => String(a.periodo).localeCompare(String(b.periodo)));
+  }, [perfilPlan, mesesResumen, cabecera]);
+
+  const totalsComparativo = useMemo(() => {
+    const acc = {
+      horas_estimadas: 0,
+      ingreso_estimado: 0,
+      costo_estimado: 0,
+      horas_reales: 0,
+      costo_real: 0,
+      variacion_costo: 0,
+      variacion_horas: 0,
+    };
+
+    comparativoHorasCosto.forEach((row) => {
+      acc.horas_estimadas += toNumber(row.horas_estimadas);
+      acc.ingreso_estimado += toNumber(row.ingreso_estimado);
+      acc.costo_estimado += toNumber(row.costo_estimado);
+      acc.horas_reales += toNumber(row.horas_reales);
+      acc.costo_real += toNumber(row.costo_real);
+      acc.variacion_costo += toNumber(row.variacion_costo);
+      acc.variacion_horas += toNumber(row.variacion_horas);
+    });
+
+    acc.precio_estimado =
+      acc.horas_estimadas > 0 ? acc.ingreso_estimado / acc.horas_estimadas : 0;
+
+    acc.precio_real =
+      acc.horas_reales > 0 ? acc.costo_real / acc.horas_reales : 0;
+
+    acc.pct_uso =
+      acc.horas_estimadas > 0 ? (acc.horas_reales / acc.horas_estimadas) * 100 : null;
+
+    acc.estadoCls = getAlertClass(acc.pct_uso, cabecera);
+    acc.estadoLabel = estadoLabelByClass(acc.estadoCls);
+
+    return acc;
+  }, [comparativoHorasCosto, cabecera]);
 
   if (!proyectoId) return null;
 
@@ -557,35 +722,45 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         </button>
       </div>
 
-      <div className="pcp-cards">
-        <div className="pcp-card">
-          <span className="pcp-card-label">Ingreso total</span>
-          <strong>{formatMoney(cards.ingreso_total, cabecera.moneda)}</strong>
+      <div className="pcp-card-groups">
+        <div className="pcp-card-group">
+          <div className="pcp-card-group-title">Resumen real</div>
+          <div className="pcp-cards pcp-cards--three">
+            <div className="pcp-card">
+              <span className="pcp-card-label">Ingreso total</span>
+              <strong>{formatMoney(cards.ingreso_total, cabecera.moneda)}</strong>
+            </div>
+
+            <div className="pcp-card">
+              <span className="pcp-card-label">Costo real acumulado</span>
+              <strong>{formatMoney(cards.costo_real_acumulado, cabecera.moneda)}</strong>
+            </div>
+
+            <div className="pcp-card">
+              <span className="pcp-card-label">Margen real</span>
+              <strong>{formatMoney(cards.margen_real, cabecera.moneda)}</strong>
+            </div>
+          </div>
         </div>
 
-        <div className="pcp-card">
-          <span className="pcp-card-label">Costo objetivo</span>
-          <strong>{formatMoney(cards.costo_objetivo_total, cabecera.moneda)}</strong>
-        </div>
+        <div className="pcp-card-group">
+          <div className="pcp-card-group-title">Resumen planeado</div>
+          <div className="pcp-cards pcp-cards--three">
+            <div className="pcp-card">
+              <span className="pcp-card-label">Ingreso total</span>
+              <strong>{formatMoney(cards.ingreso_total, cabecera.moneda)}</strong>
+            </div>
 
-        <div className="pcp-card">
-          <span className="pcp-card-label">Costo planeado acumulado</span>
-          <strong>{formatMoney(cards.costo_planeado_acumulado, cabecera.moneda)}</strong>
-        </div>
+            <div className="pcp-card">
+              <span className="pcp-card-label">Costo planeado acumulado</span>
+              <strong>{formatMoney(cards.costo_planeado_acumulado, cabecera.moneda)}</strong>
+            </div>
 
-        <div className="pcp-card">
-          <span className="pcp-card-label">Costo real acumulado</span>
-          <strong>{formatMoney(cards.costo_real_acumulado, cabecera.moneda)}</strong>
-        </div>
-
-        <div className="pcp-card">
-          <span className="pcp-card-label">Margen planeado</span>
-          <strong>{formatMoney(cards.margen_planeado, cabecera.moneda)}</strong>
-        </div>
-
-        <div className="pcp-card">
-          <span className="pcp-card-label">Margen real</span>
-          <strong>{formatMoney(cards.margen_real, cabecera.moneda)}</strong>
+            <div className="pcp-card">
+              <span className="pcp-card-label">Margen planeado</span>
+              <strong>{formatMoney(cards.margen_planeado, cabecera.moneda)}</strong>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -871,7 +1046,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 <th>Perfil</th>
                 <th>Módulo</th>
                 <th>Horas estimadas</th>
-                <th>FTE</th>
+                <th>Valor hora ingreso</th>
                 <th>Valor hora planeado</th>
                 <th>Costo estimado</th>
                 <th>Ingreso estimado</th>
@@ -890,8 +1065,20 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
               {perfilPlan.map((row, index) => (
                 <tr key={row.__rowKey || row.id || `pp-${index}`}>
-                  <td><input value={row.anio} onChange={(e) => onPerfilChange(index, "anio", e.target.value)} /></td>
-                  <td><input value={row.mes} onChange={(e) => onPerfilChange(index, "mes", e.target.value)} /></td>
+                  <td>
+                    <input
+                      value={row.anio}
+                      onChange={(e) => onPerfilChange(index, "anio", e.target.value)}
+                    />
+                  </td>
+
+                  <td>
+                    <input
+                      value={row.mes}
+                      onChange={(e) => onPerfilChange(index, "mes", e.target.value)}
+                    />
+                  </td>
+
                   <td>
                     <select
                       value={row.perfil_id ?? ""}
@@ -905,6 +1092,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                       ))}
                     </select>
                   </td>
+
                   <td>
                     <select
                       value={row.modulo_id ?? ""}
@@ -919,12 +1107,43 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                       ))}
                     </select>
                   </td>
-                  <td><input value={row.horas_estimadas ?? ""} onChange={(e) => onPerfilChange(index, "horas_estimadas", e.target.value)} /></td>
-                  <td><input value={row.fte_estimado ?? ""} onChange={(e) => onPerfilChange(index, "fte_estimado", e.target.value)} /></td>
-                  <td><input value={row.valor_hora_planeado ?? ""} onChange={(e) => onPerfilChange(index, "valor_hora_planeado", e.target.value)} /></td>
-                  <td><input value={row.costo_estimado ?? ""} readOnly /></td>
-                  <td><input value={row.ingreso_estimado ?? ""} onChange={(e) => onPerfilChange(index, "ingreso_estimado", e.target.value)} /></td>
-                  <td><input value={row.observacion ?? ""} onChange={(e) => onPerfilChange(index, "observacion", e.target.value)} /></td>
+
+                  <td>
+                    <input
+                      value={row.horas_estimadas ?? ""}
+                      onChange={(e) => onPerfilChange(index, "horas_estimadas", e.target.value)}
+                    />
+                  </td>
+
+                  <td>
+                    <input
+                      value={row.valor_hora_ingreso ?? ""}
+                      onChange={(e) => onPerfilChange(index, "valor_hora_ingreso", e.target.value)}
+                    />
+                  </td>
+
+                  <td>
+                    <input
+                      value={row.valor_hora_planeado ?? ""}
+                      onChange={(e) => onPerfilChange(index, "valor_hora_planeado", e.target.value)}
+                    />
+                  </td>
+
+                  <td>
+                    <input value={row.costo_estimado ?? ""} readOnly />
+                  </td>
+
+                  <td>
+                    <input value={row.ingreso_estimado ?? ""} readOnly />
+                  </td>
+
+                  <td>
+                    <input
+                      value={row.observacion ?? ""}
+                      onChange={(e) => onPerfilChange(index, "observacion", e.target.value)}
+                    />
+                  </td>
+
                   <td className="center">
                     <input
                       type="checkbox"
@@ -932,6 +1151,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                       onChange={(e) => onPerfilChange(index, "activo", e.target.checked)}
                     />
                   </td>
+
                   <td className="center">
                     <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
                       <button
@@ -959,7 +1179,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <tr>
                 <th colSpan={4}>Totales</th>
                 <th>{formatNumber(totalsPerfil.horas)}</th>
-                <th>{formatNumber(totalsPerfil.fte)}</th>
+                <th></th>
                 <th></th>
                 <th>{formatMoney(totalsPerfil.costo, cabecera.moneda)}</th>
                 <th>{formatMoney(totalsPerfil.ingreso, cabecera.moneda)}</th>
@@ -1087,95 +1307,125 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 <th>Horas planeadas</th>
                 <th>Horas reales</th>
                 <th>Costo real</th>
-                <th>Variación costo</th>
-                <th>% Uso</th>
-                <th>Estado</th>
               </tr>
             </thead>
 
             <tbody>
               {mesesResumen.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="pcp-empty">Aún no hay resumen mensual</td>
+                  <td colSpan={8} className="pcp-empty">Aún no hay resumen mensual</td>
                 </tr>
               )}
 
-              {mesesResumen.map((row) => {
-                const cls = getAlertClass(row.pct_uso, cabecera);
-
-                return (
-                  <tr key={row.periodo}>
-                    <td>{row.periodo}</td>
-                    <td>{formatMoney(row.ingreso_planeado, cabecera.moneda)}</td>
-                    <td>{formatMoney(row.costo_planeado, cabecera.moneda)}</td>
-                    <td>{formatMoney(row.costo_adicional, cabecera.moneda)}</td>
-                    <td>{formatMoney(row.costo_planeado_total, cabecera.moneda)}</td>
-                    <td>{formatNumber(row.horas_planeadas)}</td>
-                    <td>{formatNumber(row.horas_reales)}</td>
-                    <td>{formatMoney(row.costo_real, cabecera.moneda)}</td>
-                    <td>{formatMoney(row.variacion_costo, cabecera.moneda)}</td>
-                    <td>{row.pct_uso == null ? "—" : `${formatNumber(row.pct_uso)}%`}</td>
-                    <td>
-                      <span className={`pcp-badge ${cls}`}>
-                        {cls === "danger"
-                          ? "Crítico"
-                          : cls === "warn"
-                          ? "Alerta"
-                          : cls === "info"
-                          ? "Seguimiento"
-                          : cls === "ok"
-                          ? "Controlado"
-                          : "Sin dato"}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {mesesResumen.map((row) => (
+                <tr key={row.periodo}>
+                  <td>{row.periodo}</td>
+                  <td>{formatMoney(row.ingreso_planeado, cabecera.moneda)}</td>
+                  <td>{formatMoney(row.costo_planeado, cabecera.moneda)}</td>
+                  <td>{formatMoney(row.costo_adicional, cabecera.moneda)}</td>
+                  <td>{formatMoney(row.costo_planeado_total, cabecera.moneda)}</td>
+                  <td>{formatNumber(row.horas_planeadas)}</td>
+                  <td>{formatNumber(row.horas_reales)}</td>
+                  <td>{formatMoney(row.costo_real, cabecera.moneda)}</td>
+                </tr>
+              ))}
             </tbody>
 
-            <section className="pcp-section">
-              <div className="pcp-section-head">
-                <div>
-                  <h3>Detalle real por consultor</h3>
-                  <p className="pcp-note">
-                    Horas reales y costo real calculado solo con registros del proyecto.
-                  </p>
-                </div>
-              </div>
+            <tfoot>
+              <tr>
+                <th>Totales</th>
+                <th>{formatMoney(totalsResumenMensual.ingreso_planeado, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsResumenMensual.costo_planeado, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsResumenMensual.costo_adicional, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsResumenMensual.costo_planeado_total, cabecera.moneda)}</th>
+                <th>{formatNumber(totalsResumenMensual.horas_planeadas)}</th>
+                <th>{formatNumber(totalsResumenMensual.horas_reales)}</th>
+                <th>{formatMoney(totalsResumenMensual.costo_real, cabecera.moneda)}</th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
 
-              <div className="pcp-table-wrap">
-                <table className="pcp-table">
-                  <thead>
-                    <tr>
-                      <th>Período</th>
-                      <th>Consultor</th>
-                      <th>Usuario</th>
-                      <th>Horas reales</th>
-                      <th>Valor hora</th>
-                      <th>Costo real</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detalleConsultoresMes.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="pcp-empty">Sin detalle real por consultor</td>
-                      </tr>
-                    )}
+      <section className="pcp-section">
+        <div className="pcp-section-head">
+          <div>
+            <h3>Comparativo horas y costo estimado vs real</h3>
+            <p className="pcp-note">
+              Horas estimadas tomadas desde Planeación por perfil y comparadas contra horas reales del proyecto.
+            </p>
+          </div>
+        </div>
 
-                    {detalleConsultoresMes.map((row, idx) => (
-                      <tr key={`${row.periodo}-${row.consultor_id || row.usuario_consultor || idx}`}>
-                        <td>{row.periodo}</td>
-                        <td>{row.consultor}</td>
-                        <td>{row.usuario_consultor || "—"}</td>
-                        <td>{formatNumber(row.horas_reales)}</td>
-                        <td>{formatMoney(row.valor_hora, cabecera.moneda)}</td>
-                        <td>{formatMoney(row.costo_real, cabecera.moneda)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+        <div className="pcp-table-wrap">
+          <table className="pcp-table pcp-table-summary">
+            <thead>
+              <tr>
+                <th>Período</th>
+                <th>Horas estimadas</th>
+                <th>Precio estimado</th>
+                <th>Costo estimado</th>
+                <th>Horas reales</th>
+                <th>Precio real</th>
+                <th>Costo real</th>
+                <th>Variación costo</th>
+                <th>Variación horas</th>
+                <th>% Uso</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {comparativoHorasCosto.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="pcp-empty">Sin comparativo disponible</td>
+                </tr>
+              )}
+
+              {comparativoHorasCosto.map((row) => (
+                <tr key={row.periodo}>
+                  <td>{row.periodo}</td>
+                  <td>{formatNumber(row.horas_estimadas)}</td>
+                  <td>{formatMoney(row.precio_estimado, cabecera.moneda)}</td>
+                  <td>{formatMoney(row.costo_estimado, cabecera.moneda)}</td>
+                  <td>{formatNumber(row.horas_reales)}</td>
+                  <td>{formatMoney(row.precio_real, cabecera.moneda)}</td>
+                  <td>{formatMoney(row.costo_real, cabecera.moneda)}</td>
+                  <td>{formatMoney(row.variacion_costo, cabecera.moneda)}</td>
+                  <td>{formatNumber(row.variacion_horas)}</td>
+                  <td>{row.pct_uso == null ? "—" : `${formatNumber(row.pct_uso)}%`}</td>
+                  <td>
+                    <span className={`pcp-badge ${row.estadoCls}`}>
+                      {row.estadoLabel}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th>Totales</th>
+                <th>{formatNumber(totalsComparativo.horas_estimadas)}</th>
+                <th>{formatMoney(totalsComparativo.precio_estimado, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsComparativo.costo_estimado, cabecera.moneda)}</th>
+                <th>{formatNumber(totalsComparativo.horas_reales)}</th>
+                <th>{formatMoney(totalsComparativo.precio_real, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsComparativo.costo_real, cabecera.moneda)}</th>
+                <th>{formatMoney(totalsComparativo.variacion_costo, cabecera.moneda)}</th>
+                <th>{formatNumber(totalsComparativo.variacion_horas)}</th>
+                <th>
+                  {totalsComparativo.pct_uso == null
+                    ? "—"
+                    : `${formatNumber(totalsComparativo.pct_uso)}%`}
+                </th>
+                <th>
+                  <span className={`pcp-badge ${totalsComparativo.estadoCls}`}>
+                    {totalsComparativo.estadoLabel}
+                  </span>
+                </th>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </section>
