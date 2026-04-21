@@ -1547,6 +1547,53 @@ def _apply_project_filter_graficos(q, proyecto_id: int):
 
     return q.filter(or_(*clauses))
 
+def _apply_project_filter_shared(q, proyecto_id: int):
+    proyecto = (
+        Proyecto.query.options(joinedload(Proyecto.mapeos))
+        .filter(Proyecto.id == proyecto_id)
+        .first()
+    )
+
+    if not proyecto:
+        return q.filter(text("1=0"))
+
+    clauses = [Registro.proyecto_id == proyecto.id]
+
+    codigo = (proyecto.codigo or "").strip().upper()
+    campo_nro = func.upper(func.coalesce(Registro.nro_caso_cliente, ""))
+    campo_desc = func.upper(func.coalesce(Registro.descripcion, ""))
+
+    if codigo:
+        clauses.append(campo_nro == codigo)
+        clauses.append(campo_desc == codigo)
+        clauses.append(campo_nro.like(f"%{codigo}%"))
+        clauses.append(campo_desc.like(f"%{codigo}%"))
+
+    for mp in (proyecto.mapeos or []):
+        if not bool(mp.activo):
+            continue
+
+        valor = (mp.valor_origen or "").strip().upper()
+        tipo = (mp.tipo_match or "EXACT").strip().upper()
+
+        if not valor:
+            continue
+
+        if tipo == "EXACT":
+            clauses.append(campo_nro == valor)
+            clauses.append(campo_desc == valor)
+        elif tipo == "CONTAINS":
+            clauses.append(campo_nro.like(f"%{valor}%"))
+            clauses.append(campo_desc.like(f"%{valor}%"))
+        elif tipo == "REGEX":
+            try:
+                clauses.append(campo_nro.op("REGEXP")(valor))
+                clauses.append(campo_desc.op("REGEXP")(valor))
+            except Exception:
+                pass
+
+    return q.filter(or_(*clauses))
+
 @bp.route('/registros/graficos', methods=['GET'])
 @permission_required("GRAFICOS_VER")
 def obtener_registros_graficos():
@@ -7301,6 +7348,9 @@ def get_proyecto_costos_resumen(proyecto_id):
 
     # 3. Costos adicionales
     for x in (p.costos_adicionales or []):
+        if not bool(getattr(x, "activo", True)):
+            continue
+
         key = f"{int(x.anio):04d}-{int(x.mes):02d}"
 
         if key not in plan_mensual:
@@ -7321,16 +7371,14 @@ def get_proyecto_costos_resumen(proyecto_id):
 
         plan_mensual[key]["costo_adicional"] += _dec(x.valor)
 
-    # 4. Registros reales SOLO del proyecto
-    rows_reg = (
-        db.session.query(Registro, Consultor)
-        .outerjoin(
+    # 4. Registros reales del proyecto usando la MISMA lógica compartida
+    rows_reg = _apply_project_filter_shared(
+        db.session.query(Registro, Consultor).outerjoin(
             Consultor,
             func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
-        )
-        .filter(Registro.proyecto_id == proyecto_id)
-        .all()
-    )
+        ),
+        proyecto_id
+    ).all()
 
     detalle_consultores_mes = {}
 
@@ -10311,7 +10359,6 @@ def obtener_proyectos_horas_dashboard():
             if not vals:
                 vals = request.args.getlist(f"{name}[]")
 
-            # soporte adicional por si llega un solo valor como query simple
             one = request.args.get(name)
             if one and not vals:
                 vals = [one]
@@ -10323,7 +10370,6 @@ def obtener_proyectos_horas_dashboard():
                     continue
                 out.append(s.upper() if upper else s)
 
-            # deduplicar manteniendo orden
             seen = set()
             cleaned = []
             for v in out:
@@ -10348,7 +10394,6 @@ def obtener_proyectos_horas_dashboard():
                 except Exception:
                     pass
 
-            # deduplicar
             seen = set()
             cleaned = []
             for v in out:
@@ -10358,37 +10403,37 @@ def obtener_proyectos_horas_dashboard():
             return cleaned
 
         # ----------------------------------------------------------
-        # Filtros opcionales
+        # Filtro opcional por equipo
         # ----------------------------------------------------------
-        equipos_filter = _get_list_param("equipo", upper=True)
-        clientes_filter = _get_list_param("cliente", upper=False)
-        consultores_filter = _get_list_param("consultor", upper=False)
-        modulos_filter = _get_list_param("modulo", upper=True)
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
 
-        ocupacion_ids = _get_int_list_param("ocupacion_id")
-        tarea_ids = _get_int_list_param("tarea_id")
-
-        filtro_mes = (request.args.get("mes") or "").strip()
-        filtro_desde = (request.args.get("desde") or "").strip()
-        filtro_hasta = (request.args.get("hasta") or "").strip()
-        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
-
-        # ----------------------------------------------------------
-        # Validación filtro de equipo según scope
-        # ----------------------------------------------------------
-        if equipos_filter:
+        if equipo_filter:
             if scope in ("TEAM", "SELF"):
                 eq_login = ""
                 if consultor_login.equipo_obj:
                     eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper()
 
-                if any(eq != eq_login for eq in equipos_filter):
+                if equipo_filter != eq_login:
                     return jsonify({"error": "No autorizado para consultar otro equipo"}), 403
 
-            q = q.filter(func.upper(E.nombre).in_(equipos_filter))
+            q = q.filter(func.upper(E.nombre) == equipo_filter)
 
         # ----------------------------------------------------------
-        # Filtro temporal
+        # Filtros opcionales backend
+        # ----------------------------------------------------------
+        filtro_mes = (request.args.get("mes") or "").strip()
+        filtro_desde = (request.args.get("desde") or "").strip()
+        filtro_hasta = (request.args.get("hasta") or "").strip()
+        filtro_modulo = (request.args.get("modulo") or "").strip()
+        filtro_cliente = (request.args.get("cliente") or "").strip()
+        filtro_consultor = (request.args.get("consultor") or "").strip()
+        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
+
+        filtro_tarea_ids = _get_int_list_param("tarea_id")
+        filtro_ocupacion_ids = _get_int_list_param("ocupacion_id")
+
+        # ----------------------------------------------------------
+        # Filtro por mes o rango
         # ----------------------------------------------------------
         if filtro_mes:
             partes = filtro_mes.split("-")
@@ -10415,28 +10460,24 @@ def obtener_proyectos_horas_dashboard():
             if filtro_hasta:
                 q = q.filter(func.cast(Registro.fecha, db.String) <= filtro_hasta)
 
-        # ----------------------------------------------------------
-        # Filtros adicionales que sí deben bajar la consulta
-        # ----------------------------------------------------------
-        if clientes_filter:
-            q = q.filter(Registro.cliente.in_(clientes_filter))
+        if filtro_modulo:
+            q = q.filter(func.upper(Registro.modulo) == filtro_modulo.upper())
 
-        if consultores_filter:
-            q = q.filter(C.nombre.in_(consultores_filter))
+        if filtro_cliente:
+            q = q.filter(Registro.cliente.ilike(f"%{filtro_cliente}%"))
 
-        if modulos_filter:
-            q = q.filter(func.upper(Registro.modulo).in_(modulos_filter))
+        if filtro_consultor:
+            q = q.filter(C.nombre.ilike(f"%{filtro_consultor}%"))
 
-        if ocupacion_ids:
-            q = q.filter(Registro.ocupacion_id.in_(ocupacion_ids))
+        if filtro_tarea_ids:
+            q = q.filter(Registro.tarea_id.in_(filtro_tarea_ids))
 
-        if tarea_ids:
-            q = q.filter(Registro.tarea_id.in_(tarea_ids))
+        if filtro_ocupacion_ids:
+            q = q.filter(Registro.ocupacion_id.in_(filtro_ocupacion_ids))
 
         if filtro_proyecto_id:
             try:
-                proyecto_id_int = int(filtro_proyecto_id)
-                q = q.filter(Registro.proyecto_id == proyecto_id_int)
+                q = _apply_project_filter_shared(q, int(filtro_proyecto_id))
             except Exception:
                 return jsonify({"error": "proyecto_id inválido"}), 400
 
@@ -10446,65 +10487,35 @@ def obtener_proyectos_horas_dashboard():
         q = q.order_by(Registro.fecha.desc(), Registro.id.desc())
 
         # ----------------------------------------------------------
-        # Protección contra sobrecarga
         # IMPORTANTE:
-        # incluso con filtro temporal, no hacemos q.all()
-        # para evitar 504 en rangos amplios.
+        # si hay filtro temporal, NO truncar
         # ----------------------------------------------------------
         tiene_filtro_temporal = bool(filtro_mes or filtro_desde or filtro_hasta)
 
-        filtros_activos = 0
-        if equipos_filter:
-            filtros_activos += 1
-        if clientes_filter:
-            filtros_activos += 1
-        if consultores_filter:
-            filtros_activos += 1
-        if modulos_filter:
-            filtros_activos += 1
-        if ocupacion_ids:
-            filtros_activos += 1
-        if tarea_ids:
-            filtros_activos += 1
-        if filtro_proyecto_id:
-            filtros_activos += 1
-
-        requested_max = request.args.get("max_rows", type=int)
-
-        if requested_max:
-            max_rows = requested_max
+        if tiene_filtro_temporal:
+            registros = q.all()
+            truncated = False
+            max_rows = None
         else:
-            if tiene_filtro_temporal:
-                max_rows = 2500
-                if filtros_activos >= 1:
-                    max_rows = 3500
-                if filtros_activos >= 2:
-                    max_rows = 5000
-                if filtro_proyecto_id:
-                    max_rows = 6500
-            else:
-                max_rows = 1800
-                if filtros_activos >= 1:
-                    max_rows = 2500
-                if filtros_activos >= 2:
-                    max_rows = 3500
-                if filtro_proyecto_id:
-                    max_rows = 5000
+            max_rows = request.args.get("max_rows", type=int) or 5000
+            max_rows = min(max(max_rows, 1), 10000)
 
-        max_rows = min(max(max_rows, 500), 8000)
+            registros = q.limit(max_rows + 1).all()
+            truncated = len(registros) > max_rows
 
-        rows = q.limit(max_rows + 1).all()
-        truncated = len(rows) > max_rows
-        rows = rows[:max_rows]
+            if truncated:
+                registros = registros[:max_rows]
 
         # ----------------------------------------------------------
         # Serialización
         # ----------------------------------------------------------
         data = []
 
-        for r in rows:
+        for r in registros:
             tarea = getattr(r, "tarea", None)
             ocup = getattr(r, "ocupacion", None)
+            proyecto = getattr(r, "proyecto", None)
+            fase_proyecto = getattr(r, "fase_proyecto", None)
 
             if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
                 tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
@@ -10517,15 +10528,13 @@ def obtener_proyectos_horas_dashboard():
 
             equipo_raw = getattr(r, "equipo", None)
 
-            proyecto = getattr(r, "proyecto", None)
-            fase_proyecto = getattr(r, "fase_proyecto", None)
-
             data.append({
                 "id": r.id,
                 "fecha": _safe_fecha_iso(r.fecha),
                 "modulo": r.modulo,
                 "cliente": r.cliente,
                 "equipo": equipo_nombre or (str(equipo_raw).strip().upper() if equipo_raw else "SIN EQUIPO"),
+
                 "nroCasoCliente": r.nro_caso_cliente,
                 "nroCasoInterno": r.nro_caso_interno,
                 "nroCasoEscaladoSap": r.nro_caso_escalado,
@@ -10544,6 +10553,7 @@ def obtener_proyectos_horas_dashboard():
 
                 "consultor": r.consultor.nombre if r.consultor else None,
                 "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+
                 "horaInicio": r.hora_inicio,
                 "horaFin": r.hora_fin,
                 "tiempoInvertido": r.tiempo_invertido,
@@ -10551,6 +10561,7 @@ def obtener_proyectos_horas_dashboard():
                 "horasAdicionales": r.horas_adicionales,
                 "descripcion": r.descripcion,
                 "totalHoras": r.total_horas,
+
                 "bloqueado": bool(r.bloqueado),
                 "oncall": r.oncall,
                 "desborde": r.desborde,
