@@ -6935,7 +6935,7 @@ def get_proyecto_costos(proyecto_id):
 
     modulos_map = {}
 
-    # módulos asociados al proyecto
+    # módulos ya asociados al proyecto
     for pm in (p.modulos or []):
         if pm.modulo:
             modulos_map[int(pm.modulo.id)] = {
@@ -6943,12 +6943,20 @@ def get_proyecto_costos(proyecto_id):
                 "nombre": pm.modulo.nombre,
             }
 
-    # módulos que ya estén guardados en filas de perfil_plan
+    # módulos ya usados en filas guardadas
     for row in (p.perfiles_plan or []):
         if getattr(row, "modulo", None):
             modulos_map[int(row.modulo.id)] = {
                 "id": int(row.modulo.id),
                 "nombre": row.modulo.nombre,
+            }
+
+    # ✅ si el proyecto todavía no tiene módulos, mostrar catálogo completo
+    if not modulos_map:
+        for m in Modulo.query.order_by(Modulo.nombre.asc()).all():
+            modulos_map[int(m.id)] = {
+                "id": int(m.id),
+                "nombre": m.nombre,
             }
 
     modulos_catalogo = sorted(
@@ -6964,15 +6972,24 @@ def get_proyecto_costos(proyecto_id):
         },
         "presupuesto_mensual": [
             _presupuesto_mensual_to_dict(x)
-            for x in sorted(p.presupuestos_mensuales, key=lambda r: (r.anio, r.mes))
+            for x in sorted(
+                p.presupuestos_mensuales,
+                key=lambda r: (r.anio or 0, r.mes or 0)
+            )
         ],
         "perfil_plan": [
             _perfil_plan_to_dict(x)
-            for x in sorted(p.perfiles_plan, key=lambda r: (r.anio, r.mes, r.orden, r.id))
+            for x in sorted(
+                p.perfiles_plan,
+                key=lambda r: (r.anio or 0, r.mes or 0, r.orden or 0)
+            )
         ],
         "costos_adicionales": [
             _costo_adicional_to_dict(x)
-            for x in sorted(p.costos_adicionales, key=lambda r: (r.anio, r.mes, r.id))
+            for x in sorted(
+                p.costos_adicionales,
+                key=lambda r: (r.anio or 0, r.mes or 0)
+            )
         ],
     }), 200
 
@@ -7111,22 +7128,6 @@ def save_proyecto_perfil_plan(proyecto_id):
     data = request.get_json(silent=True) or {}
     rows = data.get("rows") or []
 
-    proyecto_modulo_ids = {
-        int(x.modulo_id)
-        for x in (
-            ProyectoModulo.query
-            .filter(ProyectoModulo.proyecto_id == proyecto_id)
-            .filter(ProyectoModulo.activo == True)
-            .all()
-        )
-        if x.modulo_id
-    }
-
-    if rows and not proyecto_modulo_ids:
-        return jsonify({
-            "mensaje": "El proyecto no tiene módulos configurados. No se puede planear perfiles sin seleccionar un módulo del proyecto."
-        }), 400
-
     seen = set()
     for idx, row in enumerate(rows):
         anio = int(row.get("anio") or 0)
@@ -7155,10 +7156,27 @@ def save_proyecto_perfil_plan(proyecto_id):
         if not modulo:
             return jsonify({"mensaje": f"Módulo no existe: {modulo_id}"}), 400
 
+    # ✅ auto-asociar módulos al proyecto si aún no existen en ProyectoModulo
+    proyecto_modulo_ids = {
+        int(x.modulo_id)
+        for x in (
+            ProyectoModulo.query
+            .filter(ProyectoModulo.proyecto_id == proyecto_id)
+            .filter(ProyectoModulo.activo == True)
+            .all()
+        )
+        if x.modulo_id
+    }
+
+    for row in rows:
+        modulo_id = int(row.get("modulo_id"))
         if modulo_id not in proyecto_modulo_ids:
-            return jsonify({
-                "mensaje": f"El módulo '{modulo.nombre}' no está asociado al proyecto."
-            }), 400
+            db.session.add(ProyectoModulo(
+                proyecto_id=proyecto_id,
+                modulo_id=modulo_id,
+                activo=True,
+            ))
+            proyecto_modulo_ids.add(modulo_id)
 
     ProyectoPerfilPlan.query.filter_by(proyecto_id=proyecto_id).delete()
 
@@ -7198,7 +7216,11 @@ def save_proyecto_perfil_plan(proyecto_id):
             joinedload(ProyectoPerfilPlan.consultor),
         )
         .filter_by(proyecto_id=proyecto_id)
-        .order_by(ProyectoPerfilPlan.anio.asc(), ProyectoPerfilPlan.mes.asc(), ProyectoPerfilPlan.orden.asc())
+        .order_by(
+            ProyectoPerfilPlan.anio.asc(),
+            ProyectoPerfilPlan.mes.asc(),
+            ProyectoPerfilPlan.orden.asc()
+        )
         .all()
     )
 
