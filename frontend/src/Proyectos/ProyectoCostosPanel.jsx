@@ -207,6 +207,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   const [perfilPlan, setPerfilPlan] = useState([]);
   const [costosAdicionales, setCostosAdicionales] = useState([]);
   const [resumen, setResumen] = useState(null);
+  const [showUsoColumns, setShowUsoColumns] = useState(false);
 
   const fetchAll = async () => {
     if (!proyectoId) return;
@@ -604,8 +605,8 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         map.set(periodo, {
           periodo,
           horas_estimadas: 0,
-          costo_estimado: 0,
           ingreso_estimado: 0,
+          costo_estimado: 0,
           horas_reales: 0,
           costo_real: 0,
         });
@@ -613,8 +614,8 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
       const item = map.get(periodo);
       item.horas_estimadas += toNumber(row.horas_estimadas);
-      item.costo_estimado += toNumber(row.costo_estimado);
       item.ingreso_estimado += toNumber(row.ingreso_estimado);
+      item.costo_estimado += toNumber(row.costo_estimado);
     });
 
     (mesesResumen || []).forEach((row) => {
@@ -625,8 +626,8 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         map.set(periodo, {
           periodo,
           horas_estimadas: 0,
-          costo_estimado: 0,
           ingreso_estimado: 0,
+          costo_estimado: 0,
           horas_reales: 0,
           costo_real: 0,
         });
@@ -640,28 +641,26 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     return Array.from(map.values())
       .map((item) => {
         const precioEstimado =
-          item.horas_estimadas > 0 ? item.ingreso_estimado / item.horas_estimadas : 0;
-
-        const precioReal =
-          item.horas_reales > 0 ? item.costo_real / item.horas_reales : 0;
+          item.horas_estimadas > 0
+            ? item.ingreso_estimado / item.horas_estimadas
+            : 0;
 
         const variacionCosto = item.costo_real - item.costo_estimado;
         const variacionHoras = item.horas_reales - item.horas_estimadas;
 
-        const pctUso =
+        const pctUsoHoras =
           item.horas_estimadas > 0
             ? (item.horas_reales / item.horas_estimadas) * 100
             : null;
 
-        const estadoCls = getAlertClass(pctUso, cabecera);
+        const estadoCls = getAlertClass(pctUsoHoras, cabecera);
 
         return {
           ...item,
           precio_estimado: precioEstimado,
-          precio_real: precioReal,
           variacion_costo: variacionCosto,
           variacion_horas: variacionHoras,
-          pct_uso: pctUso,
+          pct_uso_horas: pctUsoHoras,
           estadoCls,
           estadoLabel: estadoLabelByClass(estadoCls),
         };
@@ -691,15 +690,16 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     });
 
     acc.precio_estimado =
-      acc.horas_estimadas > 0 ? acc.ingreso_estimado / acc.horas_estimadas : 0;
+      acc.horas_estimadas > 0
+        ? acc.ingreso_estimado / acc.horas_estimadas
+        : 0;
 
-    acc.precio_real =
-      acc.horas_reales > 0 ? acc.costo_real / acc.horas_reales : 0;
+    acc.pct_uso_horas =
+      acc.horas_estimadas > 0
+        ? (acc.horas_reales / acc.horas_estimadas) * 100
+        : null;
 
-    acc.pct_uso =
-      acc.horas_estimadas > 0 ? (acc.horas_reales / acc.horas_estimadas) * 100 : null;
-
-    acc.estadoCls = getAlertClass(acc.pct_uso, cabecera);
+    acc.estadoCls = getAlertClass(acc.pct_uso_horas, cabecera);
     acc.estadoLabel = estadoLabelByClass(acc.estadoCls);
 
     return acc;
@@ -1303,9 +1303,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 <th>Ingreso planeado</th>
                 <th>Costo planeado</th>
                 <th>Adicional</th>
-                <th>Costo planeado total</th>
-                <th>Horas planeadas</th>
-                <th>Horas reales</th>
                 <th>Costo real</th>
               </tr>
             </thead>
@@ -1313,7 +1310,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
             <tbody>
               {mesesResumen.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="pcp-empty">Aún no hay resumen mensual</td>
+                  <td colSpan={5} className="pcp-empty">Aún no hay resumen mensual</td>
                 </tr>
               )}
 
@@ -1323,9 +1320,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                   <td>{formatMoney(row.ingreso_planeado, cabecera.moneda)}</td>
                   <td>{formatMoney(row.costo_planeado, cabecera.moneda)}</td>
                   <td>{formatMoney(row.costo_adicional, cabecera.moneda)}</td>
-                  <td>{formatMoney(row.costo_planeado_total, cabecera.moneda)}</td>
-                  <td>{formatNumber(row.horas_planeadas)}</td>
-                  <td>{formatNumber(row.horas_reales)}</td>
                   <td>{formatMoney(row.costo_real, cabecera.moneda)}</td>
                 </tr>
               ))}
@@ -1337,9 +1331,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 <th>{formatMoney(totalsResumenMensual.ingreso_planeado, cabecera.moneda)}</th>
                 <th>{formatMoney(totalsResumenMensual.costo_planeado, cabecera.moneda)}</th>
                 <th>{formatMoney(totalsResumenMensual.costo_adicional, cabecera.moneda)}</th>
-                <th>{formatMoney(totalsResumenMensual.costo_planeado_total, cabecera.moneda)}</th>
-                <th>{formatNumber(totalsResumenMensual.horas_planeadas)}</th>
-                <th>{formatNumber(totalsResumenMensual.horas_reales)}</th>
                 <th>{formatMoney(totalsResumenMensual.costo_real, cabecera.moneda)}</th>
               </tr>
             </tfoot>
@@ -1355,6 +1346,16 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               Horas estimadas tomadas desde Planeación por perfil y comparadas contra horas reales del proyecto.
             </p>
           </div>
+
+          <div className="pcp-section-actions">
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setShowUsoColumns((prev) => !prev)}
+            >
+              {showUsoColumns ? "Ocultar % uso y estado" : "Ver % uso y estado"}
+            </button>
+          </div>
         </div>
 
         <div className="pcp-table-wrap">
@@ -1364,21 +1365,21 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 <th>Período</th>
                 <th>Horas estimadas</th>
                 <th>Precio estimado</th>
-                <th>Costo estimado</th>
                 <th>Horas reales</th>
-                <th>Precio real</th>
                 <th>Costo real</th>
                 <th>Variación costo</th>
                 <th>Variación horas</th>
-                <th>% Uso</th>
-                <th>Estado</th>
+                {showUsoColumns && <th>% Uso</th>}
+                {showUsoColumns && <th>Estado</th>}
               </tr>
             </thead>
 
             <tbody>
               {comparativoHorasCosto.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="pcp-empty">Sin comparativo disponible</td>
+                  <td colSpan={showUsoColumns ? 9 : 7} className="pcp-empty">
+                    Sin comparativo disponible
+                  </td>
                 </tr>
               )}
 
@@ -1387,18 +1388,26 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                   <td>{row.periodo}</td>
                   <td>{formatNumber(row.horas_estimadas)}</td>
                   <td>{formatMoney(row.precio_estimado, cabecera.moneda)}</td>
-                  <td>{formatMoney(row.costo_estimado, cabecera.moneda)}</td>
                   <td>{formatNumber(row.horas_reales)}</td>
-                  <td>{formatMoney(row.precio_real, cabecera.moneda)}</td>
                   <td>{formatMoney(row.costo_real, cabecera.moneda)}</td>
                   <td>{formatMoney(row.variacion_costo, cabecera.moneda)}</td>
                   <td>{formatNumber(row.variacion_horas)}</td>
-                  <td>{row.pct_uso == null ? "—" : `${formatNumber(row.pct_uso)}%`}</td>
-                  <td>
-                    <span className={`pcp-badge ${row.estadoCls}`}>
-                      {row.estadoLabel}
-                    </span>
-                  </td>
+
+                  {showUsoColumns && (
+                    <td>
+                      {row.pct_uso_horas == null
+                        ? "—"
+                        : `${formatNumber(row.pct_uso_horas)}%`}
+                    </td>
+                  )}
+
+                  {showUsoColumns && (
+                    <td>
+                      <span className={`pcp-badge ${row.estadoCls}`}>
+                        {row.estadoLabel}
+                      </span>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -1408,22 +1417,26 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 <th>Totales</th>
                 <th>{formatNumber(totalsComparativo.horas_estimadas)}</th>
                 <th>{formatMoney(totalsComparativo.precio_estimado, cabecera.moneda)}</th>
-                <th>{formatMoney(totalsComparativo.costo_estimado, cabecera.moneda)}</th>
                 <th>{formatNumber(totalsComparativo.horas_reales)}</th>
-                <th>{formatMoney(totalsComparativo.precio_real, cabecera.moneda)}</th>
                 <th>{formatMoney(totalsComparativo.costo_real, cabecera.moneda)}</th>
                 <th>{formatMoney(totalsComparativo.variacion_costo, cabecera.moneda)}</th>
                 <th>{formatNumber(totalsComparativo.variacion_horas)}</th>
-                <th>
-                  {totalsComparativo.pct_uso == null
-                    ? "—"
-                    : `${formatNumber(totalsComparativo.pct_uso)}%`}
-                </th>
-                <th>
-                  <span className={`pcp-badge ${totalsComparativo.estadoCls}`}>
-                    {totalsComparativo.estadoLabel}
-                  </span>
-                </th>
+
+                {showUsoColumns && (
+                  <th>
+                    {totalsComparativo.pct_uso_horas == null
+                      ? "—"
+                      : `${formatNumber(totalsComparativo.pct_uso_horas)}%`}
+                  </th>
+                )}
+
+                {showUsoColumns && (
+                  <th>
+                    <span className={`pcp-badge ${totalsComparativo.estadoCls}`}>
+                      {totalsComparativo.estadoLabel}
+                    </span>
+                  </th>
+                )}
               </tr>
             </tfoot>
           </table>
