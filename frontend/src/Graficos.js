@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import Modal from 'react-modal';
 import './PanelGraficos.css';
 import { jfetch } from './lib/api';
-import { Navigate, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 
 import HorasPorConsultorChart from './GraficosOperacion/HorasPorConsultorChart';
@@ -243,20 +243,8 @@ export default function Graficos() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const [filtroConsultor, setFiltroConsultor] = useState([]);
-  const [filtroTarea, setFiltroTarea] = useState([]);
-  const [filtroCliente, setFiltroCliente] = useState([]);
-  const [filtroModulo, setFiltroModulo] = useState([]);
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const [filtroMes, setFiltroMes] = useState(currentMonth);
-  const [filtroNroCliente, setFiltroNroCliente] = useState([]);
-  const [filtroNroEscalado, setFiltroNroEscalado] = useState([]);
-  const [filtroEquipo, setFiltroEquipo] = useState([]);
   const [ocupacionesCatalogo, setOcupacionesCatalogo] = useState([]);
   const [ocupacionesCatalogoRaw, setOcupacionesCatalogoRaw] = useState([]);
-  const [filtroOcupacion, setFiltroOcupacion] = useState([]);
-  const [filtroDesde, setFiltroDesde] = useState("");
-  const [filtroHasta, setFiltroHasta] = useState("");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRows, setModalRows] = useState([]);
@@ -304,6 +292,65 @@ export default function Graficos() {
   const isAdmin = scope !== 'SELF';
   const canOpenProyectos = PROYECTOS_ALLOWED_ROLES.has(rolUpper) || scope === 'TEAM';
 
+  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
+
+  const buildScopedFilters = useCallback(() => {
+    const next = {
+      consultor: [],
+      tarea: [],
+      cliente: [],
+      modulo: [],
+      mes: currentMonth,
+      nroCliente: [],
+      nroEscalado: [],
+      equipo: [],
+      ocupacion: [],
+      desde: "",
+      hasta: "",
+    };
+
+    if (scope === 'SELF') {
+      next.consultor = nombreUser ? [nombreUser] : [];
+      next.equipo = equipoUser ? [equipoUser] : [];
+    } else if (scope === 'TEAM') {
+      next.consultor = [];
+      next.equipo = equipoUser ? [equipoUser] : [];
+    }
+
+    return next;
+  }, [scope, nombreUser, equipoUser, currentMonth]);
+
+  const [draftFilters, setDraftFilters] = useState(() => buildScopedFilters());
+  const [appliedFilters, setAppliedFilters] = useState(() => buildScopedFilters());
+
+  const updateDraftFilter = useCallback((key, value) => {
+    setDraftFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }, []);
+
+  const handleApplyFilters = useCallback(() => {
+    setAppliedFilters({ ...draftFilters });
+  }, [draftFilters]);
+
+  const handleClearDraftFilters = useCallback(() => {
+    setDraftFilters(buildScopedFilters());
+  }, [buildScopedFilters]);
+
+  const handleClearDraftRange = useCallback(() => {
+    setDraftFilters((prev) => ({
+      ...prev,
+      desde: "",
+      hasta: "",
+      mes: currentMonth,
+    }));
+  }, [currentMonth]);
+
+  const hasPendingChanges = useMemo(() => {
+    return JSON.stringify(draftFilters) !== JSON.stringify(appliedFilters);
+  }, [draftFilters, appliedFilters]);
+
   const fetchRegistros = useCallback(async () => {
     if (fetchAbortRef.current) {
       try { fetchAbortRef.current.abort(); } catch {}
@@ -319,11 +366,11 @@ export default function Graficos() {
       const params = new URLSearchParams();
       params.set('max_rows', '2000');
 
-      if (filtroMes) {
-        params.set('mes', filtroMes);
+      if (appliedFilters.mes) {
+        params.set('mes', appliedFilters.mes);
       } else {
-        if (filtroDesde) params.set('desde', filtroDesde);
-        if (filtroHasta) params.set('hasta', filtroHasta);
+        if (appliedFilters.desde) params.set('desde', appliedFilters.desde);
+        if (appliedFilters.hasta) params.set('hasta', appliedFilters.hasta);
       }
 
       const res = await jfetch(`/registros/graficos?${params.toString()}`, {
@@ -350,17 +397,6 @@ export default function Graficos() {
 
       const arr = Array.isArray(json) ? json : [];
       setRegistros(arr);
-
-      if (scope === 'SELF') {
-        setFiltroConsultor(nombreUser ? [nombreUser] : []);
-        setFiltroEquipo(equipoUser ? [equipoUser] : []);
-      } else if (scope === 'TEAM') {
-        setFiltroEquipo(equipoUser ? [equipoUser] : []);
-        setFiltroConsultor([]);
-      } else {
-        setFiltroConsultor([]);
-        setFiltroEquipo([]);
-      }
     } catch (err) {
       if (err?.name === 'AbortError') return;
       setRegistros([]);
@@ -369,7 +405,14 @@ export default function Graficos() {
     } finally {
       setLoading(false);
     }
-  }, [rolUpper, usuario, nombreUser, equipoUser, scope, filtroMes, filtroDesde, filtroHasta]);
+  }, [
+    rolUpper,
+    usuario,
+    equipoUser,
+    appliedFilters.mes,
+    appliedFilters.desde,
+    appliedFilters.hasta,
+  ]);
 
   useEffect(() => {
     if (!usuario) return;
@@ -556,12 +599,20 @@ export default function Graficos() {
         if (equipoUser && eq !== equipoUser) return false;
       }
 
-      if (!coincideMes(r.fecha, filtroMes)) return false;
-      if (!inRangeISO(r.fecha, filtroDesde, filtroHasta)) return false;
+      if (!coincideMes(r.fecha, appliedFilters.mes)) return false;
+      if (!inRangeISO(r.fecha, appliedFilters.desde, appliedFilters.hasta)) return false;
 
       return true;
     });
-  }, [registros, scope, usuario, equipoUser, filtroMes, filtroDesde, filtroHasta]);
+  }, [
+    registros,
+    scope,
+    usuario,
+    equipoUser,
+    appliedFilters.mes,
+    appliedFilters.desde,
+    appliedFilters.hasta,
+  ]);
 
   const consultoresUnicos = useMemo(() => {
     const set = new Set((registrosBase ?? []).map(r => r.consultor));
@@ -569,107 +620,73 @@ export default function Graficos() {
   }, [registrosBase]);
 
   const tareasUnicos = useMemo(() => {
-    const set = new Set(
-      (registros ?? [])
-        .filter(r => coincideMes(r.fecha, filtroMes))
-        .map(r => r.tipoTarea)
-    );
+    const set = new Set((registrosBase ?? []).map(r => r.tipoTarea));
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registrosBase]);
 
   const clientesUnicos = useMemo(() => {
-    const set = new Set(
-      (registros ?? [])
-        .filter(r => coincideMes(r.fecha, filtroMes))
-        .map(r => r.cliente)
-    );
+    const set = new Set((registrosBase ?? []).map(r => r.cliente));
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registrosBase]);
 
   const modulosUnicos = useMemo(() => {
-    const set = new Set(
-      (registros ?? [])
-        .filter(r => coincideMes(r.fecha, filtroMes))
-        .map(r => r.modulo)
-    );
+    const set = new Set((registrosBase ?? []).map(r => r.modulo));
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registrosBase]);
 
   const equiposUnicos = useMemo(() => {
-    const set = new Set(
-      (registros ?? [])
-        .filter(r => coincideMes(r.fecha, filtroMes))
-        .map(r => equipoOf(r))
-    );
+    const set = new Set((registrosBase ?? []).map(r => equipoOf(r)));
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registrosBase]);
 
   const nroClienteUnicos = useMemo(() => {
-    const set = new Set(
-      (registros ?? [])
-        .filter(r => coincideMes(r.fecha, filtroMes))
-        .map(r => r.nroCasoCliente)
-    );
+    const set = new Set((registrosBase ?? []).map(r => r.nroCasoCliente));
     return Array.from(set)
       .filter(v => (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '0'))
       .map(v => String(v))
       .sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registrosBase]);
 
   const nroEscaladoUnicos = useMemo(() => {
-    const set = new Set(
-      (registros ?? [])
-        .filter(r => coincideMes(r.fecha, filtroMes))
-        .map(r => r.nroCasoEscaladoSap)
-    );
+    const set = new Set((registrosBase ?? []).map(r => r.nroCasoEscaladoSap));
     return Array.from(set)
       .filter(v => (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '0'))
       .map(v => String(v))
       .sort((a, b) => a.localeCompare(b));
-  }, [registros, filtroMes]);
+  }, [registrosBase]);
 
   const datosFiltrados = useMemo(() => {
     return (registrosBase ?? []).filter(r => {
       const eq = equipoOf(r);
 
-      if (filtroOcupacion.length > 0) {
+      if (appliedFilters.ocupacion.length > 0) {
         const occLabel =
           (r.ocupacion_codigo && r.ocupacion_nombre)
             ? `${String(r.ocupacion_codigo).trim()} - ${String(r.ocupacion_nombre).trim()}`
             : (r.ocupacion_nombre ? String(r.ocupacion_nombre).trim() : "SIN OCUPACIÓN");
 
-        if (!filtroOcupacion.includes(occLabel)) return false;
+        if (!appliedFilters.ocupacion.includes(occLabel)) return false;
       }
 
-      if (filtroConsultor.length > 0 && !filtroConsultor.includes(r.consultor)) return false;
-      if (filtroTarea.length > 0 && !filtroTarea.includes(r.tipoTarea)) return false;
-      if (filtroCliente.length > 0 && !filtroCliente.includes(r.cliente)) return false;
-      if (filtroModulo.length > 0 && !filtroModulo.includes(r.modulo)) return false;
-      if (filtroEquipo.length > 0 && !filtroEquipo.includes(eq)) return false;
+      if (appliedFilters.consultor.length > 0 && !appliedFilters.consultor.includes(r.consultor)) return false;
+      if (appliedFilters.tarea.length > 0 && !appliedFilters.tarea.includes(r.tipoTarea)) return false;
+      if (appliedFilters.cliente.length > 0 && !appliedFilters.cliente.includes(r.cliente)) return false;
+      if (appliedFilters.modulo.length > 0 && !appliedFilters.modulo.includes(r.modulo)) return false;
+      if (appliedFilters.equipo.length > 0 && !appliedFilters.equipo.includes(eq)) return false;
 
-      if (filtroNroCliente.length > 0) {
+      if (appliedFilters.nroCliente.length > 0) {
         const val = String(r.nroCasoCliente || '');
-        if (!filtroNroCliente.includes(val)) return false;
+        if (!appliedFilters.nroCliente.includes(val)) return false;
       }
 
-      if (filtroNroEscalado.length > 0) {
+      if (appliedFilters.nroEscalado.length > 0) {
         const val = String(r.nroCasoEscaladoSap || '');
-        if (!filtroNroEscalado.includes(val)) return false;
+        if (!appliedFilters.nroEscalado.includes(val)) return false;
       }
 
       return true;
     });
-  }, [
-    registrosBase,
-    filtroOcupacion,
-    filtroConsultor,
-    filtroTarea,
-    filtroCliente,
-    filtroModulo,
-    filtroEquipo,
-    filtroNroCliente,
-    filtroNroEscalado
-  ]);
+  }, [registrosBase, appliedFilters]);
 
   const horasPorConsultor = useMemo(() => {
     const acc = new Map();
@@ -885,30 +902,30 @@ export default function Graficos() {
   }, [modalRows]);
 
   const metaMensual = useMemo(() => {
-    if (!filtroMes) return null;
-    const [y, m] = filtroMes.split('-').map(Number);
+    if (!appliedFilters.mes) return null;
+    const [y, m] = appliedFilters.mes.split('-').map(Number);
     const wd = workdaysInMonth(y, m, HOLIDAYS);
     return {
       diasHabiles: wd,
       limite: wd * 9
     };
-  }, [filtroMes]);
+  }, [appliedFilters.mes]);
 
   const filtroAnio = useMemo(() => {
-    if (filtroMes && /^\d{4}-\d{2}$/.test(filtroMes)) {
-      return Number(filtroMes.slice(0, 4));
+    if (appliedFilters.mes && /^\d{4}-\d{2}$/.test(appliedFilters.mes)) {
+      return Number(appliedFilters.mes.slice(0, 4));
     }
 
-    if (filtroDesde && /^\d{4}-\d{2}-\d{2}$/.test(filtroDesde)) {
-      return Number(filtroDesde.slice(0, 4));
+    if (appliedFilters.desde && /^\d{4}-\d{2}-\d{2}$/.test(appliedFilters.desde)) {
+      return Number(appliedFilters.desde.slice(0, 4));
     }
 
-    if (filtroHasta && /^\d{4}-\d{2}-\d{2}$/.test(filtroHasta)) {
-      return Number(filtroHasta.slice(0, 4));
+    if (appliedFilters.hasta && /^\d{4}-\d{2}-\d{2}$/.test(appliedFilters.hasta)) {
+      return Number(appliedFilters.hasta.slice(0, 4));
     }
 
     return new Date().getFullYear();
-  }, [filtroMes, filtroDesde, filtroHasta]);
+  }, [appliedFilters.mes, appliedFilters.desde, appliedFilters.hasta]);
 
   const filtroOcupacionIds = useMemo(() => {
     const labelToId = new Map();
@@ -924,49 +941,36 @@ export default function Graficos() {
       }
     });
 
-    return (Array.isArray(filtroOcupacion) ? filtroOcupacion : [])
+    return (Array.isArray(appliedFilters.ocupacion) ? appliedFilters.ocupacion : [])
       .map((label) => labelToId.get(label))
       .filter((id) => Number.isFinite(id) && id > 0);
-  }, [filtroOcupacion, ocupacionesCatalogoRaw]);
+  }, [appliedFilters.ocupacion, ocupacionesCatalogoRaw]);
 
   const dashboardCostosState = useMemo(() => {
-      return {
-        filtroEquipo,
-        filtroCliente,
-        filtroConsultor,
-        filtroModulo,
-        filtroMes,
-        filtroAnio,
-        filtroDesde,
-        filtroHasta,
-        filtroOcupacionIds,
-        filtroOcupacionLabels: filtroOcupacion,
-        rol: rolUpper,
-        modoDashboard: filtroMes ? "mes" : "rango",
-      };
-    }, [
-      filtroEquipo,
-      filtroCliente,
-      filtroConsultor,
-      filtroModulo,
-      filtroMes,
+    return {
+      filtroEquipo: appliedFilters.equipo,
+      filtroCliente: appliedFilters.cliente,
+      filtroConsultor: appliedFilters.consultor,
+      filtroModulo: appliedFilters.modulo,
+      filtroMes: appliedFilters.mes,
       filtroAnio,
-      filtroDesde,
-      filtroHasta,
+      filtroDesde: appliedFilters.desde,
+      filtroHasta: appliedFilters.hasta,
       filtroOcupacionIds,
-      filtroOcupacion,
-      rolUpper,
-    ]);
+      filtroOcupacionLabels: appliedFilters.ocupacion,
+      rol: rolUpper,
+      modoDashboard: appliedFilters.mes ? "mes" : "rango",
+    };
+  }, [appliedFilters, filtroAnio, filtroOcupacionIds, rolUpper]);
 
   const consultoresUnicosTeam = useMemo(() => {
     const set = new Set(
-      (registros ?? [])
-        .filter(r => coincideMes(r.fecha, filtroMes))
+      (registrosBase ?? [])
         .filter(r => !equipoUser || equipoOf(r) === equipoUser)
         .map(r => r.consultor)
     );
     return Array.from(set).filter(Boolean).sort((a,b) => a.localeCompare(b));
-  }, [registros, filtroMes, equipoUser]);
+  }, [registrosBase, equipoUser]);
 
   const consultoresParaFiltro =
     scope === 'ALL' ? consultoresUnicos :
@@ -986,8 +990,11 @@ export default function Graficos() {
           <MultiFiltro
             titulo="CONSULTORES"
             opciones={consultoresParaFiltro}
-            seleccion={filtroConsultor}
-            onChange={(scope === 'ALL' || scope === 'TEAM') ? setFiltroConsultor : () => {}}
+            seleccion={draftFilters.consultor}
+            onChange={(scope === 'ALL' || scope === 'TEAM')
+              ? (vals) => updateDraftFilter('consultor', vals)
+              : () => {}
+            }
             disabled={scope === 'SELF'}
             placeholder={
               scope === 'ALL' ? 'Todos los consultores' :
@@ -999,56 +1006,59 @@ export default function Graficos() {
           <MultiFiltro
             titulo="TAREAS"
             opciones={tareasUnicos}
-            seleccion={filtroTarea}
-            onChange={setFiltroTarea}
+            seleccion={draftFilters.tarea}
+            onChange={(vals) => updateDraftFilter('tarea', vals)}
             placeholder="Todas las tareas"
           />
 
           <MultiFiltro
             titulo="MÓDULOS"
             opciones={modulosUnicos}
-            seleccion={filtroModulo}
-            onChange={setFiltroModulo}
+            seleccion={draftFilters.modulo}
+            onChange={(vals) => updateDraftFilter('modulo', vals)}
             placeholder="Todos los módulos"
           />
 
           <MultiFiltro
             titulo="CLIENTES"
             opciones={clientesUnicos}
-            seleccion={filtroCliente}
-            onChange={setFiltroCliente}
+            seleccion={draftFilters.cliente}
+            onChange={(vals) => updateDraftFilter('cliente', vals)}
             placeholder="Todos los clientes"
           />
 
           <MultiFiltro
             titulo="OCUPACIONES"
             opciones={ocupacionesCatalogo}
-            seleccion={filtroOcupacion}
-            onChange={setFiltroOcupacion}
+            seleccion={draftFilters.ocupacion}
+            onChange={(vals) => updateDraftFilter('ocupacion', vals)}
             placeholder="Todas las ocupaciones"
           />
 
           <MultiFiltro
             titulo="Nro. CASO CLIENTE"
             opciones={nroClienteUnicos}
-            seleccion={filtroNroCliente}
-            onChange={setFiltroNroCliente}
+            seleccion={draftFilters.nroCliente}
+            onChange={(vals) => updateDraftFilter('nroCliente', vals)}
             placeholder="Nro. Caso Cliente (todos)"
           />
 
           <MultiFiltro
             titulo="Nro. ESCALADO SAP"
             opciones={nroEscaladoUnicos}
-            seleccion={filtroNroEscalado}
-            onChange={setFiltroNroEscalado}
+            seleccion={draftFilters.nroEscalado}
+            onChange={(vals) => updateDraftFilter('nroEscalado', vals)}
             placeholder="Nro. Escalado SAP (todos)"
           />
 
           <MultiFiltro
             titulo="EQUIPOS"
             opciones={scope === 'ALL' ? equiposUnicos : (equipoUser ? [equipoUser] : [])}
-            seleccion={filtroEquipo}
-            onChange={scope === 'ALL' ? setFiltroEquipo : () => {}}
+            seleccion={draftFilters.equipo}
+            onChange={scope === 'ALL'
+              ? (vals) => updateDraftFilter('equipo', vals)
+              : () => {}
+            }
             disabled={scope !== 'ALL'}
             placeholder={scope === 'ALL' ? 'Todos los equipos' : 'Tu equipo'}
           />
@@ -1058,11 +1068,14 @@ export default function Graficos() {
             <input
               className="pgx-input-month"
               type="month"
-              value={filtroMes}
+              value={draftFilters.mes}
               onChange={(e) => {
-                setFiltroMes(e.target.value);
-                setFiltroDesde("");
-                setFiltroHasta("");
+                setDraftFilters(prev => ({
+                  ...prev,
+                  mes: e.target.value,
+                  desde: "",
+                  hasta: "",
+                }));
               }}
             />
           </div>
@@ -1073,24 +1086,39 @@ export default function Graficos() {
               <input
                 className="pgx-input-date"
                 type="date"
-                value={filtroDesde}
+                value={draftFilters.desde}
                 onChange={(e) => {
-                  setFiltroDesde(e.target.value);
-                  setFiltroMes("");
+                  setDraftFilters(prev => ({
+                    ...prev,
+                    desde: e.target.value,
+                    mes: "",
+                  }));
                 }}
               />
               <span className="pgx-range-sep">a</span>
               <input
                 className="pgx-input-date"
                 type="date"
-                value={filtroHasta}
+                value={draftFilters.hasta}
                 onChange={(e) => {
-                  setFiltroHasta(e.target.value);
-                  setFiltroMes("");
+                  setDraftFilters(prev => ({
+                    ...prev,
+                    hasta: e.target.value,
+                    mes: "",
+                  }));
                 }}
               />
             </div>
           </div>
+
+          <button
+            type="button"
+            className="pgx-btn"
+            onClick={handleApplyFilters}
+            disabled={!hasPendingChanges}
+          >
+            Aplicar filtros
+          </button>
 
           <button
             type="button"
@@ -1113,7 +1141,7 @@ export default function Graficos() {
               navigate("/proyectos-horas", {
                 state: {
                   userData: user,
-                  defaultMonth: filtroMes,
+                  defaultMonth: appliedFilters.mes,
                 },
               });
             }}
@@ -1122,29 +1150,9 @@ export default function Graficos() {
           </button>
 
           <button
+            type="button"
             className="pgx-btn pgx-btn-outline"
-            onClick={() => {
-              setFiltroTarea([]);
-              setFiltroCliente([]);
-              setFiltroModulo([]);
-              setFiltroMes('');
-              setFiltroNroCliente([]);
-              setFiltroNroEscalado([]);
-              setFiltroOcupacion([]);
-              setFiltroDesde("");
-              setFiltroHasta("");
-
-              if (scope === 'ALL') {
-                setFiltroEquipo([]);
-                setFiltroConsultor([]);
-              } else if (scope === 'TEAM') {
-                setFiltroEquipo(equipoUser ? [equipoUser] : []);
-                setFiltroConsultor([]);
-              } else {
-                setFiltroEquipo(equipoUser ? [equipoUser] : []);
-                setFiltroConsultor(nombreUser ? [nombreUser] : []);
-              }
-            }}
+            onClick={handleClearDraftFilters}
           >
             Limpiar
           </button>
@@ -1152,7 +1160,7 @@ export default function Graficos() {
           <button
             type="button"
             className="pgx-btn pgx-btn-outline"
-            onClick={() => { setFiltroDesde(""); setFiltroHasta(""); }}
+            onClick={handleClearDraftRange}
           >
             Limpiar rango
           </button>
@@ -1180,16 +1188,16 @@ export default function Graficos() {
           <PieOcupacionChart
             data={pieOcupacion}
             totalHoras={totalHorasPieOcupacion}
-            filtroMes={filtroMes}
-            filtroEquipo={filtroEquipo}
+            filtroMes={appliedFilters.mes}
+            filtroEquipo={appliedFilters.equipo}
           />
 
           <PieTareasChart
             data={pieTareas}
             otrosDetalle={otrosTareasDetalle}
             totalHoras={totalHorasPieTareas}
-            filtroMes={filtroMes}
-            filtroEquipo={filtroEquipo}
+            filtroMes={appliedFilters.mes}
+            filtroEquipo={appliedFilters.equipo}
           />
 
           <div className="pgx-chart-mono">
@@ -1212,8 +1220,8 @@ export default function Graficos() {
             <HorasPorClienteChart
               data={horasPorCliente}
               isAdmin={isAdmin}
-              filtroMes={filtroMes}
-              filtroEquipo={filtroEquipo}
+              filtroMes={appliedFilters.mes}
+              filtroEquipo={appliedFilters.equipo}
               onOpenDetail={openDetail}
             />
           </div>
@@ -1222,8 +1230,8 @@ export default function Graficos() {
             <HorasPorModuloChart
               data={horasPorModulo}
               isAdmin={isAdmin}
-              filtroMes={filtroMes}
-              filtroEquipo={filtroEquipo}
+              filtroMes={appliedFilters.mes}
+              filtroEquipo={appliedFilters.equipo}
               onOpenDetail={openDetail}
             />
           </div>
@@ -1232,8 +1240,8 @@ export default function Graficos() {
             <HorasPorConsultorChart
               data={horasPorConsultor}
               isAdmin={isAdmin}
-              filtroMes={filtroMes}
-              filtroEquipo={filtroEquipo}
+              filtroMes={appliedFilters.mes}
+              filtroEquipo={appliedFilters.equipo}
               metaMensual={metaMensual}
               onOpenDetail={openDetail}
             />
@@ -1242,8 +1250,8 @@ export default function Graficos() {
           <div className="pgx-chart-mono">
             <HorasPorDiaChart
               data={horasPorDia}
-              filtroMes={filtroMes}
-              filtroEquipo={filtroEquipo}
+              filtroMes={appliedFilters.mes}
+              filtroEquipo={appliedFilters.equipo}
               onOpenDetail={openDetail}
             />
           </div>
@@ -1252,8 +1260,8 @@ export default function Graficos() {
             <HorasPorProyectoChart
               data={horasPorProyecto}
               isAdmin={isAdmin}
-              filtroMes={filtroMes}
-              filtroEquipo={filtroEquipo}
+              filtroMes={appliedFilters.mes}
+              filtroEquipo={appliedFilters.equipo}
             />
           </div>
         </div>
