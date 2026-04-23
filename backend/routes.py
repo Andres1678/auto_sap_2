@@ -10084,7 +10084,7 @@ def dashboard_costos_resumen():
     except Exception as e:
         app.logger.exception("❌ Error en /dashboard/costos-resumen")
         return jsonify({"error": str(e)}), 500
-
+    
 @bp.route("/dashboard/costos-filtros", methods=["GET"])
 @permission_required("GRAFICOS_VER")
 def dashboard_costos_filtros():

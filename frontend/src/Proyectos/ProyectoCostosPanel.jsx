@@ -729,7 +729,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
     return Array.from(map.values())
       .map((item) => {
-        const variacionCosto = item.costo_real - item.costo_estimado;
+        const variacionCosto = item.costo_estimado - item.costo_real;
         const variacionHoras = item.horas_estimadas - item.horas_reales;
 
         const pctUsoHoras =
