@@ -1,182 +1,298 @@
 /************************************************************
-  ⚙️ PANEL DE CONFIGURACIÓN — UI PREMIUM
-  Incluye modo oscuro, modo claro y grid responsivo de 3 cards
+  ⚙️ CONFIG / PANEL GRÁFICO — UI PREMIUM MEJORADA
 ************************************************************/
 
-.config-wrapper {
-  padding: 40px;
-  font-family: "Inter", sans-serif;
-  min-height: 100vh;
-  animation: fadeIn 0.4s ease;
-
-  /* ★ DARK MODE DEFAULT */
-  background: radial-gradient(circle at 20% 20%, rgba(0, 122, 255, 0.08), transparent 42%),
-              radial-gradient(circle at 80% 80%, rgba(227, 6, 19, 0.08), transparent 42%),
-              #0c1320;
-  color: #e2e8f0;
+:root {
+  --cfg-bg: #0b1220;
+  --cfg-bg-soft: #111a2b;
+  --cfg-surface: rgba(255, 255, 255, 0.06);
+  --cfg-surface-strong: rgba(255, 255, 255, 0.09);
+  --cfg-border: rgba(255, 255, 255, 0.09);
+  --cfg-border-hover: rgba(96, 165, 250, 0.55);
+  --cfg-text: #e5edf8;
+  --cfg-text-soft: #a8b6cc;
+  --cfg-title-1: #60a5fa;
+  --cfg-title-2: #34d399;
+  --cfg-shadow: 0 16px 38px rgba(0, 0, 0, 0.35);
+  --cfg-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.45);
+  --cfg-radius-xl: 26px;
+  --cfg-radius-lg: 20px;
+  --cfg-radius-md: 16px;
+  --cfg-transition: 220ms ease;
 }
 
-/* --- LIGHT MODE AUTOMÁTICO --- */
 @media (prefers-color-scheme: light) {
-  .config-wrapper {
-    background: #f5f7fa;
-    color: #1f2937;
+  :root {
+    --cfg-bg: #f4f7fb;
+    --cfg-bg-soft: #edf3f9;
+    --cfg-surface: rgba(255, 255, 255, 0.9);
+    --cfg-surface-strong: rgba(255, 255, 255, 1);
+    --cfg-border: rgba(15, 23, 42, 0.08);
+    --cfg-border-hover: rgba(59, 130, 246, 0.5);
+    --cfg-text: #172033;
+    --cfg-text-soft: #5a6780;
+    --cfg-title-1: #2563eb;
+    --cfg-title-2: #059669;
+    --cfg-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    --cfg-shadow-hover: 0 18px 36px rgba(15, 23, 42, 0.14);
   }
 }
 
 /************************************************************
-  🏷️ TITULOS
+  🌌 CONTENEDOR PRINCIPAL
 ************************************************************/
+.config-wrapper {
+  min-height: 100vh;
+  padding: 42px 28px 56px;
+  font-family: "Inter", sans-serif;
+  color: var(--cfg-text);
+  background:
+    radial-gradient(circle at 12% 18%, rgba(59, 130, 246, 0.12), transparent 28%),
+    radial-gradient(circle at 88% 82%, rgba(16, 185, 129, 0.12), transparent 28%),
+    linear-gradient(180deg, var(--cfg-bg) 0%, var(--cfg-bg-soft) 100%);
+  animation: fadeIn 0.35s ease;
+}
+
+@media (max-width: 640px) {
+  .config-wrapper {
+    padding: 26px 16px 40px;
+  }
+}
+
+/* centra el contenido y evita que quede muy estirado */
+.config-wrapper > .config-title,
+.config-wrapper > .config-grid {
+  width: 100%;
+  max-width: 1320px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/************************************************************
+  🏷️ CABECERA
+************************************************************/
+.config-title {
+  margin-bottom: 16px;
+}
+
 .config-title h1 {
   margin: 0;
-  font-size: 34px;
+  font-size: clamp(2rem, 3vw, 2.8rem);
   font-weight: 800;
-
-  background: linear-gradient(90deg, #3b82f6, #10b981);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  background: linear-gradient(90deg, var(--cfg-title-1), var(--cfg-title-2));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .config-sub {
-  margin-top: 8px;
-  color: #94a3b8;
-  font-size: 16px;
-}
-
-@media (prefers-color-scheme: light) {
-  .config-sub {
-    color: #475569;
-  }
+  margin: 10px 0 0;
+  max-width: 760px;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--cfg-text-soft);
 }
 
 /************************************************************
-  🧩 GRID DE CARDS — SIEMPRE 3 POR FILA
+  🧩 GRID RESPONSIVO
 ************************************************************/
 .config-grid {
-  margin-top: 40px;
+  margin-top: 34px;
   display: grid;
-
-  /* EXACTAMENTE 3 POR FILA EN PANTALLAS GRANDES */
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-
-  gap: 32px;
-  padding: 10px;
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
+  gap: 24px;
+  align-items: stretch;
 }
 
-/* 2 por fila en tablets */
-@media (max-width: 1180px) {
+@media (max-width: 1120px) {
   .config-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(240px, 1fr));
+    gap: 20px;
   }
 }
 
-/* 1 por fila en móviles */
 @media (max-width: 720px) {
   .config-grid {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 }
 
 /************************************************************
-  🪪 CARDS — Estilo Premium Unificado
+  🪪 CARD
 ************************************************************/
 .config-card {
-  text-decoration: none;
-  padding: 32px 28px;
-  border-radius: 20px;
-  height: 240px;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
 
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  gap: 18px;
+  gap: 16px;
 
-  transition: all 0.28s ease;
-  cursor: pointer;
+  min-height: 220px;
+  padding: 26px 24px;
+  border-radius: var(--cfg-radius-xl);
+  text-decoration: none;
+  color: var(--cfg-text);
 
-  /* DARK MODE */
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  color: #f1f5f9;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  background: var(--cfg-surface);
+  border: 1px solid var(--cfg-border);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--cfg-shadow);
+
+  transition:
+    transform var(--cfg-transition),
+    box-shadow var(--cfg-transition),
+    border-color var(--cfg-transition),
+    background var(--cfg-transition);
 }
 
-/* LIGHT MODE CARD */
-@media (prefers-color-scheme: light) {
-  .config-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
-    color: #1e293b;
-  }
+/* brillo superior suave */
+.config-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(255, 255, 255, 0.02) 40%,
+      transparent 80%
+    );
+  pointer-events: none;
+  z-index: 0;
 }
 
-/* ★ EFECTO HOVER PREMIUM */
+/* glow decorativo */
+.config-card::after {
+  content: "";
+  position: absolute;
+  width: 180px;
+  height: 180px;
+  right: -70px;
+  top: -70px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.18), transparent 68%);
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.config-card > * {
+  position: relative;
+  z-index: 1;
+}
+
 .config-card:hover {
-  transform: translateY(-8px);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55);
-  border-color: rgba(59, 130, 246, 0.45);
-
-  background: linear-gradient(
-    135deg,
-    rgba(59, 130, 246, 0.14),
-    rgba(16, 185, 129, 0.14)
-  );
+  transform: translateY(-6px);
+  border-color: var(--cfg-border-hover);
+  background: var(--cfg-surface-strong);
+  box-shadow: var(--cfg-shadow-hover);
 }
 
-@media (prefers-color-scheme: light) {
-  .config-card:hover {
-    background: #f0f9ff;
-    border-color: #3b82f6;
-    transform: translateY(-6px);
-  }
+.config-card:active {
+  transform: translateY(-2px);
+}
+
+.config-card:focus-visible {
+  outline: 3px solid rgba(96, 165, 250, 0.4);
+  outline-offset: 4px;
 }
 
 /************************************************************
-  🔵 ICONOS
+  🔵 ÍCONO
 ************************************************************/
 .config-icon {
-  font-size: 48px;
-  opacity: 0.85;
-  text-shadow: 0 0 12px rgba(59, 130, 246, 0.45);
-  transition: 0.25s ease;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  border-radius: 18px;
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.18),
+    rgba(16, 185, 129, 0.16)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: transform var(--cfg-transition), filter var(--cfg-transition);
 }
 
 .config-card:hover .config-icon {
-  transform: scale(1.12);
-  opacity: 1;
+  transform: scale(1.06);
+  filter: brightness(1.08);
 }
 
 /************************************************************
-  📝 TEXTOS DE CARDS
+  📝 TEXTO
 ************************************************************/
 .config-card h3 {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 700;
+  margin: 2px 0 0;
+  font-size: 1.25rem;
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .config-card p {
   margin: 0;
-  font-size: 15px;
-  line-height: 1.45;
-  color: #cbd5e1;
+  font-size: 0.97rem;
+  line-height: 1.6;
+  color: var(--cfg-text-soft);
+  max-width: 42ch;
 }
 
-@media (prefers-color-scheme: light) {
+/************************************************************
+  ✨ OPCIONAL: VARIANTE PARA TARJETAS IMPORTANTES
+************************************************************/
+.config-card.is-featured {
+  border-color: rgba(52, 211, 153, 0.32);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(16, 185, 129, 0.09),
+      rgba(59, 130, 246, 0.08)
+    ),
+    var(--cfg-surface);
+}
+
+/************************************************************
+  📱 AJUSTES MOBILE
+************************************************************/
+@media (max-width: 640px) {
+  .config-card {
+    min-height: 190px;
+    padding: 22px 18px;
+    border-radius: 20px;
+  }
+
+  .config-icon {
+    width: 56px;
+    height: 56px;
+    font-size: 1.7rem;
+    border-radius: 16px;
+  }
+
+  .config-card h3 {
+    font-size: 1.1rem;
+  }
+
   .config-card p {
-    color: #475569;
+    font-size: 0.93rem;
   }
 }
 
 /************************************************************
-  🌫️ ANIMACIONES
+  🌫️ ANIMACIÓN ENTRADA
 ************************************************************/
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
