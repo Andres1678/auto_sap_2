@@ -267,6 +267,7 @@
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* =========================
@@ -336,6 +337,7 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
+  min-width: 0;
 }
 
 .pcp-field label {
@@ -388,6 +390,27 @@
   font-weight: 700;
 }
 
+/* Multi-select para filtros globales */
+.pcp select[multiple] {
+  min-height: 168px;
+  height: auto;
+  padding: 8px;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.pcp select[multiple] option {
+  padding: 10px 12px;
+  border-radius: 8px;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.pcp select[multiple] option:checked {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  color: #fff;
+}
+
 /* =========================
    Tablas
 ========================= */
@@ -417,7 +440,7 @@
 
 .pcp-table {
   width: 100%;
-  min-width: 1200px;
+  min-width: 1450px;
   border-collapse: separate;
   border-spacing: 0;
   background: #fff;
@@ -463,6 +486,15 @@
   font-size: 0.92rem;
 }
 
+.pcp-table td textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.pcp-table td > div[style] {
+  min-width: max-content;
+}
+
 .pcp-table tfoot th,
 .pcp-table tfoot td {
   background: #f8fbff;
@@ -475,6 +507,10 @@
 .pcp-table td.center,
 .pcp-table th.center {
   text-align: center;
+}
+
+.pcp-table-summary {
+  min-width: 1180px;
 }
 
 .pcp-table-summary td,
@@ -565,6 +601,10 @@
   .pcp-form-grid {
     grid-template-columns: repeat(3, minmax(180px, 1fr));
   }
+
+  .pcp-table {
+    min-width: 1320px;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -574,6 +614,10 @@
 
   .pcp-form-grid {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .pcp-table {
+    min-width: 1180px;
   }
 }
 
@@ -606,6 +650,7 @@
 
   .pcp-section-actions {
     width: 100%;
+    justify-content: stretch;
   }
 
   .pcp-section-actions > button,
@@ -617,5 +662,9 @@
     width: 30px;
     height: 30px;
     font-size: 14px;
+  }
+
+  .pcp select[multiple] {
+    min-height: 140px;
   }
 }

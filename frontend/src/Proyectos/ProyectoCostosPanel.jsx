@@ -190,6 +190,16 @@ const perfilLabel = (p) => {
   return descripcion ? `${nombre} — ${descripcion}` : nombre;
 };
 
+const getPeriodo = (row) => {
+  const anio = String(row?.anio ?? "").trim();
+  const mes = String(row?.mes ?? "").padStart(2, "0");
+  if (!anio || !mes) return "";
+  return `${anio}-${mes}`;
+};
+
+const getMultiValues = (e) =>
+  Array.from(e.target.selectedOptions || []).map((opt) => String(opt.value));
+
 export default function ProyectoCostosPanel({ proyectoId }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState({
@@ -201,12 +211,21 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
   const [proyecto, setProyecto] = useState(null);
   const [cabecera, setCabecera] = useState(emptyCabecera);
-  const [catalogos, setCatalogos] = useState({ perfiles: [], modulos: [] });
+  const [catalogos, setCatalogos] = useState({
+    perfiles: [],
+    modulos: [],
+    consultores: [],
+  });
 
   const [presupuestoMensual, setPresupuestoMensual] = useState([]);
   const [perfilPlan, setPerfilPlan] = useState([]);
   const [costosAdicionales, setCostosAdicionales] = useState([]);
   const [resumen, setResumen] = useState(null);
+
+  const [filtros, setFiltros] = useState({
+    moduloIds: [],
+    consultorIds: [],
+  });
 
   const [showUsoCostosColumns, setShowUsoCostosColumns] = useState(false);
   const [showUsoHorasColumns, setShowUsoHorasColumns] = useState(false);
@@ -215,6 +234,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     resumenReal: true,
     resumenPlaneado: true,
     cabecera: true,
+    filtros: true,
     presupuesto: true,
     perfiles: true,
     adicionales: true,
@@ -229,50 +249,74 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     }));
   };
 
-  const fetchAll = async () => {
+  const buildResumenQuery = (currentFiltros = filtros) => {
+    const params = new URLSearchParams();
+
+    (currentFiltros.moduloIds || []).forEach((id) => {
+      if (id) params.append("modulo_id", id);
+    });
+
+    (currentFiltros.consultorIds || []).forEach((id) => {
+      if (id) params.append("consultor_id", id);
+    });
+
+    const qs = params.toString();
+    return qs ? `?${qs}` : "";
+  };
+
+  const fetchAll = async (currentFiltros = filtros) => {
     if (!proyectoId) return;
     setLoading(true);
 
     try {
       const [cfgRes, resumenRes] = await Promise.all([
         jfetch(`/proyectos/${proyectoId}/costos`),
-        jfetch(`/proyectos/${proyectoId}/costos/resumen`),
+        jfetch(
+          `/proyectos/${proyectoId}/costos/resumen${buildResumenQuery(
+            currentFiltros
+          )}`
+        ),
       ]);
 
       const cfg = await cfgRes.json().catch(() => ({}));
       const sum = await resumenRes.json().catch(() => ({}));
 
       if (!cfgRes.ok) throw new Error(cfg?.mensaje || `HTTP ${cfgRes.status}`);
-      if (!resumenRes.ok) throw new Error(sum?.mensaje || `HTTP ${resumenRes.status}`);
+      if (!resumenRes.ok)
+        throw new Error(sum?.mensaje || `HTTP ${resumenRes.status}`);
 
       const p = cfg.proyecto || {};
-      const rawCatalogos = cfg.catalogos || { perfiles: [], modulos: [] };
+      const rawCatalogos = cfg.catalogos || {
+        perfiles: [],
+        modulos: [],
+        consultores: [],
+      };
       const rawPerfilPlan = Array.isArray(cfg.perfil_plan) ? cfg.perfil_plan : [];
-
-      const modulosMap = new Map();
-
-      (rawCatalogos.modulos || []).forEach((m) => {
-        if (!m?.id) return;
-        modulosMap.set(String(m.id), {
-          id: String(m.id),
-          nombre: m.nombre || `Módulo ${m.id}`,
-        });
-      });
-
-      rawPerfilPlan.forEach((row) => {
-        if (row?.modulo_id) {
-          modulosMap.set(String(row.modulo_id), {
-            id: String(row.modulo_id),
-            nombre: row?.modulo?.nombre || `Módulo ${row.modulo_id}`,
-          });
-        }
-      });
 
       setProyecto(p);
 
       setCatalogos({
-        perfiles: Array.isArray(rawCatalogos.perfiles) ? rawCatalogos.perfiles : [],
-        modulos: Array.from(modulosMap.values()),
+        perfiles: Array.isArray(rawCatalogos.perfiles)
+          ? rawCatalogos.perfiles
+          : [],
+        modulos: Array.isArray(rawCatalogos.modulos)
+          ? rawCatalogos.modulos.map((m) => ({
+              id: String(m.id),
+              nombre: m.nombre || `Módulo ${m.id}`,
+            }))
+          : [],
+        consultores: Array.isArray(rawCatalogos.consultores)
+          ? rawCatalogos.consultores.map((c) => ({
+              ...c,
+              id: String(c.id),
+              modulos: Array.isArray(c.modulos)
+                ? c.modulos.map((x) => Number(x))
+                : [],
+              perfiles: Array.isArray(c.perfiles)
+                ? c.perfiles.map((x) => Number(x))
+                : [],
+            }))
+          : [],
       });
 
       setCabecera({
@@ -296,10 +340,12 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       });
 
       setPresupuestoMensual(
-        (Array.isArray(cfg.presupuesto_mensual) ? cfg.presupuesto_mensual : []).map((row) => ({
-          ...row,
-          __rowKey: makeRowKey("pm"),
-        }))
+        (Array.isArray(cfg.presupuesto_mensual) ? cfg.presupuesto_mensual : []).map(
+          (row) => ({
+            ...row,
+            __rowKey: makeRowKey("pm"),
+          })
+        )
       );
 
       setPerfilPlan(
@@ -309,7 +355,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
             __rowKey: makeRowKey("pp"),
             perfil_id: row?.perfil_id ? String(row.perfil_id) : "",
             modulo_id: row?.modulo_id ? String(row.modulo_id) : "",
-            valor_hora_ingreso: row?.valor_hora_ingreso ?? row?.fte_estimado ?? "",
+            consultor_id: row?.consultor_id ? String(row.consultor_id) : "",
+            valor_hora_ingreso:
+              row?.valor_hora_ingreso ?? row?.fte_estimado ?? "",
           };
 
           return recalcPerfilRow(normalized);
@@ -317,10 +365,12 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       );
 
       setCostosAdicionales(
-        (Array.isArray(cfg.costos_adicionales) ? cfg.costos_adicionales : []).map((row) => ({
-          ...row,
-          __rowKey: makeRowKey("ca"),
-        }))
+        (Array.isArray(cfg.costos_adicionales) ? cfg.costos_adicionales : []).map(
+          (row) => ({
+            ...row,
+            __rowKey: makeRowKey("ca"),
+          })
+        )
       );
 
       setResumen(sum || null);
@@ -336,7 +386,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   };
 
   useEffect(() => {
-    fetchAll();
+    fetchAll(filtros);
   }, [proyectoId]);
 
   const onCabeceraChange = (key, value) => {
@@ -358,8 +408,15 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
         const next = { ...row, [key]: value };
 
-        if (key === "perfil_id" && !value) {
-          next.modulo_id = "";
+        if (key === "perfil_id") {
+          next.consultor_id = "";
+          if (!value) {
+            next.modulo_id = "";
+          }
+        }
+
+        if (key === "modulo_id") {
+          next.consultor_id = "";
         }
 
         if (key === "valor_hora_ingreso") {
@@ -405,6 +462,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         __rowKey: makeRowKey("pp"),
         perfil_id: row?.perfil_id ? String(row.perfil_id) : "",
         modulo_id: row?.modulo_id ? String(row.modulo_id) : "",
+        consultor_id: row?.consultor_id ? String(row.consultor_id) : "",
         orden: Number(row.orden ?? index) + 1,
       };
 
@@ -469,9 +527,13 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
 
       Swal.fire({ icon: "success", title: "Cabecera guardada" });
-      await fetchAll();
+      await fetchAll(filtros);
     } catch (e) {
-      Swal.fire({ icon: "error", title: "Error", text: String(e.message || e) });
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: String(e.message || e),
+      });
     } finally {
       setSaving((s) => ({ ...s, cabecera: false }));
     }
@@ -483,19 +545,26 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
       const payload = presupuestoMensual.map(({ __rowKey, ...row }) => row);
 
-      const res = await jfetch(`/proyectos/${proyectoId}/costos/presupuesto-mensual`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: payload }),
-      });
+      const res = await jfetch(
+        `/proyectos/${proyectoId}/costos/presupuesto-mensual`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows: payload }),
+        }
+      );
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
 
       Swal.fire({ icon: "success", title: "Presupuesto mensual guardado" });
-      await fetchAll();
+      await fetchAll(filtros);
     } catch (e) {
-      Swal.fire({ icon: "error", title: "Error", text: String(e.message || e) });
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: String(e.message || e),
+      });
     } finally {
       setSaving((s) => ({ ...s, presupuesto: false }));
     }
@@ -520,9 +589,13 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
 
       Swal.fire({ icon: "success", title: "Planeación por perfil guardada" });
-      await fetchAll();
+      await fetchAll(filtros);
     } catch (e) {
-      Swal.fire({ icon: "error", title: "Error", text: String(e.message || e) });
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: String(e.message || e),
+      });
     } finally {
       setSaving((s) => ({ ...s, perfiles: false }));
     }
@@ -534,19 +607,26 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
       const payload = costosAdicionales.map(({ __rowKey, ...row }) => row);
 
-      const res = await jfetch(`/proyectos/${proyectoId}/costos/costos-adicionales`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: payload }),
-      });
+      const res = await jfetch(
+        `/proyectos/${proyectoId}/costos/costos-adicionales`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows: payload }),
+        }
+      );
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.mensaje || `HTTP ${res.status}`);
 
       Swal.fire({ icon: "success", title: "Costos adicionales guardados" });
-      await fetchAll();
+      await fetchAll(filtros);
     } catch (e) {
-      Swal.fire({ icon: "error", title: "Error", text: String(e.message || e) });
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: String(e.message || e),
+      });
     } finally {
       setSaving((s) => ({ ...s, adicionales: false }));
     }
@@ -555,17 +635,56 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   const cards = resumen?.cards || {};
   const mesesResumen = Array.isArray(resumen?.meses) ? resumen.meses : [];
 
+  const hayFiltrosActivos =
+    filtros.moduloIds.length > 0 || filtros.consultorIds.length > 0;
+
+  const periodosResumenSet = useMemo(() => {
+    return new Set((mesesResumen || []).map((row) => String(row.periodo || "")));
+  }, [mesesResumen]);
+
+  const shouldKeepByPeriodo = (row) => {
+    if (!hayFiltrosActivos) return true;
+    if (!periodosResumenSet.size) return false;
+    const periodo = getPeriodo(row);
+    return periodosResumenSet.has(periodo);
+  };
+
+  const presupuestoMensualView = useMemo(() => {
+    return (presupuestoMensual || [])
+      .map((row, originalIndex) => ({ ...row, __originalIndex: originalIndex }))
+      .filter((row) => shouldKeepByPeriodo(row));
+  }, [presupuestoMensual, hayFiltrosActivos, periodosResumenSet]);
+
+  const perfilPlanView = useMemo(() => {
+    return (perfilPlan || [])
+      .map((row, originalIndex) => ({ ...row, __originalIndex: originalIndex }))
+      .filter((row) => {
+        const okModulo =
+          !filtros.moduloIds.length ||
+          filtros.moduloIds.includes(String(row.modulo_id || ""));
+
+        const okConsultor =
+          !filtros.consultorIds.length ||
+          filtros.consultorIds.includes(String(row.consultor_id || ""));
+
+        return okModulo && okConsultor;
+      });
+  }, [perfilPlan, filtros]);
+
+  const costosAdicionalesView = useMemo(() => {
+    return (costosAdicionales || [])
+      .map((row, originalIndex) => ({ ...row, __originalIndex: originalIndex }))
+      .filter((row) => shouldKeepByPeriodo(row));
+  }, [costosAdicionales, hayFiltrosActivos, periodosResumenSet]);
+
   const planeacionPorPeriodo = useMemo(() => {
     const map = new Map();
 
-    (perfilPlan || []).forEach((row) => {
+    (perfilPlanView || []).forEach((row) => {
       if (!row?.activo) return;
 
-      const anio = String(row.anio || "").trim();
-      const mes = String(row.mes || "").padStart(2, "0");
-      if (!anio || !mes) return;
-
-      const periodo = `${anio}-${mes}`;
+      const periodo = getPeriodo(row);
+      if (!periodo) return;
 
       if (!map.has(periodo)) {
         map.set(periodo, {
@@ -590,10 +709,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     });
 
     return map;
-  }, [perfilPlan]);
+  }, [perfilPlanView]);
 
   const totalsPresupuesto = useMemo(() => {
-    return presupuestoMensual.reduce(
+    return presupuestoMensualView.reduce(
       (acc, row) => {
         acc.ingreso += toNumber(row.ingreso_planeado);
         acc.costo += toNumber(row.costo_planeado);
@@ -604,10 +723,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       },
       { ingreso: 0, costo: 0, gastoOp: 0, costoAdm: 0, ebitda: 0 }
     );
-  }, [presupuestoMensual]);
+  }, [presupuestoMensualView]);
 
   const totalsPerfil = useMemo(() => {
-    return perfilPlan.reduce(
+    return perfilPlanView.reduce(
       (acc, row) => {
         acc.horas += toNumber(row.horas_estimadas);
         acc.costo += toNumber(row.costo_estimado);
@@ -616,11 +735,14 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       },
       { horas: 0, costo: 0, ingreso: 0 }
     );
-  }, [perfilPlan]);
+  }, [perfilPlanView]);
 
   const totalsAdicionales = useMemo(() => {
-    return costosAdicionales.reduce((acc, row) => acc + toNumber(row.valor), 0);
-  }, [costosAdicionales]);
+    return costosAdicionalesView.reduce(
+      (acc, row) => acc + toNumber(row.valor),
+      0
+    );
+  }, [costosAdicionalesView]);
 
   const resumenMensualCostos = useMemo(() => {
     return (mesesResumen || []).map((row) => {
@@ -788,6 +910,29 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     return acc;
   }, [comparativoHorasCosto, cabecera]);
 
+  const getConsultoresDisponibles = (perfilId, moduloId) => {
+    return (catalogos.consultores || []).filter((c) => {
+      const okPerfil =
+        !perfilId || (c.perfiles || []).includes(Number(perfilId));
+
+      const okModulo =
+        !moduloId || (c.modulos || []).includes(Number(moduloId));
+
+      return okPerfil && okModulo;
+    });
+  };
+
+  const aplicarFiltros = (next) => {
+    setFiltros(next);
+    fetchAll(next);
+  };
+
+  const limpiarFiltros = () => {
+    const next = { moduloIds: [], consultorIds: [] };
+    setFiltros(next);
+    fetchAll(next);
+  };
+
   if (!proyectoId) return null;
 
   return (
@@ -796,11 +941,18 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         <div>
           <h2 className="pcp-title">Control financiero del proyecto</h2>
           <p className="pcp-subtitle">
-            {proyecto ? `${proyecto.codigo} - ${proyecto.nombre}` : "Cargando proyecto..."}
+            {proyecto
+              ? `${proyecto.codigo} - ${proyecto.nombre}`
+              : "Cargando proyecto..."}
           </p>
         </div>
 
-        <button type="button" className="pcp-refresh" onClick={fetchAll} disabled={loading}>
+        <button
+          type="button"
+          className="pcp-refresh"
+          onClick={() => fetchAll(filtros)}
+          disabled={loading}
+        >
           {loading ? "Actualizando..." : "Refrescar"}
         </button>
       </div>
@@ -828,7 +980,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
               <div className="pcp-card">
                 <span className="pcp-card-label">Costo real acumulado</span>
-                <strong>{formatMoney(cards.costo_real_acumulado, cabecera.moneda)}</strong>
+                <strong>
+                  {formatMoney(cards.costo_real_acumulado, cabecera.moneda)}
+                </strong>
               </div>
 
               <div className="pcp-card">
@@ -861,12 +1015,16 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
               <div className="pcp-card">
                 <span className="pcp-card-label">Costo planeado acumulado</span>
-                <strong>{formatMoney(cards.costo_planeado_acumulado, cabecera.moneda)}</strong>
+                <strong>
+                  {formatMoney(cards.costo_planeado_acumulado, cabecera.moneda)}
+                </strong>
               </div>
 
               <div className="pcp-card">
                 <span className="pcp-card-label">Margen planeado</span>
-                <strong>{formatMoney(cards.margen_planeado, cabecera.moneda)}</strong>
+                <strong>
+                  {formatMoney(cards.margen_planeado, cabecera.moneda)}
+                </strong>
               </div>
             </div>
           )}
@@ -888,7 +1046,11 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           </button>
 
           {openSections.cabecera && (
-            <button type="button" onClick={guardarCabecera} disabled={saving.cabecera || loading}>
+            <button
+              type="button"
+              onClick={guardarCabecera}
+              disabled={saving.cabecera || loading}
+            >
               {saving.cabecera ? "Guardando..." : "Guardar cabecera"}
             </button>
           )}
@@ -900,7 +1062,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <label>Código OT principal</label>
               <input
                 value={cabecera.codigo_ot_principal}
-                onChange={(e) => onCabeceraChange("codigo_ot_principal", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("codigo_ot_principal", e.target.value)
+                }
               />
             </div>
 
@@ -919,7 +1083,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <label>Estado financiero</label>
               <select
                 value={cabecera.estado_financiero}
-                onChange={(e) => onCabeceraChange("estado_financiero", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("estado_financiero", e.target.value)
+                }
               >
                 <option value="BORRADOR">BORRADOR</option>
                 <option value="CONFIGURADO">CONFIGURADO</option>
@@ -941,7 +1107,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <label>Costo objetivo total</label>
               <input
                 value={cabecera.costo_objetivo_total}
-                onChange={(e) => onCabeceraChange("costo_objetivo_total", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("costo_objetivo_total", e.target.value)
+                }
               />
             </div>
 
@@ -949,7 +1117,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <label>Gasto operativo total</label>
               <input
                 value={cabecera.gasto_operativo_total}
-                onChange={(e) => onCabeceraChange("gasto_operativo_total", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("gasto_operativo_total", e.target.value)
+                }
               />
             </div>
 
@@ -957,7 +1127,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <label>Costo administrativo total</label>
               <input
                 value={cabecera.costo_administrativo_total}
-                onChange={(e) => onCabeceraChange("costo_administrativo_total", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("costo_administrativo_total", e.target.value)
+                }
               />
             </div>
 
@@ -965,7 +1137,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <label>EBITDA objetivo</label>
               <input
                 value={cabecera.ebitda_objetivo}
-                onChange={(e) => onCabeceraChange("ebitda_objetivo", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("ebitda_objetivo", e.target.value)
+                }
               />
             </div>
 
@@ -973,7 +1147,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <label>% margen objetivo</label>
               <input
                 value={cabecera.margen_objetivo_pct}
-                onChange={(e) => onCabeceraChange("margen_objetivo_pct", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("margen_objetivo_pct", e.target.value)
+                }
               />
             </div>
 
@@ -982,7 +1158,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <input
                 type="date"
                 value={cabecera.fecha_inicio_ejecucion}
-                onChange={(e) => onCabeceraChange("fecha_inicio_ejecucion", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("fecha_inicio_ejecucion", e.target.value)
+                }
               />
             </div>
 
@@ -991,7 +1169,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <input
                 type="date"
                 value={cabecera.fecha_fin_ejecucion}
-                onChange={(e) => onCabeceraChange("fecha_fin_ejecucion", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("fecha_fin_ejecucion", e.target.value)
+                }
               />
             </div>
 
@@ -1000,7 +1180,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <input
                 type="date"
                 value={cabecera.fecha_inicio_facturacion}
-                onChange={(e) => onCabeceraChange("fecha_inicio_facturacion", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("fecha_inicio_facturacion", e.target.value)
+                }
               />
             </div>
 
@@ -1009,7 +1191,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <input
                 type="date"
                 value={cabecera.fecha_fin_facturacion}
-                onChange={(e) => onCabeceraChange("fecha_fin_facturacion", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("fecha_fin_facturacion", e.target.value)
+                }
               />
             </div>
 
@@ -1017,7 +1201,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <label>Alerta 1 (%)</label>
               <input
                 value={cabecera.alerta_umbral_1}
-                onChange={(e) => onCabeceraChange("alerta_umbral_1", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("alerta_umbral_1", e.target.value)
+                }
               />
             </div>
 
@@ -1025,7 +1211,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <label>Alerta 2 (%)</label>
               <input
                 value={cabecera.alerta_umbral_2}
-                onChange={(e) => onCabeceraChange("alerta_umbral_2", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("alerta_umbral_2", e.target.value)
+                }
               />
             </div>
 
@@ -1033,8 +1221,96 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <label>Alerta 3 (%)</label>
               <input
                 value={cabecera.alerta_umbral_3}
-                onChange={(e) => onCabeceraChange("alerta_umbral_3", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("alerta_umbral_3", e.target.value)
+                }
               />
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="pcp-section">
+        <div className="pcp-section-head">
+          <button
+            type="button"
+            className="pcp-collapse-trigger"
+            onClick={() => toggleSection("filtros")}
+            aria-expanded={openSections.filtros}
+          >
+            <div>
+              <h3>Filtros globales</h3>
+              <p className="pcp-note">
+                Filtran las tablas por módulo y consultor.
+              </p>
+            </div>
+            <span className="pcp-collapse-icon">
+              {openSections.filtros ? "▾" : "▸"}
+            </span>
+          </button>
+
+          {openSections.filtros && (
+            <div className="pcp-section-actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={limpiarFiltros}
+                disabled={loading}
+              >
+                Limpiar filtros
+              </button>
+            </div>
+          )}
+        </div>
+
+        {openSections.filtros && (
+          <div className="pcp-form-grid">
+            <div className="pcp-field">
+              <label>Módulos</label>
+              <select
+                multiple
+                value={filtros.moduloIds}
+                onChange={(e) =>
+                  aplicarFiltros({
+                    ...filtros,
+                    moduloIds: getMultiValues(e),
+                  })
+                }
+                size={Math.min(
+                  8,
+                  Math.max((catalogos.modulos || []).length, 4)
+                )}
+              >
+                {(catalogos.modulos || []).map((m) => (
+                  <option key={String(m.id)} value={String(m.id)}>
+                    {m.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="pcp-field">
+              <label>Consultores</label>
+              <select
+                multiple
+                value={filtros.consultorIds}
+                onChange={(e) =>
+                  aplicarFiltros({
+                    ...filtros,
+                    consultorIds: getMultiValues(e),
+                  })
+                }
+                size={Math.min(
+                  10,
+                  Math.max((catalogos.consultores || []).length, 4)
+                )}
+              >
+                {(catalogos.consultores || []).map((c) => (
+                  <option key={String(c.id)} value={String(c.id)}>
+                    {c.nombre}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         )}
@@ -1050,7 +1326,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           >
             <div>
               <h3>Presupuesto mensual</h3>
-              <p className="pcp-note">Planeación manual de preventa por período.</p>
+              <p className="pcp-note">
+                Planeación manual de preventa por período.
+              </p>
             </div>
             <span className="pcp-collapse-icon">
               {openSections.presupuesto ? "▾" : "▸"}
@@ -1059,10 +1337,18 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
           {openSections.presupuesto && (
             <div className="pcp-section-actions">
-              <button type="button" className="secondary" onClick={addPresupuestoRow}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={addPresupuestoRow}
+              >
                 + Agregar mes
               </button>
-              <button type="button" onClick={guardarPresupuestoMensual} disabled={saving.presupuesto || loading}>
+              <button
+                type="button"
+                onClick={guardarPresupuestoMensual}
+                disabled={saving.presupuesto || loading}
+              >
                 {saving.presupuesto ? "Guardando..." : "Guardar presupuesto"}
               </button>
             </div>
@@ -1088,50 +1374,129 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               </thead>
 
               <tbody>
-                {presupuestoMensual.length === 0 && (
+                {presupuestoMensualView.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="pcp-empty">Sin meses planeados</td>
+                    <td colSpan={10} className="pcp-empty">
+                      Sin meses planeados
+                    </td>
                   </tr>
                 )}
 
-                {presupuestoMensual.map((row, index) => (
-                  <tr key={row.__rowKey || row.id || `pm-${index}`}>
-                    <td><input value={row.anio} onChange={(e) => onPresupuestoChange(index, "anio", e.target.value)} /></td>
-                    <td><input value={row.mes} onChange={(e) => onPresupuestoChange(index, "mes", e.target.value)} /></td>
-                    <td><input value={row.ingreso_planeado ?? ""} onChange={(e) => onPresupuestoChange(index, "ingreso_planeado", e.target.value)} /></td>
-                    <td><input value={row.costo_planeado ?? ""} onChange={(e) => onPresupuestoChange(index, "costo_planeado", e.target.value)} /></td>
-                    <td><input value={row.gasto_operativo_planeado ?? ""} onChange={(e) => onPresupuestoChange(index, "gasto_operativo_planeado", e.target.value)} /></td>
-                    <td><input value={row.costo_administrativo_planeado ?? ""} onChange={(e) => onPresupuestoChange(index, "costo_administrativo_planeado", e.target.value)} /></td>
-                    <td><input value={row.ebitda_planeado ?? ""} readOnly /></td>
-                    <td><input value={row.margen_planeado_pct ?? ""} readOnly /></td>
-                    <td className="center">
-                      <input
-                        type="checkbox"
-                        checked={!!row.activo}
-                        onChange={(e) => onPresupuestoChange(index, "activo", e.target.checked)}
-                      />
-                    </td>
-                    <td className="center">
-                      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                        <button
-                          type="button"
-                          className="secondary ghost"
-                          onClick={() => copyPresupuestoRow(index)}
+                {presupuestoMensualView.map((row) => {
+                  const index = row.__originalIndex;
+                  return (
+                    <tr key={row.__rowKey || row.id || `pm-${index}`}>
+                      <td>
+                        <input
+                          value={row.anio}
+                          onChange={(e) =>
+                            onPresupuestoChange(index, "anio", e.target.value)
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={row.mes}
+                          onChange={(e) =>
+                            onPresupuestoChange(index, "mes", e.target.value)
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={row.ingreso_planeado ?? ""}
+                          onChange={(e) =>
+                            onPresupuestoChange(
+                              index,
+                              "ingreso_planeado",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={row.costo_planeado ?? ""}
+                          onChange={(e) =>
+                            onPresupuestoChange(
+                              index,
+                              "costo_planeado",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={row.gasto_operativo_planeado ?? ""}
+                          onChange={(e) =>
+                            onPresupuestoChange(
+                              index,
+                              "gasto_operativo_planeado",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={row.costo_administrativo_planeado ?? ""}
+                          onChange={(e) =>
+                            onPresupuestoChange(
+                              index,
+                              "costo_administrativo_planeado",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input value={row.ebitda_planeado ?? ""} readOnly />
+                      </td>
+                      <td>
+                        <input value={row.margen_planeado_pct ?? ""} readOnly />
+                      </td>
+                      <td className="center">
+                        <input
+                          type="checkbox"
+                          checked={!!row.activo}
+                          onChange={(e) =>
+                            onPresupuestoChange(
+                              index,
+                              "activo",
+                              e.target.checked
+                            )
+                          }
+                        />
+                      </td>
+                      <td className="center">
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            justifyContent: "center",
+                          }}
                         >
-                          Copiar
-                        </button>
+                          <button
+                            type="button"
+                            className="secondary ghost"
+                            onClick={() => copyPresupuestoRow(index)}
+                          >
+                            Copiar
+                          </button>
 
-                        <button
-                          type="button"
-                          className="danger ghost"
-                          onClick={() => removePresupuestoRow(index)}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <button
+                            type="button"
+                            className="danger ghost"
+                            onClick={() => removePresupuestoRow(index)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
 
               <tfoot>
@@ -1161,7 +1526,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
             <div>
               <h3>Planeación por perfil</h3>
               <p className="pcp-note">
-                Selecciona un perfil general y luego el módulo del proyecto al que aplica la fila.
+                Selecciona un perfil general, el módulo y el consultor para la fila.
               </p>
             </div>
             <span className="pcp-collapse-icon">
@@ -1171,10 +1536,18 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
           {openSections.perfiles && (
             <div className="pcp-section-actions">
-              <button type="button" className="secondary" onClick={addPerfilRow}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={addPerfilRow}
+              >
                 + Agregar perfil
               </button>
-              <button type="button" onClick={guardarPerfilPlan} disabled={saving.perfiles || loading}>
+              <button
+                type="button"
+                onClick={guardarPerfilPlan}
+                disabled={saving.perfiles || loading}
+              >
                 {saving.perfiles ? "Guardando..." : "Guardar perfiles"}
               </button>
             </div>
@@ -1185,7 +1558,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           <>
             {(catalogos.modulos || []).length === 0 && (
               <div className="pcp-empty" style={{ marginBottom: 12 }}>
-                Este proyecto no tiene módulos configurados. Primero asocia módulos al proyecto para poder planear perfiles.
+                Este proyecto no tiene módulos configurados.
               </div>
             )}
 
@@ -1197,6 +1570,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                     <th>Mes</th>
                     <th>Perfil</th>
                     <th>Módulo</th>
+                    <th>Consultor</th>
                     <th>Horas estimadas</th>
                     <th>Valor hora ingreso</th>
                     <th>Valor hora planeado</th>
@@ -1209,127 +1583,196 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 </thead>
 
                 <tbody>
-                  {perfilPlan.length === 0 && (
+                  {perfilPlanView.length === 0 && (
                     <tr>
-                      <td colSpan={12} className="pcp-empty">Sin planeación por perfil</td>
+                      <td colSpan={13} className="pcp-empty">
+                        Sin planeación por perfil
+                      </td>
                     </tr>
                   )}
 
-                  {perfilPlan.map((row, index) => (
-                    <tr key={row.__rowKey || row.id || `pp-${index}`}>
-                      <td>
-                        <input
-                          value={row.anio}
-                          onChange={(e) => onPerfilChange(index, "anio", e.target.value)}
-                        />
-                      </td>
+                  {perfilPlanView.map((row) => {
+                    const index = row.__originalIndex;
+                    return (
+                      <tr key={row.__rowKey || row.id || `pp-${index}`}>
+                        <td>
+                          <input
+                            value={row.anio}
+                            onChange={(e) =>
+                              onPerfilChange(index, "anio", e.target.value)
+                            }
+                          />
+                        </td>
 
-                      <td>
-                        <input
-                          value={row.mes}
-                          onChange={(e) => onPerfilChange(index, "mes", e.target.value)}
-                        />
-                      </td>
+                        <td>
+                          <input
+                            value={row.mes}
+                            onChange={(e) =>
+                              onPerfilChange(index, "mes", e.target.value)
+                            }
+                          />
+                        </td>
 
-                      <td>
-                        <select
-                          value={row.perfil_id ?? ""}
-                          onChange={(e) => onPerfilChange(index, "perfil_id", e.target.value)}
-                        >
-                          <option value="">Seleccione</option>
-                          {(catalogos.perfiles || []).map((p) => (
-                            <option key={String(p.id)} value={String(p.id)}>
-                              {perfilLabel(p)}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      <td>
-                        <select
-                          value={row.modulo_id ?? ""}
-                          onChange={(e) => onPerfilChange(index, "modulo_id", e.target.value)}
-                          disabled={!row.perfil_id}
-                        >
-                          <option value="">Seleccione</option>
-                          {(catalogos.modulos || []).map((m) => (
-                            <option key={String(m.id)} value={String(m.id)}>
-                              {m.nombre}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      <td>
-                        <input
-                          value={row.horas_estimadas ?? ""}
-                          onChange={(e) => onPerfilChange(index, "horas_estimadas", e.target.value)}
-                        />
-                      </td>
-
-                      <td>
-                        <input
-                          value={row.valor_hora_ingreso ?? ""}
-                          onChange={(e) => onPerfilChange(index, "valor_hora_ingreso", e.target.value)}
-                        />
-                      </td>
-
-                      <td>
-                        <input
-                          value={row.valor_hora_planeado ?? ""}
-                          onChange={(e) => onPerfilChange(index, "valor_hora_planeado", e.target.value)}
-                        />
-                      </td>
-
-                      <td>
-                        <input value={row.costo_estimado ?? ""} readOnly />
-                      </td>
-
-                      <td>
-                        <input value={row.ingreso_estimado ?? ""} readOnly />
-                      </td>
-
-                      <td>
-                        <input
-                          value={row.observacion ?? ""}
-                          onChange={(e) => onPerfilChange(index, "observacion", e.target.value)}
-                        />
-                      </td>
-
-                      <td className="center">
-                        <input
-                          type="checkbox"
-                          checked={!!row.activo}
-                          onChange={(e) => onPerfilChange(index, "activo", e.target.checked)}
-                        />
-                      </td>
-
-                      <td className="center">
-                        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                          <button
-                            type="button"
-                            className="secondary ghost"
-                            onClick={() => copyPerfilRow(index)}
+                        <td>
+                          <select
+                            value={row.perfil_id ?? ""}
+                            onChange={(e) =>
+                              onPerfilChange(index, "perfil_id", e.target.value)
+                            }
                           >
-                            Copiar
-                          </button>
+                            <option value="">Seleccione</option>
+                            {(catalogos.perfiles || []).map((p) => (
+                              <option key={String(p.id)} value={String(p.id)}>
+                                {perfilLabel(p)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
 
-                          <button
-                            type="button"
-                            className="danger ghost"
-                            onClick={() => removePerfilRow(index)}
+                        <td>
+                          <select
+                            value={row.modulo_id ?? ""}
+                            onChange={(e) =>
+                              onPerfilChange(index, "modulo_id", e.target.value)
+                            }
+                            disabled={!row.perfil_id}
                           >
-                            Eliminar
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            <option value="">Seleccione</option>
+                            {(catalogos.modulos || []).map((m) => (
+                              <option key={String(m.id)} value={String(m.id)}>
+                                {m.nombre}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        <td>
+                          <select
+                            value={row.consultor_id ?? ""}
+                            onChange={(e) =>
+                              onPerfilChange(
+                                index,
+                                "consultor_id",
+                                e.target.value
+                              )
+                            }
+                            disabled={!row.perfil_id}
+                          >
+                            <option value="">Seleccione</option>
+                            {getConsultoresDisponibles(
+                              row.perfil_id,
+                              row.modulo_id
+                            ).map((c) => (
+                              <option key={String(c.id)} value={String(c.id)}>
+                                {c.nombre}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        <td>
+                          <input
+                            value={row.horas_estimadas ?? ""}
+                            onChange={(e) =>
+                              onPerfilChange(
+                                index,
+                                "horas_estimadas",
+                                e.target.value
+                              )
+                            }
+                          />
+                        </td>
+
+                        <td>
+                          <input
+                            value={row.valor_hora_ingreso ?? ""}
+                            onChange={(e) =>
+                              onPerfilChange(
+                                index,
+                                "valor_hora_ingreso",
+                                e.target.value
+                              )
+                            }
+                          />
+                        </td>
+
+                        <td>
+                          <input
+                            value={row.valor_hora_planeado ?? ""}
+                            onChange={(e) =>
+                              onPerfilChange(
+                                index,
+                                "valor_hora_planeado",
+                                e.target.value
+                              )
+                            }
+                          />
+                        </td>
+
+                        <td>
+                          <input value={row.costo_estimado ?? ""} readOnly />
+                        </td>
+
+                        <td>
+                          <input value={row.ingreso_estimado ?? ""} readOnly />
+                        </td>
+
+                        <td>
+                          <input
+                            value={row.observacion ?? ""}
+                            onChange={(e) =>
+                              onPerfilChange(
+                                index,
+                                "observacion",
+                                e.target.value
+                              )
+                            }
+                          />
+                        </td>
+
+                        <td className="center">
+                          <input
+                            type="checkbox"
+                            checked={!!row.activo}
+                            onChange={(e) =>
+                              onPerfilChange(index, "activo", e.target.checked)
+                            }
+                          />
+                        </td>
+
+                        <td className="center">
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              justifyContent: "center",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className="secondary ghost"
+                              onClick={() => copyPerfilRow(index)}
+                            >
+                              Copiar
+                            </button>
+
+                            <button
+                              type="button"
+                              className="danger ghost"
+                              onClick={() => removePerfilRow(index)}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
 
                 <tfoot>
                   <tr>
-                    <th colSpan={4}>Totales</th>
+                    <th colSpan={5}>Totales</th>
                     <th>{formatNumber(totalsPerfil.horas)}</th>
                     <th></th>
                     <th></th>
@@ -1354,7 +1797,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           >
             <div>
               <h3>Costos adicionales</h3>
-              <p className="pcp-note">Operativos, administrativos u otros.</p>
+              <p className="pcp-note">
+                Costos no incluidos en la planeación por perfil.
+              </p>
             </div>
             <span className="pcp-collapse-icon">
               {openSections.adicionales ? "▾" : "▸"}
@@ -1363,11 +1808,21 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
           {openSections.adicionales && (
             <div className="pcp-section-actions">
-              <button type="button" className="secondary" onClick={addCostoAdicionalRow}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={addCostoAdicionalRow}
+              >
                 + Agregar costo
               </button>
-              <button type="button" onClick={guardarCostosAdicionales} disabled={saving.adicionales || loading}>
-                {saving.adicionales ? "Guardando..." : "Guardar adicionales"}
+              <button
+                type="button"
+                onClick={guardarCostosAdicionales}
+                disabled={saving.adicionales || loading}
+              >
+                {saving.adicionales
+                  ? "Guardando..."
+                  : "Guardar costos adicionales"}
               </button>
             </div>
           )}
@@ -1390,57 +1845,126 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               </thead>
 
               <tbody>
-                {costosAdicionales.length === 0 && (
+                {costosAdicionalesView.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="pcp-empty">Sin costos adicionales</td>
+                    <td colSpan={8} className="pcp-empty">
+                      Sin costos adicionales
+                    </td>
                   </tr>
                 )}
 
-                {costosAdicionales.map((row, index) => (
-                  <tr key={row.__rowKey || row.id || `ca-${index}`}>
-                    <td><input value={row.anio} onChange={(e) => onAdicionalChange(index, "anio", e.target.value)} /></td>
-                    <td><input value={row.mes} onChange={(e) => onAdicionalChange(index, "mes", e.target.value)} /></td>
-                    <td>
-                      <select
-                        value={row.tipo_costo ?? "OTRO"}
-                        onChange={(e) => onAdicionalChange(index, "tipo_costo", e.target.value)}
-                      >
-                        <option value="OPERATIVO">OPERATIVO</option>
-                        <option value="ADMINISTRATIVO">ADMINISTRATIVO</option>
-                        <option value="OTRO">OTRO</option>
-                      </select>
-                    </td>
-                    <td><input value={row.categoria ?? ""} onChange={(e) => onAdicionalChange(index, "categoria", e.target.value)} /></td>
-                    <td><input value={row.descripcion ?? ""} onChange={(e) => onAdicionalChange(index, "descripcion", e.target.value)} /></td>
-                    <td><input value={row.valor ?? ""} onChange={(e) => onAdicionalChange(index, "valor", e.target.value)} /></td>
-                    <td className="center">
-                      <input
-                        type="checkbox"
-                        checked={!!row.activo}
-                        onChange={(e) => onAdicionalChange(index, "activo", e.target.checked)}
-                      />
-                    </td>
-                    <td className="center">
-                      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                        <button
-                          type="button"
-                          className="secondary ghost"
-                          onClick={() => copyCostoAdicionalRow(index)}
-                        >
-                          Copiar
-                        </button>
+                {costosAdicionalesView.map((row) => {
+                  const index = row.__originalIndex;
+                  return (
+                    <tr key={row.__rowKey || row.id || `ca-${index}`}>
+                      <td>
+                        <input
+                          value={row.anio}
+                          onChange={(e) =>
+                            onAdicionalChange(index, "anio", e.target.value)
+                          }
+                        />
+                      </td>
 
-                        <button
-                          type="button"
-                          className="danger ghost"
-                          onClick={() => removeCostoAdicionalRow(index)}
+                      <td>
+                        <input
+                          value={row.mes}
+                          onChange={(e) =>
+                            onAdicionalChange(index, "mes", e.target.value)
+                          }
+                        />
+                      </td>
+
+                      <td>
+                        <select
+                          value={row.tipo_costo ?? "OTRO"}
+                          onChange={(e) =>
+                            onAdicionalChange(
+                              index,
+                              "tipo_costo",
+                              e.target.value
+                            )
+                          }
                         >
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <option value="OPERATIVO">OPERATIVO</option>
+                          <option value="ADMINISTRATIVO">ADMINISTRATIVO</option>
+                          <option value="OTRO">OTRO</option>
+                        </select>
+                      </td>
+
+                      <td>
+                        <input
+                          value={row.categoria ?? ""}
+                          onChange={(e) =>
+                            onAdicionalChange(
+                              index,
+                              "categoria",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </td>
+
+                      <td>
+                        <input
+                          value={row.descripcion ?? ""}
+                          onChange={(e) =>
+                            onAdicionalChange(
+                              index,
+                              "descripcion",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </td>
+
+                      <td>
+                        <input
+                          value={row.valor ?? ""}
+                          onChange={(e) =>
+                            onAdicionalChange(index, "valor", e.target.value)
+                          }
+                        />
+                      </td>
+
+                      <td className="center">
+                        <input
+                          type="checkbox"
+                          checked={!!row.activo}
+                          onChange={(e) =>
+                            onAdicionalChange(index, "activo", e.target.checked)
+                          }
+                        />
+                      </td>
+
+                      <td className="center">
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            justifyContent: "center",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="secondary ghost"
+                            onClick={() => copyCostoAdicionalRow(index)}
+                          >
+                            Copiar
+                          </button>
+
+                          <button
+                            type="button"
+                            className="danger ghost"
+                            onClick={() => removeCostoAdicionalRow(index)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
 
               <tfoot>
@@ -1465,7 +1989,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           >
             <div>
               <h3>Resumen mensual real vs planeado</h3>
-              <p className="pcp-note">Consolidado usando horas reales registradas al proyecto.</p>
+              <p className="pcp-note">
+                Consolidado usando horas reales registradas al proyecto.
+              </p>
             </div>
             <span className="pcp-collapse-icon">
               {openSections.resumenMensual ? "▾" : "▸"}
@@ -1479,7 +2005,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 className="secondary"
                 onClick={() => setShowUsoCostosColumns((prev) => !prev)}
               >
-                {showUsoCostosColumns ? "Ocultar % uso y estado costos" : "Ver % uso y estado costos"}
+                {showUsoCostosColumns
+                  ? "Ocultar % uso y estado costos"
+                  : "Ver % uso y estado costos"}
               </button>
             </div>
           )}
@@ -1505,7 +2033,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <tbody>
                 {resumenMensualCostos.length === 0 && (
                   <tr>
-                    <td colSpan={showUsoCostosColumns ? 9 : 7} className="pcp-empty">
+                    <td
+                      colSpan={showUsoCostosColumns ? 9 : 7}
+                      className="pcp-empty"
+                    >
                       Aún no hay resumen mensual
                     </td>
                   </tr>
@@ -1543,24 +2074,58 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <tfoot>
                 <tr>
                   <th>Totales</th>
-                  <th>{formatMoney(totalsResumenMensual.ingreso_planeado, cabecera.moneda)}</th>
-                  <th>{formatMoney(totalsResumenMensual.precio_estimado, cabecera.moneda)}</th>
-                  <th>{formatMoney(totalsResumenMensual.costo_planeado, cabecera.moneda)}</th>
-                  <th>{formatMoney(totalsResumenMensual.costo_adicional, cabecera.moneda)}</th>
-                  <th>{formatMoney(totalsResumenMensual.costo_real, cabecera.moneda)}</th>
-                  <th>{formatMoney(totalsResumenMensual.variacion_costo, cabecera.moneda)}</th>
+                  <th>
+                    {formatMoney(
+                      totalsResumenMensual.ingreso_planeado,
+                      cabecera.moneda
+                    )}
+                  </th>
+                  <th>
+                    {formatMoney(
+                      totalsResumenMensual.precio_estimado,
+                      cabecera.moneda
+                    )}
+                  </th>
+                  <th>
+                    {formatMoney(
+                      totalsResumenMensual.costo_planeado,
+                      cabecera.moneda
+                    )}
+                  </th>
+                  <th>
+                    {formatMoney(
+                      totalsResumenMensual.costo_adicional,
+                      cabecera.moneda
+                    )}
+                  </th>
+                  <th>
+                    {formatMoney(
+                      totalsResumenMensual.costo_real,
+                      cabecera.moneda
+                    )}
+                  </th>
+                  <th>
+                    {formatMoney(
+                      totalsResumenMensual.variacion_costo,
+                      cabecera.moneda
+                    )}
+                  </th>
 
                   {showUsoCostosColumns && (
                     <th>
                       {totalsResumenMensual.pct_uso_costos == null
                         ? "—"
-                        : `${formatNumber(totalsResumenMensual.pct_uso_costos)}%`}
+                        : `${formatNumber(
+                            totalsResumenMensual.pct_uso_costos
+                          )}%`}
                     </th>
                   )}
 
                   {showUsoCostosColumns && (
                     <th>
-                      <span className={`pcp-badge ${totalsResumenMensual.estado_costos_cls}`}>
+                      <span
+                        className={`pcp-badge ${totalsResumenMensual.estado_costos_cls}`}
+                      >
                         {totalsResumenMensual.estado_costos_label}
                       </span>
                     </th>
@@ -1583,7 +2148,8 @@ export default function ProyectoCostosPanel({ proyectoId }) {
             <div>
               <h3>Comparativo horas y costo estimado vs real</h3>
               <p className="pcp-note">
-                Horas estimadas tomadas desde Planeación por perfil y comparadas contra horas reales del proyecto.
+                Horas estimadas tomadas desde Planeación por perfil y comparadas
+                contra horas reales del proyecto.
               </p>
             </div>
             <span className="pcp-collapse-icon">
@@ -1598,7 +2164,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 className="secondary"
                 onClick={() => setShowUsoHorasColumns((prev) => !prev)}
               >
-                {showUsoHorasColumns ? "Ocultar % uso y estado horas" : "Ver % uso y estado horas"}
+                {showUsoHorasColumns
+                  ? "Ocultar % uso y estado horas"
+                  : "Ver % uso y estado horas"}
               </button>
             </div>
           )}
@@ -1613,6 +2181,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                   <th>Horas estimadas</th>
                   <th>Horas reales</th>
                   <th>Variación horas</th>
+                  <th>Precio estimado</th>
+                  <th>Costo estimado</th>
+                  <th>Costo real</th>
+                  <th>Variación costo</th>
                   {showUsoHorasColumns && <th>% Uso horas</th>}
                   {showUsoHorasColumns && <th>Estado horas</th>}
                 </tr>
@@ -1621,7 +2193,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <tbody>
                 {comparativoHorasCosto.length === 0 && (
                   <tr>
-                    <td colSpan={showUsoHorasColumns ? 6 : 4} className="pcp-empty">
+                    <td
+                      colSpan={showUsoHorasColumns ? 10 : 8}
+                      className="pcp-empty"
+                    >
                       Sin comparativo disponible
                     </td>
                   </tr>
@@ -1633,6 +2208,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                     <td>{formatNumber(row.horas_estimadas)}</td>
                     <td>{formatNumber(row.horas_reales)}</td>
                     <td>{formatNumber(row.variacion_horas)}</td>
+                    <td>{formatMoney(row.precio_estimado, cabecera.moneda)}</td>
+                    <td>{formatMoney(row.costo_estimado, cabecera.moneda)}</td>
+                    <td>{formatMoney(row.costo_real, cabecera.moneda)}</td>
+                    <td>{formatMoney(row.variacion_costo, cabecera.moneda)}</td>
 
                     {showUsoHorasColumns && (
                       <td>
@@ -1659,12 +2238,26 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                   <th>{formatNumber(totalsComparativo.horas_estimadas)}</th>
                   <th>{formatNumber(totalsComparativo.horas_reales)}</th>
                   <th>{formatNumber(totalsComparativo.variacion_horas)}</th>
+                  <th>
+                    {formatMoney(totalsComparativo.precio_estimado, cabecera.moneda)}
+                  </th>
+                  <th>
+                    {formatMoney(totalsComparativo.costo_estimado, cabecera.moneda)}
+                  </th>
+                  <th>
+                    {formatMoney(totalsComparativo.costo_real, cabecera.moneda)}
+                  </th>
+                  <th>
+                    {formatMoney(totalsComparativo.variacion_costo, cabecera.moneda)}
+                  </th>
 
                   {showUsoHorasColumns && (
                     <th>
                       {totalsComparativo.pct_uso_horas == null
                         ? "—"
-                        : `${formatNumber(totalsComparativo.pct_uso_horas)}%`}
+                        : `${formatNumber(
+                            totalsComparativo.pct_uso_horas
+                          )}%`}
                     </th>
                   )}
 

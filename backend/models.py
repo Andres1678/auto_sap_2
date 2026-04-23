@@ -891,7 +891,15 @@ class ProyectoPerfilPlan(db.Model):
     consultor = relationship("Consultor", lazy="joined")
 
     __table_args__ = (
-        UniqueConstraint("proyecto_id", "anio", "mes", "perfil_id", "modulo_id", name="uq_proyecto_perfil_plan"),
+        UniqueConstraint(
+            "proyecto_id",
+            "anio",
+            "mes",
+            "perfil_id",
+            "modulo_id",
+            "consultor_id",
+            name="uq_proyecto_perfil_plan"
+        ),
     )
 
 
