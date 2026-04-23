@@ -27,6 +27,7 @@ import PanelGrafico from './PanelGrafico';
 import PerfilesPage from "./PerfilesPage";
 import CostoConsultorPage from "./CostoConsultorPage";
 import DashboardCostos from "./DashboardCostos";
+import Graficos from './Graficos';
 import { jfetch } from './lib/api';
 
 const AUTO_LOGOUT_HOURS = [6, 7, 8, 10, 18, 22];
@@ -276,6 +277,15 @@ function App() {
               element={
                 <AdminRoute allow={['ADMIN', 'CONSULTOR']} requirePermiso="GRAFICOS_VER">
                   <PanelGrafico />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/grafico"
+              element={
+                <AdminRoute allow={['ADMIN', 'CONSULTOR']} requirePermiso="GRAFICOS_VER">
+                  <Graficos />
                 </AdminRoute>
               }
             />
