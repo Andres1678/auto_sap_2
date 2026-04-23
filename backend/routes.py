@@ -6933,7 +6933,7 @@ def get_proyecto_costos(proyecto_id):
         .all()
     )
 
-    # TODOS los módulos, no solo los del proyecto
+    # ✅ todos los módulos
     modulos_catalogo = [
         {
             "id": int(m.id),
@@ -6942,36 +6942,51 @@ def get_proyecto_costos(proyecto_id):
         for m in Modulo.query.order_by(Modulo.nombre.asc()).all()
     ]
 
-    # Consultores activos + perfiles + módulos
-    consultores_catalogo = (
+    # ✅ NO usar joinedload(Consultor.perfiles) porque la tabla consultor_perfil
+    # no existe en esta BD y eso genera el 500
+    consultores_rows = (
         Consultor.query.options(
             joinedload(Consultor.modulos),
-            joinedload(Consultor.perfiles).joinedload(ConsultorPerfil.perfil),
         )
         .filter(Consultor.activo == True)
         .order_by(Consultor.nombre.asc())
         .all()
     )
 
+    consultores_catalogo = []
+    for c in consultores_rows:
+        modulos_ids = []
+
+        # relación many-to-many consultor.modulos
+        for m in (c.modulos or []):
+            try:
+                modulos_ids.append(int(m.id))
+            except Exception:
+                pass
+
+        # fallback por modulo_id legacy
+        if getattr(c, "modulo_id", None):
+            try:
+                mid = int(c.modulo_id)
+                if mid not in modulos_ids:
+                    modulos_ids.append(mid)
+            except Exception:
+                pass
+
+        consultores_catalogo.append({
+            "id": int(c.id),
+            "nombre": c.nombre,
+            "usuario": c.usuario,
+            "modulos": sorted(list(dict.fromkeys(modulos_ids))),
+            "perfiles": [],  # <- se deja vacío mientras no exista consultor_perfil
+        })
+
     return jsonify({
         "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True),
         "catalogos": {
             "perfiles": [_perfil_to_dict(x) for x in perfiles_catalogo],
             "modulos": modulos_catalogo,
-            "consultores": [
-                {
-                    "id": int(c.id),
-                    "nombre": c.nombre,
-                    "usuario": c.usuario,
-                    "modulos": [int(m.id) for m in (c.modulos or [])],
-                    "perfiles": [
-                        int(cp.perfil_id)
-                        for cp in (c.perfiles or [])
-                        if bool(getattr(cp, "activo", True))
-                    ],
-                }
-                for c in consultores_catalogo
-            ],
+            "consultores": consultores_catalogo,
         },
         "presupuesto_mensual": [
             _presupuesto_mensual_to_dict(x)
@@ -6984,14 +6999,14 @@ def get_proyecto_costos(proyecto_id):
             _perfil_plan_to_dict(x)
             for x in sorted(
                 p.perfiles_plan,
-                key=lambda r: (r.anio or 0, r.mes or 0, r.orden or 0)
+                key=lambda r: (r.anio or 0, r.mes or 0, r.orden or 0, r.id or 0)
             )
         ],
         "costos_adicionales": [
             _costo_adicional_to_dict(x)
             for x in sorted(
                 p.costos_adicionales,
-                key=lambda r: (r.anio or 0, r.mes or 0)
+                key=lambda r: (r.anio or 0, r.mes or 0, r.id or 0)
             )
         ],
     }), 200

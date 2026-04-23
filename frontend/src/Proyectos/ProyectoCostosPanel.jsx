@@ -912,13 +912,10 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
   const getConsultoresDisponibles = (perfilId, moduloId) => {
     return (catalogos.consultores || []).filter((c) => {
-      const okPerfil =
-        !perfilId || (c.perfiles || []).includes(Number(perfilId));
-
       const okModulo =
         !moduloId || (c.modulos || []).includes(Number(moduloId));
 
-      return okPerfil && okModulo;
+      return okModulo;
     });
   };
 
