@@ -1122,35 +1122,6 @@ export default function Graficos() {
 
           <button
             type="button"
-            className={"pgx-btn pgx-btn-outline" + (!canOpenProyectos ? " is-disabled" : "")}
-            disabled={!canOpenProyectos}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              e.currentTarget.blur();
-
-              if (!canOpenProyectos) {
-                Swal.fire({
-                  icon: "warning",
-                  title: "Acceso restringido",
-                  text: "Solo ADMIN o ADMIN por equipo pueden abrir el reporte de Proyectos.",
-                });
-                return;
-              }
-
-              navigate("/proyectos-horas", {
-                state: {
-                  userData: user,
-                  defaultMonth: appliedFilters.mes,
-                },
-              });
-            }}
-          >
-            Proyectos
-          </button>
-
-          <button
-            type="button"
             className="pgx-btn pgx-btn-outline"
             onClick={handleClearDraftFilters}
           >
@@ -1163,18 +1134,6 @@ export default function Graficos() {
             onClick={handleClearDraftRange}
           >
             Limpiar rango
-          </button>
-
-          <button
-            type="button"
-            className="pgx-btn pgx-btn-outline"
-            onClick={() =>
-              navigate("/dashboard-costos", {
-                state: dashboardCostosState,
-              })
-            }
-          >
-            Ver dashboard de costos
           </button>
         </div>
 
