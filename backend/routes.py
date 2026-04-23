@@ -6920,7 +6920,6 @@ def get_proyecto_costos(proyecto_id):
             joinedload(Proyecto.presupuestos_mensuales),
             joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.perfil),
             joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.modulo),
-            joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.consultor),
             joinedload(Proyecto.costos_adicionales),
         )
         .get_or_404(proyecto_id)
@@ -6933,60 +6932,59 @@ def get_proyecto_costos(proyecto_id):
         .all()
     )
 
-    # ✅ todos los módulos
-    modulos_catalogo = [
-        {
-            "id": int(m.id),
-            "nombre": m.nombre,
-        }
-        for m in Modulo.query.order_by(Modulo.nombre.asc()).all()
-    ]
-
-    # ✅ NO usar joinedload(Consultor.perfiles) porque la tabla consultor_perfil
-    # no existe en esta BD y eso genera el 500
-    consultores_rows = (
-        Consultor.query.options(
-            joinedload(Consultor.modulos),
+    rows_filtros = (
+        _apply_project_filter_shared(
+            db.session.query(
+                Registro.equipo.label("equipo"),
+                Registro.modulo.label("modulo"),
+                Registro.usuario_consultor.label("usuario_consultor"),
+                Consultor.nombre.label("consultor_nombre"),
+            )
+            .outerjoin(
+                Consultor,
+                func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
+            ),
+            proyecto_id
         )
-        .filter(Consultor.activo == True)
-        .order_by(Consultor.nombre.asc())
         .all()
     )
 
-    consultores_catalogo = []
-    for c in consultores_rows:
-        modulos_ids = []
+    equipos_map = {}
+    modulos_map = {}
+    consultores_map = {}
 
-        # relación many-to-many consultor.modulos
-        for m in (c.modulos or []):
-            try:
-                modulos_ids.append(int(m.id))
-            except Exception:
-                pass
+    for r in rows_filtros:
+        equipo = (r.equipo or "").strip().upper()
+        modulo = (r.modulo or "").strip()
+        usuario = (r.usuario_consultor or "").strip().lower()
+        nombre = (r.consultor_nombre or usuario or "").strip()
 
-        # fallback por modulo_id legacy
-        if getattr(c, "modulo_id", None):
-            try:
-                mid = int(c.modulo_id)
-                if mid not in modulos_ids:
-                    modulos_ids.append(mid)
-            except Exception:
-                pass
+        if equipo:
+            equipos_map[equipo] = {
+                "id": equipo,
+                "nombre": equipo,
+            }
 
-        consultores_catalogo.append({
-            "id": int(c.id),
-            "nombre": c.nombre,
-            "usuario": c.usuario,
-            "modulos": sorted(list(dict.fromkeys(modulos_ids))),
-            "perfiles": [],  # <- se deja vacío mientras no exista consultor_perfil
-        })
+        if modulo:
+            modulos_map[modulo.upper()] = {
+                "id": modulo,
+                "nombre": modulo,
+            }
+
+        if usuario:
+            consultores_map[usuario] = {
+                "id": usuario,
+                "usuario": usuario,
+                "nombre": nombre,
+            }
 
     return jsonify({
         "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True),
         "catalogos": {
             "perfiles": [_perfil_to_dict(x) for x in perfiles_catalogo],
-            "modulos": modulos_catalogo,
-            "consultores": consultores_catalogo,
+            "equipos": sorted(equipos_map.values(), key=lambda x: x["nombre"].upper()),
+            "modulos": sorted(modulos_map.values(), key=lambda x: x["nombre"].upper()),
+            "consultores": sorted(consultores_map.values(), key=lambda x: x["nombre"].upper()),
         },
         "presupuesto_mensual": [
             _presupuesto_mensual_to_dict(x)
@@ -7351,41 +7349,28 @@ def get_proyecto_costos_resumen(proyecto_id):
             "costo_real": Decimal("0.00"),
         }
 
-    # ---------------------------------------------------------
-    # 0) Filtros múltiples recibidos por query string
-    #    Ej:
-    #    ?modulo_id=1&modulo_id=2&consultor_id=5&consultor_id=8
-    # ---------------------------------------------------------
-    modulo_ids = []
-    consultor_ids = []
+    filtro_equipos = [
+        str(v).strip().upper()
+        for v in request.args.getlist("equipo")
+        if str(v).strip()
+    ]
 
-    for v in request.args.getlist("modulo_id"):
-        try:
-            modulo_ids.append(int(v))
-        except Exception:
-            pass
+    filtro_modulos = [
+        str(v).strip().upper()
+        for v in request.args.getlist("modulo")
+        if str(v).strip()
+    ]
 
-    for v in request.args.getlist("consultor_id"):
-        try:
-            consultor_ids.append(int(v))
-        except Exception:
-            pass
-
-    modulo_ids = list(dict.fromkeys(modulo_ids))
-    consultor_ids = list(dict.fromkeys(consultor_ids))
-
-    # Mapa id -> nombre módulo
-    modulos_filtrados = {}
-    if modulo_ids:
-        modulos_filtrados = {
-            int(m.id): (m.nombre or "").strip().upper()
-            for m in Modulo.query.filter(Modulo.id.in_(modulo_ids)).all()
-        }
+    filtro_consultores = [
+        str(v).strip().lower()
+        for v in request.args.getlist("consultor")
+        if str(v).strip()
+    ]
 
     p = (
         Proyecto.query.options(
             joinedload(Proyecto.presupuestos_mensuales),
-            joinedload(Proyecto.perfiles_plan),
+            joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.modulo),
             joinedload(Proyecto.costos_adicionales),
         )
         .get_or_404(proyecto_id)
@@ -7393,9 +7378,6 @@ def get_proyecto_costos_resumen(proyecto_id):
 
     plan_mensual = {}
 
-    # ---------------------------------------------------------
-    # 1) Base presupuestada
-    # ---------------------------------------------------------
     for x in (p.presupuestos_mensuales or []):
         key = f"{int(x.anio):04d}-{int(x.mes):02d}"
         plan_mensual[key] = {
@@ -7413,15 +7395,15 @@ def get_proyecto_costos_resumen(proyecto_id):
             "costo_real": Decimal("0.00"),
         }
 
-    # ---------------------------------------------------------
-    # 2) Horas planeadas desde perfil plan
-    #    Se filtra por módulo y consultor si vienen en query string
-    # ---------------------------------------------------------
     for x in (p.perfiles_plan or []):
-        if modulo_ids and int(getattr(x, "modulo_id", 0) or 0) not in modulo_ids:
+        if not bool(getattr(x, "activo", True)):
             continue
 
-        if consultor_ids and int(getattr(x, "consultor_id", 0) or 0) not in consultor_ids:
+        modulo_nombre = ""
+        if getattr(x, "modulo", None):
+            modulo_nombre = (x.modulo.nombre or "").strip().upper()
+
+        if filtro_modulos and modulo_nombre not in filtro_modulos:
             continue
 
         key = f"{int(x.anio):04d}-{int(x.mes):02d}"
@@ -7431,11 +7413,6 @@ def get_proyecto_costos_resumen(proyecto_id):
 
         plan_mensual[key]["horas_planeadas"] += _dec(x.horas_estimadas)
 
-    # ---------------------------------------------------------
-    # 3) Costos adicionales
-    #    Ojo: estos no están amarrados a módulo ni consultor,
-    #    así que se mantienen igual a nivel de período
-    # ---------------------------------------------------------
     for x in (p.costos_adicionales or []):
         if not bool(getattr(x, "activo", True)):
             continue
@@ -7447,10 +7424,6 @@ def get_proyecto_costos_resumen(proyecto_id):
 
         plan_mensual[key]["costo_adicional"] += _dec(x.valor)
 
-    # ---------------------------------------------------------
-    # 4) Registros reales del proyecto usando la misma lógica
-    #    compartida de mapeo al proyecto
-    # ---------------------------------------------------------
     rows_reg_query = _apply_project_filter_shared(
         db.session.query(Registro, Consultor).outerjoin(
             Consultor,
@@ -7459,24 +7432,25 @@ def get_proyecto_costos_resumen(proyecto_id):
         proyecto_id
     )
 
-    # filtro por consultor real
-    if consultor_ids:
-        rows_reg_query = rows_reg_query.filter(Consultor.id.in_(consultor_ids))
+    if filtro_equipos:
+        rows_reg_query = rows_reg_query.filter(
+            func.upper(func.coalesce(Registro.equipo, "")).in_(filtro_equipos)
+        )
 
-    # filtro por módulo real
-    # Registro.modulo es texto, por eso aquí se filtra por nombre en mayúscula
-    if modulo_ids:
-        nombres_modulo = [v for v in modulos_filtrados.values() if v]
-        if nombres_modulo:
-            rows_reg_query = rows_reg_query.filter(
-                func.upper(func.coalesce(Registro.modulo, "")).in_(nombres_modulo)
-            )
-        else:
-            rows_reg_query = rows_reg_query.filter(text("1=0"))
+    if filtro_modulos:
+        rows_reg_query = rows_reg_query.filter(
+            func.upper(func.coalesce(Registro.modulo, "")).in_(filtro_modulos)
+        )
+
+    if filtro_consultores:
+        rows_reg_query = rows_reg_query.filter(
+            func.lower(func.coalesce(Registro.usuario_consultor, "")).in_(filtro_consultores)
+        )
 
     rows_reg = rows_reg_query.all()
 
     detalle_consultores_mes = {}
+    periodos_reales_filtrados = set()
 
     for reg, consultor in rows_reg:
         anio, mes = _fecha_to_parts(reg.fecha)
@@ -7484,6 +7458,7 @@ def get_proyecto_costos_resumen(proyecto_id):
             continue
 
         periodo = f"{anio:04d}-{mes:02d}"
+        periodos_reales_filtrados.add(periodo)
 
         horas = _dec(
             reg.total_horas
@@ -7497,22 +7472,18 @@ def get_proyecto_costos_resumen(proyecto_id):
         consultor_id = getattr(consultor, "id", None)
         consultor_nombre = (
             getattr(consultor, "nombre", None)
-            or getattr(reg, "consultor", None)
+            or getattr(reg, "usuario_consultor", None)
             or "SIN NOMBRE"
         )
         usuario_consultor = (getattr(reg, "usuario_consultor", None) or "").strip().lower()
 
-        presupuesto = None
         valor_hora = Decimal("0.00")
 
         if consultor_id:
             try:
-                presupuesto = _presupuesto_consultor_mes(consultor_id, anio, mes)
+                valor_hora = _valor_hora_consultor(consultor_id, anio, mes)
             except Exception:
-                presupuesto = None
-
-        if presupuesto:
-            valor_hora = _dec(presupuesto.get("valor_hora"))
+                valor_hora = Decimal("0.00")
 
         costo_real_reg = (horas * valor_hora).quantize(
             Decimal("0.01"),
@@ -7525,7 +7496,7 @@ def get_proyecto_costos_resumen(proyecto_id):
         plan_mensual[periodo]["horas_reales"] += horas
         plan_mensual[periodo]["costo_real"] += costo_real_reg
 
-        detail_key = f"{periodo}||{consultor_id or usuario_consultor or 'SIN_USUARIO'}"
+        detail_key = f"{periodo}||{usuario_consultor or consultor_id or 'SIN_USUARIO'}"
 
         if detail_key not in detalle_consultores_mes:
             detalle_consultores_mes[detail_key] = {
@@ -7544,9 +7515,15 @@ def get_proyecto_costos_resumen(proyecto_id):
         if detalle_consultores_mes[detail_key]["valor_hora"] <= 0 and valor_hora > 0:
             detalle_consultores_mes[detail_key]["valor_hora"] = valor_hora
 
-    # ---------------------------------------------------------
-    # 5) Salida por meses
-    # ---------------------------------------------------------
+    if filtro_equipos or filtro_modulos or filtro_consultores:
+        plan_mensual = {
+            key: value
+            for key, value in plan_mensual.items()
+            if key in periodos_reales_filtrados
+            or _dec(value.get("horas_planeadas")) > 0
+            or _dec(value.get("horas_reales")) > 0
+        }
+
     meses_out = []
     total_ingreso_planeado = Decimal("0.00")
     total_costo_planeado = Decimal("0.00")
@@ -7599,9 +7576,6 @@ def get_proyecto_costos_resumen(proyecto_id):
     if costo_objetivo_total <= 0:
         costo_objetivo_total = total_costo_planeado
 
-    # ---------------------------------------------------------
-    # 6) Detalle por consultor y mes
-    # ---------------------------------------------------------
     detalle_out = []
     for _, x in sorted(
         detalle_consultores_mes.items(),

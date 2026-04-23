@@ -215,6 +215,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     perfiles: [],
     modulos: [],
     consultores: [],
+    equipos: [],
   });
 
   const [presupuestoMensual, setPresupuestoMensual] = useState([]);
@@ -223,8 +224,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   const [resumen, setResumen] = useState(null);
 
   const [filtros, setFiltros] = useState({
-    moduloIds: [],
-    consultorIds: [],
+    equipos: [],
+    modulos: [],
+    consultores: [],
   });
 
   const [showUsoCostosColumns, setShowUsoCostosColumns] = useState(false);
@@ -252,12 +254,16 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   const buildResumenQuery = (currentFiltros = filtros) => {
     const params = new URLSearchParams();
 
-    (currentFiltros.moduloIds || []).forEach((id) => {
-      if (id) params.append("modulo_id", id);
+    (currentFiltros.equipos || []).forEach((equipo) => {
+      if (equipo) params.append("equipo", equipo);
     });
 
-    (currentFiltros.consultorIds || []).forEach((id) => {
-      if (id) params.append("consultor_id", id);
+    (currentFiltros.modulos || []).forEach((modulo) => {
+      if (modulo) params.append("modulo", modulo);
+    });
+
+    (currentFiltros.consultores || []).forEach((consultor) => {
+      if (consultor) params.append("consultor", consultor);
     });
 
     const qs = params.toString();
@@ -301,20 +307,21 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           : [],
         modulos: Array.isArray(rawCatalogos.modulos)
           ? rawCatalogos.modulos.map((m) => ({
-              id: String(m.id),
+              id: String(m.nombre || m.id),
               nombre: m.nombre || `Módulo ${m.id}`,
             }))
           : [],
         consultores: Array.isArray(rawCatalogos.consultores)
           ? rawCatalogos.consultores.map((c) => ({
-              ...c,
-              id: String(c.id),
-              modulos: Array.isArray(c.modulos)
-                ? c.modulos.map((x) => Number(x))
-                : [],
-              perfiles: Array.isArray(c.perfiles)
-                ? c.perfiles.map((x) => Number(x))
-                : [],
+              id: String(c.usuario || c.id),
+              nombre: c.nombre,
+              usuario: c.usuario,
+            }))
+          : [],
+        equipos: Array.isArray(rawCatalogos.equipos)
+          ? rawCatalogos.equipos.map((e) => ({
+              id: String(e.nombre || e.id),
+              nombre: e.nombre,
             }))
           : [],
       });
@@ -660,16 +667,20 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       .map((row, originalIndex) => ({ ...row, __originalIndex: originalIndex }))
       .filter((row) => {
         const okModulo =
-          !filtros.moduloIds.length ||
-          filtros.moduloIds.includes(String(row.modulo_id || ""));
+          !filtros.modulos.length ||
+          filtros.modulos.includes(
+            String(
+              (catalogos.modulos || []).find(
+                (m) => String(m.id) === String(row.modulo_id)
+              )?.nombre || row.modulo_id || ""
+            )
+          );
 
-        const okConsultor =
-          !filtros.consultorIds.length ||
-          filtros.consultorIds.includes(String(row.consultor_id || ""));
+        const okPeriodo = shouldKeepByPeriodo(row);
 
-        return okModulo && okConsultor;
+        return okModulo && okPeriodo;
       });
-  }, [perfilPlan, filtros]);
+  }, [perfilPlan, filtros, catalogos.modulos, hayFiltrosActivos, periodosResumenSet]);
 
   const costosAdicionalesView = useMemo(() => {
     return (costosAdicionales || [])
@@ -910,27 +921,56 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     return acc;
   }, [comparativoHorasCosto, cabecera]);
 
-  const getConsultoresDisponibles = (perfilId, moduloId) => {
-    return (catalogos.consultores || []).filter((c) => {
-      const okModulo =
-        !moduloId || (c.modulos || []).includes(Number(moduloId));
-
-      return okModulo;
-    });
-  };
-
   const aplicarFiltros = (next) => {
     setFiltros(next);
     fetchAll(next);
   };
 
   const limpiarFiltros = () => {
-    const next = { moduloIds: [], consultorIds: [] };
+    const next = { equipos: [], modulos: [], consultores: [] };
     setFiltros(next);
     fetchAll(next);
   };
 
   if (!proyectoId) return null;
+
+  const toggleFiltro = (tipo, value) => {
+  const current = filtros[tipo] || [];
+  const exists = current.includes(value);
+
+  const next = {
+    ...filtros,
+    [tipo]: exists
+      ? current.filter((x) => x !== value)
+      : [...current, value],
+  };
+
+  setFiltros(next);
+  fetchAll(next);
+};
+
+  const FilterBox = ({ title, items, tipo }) => (
+    <div className="pcp-filter-box">
+      <div className="pcp-filter-title">{title}</div>
+
+      <div className="pcp-filter-options">
+        {items.length === 0 && (
+          <div className="pcp-filter-empty">Sin opciones</div>
+        )}
+
+        {items.map((item) => (
+          <label key={`${tipo}-${item.id}`} className="pcp-filter-check">
+            <input
+              type="checkbox"
+              checked={(filtros[tipo] || []).includes(String(item.id))}
+              onChange={() => toggleFiltro(tipo, String(item.id))}
+            />
+            <span>{item.nombre}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div className="pcp">
@@ -1262,28 +1302,24 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
         {openSections.filtros && (
           <div className="pcp-form-grid">
-            <div className="pcp-field">
-              <label>Módulos</label>
-              <select
-                multiple
-                value={filtros.moduloIds}
-                onChange={(e) =>
-                  aplicarFiltros({
-                    ...filtros,
-                    moduloIds: getMultiValues(e),
-                  })
-                }
-                size={Math.min(
-                  8,
-                  Math.max((catalogos.modulos || []).length, 4)
-                )}
-              >
-                {(catalogos.modulos || []).map((m) => (
-                  <option key={String(m.id)} value={String(m.id)}>
-                    {m.nombre}
-                  </option>
-                ))}
-              </select>
+            <div className="pcp-filter-grid">
+              <FilterBox
+                title="Equipos"
+                tipo="equipos"
+                items={catalogos.equipos || []}
+              />
+
+              <FilterBox
+                title="Módulos"
+                tipo="modulos"
+                items={catalogos.modulos || []}
+              />
+
+              <FilterBox
+                title="Consultores"
+                tipo="consultores"
+                items={catalogos.consultores || []}
+              />
             </div>
 
             <div className="pcp-field">
@@ -1567,7 +1603,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                     <th>Mes</th>
                     <th>Perfil</th>
                     <th>Módulo</th>
-                    <th>Consultor</th>
                     <th>Horas estimadas</th>
                     <th>Valor hora ingreso</th>
                     <th>Valor hora planeado</th>
@@ -1582,7 +1617,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 <tbody>
                   {perfilPlanView.length === 0 && (
                     <tr>
-                      <td colSpan={13} className="pcp-empty">
+                      <td colSpan={12} className="pcp-empty">
                         Sin planeación por perfil
                       </td>
                     </tr>
@@ -1638,30 +1673,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                             {(catalogos.modulos || []).map((m) => (
                               <option key={String(m.id)} value={String(m.id)}>
                                 {m.nombre}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-
-                        <td>
-                          <select
-                            value={row.consultor_id ?? ""}
-                            onChange={(e) =>
-                              onPerfilChange(
-                                index,
-                                "consultor_id",
-                                e.target.value
-                              )
-                            }
-                            disabled={!row.perfil_id}
-                          >
-                            <option value="">Seleccione</option>
-                            {getConsultoresDisponibles(
-                              row.perfil_id,
-                              row.modulo_id
-                            ).map((c) => (
-                              <option key={String(c.id)} value={String(c.id)}>
-                                {c.nombre}
                               </option>
                             ))}
                           </select>
@@ -1769,7 +1780,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
                 <tfoot>
                   <tr>
-                    <th colSpan={5}>Totales</th>
+                    <th colSpan={4}>Totales</th>
                     <th>{formatNumber(totalsPerfil.horas)}</th>
                     <th></th>
                     <th></th>
@@ -2178,9 +2189,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                   <th>Horas estimadas</th>
                   <th>Horas reales</th>
                   <th>Variación horas</th>
-                  <th>Precio estimado</th>
-                  <th>Costo estimado</th>
-                  <th>Costo real</th>
                   <th>Variación costo</th>
                   {showUsoHorasColumns && <th>% Uso horas</th>}
                   {showUsoHorasColumns && <th>Estado horas</th>}
@@ -2205,10 +2213,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                     <td>{formatNumber(row.horas_estimadas)}</td>
                     <td>{formatNumber(row.horas_reales)}</td>
                     <td>{formatNumber(row.variacion_horas)}</td>
-                    <td>{formatMoney(row.precio_estimado, cabecera.moneda)}</td>
-                    <td>{formatMoney(row.costo_estimado, cabecera.moneda)}</td>
-                    <td>{formatMoney(row.costo_real, cabecera.moneda)}</td>
-                    <td>{formatMoney(row.variacion_costo, cabecera.moneda)}</td>
 
                     {showUsoHorasColumns && (
                       <td>
@@ -2235,18 +2239,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                   <th>{formatNumber(totalsComparativo.horas_estimadas)}</th>
                   <th>{formatNumber(totalsComparativo.horas_reales)}</th>
                   <th>{formatNumber(totalsComparativo.variacion_horas)}</th>
-                  <th>
-                    {formatMoney(totalsComparativo.precio_estimado, cabecera.moneda)}
-                  </th>
-                  <th>
-                    {formatMoney(totalsComparativo.costo_estimado, cabecera.moneda)}
-                  </th>
-                  <th>
-                    {formatMoney(totalsComparativo.costo_real, cabecera.moneda)}
-                  </th>
-                  <th>
-                    {formatMoney(totalsComparativo.variacion_costo, cabecera.moneda)}
-                  </th>
 
                   {showUsoHorasColumns && (
                     <th>
