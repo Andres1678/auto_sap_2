@@ -275,7 +275,7 @@ function App() {
               path="/panel-grafico"
               element={
                 <AdminRoute allow={['ADMIN', 'CONSULTOR']} requirePermiso="GRAFICOS_VER">
-                  <Graficos />
+                  <PanelGrafico />
                 </AdminRoute>
               }
             />
