@@ -10018,14 +10018,17 @@ def dashboard_costos_resumen():
                     }
                     for item in margenes_por_cliente
                 ],
+
                 "porClienteOperativo": [
                     {"name": k, "costo": float(_dec(v))}
                     for k, v in sorted(graf_cliente_operativo.items(), key=lambda x: x[1], reverse=True)
                 ],
+
                 "porOcupacion": [
                     {"name": k, "costo": float(_dec(v))}
                     for k, v in sorted(graf_ocupacion.items(), key=lambda x: x[1], reverse=True)
                 ],
+
                 "porMes": [
                     {
                         "periodo": periodo,
@@ -10034,6 +10037,7 @@ def dashboard_costos_resumen():
                     }
                     for periodo, vals in sorted(graf_mensual_operativo.items(), key=lambda x: x[0])
                 ],
+
                 "oportunidadesPorResultado": [
                     {
                         "name": resultado,
