@@ -13,7 +13,7 @@ export default function ConfiguracionReportes() {
       </div>
 
       <div className="config-grid">
-        <Link to="/graficos" className="config-card">
+        <Link to="/grafico" className="config-card">
           <div className="config-icon">📈</div>
           <h3>Gráficos</h3>
           <p>Visualiza todos los gráficos operativos en conjunto.</p>
