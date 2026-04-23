@@ -9626,8 +9626,6 @@ def dashboard_costos_resumen():
                 continue
 
             consultor_id = int(r.consultor_id or 0)
-            if not consultor_id:
-                continue
 
             cliente = (r.cliente or "SIN CLIENTE").strip() or "SIN CLIENTE"
             cliente_norm = _client_norm(cliente)
@@ -9642,16 +9640,17 @@ def dashboard_costos_resumen():
 
             horas = _dec(r.total_horas if r.total_horas is not None else r.tiempo_invertido)
 
-            presupuesto = _presupuesto_consultor_mes(
-                consultor_id,
-                int(fecha_reg.year),
-                int(fecha_reg.month),
-            )
-
-            if isinstance(presupuesto, dict):
-                valor_hora = _dec(presupuesto.get("valor_hora"))
-            else:
-                valor_hora = _dec(presupuesto)
+            valor_hora = Decimal("0.00")
+            if consultor_id:
+                presupuesto = _presupuesto_consultor_mes(
+                    consultor_id,
+                    int(fecha_reg.year),
+                    int(fecha_reg.month),
+                )
+                if isinstance(presupuesto, dict):
+                    valor_hora = _dec(presupuesto.get("valor_hora"))
+                else:
+                    valor_hora = _dec(presupuesto)
 
             costo = (horas * valor_hora).quantize(
                 Decimal("0.01"),
