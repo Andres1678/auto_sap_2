@@ -9521,9 +9521,15 @@ def dashboard_costos_resumen():
                 return Decimal("0.00")
 
         def _client_norm(v):
-            return " ".join(str(v or "").strip().upper().split())
+            return " ".join(str(v or "").replace("\u00A0", " ").strip().upper().split())
 
-        clientes_filter = _get_multi("cliente")
+        def _sql_client_norm(col):
+            c = func.upper(func.trim(func.replace(func.coalesce(col, ""), "\u00A0", " ")))
+            c = func.replace(c, "  ", " ")
+            c = func.replace(c, "  ", " ")
+            return c
+
+        clientes_filter = [_client_norm(x) for x in _get_multi("cliente")]
         consultores_filter = _get_multi("consultor")
         modulos_filter = [x.upper() for x in _get_multi("modulo")]
         estados_ot_filter = _get_multi("estado_ot")
@@ -9574,7 +9580,7 @@ def dashboard_costos_resumen():
             q = q.filter(C.equipo_id == int(val))
 
         if clientes_filter:
-            q = q.filter(Registro.cliente.in_(clientes_filter))
+            q = q.filter(_sql_client_norm(Registro.cliente).in_(clientes_filter))
 
         if consultores_filter:
             q = q.filter(C.nombre.in_(consultores_filter))
@@ -9589,7 +9595,7 @@ def dashboard_costos_resumen():
             q = q.filter(Registro.ocupacion_id.in_(ocupacion_ids))
 
         if filtro_proyecto_id.isdigit():
-            q = q.filter(Registro.proyecto_id == int(filtro_proyecto_id))
+            q = _apply_project_filter_shared(q, int(filtro_proyecto_id))
 
         registros = q.all()
 
@@ -9756,8 +9762,8 @@ def dashboard_costos_resumen():
         rows_out.sort(key=lambda x: (-x["costoTotal"], x["cliente"], x["ocupacion"], x["equipo"]))
 
         # -----------------------------------------
-        # 2) OPORTUNIDADES GANADAS
-        #    Ahora se calcula valor comercial = OTC + MRC
+        # 2) OPORTUNIDADES GANADAS / OT
+        #    Valor comercial = OTC + MRC
         # -----------------------------------------
         qo = db.session.query(
             Oportunidad.id.label("id"),
@@ -9779,7 +9785,7 @@ def dashboard_costos_resumen():
         )
 
         if clientes_filter:
-            qo = qo.filter(Oportunidad.nombre_cliente.in_(clientes_filter))
+            qo = qo.filter(_sql_client_norm(Oportunidad.nombre_cliente).in_(clientes_filter))
 
         if estados_ot_filter:
             qo = qo.filter(Oportunidad.estado_ot.in_(estados_ot_filter))
@@ -10002,7 +10008,6 @@ def dashboard_costos_resumen():
             "rows": rows_out,
 
             "graficos": {
-                # Comercial: OTC + MRC por cliente
                 "porCliente": [
                     {
                         "name": item["cliente"],
@@ -10013,19 +10018,14 @@ def dashboard_costos_resumen():
                     }
                     for item in margenes_por_cliente
                 ],
-
-                # Operativo por cliente, por si lo quieres aparte
                 "porClienteOperativo": [
                     {"name": k, "costo": float(_dec(v))}
                     for k, v in sorted(graf_cliente_operativo.items(), key=lambda x: x[1], reverse=True)
                 ],
-
                 "porOcupacion": [
                     {"name": k, "costo": float(_dec(v))}
                     for k, v in sorted(graf_ocupacion.items(), key=lambda x: x[1], reverse=True)
                 ],
-
-                # NUEVO: gráfico vertical mensual
                 "porMes": [
                     {
                         "periodo": periodo,
@@ -10034,8 +10034,6 @@ def dashboard_costos_resumen():
                     }
                     for periodo, vals in sorted(graf_mensual_operativo.items(), key=lambda x: x[0])
                 ],
-
-                # NUEVO: oportunidades ganadas por resultado
                 "oportunidadesPorResultado": [
                     {
                         "name": resultado,
