@@ -23,7 +23,7 @@ import PresupuestoConsultorImport from './PresupuestoConsultorImport';
 import Proyectos from "./Proyectos";
 import ModulosAdmin from "./ModulosAdmin";
 import ProyectosHorasDashboard from './ProyectosHorasDashboard';
-import Graficos from './Graficos';
+import PanelGrafico from './PanelGrafico';
 import PerfilesPage from "./PerfilesPage";
 import CostoConsultorPage from "./CostoConsultorPage";
 import DashboardCostos from "./DashboardCostos";
@@ -272,7 +272,7 @@ function App() {
             />
 
             <Route
-              path="/grafico"
+              path="/panel-grafico"
               element={
                 <AdminRoute allow={['ADMIN', 'CONSULTOR']} requirePermiso="GRAFICOS_VER">
                   <Graficos />

@@ -107,7 +107,7 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
         </Link>
 
         <Link to="/">Inicio</Link>
-        <Link to="/grafico">Panel Gráfico</Link>
+        <Link to="/panel-grafico">Panel Gráfico</Link>
 
         {/*{can("BASE_REGISTROS_VER") && <Link to="/BaseRegistros">Base Registros</Link>}
         {can("GRAFICO_BASE_VER") && <Link to="/GraficoBase">Gráfico Base</Link>}*/}

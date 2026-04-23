@@ -2027,29 +2027,6 @@ const Registro = ({ userData }) => {
               </button>
             )}
 
-            {canViewCostoConsultor && (
-              <button
-                type="button"
-                className="btn btn-outline-primary"
-                onClick={() =>
-                  navigate("/reportes/costo-consultor", {
-                    state: {
-                      filtroEquipo: equipoLocked,
-                      filtroConsultor: Array.isArray(filtroConsultor) ? filtroConsultor[0] || "" : filtroConsultor,
-                      filtroMes,
-                      filtroAnio,
-                      filtroOcupacionIds,
-                      filtroOcupacionLabels: filtroOcupacion,
-                      equipoBloqueado: isAdminEquipo,
-                      rol,
-                    },
-                  })
-                }
-              >
-                Ver costo por consultor
-              </button>
-            )}
-
             <button
               ref={openButtonRef}
               type="button"
