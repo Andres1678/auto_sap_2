@@ -252,17 +252,23 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   };
 
   const buildResumenQuery = (currentFiltros = filtros) => {
+    const safeFiltros = currentFiltros || {
+      equipos: [],
+      modulos: [],
+      consultores: [],
+    };
+
     const params = new URLSearchParams();
 
-    (currentFiltros.equipos || []).forEach((equipo) => {
+    (safeFiltros.equipos || []).forEach((equipo) => {
       if (equipo) params.append("equipo", equipo);
     });
 
-    (currentFiltros.modulos || []).forEach((modulo) => {
+    (safeFiltros.modulos || []).forEach((modulo) => {
       if (modulo) params.append("modulo", modulo);
     });
 
-    (currentFiltros.consultores || []).forEach((consultor) => {
+    (safeFiltros.consultores || []).forEach((consultor) => {
       if (consultor) params.append("consultor", consultor);
     });
 
@@ -643,7 +649,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   const mesesResumen = Array.isArray(resumen?.meses) ? resumen.meses : [];
 
   const hayFiltrosActivos =
-    filtros.moduloIds.length > 0 || filtros.consultorIds.length > 0;
+    (filtros.equipos || []).length > 0 ||
+    (filtros.modulos || []).length > 0 ||
+    (filtros.consultores || []).length > 0;
 
   const periodosResumenSet = useMemo(() => {
     return new Set((mesesResumen || []).map((row) => String(row.periodo || "")));
@@ -663,24 +671,32 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   }, [presupuestoMensual, hayFiltrosActivos, periodosResumenSet]);
 
   const perfilPlanView = useMemo(() => {
+    const modulosFiltro = filtros.modulos || [];
+
     return (perfilPlan || [])
       .map((row, originalIndex) => ({ ...row, __originalIndex: originalIndex }))
       .filter((row) => {
+        const moduloRow = (catalogos.modulos || []).find(
+          (m) => String(m.id) === String(row.modulo_id)
+        );
+
+        const moduloNombre = String(moduloRow?.nombre || row.modulo_id || "").toUpperCase();
+
         const okModulo =
-          !filtros.modulos.length ||
-          filtros.modulos.includes(
-            String(
-              (catalogos.modulos || []).find(
-                (m) => String(m.id) === String(row.modulo_id)
-              )?.nombre || row.modulo_id || ""
-            )
-          );
+          modulosFiltro.length === 0 ||
+          modulosFiltro.map((x) => String(x).toUpperCase()).includes(moduloNombre);
 
         const okPeriodo = shouldKeepByPeriodo(row);
 
         return okModulo && okPeriodo;
       });
-  }, [perfilPlan, filtros, catalogos.modulos, hayFiltrosActivos, periodosResumenSet]);
+  }, [
+    perfilPlan,
+    filtros,
+    catalogos.modulos,
+    hayFiltrosActivos,
+    periodosResumenSet,
+  ]);
 
   const costosAdicionalesView = useMemo(() => {
     return (costosAdicionales || [])
