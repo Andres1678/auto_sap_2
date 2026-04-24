@@ -1034,6 +1034,28 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     };
   }, [catalogos, filtros]);
 
+  useEffect(() => {
+    const visibles = new Set(
+      (catalogosFiltrados.consultores || []).map((c) => String(c.id))
+    );
+
+    setFiltros((prev) => {
+      const actuales = prev.consultores || [];
+      const validos = actuales.filter((id) => visibles.has(String(id)));
+
+      if (validos.length === actuales.length) return prev;
+
+      const next = {
+        ...prev,
+        consultores: validos,
+      };
+
+      fetchAll(next);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogosFiltrados.consultores]);
+
   const FilterBox = ({ title, items, tipo }) => (
     <div className="pcp-filter-box">
       <div className="pcp-filter-title">{title}</div>

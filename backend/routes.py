@@ -6940,15 +6940,15 @@ def get_proyecto_costos(proyecto_id):
     rows_filtros = (
         _apply_project_filter_shared(
             db.session.query(
-                Registro.equipo.label("equipo"),
+                func.coalesce(Equipo.nombre, Registro.equipo).label("equipo"),
                 Registro.modulo.label("modulo"),
                 Registro.usuario_consultor.label("usuario_consultor"),
+                Consultor.usuario.label("consultor_usuario"),
                 Consultor.nombre.label("consultor_nombre"),
             )
-            .outerjoin(
-                Consultor,
-                consultor_join_cond
-            ),
+            .select_from(Registro)
+            .outerjoin(Consultor, consultor_join_cond)
+            .outerjoin(Equipo, Consultor.equipo_id == Equipo.id),
             proyecto_id
         )
         .all()
@@ -6960,9 +6960,20 @@ def get_proyecto_costos(proyecto_id):
 
     for r in rows_filtros:
         equipo = (r.equipo or "").strip().upper()
-        modulo = (r.modulo or "").strip()
-        usuario = (r.usuario_consultor or "").strip().lower()
-        nombre = (r.consultor_nombre or usuario or "").strip()
+        modulo = (r.modulo or "").strip().upper()
+
+        usuario = (
+            r.consultor_usuario
+            or r.usuario_consultor
+            or ""
+        ).strip().lower()
+
+        nombre = (
+            r.consultor_nombre
+            or r.usuario_consultor
+            or usuario
+            or ""
+        ).strip()
 
         if equipo:
             equipos_map[equipo] = {
@@ -6971,7 +6982,7 @@ def get_proyecto_costos(proyecto_id):
             }
 
         if modulo:
-            modulos_map[modulo.upper()] = {
+            modulos_map[modulo] = {
                 "id": modulo,
                 "nombre": modulo,
             }
@@ -6989,16 +7000,25 @@ def get_proyecto_costos(proyecto_id):
             if equipo and equipo not in consultores_map[usuario]["equipos"]:
                 consultores_map[usuario]["equipos"].append(equipo)
 
-            if modulo and modulo.upper() not in consultores_map[usuario]["modulos"]:
-                consultores_map[usuario]["modulos"].append(modulo.upper())
+            if modulo and modulo not in consultores_map[usuario]["modulos"]:
+                consultores_map[usuario]["modulos"].append(modulo)
 
     return jsonify({
         "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True),
         "catalogos": {
             "perfiles": [_perfil_to_dict(x) for x in perfiles_catalogo],
-            "equipos": sorted(equipos_map.values(), key=lambda x: x["nombre"].upper()),
-            "modulos": sorted(modulos_map.values(), key=lambda x: x["nombre"].upper()),
-            "consultores": sorted(consultores_map.values(), key=lambda x: x["nombre"].upper()),
+            "equipos": sorted(
+                equipos_map.values(),
+                key=lambda x: x["nombre"].upper()
+            ),
+            "modulos": sorted(
+                modulos_map.values(),
+                key=lambda x: x["nombre"].upper()
+            ),
+            "consultores": sorted(
+                consultores_map.values(),
+                key=lambda x: x["nombre"].upper()
+            ),
         },
         "presupuesto_mensual": [
             _presupuesto_mensual_to_dict(x)
