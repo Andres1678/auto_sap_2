@@ -7567,8 +7567,14 @@ def get_proyecto_costos_resumen(proyecto_id):
         total_costo_planeado += costo_planeado_total
         total_costo_real += costo_real
 
-    ingreso_total = _dec(getattr(p, "ingreso_total", None))
-    costo_objetivo_total = _dec(getattr(p, "costo_objetivo_total", None))
+    hay_filtros = bool(filtro_equipos or filtro_modulos or filtro_consultores)
+
+    if hay_filtros:
+        ingreso_total = total_ingreso_planeado
+        costo_objetivo_total = total_costo_planeado
+    else:
+        ingreso_total = _dec(getattr(p, "ingreso_total", None))
+        costo_objetivo_total = _dec(getattr(p, "costo_objetivo_total", None))
 
     if ingreso_total <= 0:
         ingreso_total = total_ingreso_planeado

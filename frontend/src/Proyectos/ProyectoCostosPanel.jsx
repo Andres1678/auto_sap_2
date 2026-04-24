@@ -50,7 +50,6 @@ const newPerfilRow = () => ({
   mes: monthNow,
   perfil_id: "",
   modulo_id: "",
-  consultor_id: "",
   horas_estimadas: "",
   valor_hora_ingreso: "",
   valor_hora_planeado: "",
@@ -197,9 +196,6 @@ const getPeriodo = (row) => {
   return `${anio}-${mes}`;
 };
 
-const getMultiValues = (e) =>
-  Array.from(e.target.selectedOptions || []).map((opt) => String(opt.value));
-
 export default function ProyectoCostosPanel({ proyectoId }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState({
@@ -211,6 +207,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
   const [proyecto, setProyecto] = useState(null);
   const [cabecera, setCabecera] = useState(emptyCabecera);
+
   const [catalogos, setCatalogos] = useState({
     perfiles: [],
     modulos: [],
@@ -302,6 +299,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         perfiles: [],
         modulos: [],
         consultores: [],
+        equipos: [],
       };
       const rawPerfilPlan = Array.isArray(cfg.perfil_plan) ? cfg.perfil_plan : [];
 
@@ -320,14 +318,14 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         consultores: Array.isArray(rawCatalogos.consultores)
           ? rawCatalogos.consultores.map((c) => ({
               id: String(c.usuario || c.id),
-              nombre: c.nombre,
+              nombre: c.nombre || c.usuario || `Consultor ${c.id}`,
               usuario: c.usuario,
             }))
           : [],
         equipos: Array.isArray(rawCatalogos.equipos)
           ? rawCatalogos.equipos.map((e) => ({
               id: String(e.nombre || e.id),
-              nombre: e.nombre,
+              nombre: e.nombre || e.id,
             }))
           : [],
       });
@@ -353,12 +351,13 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       });
 
       setPresupuestoMensual(
-        (Array.isArray(cfg.presupuesto_mensual) ? cfg.presupuesto_mensual : []).map(
-          (row) => ({
-            ...row,
-            __rowKey: makeRowKey("pm"),
-          })
-        )
+        (Array.isArray(cfg.presupuesto_mensual)
+          ? cfg.presupuesto_mensual
+          : []
+        ).map((row) => ({
+          ...row,
+          __rowKey: makeRowKey("pm"),
+        }))
       );
 
       setPerfilPlan(
@@ -368,7 +367,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
             __rowKey: makeRowKey("pp"),
             perfil_id: row?.perfil_id ? String(row.perfil_id) : "",
             modulo_id: row?.modulo_id ? String(row.modulo_id) : "",
-            consultor_id: row?.consultor_id ? String(row.consultor_id) : "",
             valor_hora_ingreso:
               row?.valor_hora_ingreso ?? row?.fte_estimado ?? "",
           };
@@ -378,12 +376,13 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       );
 
       setCostosAdicionales(
-        (Array.isArray(cfg.costos_adicionales) ? cfg.costos_adicionales : []).map(
-          (row) => ({
-            ...row,
-            __rowKey: makeRowKey("ca"),
-          })
-        )
+        (Array.isArray(cfg.costos_adicionales)
+          ? cfg.costos_adicionales
+          : []
+        ).map((row) => ({
+          ...row,
+          __rowKey: makeRowKey("ca"),
+        }))
       );
 
       setResumen(sum || null);
@@ -400,6 +399,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
   useEffect(() => {
     fetchAll(filtros);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proyectoId]);
 
   const onCabeceraChange = (key, value) => {
@@ -421,15 +421,8 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
         const next = { ...row, [key]: value };
 
-        if (key === "perfil_id") {
-          next.consultor_id = "";
-          if (!value) {
-            next.modulo_id = "";
-          }
-        }
-
-        if (key === "modulo_id") {
-          next.consultor_id = "";
+        if (key === "perfil_id" && !value) {
+          next.modulo_id = "";
         }
 
         if (key === "valor_hora_ingreso") {
@@ -475,7 +468,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         __rowKey: makeRowKey("pp"),
         perfil_id: row?.perfil_id ? String(row.perfil_id) : "",
         modulo_id: row?.modulo_id ? String(row.modulo_id) : "",
-        consultor_id: row?.consultor_id ? String(row.consultor_id) : "",
         orden: Number(row.orden ?? index) + 1,
       };
 
@@ -680,11 +672,15 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           (m) => String(m.id) === String(row.modulo_id)
         );
 
-        const moduloNombre = String(moduloRow?.nombre || row.modulo_id || "").toUpperCase();
+        const moduloNombre = String(
+          moduloRow?.nombre || row.modulo_id || ""
+        ).toUpperCase();
 
         const okModulo =
           modulosFiltro.length === 0 ||
-          modulosFiltro.map((x) => String(x).toUpperCase()).includes(moduloNombre);
+          modulosFiltro
+            .map((x) => String(x).toUpperCase())
+            .includes(moduloNombre);
 
         const okPeriodo = shouldKeepByPeriodo(row);
 
@@ -847,11 +843,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       map.set(item.periodo, {
         periodo: item.periodo,
         horas_estimadas: toNumber(item.horas_estimadas),
-        ingreso_estimado: toNumber(item.ingreso_estimado),
-        costo_estimado: toNumber(item.costo_estimado),
-        precio_estimado: toNumber(item.precio_estimado),
         horas_reales: 0,
-        costo_real: 0,
       });
     });
 
@@ -863,22 +855,16 @@ export default function ProyectoCostosPanel({ proyectoId }) {
         map.set(periodo, {
           periodo,
           horas_estimadas: 0,
-          ingreso_estimado: 0,
-          costo_estimado: 0,
-          precio_estimado: 0,
           horas_reales: 0,
-          costo_real: 0,
         });
       }
 
       const item = map.get(periodo);
       item.horas_reales += toNumber(row.horas_reales);
-      item.costo_real += toNumber(row.costo_real);
     });
 
     return Array.from(map.values())
       .map((item) => {
-        const variacionCosto = item.costo_estimado - item.costo_real;
         const variacionHoras = item.horas_estimadas - item.horas_reales;
 
         const pctUsoHoras =
@@ -890,7 +876,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
         return {
           ...item,
-          variacion_costo: variacionCosto,
           variacion_horas: variacionHoras,
           pct_uso_horas: pctUsoHoras,
           estadoCls,
@@ -903,28 +888,15 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   const totalsComparativo = useMemo(() => {
     const acc = {
       horas_estimadas: 0,
-      ingreso_estimado: 0,
-      costo_estimado: 0,
       horas_reales: 0,
-      costo_real: 0,
-      variacion_costo: 0,
       variacion_horas: 0,
     };
 
     comparativoHorasCosto.forEach((row) => {
       acc.horas_estimadas += toNumber(row.horas_estimadas);
-      acc.ingreso_estimado += toNumber(row.ingreso_estimado);
-      acc.costo_estimado += toNumber(row.costo_estimado);
       acc.horas_reales += toNumber(row.horas_reales);
-      acc.costo_real += toNumber(row.costo_real);
-      acc.variacion_costo += toNumber(row.variacion_costo);
       acc.variacion_horas += toNumber(row.variacion_horas);
     });
-
-    acc.precio_estimado =
-      acc.horas_estimadas > 0
-        ? acc.ingreso_estimado / acc.horas_estimadas
-        : 0;
 
     acc.pct_uso_horas =
       acc.horas_estimadas > 0
@@ -937,33 +909,26 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     return acc;
   }, [comparativoHorasCosto, cabecera]);
 
-  const aplicarFiltros = (next) => {
-    setFiltros(next);
-    fetchAll(next);
-  };
-
   const limpiarFiltros = () => {
     const next = { equipos: [], modulos: [], consultores: [] };
     setFiltros(next);
     fetchAll(next);
   };
 
-  if (!proyectoId) return null;
-
   const toggleFiltro = (tipo, value) => {
-  const current = filtros[tipo] || [];
-  const exists = current.includes(value);
+    const current = filtros[tipo] || [];
+    const exists = current.includes(value);
 
-  const next = {
-    ...filtros,
-    [tipo]: exists
-      ? current.filter((x) => x !== value)
-      : [...current, value],
+    const next = {
+      ...filtros,
+      [tipo]: exists
+        ? current.filter((x) => x !== value)
+        : [...current, value],
+    };
+
+    setFiltros(next);
+    fetchAll(next);
   };
-
-  setFiltros(next);
-  fetchAll(next);
-};
 
   const FilterBox = ({ title, items, tipo }) => (
     <div className="pcp-filter-box">
@@ -988,6 +953,8 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     </div>
   );
 
+  if (!proyectoId) return null;
+
   return (
     <div className="pcp">
       <div className="pcp-head">
@@ -1009,6 +976,62 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           {loading ? "Actualizando..." : "Refrescar"}
         </button>
       </div>
+
+      <section className="pcp-section pcp-filter-section">
+        <div className="pcp-section-head">
+          <button
+            type="button"
+            className="pcp-collapse-trigger"
+            onClick={() => toggleSection("filtros")}
+            aria-expanded={openSections.filtros}
+          >
+            <div>
+              <h3>Filtros globales</h3>
+              <p className="pcp-note">
+                Filtran las cards y las tablas por equipo, módulo y consultor.
+              </p>
+            </div>
+            <span className="pcp-collapse-icon">
+              {openSections.filtros ? "▾" : "▸"}
+            </span>
+          </button>
+
+          {openSections.filtros && (
+            <div className="pcp-section-actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={limpiarFiltros}
+                disabled={loading}
+              >
+                Limpiar filtros
+              </button>
+            </div>
+          )}
+        </div>
+
+        {openSections.filtros && (
+          <div className="pcp-filter-grid">
+            <FilterBox
+              title="Equipos"
+              tipo="equipos"
+              items={catalogos.equipos || []}
+            />
+
+            <FilterBox
+              title="Módulos"
+              tipo="modulos"
+              items={catalogos.modulos || []}
+            />
+
+            <FilterBox
+              title="Consultores"
+              tipo="consultores"
+              items={catalogos.consultores || []}
+            />
+          </div>
+        )}
+      </section>
 
       <div className="pcp-card-groups">
         <div className="pcp-card-group">
@@ -1152,7 +1175,9 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               <label>Ingreso total</label>
               <input
                 value={cabecera.ingreso_total}
-                onChange={(e) => onCabeceraChange("ingreso_total", e.target.value)}
+                onChange={(e) =>
+                  onCabeceraChange("ingreso_total", e.target.value)
+                }
               />
             </div>
 
@@ -1278,88 +1303,6 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                   onCabeceraChange("alerta_umbral_3", e.target.value)
                 }
               />
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="pcp-section">
-        <div className="pcp-section-head">
-          <button
-            type="button"
-            className="pcp-collapse-trigger"
-            onClick={() => toggleSection("filtros")}
-            aria-expanded={openSections.filtros}
-          >
-            <div>
-              <h3>Filtros globales</h3>
-              <p className="pcp-note">
-                Filtran las tablas por módulo y consultor.
-              </p>
-            </div>
-            <span className="pcp-collapse-icon">
-              {openSections.filtros ? "▾" : "▸"}
-            </span>
-          </button>
-
-          {openSections.filtros && (
-            <div className="pcp-section-actions">
-              <button
-                type="button"
-                className="secondary"
-                onClick={limpiarFiltros}
-                disabled={loading}
-              >
-                Limpiar filtros
-              </button>
-            </div>
-          )}
-        </div>
-
-        {openSections.filtros && (
-          <div className="pcp-form-grid">
-            <div className="pcp-filter-grid">
-              <FilterBox
-                title="Equipos"
-                tipo="equipos"
-                items={catalogos.equipos || []}
-              />
-
-              <FilterBox
-                title="Módulos"
-                tipo="modulos"
-                items={catalogos.modulos || []}
-              />
-
-              <FilterBox
-                title="Consultores"
-                tipo="consultores"
-                items={catalogos.consultores || []}
-              />
-            </div>
-
-            <div className="pcp-field">
-              <label>Consultores</label>
-              <select
-                multiple
-                value={filtros.consultorIds}
-                onChange={(e) =>
-                  aplicarFiltros({
-                    ...filtros,
-                    consultorIds: getMultiValues(e),
-                  })
-                }
-                size={Math.min(
-                  10,
-                  Math.max((catalogos.consultores || []).length, 4)
-                )}
-              >
-                {(catalogos.consultores || []).map((c) => (
-                  <option key={String(c.id)} value={String(c.id)}>
-                    {c.nombre}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
         )}
@@ -1575,7 +1518,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
             <div>
               <h3>Planeación por perfil</h3>
               <p className="pcp-note">
-                Selecciona un perfil general, el módulo y el consultor para la fila.
+                Selecciona un perfil general y el módulo para la fila.
               </p>
             </div>
             <span className="pcp-collapse-icon">
@@ -2170,7 +2113,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
             aria-expanded={openSections.comparativo}
           >
             <div>
-              <h3>Comparativo horas y costo estimado vs real</h3>
+              <h3>Comparativo horas estimadas vs reales</h3>
               <p className="pcp-note">
                 Horas estimadas tomadas desde Planeación por perfil y comparadas
                 contra horas reales del proyecto.
@@ -2198,14 +2141,13 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
         {openSections.comparativo && (
           <div className="pcp-table-wrap">
-            <table className="pcp-table pcp-table-summary">
+            <table className="pcp-table pcp-table-summary pcp-table-comparativo">
               <thead>
                 <tr>
                   <th>Período</th>
                   <th>Horas estimadas</th>
                   <th>Horas reales</th>
                   <th>Variación horas</th>
-                  <th>Variación costo</th>
                   {showUsoHorasColumns && <th>% Uso horas</th>}
                   {showUsoHorasColumns && <th>Estado horas</th>}
                 </tr>
@@ -2215,7 +2157,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                 {comparativoHorasCosto.length === 0 && (
                   <tr>
                     <td
-                      colSpan={showUsoHorasColumns ? 10 : 8}
+                      colSpan={showUsoHorasColumns ? 6 : 4}
                       className="pcp-empty"
                     >
                       Sin comparativo disponible
@@ -2260,9 +2202,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                     <th>
                       {totalsComparativo.pct_uso_horas == null
                         ? "—"
-                        : `${formatNumber(
-                            totalsComparativo.pct_uso_horas
-                          )}%`}
+                        : `${formatNumber(totalsComparativo.pct_uso_horas)}%`}
                     </th>
                   )}
 
