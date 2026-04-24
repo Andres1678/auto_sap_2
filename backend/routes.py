@@ -6932,6 +6932,11 @@ def get_proyecto_costos(proyecto_id):
         .all()
     )
 
+    consultor_join_cond = db.or_(
+        func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.usuario)),
+        func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.nombre)),
+    )
+
     rows_filtros = (
         _apply_project_filter_shared(
             db.session.query(
@@ -6942,7 +6947,7 @@ def get_proyecto_costos(proyecto_id):
             )
             .outerjoin(
                 Consultor,
-                func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
+                consultor_join_cond
             ),
             proyecto_id
         )
@@ -7424,10 +7429,15 @@ def get_proyecto_costos_resumen(proyecto_id):
 
         plan_mensual[key]["costo_adicional"] += _dec(x.valor)
 
+    consultor_join_cond = db.or_(
+        func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.usuario)),
+        func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.nombre)),
+    )
+
     rows_reg_query = _apply_project_filter_shared(
         db.session.query(Registro, Consultor).outerjoin(
             Consultor,
-            func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
+            consultor_join_cond
         ),
         proyecto_id
     )
