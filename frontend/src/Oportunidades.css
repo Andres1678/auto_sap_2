@@ -15,9 +15,9 @@
   --text-dark: #1e293b;
   --thead-row-1: 48px;
 
-  --col-id-w: 110px;
-  --col-cliente-w: 260px;
-  --col-servicio-w: 340px;
+  --col-id-w: 125px;
+  --col-cliente-w: 290px;
+  --col-servicio-w: 380px;
   --col-default-w: 190px;
   --col-long-w: 520px;
 }
@@ -654,4 +654,157 @@
   .oportunidades-wrapper .tabla-oportunidades {
     min-width: 3000px;
   }
+}
+
+.oportunidades-wrapper .tabla-oportunidades {
+  table-layout: fixed !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+/* Todas las celdas del cuerpo */
+.oportunidades-wrapper .tabla-oportunidades tbody td {
+  text-align: left !important;
+  vertical-align: middle !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  line-height: 1.35 !important;
+  padding: 10px 12px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+/* Encabezados */
+.oportunidades-wrapper .tabla-oportunidades thead th {
+  text-align: center !important;
+  vertical-align: middle !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  line-height: 1.25 !important;
+  box-sizing: border-box !important;
+}
+
+/* Fila de filtros */
+.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas th {
+  vertical-align: middle !important;
+  padding: 10px !important;
+  height: 78px !important;
+}
+
+/* Inputs y selects dentro de la tabla */
+.oportunidades-wrapper .cell-input,
+.oportunidades-wrapper .tabla-oportunidades select,
+.oportunidades-wrapper .tabla-oportunidades input {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  text-align: left !important;
+}
+
+/* React select de filtros */
+.oportunidades-wrapper .select-filter {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.oportunidades-wrapper .react-select__control {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.oportunidades-wrapper .react-select__value-container {
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+
+.oportunidades-wrapper .react-select__multi-value {
+  max-width: 95px !important;
+}
+
+.oportunidades-wrapper .react-select__multi-value__label {
+  max-width: 70px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* Anchos más estables por columna */
+.oportunidades-wrapper .id-col {
+  text-align: center !important;
+  font-weight: 700 !important;
+}
+
+.oportunidades-wrapper .cliente-col {
+  min-width: 290px !important;
+  width: 290px !important;
+  max-width: 290px !important;
+}
+
+.oportunidades-wrapper .servicio-col,
+.oportunidades-wrapper .servicio-wrap-cell {
+  min-width: 380px !important;
+  width: 380px !important;
+  max-width: 380px !important;
+  vertical-align: top !important;
+}
+
+/* Columnas de estado y listas */
+.oportunidades-wrapper .tabla-oportunidades th:nth-child(5),
+.oportunidades-wrapper .tabla-oportunidades td:nth-child(5),
+.oportunidades-wrapper .tabla-oportunidades th:nth-child(6),
+.oportunidades-wrapper .tabla-oportunidades td:nth-child(6),
+.oportunidades-wrapper .tabla-oportunidades th:nth-child(7),
+.oportunidades-wrapper .tabla-oportunidades td:nth-child(7),
+.oportunidades-wrapper .tabla-oportunidades th:nth-child(8),
+.oportunidades-wrapper .tabla-oportunidades td:nth-child(8) {
+  min-width: 230px !important;
+  width: 230px !important;
+  max-width: 230px !important;
+}
+
+/* Observaciones y seguimiento */
+.oportunidades-wrapper .tabla-oportunidades td.obs-col {
+  min-width: 520px !important;
+  width: 520px !important;
+  max-width: 520px !important;
+  vertical-align: top !important;
+}
+
+/* Descripción OT */
+.oportunidades-wrapper .descripcion-ot-col,
+.oportunidades-wrapper .descripcion-ot-wrap-cell {
+  min-width: 360px !important;
+  width: 360px !important;
+  max-width: 360px !important;
+  vertical-align: top !important;
+}
+
+/* Evita que los textos se monten sobre bordes o columnas */
+.oportunidades-wrapper .tabla-oportunidades td,
+.oportunidades-wrapper .tabla-oportunidades th {
+  border-right: 1px solid #dbe3ef !important;
+  border-bottom: 1px solid #dbe3ef !important;
+}
+
+/* Para que las columnas fijas no transparenten texto de atrás */
+.oportunidades-wrapper .tabla-oportunidades tbody .sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody .sticky-col-2,
+.oportunidades-wrapper .tabla-oportunidades tbody .sticky-col-3 {
+  background: #ffffff !important;
+  overflow: hidden !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr:hover .sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody tr:hover .sticky-col-2,
+.oportunidades-wrapper .tabla-oportunidades tbody tr:hover .sticky-col-3 {
+  background: #f8fafc !important;
+}
+
+/* Ajuste visual para que las filas no queden gigantes innecesariamente */
+.oportunidades-wrapper .tabla-oportunidades tbody tr {
+  min-height: 72px !important;
 }
