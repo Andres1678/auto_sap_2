@@ -320,6 +320,12 @@ export default function ProyectoCostosPanel({ proyectoId }) {
               id: String(c.usuario || c.id),
               nombre: c.nombre || c.usuario || `Consultor ${c.id}`,
               usuario: c.usuario,
+              equipos: Array.isArray(c.equipos)
+                ? c.equipos.map((x) => String(x).toUpperCase())
+                : [],
+              modulos: Array.isArray(c.modulos)
+                ? c.modulos.map((x) => String(x).toUpperCase())
+                : [],
             }))
           : [],
         equipos: Array.isArray(rawCatalogos.equipos)
@@ -930,6 +936,104 @@ export default function ProyectoCostosPanel({ proyectoId }) {
     fetchAll(next);
   };
 
+  const catalogosFiltrados = useMemo(() => {
+    const equiposSeleccionados = (filtros.equipos || []).map((x) =>
+      String(x).toUpperCase()
+    );
+
+    const modulosSeleccionados = (filtros.modulos || []).map((x) =>
+      String(x).toUpperCase()
+    );
+
+    const consultoresSeleccionados = (filtros.consultores || []).map((x) =>
+      String(x).toLowerCase()
+    );
+
+    const consultoresBase = catalogos.consultores || [];
+
+    const consultoresFiltrados = consultoresBase.filter((c) => {
+      const equiposConsultor = (c.equipos || []).map((x) =>
+        String(x).toUpperCase()
+      );
+
+      const modulosConsultor = (c.modulos || []).map((x) =>
+        String(x).toUpperCase()
+      );
+
+      const okEquipo =
+        equiposSeleccionados.length === 0 ||
+        equiposConsultor.some((eq) => equiposSeleccionados.includes(eq));
+
+      const okModulo =
+        modulosSeleccionados.length === 0 ||
+        modulosConsultor.some((mod) => modulosSeleccionados.includes(mod));
+
+      return okEquipo && okModulo;
+    });
+
+    const equiposFiltrados = (catalogos.equipos || []).filter((e) => {
+      const equipo = String(e.id || e.nombre || "").toUpperCase();
+
+      if (modulosSeleccionados.length === 0 && consultoresSeleccionados.length === 0) {
+        return true;
+      }
+
+      return consultoresBase.some((c) => {
+        const consultorId = String(c.id || c.usuario || "").toLowerCase();
+        const equiposConsultor = (c.equipos || []).map((x) =>
+          String(x).toUpperCase()
+        );
+        const modulosConsultor = (c.modulos || []).map((x) =>
+          String(x).toUpperCase()
+        );
+
+        const okConsultor =
+          consultoresSeleccionados.length === 0 ||
+          consultoresSeleccionados.includes(consultorId);
+
+        const okModulo =
+          modulosSeleccionados.length === 0 ||
+          modulosConsultor.some((mod) => modulosSeleccionados.includes(mod));
+
+        return okConsultor && okModulo && equiposConsultor.includes(equipo);
+      });
+    });
+
+    const modulosFiltrados = (catalogos.modulos || []).filter((m) => {
+      const modulo = String(m.id || m.nombre || "").toUpperCase();
+
+      if (equiposSeleccionados.length === 0 && consultoresSeleccionados.length === 0) {
+        return true;
+      }
+
+      return consultoresBase.some((c) => {
+        const consultorId = String(c.id || c.usuario || "").toLowerCase();
+        const equiposConsultor = (c.equipos || []).map((x) =>
+          String(x).toUpperCase()
+        );
+        const modulosConsultor = (c.modulos || []).map((x) =>
+          String(x).toUpperCase()
+        );
+
+        const okConsultor =
+          consultoresSeleccionados.length === 0 ||
+          consultoresSeleccionados.includes(consultorId);
+
+        const okEquipo =
+          equiposSeleccionados.length === 0 ||
+          equiposConsultor.some((eq) => equiposSeleccionados.includes(eq));
+
+        return okConsultor && okEquipo && modulosConsultor.includes(modulo);
+      });
+    });
+
+    return {
+      equipos: equiposFiltrados,
+      modulos: modulosFiltrados,
+      consultores: consultoresFiltrados,
+    };
+  }, [catalogos, filtros]);
+
   const FilterBox = ({ title, items, tipo }) => (
     <div className="pcp-filter-box">
       <div className="pcp-filter-title">{title}</div>
@@ -1015,19 +1119,19 @@ export default function ProyectoCostosPanel({ proyectoId }) {
             <FilterBox
               title="Equipos"
               tipo="equipos"
-              items={catalogos.equipos || []}
+              items={catalogosFiltrados.equipos || []}
             />
 
             <FilterBox
               title="Módulos"
               tipo="modulos"
-              items={catalogos.modulos || []}
+              items={catalogosFiltrados.modulos || []}
             />
 
             <FilterBox
               title="Consultores"
               tipo="consultores"
-              items={catalogos.consultores || []}
+              items={catalogosFiltrados.consultores || []}
             />
           </div>
         )}

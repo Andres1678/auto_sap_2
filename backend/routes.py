@@ -6977,11 +6977,20 @@ def get_proyecto_costos(proyecto_id):
             }
 
         if usuario:
-            consultores_map[usuario] = {
-                "id": usuario,
-                "usuario": usuario,
-                "nombre": nombre,
-            }
+            if usuario not in consultores_map:
+                consultores_map[usuario] = {
+                    "id": usuario,
+                    "usuario": usuario,
+                    "nombre": nombre,
+                    "equipos": [],
+                    "modulos": [],
+                }
+
+            if equipo and equipo not in consultores_map[usuario]["equipos"]:
+                consultores_map[usuario]["equipos"].append(equipo)
+
+            if modulo and modulo.upper() not in consultores_map[usuario]["modulos"]:
+                consultores_map[usuario]["modulos"].append(modulo.upper())
 
     return jsonify({
         "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True),
