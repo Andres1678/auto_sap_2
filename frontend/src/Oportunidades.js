@@ -623,25 +623,6 @@ export default function Oportunidades() {
     );
   };
 
-  const handleExportFiltered = () => {
-    if (!filteredData?.length) {
-      return Swal.fire("Info", "No hay datos filtrados para exportar.", "info");
-    }
-
-    exportOportunidadesExcel(
-      filteredData,
-      columnOrder,
-      `oportunidades_filtrado_${todayStamp()}.xlsx`,
-      {
-        Filtros: JSON.stringify(
-          Object.fromEntries(
-            Object.entries(filters).map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : v])
-          )
-        ),
-      }
-    );
-  };
-
   function normalizeRowFromApi(r) {
     const obj = r || {};
     const otcValue = obj.otc ?? obj.otr ?? obj.OTR ?? "";
