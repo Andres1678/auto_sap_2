@@ -7415,7 +7415,7 @@ def get_proyecto_costos_resumen(proyecto_id):
     plan_mensual = {}
 
     # ---------------------------------------------------------
-    # 1) Presupuesto mensual
+    # 1) Presupuesto mensual base
     # ---------------------------------------------------------
     for x in (p.presupuestos_mensuales or []):
         key = f"{int(x.anio):04d}-{int(x.mes):02d}"
@@ -7437,6 +7437,10 @@ def get_proyecto_costos_resumen(proyecto_id):
 
     # ---------------------------------------------------------
     # 2) Horas planeadas desde planeación por perfil
+    #    Nota:
+    #    - Si filtras por módulo, se cruza contra módulo.
+    #    - Si filtras solo por equipo/consultor, no se suma planeado,
+    #      porque la planeación ya no tiene consultor/equipo asignado.
     # ---------------------------------------------------------
     for x in (p.perfiles_plan or []):
         if not bool(getattr(x, "activo", True)):
@@ -7447,6 +7451,9 @@ def get_proyecto_costos_resumen(proyecto_id):
             modulo_nombre = (x.modulo.nombre or "").strip().upper()
 
         if filtro_modulos and modulo_nombre not in filtro_modulos:
+            continue
+
+        if (filtro_equipos or filtro_consultores) and not filtro_modulos:
             continue
 
         key = f"{int(x.anio):04d}-{int(x.mes):02d}"
@@ -7472,7 +7479,8 @@ def get_proyecto_costos_resumen(proyecto_id):
 
     # ---------------------------------------------------------
     # 4) Registros reales del proyecto
-    #    Se agrupa por fecha + consultor para calcular costo real
+    #    Equipo real tomado desde Consultor.equipo_id -> Equipo.nombre
+    #    con fallback a Registro.equipo.
     # ---------------------------------------------------------
     consultor_join_cond = db.or_(
         func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.usuario)),
@@ -7484,17 +7492,23 @@ def get_proyecto_costos_resumen(proyecto_id):
             Registro.fecha.label("fecha"),
             Registro.usuario_consultor.label("usuario_consultor"),
             Consultor.id.label("consultor_id"),
+            Consultor.usuario.label("consultor_usuario"),
             Consultor.nombre.label("consultor_nombre"),
+            Equipo.nombre.label("equipo_nombre"),
+            Registro.modulo.label("modulo_nombre"),
             func.coalesce(func.sum(Registro.total_horas), 0).label("horas"),
         )
         .select_from(Registro)
-        .outerjoin(Consultor, consultor_join_cond),
+        .outerjoin(Consultor, consultor_join_cond)
+        .outerjoin(Equipo, Consultor.equipo_id == Equipo.id),
         proyecto_id
     )
 
     if filtro_equipos:
         rows_reg_query = rows_reg_query.filter(
-            func.upper(func.coalesce(Registro.equipo, "")).in_(filtro_equipos)
+            func.upper(
+                func.coalesce(Equipo.nombre, Registro.equipo, "")
+            ).in_(filtro_equipos)
         )
 
     if filtro_modulos:
@@ -7504,14 +7518,19 @@ def get_proyecto_costos_resumen(proyecto_id):
 
     if filtro_consultores:
         rows_reg_query = rows_reg_query.filter(
-            func.lower(func.coalesce(Registro.usuario_consultor, "")).in_(filtro_consultores)
+            func.lower(
+                func.coalesce(Consultor.usuario, Registro.usuario_consultor, "")
+            ).in_(filtro_consultores)
         )
 
     rows_reg_query = rows_reg_query.group_by(
         Registro.fecha,
         Registro.usuario_consultor,
         Consultor.id,
+        Consultor.usuario,
         Consultor.nombre,
+        Equipo.nombre,
+        Registro.modulo,
     )
 
     rows_reg = rows_reg_query.all()
@@ -7534,7 +7553,11 @@ def get_proyecto_costos_resumen(proyecto_id):
 
         consultor_id = r.consultor_id
         consultor_nombre = r.consultor_nombre or r.usuario_consultor or "SIN NOMBRE"
-        usuario_consultor = (r.usuario_consultor or "").strip().lower()
+        usuario_consultor = (
+            r.consultor_usuario
+            or r.usuario_consultor
+            or ""
+        ).strip().lower()
 
         valor_hora = Decimal("0.00")
 
@@ -7559,6 +7582,8 @@ def get_proyecto_costos_resumen(proyecto_id):
             "consultor_id": consultor_id,
             "consultor": consultor_nombre,
             "usuario_consultor": usuario_consultor,
+            "equipo": r.equipo_nombre,
+            "modulo": r.modulo_nombre,
             "horas": str(horas),
             "valor_hora": str(valor_hora),
             "costo_real_reg": str(costo_real_reg),
@@ -7590,7 +7615,7 @@ def get_proyecto_costos_resumen(proyecto_id):
             detalle_consultores_mes[detail_key]["valor_hora"] = valor_hora
 
     # ---------------------------------------------------------
-    # 5) Si hay filtros, dejar solo periodos que aplican
+    # 5) Si hay filtros, dejar solo períodos relacionados
     # ---------------------------------------------------------
     if hay_filtros:
         plan_mensual = {
