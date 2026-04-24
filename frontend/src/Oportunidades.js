@@ -601,6 +601,22 @@ export default function Oportunidades() {
     [prcStartIndex, tableColumnOrder]
   );
 
+  const handleExportAll = () => {
+    if (!data?.length) {
+      return Swal.fire("Info", "No hay datos para exportar.", "info");
+    }
+
+    exportOportunidadesExcel(
+      prepareRowsForExcel(data),
+      columnOrder,
+      `oportunidades_completo_${todayStamp()}.xlsx`,
+      {
+        Fuente: "Gestión de Oportunidades",
+        Nota: "Exportado desde pantalla",
+      }
+    );
+  };
+
   const handleExportFiltered = () => {
     if (!filteredData?.length) {
       return Swal.fire("Info", "No hay datos filtrados para exportar.", "info");
