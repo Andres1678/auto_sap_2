@@ -141,6 +141,54 @@ function toIsoDate(v) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function toExcelDateDDMMYYYY(v) {
+  if (!v) return "";
+
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    const dd = String(v.getDate()).padStart(2, "0");
+    const mm = String(v.getMonth() + 1).padStart(2, "0");
+    const yyyy = v.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  const s = String(v).trim();
+
+  // Si ya viene dd/mm/yyyy, lo deja igual
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    return s;
+  }
+
+  // Si viene yyyy-mm-dd, lo convierte sin usar Date para evitar desfases por zona horaria
+  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const [, yyyy, mm, dd] = isoMatch;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function prepareRowsForExcel(rows) {
+  return (rows || []).map((row) => {
+    const out = { ...row };
+
+    DATE_COLS.forEach((col) => {
+      if (Object.prototype.hasOwnProperty.call(out, col)) {
+        out[col] = out[col] ? toExcelDateDDMMYYYY(out[col]) : "";
+      }
+    });
+
+    return out;
+  });
+}
+
 function parseNumberSmart(input) {
   if (input === null || input === undefined || input === "") return "";
   if (typeof input === "number") return Number.isFinite(input) ? input : "";
@@ -553,18 +601,24 @@ export default function Oportunidades() {
     [prcStartIndex, tableColumnOrder]
   );
 
-  const handleExportAll = () => {
-    if (!data?.length) {
-      return Swal.fire("Info", "No hay datos para exportar.", "info");
+  const handleExportFiltered = () => {
+    if (!filteredData?.length) {
+      return Swal.fire("Info", "No hay datos filtrados para exportar.", "info");
     }
 
     exportOportunidadesExcel(
-      data,
+      prepareRowsForExcel(filteredData),
       columnOrder,
-      `oportunidades_completo_${todayStamp()}.xlsx`,
+      `oportunidades_filtrado_${todayStamp()}.xlsx`,
       {
-        Fuente: "Gestión de Oportunidades",
-        Nota: "Exportado desde pantalla",
+        Filtros: JSON.stringify(
+          Object.fromEntries(
+            Object.entries(filters).map(([k, v]) => [
+              k,
+              Array.isArray(v) ? v.join(", ") : v,
+            ])
+          )
+        ),
       }
     );
   };
