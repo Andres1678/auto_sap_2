@@ -399,7 +399,7 @@ export default function Oportunidades() {
   const [uniqueValues, setUniqueValues] = useState({});
   const [filters, setFilters] = useState({});
   const [file, setFile] = useState(null);
-  const [editing, setEditing] = useState({ row: null, col: null });
+  const [editing, setEditing] = useState({ rowId: null, col: null });
   const [editingContext, setEditingContext] = useState(null);
   const [newRow, setNewRow] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -768,30 +768,42 @@ export default function Oportunidades() {
 
   const handleClearFilters = () => {
     setFilters({});
-    setEditing({ row: null, col: null });
+    setEditing({ rowId: null, col: null });
     setEditingContext(null);
   };
 
-  const highlightRow = (index) => {
+  const closeEditing = () => {
+    setEditing({ rowId: null, col: null });
+    setEditingContext(null);
+  };
+
+  const sameId = (a, b) => String(a ?? "") === String(b ?? "");
+
+  const findRowById = (rowId) => data.find((r) => sameId(r?.id, rowId));
+
+  const highlightRow = (rowId) => {
     setTimeout(() => {
-      const rows = document.querySelectorAll("tbody tr");
-      const offset = newRow ? 1 : 0;
-      rows[index + offset]?.classList.add("row-success");
-      setTimeout(() => rows[index + offset]?.classList.remove("row-success"), 1600);
+      const rows = Array.from(
+        document.querySelectorAll(".tabla-oportunidades tbody tr[data-row-id]")
+      );
+      const rowEl = rows.find((tr) => tr.dataset.rowId === String(rowId ?? ""));
+
+      rowEl?.classList.add("row-success");
+      setTimeout(() => rowEl?.classList.remove("row-success"), 1600);
     }, 50);
   };
 
-  const startEdit = (rowIndex, col) => {
-    const row = filteredData[rowIndex];
-    if (!row) return;
+  const startEdit = (row, col) => {
+    if (!row?.id) return;
 
     if (col === "mrc_normalizado") {
       Swal.fire("Info", "Este campo se calcula automáticamente (OTC/12 + MRC).", "info");
       return;
     }
 
-    setEditing({ row: rowIndex, col });
+    setEditing({ rowId: row.id, col });
     setEditingContext({
+      id: row.id,
       cliente: row?.nombre_cliente ?? "-",
       servicio: row?.servicio ?? "-",
       col,
@@ -806,11 +818,11 @@ export default function Oportunidades() {
     }
   };
 
-  const saveEditMulti = async (rowIndex, updates) => {
-    const row = filteredData?.[rowIndex];
-    if (!row || !row.id) {
-      setEditing({ row: null, col: null });
-      setEditingContext(null);
+  const saveEditMulti = async (rowId, updates) => {
+    const row = findRowById(rowId);
+
+    if (!row?.id) {
+      closeEditing();
       return;
     }
 
@@ -828,33 +840,31 @@ export default function Oportunidades() {
 
       if (!resp.ok) {
         Swal.fire("Error", j?.mensaje || j?.error || `HTTP ${resp.status}`, "error");
-        setEditing({ row: null, col: null });
-        setEditingContext(null);
+        closeEditing();
         return;
       }
 
-      const nextData = data.map((r) =>
-        r.id === row.id
-          ? normalizeRowFromApi({ ...r, ...payload })
-          : r
+      setData((prev) =>
+        prev.map((r) =>
+          sameId(r.id, row.id)
+            ? normalizeRowFromApi({ ...r, ...payload })
+            : r
+        )
       );
-      setData(nextData);
 
-      highlightRow(rowIndex);
-      setEditing({ row: null, col: null });
-      setEditingContext(null);
+      highlightRow(row.id);
+      closeEditing();
     } catch (e) {
       Swal.fire("Error", e?.message || "Error inesperado", "error");
-      setEditing({ row: null, col: null });
-      setEditingContext(null);
+      closeEditing();
     }
   };
 
-  const saveEdit = async (rowIndex, col, newValue) => {
-    const row = filteredData?.[rowIndex];
-    if (!row || !row.id) {
-      setEditing({ row: null, col: null });
-      setEditingContext(null);
+  const saveEdit = async (rowId, col, newValue) => {
+    const row = findRowById(rowId);
+
+    if (!row?.id) {
+      closeEditing();
       return;
     }
 
@@ -862,19 +872,18 @@ export default function Oportunidades() {
     const incoming = isDateCol(col) ? toIsoDate(newValue) : newValue;
 
     if (String(original ?? "") === String(incoming ?? "")) {
-      setEditing({ row: null, col: null });
-      setEditingContext(null);
+      closeEditing();
       return;
     }
 
     let coercedValue = incoming;
     if (isNumericCol(col)) coercedValue = parseNumberSmart(incoming);
 
-    await saveEditMulti(rowIndex, { [col]: coercedValue });
+    await saveEditMulti(row.id, { [col]: coercedValue });
   };
 
-  const editLongText = async (rowIndex, col) => {
-    const row = filteredData[rowIndex];
+  const editLongText = async (rowId, col) => {
+    const row = findRowById(rowId);
     if (!row?.id) return;
 
     const cliente = row?.nombre_cliente ?? "-";
@@ -922,12 +931,12 @@ export default function Oportunidades() {
 
     if (res.isDenied) {
       const nextValue = `${current ? current + "\n" : ""}${stamp} - `;
-      await saveEdit(rowIndex, col, nextValue);
+      await saveEdit(row.id, col, nextValue);
       return;
     }
 
     if (res.isConfirmed) {
-      await saveEdit(rowIndex, col, res.value ?? "");
+      await saveEdit(row.id, col, res.value ?? "");
     }
   };
 
@@ -966,14 +975,24 @@ export default function Oportunidades() {
     }
   };
 
-  const renderSelect = (value, setValue, onBlur, options) => {
+  const renderSelect = (row, col, options) => {
     return (
       <select
         className="cell-input"
         autoFocus
-        value={value ?? ""}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={onBlur}
+        value={editValue ?? ""}
+        onChange={(e) => {
+          const next = e.target.value;
+          setEditValue(next);
+          saveEdit(row.id, col, next);
+        }}
+        onBlur={closeEditing}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            closeEditing();
+          }
+        }}
       >
         <option value="">-</option>
         {options.map((op) => (
@@ -985,8 +1004,8 @@ export default function Oportunidades() {
     );
   };
 
-  const renderEditorCell = (row, i, col) => {
-    if (editing.row !== i || editing.col !== col) return null;
+  const renderEditorCell = (row, col) => {
+    if (!sameId(editing.rowId, row?.id) || editing.col !== col) return null;
 
     if (isDateCol(col)) {
       return (
@@ -1000,11 +1019,11 @@ export default function Oportunidades() {
             if (e.key === "Enter") e.currentTarget.blur();
             if (e.key === "Escape") {
               e.preventDefault();
-              setEditing({ row: null, col: null });
+              setEditing({ rowId: null, col: null });
               setEditingContext(null);
             }
           }}
-          onBlur={() => saveEdit(i, col, toIsoDate(editValue))}
+          onBlur={(e) => saveEdit(row.id, col, toIsoDate(e.currentTarget.value))}
         />
       );
     }
@@ -1025,41 +1044,41 @@ export default function Oportunidades() {
             }
             if (e.key === "Escape") {
               e.preventDefault();
-              setEditing({ row: null, col: null });
+              setEditing({ rowId: null, col: null });
               setEditingContext(null);
             }
           }}
-          onBlur={() => saveEdit(i, col, editValue)}
+          onBlur={(e) => saveEdit(row.id, col, e.currentTarget.value)}
         />
       );
     }
 
     if (col === "tipo_moneda") {
-      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), ["COP", "USD"]);
+      return renderSelect(row, col, ["COP", "USD"]);
     }
 
     if (col === "tipo_cliente") {
-      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), TIPO_CLIENTE_OPTS);
+      return renderSelect(row, col, TIPO_CLIENTE_OPTS);
     }
 
     if (col === "tipo_solicitud") {
-      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), TIPO_SOLICITUD_OPTS);
+      return renderSelect(row, col, TIPO_SOLICITUD_OPTS);
     }
 
     if (col === "calificacion_oportunidad") {
-      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), CALIFICACION_OPTS);
+      return renderSelect(row, col, CALIFICACION_OPTS);
     }
 
     if (col === "origen_oportunidad") {
-      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), ORIGEN_OPTS);
+      return renderSelect(row, col, ORIGEN_OPTS);
     }
 
     if (col === "estado_ot") {
-      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), ESTADO_OT_OPTS);
+      return renderSelect(row, col, ESTADO_OT_OPTS);
     }
 
     if (col === "estado_proyecto") {
-      return renderSelect(editValue, setEditValue, () => saveEdit(i, col, editValue), ESTADO_PROYECTO_OPTS);
+      return renderSelect(row, col, ESTADO_PROYECTO_OPTS);
     }
 
     if (col === "estado_oferta") {
@@ -1072,22 +1091,15 @@ export default function Oportunidades() {
             const estado = e.target.value;
             const allowed = estadoResultadoMap[estado] || [];
             const autoRes = allowed.length === 1 ? allowed[0] : "";
-            setEditValue(estado);
-            setData((prev) =>
-              prev.map((r) =>
-                r.id === row.id
-                  ? { ...r, estado_oferta: estado, resultado_oferta: autoRes || r.resultado_oferta }
-                  : r
-              )
-            );
-          }}
-          onBlur={() => {
-            const estado = editValue ?? "";
-            const allowed = estadoResultadoMap[estado] || [];
-            const autoRes = allowed.length === 1 ? allowed[0] : "";
             const nextResultado = autoRes || row.resultado_oferta || "";
-            saveEditMulti(i, { estado_oferta: estado, resultado_oferta: nextResultado });
+
+            setEditValue(estado);
+            saveEditMulti(row.id, {
+              estado_oferta: estado,
+              resultado_oferta: nextResultado,
+            });
           }}
+          onBlur={closeEditing}
         >
           <option value="">-</option>
           {Object.keys(estadoResultadoMap).map((op) => (
@@ -1106,8 +1118,12 @@ export default function Oportunidades() {
           className="cell-input"
           autoFocus
           value={editValue ?? ""}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={() => saveEdit(i, col, editValue)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setEditValue(next);
+            saveEdit(row.id, col, next);
+          }}
+          onBlur={closeEditing}
         >
           <option value="">-</option>
           {allowed.map((op) => (
@@ -1127,25 +1143,17 @@ export default function Oportunidades() {
           value={editValue ?? ""}
           onChange={(e) => {
             const cat = e.target.value;
-            setEditValue(cat);
-            const allowed = CATEGORIA_SUBCATEGORIA[cat] || [];
-            const autoSub = allowed.length === 1 ? allowed[0] : "";
-
-            setData((prev) =>
-              prev.map((r) =>
-                r.id === row.id
-                  ? { ...r, categoria_perdida: cat, subcategoria_perdida: autoSub || r.subcategoria_perdida }
-                  : r
-              )
-            );
-          }}
-          onBlur={() => {
-            const cat = editValue ?? "";
             const allowed = CATEGORIA_SUBCATEGORIA[cat] || [];
             const autoSub = allowed.length === 1 ? allowed[0] : "";
             const nextSub = autoSub || row.subcategoria_perdida || "";
-            saveEditMulti(i, { categoria_perdida: cat, subcategoria_perdida: nextSub });
+
+            setEditValue(cat);
+            saveEditMulti(row.id, {
+              categoria_perdida: cat,
+              subcategoria_perdida: nextSub,
+            });
           }}
+          onBlur={closeEditing}
         >
           <option value="">-</option>
           {Object.keys(CATEGORIA_SUBCATEGORIA).map((op) => (
@@ -1164,8 +1172,12 @@ export default function Oportunidades() {
           className="cell-input"
           autoFocus
           value={editValue ?? ""}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={() => saveEdit(i, col, editValue)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setEditValue(next);
+            saveEdit(row.id, col, next);
+          }}
+          onBlur={closeEditing}
         >
           <option value="">-</option>
           {allowed.map((op) => (
@@ -1191,11 +1203,11 @@ export default function Oportunidades() {
           }
           if (e.key === "Escape") {
             e.preventDefault();
-            setEditing({ row: null, col: null });
+            setEditing({ rowId: null, col: null });
             setEditingContext(null);
           }
         }}
-        onBlur={() => saveEdit(i, col, editValue)}
+        onBlur={(e) => saveEdit(row.id, col, e.currentTarget.value)}
       />
     );
   };
@@ -1560,7 +1572,7 @@ export default function Oportunidades() {
               <tr className="new-row">
                 <td className={getColumnClassNames("id")}>-</td>
 
-                {columnOrder.map((col) => (
+                {displayColumnOrder.map((col) => (
                   <td
                     key={col}
                     className={[
@@ -1584,7 +1596,7 @@ export default function Oportunidades() {
             )}
 
             {filteredData.map((row, i) => (
-              <tr key={row.id ?? i}>
+              <tr key={row.id ?? i} data-row-id={row.id ?? ""}>
                 {tableColumnOrder.map((col) => {
                   const isLong = isObservationsCol(col);
 
@@ -1593,12 +1605,12 @@ export default function Oportunidades() {
                       key={col}
                       onDoubleClick={() => {
                         if (col === "id") return;
-                        if (isLong) return editLongText(i, col);
-                        startEdit(i, col);
+                        if (isLong) return editLongText(row.id, col);
+                        startEdit(row, col);
                       }}
                       className={[
                         getColumnClassNames(col),
-                        editing.row === i && editing.col === col ? "editing" : "",
+                        sameId(editing.rowId, row?.id) && editing.col === col ? "editing" : "",
                         isLong ? "obs-col" : "",
                         col === SERVICIO_COL ? "servicio-wrap-cell" : "",
                       ].join(" ").trim()}
@@ -1606,8 +1618,8 @@ export default function Oportunidades() {
                     >
                       {col === "id"
                         ? row?.id ?? "-"
-                        : editing.row === i && editing.col === col
-                        ? renderEditorCell(row, i, col)
+                        : sameId(editing.rowId, row?.id) && editing.col === col
+                        ? renderEditorCell(row, col)
                         : isLong
                         ? renderLongTextCell(row?.[col])
                         : formatCell(col, row[col])}

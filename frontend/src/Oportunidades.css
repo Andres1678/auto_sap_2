@@ -16,8 +16,10 @@
   --thead-row-1: 48px;
 
   --col-id-w: 110px;
-  --col-cliente-w: 250px;
-  --col-servicio-w: 320px;
+  --col-cliente-w: 260px;
+  --col-servicio-w: 340px;
+  --col-default-w: 190px;
+  --col-long-w: 520px;
 }
 
 .oportunidades-wrapper {
@@ -141,22 +143,28 @@
 
 .oportunidades-wrapper .tabla-oportunidades {
   width: max-content;
-  min-width: 3200px;
+  min-width: 3600px;
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
   font-size: 0.82rem;
   color: #111827;
 }
 
 .oportunidades-wrapper .tabla-oportunidades th,
 .oportunidades-wrapper .tabla-oportunidades td {
-  min-width: 170px;
-  max-width: 260px;
+  width: var(--col-default-w);
+  min-width: var(--col-default-w);
+  max-width: var(--col-default-w);
   border: 1px solid var(--gray-border);
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .oportunidades-wrapper .tabla-oportunidades thead th {
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .oportunidades-wrapper .tabla-oportunidades thead tr:first-child th {
@@ -258,14 +266,37 @@
 
 .oportunidades-wrapper .tabla-oportunidades tbody td {
   padding: 8px 10px;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   color: #111827;
+  text-align: left;
   vertical-align: middle;
   background: #fff;
+  line-height: 1.35;
 }
 
 .oportunidades-wrapper .tabla-oportunidades tbody tr:hover td {
   background: #f8fafc;
+}
+
+.oportunidades-wrapper .tabla-oportunidades th {
+  text-align: center;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.oportunidades-wrapper .tabla-oportunidades td.id-col {
+  text-align: center;
+  font-weight: 700;
+}
+
+.oportunidades-wrapper .tabla-oportunidades td.cliente-col,
+.oportunidades-wrapper .tabla-oportunidades td.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades td.descripcion-ot-col,
+.oportunidades-wrapper .tabla-oportunidades td.obs-col {
+  text-align: left;
 }
 
 /* =========================
@@ -430,6 +461,8 @@
   outline: none;
   font-size: 0.82rem;
   box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .oportunidades-wrapper .cell-input:focus {
@@ -448,11 +481,11 @@
 }
 
 .oportunidades-wrapper .acciones {
-  white-space: nowrap;
+  white-space: normal;
   text-align: center;
-  min-width: 120px !important;
-  max-width: 120px !important;
-  width: 120px !important;
+  min-width: 130px !important;
+  max-width: 130px !important;
+  width: 130px !important;
 }
 
 .oportunidades-wrapper .btn-save,
@@ -522,11 +555,14 @@
 }
 
 .oportunidades-wrapper .tabla-oportunidades td.obs-col {
+  width: var(--col-long-w) !important;
+  min-width: var(--col-long-w) !important;
+  max-width: var(--col-long-w) !important;
   white-space: normal !important;
-  min-width: 480px;
-  max-width: 760px;
+  overflow: hidden;
   line-height: 1.25;
   padding: 10px 12px;
+  vertical-align: top;
 }
 
 .oportunidades-wrapper .obs-list {
@@ -536,6 +572,8 @@
   max-height: 180px;
   overflow: auto;
   padding-right: 6px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .oportunidades-wrapper .obs-list::-webkit-scrollbar {
@@ -554,6 +592,8 @@
   padding: 8px 10px;
   box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
   word-break: break-word;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
 }
 
 .oportunidades-wrapper .obs-date {
@@ -597,7 +637,9 @@
   .oportunidades-wrapper {
     --col-id-w: 90px;
     --col-cliente-w: 220px;
-    --col-servicio-w: 260px;
+    --col-servicio-w: 280px;
+    --col-default-w: 170px;
+    --col-long-w: 420px;
   }
 
   .oportunidades-wrapper .upload-section {
@@ -610,6 +652,6 @@
   }
 
   .oportunidades-wrapper .tabla-oportunidades {
-    min-width: 2600px;
+    min-width: 3000px;
   }
 }
