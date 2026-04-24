@@ -7372,6 +7372,8 @@ def get_proyecto_costos_resumen(proyecto_id):
         if str(v).strip()
     ]
 
+    hay_filtros = bool(filtro_equipos or filtro_modulos or filtro_consultores)
+
     p = (
         Proyecto.query.options(
             joinedload(Proyecto.presupuestos_mensuales),
@@ -7383,8 +7385,12 @@ def get_proyecto_costos_resumen(proyecto_id):
 
     plan_mensual = {}
 
+    # ---------------------------------------------------------
+    # 1) Presupuesto mensual
+    # ---------------------------------------------------------
     for x in (p.presupuestos_mensuales or []):
         key = f"{int(x.anio):04d}-{int(x.mes):02d}"
+
         plan_mensual[key] = {
             "anio": int(x.anio),
             "mes": int(x.mes),
@@ -7400,6 +7406,9 @@ def get_proyecto_costos_resumen(proyecto_id):
             "costo_real": Decimal("0.00"),
         }
 
+    # ---------------------------------------------------------
+    # 2) Horas planeadas desde planeación por perfil
+    # ---------------------------------------------------------
     for x in (p.perfiles_plan or []):
         if not bool(getattr(x, "activo", True)):
             continue
@@ -7418,6 +7427,9 @@ def get_proyecto_costos_resumen(proyecto_id):
 
         plan_mensual[key]["horas_planeadas"] += _dec(x.horas_estimadas)
 
+    # ---------------------------------------------------------
+    # 3) Costos adicionales
+    # ---------------------------------------------------------
     for x in (p.costos_adicionales or []):
         if not bool(getattr(x, "activo", True)):
             continue
@@ -7429,16 +7441,25 @@ def get_proyecto_costos_resumen(proyecto_id):
 
         plan_mensual[key]["costo_adicional"] += _dec(x.valor)
 
+    # ---------------------------------------------------------
+    # 4) Registros reales del proyecto
+    #    Se agrupa por fecha + consultor para calcular costo real
+    # ---------------------------------------------------------
     consultor_join_cond = db.or_(
         func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.usuario)),
         func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.nombre)),
     )
 
     rows_reg_query = _apply_project_filter_shared(
-        db.session.query(Registro, Consultor).outerjoin(
-            Consultor,
-            consultor_join_cond
-        ),
+        db.session.query(
+            Registro.fecha.label("fecha"),
+            Registro.usuario_consultor.label("usuario_consultor"),
+            Consultor.id.label("consultor_id"),
+            Consultor.nombre.label("consultor_nombre"),
+            func.coalesce(func.sum(Registro.total_horas), 0).label("horas"),
+        )
+        .select_from(Registro)
+        .outerjoin(Consultor, consultor_join_cond),
         proyecto_id
     )
 
@@ -7457,48 +7478,62 @@ def get_proyecto_costos_resumen(proyecto_id):
             func.lower(func.coalesce(Registro.usuario_consultor, "")).in_(filtro_consultores)
         )
 
+    rows_reg_query = rows_reg_query.group_by(
+        Registro.fecha,
+        Registro.usuario_consultor,
+        Consultor.id,
+        Consultor.nombre,
+    )
+
     rows_reg = rows_reg_query.all()
 
     detalle_consultores_mes = {}
     periodos_reales_filtrados = set()
 
-    for reg, consultor in rows_reg:
-        anio, mes = _fecha_to_parts(reg.fecha)
+    for r in rows_reg:
+        anio, mes = _fecha_to_parts(r.fecha)
         if not anio or not mes:
             continue
 
         periodo = f"{anio:04d}-{mes:02d}"
         periodos_reales_filtrados.add(periodo)
 
-        horas = _dec(
-            reg.total_horas
-            if reg.total_horas is not None
-            else (reg.tiempo_invertido if reg.tiempo_invertido is not None else 0)
-        )
+        horas = _dec(r.horas)
 
         if horas <= 0:
             continue
 
-        consultor_id = getattr(consultor, "id", None)
-        consultor_nombre = (
-            getattr(consultor, "nombre", None)
-            or getattr(reg, "usuario_consultor", None)
-            or "SIN NOMBRE"
-        )
-        usuario_consultor = (getattr(reg, "usuario_consultor", None) or "").strip().lower()
+        consultor_id = r.consultor_id
+        consultor_nombre = r.consultor_nombre or r.usuario_consultor or "SIN NOMBRE"
+        usuario_consultor = (r.usuario_consultor or "").strip().lower()
 
         valor_hora = Decimal("0.00")
 
         if consultor_id:
+            presupuesto = None
+
             try:
-                valor_hora = _valor_hora_consultor(consultor_id, anio, mes)
+                presupuesto = _presupuesto_consultor_mes(consultor_id, anio, mes)
             except Exception:
-                valor_hora = Decimal("0.00")
+                presupuesto = None
+
+            if presupuesto:
+                valor_hora = _dec(presupuesto.get("valor_hora"))
 
         costo_real_reg = (horas * valor_hora).quantize(
             Decimal("0.01"),
             rounding=ROUND_HALF_UP
         )
+
+        app.logger.info("COSTO_REAL_PROYECTO_DEBUG", {
+            "periodo": periodo,
+            "consultor_id": consultor_id,
+            "consultor": consultor_nombre,
+            "usuario_consultor": usuario_consultor,
+            "horas": str(horas),
+            "valor_hora": str(valor_hora),
+            "costo_real_reg": str(costo_real_reg),
+        })
 
         if periodo not in plan_mensual:
             plan_mensual[periodo] = _empty_period(anio, mes)
@@ -7506,7 +7541,7 @@ def get_proyecto_costos_resumen(proyecto_id):
         plan_mensual[periodo]["horas_reales"] += horas
         plan_mensual[periodo]["costo_real"] += costo_real_reg
 
-        detail_key = f"{periodo}||{usuario_consultor or consultor_id or 'SIN_USUARIO'}"
+        detail_key = f"{periodo}||{consultor_id or usuario_consultor or 'SIN_USUARIO'}"
 
         if detail_key not in detalle_consultores_mes:
             detalle_consultores_mes[detail_key] = {
@@ -7525,7 +7560,10 @@ def get_proyecto_costos_resumen(proyecto_id):
         if detalle_consultores_mes[detail_key]["valor_hora"] <= 0 and valor_hora > 0:
             detalle_consultores_mes[detail_key]["valor_hora"] = valor_hora
 
-    if filtro_equipos or filtro_modulos or filtro_consultores:
+    # ---------------------------------------------------------
+    # 5) Si hay filtros, dejar solo periodos que aplican
+    # ---------------------------------------------------------
+    if hay_filtros:
         plan_mensual = {
             key: value
             for key, value in plan_mensual.items()
@@ -7534,7 +7572,11 @@ def get_proyecto_costos_resumen(proyecto_id):
             or _dec(value.get("horas_reales")) > 0
         }
 
+    # ---------------------------------------------------------
+    # 6) Salida mensual
+    # ---------------------------------------------------------
     meses_out = []
+
     total_ingreso_planeado = Decimal("0.00")
     total_costo_planeado = Decimal("0.00")
     total_costo_real = Decimal("0.00")
@@ -7577,8 +7619,9 @@ def get_proyecto_costos_resumen(proyecto_id):
         total_costo_planeado += costo_planeado_total
         total_costo_real += costo_real
 
-    hay_filtros = bool(filtro_equipos or filtro_modulos or filtro_consultores)
-
+    # ---------------------------------------------------------
+    # 7) Cards
+    # ---------------------------------------------------------
     if hay_filtros:
         ingreso_total = total_ingreso_planeado
         costo_objetivo_total = total_costo_planeado
@@ -7586,13 +7629,17 @@ def get_proyecto_costos_resumen(proyecto_id):
         ingreso_total = _dec(getattr(p, "ingreso_total", None))
         costo_objetivo_total = _dec(getattr(p, "costo_objetivo_total", None))
 
-    if ingreso_total <= 0:
-        ingreso_total = total_ingreso_planeado
+        if ingreso_total <= 0:
+            ingreso_total = total_ingreso_planeado
 
-    if costo_objetivo_total <= 0:
-        costo_objetivo_total = total_costo_planeado
+        if costo_objetivo_total <= 0:
+            costo_objetivo_total = total_costo_planeado
 
+    # ---------------------------------------------------------
+    # 8) Detalle por consultor y mes
+    # ---------------------------------------------------------
     detalle_out = []
+
     for _, x in sorted(
         detalle_consultores_mes.items(),
         key=lambda kv: (kv[1]["periodo"], (kv[1]["consultor"] or "").upper())
