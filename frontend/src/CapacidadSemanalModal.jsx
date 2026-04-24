@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import Modal from "react-modal";
 import { jfetch } from "./lib/api";
@@ -60,6 +59,10 @@ function normalizeUpper(value) {
   return normalizeText(value).toUpperCase();
 }
 
+function normalizeLower(value) {
+  return normalizeText(value).toLowerCase();
+}
+
 function cumplimientoBucket(pct) {
   const n = Number(pct || 0);
   if (n >= 90) return "alto";
@@ -70,6 +73,14 @@ function cumplimientoBucket(pct) {
 function buildYearOptions(baseYear) {
   const y = Number(baseYear || new Date().getFullYear());
   return [y - 2, y - 1, y, y + 1];
+}
+
+function ocupacionLabel(row) {
+  const codigo = normalizeText(row?.ocupacion_codigo);
+  const nombre = normalizeText(row?.ocupacion_nombre || row?.ocupacion);
+
+  if (!nombre) return "";
+  return codigo ? `${codigo} - ${nombre}` : nombre;
 }
 
 export default function CapacidadSemanalModal({
@@ -87,7 +98,9 @@ export default function CapacidadSemanalModal({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
   const [rows, setRows] = useState([]);
+  const [ocupacionRows, setOcupacionRows] = useState([]);
 
   const [selectedEquipo, setSelectedEquipo] = useState(normalizeUpper(filtroEquipo));
   const [selectedConsultor, setSelectedConsultor] = useState(normalizeText(filtroConsultor));
@@ -105,7 +118,15 @@ export default function CapacidadSemanalModal({
     setSelectedAnio(Number(filtroAnio || currentYear));
     setSelectedCumplimiento("");
     setSelectedOcupacion("");
-  }, [isOpen, filtroEquipo, filtroConsultor, filtroMes, filtroAnio, currentMonth, currentYear]);
+  }, [
+    isOpen,
+    filtroEquipo,
+    filtroConsultor,
+    filtroMes,
+    filtroAnio,
+    currentMonth,
+    currentYear,
+  ]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -122,14 +143,24 @@ export default function CapacidadSemanalModal({
         if (selectedEquipo) qs.set("equipo", selectedEquipo);
         if (selectedConsultor) qs.set("consultor", selectedConsultor);
 
-        const res = await jfetch(`/resumen-capacidad-semanal?${qs.toString()}`);
-        const json = await res.json();
+        const [resResumen, resOcupaciones] = await Promise.all([
+          jfetch(`/resumen-capacidad-semanal?${qs.toString()}`),
+          jfetch(`/capacidad-semanal-ocupaciones?${qs.toString()}`),
+        ]);
 
-        if (!res.ok) {
-          throw new Error(json?.error || `HTTP ${res.status}`);
+        const jsonResumen = await resResumen.json();
+        const jsonOcupaciones = await resOcupaciones.json();
+
+        if (!resResumen.ok) {
+          throw new Error(jsonResumen?.error || `HTTP ${resResumen.status}`);
         }
 
-        setRows(safeRows(json));
+        if (!resOcupaciones.ok) {
+          throw new Error(jsonOcupaciones?.error || `HTTP ${resOcupaciones.status}`);
+        }
+
+        setRows(safeRows(jsonResumen));
+        setOcupacionRows(safeRows(jsonOcupaciones));
       } catch (e) {
         setError(e?.message || "No se pudo cargar la capacidad semanal");
       } finally {
@@ -163,20 +194,25 @@ export default function CapacidadSemanalModal({
   }, [rows, selectedEquipo]);
 
   const ocupacionesDisponibles = useMemo(() => {
-    const source = rows.filter((r) => {
-      const equipoOk =
-        !selectedEquipo || normalizeUpper(r.equipo) === selectedEquipo;
+    const ocupaciones = ocupacionRows
+      .filter((r) => {
+        const equipoOk =
+          !selectedEquipo || normalizeUpper(r.equipo) === selectedEquipo;
 
-      const consultorOk =
-        !selectedConsultor || normalizeText(r.consultor) === selectedConsultor;
+        const consultorOk =
+          !selectedConsultor ||
+          normalizeText(r.consultor) === selectedConsultor ||
+          normalizeLower(r.usuario_consultor) === normalizeLower(selectedConsultor);
 
-      return equipoOk && consultorOk;
-    });
+        return equipoOk && consultorOk && Number(r.horas || 0) > 0;
+      })
+      .map((r) => ocupacionLabel(r))
+      .filter(Boolean);
 
-    return Array.from(
-      new Set(source.map((r) => normalizeText(r.ocupacion)).filter(Boolean))
-    ).sort((a, b) => a.localeCompare(b, "es"));
-  }, [rows, selectedEquipo, selectedConsultor]);
+    return Array.from(new Set(ocupaciones)).sort((a, b) =>
+      a.localeCompare(b, "es")
+    );
+  }, [ocupacionRows, selectedEquipo, selectedConsultor]);
 
   useEffect(() => {
     if (!selectedOcupacion) return;
@@ -202,7 +238,22 @@ export default function CapacidadSemanalModal({
           !selectedConsultor || normalizeText(item.consultor) === selectedConsultor;
 
         const ocupacionOk =
-          !selectedOcupacion || normalizeText(item.ocupacion) === selectedOcupacion;
+          !selectedOcupacion ||
+          ocupacionRows.some((o) => {
+            const sameConsultor =
+              normalizeText(o.consultor) === normalizeText(item.consultor) ||
+              normalizeLower(o.usuario_consultor) === normalizeLower(item.usuario_consultor);
+
+            const sameEquipo =
+              !selectedEquipo || normalizeUpper(o.equipo) === selectedEquipo;
+
+            return (
+              sameConsultor &&
+              sameEquipo &&
+              ocupacionLabel(o) === selectedOcupacion &&
+              Number(o.horas || 0) > 0
+            );
+          });
 
         const cumplimientoOk =
           !selectedCumplimiento ||
@@ -215,7 +266,14 @@ export default function CapacidadSemanalModal({
           sensitivity: "base",
         })
       );
-  }, [rows, selectedEquipo, selectedConsultor, selectedOcupacion, selectedCumplimiento]);
+  }, [
+    rows,
+    ocupacionRows,
+    selectedEquipo,
+    selectedConsultor,
+    selectedOcupacion,
+    selectedCumplimiento,
+  ]);
 
   const resumenGeneral = useMemo(() => {
     const totalConsultores = filteredRows.length;
