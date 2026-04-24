@@ -94,6 +94,7 @@ export default function CapacidadSemanalModal({
   const [selectedMes, setSelectedMes] = useState(Number(filtroMes || currentMonth));
   const [selectedAnio, setSelectedAnio] = useState(Number(filtroAnio || currentYear));
   const [selectedCumplimiento, setSelectedCumplimiento] = useState("");
+  const [selectedOcupacion, setSelectedOcupacion] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -103,6 +104,7 @@ export default function CapacidadSemanalModal({
     setSelectedMes(Number(filtroMes || currentMonth));
     setSelectedAnio(Number(filtroAnio || currentYear));
     setSelectedCumplimiento("");
+    setSelectedOcupacion("");
   }, [isOpen, filtroEquipo, filtroConsultor, filtroMes, filtroAnio, currentMonth, currentYear]);
 
   useEffect(() => {
@@ -160,6 +162,29 @@ export default function CapacidadSemanalModal({
     ).sort((a, b) => a.localeCompare(b, "es"));
   }, [rows, selectedEquipo]);
 
+  const ocupacionesDisponibles = useMemo(() => {
+    const source = rows.filter((r) => {
+      const equipoOk =
+        !selectedEquipo || normalizeUpper(r.equipo) === selectedEquipo;
+
+      const consultorOk =
+        !selectedConsultor || normalizeText(r.consultor) === selectedConsultor;
+
+      return equipoOk && consultorOk;
+    });
+
+    return Array.from(
+      new Set(source.map((r) => normalizeText(r.ocupacion)).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b, "es"));
+  }, [rows, selectedEquipo, selectedConsultor]);
+
+  useEffect(() => {
+    if (!selectedOcupacion) return;
+    if (!ocupacionesDisponibles.includes(selectedOcupacion)) {
+      setSelectedOcupacion("");
+    }
+  }, [ocupacionesDisponibles, selectedOcupacion]);
+
   useEffect(() => {
     if (!selectedConsultor) return;
     if (!consultoresDisponibles.includes(selectedConsultor)) {
@@ -176,18 +201,21 @@ export default function CapacidadSemanalModal({
         const consultorOk =
           !selectedConsultor || normalizeText(item.consultor) === selectedConsultor;
 
+        const ocupacionOk =
+          !selectedOcupacion || normalizeText(item.ocupacion) === selectedOcupacion;
+
         const cumplimientoOk =
           !selectedCumplimiento ||
           cumplimientoBucket(item.porcentajeMes) === selectedCumplimiento;
 
-        return equipoOk && consultorOk && cumplimientoOk;
+        return equipoOk && consultorOk && ocupacionOk && cumplimientoOk;
       })
       .sort((a, b) =>
         normalizeText(a.consultor).localeCompare(normalizeText(b.consultor), "es", {
           sensitivity: "base",
         })
       );
-  }, [rows, selectedEquipo, selectedConsultor, selectedCumplimiento]);
+  }, [rows, selectedEquipo, selectedConsultor, selectedOcupacion, selectedCumplimiento]);
 
   const resumenGeneral = useMemo(() => {
     const totalConsultores = filteredRows.length;
@@ -217,6 +245,7 @@ export default function CapacidadSemanalModal({
   const clearFilters = () => {
     setSelectedEquipo(normalizeUpper(filtroEquipo));
     setSelectedConsultor("");
+    setSelectedOcupacion("");
     setSelectedCumplimiento("");
     setSelectedMes(Number(filtroMes || currentMonth));
     setSelectedAnio(Number(filtroAnio || currentYear));
@@ -277,6 +306,21 @@ export default function CapacidadSemanalModal({
               {consultoresDisponibles.map((c) => (
                 <option key={c} value={c}>
                   {c}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-field">
+            <label>Ocupación</label>
+            <select
+              value={selectedOcupacion}
+              onChange={(e) => setSelectedOcupacion(e.target.value)}
+            >
+              <option value="">Todas</option>
+              {ocupacionesDisponibles.map((o) => (
+                <option key={o} value={o}>
+                  {o}
                 </option>
               ))}
             </select>
