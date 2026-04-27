@@ -7963,7 +7963,7 @@ def reporte_horas_consultor_cliente_detalle():
             modulo_nombre = str(r.modulo or "SIN MODULO").strip().upper()
 
             horas = _safe_float_report(
-                r.total_horas if r.total_horas is not None else r.tiempo_invertido
+                r.tiempo_invertido if r.tiempo_invertido is not None else r.total_horas
             )
 
             fecha_str = _safe_fecha_iso(r.fecha)
@@ -9796,7 +9796,7 @@ def dashboard_costos_resumen():
             consultor_nombre = (r.consultor or "SIN NOMBRE").strip() or "SIN NOMBRE"
             equipo = (r.equipo or "SIN EQUIPO").strip() or "SIN EQUIPO"
 
-            horas = _dec(r.total_horas if r.total_horas is not None else r.tiempo_invertido)
+            horas = _dec(r.tiempo_invertido if r.tiempo_invertido is not None else r.total_horas)
 
             valor_hora = Decimal("0.00")
             if consultor_id:
@@ -10671,7 +10671,9 @@ def obtener_proyectos_horas_dashboard():
         # IMPORTANTE:
         # si hay filtro temporal, NO truncar
         # ----------------------------------------------------------
-        tiene_filtro_temporal = bool(filtro_mes or filtro_desde or filtro_hasta)
+        tiene_filtro_temporal = bool(
+            filtro_mes or filtro_desde or filtro_hasta or filtro_proyecto_id
+        )
 
         if tiene_filtro_temporal:
             registros = q.all()
@@ -10737,11 +10739,11 @@ def obtener_proyectos_horas_dashboard():
 
                 "horaInicio": r.hora_inicio,
                 "horaFin": r.hora_fin,
-                "tiempoInvertido": r.tiempo_invertido,
-                "tiempoFacturable": r.tiempo_facturable,
+                "tiempoInvertido": round(horas, 2),
+                "tiempoFacturable": _safe_float_report(r.tiempo_facturable),
                 "horasAdicionales": r.horas_adicionales,
                 "descripcion": r.descripcion,
-                "totalHoras": r.total_horas,
+                "totalHoras": round(horas, 2),
 
                 "bloqueado": bool(r.bloqueado),
                 "oncall": r.oncall,
