@@ -851,7 +851,26 @@ export default function ProyectosHorasDashboard({
     try {
       const params = new URLSearchParams();
 
-      if (rangoActivo) {
+      // convertir label de proyecto a id real
+      const proyectoIds = appliedFiltroProyecto
+        .map((label) => {
+          const encontrado = (proyectos || []).find(
+            (p) => buildProyectoLabel(p) === label
+          );
+          return encontrado?.id || null;
+        })
+        .filter(Boolean);
+
+      // Si hay proyecto seleccionado, NO mandes mes suelto.
+      // Debe mandar rango para que cuadre con el control financiero.
+      if (proyectoIds.length > 0) {
+        if (rangoDesde) params.set("desde", rangoDesde);
+        if (rangoHasta) params.set("hasta", rangoHasta);
+
+        proyectoIds.forEach((id) => {
+          params.append("proyecto_id", String(id));
+        });
+      } else if (rangoActivo) {
         if (rangoDesde) params.set("desde", rangoDesde);
         if (rangoHasta) params.set("hasta", rangoHasta);
       } else if (filtroMesActivo) {
@@ -875,20 +894,6 @@ export default function ProyectosHorasDashboard({
         params.set("consultor", appliedFiltroConsultor[0]);
       }
 
-      // convertir label de proyecto a id real
-      const proyectoIds = appliedFiltroProyecto
-        .map((label) => {
-          const encontrado = (proyectos || []).find(
-            (p) => buildProyectoLabel(p) === label
-          );
-          return encontrado?.id || null;
-        })
-        .filter(Boolean);
-
-      if (proyectoIds.length === 1) {
-        params.set("proyecto_id", String(proyectoIds[0]));
-      }
-
       // de momento deja un tope siempre, incluso con rango,
       // para evitar que una ventana muy grande vuelva a tumbar el endpoint
       let SAFE_MAX_ROWS = 1800;
@@ -897,7 +902,7 @@ export default function ProyectosHorasDashboard({
       if (appliedFiltroCliente.length > 0) SAFE_MAX_ROWS = 3000;
       if (appliedFiltroModulo.length > 0) SAFE_MAX_ROWS = 3000;
       if (appliedFiltroConsultor.length > 0) SAFE_MAX_ROWS = 3000;
-      if (proyectoIds.length > 0) SAFE_MAX_ROWS = 2000;
+      if (proyectoIds.length > 0) SAFE_MAX_ROWS = 10000;
 
       params.set("max_rows", String(SAFE_MAX_ROWS));
 

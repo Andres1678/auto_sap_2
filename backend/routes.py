@@ -10596,7 +10596,9 @@ def obtener_proyectos_horas_dashboard():
         filtro_modulo = (request.args.get("modulo") or "").strip()
         filtro_cliente = (request.args.get("cliente") or "").strip()
         filtro_consultor = (request.args.get("consultor") or "").strip()
-        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
+        filtro_proyecto_ids = request.args.getlist("proyecto_id")
+        if not filtro_proyecto_ids:
+            filtro_proyecto_ids = request.args.getlist("proyecto_id[]")
 
         filtro_tarea_ids = _get_int_list_param("tarea_id")
         filtro_ocupacion_ids = _get_int_list_param("ocupacion_id")
@@ -10641,16 +10643,22 @@ def obtener_proyectos_horas_dashboard():
         if filtro_ocupacion_ids:
             q = q.filter(Registro.ocupacion_id.in_(filtro_ocupacion_ids))
 
-        if filtro_proyecto_id:
+        if filtro_proyecto_ids:
             try:
-                q = _apply_project_filter_shared(q, int(filtro_proyecto_id))
+                filtros_proyecto = []
+                for pid in filtro_proyecto_ids:
+                    subq = Registro.query.with_entities(Registro.id)
+                    subq = _apply_project_filter_shared(subq, int(pid))
+                    filtros_proyecto.append(Registro.id.in_(subq))
+
+                q = q.filter(or_(*filtros_proyecto))
             except Exception:
                 return jsonify({"error": "proyecto_id inválido"}), 400
 
         q = q.order_by(Registro.fecha.desc(), Registro.id.desc())
 
         tiene_filtro_temporal = bool(
-            filtro_mes or filtro_desde or filtro_hasta or filtro_proyecto_id
+            filtro_mes or filtro_desde or filtro_hasta or filtro_proyecto_ids
         )
 
         if tiene_filtro_temporal:
