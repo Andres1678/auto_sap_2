@@ -17,18 +17,63 @@ const DATE_COLS = new Set([
   "proyeccion_ingreso",
 ]);
 
-const NUMERIC_COLS = new Set(["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"]);
+const NUMERIC_COLS = new Set([
+  "otc",
+  "mrc",
+  "mrc_normalizado",
+  "valor_oferta_claro",
+]);
 
-const toIsoDate = (v) => {
+const toExcelDateDDMMYYYY = (v) => {
   if (!v) return "";
+
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    const dd = String(v.getDate()).padStart(2, "0");
+    const mm = String(v.getMonth() + 1).padStart(2, "0");
+    const yyyy = v.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
   const s = String(v).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const d = new Date(v);
+
+  if (
+    !s ||
+    s === "-" ||
+    s.toLowerCase() === "null" ||
+    s.toLowerCase() === "none" ||
+    s.toLowerCase() === "nan"
+  ) {
+    return "";
+  }
+
+  // Si ya viene como dd/mm/yyyy, se deja igual
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    return s;
+  }
+
+  // Si viene como dd-mm-yyyy o dd.mm.yyyy, se convierte a dd/mm/yyyy
+  const dmy = s.match(/^(\d{2})[-.](\d{2})[-.](\d{4})$/);
+  if (dmy) {
+    const [, dd, mm, yyyy] = dmy;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  // Si viene como yyyy-mm-dd, se convierte sin usar Date
+  // para evitar desfases por zona horaria
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const [, yyyy, mm, dd] = iso;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
+
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+
+  return `${dd}/${mm}/${yyyy}`;
 };
 
 const parseNumberSmart = (input) => {
@@ -96,51 +141,101 @@ const parseNumberSmart = (input) => {
   return Number.isFinite(n) ? n : "";
 };
 
-export function exportOportunidadesExcel(rows, columnOrder, filename = "oportunidades.xlsx", meta = {}) {
+const getCellValue = (row, col) => {
+  if (!row) return "";
+
+  if (col === "fecha_compromiso") {
+    return (
+      row.fecha_compromiso ??
+      row.fechaCompromiso ??
+      row["FECHA COMPROMISO"] ??
+      ""
+    );
+  }
+
+  if (col === "proyeccion_ingreso") {
+    return (
+      row.proyeccion_ingreso ??
+      row.proyeccionIngreso ??
+      row["PROYECCION INGRESO"] ??
+      ""
+    );
+  }
+
+  if (col === "fecha_cierre") {
+    return (
+      row.fecha_cierre ??
+      row.fechaCierre ??
+      row["FECHA CIERRE"] ??
+      ""
+    );
+  }
+
+  return row[col] ?? "";
+};
+
+export function exportOportunidadesExcel(
+  rows,
+  columnOrder,
+  filename = "oportunidades.xlsx",
+  meta = {}
+) {
   const safeRows = Array.isArray(rows) ? rows : [];
   const safeCols = Array.isArray(columnOrder) ? columnOrder : [];
 
-  // headers bonitos + mapa header->col
   const headers = safeCols.map((c) => pretty(c));
   const headerToCol = new Map(headers.map((h, idx) => [h, safeCols[idx]]));
 
   const data = safeRows.map((r) => {
     const out = {};
+
     for (const h of headers) {
       const col = headerToCol.get(h);
-      const v = r?.[col];
+      const v = getCellValue(r, col);
 
       if (DATE_COLS.has(col)) {
-        out[h] = v ? toIsoDate(v) : "";
+        out[h] = v ? toExcelDateDDMMYYYY(v) : "";
         continue;
       }
 
       if (NUMERIC_COLS.has(col)) {
         const n = typeof v === "number" ? v : parseNumberSmart(v);
-        out[h] = n === "" ? (v ?? "") : n; // número real cuando se pueda
+        out[h] = n === "" ? v ?? "" : n;
         continue;
       }
 
       out[h] = v ?? "";
     }
+
     return out;
   });
 
   const ws = XLSX.utils.json_to_sheet(data, { header: headers });
 
-  ws["!cols"] = headers.map((h) => ({ wch: Math.min(50, Math.max(12, h.length + 4)) }));
+  ws["!cols"] = headers.map((h) => ({
+    wch: Math.min(50, Math.max(12, h.length + 4)),
+  }));
 
   const metaRows = [
     { Campo: "Generado", Valor: new Date().toLocaleString() },
     { Campo: "Total filas", Valor: String(safeRows.length) },
-    ...Object.entries(meta || {}).map(([k, v]) => ({ Campo: k, Valor: String(v ?? "") })),
+    ...Object.entries(meta || {}).map(([k, v]) => ({
+      Campo: k,
+      Valor: String(v ?? ""),
+    })),
   ];
-  const wsMeta = XLSX.utils.json_to_sheet(metaRows.length ? metaRows : [{ Campo: "Info", Valor: "—" }]);
+
+  const wsMeta = XLSX.utils.json_to_sheet(
+    metaRows.length ? metaRows : [{ Campo: "Info", Valor: "—" }]
+  );
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsMeta, "Metadata");
   XLSX.utils.book_append_sheet(wb, ws, "Oportunidades");
 
-  const safeName = filename.toLowerCase().endsWith(".xlsx") ? filename : `${filename}.xlsx`;
+  const safeName = filename.toLowerCase().endsWith(".xlsx")
+    ? filename
+    : `${filename}.xlsx`;
+
   XLSX.writeFile(wb, safeName);
 }

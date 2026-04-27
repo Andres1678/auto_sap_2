@@ -175,13 +175,42 @@ function toExcelDateDDMMYYYY(v) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
-function prepareRowsForExcel(rows) {
+function prepareRowsForExcel(rows, columns = []) {
   return (rows || []).map((row) => {
-    const out = { ...row };
+    const out = {};
 
-    DATE_COLS.forEach((col) => {
-      if (Object.prototype.hasOwnProperty.call(out, col)) {
-        out[col] = out[col] ? toExcelDateDDMMYYYY(out[col]) : "";
+    columns.forEach((col) => {
+      let value = row?.[col];
+
+      // ✅ Refuerzo para evitar que FECHA COMPROMISO salga vacía
+      if (col === "fecha_compromiso") {
+        value =
+          row?.fecha_compromiso ??
+          row?.fechaCompromiso ??
+          row?.["FECHA COMPROMISO"] ??
+          "";
+      }
+
+      if (col === "proyeccion_ingreso") {
+        value =
+          row?.proyeccion_ingreso ??
+          row?.proyeccionIngreso ??
+          row?.["PROYECCION INGRESO"] ??
+          "";
+      }
+
+      if (col === "fecha_cierre") {
+        value =
+          row?.fecha_cierre ??
+          row?.fechaCierre ??
+          row?.["FECHA CIERRE"] ??
+          "";
+      }
+
+      if (DATE_COLS.has(col)) {
+        out[col] = value ? toExcelDateDDMMYYYY(value) : "";
+      } else {
+        out[col] = value ?? "";
       }
     });
 
@@ -607,7 +636,7 @@ export default function Oportunidades() {
     }
 
     exportOportunidadesExcel(
-      prepareRowsForExcel(data),
+      prepareRowsForExcel(data, columnOrder),
       columnOrder,
       `oportunidades_completo_${todayStamp()}.xlsx`,
       {
@@ -623,7 +652,7 @@ export default function Oportunidades() {
     }
 
     exportOportunidadesExcel(
-      prepareRowsForExcel(filteredData),
+      prepareRowsForExcel(filteredData, columnOrder),
       columnOrder,
       `oportunidades_filtrado_${todayStamp()}.xlsx`,
       {
@@ -647,10 +676,31 @@ export default function Oportunidades() {
     return {
       ...rest,
       otc: otcValue,
+
+      // ✅ Normalización explícita de fechas OT
+      proyeccion_ingreso:
+        rest.proyeccion_ingreso ??
+        obj.proyeccionIngreso ??
+        obj["PROYECCION INGRESO"] ??
+        "",
+
+      fecha_compromiso:
+        rest.fecha_compromiso ??
+        obj.fechaCompromiso ??
+        obj["FECHA COMPROMISO"] ??
+        "",
+
+      fecha_cierre:
+        rest.fecha_cierre ??
+        obj.fechaCierre ??
+        obj["FECHA CIERRE"] ??
+        "",
+
       mrc_normalizado: computeMrcNormalizado({
         otc: otcValue,
         mrc: rest.mrc,
       }),
+
       nombre_cliente: normalizeText(rest.nombre_cliente),
       servicio: normalizeText(rest.servicio),
       estado_oferta: normalizeText(rest.estado_oferta),
