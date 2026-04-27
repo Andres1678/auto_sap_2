@@ -10518,9 +10518,6 @@ def obtener_proyectos_horas_dashboard():
             .outerjoin(E, C.equipo_id == E.id)
         )
 
-        # ----------------------------------------------------------
-        # Scope
-        # ----------------------------------------------------------
         if scope == "SELF":
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
 
@@ -10532,9 +10529,6 @@ def obtener_proyectos_horas_dashboard():
         elif scope == "ALL":
             pass
 
-        # ----------------------------------------------------------
-        # Helpers locales
-        # ----------------------------------------------------------
         def _get_list_param(name, upper=False):
             vals = request.args.getlist(name)
             if not vals:
@@ -10583,9 +10577,6 @@ def obtener_proyectos_horas_dashboard():
                     cleaned.append(v)
             return cleaned
 
-        # ----------------------------------------------------------
-        # Filtro opcional por equipo
-        # ----------------------------------------------------------
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
 
         if equipo_filter:
@@ -10599,9 +10590,6 @@ def obtener_proyectos_horas_dashboard():
 
             q = q.filter(func.upper(E.nombre) == equipo_filter)
 
-        # ----------------------------------------------------------
-        # Filtros opcionales backend
-        # ----------------------------------------------------------
         filtro_mes = (request.args.get("mes") or "").strip()
         filtro_desde = (request.args.get("desde") or "").strip()
         filtro_hasta = (request.args.get("hasta") or "").strip()
@@ -10613,9 +10601,6 @@ def obtener_proyectos_horas_dashboard():
         filtro_tarea_ids = _get_int_list_param("tarea_id")
         filtro_ocupacion_ids = _get_int_list_param("ocupacion_id")
 
-        # ----------------------------------------------------------
-        # Filtro por mes o rango
-        # ----------------------------------------------------------
         if filtro_mes:
             partes = filtro_mes.split("-")
             if len(partes) != 2:
@@ -10662,15 +10647,8 @@ def obtener_proyectos_horas_dashboard():
             except Exception:
                 return jsonify({"error": "proyecto_id inválido"}), 400
 
-        # ----------------------------------------------------------
-        # Orden
-        # ----------------------------------------------------------
         q = q.order_by(Registro.fecha.desc(), Registro.id.desc())
 
-        # ----------------------------------------------------------
-        # IMPORTANTE:
-        # si hay filtro temporal, NO truncar
-        # ----------------------------------------------------------
         tiene_filtro_temporal = bool(
             filtro_mes or filtro_desde or filtro_hasta or filtro_proyecto_id
         )
@@ -10689,9 +10667,6 @@ def obtener_proyectos_horas_dashboard():
             if truncated:
                 registros = registros[:max_rows]
 
-        # ----------------------------------------------------------
-        # Serialización
-        # ----------------------------------------------------------
         data = []
 
         for r in registros:
@@ -10699,6 +10674,10 @@ def obtener_proyectos_horas_dashboard():
             ocup = getattr(r, "ocupacion", None)
             proyecto = getattr(r, "proyecto", None)
             fase_proyecto = getattr(r, "fase_proyecto", None)
+
+            horas = _safe_float_report(
+                r.tiempo_invertido if r.tiempo_invertido is not None else r.total_horas
+            )
 
             if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
                 tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
@@ -10780,7 +10759,6 @@ def obtener_proyectos_horas_dashboard():
             "error": "Error interno del servidor",
             "detalle": str(e)
         }), 500
-
 
 @bp.route('/proyectos/dashboard', methods=['GET'])
 @auth_required
