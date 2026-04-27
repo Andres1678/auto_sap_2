@@ -5278,7 +5278,12 @@ def reporte_costos_cliente_dia():
                 Consultor.usuario.label("consultor_usuario"),
 
                 Equipo.nombre.label("equipo"),
-                func.coalesce(func.sum(Registro.total_horas), 0).label("horas"),
+                func.coalesce(
+                    func.sum(
+                        func.coalesce(Registro.tiempo_invertido, Registro.total_horas, 0)
+                    ),
+                    0
+                ).label("horas"),
             )
             .select_from(Registro)
             .join(Consultor, func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario))
@@ -7496,7 +7501,12 @@ def get_proyecto_costos_resumen(proyecto_id):
             Consultor.nombre.label("consultor_nombre"),
             Equipo.nombre.label("equipo_nombre"),
             Registro.modulo.label("modulo_nombre"),
-            func.coalesce(func.sum(Registro.total_horas), 0).label("horas"),
+            func.coalesce(
+                func.sum(
+                    func.coalesce(Registro.tiempo_invertido, Registro.total_horas, 0)
+                ),
+                0
+            ).label("horas"),
         )
         .select_from(Registro)
         .outerjoin(Consultor, consultor_join_cond)
@@ -8634,7 +8644,12 @@ def capacidad_semanal_ocupaciones():
                 Equipo.nombre.label("equipo"),
                 Ocupacion.codigo.label("ocupacion_codigo"),
                 Ocupacion.nombre.label("ocupacion_nombre"),
-                func.coalesce(func.sum(Registro.total_horas), 0).label("horas"),
+                func.coalesce(
+                    func.sum(
+                        func.coalesce(Registro.tiempo_invertido, Registro.total_horas, 0)
+                    ),
+                    0
+                ).label("horas")
             )
             .select_from(Registro)
             .join(
@@ -9388,7 +9403,12 @@ def resumen_costo_consultor():
                 Consultor.usuario.label("usuario_consultor"),
                 Equipo.nombre.label("equipo"),
                 func.substr(func.cast(Registro.fecha, db.String), 1, 7).label("periodo"),
-                func.coalesce(func.sum(Registro.total_horas), 0).label("horas"),
+                func.coalesce(
+                    func.sum(
+                        func.coalesce(Registro.tiempo_invertido, Registro.total_horas, 0)
+                    ),
+                    0
+                ).label("horas"),
             )
             .select_from(Registro)
             .join(
