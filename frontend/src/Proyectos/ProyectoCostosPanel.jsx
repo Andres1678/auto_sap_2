@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { jfetch } from "../lib/api";
 import "./ProyectoCostosPanel.css";
+import ProyectoCostosGraficas from "./ProyectoCostosGraficas";
 
 const emptyCabecera = {
   oportunidad_id: "",
@@ -2345,6 +2346,13 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           </div>
         )}
       </section>
+
+      <ProyectoCostosGraficas
+        proyectoId={proyectoId}
+        filtros={filtros}
+        moneda={cabecera.moneda}
+        periodosOptions={mesesResumen.map((x) => x.periodo).filter(Boolean)}
+      />
     </div>
   );
 }

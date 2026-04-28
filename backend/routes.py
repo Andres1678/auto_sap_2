@@ -7731,6 +7731,361 @@ def get_proyecto_costos_resumen(proyecto_id):
         "detalle_consultores_mes": detalle_out,
     }), 200
 
+@bp.route("/proyectos/<int:proyecto_id>/costos/graficas", methods=["GET"])
+@permission_required("PROYECTOS_VER")
+def get_proyecto_costos_graficas(proyecto_id):
+    def _dec(v):
+        try:
+            if v is None or v == "":
+                return Decimal("0.00")
+            if isinstance(v, Decimal):
+                return v
+            return Decimal(str(v))
+        except Exception:
+            return Decimal("0.00")
+
+    def _money(v):
+        return float(_dec(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+    def _up(v):
+        return str(v or "").strip().upper()
+
+    def _low(v):
+        return str(v or "").strip().lower()
+
+    def _fecha_to_parts(v):
+        if v is None:
+            return None, None, None
+
+        if isinstance(v, datetime):
+            return v.year, v.month, v.date()
+
+        if isinstance(v, date):
+            return v.year, v.month, v
+
+        s = str(v).strip()
+        if not s:
+            return None, None, None
+
+        try:
+            dt = datetime.fromisoformat(s[:19])
+            return dt.year, dt.month, dt.date()
+        except Exception:
+            pass
+
+        try:
+            dt = datetime.strptime(s[:10], "%Y-%m-%d")
+            return dt.year, dt.month, dt.date()
+        except Exception:
+            return None, None, None
+
+    def _period_key(anio, mes):
+        return f"{int(anio):04d}-{int(mes):02d}"
+
+    def _period_leq(anio_a, mes_a, anio_b, mes_b):
+        return (int(anio_a), int(mes_a)) <= (int(anio_b), int(mes_b))
+
+    def _empty_bucket():
+        return {
+            "horas_estimadas": Decimal("0.00"),
+            "horas_reales": Decimal("0.00"),
+            "costo_estimado": Decimal("0.00"),
+            "costo_real": Decimal("0.00"),
+        }
+
+    # ---------------------------------------------------------
+    # filtros globales opcionales
+    # ---------------------------------------------------------
+    filtro_equipos = [
+        str(v).strip().upper()
+        for v in request.args.getlist("equipo")
+        if str(v).strip()
+    ]
+
+    filtro_modulos = [
+        str(v).strip().upper()
+        for v in request.args.getlist("modulo")
+        if str(v).strip()
+    ]
+
+    filtro_consultores = [
+        str(v).strip().lower()
+        for v in request.args.getlist("consultor")
+        if str(v).strip()
+    ]
+
+    # ---------------------------------------------------------
+    # proyecto + periodo seleccionado
+    # ---------------------------------------------------------
+    p = (
+        Proyecto.query.options(
+            joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.perfil),
+            joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.modulo),
+            joinedload(Proyecto.presupuestos_mensuales),
+            joinedload(Proyecto.costos_adicionales),
+        )
+        .get_or_404(proyecto_id)
+    )
+
+    anio = request.args.get("anio", type=int)
+    mes = request.args.get("mes", type=int)
+
+    if not anio or not mes or mes < 1 or mes > 12:
+        periodos = set()
+
+        for row in (p.perfiles_plan or []):
+            if row.anio and row.mes:
+                periodos.add((int(row.anio), int(row.mes)))
+
+        for row in (p.presupuestos_mensuales or []):
+            if row.anio and row.mes:
+                periodos.add((int(row.anio), int(row.mes)))
+
+        reg_periodos = (
+            db.session.query(
+                extract("year", cast(Registro.fecha, db.Date)).label("anio"),
+                extract("month", cast(Registro.fecha, db.Date)).label("mes"),
+            )
+            .filter(Registro.proyecto_id == proyecto_id)
+            .distinct()
+            .all()
+        )
+
+        for rp in reg_periodos:
+            if rp.anio and rp.mes:
+                periodos.add((int(rp.anio), int(rp.mes)))
+
+        if periodos:
+            anio, mes = sorted(periodos)[-1]
+        else:
+            hoy = datetime.now()
+            anio, mes = hoy.year, hoy.month
+
+    # ---------------------------------------------------------
+    # helper: perfil vigente del consultor en una fecha
+    # ---------------------------------------------------------
+    consultor_perfiles_rows = (
+        ConsultorPerfil.query.options(joinedload(ConsultorPerfil.perfil))
+        .order_by(
+            ConsultorPerfil.consultor_id.asc(),
+            ConsultorPerfil.fecha_inicio.desc(),
+            ConsultorPerfil.id.desc(),
+        )
+        .all()
+    )
+
+    perfiles_por_consultor = defaultdict(list)
+    for cp in consultor_perfiles_rows:
+        perfiles_por_consultor[cp.consultor_id].append(cp)
+
+    def _perfil_vigente(consultor_id, fecha_ref):
+        if not consultor_id or not fecha_ref:
+            return None
+
+        rows = perfiles_por_consultor.get(consultor_id, [])
+        for cp in rows:
+            fi = cp.fecha_inicio
+            ff = cp.fecha_fin
+
+            if fi and fecha_ref < fi:
+                continue
+            if ff and fecha_ref > ff:
+                continue
+
+            if cp.perfil:
+                return cp.perfil
+
+        return None
+
+    # ---------------------------------------------------------
+    # 1) PLANEADO por perfil
+    # ---------------------------------------------------------
+    horas_por_perfil = {}
+    costos_por_perfil = {}
+    acumulado_horas_por_perfil = {}
+
+    for row in (p.perfiles_plan or []):
+        if not bool(getattr(row, "activo", True)):
+            continue
+
+        row_modulo = _up(getattr(row.modulo, "nombre", None) if getattr(row, "modulo", None) else None)
+        if filtro_modulos and row_modulo not in filtro_modulos:
+            continue
+
+        perfil_nombre = (
+            getattr(getattr(row, "perfil", None), "nombre", None)
+            or "SIN PERFIL"
+        )
+
+        if perfil_nombre not in horas_por_perfil:
+            horas_por_perfil[perfil_nombre] = {
+                "perfil": perfil_nombre,
+                "estimadas": Decimal("0.00"),
+                "reales": Decimal("0.00"),
+            }
+
+        if perfil_nombre not in costos_por_perfil:
+            costos_por_perfil[perfil_nombre] = {
+                "perfil": perfil_nombre,
+                "estimado": Decimal("0.00"),
+                "real": Decimal("0.00"),
+            }
+
+        if perfil_nombre not in acumulado_horas_por_perfil:
+            acumulado_horas_por_perfil[perfil_nombre] = {
+                "perfil": perfil_nombre,
+                "estimadas": Decimal("0.00"),
+                "reales": Decimal("0.00"),
+            }
+
+        horas_est = _dec(row.horas_estimadas)
+        costo_est = _dec(row.costo_estimado)
+
+        if int(row.anio) == int(anio) and int(row.mes) == int(mes):
+            horas_por_perfil[perfil_nombre]["estimadas"] += horas_est
+            costos_por_perfil[perfil_nombre]["estimado"] += costo_est
+
+        if _period_leq(row.anio, row.mes, anio, mes):
+            acumulado_horas_por_perfil[perfil_nombre]["estimadas"] += horas_est
+
+    # ---------------------------------------------------------
+    # 2) REAL por perfil desde registro oficial del proyecto
+    # ---------------------------------------------------------
+    consultor_join_cond = db.or_(
+        func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.usuario)),
+        func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.nombre)),
+    )
+
+    rows_reg = (
+        db.session.query(Registro, Consultor, Equipo)
+        .select_from(Registro)
+        .outerjoin(Consultor, consultor_join_cond)
+        .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
+        .filter(Registro.proyecto_id == proyecto_id)
+        .all()
+    )
+
+    for reg, consultor, equipo in rows_reg:
+        ry, rm, fecha_ref = _fecha_to_parts(reg.fecha)
+        if not ry or not rm:
+            continue
+
+        modulo_reg = _up(reg.modulo)
+        equipo_reg = _up(getattr(equipo, "nombre", None) or reg.equipo)
+        usuario_reg = _low(getattr(consultor, "usuario", None) or reg.usuario_consultor)
+
+        if filtro_modulos and modulo_reg not in filtro_modulos:
+            continue
+        if filtro_equipos and equipo_reg not in filtro_equipos:
+            continue
+        if filtro_consultores and usuario_reg not in filtro_consultores:
+            continue
+
+        perfil_obj = _perfil_vigente(getattr(consultor, "id", None), fecha_ref)
+        perfil_nombre = getattr(perfil_obj, "nombre", None) or "SIN PERFIL ASIGNADO"
+
+        if perfil_nombre not in horas_por_perfil:
+            horas_por_perfil[perfil_nombre] = {
+                "perfil": perfil_nombre,
+                "estimadas": Decimal("0.00"),
+                "reales": Decimal("0.00"),
+            }
+
+        if perfil_nombre not in costos_por_perfil:
+            costos_por_perfil[perfil_nombre] = {
+                "perfil": perfil_nombre,
+                "estimado": Decimal("0.00"),
+                "real": Decimal("0.00"),
+            }
+
+        if perfil_nombre not in acumulado_horas_por_perfil:
+            acumulado_horas_por_perfil[perfil_nombre] = {
+                "perfil": perfil_nombre,
+                "estimadas": Decimal("0.00"),
+                "reales": Decimal("0.00"),
+            }
+
+        horas_real = _dec(
+            reg.total_horas
+            if reg.total_horas is not None
+            else (reg.tiempo_invertido if reg.tiempo_invertido is not None else 0)
+        )
+
+        if horas_real <= 0:
+            continue
+
+        valor_hora = Decimal("0.00")
+        if consultor and getattr(consultor, "id", None):
+            try:
+                presupuesto = _presupuesto_consultor_mes(consultor.id, int(ry), int(rm))
+                if presupuesto:
+                    valor_hora = _dec(presupuesto.get("valor_hora"))
+            except Exception:
+                valor_hora = Decimal("0.00")
+
+        costo_real = (horas_real * valor_hora).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP
+        )
+
+        if int(ry) == int(anio) and int(rm) == int(mes):
+            horas_por_perfil[perfil_nombre]["reales"] += horas_real
+            costos_por_perfil[perfil_nombre]["real"] += costo_real
+
+        if _period_leq(ry, rm, anio, mes):
+            acumulado_horas_por_perfil[perfil_nombre]["reales"] += horas_real
+
+    # ---------------------------------------------------------
+    # 3) serialización
+    # ---------------------------------------------------------
+    horas_out = [
+        {
+            "perfil": x["perfil"],
+            "estimadas": _money(x["estimadas"]),
+            "reales": _money(x["reales"]),
+        }
+        for x in sorted(
+            horas_por_perfil.values(),
+            key=lambda r: max(r["estimadas"], r["reales"]),
+            reverse=True
+        )
+    ]
+
+    costos_out = [
+        {
+            "perfil": x["perfil"],
+            "estimado": _money(x["estimado"]),
+            "real": _money(x["real"]),
+        }
+        for x in sorted(
+            costos_por_perfil.values(),
+            key=lambda r: max(r["estimado"], r["real"]),
+            reverse=True
+        )
+    ]
+
+    acumulado_out = [
+        {
+            "perfil": x["perfil"],
+            "estimadas": _money(x["estimadas"]),
+            "reales": _money(x["reales"]),
+        }
+        for x in sorted(
+            acumulado_horas_por_perfil.values(),
+            key=lambda r: max(r["estimadas"], r["reales"]),
+            reverse=True
+        )
+    ]
+
+    return jsonify({
+        "anio": int(anio),
+        "mes": int(mes),
+        "periodo": _period_key(anio, mes),
+        "horas_por_perfil": horas_out,
+        "costos_por_perfil": costos_out,
+        "acumulado_horas_por_perfil": acumulado_out,
+    }), 200
+
 ## -------------------------------
 ## Modulos (para categorizar proyectos y reportes)
 @bp.route('/modulos', methods=['POST'])
