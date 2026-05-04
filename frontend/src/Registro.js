@@ -2364,10 +2364,34 @@ const Registro = ({ userData }) => {
                   <input
                     type="date"
                     value={registro.fecha}
-                    max={todayISO}
-                    onChange={(e) => setRegistro({ ...registro, fecha: e.target.value })}
+                    max={habilitarRangoVacaciones ? undefined : todayISO}
+                    onChange={(e) => {
+                      const value = e.target.value;
+
+                      if (habilitarRangoVacaciones) {
+                        setRegistro((r) => ({
+                          ...r,
+                          fecha: value,
+                          fechaInicioVacaciones: value,
+                          fechaFinVacaciones:
+                            r.fechaFinVacaciones && r.fechaFinVacaciones >= value
+                              ? r.fechaFinVacaciones
+                              : value,
+                        }));
+                        return;
+                      }
+
+                      setRegistro((r) => ({
+                        ...r,
+                        fecha: value,
+                      }));
+                    }}
                     required
-                    title="Puedes editar fechas pasadas o de hoy, pero no fechas futuras"
+                    title={
+                      habilitarRangoVacaciones
+                        ? "Para vacaciones se permiten fechas futuras."
+                        : "Puedes editar fechas pasadas o de hoy, pero no fechas futuras."
+                    }
                   />
 
                   <select
