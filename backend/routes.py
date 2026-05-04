@@ -1072,6 +1072,49 @@ def _dividir_registro_por_horario(hora_inicio: str, hora_fin: str, horario_traba
 
     return fragmentos
 
+def _norm_text_basic(value):
+    s = str(value or "").strip().upper()
+    s = unicodedata.normalize("NFD", s)
+    return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+
+
+def _is_vacaciones_payload(data: dict) -> bool:
+    if not bool(data.get("generarRangoVacaciones")):
+        return False
+
+    tipo = pick(data, "tipoTarea", "tipo_tarea", default="")
+    tipo_norm = _norm_text_basic(tipo)
+
+    # En tu catálogo se ve como "15 - Vacaciones / Incapacidades"
+    return tipo_norm.startswith("15") or "VACACIONES" in tipo_norm
+
+
+def _parse_iso_date_for_range(value):
+    s = str(value or "").strip()
+    if not s:
+        return None
+
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _build_iso_dates_range(start_value, end_value):
+    start = _parse_iso_date_for_range(start_value)
+    end = _parse_iso_date_for_range(end_value)
+
+    if not start or not end or end < start:
+        return []
+
+    dates = []
+    current = start
+
+    while current <= end:
+        dates.append(current.isoformat())
+        current = current + timedelta(days=1)
+
+    return dates
 
 @bp.route('/registrar-hora', methods=['POST'])
 def registrar_hora():
@@ -1113,8 +1156,46 @@ def registrar_hora():
     hora_inicio = pick(data, 'horaInicio', 'hora_inicio')
     hora_fin = pick(data, 'horaFin', 'hora_fin')
 
-    if not fecha or not cliente or not hora_inicio or not hora_fin:
+    es_rango_vacaciones = _is_vacaciones_payload(data)
+
+    if not cliente or not hora_inicio or not hora_fin:
         return jsonify({'mensaje': 'Campos obligatorios faltantes'}), 400
+
+    if es_rango_vacaciones:
+        fecha_inicio_vacaciones = pick(
+            data,
+            'fechaInicioVacaciones',
+            'fecha_inicio_vacaciones'
+        )
+        fecha_fin_vacaciones = pick(
+            data,
+            'fechaFinVacaciones',
+            'fecha_fin_vacaciones'
+        )
+
+        fechas_a_crear = _build_iso_dates_range(
+            fecha_inicio_vacaciones,
+            fecha_fin_vacaciones
+        )
+
+        if not fechas_a_crear:
+            return jsonify({
+                'mensaje': 'Rango de vacaciones inválido. Verifica fecha de inicio y fecha de fin.'
+            }), 400
+
+        hoy_bogota = datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
+        if any(f > hoy_bogota for f in fechas_a_crear):
+            return jsonify({
+                'mensaje': 'El rango de vacaciones no puede contener fechas futuras.'
+            }), 403
+
+        # La fecha principal será la primera del rango.
+        fecha = fechas_a_crear[0]
+    else:
+        if not fecha:
+            return jsonify({'mensaje': 'Campos obligatorios faltantes'}), 400
+
+        fechas_a_crear = [fecha]
 
     tiempo_calculado = _calcular_tiempo_horas(hora_inicio, hora_fin)
     if tiempo_calculado <= 0:
@@ -1123,17 +1204,22 @@ def registrar_hora():
     # ------------------------------------------------------------------
     # 3) VALIDAR TRASLAPE EN BACKEND
     # ------------------------------------------------------------------
-    conflicto = _buscar_registro_traslapado(
-        fecha=fecha,
-        usuario_consultor=consultor.usuario,
-        hora_inicio=hora_inicio,
-        hora_fin=hora_fin,
-        exclude_id=None
-    )
-    if conflicto:
-        return jsonify({
-            'mensaje': f'Ya existe un registro que se cruza con este rango: {conflicto.hora_inicio} - {conflicto.hora_fin} (ID: {conflicto.id})'
-        }), 409
+    for fecha_item in fechas_a_crear:
+        conflicto = _buscar_registro_traslapado(
+            fecha=fecha_item,
+            usuario_consultor=consultor.usuario,
+            hora_inicio=hora_inicio,
+            hora_fin=hora_fin,
+            exclude_id=None
+        )
+
+        if conflicto:
+            return jsonify({
+                'mensaje': (
+                    f'Ya existe un registro que se cruza con este rango el día {fecha_item}: '
+                    f'{conflicto.hora_inicio} - {conflicto.hora_fin} (ID: {conflicto.id})'
+                )
+            }), 409
 
     # ------------------------------------------------------------------
     # 4) DETERMINAR TAREA
@@ -1190,27 +1276,45 @@ def registrar_hora():
     # ------------------------------------------------------------------
     # 7.1) DIVIDIR EL REGISTRO SEGÚN EL HORARIO
     # ------------------------------------------------------------------
-    fragmentos = _dividir_registro_por_horario(hora_inicio, hora_fin, horario_trabajo)
+    if es_rango_vacaciones:
+        fragmentos = [{
+            "hora_inicio": hora_inicio,
+            "hora_fin": hora_fin,
+            "horas_adicionales": pick(
+                data,
+                "horasAdicionales",
+                "horas_adicionales",
+                default="No"
+            ),
+        }]
+    else:
+        fragmentos = _dividir_registro_por_horario(
+            hora_inicio,
+            hora_fin,
+            horario_trabajo
+        )
 
-    if not fragmentos:
-        return jsonify({'mensaje': 'No se pudo dividir el rango horario'}), 400
+        if not fragmentos:
+            return jsonify({'mensaje': 'No se pudo dividir el rango horario'}), 400
 
     # validar traslape por cada fragmento
-    for frag in fragmentos:
-        conflicto = _buscar_registro_traslapado(
-            fecha=fecha,
-            usuario_consultor=consultor.usuario,
-            hora_inicio=frag["hora_inicio"],
-            hora_fin=frag["hora_fin"],
-            exclude_id=None
-        )
-        if conflicto:
-            return jsonify({
-                'mensaje': (
-                    f'Ya existe un registro que se cruza con este rango: '
-                    f'{conflicto.hora_inicio} - {conflicto.hora_fin} (ID: {conflicto.id})'
-                )
-            }), 409
+    for fecha_item in fechas_a_crear:
+        for frag in fragmentos:
+            conflicto = _buscar_registro_traslapado(
+                fecha=fecha_item,
+                usuario_consultor=consultor.usuario,
+                hora_inicio=frag["hora_inicio"],
+                hora_fin=frag["hora_fin"],
+                exclude_id=None
+            )
+
+            if conflicto:
+                return jsonify({
+                    'mensaje': (
+                        f'Ya existe un registro que se cruza con este rango el día {fecha_item}: '
+                        f'{conflicto.hora_inicio} - {conflicto.hora_fin} (ID: {conflicto.id})'
+                    )
+                }), 409
 
     # ------------------------------------------------------------------
     # 8) EQUIPO
@@ -1313,53 +1417,55 @@ def registrar_hora():
     try:
         nuevos = []
 
-        for frag in fragmentos:
-            frag_hora_inicio = frag["hora_inicio"]
-            frag_hora_fin = frag["hora_fin"]
-            frag_horas_adic = frag["horas_adicionales"]
+        for fecha_item in fechas_a_crear:
+            for frag in fragmentos:
+                frag_hora_inicio = frag["hora_inicio"]
+                frag_hora_fin = frag["hora_fin"]
+                frag_horas_adic = frag["horas_adicionales"]
 
-            frag_tiempo = _calcular_tiempo_horas(frag_hora_inicio, frag_hora_fin)
+                frag_tiempo = _calcular_tiempo_horas(frag_hora_inicio, frag_hora_fin)
 
-            nuevo = Registro(
-                fecha=fecha,
-                cliente=cliente,
-                nro_caso_cliente=_norm_default(pick(data, 'nroCasoCliente', 'nro_caso_cliente'), '0'),
-                nro_caso_interno=_norm_default(pick(data, 'nroCasoInterno', 'nro_caso_interno'), '0'),
-                nro_caso_escalado=bd["nro_escalado"],
+                nuevo = Registro(
+                    fecha=fecha_item,
+                    cliente=cliente,
+                    nro_caso_cliente=_norm_default(pick(data, 'nroCasoCliente', 'nro_caso_cliente'), '0'),
+                    nro_caso_interno=_norm_default(pick(data, 'nroCasoInterno', 'nro_caso_interno'), '0'),
+                    nro_caso_escalado=bd["nro_escalado"],
 
-                tarea_id=tarea_id,
-                ocupacion_id=ocupacion_id,
+                    tarea_id=tarea_id,
+                    ocupacion_id=ocupacion_id,
 
-                proyecto_id=proyecto_id,
-                fase_proyecto_id=fase_proyecto_id,
+                    proyecto_id=proyecto_id,
+                    fase_proyecto_id=fase_proyecto_id,
 
-                hora_inicio=frag_hora_inicio,
-                hora_fin=frag_hora_fin,
-                tiempo_invertido=frag_tiempo,
-                tiempo_facturable=tiempo_facturable,
+                    hora_inicio=frag_hora_inicio,
+                    hora_fin=frag_hora_fin,
+                    tiempo_invertido=frag_tiempo,
+                    tiempo_facturable=tiempo_facturable,
 
-                actividad_malla=bd["actividad_malla"],
-                oncall=bd["oncall"],
-                desborde=bd["desborde"],
+                    actividad_malla=bd["actividad_malla"],
+                    oncall=bd["oncall"],
+                    desborde=bd["desborde"],
 
-                horas_adicionales=frag_horas_adic,
-                descripcion=_norm_default(pick(data, 'descripcion'), ''),
+                    horas_adicionales=frag_horas_adic,
+                    descripcion=_norm_default(pick(data, 'descripcion'), ''),
 
-                total_horas=frag_tiempo,
-                modulo=modulo_final,
-                horario_trabajo=horario_trabajo,
-                usuario_consultor=consultor.usuario,
-                equipo=equipo_final,
-            )
+                    total_horas=frag_tiempo,
+                    modulo=modulo_final,
+                    horario_trabajo=horario_trabajo,
+                    usuario_consultor=consultor.usuario,
+                    equipo=equipo_final,
+                )
 
-            db.session.add(nuevo)
-            nuevos.append(nuevo)
+                db.session.add(nuevo)
+                nuevos.append(nuevo)
 
         db.session.commit()
 
         return jsonify({
             'mensaje': 'Registro guardado correctamente',
             'cantidad_registros': len(nuevos),
+            'es_rango_vacaciones': bool(es_rango_vacaciones),
             'registros': [
                 {
                     'id': r.id,
@@ -11368,3 +11474,73 @@ def eliminar_perfil(perfil_id):
 
     return jsonify({"mensaje": "Perfil eliminado"}), 200
 
+
+## Cambiar password
+@bp.route('/cambiar-password', methods=['POST'])
+def cambiar_password():
+    data = request.get_json(silent=True) or {}
+
+    usuario = (data.get("usuario") or "").strip().lower()
+    password_actual = data.get("passwordActual") or ""
+    nueva_password = data.get("nuevaPassword") or ""
+    confirmar_password = data.get("confirmarPassword") or ""
+
+    if not usuario or not password_actual or not nueva_password or not confirmar_password:
+        return jsonify({
+            "mensaje": "Usuario, contraseña actual, nueva contraseña y confirmación son obligatorios"
+        }), 400
+
+    if nueva_password != confirmar_password:
+        return jsonify({
+            "mensaje": "La nueva contraseña y la confirmación no coinciden"
+        }), 400
+
+    if len(nueva_password) < 6:
+        return jsonify({
+            "mensaje": "La nueva contraseña debe tener mínimo 6 caracteres"
+        }), 400
+
+    consultor = Consultor.query.filter(
+        func.lower(Consultor.usuario) == usuario
+    ).first()
+
+    if not consultor:
+        return jsonify({"mensaje": "Usuario no encontrado"}), 404
+
+    if not bool(getattr(consultor, "activo", True)):
+        return jsonify({
+            "mensaje": "Usuario inactivo. Contacte al administrador."
+        }), 403
+
+    stored = consultor.password or ""
+
+    if stored.startswith("$2"):
+        ok_pass = bcrypt.checkpw(
+            password_actual.encode("utf-8"),
+            stored.encode("utf-8")
+        )
+    else:
+        ok_pass = stored == password_actual
+
+    if not ok_pass:
+        return jsonify({
+            "mensaje": "La contraseña actual no es correcta"
+        }), 401
+
+    hashed = bcrypt.hashpw(
+        nueva_password.encode("utf-8"),
+        bcrypt.gensalt()
+    ).decode("utf-8")
+
+    consultor.password = hashed
+
+    try:
+        db.session.commit()
+        return jsonify({
+            "mensaje": "Contraseña actualizada correctamente"
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "mensaje": f"No se pudo actualizar la contraseña: {str(e)}"
+        }), 500

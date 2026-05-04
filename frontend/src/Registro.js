@@ -38,6 +38,11 @@ function initRegistro() {
     fase_proyecto_id: '',
     tarea_id: '',
     ocupacion_id: '',
+    tipoTarea: '',
+
+    // NUEVO: rango de vacaciones
+    fechaInicioVacaciones: '',
+    fechaFinVacaciones: '',
   };
 }
 
@@ -188,6 +193,36 @@ function isDateInCurrentWeek(fechaISO, now = new Date()) {
 
 function taskCode(value) {
   return (String(value || '').match(/^\d+/)?.[0] ?? '');
+}
+
+function isVacacionesTaskText(value) {
+  const normalized = normText(value);
+  return taskCode(value) === "15" || normalized.includes("VACACIONES");
+}
+
+function buildDateRangeISO(startISO, endISO) {
+  if (!startISO || !endISO) return [];
+
+  const start = new Date(`${startISO}T00:00:00`);
+  const end = new Date(`${endISO}T00:00:00`);
+
+  if (
+    Number.isNaN(start.getTime()) ||
+    Number.isNaN(end.getTime()) ||
+    end < start
+  ) {
+    return [];
+  }
+
+  const days = [];
+  const current = new Date(start);
+
+  while (current <= end) {
+    days.push(toISODate(current));
+    current.setDate(current.getDate() + 1);
+  }
+
+  return days;
 }
 
 function isInvalidCaseNumber(nro) {
@@ -681,6 +716,12 @@ const Registro = ({ userData }) => {
   const occCodeSeleccionada = useMemo(() => {
     return ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
   }, [ocupacionSeleccionada, ocupaciones]);
+
+  const isVacacionesTask = useMemo(() => {
+    return isVacacionesTaskText(registro.tipoTarea);
+  }, [registro.tipoTarea]);
+
+  const habilitarRangoVacaciones = isVacacionesTask && !modoEdicion;
 
   const clientesDisponibles = useMemo(() => {
     const lista = Array.isArray(clientes) ? clientes : [];
@@ -1182,12 +1223,45 @@ const Registro = ({ userData }) => {
     }
 
     const code = taskCode(registro.tipoTarea);
+    const esRangoVacaciones = habilitarRangoVacaciones;
 
-    if (!registro.fecha) {
+    const fechasVacaciones = esRangoVacaciones
+      ? buildDateRangeISO(registro.fechaInicioVacaciones, registro.fechaFinVacaciones)
+      : [];
+
+    const fechaPrincipal = esRangoVacaciones
+      ? registro.fechaInicioVacaciones
+      : registro.fecha;
+
+    if (!fechaPrincipal) {
       return Swal.fire({ icon: "warning", title: "Selecciona una fecha" });
     }
 
-    if (registro.fecha > todayISO) {
+    if (esRangoVacaciones) {
+      if (!registro.fechaInicioVacaciones || !registro.fechaFinVacaciones) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Rango de vacaciones obligatorio",
+          text: "Selecciona la fecha de inicio y la fecha de fin de vacaciones.",
+        });
+      }
+
+      if (!fechasVacaciones.length) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Rango inválido",
+          text: "La fecha final de vacaciones debe ser mayor o igual a la fecha inicial.",
+        });
+      }
+
+      if (registro.fechaFinVacaciones > todayISO) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Fecha futura no permitida",
+          text: "El rango de vacaciones no puede contener fechas futuras.",
+        });
+      }
+    } else if (registro.fecha > todayISO) {
       return Swal.fire({
         icon: "warning",
         title: "Fecha futura no permitida",
@@ -1226,23 +1300,27 @@ const Registro = ({ userData }) => {
     const debeValidarOverlap = !modoEdicion || cambioRangoEnEdicion;
 
     if (debeValidarOverlap) {
-      const conflict = findOverlapRegistro({
-        registros,
-        fecha: registro.fecha,
-        consultorId,
-        usuarioLogin,
-        nombreConsultor,
-        excludeId: modoEdicion ? registro.id : null,
-        horaInicio: registro.horaInicio,
-        horaFin: registro.horaFin,
-      });
+      const fechasAValidar = esRangoVacaciones ? fechasVacaciones : [registro.fecha];
 
-      if (conflict) {
-        return Swal.fire({
-          icon: "warning",
-          title: "Horas duplicadas",
-          html: `Ya existe un registro que se cruza con este rango:<br/><b>${conflict.horaInicio} - ${conflict.horaFin}</b> (ID: ${conflict.id})`,
+      for (const fechaValidar of fechasAValidar) {
+        const conflict = findOverlapRegistro({
+          registros,
+          fecha: fechaValidar,
+          consultorId,
+          usuarioLogin,
+          nombreConsultor,
+          excludeId: modoEdicion ? registro.id : null,
+          horaInicio: registro.horaInicio,
+          horaFin: registro.horaFin,
         });
+
+        if (conflict) {
+          return Swal.fire({
+            icon: "warning",
+            title: "Horas duplicadas",
+            html: `Ya existe un registro que se cruza con este rango el día <b>${fechaValidar}</b>:<br/><b>${conflict.horaInicio} - ${conflict.horaFin}</b> (ID: ${conflict.id})`,
+          });
+        }
       }
     }
 
@@ -1356,7 +1434,7 @@ const Registro = ({ userData }) => {
     }
 
     const base = {
-      fecha: registro.fecha,
+      fecha: fechaPrincipal,
       cliente: registro.cliente,
       nroCasoCliente: registro.nroCasoCliente,
       nroCasoInterno: registro.nroCasoInterno,
@@ -1392,6 +1470,12 @@ const Registro = ({ userData }) => {
       tipoTarea: registro.tipoTarea,
     };
 
+    if (esRangoVacaciones) {
+      payload.generarRangoVacaciones = true;
+      payload.fechaInicioVacaciones = registro.fechaInicioVacaciones;
+      payload.fechaFinVacaciones = registro.fechaFinVacaciones;
+    }
+
     if (equipoFormulario === "BASIS") {
       payload.actividadMalla = registro.actividadMalla;
       payload.oncall = registro.oncall;
@@ -1419,7 +1503,11 @@ const Registro = ({ userData }) => {
         icon: "success",
         title: modoEdicion ? "Registro actualizado" : "Registro guardado",
         text: j?.cantidad_registros > 1
-          ? `Se generaron ${j.cantidad_registros} registros por división de horario.`
+          ? (
+              j?.es_rango_vacaciones
+                ? `Se generaron ${j.cantidad_registros} registros de vacaciones según el rango seleccionado.`
+                : `Se generaron ${j.cantidad_registros} registros por división de horario.`
+            )
           : undefined,
       });
 
@@ -2361,11 +2449,15 @@ const Registro = ({ userData }) => {
                     onChange={(e) => {
                       const tareaId = Number(e.target.value);
                       const tareaObj = tareasDeOcupacion.find(t => Number(t.id) === Number(tareaId));
+                      const tipoTareaText = tareaObj ? `${tareaObj.codigo} - ${tareaObj.nombre}` : "";
+                      const esVacaciones = isVacacionesTaskText(tipoTareaText);
 
                       setRegistro(r => ({
                         ...r,
-                        tarea_id: tareaId,
-                        tipoTarea: tareaObj ? `${tareaObj.codigo} - ${tareaObj.nombre}` : ""
+                        tarea_id: tareaId || '',
+                        tipoTarea: tipoTareaText,
+                        fechaInicioVacaciones: esVacaciones ? (r.fechaInicioVacaciones || r.fecha || todayISO) : '',
+                        fechaFinVacaciones: esVacaciones ? (r.fechaFinVacaciones || r.fecha || todayISO) : '',
                       }));
                     }}
                     required
@@ -2378,6 +2470,50 @@ const Registro = ({ userData }) => {
                       </option>
                     ))}
                   </select>
+
+                  {habilitarRangoVacaciones && (
+                    <div className="registro-vacaciones-range span-2">
+                      <div className="registro-field">
+                        <label>Inicio vacaciones</label>
+                        <input
+                          type="date"
+                          value={registro.fechaInicioVacaciones || ''}
+                          max={todayISO}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setRegistro((r) => ({
+                              ...r,
+                              fechaInicioVacaciones: value,
+                              fecha: value || r.fecha,
+                              fechaFinVacaciones:
+                                r.fechaFinVacaciones && r.fechaFinVacaciones >= value
+                                  ? r.fechaFinVacaciones
+                                  : value,
+                            }));
+                          }}
+                          required={habilitarRangoVacaciones}
+                        />
+                      </div>
+
+                      <div className="registro-field">
+                        <label>Fin vacaciones</label>
+                        <input
+                          type="date"
+                          value={registro.fechaFinVacaciones || ''}
+                          min={registro.fechaInicioVacaciones || ''}
+                          max={todayISO}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setRegistro((r) => ({
+                              ...r,
+                              fechaFinVacaciones: value,
+                            }));
+                          }}
+                          required={habilitarRangoVacaciones}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {showProyectoUI && (
                     <>

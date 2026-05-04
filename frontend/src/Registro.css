@@ -1146,3 +1146,33 @@
   background: rgba(15,23,42,.22);
   border-radius: 999px;
 }
+
+.registro-vacaciones-range{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+  padding:14px;
+  border:1px solid rgba(0,85,184,.14);
+  border-radius:16px;
+  background:linear-gradient(180deg, rgba(0,85,184,.04), rgba(255,255,255,.76));
+}
+
+.registro-field{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+}
+
+.registro-field label{
+  font-size:12px;
+  font-weight:900;
+  color:#334155;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+
+@media(max-width:600px){
+  .registro-vacaciones-range{
+    grid-template-columns:1fr;
+  }
+}
