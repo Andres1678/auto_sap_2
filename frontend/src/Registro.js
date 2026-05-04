@@ -196,8 +196,7 @@ function taskCode(value) {
 }
 
 function isVacacionesTaskText(value) {
-  const normalized = normText(value);
-  return taskCode(value) === "15" || normalized.includes("VACACIONES");
+  return taskCode(value) === "15";
 }
 
 function buildDateRangeISO(startISO, endISO) {
@@ -1251,14 +1250,6 @@ const Registro = ({ userData }) => {
           icon: "warning",
           title: "Rango inválido",
           text: "La fecha final de vacaciones debe ser mayor o igual a la fecha inicial.",
-        });
-      }
-
-      if (registro.fechaFinVacaciones > todayISO) {
-        return Swal.fire({
-          icon: "warning",
-          title: "Fecha futura no permitida",
-          text: "El rango de vacaciones no puede contener fechas futuras.",
         });
       }
     } else if (registro.fecha > todayISO) {
@@ -2478,7 +2469,6 @@ const Registro = ({ userData }) => {
                         <input
                           type="date"
                           value={registro.fechaInicioVacaciones || ''}
-                          max={todayISO}
                           onChange={(e) => {
                             const value = e.target.value;
                             setRegistro((r) => ({
@@ -2501,7 +2491,6 @@ const Registro = ({ userData }) => {
                           type="date"
                           value={registro.fechaFinVacaciones || ''}
                           min={registro.fechaInicioVacaciones || ''}
-                          max={todayISO}
                           onChange={(e) => {
                             const value = e.target.value;
                             setRegistro((r) => ({

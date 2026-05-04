@@ -1183,13 +1183,6 @@ def registrar_hora():
                 'mensaje': 'Rango de vacaciones inválido. Verifica fecha de inicio y fecha de fin.'
             }), 400
 
-        hoy_bogota = datetime.now(ZoneInfo("America/Bogota")).date().isoformat()
-        if any(f > hoy_bogota for f in fechas_a_crear):
-            return jsonify({
-                'mensaje': 'El rango de vacaciones no puede contener fechas futuras.'
-            }), 403
-
-        # La fecha principal será la primera del rango.
         fecha = fechas_a_crear[0]
     else:
         if not fecha:
