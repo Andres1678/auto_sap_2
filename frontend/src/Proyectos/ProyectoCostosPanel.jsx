@@ -212,6 +212,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   const [catalogos, setCatalogos] = useState({
     perfiles: [],
     modulos: [],
+    modulosPlaneacion: [],
     consultores: [],
     equipos: [],
   });
@@ -312,7 +313,14 @@ export default function ProyectoCostosPanel({ proyectoId }) {
           : [],
         modulos: Array.isArray(rawCatalogos.modulos)
           ? rawCatalogos.modulos.map((m) => ({
-              id: String(m.nombre || m.id),
+              id: String(m.id ?? m.nombre),
+              nombre: m.nombre || `Módulo ${m.id}`,
+            }))
+          : [],
+
+        modulosPlaneacion: Array.isArray(rawCatalogos.modulos_planeacion)
+          ? rawCatalogos.modulos_planeacion.map((m) => ({
+              id: String(m.id),
               nombre: m.nombre || `Módulo ${m.id}`,
             }))
           : [],
@@ -1675,7 +1683,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
         {openSections.perfiles && (
           <>
-            {(catalogos.modulos || []).length === 0 && (
+            {(catalogos.modulosPlaneacion || []).length === 0 && (
               <div className="pcp-empty" style={{ marginBottom: 12 }}>
                 Este proyecto no tiene módulos configurados.
               </div>
@@ -1756,7 +1764,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                             disabled={!row.perfil_id}
                           >
                             <option value="">Seleccione</option>
-                            {(catalogos.modulos || []).map((m) => (
+                            {(catalogos.modulosPlaneacion || []).map((m) => (
                               <option key={String(m.id)} value={String(m.id)}>
                                 {m.nombre}
                               </option>

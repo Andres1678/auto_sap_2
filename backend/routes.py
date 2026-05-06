@@ -6704,21 +6704,28 @@ def _perfil_plan_to_dict(x: ProyectoPerfilPlan):
         "proyecto_id": x.proyecto_id,
         "anio": x.anio,
         "mes": x.mes,
+
         "perfil_id": x.perfil_id,
         "perfil": _perfil_to_dict(x.perfil) if x.perfil else None,
+
         "modulo_id": x.modulo_id,
         "modulo": {
             "id": x.modulo.id,
             "nombre": x.modulo.nombre,
         } if x.modulo else None,
+
         "consultor_id": x.consultor_id,
         "consultor": {
             "id": x.consultor.id,
             "nombre": x.consultor.nombre,
             "usuario": x.consultor.usuario,
         } if x.consultor else None,
+
         "horas_estimadas": _money_to_json(x.horas_estimadas),
+
         "fte_estimado": _money_to_json(x.fte_estimado),
+        "valor_hora_ingreso": _money_to_json(x.fte_estimado),
+
         "valor_hora_planeado": _money_to_json(x.valor_hora_planeado),
         "costo_estimado": _money_to_json(x.costo_estimado),
         "ingreso_estimado": _money_to_json(x.ingreso_estimado),
@@ -6918,30 +6925,6 @@ def _presupuesto_mensual_to_dict(x: ProyectoPresupuestoMensual):
         "activo": bool(x.activo),
     }
 
-def _perfil_plan_to_dict(x: ProyectoPerfilPlan):
-    return {
-        "id": x.id,
-        "proyecto_id": x.proyecto_id,
-        "anio": x.anio,
-        "mes": x.mes,
-        "perfil_id": x.perfil_id,
-        "perfil": _perfil_to_dict(x.perfil) if x.perfil else None,
-        "consultor_id": x.consultor_id,
-        "consultor": {
-            "id": x.consultor.id,
-            "nombre": x.consultor.nombre,
-            "usuario": x.consultor.usuario,
-        } if x.consultor else None,
-        "horas_estimadas": _money_to_json(x.horas_estimadas),
-        "fte_estimado": _money_to_json(x.fte_estimado),
-        "valor_hora_planeado": _money_to_json(x.valor_hora_planeado),
-        "costo_estimado": _money_to_json(x.costo_estimado),
-        "ingreso_estimado": _money_to_json(x.ingreso_estimado),
-        "observacion": x.observacion,
-        "orden": int(x.orden or 0),
-        "activo": bool(x.activo),
-    }
-
 def _costo_adicional_to_dict(x: ProyectoCostoAdicional):
     return {
         "id": x.id,
@@ -7027,6 +7010,12 @@ def get_proyecto_costos(proyecto_id):
             joinedload(Proyecto.costos_adicionales),
         )
         .get_or_404(proyecto_id)
+    )
+
+    modulos_planeacion = (
+        Modulo.query
+        .order_by(Modulo.nombre.asc())
+        .all()
     )
 
     perfiles_catalogo = (
@@ -7123,6 +7112,14 @@ def get_proyecto_costos(proyecto_id):
                 consultores_map.values(),
                 key=lambda x: x["nombre"].upper()
             ),
+
+            "modulos_planeacion": [
+                {
+                    "id": m.id,
+                    "nombre": m.nombre,
+                }
+                for m in modulos_planeacion
+            ],
         },
         "presupuesto_mensual": [
             _presupuesto_mensual_to_dict(x)
