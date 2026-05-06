@@ -7276,109 +7276,207 @@ def save_proyecto_presupuesto_mensual(proyecto_id):
 @permission_required("PROYECTOS_EDITAR")
 def save_proyecto_perfil_plan(proyecto_id):
     Proyecto.query.get_or_404(proyecto_id)
+
     data = request.get_json(silent=True) or {}
     rows = data.get("rows") or []
 
-    seen = set()
-    for idx, row in enumerate(rows):
-        anio = int(row.get("anio") or 0)
-        mes = int(row.get("mes") or 0)
-        perfil_id = int(row.get("perfil_id") or 0) if row.get("perfil_id") else 0
-        modulo_id = int(row.get("modulo_id") or 0) if row.get("modulo_id") else 0
-
-        if anio <= 0 or mes < 1 or mes > 12 or perfil_id <= 0 or modulo_id <= 0:
-            return jsonify({"mensaje": f"Fila inválida en planeación por perfil (índice {idx})"}), 400
-
-        key = (anio, mes, perfil_id, modulo_id)
-        if key in seen:
+    try:
+        if not isinstance(rows, list):
             return jsonify({
-                "mensaje": f"Fila duplicada para el mismo periodo/perfil/módulo: {anio}-{mes}, perfil {perfil_id}, módulo {modulo_id}"
+                "mensaje": "El payload de planeación por perfil debe enviar 'rows' como lista."
             }), 400
-        seen.add(key)
 
-        perfil = Perfil.query.get(perfil_id)
-        if not perfil:
-            return jsonify({"mensaje": f"Perfil no existe: {perfil_id}"}), 400
+        # ============================================================
+        # 1) VALIDAR FILAS ANTES DE BORRAR / GUARDAR
+        # ============================================================
+        seen = set()
 
-        if not perfil.activo:
-            return jsonify({"mensaje": f"El perfil está inactivo: {perfil.nombre}"}), 400
+        for idx, row in enumerate(rows):
+            if not isinstance(row, dict):
+                return jsonify({
+                    "mensaje": f"Fila inválida en planeación por perfil (índice {idx})."
+                }), 400
 
-        modulo = Modulo.query.get(modulo_id)
-        if not modulo:
-            return jsonify({"mensaje": f"Módulo no existe: {modulo_id}"}), 400
+            try:
+                anio = int(row.get("anio") or 0)
+                mes = int(row.get("mes") or 0)
+                perfil_id = int(row.get("perfil_id") or 0)
+                modulo_id = int(row.get("modulo_id") or 0)
+            except Exception:
+                return jsonify({
+                    "mensaje": (
+                        f"Fila inválida en planeación por perfil (índice {idx}). "
+                        "Perfil y módulo deben ser IDs numéricos. "
+                        f"Valores recibidos: perfil_id={row.get('perfil_id')}, "
+                        f"modulo_id={row.get('modulo_id')}"
+                    )
+                }), 400
 
-    # ✅ auto-asociar módulos al proyecto si aún no existen en ProyectoModulo
-    proyecto_modulo_ids = {
-        int(x.modulo_id)
-        for x in (
-            ProyectoModulo.query
-            .filter(ProyectoModulo.proyecto_id == proyecto_id)
-            .filter(ProyectoModulo.activo == True)
+            if anio <= 0 or mes < 1 or mes > 12 or perfil_id <= 0 or modulo_id <= 0:
+                return jsonify({
+                    "mensaje": f"Fila inválida en planeación por perfil (índice {idx})"
+                }), 400
+
+            consultor_id_raw = row.get("consultor_id")
+            consultor_id_key = None
+
+            if consultor_id_raw not in ("", "null", "None", None):
+                try:
+                    consultor_id_key = int(consultor_id_raw)
+                except Exception:
+                    return jsonify({
+                        "mensaje": f"Consultor inválido en planeación por perfil (índice {idx})"
+                    }), 400
+
+            key = (anio, mes, perfil_id, modulo_id, consultor_id_key)
+
+            if key in seen:
+                return jsonify({
+                    "mensaje": (
+                        "Fila duplicada para el mismo periodo/perfil/módulo/consultor: "
+                        f"{anio}-{mes}, perfil {perfil_id}, módulo {modulo_id}, "
+                        f"consultor {consultor_id_key or 'SIN CONSULTOR'}"
+                    )
+                }), 400
+
+            seen.add(key)
+
+            perfil = Perfil.query.get(perfil_id)
+            if not perfil:
+                return jsonify({
+                    "mensaje": f"Perfil no existe: {perfil_id}"
+                }), 400
+
+            if not bool(perfil.activo):
+                return jsonify({
+                    "mensaje": f"El perfil está inactivo: {perfil.nombre}"
+                }), 400
+
+            modulo = Modulo.query.get(modulo_id)
+            if not modulo:
+                return jsonify({
+                    "mensaje": f"Módulo no existe: {modulo_id}"
+                }), 400
+
+            if consultor_id_key:
+                consultor = Consultor.query.get(consultor_id_key)
+                if not consultor:
+                    return jsonify({
+                        "mensaje": f"Consultor no existe: {consultor_id_key}"
+                    }), 400
+
+        # ============================================================
+        # 2) AUTO-ASOCIAR MÓDULOS AL PROYECTO
+        #    Si existe inactivo, lo reactiva.
+        # ============================================================
+        for row in rows:
+            modulo_id = int(row.get("modulo_id"))
+
+            proyecto_modulo = (
+                ProyectoModulo.query
+                .filter_by(
+                    proyecto_id=proyecto_id,
+                    modulo_id=modulo_id
+                )
+                .first()
+            )
+
+            if proyecto_modulo:
+                proyecto_modulo.activo = True
+            else:
+                db.session.add(ProyectoModulo(
+                    proyecto_id=proyecto_id,
+                    modulo_id=modulo_id,
+                    activo=True,
+                ))
+
+        # ============================================================
+        # 3) BORRAR PLANEACIÓN ACTUAL DEL PROYECTO
+        # ============================================================
+        ProyectoPerfilPlan.query.filter_by(
+            proyecto_id=proyecto_id
+        ).delete(synchronize_session=False)
+
+        # ============================================================
+        # 4) INSERTAR NUEVA PLANEACIÓN
+        # ============================================================
+        for idx, row in enumerate(rows):
+            consultor_id = row.get("consultor_id")
+
+            if consultor_id in ("", "null", "None", None):
+                consultor_id = None
+            else:
+                consultor_id = int(consultor_id)
+
+            # El frontend puede enviar valor_hora_ingreso.
+            # En BD se está usando fte_estimado para ese valor.
+            valor_hora_ingreso = (
+                row.get("valor_hora_ingreso")
+                if row.get("valor_hora_ingreso") not in ("", None, "null", "None")
+                else row.get("fte_estimado")
+            )
+
+            db.session.add(ProyectoPerfilPlan(
+                proyecto_id=proyecto_id,
+                anio=int(row.get("anio")),
+                mes=int(row.get("mes")),
+                perfil_id=int(row.get("perfil_id")),
+                modulo_id=int(row.get("modulo_id")),
+                consultor_id=consultor_id,
+
+                horas_estimadas=_cost_parse_decimal(row.get("horas_estimadas")),
+                fte_estimado=_cost_parse_decimal(valor_hora_ingreso),
+                valor_hora_planeado=_cost_parse_decimal(row.get("valor_hora_planeado")),
+                costo_estimado=_cost_parse_decimal(row.get("costo_estimado")),
+                ingreso_estimado=_cost_parse_decimal(row.get("ingreso_estimado")),
+
+                observacion=(row.get("observacion") or "").strip() or None,
+                orden=int(row.get("orden") or idx),
+                activo=_to_bool2(row.get("activo"), default=True),
+            ))
+
+        db.session.commit()
+
+        # ============================================================
+        # 5) RETORNAR FILAS GUARDADAS
+        # ============================================================
+        rows_db = (
+            ProyectoPerfilPlan.query
+            .options(
+                joinedload(ProyectoPerfilPlan.perfil),
+                joinedload(ProyectoPerfilPlan.modulo),
+                joinedload(ProyectoPerfilPlan.consultor),
+            )
+            .filter_by(proyecto_id=proyecto_id)
+            .order_by(
+                ProyectoPerfilPlan.anio.asc(),
+                ProyectoPerfilPlan.mes.asc(),
+                ProyectoPerfilPlan.orden.asc()
+            )
             .all()
         )
-        if x.modulo_id
-    }
 
-    for row in rows:
-        modulo_id = int(row.get("modulo_id"))
-        if modulo_id not in proyecto_modulo_ids:
-            db.session.add(ProyectoModulo(
-                proyecto_id=proyecto_id,
-                modulo_id=modulo_id,
-                activo=True,
-            ))
-            proyecto_modulo_ids.add(modulo_id)
+        return jsonify({
+            "mensaje": "Planeación por perfil guardada",
+            "rows": [_perfil_plan_to_dict(x) for x in rows_db]
+        }), 200
 
-    ProyectoPerfilPlan.query.filter_by(proyecto_id=proyecto_id).delete()
+    except IntegrityError as e:
+        db.session.rollback()
+        app.logger.exception("Error de integridad guardando planeación por perfil")
 
-    for idx, row in enumerate(rows):
-        consultor_id = row.get("consultor_id")
-        if consultor_id in ("", "null", None):
-            consultor_id = None
-        elif consultor_id:
-            consultor_id = int(consultor_id)
-            if not Consultor.query.get(consultor_id):
-                return jsonify({"mensaje": f"Consultor no existe: {consultor_id}"}), 400
+        return jsonify({
+            "mensaje": "No se pudo guardar la planeación por perfil por un conflicto de datos duplicados o llaves foráneas.",
+            "detalle": str(e)
+        }), 400
 
-        db.session.add(ProyectoPerfilPlan(
-            proyecto_id=proyecto_id,
-            anio=int(row.get("anio")),
-            mes=int(row.get("mes")),
-            perfil_id=int(row.get("perfil_id")),
-            modulo_id=int(row.get("modulo_id")),
-            consultor_id=consultor_id,
-            horas_estimadas=_cost_parse_decimal(row.get("horas_estimadas")),
-            fte_estimado=_cost_parse_decimal(row.get("fte_estimado")),
-            valor_hora_planeado=_cost_parse_decimal(row.get("valor_hora_planeado")),
-            costo_estimado=_cost_parse_decimal(row.get("costo_estimado")),
-            ingreso_estimado=_cost_parse_decimal(row.get("ingreso_estimado")),
-            observacion=(row.get("observacion") or "").strip() or None,
-            orden=int(row.get("orden") or idx),
-            activo=_to_bool2(row.get("activo"), default=True),
-        ))
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error guardando planeación por perfil")
 
-    db.session.commit()
-
-    rows_db = (
-        ProyectoPerfilPlan.query
-        .options(
-            joinedload(ProyectoPerfilPlan.perfil),
-            joinedload(ProyectoPerfilPlan.modulo),
-            joinedload(ProyectoPerfilPlan.consultor),
-        )
-        .filter_by(proyecto_id=proyecto_id)
-        .order_by(
-            ProyectoPerfilPlan.anio.asc(),
-            ProyectoPerfilPlan.mes.asc(),
-            ProyectoPerfilPlan.orden.asc()
-        )
-        .all()
-    )
-
-    return jsonify({
-        "mensaje": "Planeación por perfil guardada",
-        "rows": [_perfil_plan_to_dict(x) for x in rows_db]
-    }), 200
+        return jsonify({
+            "mensaje": f"No se pudo guardar la planeación por perfil: {str(e)}"
+        }), 500
 
 @bp.route("/proyectos/<int:proyecto_id>/costos/costos-adicionales", methods=["POST"])
 @permission_required("PROYECTOS_EDITAR")
