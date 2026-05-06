@@ -11753,20 +11753,6 @@ def dashboard_proyectos():
     except Exception as e:
         return jsonify({"mensaje": str(e)}), 500
 
-## Perfiles
-
-@bp.route("/perfiles/<int:perfil_id>", methods=["GET"])
-@permission_required("PERFILES_VER")
-def get_perfil(perfil_id):
-    x = (
-        Perfil.query.options(
-            joinedload(Perfil.modulos).joinedload(ModuloPerfil.modulo)
-        )
-        .get_or_404(perfil_id)
-    )
-
-    return jsonify(perfil_to_dict(x, include_modulos=True)), 200
-
 
 ## Cambiar password
 @bp.route('/cambiar-password', methods=['POST'])
@@ -11879,11 +11865,11 @@ def _sync_perfil_modulos(perfil_id, modulos_ids):
 
 @bp.route("/perfiles", methods=["GET"])
 @permission_required("PERFILES_VER")
-def listar_perfiles():
+def listar_perfiles_catalogo():
     try:
         include_modulos = (request.args.get("include_modulos") or "0") == "1"
         q = (request.args.get("q") or "").strip()
-        activos = (request.args.get("activos") or "").strip()
+        activos = (request.args.get("activos") or "").strip().lower()
 
         query = Perfil.query
 
@@ -11902,7 +11888,7 @@ def listar_perfiles():
                 )
             )
 
-        if activos in ("1", "true", "TRUE", "si", "SI"):
+        if activos in ("1", "true", "si", "sí", "yes"):
             query = query.filter(Perfil.activo == True)
 
         rows = query.order_by(
@@ -11921,9 +11907,21 @@ def listar_perfiles():
         return jsonify({"mensaje": f"Error listando perfiles: {str(e)}"}), 500
 
 
+@bp.route("/perfiles/<int:perfil_id>", methods=["GET"])
+@permission_required("PERFILES_VER")
+def get_perfil_catalogo(perfil_id):
+    perfil = (
+        Perfil.query
+        .options(selectinload(Perfil.modulos).joinedload(ModuloPerfil.modulo))
+        .get_or_404(perfil_id)
+    )
+
+    return jsonify(perfil_to_dict(perfil, include_modulos=True)), 200
+
+
 @bp.route("/perfiles", methods=["POST"])
 @permission_required("PERFILES_CREAR")
-def crear_perfil():
+def crear_perfil_catalogo():
     data = request.get_json(silent=True) or {}
 
     try:
@@ -12009,7 +12007,7 @@ def crear_perfil():
 
 @bp.route("/perfiles/<int:perfil_id>", methods=["PUT"])
 @permission_required("PERFILES_EDITAR")
-def editar_perfil(perfil_id):
+def editar_perfil_catalogo(perfil_id):
     perfil = Perfil.query.get_or_404(perfil_id)
     data = request.get_json(silent=True) or {}
 
@@ -12100,7 +12098,7 @@ def editar_perfil(perfil_id):
 
 @bp.route("/perfiles/<int:perfil_id>", methods=["DELETE"])
 @permission_required("PERFILES_ELIMINAR")
-def desactivar_perfil(perfil_id):
+def desactivar_perfil_catalogo(perfil_id):
     perfil = Perfil.query.get_or_404(perfil_id)
 
     try:
