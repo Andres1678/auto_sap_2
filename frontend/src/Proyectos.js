@@ -22,6 +22,7 @@ const emptyForm = () => ({
   tipo_negocio: "",
   fases: [],
   activo: true,
+  perfiles: [],
   modulos: [],
   cliente_id: "",
 });
@@ -48,7 +49,9 @@ const toArrayResponse = (json) => {
 };
 
 const getProyectoFasesIds = (p) => {
-  if (Array.isArray(p?.fases_ids)) return p.fases_ids.map(String).filter(Boolean);
+  if (Array.isArray(p?.fases_ids)) {
+    return p.fases_ids.map(String).filter(Boolean);
+  }
 
   if (Array.isArray(p?.fases)) {
     return p.fases
@@ -88,12 +91,37 @@ const getProyectoModulosIds = (p) => {
   return [];
 };
 
+const getProyectoPerfilesIds = (p) => {
+  if (Array.isArray(p?.perfiles_ids)) {
+    return p.perfiles_ids
+      .map(Number)
+      .filter((n) => Number.isFinite(n) && n > 0);
+  }
+
+  if (Array.isArray(p?.perfiles)) {
+    return p.perfiles
+      .map((x) => Number(x?.perfil_id ?? x?.perfil?.id ?? x?.id))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  }
+
+  return [];
+};
+
+const getPerfilModuloIds = (perfil) => {
+  if (!Array.isArray(perfil?.modulos)) return [];
+
+  return perfil.modulos
+    .map((m) => Number(m?.id ?? m?.modulo_id ?? m?.modulo?.id))
+    .filter((n) => Number.isFinite(n) && n > 0);
+};
+
 const getProyectoModulosNames = (p, modulosMap) => {
   if (!Array.isArray(p?.modulos)) return [];
 
   return p.modulos
     .map((x) => {
       const id = Number(x?.modulo_id ?? x?.modulo?.id ?? x?.id);
+
       return String(
         x?.modulo?.nombre ??
           x?.nombre ??
@@ -101,6 +129,20 @@ const getProyectoModulosNames = (p, modulosMap) => {
           ""
       ).trim();
     })
+    .filter(Boolean);
+};
+
+const getProyectoPerfilesNames = (p) => {
+  if (!Array.isArray(p?.perfiles)) return [];
+
+  return p.perfiles
+    .map((x) =>
+      String(
+        x?.perfil?.nombre ??
+          x?.nombre ??
+          ""
+      ).trim()
+    )
     .filter(Boolean);
 };
 
@@ -120,6 +162,7 @@ const oppLabel = (o) => {
   const prc = String(o?.codigo_prc || "").trim();
   const cliente = String(o?.nombre_cliente || "").trim();
   const servicio = String(o?.servicio || "").trim();
+
   return [prc, cliente, servicio].filter(Boolean).join(" — ");
 };
 
@@ -129,6 +172,7 @@ export default function Proyectos() {
 
   const [proyectos, setProyectos] = useState([]);
   const [modulos, setModulos] = useState([]);
+  const [perfiles, setPerfiles] = useState([]);
   const [fases, setFases] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [oportunidades, setOportunidades] = useState([]);
@@ -170,9 +214,10 @@ export default function Proyectos() {
     setLoading(true);
 
     try {
-      const [pRes, mRes, fRes, cRes, oRes] = await Promise.all([
-        jfetch("/proyectos?include_modulos=1&include_fases=1"),
+      const [pRes, mRes, pfRes, fRes, cRes, oRes] = await Promise.all([
+        jfetch("/proyectos?include_modulos=1&include_fases=1&include_perfiles=1"),
         jfetch("/modulos"),
+        jfetch("/perfiles?include_modulos=1&activos=1"),
         jfetch("/proyecto-fases"),
         jfetch("/clientes"),
         jfetch("/oportunidades/elegibles-proyecto"),
@@ -180,12 +225,14 @@ export default function Proyectos() {
 
       const pData = await pRes.json().catch(() => []);
       const mData = await mRes.json().catch(() => []);
+      const pfData = await pfRes.json().catch(() => []);
       const fData = await fRes.json().catch(() => []);
       const cData = await cRes.json().catch(() => []);
       const oData = await oRes.json().catch(() => []);
 
       if (!pRes.ok) throw new Error(pData?.mensaje || `HTTP ${pRes.status}`);
       if (!mRes.ok) throw new Error(mData?.mensaje || `HTTP ${mRes.status}`);
+      if (!pfRes.ok) throw new Error(pfData?.mensaje || `HTTP ${pfRes.status}`);
       if (!fRes.ok) throw new Error(fData?.mensaje || `HTTP ${fRes.status}`);
       if (!cRes.ok) throw new Error(cData?.mensaje || `HTTP ${cRes.status}`);
       if (!oRes.ok) throw new Error(oData?.mensaje || `HTTP ${oRes.status}`);
@@ -198,6 +245,14 @@ export default function Proyectos() {
       );
 
       setModulos(toArrayResponse(mData));
+
+      setPerfiles(
+        toArrayResponse(pfData).map((p) => ({
+          ...p,
+          activo: asBool(p?.activo),
+        }))
+      );
+
       setClientes(toArrayResponse(cData));
       setOportunidades(toArrayResponse(oData));
 
@@ -224,8 +279,13 @@ export default function Proyectos() {
       merged.sort((a, b) => {
         const ao = Number(a?.orden ?? 0);
         const bo = Number(b?.orden ?? 0);
+
         if (ao !== bo) return ao - bo;
-        return String(a?.nombre || "").localeCompare(String(b?.nombre || ""), "es");
+
+        return String(a?.nombre || "").localeCompare(
+          String(b?.nombre || ""),
+          "es"
+        );
       });
 
       setFases(merged);
@@ -240,6 +300,7 @@ export default function Proyectos() {
 
       setProyectos([]);
       setModulos([]);
+      setPerfiles([]);
       setFases(DEFAULT_FASES);
       setClientes([]);
       setOportunidades([]);
@@ -254,49 +315,91 @@ export default function Proyectos() {
 
   const modulosMap = useMemo(() => {
     const m = new Map();
+
     (modulos || []).forEach((x) => {
       const id = Number(x?.id);
-      if (Number.isFinite(id)) m.set(id, String(x?.nombre || ""));
+      if (Number.isFinite(id)) {
+        m.set(id, String(x?.nombre || ""));
+      }
     });
+
     return m;
   }, [modulos]);
 
   const fasesMap = useMemo(() => {
     const m = new Map();
+
     (fases || []).forEach((x) => {
-      if (x?.id != null) m.set(String(x.id), String(x.nombre || ""));
+      if (x?.id != null) {
+        m.set(String(x.id), String(x.nombre || ""));
+      }
     });
+
     return m;
   }, [fases]);
 
   const clientesMap = useMemo(() => {
     const m = new Map();
+
     (clientes || []).forEach((c) => {
       const id = Number(c?.id);
       const name = c?.nombre_cliente ?? c?.nombre ?? "";
-      if (Number.isFinite(id)) m.set(id, String(name));
+
+      if (Number.isFinite(id)) {
+        m.set(id, String(name));
+      }
     });
+
     return m;
   }, [clientes]);
 
   const oportunidadesMap = useMemo(() => {
     const m = new Map();
+
     (oportunidades || []).forEach((o) => {
-      if (o?.id != null) m.set(String(o.id), o);
+      if (o?.id != null) {
+        m.set(String(o.id), o);
+      }
     });
+
     return m;
   }, [oportunidades]);
+
+  const modulosDisponiblesPorPerfil = useMemo(() => {
+    const perfilesSeleccionados = new Set((form.perfiles || []).map(Number));
+    const permitidos = new Set();
+
+    (perfiles || []).forEach((perfil) => {
+      if (!perfilesSeleccionados.has(Number(perfil.id))) return;
+
+      getPerfilModuloIds(perfil).forEach((mid) => {
+        permitidos.add(Number(mid));
+      });
+    });
+
+    return (modulos || []).filter((m) => permitidos.has(Number(m.id)));
+  }, [form.perfiles, perfiles, modulos]);
 
   const proyectosFiltrados = useMemo(() => {
     const needle = norm(q).toLowerCase();
 
     return (proyectos || []).filter((p) => {
       const activo = asBool(p?.activo);
+
       if (soloActivos && !activo) return false;
       if (!needle) return true;
 
-      const fasesTxt = getProyectoFasesNames(p, fasesMap).join(" ").toLowerCase();
-      const modulosTxt = getProyectoModulosNames(p, modulosMap).join(" ").toLowerCase();
+      const fasesTxt = getProyectoFasesNames(p, fasesMap)
+        .join(" ")
+        .toLowerCase();
+
+      const modulosTxt = getProyectoModulosNames(p, modulosMap)
+        .join(" ")
+        .toLowerCase();
+
+      const perfilesTxt = getProyectoPerfilesNames(p)
+        .join(" ")
+        .toLowerCase();
 
       const clienteTxt = String(
         p?.cliente?.nombre_cliente ??
@@ -312,19 +415,63 @@ export default function Proyectos() {
         String(p.nombre || "").toLowerCase().includes(needle) ||
         fasesTxt.includes(needle) ||
         modulosTxt.includes(needle) ||
+        perfilesTxt.includes(needle) ||
         clienteTxt.includes(needle) ||
         tipoTxt.includes(needle)
       );
     });
   }, [proyectos, q, soloActivos, fasesMap, modulosMap, clientesMap]);
 
+  const togglePerfil = (id) => {
+    const pid = Number(id);
+
+    setForm((f) => {
+      const set = new Set((f.perfiles || []).map(Number));
+
+      if (set.has(pid)) {
+        set.delete(pid);
+      } else {
+        set.add(pid);
+      }
+
+      const nuevosPerfiles = Array.from(set);
+      const modulosPermitidos = new Set();
+
+      (perfiles || []).forEach((perfil) => {
+        if (!nuevosPerfiles.includes(Number(perfil.id))) return;
+
+        getPerfilModuloIds(perfil).forEach((mid) => {
+          modulosPermitidos.add(Number(mid));
+        });
+      });
+
+      return {
+        ...f,
+        perfiles: nuevosPerfiles,
+        modulos: (f.modulos || [])
+          .map(Number)
+          .filter((mid) => modulosPermitidos.has(Number(mid))),
+      };
+    });
+  };
+
   const toggleModulo = (id) => {
     const mid = Number(id);
 
+    const permitido = modulosDisponiblesPorPerfil.some(
+      (m) => Number(m.id) === mid
+    );
+
+    if (!permitido) return;
+
     setForm((f) => {
       const set = new Set((f.modulos || []).map(Number));
-      if (set.has(mid)) set.delete(mid);
-      else set.add(mid);
+
+      if (set.has(mid)) {
+        set.delete(mid);
+      } else {
+        set.add(mid);
+      }
 
       return {
         ...f,
@@ -338,8 +485,12 @@ export default function Proyectos() {
 
     setForm((f) => {
       const set = new Set((f.fases || []).map(String));
-      if (set.has(fid)) set.delete(fid);
-      else set.add(fid);
+
+      if (set.has(fid)) {
+        set.delete(fid);
+      } else {
+        set.add(fid);
+      }
 
       return {
         ...f,
@@ -350,6 +501,7 @@ export default function Proyectos() {
 
   const handleOportunidadChange = (oppId) => {
     const opp = oportunidadesMap.get(String(oppId));
+
     if (!opp) {
       setForm((f) => ({
         ...f,
@@ -374,7 +526,10 @@ export default function Proyectos() {
   const resetForm = () => setForm(emptyForm());
 
   const startEdit = (p) => {
-    const oppFromProject = p?.oportunidad_id ? oportunidadesMap.get(String(p.oportunidad_id)) : null;
+    const oppFromProject = p?.oportunidad_id
+      ? oportunidadesMap.get(String(p.oportunidad_id))
+      : null;
+
     const oppByPrc =
       !oppFromProject && p?.codigo
         ? (oportunidades || []).find(
@@ -388,11 +543,17 @@ export default function Proyectos() {
 
     setForm({
       id: p.id,
-      oportunidad_id: p?.oportunidad_id != null ? String(p.oportunidad_id) : opp?.id ? String(opp.id) : "",
+      oportunidad_id:
+        p?.oportunidad_id != null
+          ? String(p.oportunidad_id)
+          : opp?.id
+            ? String(opp.id)
+            : "",
       codigo: p.codigo || (opp?.codigo_prc ?? ""),
       nombre: p.nombre || "",
       tipo_negocio: p?.tipo_negocio || (opp?.tipo_negocio ?? ""),
       activo: asBool(p.activo),
+      perfiles: getProyectoPerfilesIds(p),
       modulos: getProyectoModulosIds(p),
       fases: getProyectoFasesIds(p),
       cliente_id: p?.cliente_id != null ? String(p.cliente_id) : "",
@@ -417,12 +578,18 @@ export default function Proyectos() {
     try {
       setSaving(true);
 
-      const r = await jfetch(`/proyectos/${p.id}`, { method: "DELETE" });
+      const r = await jfetch(`/proyectos/${p.id}`, {
+        method: "DELETE",
+      });
+
       const j = await r.json().catch(() => ({}));
 
       if (!r.ok) throw new Error(j?.mensaje || `HTTP ${r.status}`);
 
-      Swal.fire({ icon: "success", title: "Eliminado" });
+      Swal.fire({
+        icon: "success",
+        title: "Eliminado",
+      });
 
       await fetchAll();
 
@@ -443,7 +610,10 @@ export default function Proyectos() {
     try {
       setSaving(true);
 
-      const r = await jfetch(`/proyectos/${p.id}/toggle-activo`, { method: "PUT" });
+      const r = await jfetch(`/proyectos/${p.id}/toggle-activo`, {
+        method: "PUT",
+      });
+
       const j = await r.json().catch(() => ({}));
 
       if (!r.ok) throw new Error(j?.mensaje || `HTTP ${r.status}`);
@@ -461,12 +631,21 @@ export default function Proyectos() {
   };
 
   const validateForm = () => {
-    if (!String(form.oportunidad_id || "").trim()) return "Debes seleccionar una oportunidad ganada";
+    if (!String(form.oportunidad_id || "").trim()) {
+      return "Debes seleccionar una oportunidad ganada";
+    }
+
     if (!norm(form.codigo)) return "El código PRC es obligatorio";
     if (!norm(form.nombre)) return "El nombre es obligatorio";
-    if (!Array.isArray(form.modulos) || form.modulos.length === 0) {
-      return "Debes seleccionar al menos 1 módulo";
+
+    if (!Array.isArray(form.perfiles) || form.perfiles.length === 0) {
+      return "Debes seleccionar al menos 1 perfil";
     }
+
+    if (!Array.isArray(form.modulos) || form.modulos.length === 0) {
+      return "Debes seleccionar al menos 1 módulo permitido por los perfiles";
+    }
+
     return null;
   };
 
@@ -474,6 +653,7 @@ export default function Proyectos() {
     e.preventDefault();
 
     const err = validateForm();
+
     if (err) {
       return Swal.fire({
         icon: "warning",
@@ -494,6 +674,7 @@ export default function Proyectos() {
       codigo: norm(form.codigo).toUpperCase(),
       nombre: norm(form.nombre),
       activo: !!form.activo,
+      perfiles: (form.perfiles || []).map(Number),
       modulos: (form.modulos || []).map(Number),
       fases: fasesIds,
       cliente_id: clienteIdClean ? Number(clienteIdClean) : null,
@@ -514,6 +695,7 @@ export default function Proyectos() {
       });
 
       const j = await r.json().catch(() => ({}));
+
       if (!r.ok) throw new Error(j?.mensaje || `HTTP ${r.status}`);
 
       Swal.fire({
@@ -541,7 +723,8 @@ export default function Proyectos() {
           <div>
             <h2 className="proj-title">Gestión de Proyectos</h2>
             <p className="proj-subtitle">
-              Crear / editar proyectos desde oportunidades ganadas, asignar cliente, módulos permitidos, múltiples fases y estado activo.
+              Crear / editar proyectos desde oportunidades ganadas, asignar cliente,
+              perfiles permitidos, módulos según perfil, múltiples fases y estado activo.
             </p>
           </div>
 
@@ -577,17 +760,20 @@ export default function Proyectos() {
             <div className="grid-2">
               <div className="field">
                 <label>Oportunidad ganada</label>
+
                 <select
                   value={form.oportunidad_id ?? ""}
                   onChange={(e) => handleOportunidadChange(e.target.value)}
                 >
                   <option value="">— Selecciona una oportunidad —</option>
+
                   {(oportunidades || []).map((o) => (
                     <option key={o.id} value={o.id}>
                       {oppLabel(o)}
                     </option>
                   ))}
                 </select>
+
                 <div className="muted">
                   Solo se muestran oportunidades ganadas de tipo proyecto o bolsa de horas.
                 </div>
@@ -595,6 +781,7 @@ export default function Proyectos() {
 
               <div className="field">
                 <label>Código PRC</label>
+
                 <input
                   value={form.codigo}
                   readOnly
@@ -606,6 +793,7 @@ export default function Proyectos() {
             <div className="grid-2">
               <div className="field">
                 <label>Tipo de negocio</label>
+
                 <input
                   value={form.tipo_negocio}
                   readOnly
@@ -615,9 +803,15 @@ export default function Proyectos() {
 
               <div className="field">
                 <label>Nombre</label>
+
                 <input
                   value={form.nombre}
-                  onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      nombre: e.target.value,
+                    }))
+                  }
                   placeholder="Ej: Greenland - Upgrade SAP"
                 />
               </div>
@@ -626,11 +820,18 @@ export default function Proyectos() {
             <div className="grid-1">
               <div className="field field--cliente">
                 <label>Cliente</label>
+
                 <select
                   value={form.cliente_id ?? ""}
-                  onChange={(e) => setForm((f) => ({ ...f, cliente_id: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      cliente_id: e.target.value,
+                    }))
+                  }
                 >
                   <option value="">— Sin cliente —</option>
+
                   {(clientes || []).map((c) => {
                     const id = c?.id;
                     const name = c?.nombre_cliente ?? c?.nombre ?? "";
@@ -659,10 +860,15 @@ export default function Proyectos() {
                   ) : (
                     (fases || []).map((fx) => {
                       const fid = String(fx.id);
-                      const checked = (form.fases || []).map(String).includes(fid);
+                      const checked = (form.fases || [])
+                        .map(String)
+                        .includes(fid);
 
                       return (
-                        <label key={fid} className={`mod-chip ${checked ? "is-on" : ""}`}>
+                        <label
+                          key={fid}
+                          className={`mod-chip ${checked ? "is-on" : ""}`}
+                        >
                           <input
                             type="checkbox"
                             checked={checked}
@@ -684,16 +890,27 @@ export default function Proyectos() {
                     <input
                       type="checkbox"
                       checked={!!form.activo}
-                      onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          activo: e.target.checked,
+                        }))
+                      }
                     />
                     <span className="slider" />
                   </label>
 
-                  <span className="muted">{form.activo ? "Activo" : "Inactivo"}</span>
+                  <span className="muted">
+                    {form.activo ? "Activo" : "Inactivo"}
+                  </span>
                 </div>
 
                 <div className="proj-actions">
-                  <button className="btn btn-primary" type="submit" disabled={saving}>
+                  <button
+                    className="btn btn-primary"
+                    type="submit"
+                    disabled={saving}
+                  >
                     {saving ? "Guardando…" : isEdit ? "Actualizar" : "Crear"}
                   </button>
                 </div>
@@ -702,17 +919,66 @@ export default function Proyectos() {
 
             <div className="grid-1">
               <div className="field">
-                <label>Módulos permitidos</label>
+                <label>Perfiles permitidos</label>
 
                 <div className="mods-box">
-                  {modulos.length === 0 ? (
-                    <div className="muted">No hay módulos cargados</div>
+                  {(perfiles || []).length === 0 ? (
+                    <div className="muted">
+                      No hay perfiles configurados
+                    </div>
                   ) : (
-                    modulos.map((m) => {
-                      const checked = (form.modulos || []).map(Number).includes(Number(m.id));
+                    (perfiles || []).map((p) => {
+                      const checked = (form.perfiles || [])
+                        .map(Number)
+                        .includes(Number(p.id));
 
                       return (
-                        <label key={m.id} className={`mod-chip ${checked ? "is-on" : ""}`}>
+                        <label
+                          key={p.id}
+                          className={`mod-chip ${checked ? "is-on" : ""}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => togglePerfil(p.id)}
+                          />
+                          <span>{p.nombre}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="muted">
+                  Al seleccionar perfiles, se habilitan únicamente los módulos asociados a esos perfiles.
+                </div>
+              </div>
+            </div>
+
+            <div className="grid-1">
+              <div className="field">
+                <label>Módulos permitidos según perfiles</label>
+
+                <div className="mods-box">
+                  {(form.perfiles || []).length === 0 ? (
+                    <div className="muted">
+                      Primero selecciona uno o más perfiles
+                    </div>
+                  ) : modulosDisponiblesPorPerfil.length === 0 ? (
+                    <div className="muted">
+                      Los perfiles seleccionados no tienen módulos asociados
+                    </div>
+                  ) : (
+                    modulosDisponiblesPorPerfil.map((m) => {
+                      const checked = (form.modulos || [])
+                        .map(Number)
+                        .includes(Number(m.id));
+
+                      return (
+                        <label
+                          key={m.id}
+                          className={`mod-chip ${checked ? "is-on" : ""}`}
+                        >
                           <input
                             type="checkbox"
                             checked={checked}
@@ -736,7 +1002,7 @@ export default function Proyectos() {
             <div className="proj-list-filters">
               <input
                 className="search"
-                placeholder="Buscar por PRC, nombre, cliente, fases, módulos o tipo…"
+                placeholder="Buscar por PRC, nombre, cliente, perfiles, fases, módulos o tipo…"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
@@ -763,6 +1029,7 @@ export default function Proyectos() {
                   <th>Tipo</th>
                   <th>Fases</th>
                   <th>Activo</th>
+                  <th>Perfiles</th>
                   <th>Módulos</th>
                   <th className="actions">Acciones</th>
                 </tr>
@@ -771,6 +1038,7 @@ export default function Proyectos() {
               <tbody>
                 {proyectosFiltrados.map((p) => {
                   const activo = asBool(p.activo);
+
                   const fasesNames = getProyectoFasesNames(p, fasesMap);
                   const fasesTxt = fasesNames.length ? fasesNames.join(", ") : "—";
 
@@ -780,7 +1048,9 @@ export default function Proyectos() {
                     (p?.cliente_id != null ? clientesMap.get(Number(p?.cliente_id)) : "") ??
                     "";
 
+                  const perfilesNames = getProyectoPerfilesNames(p);
                   const modulosNames = getProyectoModulosNames(p, modulosMap);
+
                   const costosSelected = proyectoCostos?.id === p.id && costosOpen;
 
                   return (
@@ -799,8 +1069,34 @@ export default function Proyectos() {
                       </td>
 
                       <td className="mods-cell">
+                        {perfilesNames.length === 0 && (
+                          <span className="muted">—</span>
+                        )}
+
+                        {perfilesNames.slice(0, 4).map((label, idx) => (
+                          <span
+                            key={`${p.id}-perfil-${label}-${idx}`}
+                            className="pill"
+                          >
+                            {label}
+                          </span>
+                        ))}
+
+                        {perfilesNames.length > 4 && (
+                          <span className="pill more">+ más…</span>
+                        )}
+                      </td>
+
+                      <td className="mods-cell">
+                        {modulosNames.length === 0 && (
+                          <span className="muted">—</span>
+                        )}
+
                         {modulosNames.slice(0, 6).map((label, idx) => (
-                          <span key={`${p.id}-${label}-${idx}`} className="pill">
+                          <span
+                            key={`${p.id}-modulo-${label}-${idx}`}
+                            className="pill"
+                          >
                             {label}
                           </span>
                         ))}
@@ -867,7 +1163,7 @@ export default function Proyectos() {
 
                 {proyectosFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="muted" style={{ padding: 14 }}>
+                    <td colSpan={10} className="muted" style={{ padding: 14 }}>
                       Sin proyectos
                     </td>
                   </tr>

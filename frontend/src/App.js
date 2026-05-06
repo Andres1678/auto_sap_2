@@ -29,6 +29,7 @@ import CostoConsultorPage from "./CostoConsultorPage";
 import DashboardCostos from "./DashboardCostos";
 import Graficos from './Graficos';
 import { jfetch } from './lib/api';
+import PerfilesModulos from './PerfilesModulos';
 
 const AUTO_LOGOUT_HOURS = [6, 7, 8, 10, 18, 22];
 
@@ -408,10 +409,10 @@ function App() {
             />
 
             <Route
-              path="/perfiles"
+              path="/configuracion/perfiles"
               element={
                 <AdminRoute>
-                  <PerfilesPage />
+                  <PerfilesModulos/>
                 </AdminRoute>
               }
             />

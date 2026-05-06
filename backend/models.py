@@ -666,6 +666,13 @@ class Proyecto(db.Model):
         lazy="select"
     )
 
+    perfiles = relationship(
+        "ProyectoPerfil",
+        back_populates="proyecto",
+        cascade="all, delete-orphan",
+        lazy="joined"
+    )
+
     def __repr__(self):
         return f"<Proyecto id={self.id} codigo={self.codigo!r} nombre={self.nombre!r}>"
 
@@ -1047,3 +1054,45 @@ class ConsultorPerfil(db.Model):
 
     def __repr__(self):
         return f"<ConsultorPerfil consultor_id={self.consultor_id} perfil_id={self.perfil_id}>"
+    
+class ProyectoPerfil(db.Model):
+    __tablename__ = "proyecto_perfil"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    proyecto_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    perfil_id = db.Column(
+        db.Integer,
+        db.ForeignKey("perfil.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+
+    created_at = db.Column(
+        db.DateTime,
+        nullable=True,
+        server_default=text("current_timestamp()")
+    )
+
+    updated_at = db.Column(
+        db.DateTime,
+        nullable=True,
+        server_default=text("current_timestamp()"),
+        server_onupdate=text("current_timestamp()")
+    )
+
+    proyecto = relationship("Proyecto", back_populates="perfiles")
+    perfil = relationship("Perfil", lazy="joined")
+
+    __table_args__ = (
+        db.UniqueConstraint("proyecto_id", "perfil_id", name="uq_proyecto_perfil"),
+    )
+
+    def __repr__(self):
+        return f"<ProyectoPerfil proyecto_id={self.proyecto_id} perfil_id={self.perfil_id}>"
