@@ -77,13 +77,21 @@ export default function Configuracion() {
           </Link>
         )}
 
-            {canModulos && (
-              <Link to="/configuracion/modulos" className="config-card">
-                <div className="config-icon">📌</div>
-                <h3>Gestión de Módulos</h3>
-                <p>Crear y gestionar los módulos del sistema.</p>
-              </Link>
-            )}
+        {canModulos && (
+          <Link to="/configuracion/modulos" className="config-card">
+            <div className="config-icon">📌</div>
+            <h3>Gestión de Módulos</h3>
+            <p>Crear y gestionar los módulos del sistema.</p>
+          </Link>
+        )}
+
+        {canModulos && (
+          <Link to="/configuracion/perfiles" className="config-card">
+            <div className="config-icon">📌</div>
+            <h3>Gestión de Perfiles</h3>
+            <p>Crear y gestionar los perfiles del sistema.</p>
+          </Link>
+        )}
       </div>
     </div>
   );
