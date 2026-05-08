@@ -522,6 +522,13 @@ function renderLongTextCell(value) {
   );
 }
 
+function renderMultilineTextCell(value) {
+  const text = String(value ?? "");
+  if (!normalizeText(text)) return "-";
+
+  return <span className="cell-multiline-text">{text}</span>;
+}
+
 export default function Oportunidades() {
   const [data, setData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
@@ -1202,6 +1209,34 @@ export default function Oportunidades() {
       );
     }
 
+    if (col === SERVICIO_COL) {
+      return (
+        <textarea
+          className="cell-input cell-textarea servicio-editor"
+          autoFocus
+          value={editValue ?? ""}
+          placeholder="Escribe el servicio. Usa Alt + Enter para separar por renglones."
+          onFocus={(e) => {
+            const len = e.currentTarget.value.length;
+            e.currentTarget.setSelectionRange(len, len);
+          }}
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.altKey) {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+
+            if (e.key === "Escape") {
+              e.preventDefault();
+              closeEditing();
+            }
+          }}
+          onBlur={(e) => saveEdit(row.id, col, e.currentTarget.value)}
+        />
+      );
+    }
+
     if (col === CLIENTE_COL) {
       return (
         <input
@@ -1427,6 +1462,22 @@ export default function Oportunidades() {
           value={newRow[col] ?? ""}
           placeholder="Selecciona o escribe cliente"
           onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        />
+      );
+    }
+
+    if (col === SERVICIO_COL) {
+      return (
+        <textarea
+          className="cell-input cell-textarea servicio-new-editor"
+          value={newRow[col] ?? ""}
+          placeholder="Escribe el servicio. Usa Alt + Enter para separar por renglones."
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.altKey) {
+              e.preventDefault();
+            }
+          }}
         />
       );
     }
@@ -1854,6 +1905,8 @@ export default function Oportunidades() {
                         ? renderEditorCell(row, col)
                         : isLong
                         ? renderLongTextCell(row?.[col])
+                        : col === SERVICIO_COL
+                        ? renderMultilineTextCell(row?.[col])
                         : formatCell(col, row[col])}
                     </td>
                   );

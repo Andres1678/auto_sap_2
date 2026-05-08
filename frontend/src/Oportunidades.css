@@ -808,9 +808,62 @@
 .oportunidades-wrapper .tabla-oportunidades tbody tr {
   min-height: 72px !important;
 }
+/* =========================================================
+   Ajuste edición columna SERVICIO
+   - Evita que la vista se corra al editar.
+   - Permite ver saltos de línea guardados.
+   - En el textarea: Enter guarda/sale; Alt + Enter crea renglón.
+========================================================= */
+.oportunidades-wrapper .tabla-oportunidades td.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades td.servicio-wrap-cell {
+  white-space: pre-wrap !important;
+  overflow-wrap: break-word !important;
+  word-break: normal !important;
+  overflow: hidden !important;
+  vertical-align: top !important;
+}
 
-.oportunidades-wrapper .tabla-oportunidades td.editing {
-  overflow: visible !important;
-  position: relative !important;
-  z-index: 160 !important;
+.oportunidades-wrapper .cell-multiline-text {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  width: 100%;
+  line-height: 1.35;
+}
+
+.oportunidades-wrapper .cell-textarea {
+  display: block !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  min-height: 92px !important;
+  max-height: 180px !important;
+  resize: vertical !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: break-word !important;
+  word-break: normal !important;
+  line-height: 1.35 !important;
+  font-family: inherit !important;
+}
+
+.oportunidades-wrapper .servicio-editor,
+.oportunidades-wrapper .servicio-new-editor {
+  background: #eef6ff !important;
+}
+
+/* No permitir que la celda de SERVICIO se expanda visualmente sobre otras columnas */
+.oportunidades-wrapper .tabla-oportunidades td.editing.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades td.editing.servicio-wrap-cell {
+  overflow: hidden !important;
+  position: sticky !important;
+  z-index: 75 !important;
+}
+
+/* Si agregaste antes el ajuste global td.editing { overflow: visible }, este lo corrige para SERVICIO */
+.oportunidades-wrapper .tabla-oportunidades tbody td.editing.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades tbody td.editing.servicio-wrap-cell {
+  background: #e0f2fe !important;
 }
