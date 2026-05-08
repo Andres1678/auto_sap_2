@@ -808,3 +808,9 @@
 .oportunidades-wrapper .tabla-oportunidades tbody tr {
   min-height: 72px !important;
 }
+
+.oportunidades-wrapper .tabla-oportunidades td.editing {
+  overflow: visible !important;
+  position: relative !important;
+  z-index: 160 !important;
+}

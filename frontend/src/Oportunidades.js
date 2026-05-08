@@ -129,6 +129,58 @@ function normalizeForCompare(value) {
   return normalizeText(value).toUpperCase();
 }
 
+const CATEGORIA_PERDIDA_OPTS = Object.keys(CATEGORIA_SUBCATEGORIA);
+
+const SUBCATEGORIA_PERDIDA_OPTS = [
+  ...new Set(Object.values(CATEGORIA_SUBCATEGORIA).flat()),
+].sort((a, b) => String(a).localeCompare(String(b), "es", { sensitivity: "base" }));
+
+function getCategoriaPerdidaKey(value) {
+  const normalized = normalizeForCompare(value);
+
+  return (
+    CATEGORIA_PERDIDA_OPTS.find(
+      (op) => normalizeForCompare(op) === normalized
+    ) || ""
+  );
+}
+
+function getSubcategoriaPerdidaOptions(categoria) {
+  const key = getCategoriaPerdidaKey(categoria);
+  const options = key ? CATEGORIA_SUBCATEGORIA[key] : SUBCATEGORIA_PERDIDA_OPTS;
+
+  return [...new Set(options)].sort((a, b) =>
+    String(a).localeCompare(String(b), "es", { sensitivity: "base" })
+  );
+}
+
+function valueInOptions(value, options = []) {
+  const normalized = normalizeForCompare(value);
+  if (!normalized) return false;
+
+  return options.some((op) => normalizeForCompare(op) === normalized);
+}
+
+function isOportunidadPerdida(row) {
+  const estado = normalizeForCompare(row?.estado_oferta);
+
+  return estado === "PERDIDA" || estado === "PERDIDA - SIN FEEDBACK";
+}
+
+function limpiarPerdidaSiNoAplica(row) {
+  if (!row) return row;
+
+  if (isOportunidadPerdida(row)) {
+    return row;
+  }
+
+  return {
+    ...row,
+    categoria_perdida: "",
+    subcategoria_perdida: "",
+  };
+}
+
 function toIsoDate(v) {
   if (!v) return "";
   const s = String(v).trim();
@@ -673,7 +725,7 @@ export default function Oportunidades() {
     const otcValue = obj.otc ?? obj.otr ?? obj.OTR ?? "";
     const { otr, OTR, ...rest } = obj;
 
-    return {
+    const normalized = {
       ...rest,
       otc: otcValue,
 
@@ -708,6 +760,8 @@ export default function Oportunidades() {
       categoria_perdida: normalizeText(rest.categoria_perdida),
       subcategoria_perdida: normalizeText(rest.subcategoria_perdida),
     };
+
+    return limpiarPerdidaSiNoAplica(normalized);
   }
 
   const applyFilters = useCallback((rows, currentFilters) => {
@@ -882,6 +936,21 @@ export default function Oportunidades() {
 
   const findRowById = (rowId) => data.find((r) => sameId(r?.id, rowId));
 
+  const getResultadoSeguroPorEstado = useCallback(
+    (estado, resultadoActual = "") => {
+      const allowed = estadoResultadoMap[estado] || [];
+
+      if (!estado) return "";
+
+      if (valueInOptions(resultadoActual, allowed)) {
+        return resultadoActual;
+      }
+
+      return allowed.length === 1 ? allowed[0] : "";
+    },
+    [estadoResultadoMap]
+  );
+
   const highlightRow = (rowId) => {
     setTimeout(() => {
       const rows = Array.from(
@@ -928,7 +997,10 @@ export default function Oportunidades() {
     }
 
     try {
-      const nextRow = { ...row, ...updates };
+      const nextRow = limpiarPerdidaSiNoAplica({
+        ...row,
+        ...updates,
+      });
       const payload = toDbPayload(nextRow);
 
       const resp = await jfetch(`/oportunidades/${row.id}`, {
@@ -948,7 +1020,7 @@ export default function Oportunidades() {
       setData((prev) =>
         prev.map((r) =>
           sameId(r.id, row.id)
-            ? normalizeRowFromApi({ ...r, ...payload })
+            ? normalizeRowFromApi({ ...r, ...nextRow, ...payload })
             : r
         )
       );
@@ -1051,7 +1123,8 @@ export default function Oportunidades() {
   const saveNewRow = async () => {
     try {
       setLoading(true);
-      const payload = toDbPayload(newRow);
+      const cleanedNewRow = limpiarPerdidaSiNoAplica(newRow);
+      const payload = toDbPayload(cleanedNewRow);
 
       const res = await jfetch("/oportunidades", {
         method: "POST",
@@ -1190,9 +1263,10 @@ export default function Oportunidades() {
           value={editValue ?? ""}
           onChange={(e) => {
             const estado = e.target.value;
-            const allowed = estadoResultadoMap[estado] || [];
-            const autoRes = allowed.length === 1 ? allowed[0] : "";
-            const nextResultado = autoRes || row.resultado_oferta || "";
+            const nextResultado = getResultadoSeguroPorEstado(
+              estado,
+              row.resultado_oferta
+            );
 
             setEditValue(estado);
             saveEditMulti(row.id, {
@@ -1212,6 +1286,7 @@ export default function Oportunidades() {
       );
     }
 
+
     if (col === "resultado_oferta") {
       const allowed = estadoResultadoMap[row.estado_oferta] || [];
       return (
@@ -1222,7 +1297,9 @@ export default function Oportunidades() {
           onChange={(e) => {
             const next = e.target.value;
             setEditValue(next);
-            saveEdit(row.id, col, next);
+            saveEditMulti(row.id, {
+              resultado_oferta: next,
+            });
           }}
           onBlur={closeEditing}
         >
@@ -1238,57 +1315,81 @@ export default function Oportunidades() {
 
     if (col === "categoria_perdida") {
       return (
-        <select
+        <input
           className="cell-input"
+          list="categoria-perdida-list"
           autoFocus
           value={editValue ?? ""}
-          onChange={(e) => {
-            const cat = e.target.value;
-            const allowed = CATEGORIA_SUBCATEGORIA[cat] || [];
-            const autoSub = allowed.length === 1 ? allowed[0] : "";
-            const nextSub = autoSub || row.subcategoria_perdida || "";
+          placeholder="Selecciona o escribe categoría"
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
 
-            setEditValue(cat);
+            if (e.key === "Escape") {
+              e.preventDefault();
+              closeEditing();
+            }
+          }}
+          onBlur={(e) => {
+            const categoria = normalizeText(e.currentTarget.value);
+            const allowed = getSubcategoriaPerdidaOptions(categoria);
+            const subActual = row.subcategoria_perdida || "";
+
             saveEditMulti(row.id, {
-              categoria_perdida: cat,
-              subcategoria_perdida: nextSub,
+              categoria_perdida: categoria,
+              subcategoria_perdida: valueInOptions(subActual, allowed)
+                ? subActual
+                : "",
             });
           }}
-          onBlur={closeEditing}
-        >
-          <option value="">-</option>
-          {Object.keys(CATEGORIA_SUBCATEGORIA).map((op) => (
-            <option key={op} value={op}>
-              {op}
-            </option>
-          ))}
-        </select>
+        />
       );
     }
 
+
     if (col === "subcategoria_perdida") {
-      const allowed = CATEGORIA_SUBCATEGORIA[row.categoria_perdida] || [];
+      const allowed = getSubcategoriaPerdidaOptions(row.categoria_perdida);
+      const listId = `subcategoria-perdida-list-${row.id}`;
+
       return (
-        <select
-          className="cell-input"
-          autoFocus
-          value={editValue ?? ""}
-          onChange={(e) => {
-            const next = e.target.value;
-            setEditValue(next);
-            saveEdit(row.id, col, next);
-          }}
-          onBlur={closeEditing}
-        >
-          <option value="">-</option>
-          {allowed.map((op) => (
-            <option key={op} value={op}>
-              {op}
-            </option>
-          ))}
-        </select>
+        <>
+          <input
+            className="cell-input"
+            list={listId}
+            autoFocus
+            value={editValue ?? ""}
+            placeholder="Selecciona o escribe subcategoría"
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+
+              if (e.key === "Escape") {
+                e.preventDefault();
+                closeEditing();
+              }
+            }}
+            onBlur={(e) =>
+              saveEditMulti(row.id, {
+                subcategoria_perdida: normalizeText(e.currentTarget.value),
+              })
+            }
+          />
+
+          <datalist id={listId}>
+            {allowed.map((op) => (
+              <option key={op} value={op} />
+            ))}
+          </datalist>
+        </>
       );
     }
+
 
     return (
       <input
@@ -1464,13 +1565,18 @@ export default function Oportunidades() {
           value={newRow[col] ?? ""}
           onChange={(e) => {
             const estado = e.target.value;
-            const allowed = estadoResultadoMap[estado] || [];
-            const auto = allowed.length === 1 ? allowed[0] : "";
-            setNewRow((p) => ({
-              ...p,
-              estado_oferta: estado,
-              resultado_oferta: auto || p.resultado_oferta,
-            }));
+            const nextResultado = getResultadoSeguroPorEstado(
+              estado,
+              newRow.resultado_oferta
+            );
+
+            setNewRow((p) =>
+              limpiarPerdidaSiNoAplica({
+                ...p,
+                estado_oferta: estado,
+                resultado_oferta: nextResultado,
+              })
+            );
           }}
         >
           <option value="">-</option>
@@ -1483,12 +1589,20 @@ export default function Oportunidades() {
       );
     }
 
+
     if (col === "resultado_oferta") {
       return (
         <select
           className="cell-input"
           value={newRow[col] ?? ""}
-          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+          onChange={(e) =>
+            setNewRow((p) =>
+              limpiarPerdidaSiNoAplica({
+                ...p,
+                resultado_oferta: e.target.value,
+              })
+            )
+          }
         >
           <option value="">-</option>
           {(estadoResultadoMap[newRow.estado_oferta] || []).map((op) => (
@@ -1500,48 +1614,59 @@ export default function Oportunidades() {
       );
     }
 
+
     if (col === "categoria_perdida") {
       return (
-        <select
+        <input
           className="cell-input"
+          list="categoria-perdida-list"
           value={newRow[col] ?? ""}
+          placeholder="Selecciona o escribe categoría"
           onChange={(e) => {
-            const cat = e.target.value;
-            const allowed = CATEGORIA_SUBCATEGORIA[cat] || [];
-            const auto = allowed.length === 1 ? allowed[0] : "";
+            const categoria = normalizeText(e.target.value);
+            const allowed = getSubcategoriaPerdidaOptions(categoria);
+            const subActual = newRow.subcategoria_perdida || "";
+
             setNewRow((p) => ({
               ...p,
-              categoria_perdida: cat,
-              subcategoria_perdida: auto || p.subcategoria_perdida,
+              categoria_perdida: categoria,
+              subcategoria_perdida: valueInOptions(subActual, allowed)
+                ? subActual
+                : "",
             }));
           }}
-        >
-          <option value="">-</option>
-          {Object.keys(CATEGORIA_SUBCATEGORIA).map((op) => (
-            <option key={op} value={op}>
-              {op}
-            </option>
-          ))}
-        </select>
+        />
       );
     }
 
+
     if (col === "subcategoria_perdida") {
+      const allowed = getSubcategoriaPerdidaOptions(newRow.categoria_perdida);
+
       return (
-        <select
-          className="cell-input"
-          value={newRow[col] ?? ""}
-          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
-        >
-          <option value="">-</option>
-          {(CATEGORIA_SUBCATEGORIA[newRow.categoria_perdida] || []).map((op) => (
-            <option key={op} value={op}>
-              {op}
-            </option>
-          ))}
-        </select>
+        <>
+          <input
+            className="cell-input"
+            list="subcategoria-perdida-new-list"
+            value={newRow[col] ?? ""}
+            placeholder="Selecciona o escribe subcategoría"
+            onChange={(e) =>
+              setNewRow({
+                ...newRow,
+                subcategoria_perdida: normalizeText(e.target.value),
+              })
+            }
+          />
+
+          <datalist id="subcategoria-perdida-new-list">
+            {allowed.map((op) => (
+              <option key={op} value={op} />
+            ))}
+          </datalist>
+        </>
       );
     }
+
 
     return (
       <input
@@ -1565,6 +1690,12 @@ export default function Oportunidades() {
       <datalist id="clientes-oportunidades-list">
         {clienteSuggestions.map((cliente) => (
           <option key={cliente} value={cliente} />
+        ))}
+      </datalist>
+
+      <datalist id="categoria-perdida-list">
+        {CATEGORIA_PERDIDA_OPTS.map((categoria) => (
+          <option key={categoria} value={categoria} />
         ))}
       </datalist>
 
