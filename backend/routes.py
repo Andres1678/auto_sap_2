@@ -8463,6 +8463,13 @@ def get_proyecto_costos_graficas(proyecto_id):
     def _low(v):
         return str(v or "").strip().lower()
 
+    def _mod_key(v):
+        s = str(v or "").strip().upper()
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+        s = re.sub(r"\s+", " ", s)
+        return s
+
     def _fecha_to_parts(v):
         if v is None:
             return None, None, None
@@ -8495,13 +8502,6 @@ def get_proyecto_costos_graficas(proyecto_id):
     def _period_tuple(anio, mes):
         return (int(anio), int(mes))
 
-    def _period_in_range(anio_periodo, mes_periodo):
-        if not anio_periodo or not mes_periodo:
-            return False
-
-        current = _period_tuple(anio_periodo, mes_periodo)
-        return periodo_desde <= current <= periodo_hasta
-
     def _ensure_bucket(perfil_nombre):
         if perfil_nombre not in horas_por_perfil:
             horas_por_perfil[perfil_nombre] = {
@@ -8525,7 +8525,7 @@ def get_proyecto_costos_graficas(proyecto_id):
             }
 
     # ---------------------------------------------------------
-    # 1) Filtros globales opcionales
+    # Filtros globales
     # ---------------------------------------------------------
     filtro_equipos = [
         str(v).strip().upper()
@@ -8534,7 +8534,7 @@ def get_proyecto_costos_graficas(proyecto_id):
     ]
 
     filtro_modulos = [
-        str(v).strip().upper()
+        _mod_key(v)
         for v in request.args.getlist("modulo")
         if str(v).strip()
     ]
@@ -8546,7 +8546,7 @@ def get_proyecto_costos_graficas(proyecto_id):
     ]
 
     # ---------------------------------------------------------
-    # 2) Proyecto con planeación
+    # Proyecto
     # ---------------------------------------------------------
     p = (
         Proyecto.query.options(
@@ -8560,11 +8560,7 @@ def get_proyecto_costos_graficas(proyecto_id):
     )
 
     # ---------------------------------------------------------
-    # 3) Rango de meses
-    #    Soporta:
-    #    - anio_desde, mes_desde, anio_hasta, mes_hasta
-    #    - fallback viejo: anio, mes
-    #    - si no viene nada, toma el último período disponible
+    # Rango de meses
     # ---------------------------------------------------------
     anio_desde = request.args.get("anio_desde", type=int)
     mes_desde = request.args.get("mes_desde", type=int)
@@ -8596,56 +8592,22 @@ def get_proyecto_costos_graficas(proyecto_id):
         periodo_hasta = _period_tuple(anio_single, mes_single)
 
     else:
-        periodos = set()
-
-        for row in (p.perfiles_plan or []):
-            if row.anio and row.mes:
-                periodos.add(_period_tuple(row.anio, row.mes))
-
-        for row in (p.presupuestos_mensuales or []):
-            if row.anio and row.mes:
-                periodos.add(_period_tuple(row.anio, row.mes))
-
-        consultor_join_cond_periodos = db.or_(
-            func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.usuario)),
-            func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.nombre)),
-        )
-
-        reg_periodos_query = (
-            db.session.query(
-                extract("year", cast(Registro.fecha, db.Date)).label("anio"),
-                extract("month", cast(Registro.fecha, db.Date)).label("mes"),
-            )
-            .select_from(Registro)
-            .outerjoin(Consultor, consultor_join_cond_periodos)
-            .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
-        )
-
-        reg_periodos = (
-            _apply_project_filter_shared(reg_periodos_query, proyecto_id)
-            .distinct()
-            .all()
-        )
-
-        for rp in reg_periodos:
-            if rp.anio and rp.mes:
-                periodos.add(_period_tuple(rp.anio, rp.mes))
-
-        if periodos:
-            ultimo = sorted(periodos)[-1]
-            periodo_desde = ultimo
-            periodo_hasta = ultimo
-        else:
-            hoy = datetime.now(ZoneInfo("America/Bogota")).date()
-            periodo_desde = _period_tuple(hoy.year, hoy.month)
-            periodo_hasta = _period_tuple(hoy.year, hoy.month)
+        hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+        periodo_desde = _period_tuple(hoy.year, hoy.month)
+        periodo_hasta = _period_tuple(hoy.year, hoy.month)
 
     anio_desde, mes_desde = periodo_desde
     anio_hasta, mes_hasta = periodo_hasta
 
+    def _period_in_range(anio_periodo, mes_periodo):
+        if not anio_periodo or not mes_periodo:
+            return False
+
+        current = _period_tuple(anio_periodo, mes_periodo)
+        return periodo_desde <= current <= periodo_hasta
+
     # ---------------------------------------------------------
-    # 4) Helper: perfil vigente del consultor en una fecha
-    #    Fallback cuando no se puede identificar perfil por módulo planeado.
+    # Perfil vigente del consultor como fallback
     # ---------------------------------------------------------
     consultor_perfiles_rows = (
         ConsultorPerfil.query
@@ -8686,65 +8648,114 @@ def get_proyecto_costos_graficas(proyecto_id):
         return None
 
     # ---------------------------------------------------------
-    # 5) Mapa perfil planeado por módulo y período
-    #    Cambio clave:
-    #    El real primero intenta caer en el perfil planeado para
-    #    el módulo del registro y el mes exacto.
-    # ---------------------------------------------------------
-    perfil_planeado_por_periodo_modulo = defaultdict(set)
-    perfil_planeado_por_modulo = defaultdict(set)
-
-    for row in (p.perfiles_plan or []):
-        if not bool(getattr(row, "activo", True)):
-            continue
-
-        modulo_obj = getattr(row, "modulo", None)
-        perfil_obj = getattr(row, "perfil", None)
-
-        modulo_nombre = _up(getattr(modulo_obj, "nombre", None))
-        perfil_nombre = getattr(perfil_obj, "nombre", None)
-
-        if not modulo_nombre or not perfil_nombre:
-            continue
-
-        if row.anio and row.mes:
-            perfil_planeado_por_periodo_modulo[
-                (int(row.anio), int(row.mes), modulo_nombre)
-            ].add(perfil_nombre)
-
-        perfil_planeado_por_modulo[modulo_nombre].add(perfil_nombre)
-
-    def _perfil_planeado_para_registro(anio_reg, mes_reg, modulo_reg):
-        modulo_reg = _up(modulo_reg)
-
-        if not modulo_reg:
-            return None
-
-        perfiles_periodo = perfil_planeado_por_periodo_modulo.get(
-            (int(anio_reg), int(mes_reg), modulo_reg),
-            set()
-        )
-
-        if len(perfiles_periodo) == 1:
-            return next(iter(perfiles_periodo))
-
-        perfiles_modulo = perfil_planeado_por_modulo.get(modulo_reg, set())
-
-        if len(perfiles_modulo) == 1:
-            return next(iter(perfiles_modulo))
-
-        return None
-
-    # ---------------------------------------------------------
-    # 6) Estructuras de salida
+    # Estructuras de salida
     # ---------------------------------------------------------
     horas_por_perfil = {}
     costos_por_perfil = {}
     acumulado_horas_por_perfil = {}
 
     # ---------------------------------------------------------
-    # 7) PLANEADO por perfil
-    #    Ahora suma todos los meses dentro del rango.
+    # Mapa de planeación por periodo + módulo
+    # Sirve para distribuir el real.
+    # ---------------------------------------------------------
+    planeacion_periodo_modulo = defaultdict(list)
+    planeacion_modulo_global = defaultdict(list)
+
+    for row in (p.perfiles_plan or []):
+        if not bool(getattr(row, "activo", True)):
+            continue
+
+        if not row.anio or not row.mes:
+            continue
+
+        modulo_nombre = _mod_key(
+            getattr(row.modulo, "nombre", None)
+            if getattr(row, "modulo", None)
+            else None
+        )
+
+        perfil_nombre = (
+            getattr(getattr(row, "perfil", None), "nombre", None)
+            or "SIN PERFIL"
+        )
+
+        if not modulo_nombre or not perfil_nombre:
+            continue
+
+        horas_est = _dec(row.horas_estimadas)
+        costo_est = _dec(row.costo_estimado)
+
+        item = {
+            "perfil": perfil_nombre,
+            "modulo": modulo_nombre,
+            "horas_estimadas": horas_est,
+            "costo_estimado": costo_est,
+        }
+
+        planeacion_periodo_modulo[
+            (int(row.anio), int(row.mes), modulo_nombre)
+        ].append(item)
+
+        planeacion_modulo_global[modulo_nombre].append(item)
+
+    def _distribuir_real_por_planeacion(anio_reg, mes_reg, modulo_reg, horas_real, costo_real):
+        modulo_key = _mod_key(modulo_reg)
+
+        if not modulo_key:
+            return False
+
+        targets = planeacion_periodo_modulo.get(
+            (int(anio_reg), int(mes_reg), modulo_key),
+            []
+        )
+
+        # Si no hay planeación exacta para ese mes, usa la planeación global del módulo.
+        if not targets:
+            targets = planeacion_modulo_global.get(modulo_key, [])
+
+        if not targets:
+            return False
+
+        total_horas_peso = sum((_dec(t["horas_estimadas"]) for t in targets), Decimal("0.00"))
+        total_costo_peso = sum((_dec(t["costo_estimado"]) for t in targets), Decimal("0.00"))
+
+        usar_peso_horas = total_horas_peso > 0
+        usar_peso_costos = total_costo_peso > 0
+
+        total_targets = Decimal(str(len(targets)))
+
+        for t in targets:
+            perfil_nombre = t["perfil"]
+            _ensure_bucket(perfil_nombre)
+
+            if usar_peso_horas:
+                factor_horas = _dec(t["horas_estimadas"]) / total_horas_peso
+            else:
+                factor_horas = Decimal("1.00") / total_targets
+
+            if usar_peso_costos:
+                factor_costos = _dec(t["costo_estimado"]) / total_costo_peso
+            else:
+                factor_costos = factor_horas
+
+            horas_asignadas = (horas_real * factor_horas).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP
+            )
+
+            costo_asignado = (costo_real * factor_costos).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP
+            )
+
+            horas_por_perfil[perfil_nombre]["reales"] += horas_asignadas
+            costos_por_perfil[perfil_nombre]["real"] += costo_asignado
+            acumulado_horas_por_perfil[perfil_nombre]["reales"] += horas_asignadas
+
+        return True
+
+    # ---------------------------------------------------------
+    # PLANEADO por perfil dentro del rango
     # ---------------------------------------------------------
     for row in (p.perfiles_plan or []):
         if not bool(getattr(row, "activo", True)):
@@ -8756,7 +8767,7 @@ def get_proyecto_costos_graficas(proyecto_id):
         if not _period_in_range(row.anio, row.mes):
             continue
 
-        row_modulo = _up(
+        row_modulo = _mod_key(
             getattr(row.modulo, "nombre", None)
             if getattr(row, "modulo", None)
             else None
@@ -8777,13 +8788,10 @@ def get_proyecto_costos_graficas(proyecto_id):
 
         horas_por_perfil[perfil_nombre]["estimadas"] += horas_est
         costos_por_perfil[perfil_nombre]["estimado"] += costo_est
-
         acumulado_horas_por_perfil[perfil_nombre]["estimadas"] += horas_est
 
     # ---------------------------------------------------------
-    # 8) REAL por perfil desde registros del proyecto
-    #    Ahora usa _apply_project_filter_shared para coincidir
-    #    con resumen: proyecto_id, PRC y mapeos.
+    # REAL por perfil desde registros del proyecto
     # ---------------------------------------------------------
     consultor_join_cond = db.or_(
         func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.usuario)),
@@ -8810,7 +8818,7 @@ def get_proyecto_costos_graficas(proyecto_id):
         if not _period_in_range(ry, rm):
             continue
 
-        modulo_reg = _up(reg.modulo)
+        modulo_reg = _mod_key(reg.modulo)
         equipo_reg = _up(getattr(equipo, "nombre", None) or reg.equipo)
         usuario_reg = _low(getattr(consultor, "usuario", None) or reg.usuario_consultor)
 
@@ -8822,16 +8830,6 @@ def get_proyecto_costos_graficas(proyecto_id):
 
         if filtro_consultores and usuario_reg not in filtro_consultores:
             continue
-
-        # Primero intenta tomar el perfil planeado por módulo + período
-        perfil_nombre = _perfil_planeado_para_registro(ry, rm, modulo_reg)
-
-        # Fallback al perfil vigente del consultor
-        if not perfil_nombre:
-            perfil_obj = _perfil_vigente(getattr(consultor, "id", None), fecha_ref)
-            perfil_nombre = getattr(perfil_obj, "nombre", None) or "SIN PERFIL ASIGNADO"
-
-        _ensure_bucket(perfil_nombre)
 
         horas_real = _dec(
             reg.total_horas
@@ -8866,13 +8864,34 @@ def get_proyecto_costos_graficas(proyecto_id):
             rounding=ROUND_HALF_UP
         )
 
+        # 1) Primero intenta distribuir por planeación del módulo.
+        asignado_por_planeacion = _distribuir_real_por_planeacion(
+            ry,
+            rm,
+            modulo_reg,
+            horas_real,
+            costo_real
+        )
+
+        if asignado_por_planeacion:
+            continue
+
+        # 2) Fallback: perfil vigente del consultor.
+        perfil_obj = _perfil_vigente(getattr(consultor, "id", None), fecha_ref)
+        perfil_nombre = getattr(perfil_obj, "nombre", None)
+
+        # 3) Último fallback: no lo ocultamos, pero lo marcamos mejor.
+        if not perfil_nombre:
+            perfil_nombre = f"MÓDULO SIN PLANEACIÓN: {modulo_reg or 'SIN MÓDULO'}"
+
+        _ensure_bucket(perfil_nombre)
+
         horas_por_perfil[perfil_nombre]["reales"] += horas_real
         costos_por_perfil[perfil_nombre]["real"] += costo_real
-
         acumulado_horas_por_perfil[perfil_nombre]["reales"] += horas_real
 
     # ---------------------------------------------------------
-    # 9) Serialización
+    # Serialización
     # ---------------------------------------------------------
     horas_out = [
         {
