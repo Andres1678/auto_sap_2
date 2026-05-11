@@ -1096,3 +1096,44 @@ class ProyectoPerfil(db.Model):
 
     def __repr__(self):
         return f"<ProyectoPerfil proyecto_id={self.proyecto_id} perfil_id={self.perfil_id}>"
+
+class ProyectoPerfilConsultor(db.Model):
+    __tablename__ = "proyecto_perfil_consultor"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    proyecto_id = db.Column(
+        db.Integer,
+        db.ForeignKey("proyecto.id"),
+        nullable=False,
+        index=True
+    )
+
+    perfil_id = db.Column(
+        db.Integer,
+        db.ForeignKey("perfil.id"),
+        nullable=False,
+        index=True
+    )
+
+    consultor_id = db.Column(
+        db.Integer,
+        db.ForeignKey("consultor.id"),
+        nullable=False,
+        index=True
+    )
+
+    activo = db.Column(db.Boolean, default=True)
+
+    proyecto = db.relationship("Proyecto", backref="perfil_consultores")
+    perfil = db.relationship("Perfil")
+    consultor = db.relationship("Consultor")
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "proyecto_id",
+            "perfil_id",
+            "consultor_id",
+            name="uq_proyecto_perfil_consultor"
+        ),
+    )

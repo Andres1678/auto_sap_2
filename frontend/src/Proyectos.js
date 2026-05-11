@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
-import { jfetch } from './lib/api';
+import { jfetch } from "./lib/api";
 import ModalMapeoProyecto from "./ModalMapeoProyecto";
 import ProyectoCostosPanel from "./Proyectos/ProyectoCostosPanel";
 import "./Proyectos.css";
@@ -23,7 +23,7 @@ const emptyForm = () => ({
   fases: [],
   activo: true,
   perfiles: [],
-  modulos: [],
+  perfil_consultores: {},
   cliente_id: "",
 });
 
@@ -115,6 +115,17 @@ const getPerfilModuloIds = (perfil) => {
     .filter((n) => Number.isFinite(n) && n > 0);
 };
 
+const getPerfilModulos = (perfil) => {
+  if (!Array.isArray(perfil?.modulos)) return [];
+
+  return perfil.modulos
+    .map((m) => ({
+      id: Number(m?.id ?? m?.modulo_id ?? m?.modulo?.id),
+      nombre: String(m?.nombre ?? m?.modulo?.nombre ?? "").trim(),
+    }))
+    .filter((m) => Number.isFinite(m.id) && m.id > 0 && m.nombre);
+};
+
 const getProyectoModulosNames = (p, modulosMap) => {
   if (!Array.isArray(p?.modulos)) return [];
 
@@ -166,6 +177,48 @@ const oppLabel = (o) => {
   return [prc, cliente, servicio].filter(Boolean).join(" — ");
 };
 
+const getProyectoPerfilConsultoresMap = (p) => {
+  const out = {};
+
+  const raw =
+    p?.perfil_consultores ??
+    p?.consultores_por_perfil ??
+    p?.perfiles_consultores ??
+    null;
+
+  if (!raw) return out;
+
+  if (!Array.isArray(raw) && typeof raw === "object") {
+    Object.entries(raw).forEach(([perfilId, consultoresIds]) => {
+      const pid = String(perfilId);
+      const ids = Array.isArray(consultoresIds) ? consultoresIds : [];
+
+      out[pid] = ids
+        .map((x) => Number(x?.consultor_id ?? x?.id ?? x))
+        .filter((n) => Number.isFinite(n) && n > 0);
+    });
+
+    return out;
+  }
+
+  if (Array.isArray(raw)) {
+    raw.forEach((row) => {
+      const pid = String(row?.perfil_id ?? row?.perfil?.id ?? "");
+      const cid = Number(row?.consultor_id ?? row?.consultor?.id ?? row?.id);
+
+      if (!pid || !Number.isFinite(cid) || cid <= 0) return;
+
+      if (!out[pid]) out[pid] = [];
+
+      if (!out[pid].includes(cid)) {
+        out[pid].push(cid);
+      }
+    });
+  }
+
+  return out;
+};
+
 export default function Proyectos() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -173,6 +226,7 @@ export default function Proyectos() {
   const [proyectos, setProyectos] = useState([]);
   const [modulos, setModulos] = useState([]);
   const [perfiles, setPerfiles] = useState([]);
+  const [consultores, setConsultores] = useState([]);
   const [fases, setFases] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [oportunidades, setOportunidades] = useState([]);
@@ -214,14 +268,18 @@ export default function Proyectos() {
     setLoading(true);
 
     try {
-      const [pRes, mRes, pfRes, fRes, cRes, oRes] = await Promise.all([
-        jfetch("/proyectos?include_modulos=1&include_fases=1&include_perfiles=1"),
-        jfetch("/modulos"),
-        jfetch("/perfiles?include_modulos=1&activos=1"),
-        jfetch("/proyecto-fases"),
-        jfetch("/clientes"),
-        jfetch("/oportunidades/elegibles-proyecto"),
-      ]);
+      const [pRes, mRes, pfRes, fRes, cRes, oRes, consRes] =
+        await Promise.all([
+          jfetch(
+            "/proyectos?include_modulos=1&include_fases=1&include_perfiles=1&include_consultores=1"
+          ),
+          jfetch("/modulos"),
+          jfetch("/perfiles?include_modulos=1&activos=1"),
+          jfetch("/proyecto-fases"),
+          jfetch("/clientes"),
+          jfetch("/oportunidades/elegibles-proyecto"),
+          jfetch("/consultores"),
+        ]);
 
       const pData = await pRes.json().catch(() => []);
       const mData = await mRes.json().catch(() => []);
@@ -229,6 +287,7 @@ export default function Proyectos() {
       const fData = await fRes.json().catch(() => []);
       const cData = await cRes.json().catch(() => []);
       const oData = await oRes.json().catch(() => []);
+      const consData = await consRes.json().catch(() => []);
 
       if (!pRes.ok) throw new Error(pData?.mensaje || `HTTP ${pRes.status}`);
       if (!mRes.ok) throw new Error(mData?.mensaje || `HTTP ${mRes.status}`);
@@ -236,6 +295,9 @@ export default function Proyectos() {
       if (!fRes.ok) throw new Error(fData?.mensaje || `HTTP ${fRes.status}`);
       if (!cRes.ok) throw new Error(cData?.mensaje || `HTTP ${cRes.status}`);
       if (!oRes.ok) throw new Error(oData?.mensaje || `HTTP ${oRes.status}`);
+      if (!consRes.ok) {
+        throw new Error(consData?.mensaje || `HTTP ${consRes.status}`);
+      }
 
       setProyectos(
         toArrayResponse(pData).map((p) => ({
@@ -250,6 +312,13 @@ export default function Proyectos() {
         toArrayResponse(pfData).map((p) => ({
           ...p,
           activo: asBool(p?.activo),
+        }))
+      );
+
+      setConsultores(
+        toArrayResponse(consData).map((c) => ({
+          ...c,
+          activo: c?.activo === undefined ? true : asBool(c?.activo),
         }))
       );
 
@@ -301,6 +370,7 @@ export default function Proyectos() {
       setProyectos([]);
       setModulos([]);
       setPerfiles([]);
+      setConsultores([]);
       setFases(DEFAULT_FASES);
       setClientes([]);
       setOportunidades([]);
@@ -365,20 +435,43 @@ export default function Proyectos() {
     return m;
   }, [oportunidades]);
 
-  const modulosDisponiblesPorPerfil = useMemo(() => {
-    const perfilesSeleccionados = new Set((form.perfiles || []).map(Number));
-    const permitidos = new Set();
+  const perfilesSeleccionados = useMemo(() => {
+    const selected = new Set((form.perfiles || []).map(Number));
 
-    (perfiles || []).forEach((perfil) => {
-      if (!perfilesSeleccionados.has(Number(perfil.id))) return;
+    return (perfiles || []).filter((p) => selected.has(Number(p.id)));
+  }, [form.perfiles, perfiles]);
 
-      getPerfilModuloIds(perfil).forEach((mid) => {
-        permitidos.add(Number(mid));
+  const modulosAutomaticosPorPerfil = useMemo(() => {
+    const result = new Map();
+
+    perfilesSeleccionados.forEach((perfil) => {
+      result.set(Number(perfil.id), getPerfilModulos(perfil));
+    });
+
+    return result;
+  }, [perfilesSeleccionados]);
+
+  const modulosAutomaticosIds = useMemo(() => {
+    const ids = new Set();
+
+    Array.from(modulosAutomaticosPorPerfil.values()).forEach((mods) => {
+      mods.forEach((m) => ids.add(Number(m.id)));
+    });
+
+    return Array.from(ids).filter((n) => Number.isFinite(n) && n > 0);
+  }, [modulosAutomaticosPorPerfil]);
+
+  const modulosAutomaticosNames = useMemo(() => {
+    const names = new Map();
+
+    Array.from(modulosAutomaticosPorPerfil.values()).forEach((mods) => {
+      mods.forEach((m) => {
+        if (m.id && m.nombre) names.set(Number(m.id), m.nombre);
       });
     });
 
-    return (modulos || []).filter((m) => permitidos.has(Number(m.id)));
-  }, [form.perfiles, perfiles, modulos]);
+    return Array.from(names.values());
+  }, [modulosAutomaticosPorPerfil]);
 
   const proyectosFiltrados = useMemo(() => {
     const needle = norm(q).toLowerCase();
@@ -427,56 +520,82 @@ export default function Proyectos() {
 
     setForm((f) => {
       const set = new Set((f.perfiles || []).map(Number));
+      const perfilConsultores = { ...(f.perfil_consultores || {}) };
 
       if (set.has(pid)) {
         set.delete(pid);
+        delete perfilConsultores[String(pid)];
       } else {
         set.add(pid);
+        perfilConsultores[String(pid)] =
+          perfilConsultores[String(pid)] || [];
       }
-
-      const nuevosPerfiles = Array.from(set);
-      const modulosPermitidos = new Set();
-
-      (perfiles || []).forEach((perfil) => {
-        if (!nuevosPerfiles.includes(Number(perfil.id))) return;
-
-        getPerfilModuloIds(perfil).forEach((mid) => {
-          modulosPermitidos.add(Number(mid));
-        });
-      });
 
       return {
         ...f,
-        perfiles: nuevosPerfiles,
-        modulos: (f.modulos || [])
-          .map(Number)
-          .filter((mid) => modulosPermitidos.has(Number(mid))),
+        perfiles: Array.from(set),
+        perfil_consultores: perfilConsultores,
       };
     });
   };
 
-  const toggleModulo = (id) => {
-    const mid = Number(id);
-
-    const permitido = modulosDisponiblesPorPerfil.some(
-      (m) => Number(m.id) === mid
-    );
-
-    if (!permitido) return;
+  const toggleConsultorPerfil = (perfilId, consultorId) => {
+    const pid = String(perfilId);
+    const cid = Number(consultorId);
 
     setForm((f) => {
-      const set = new Set((f.modulos || []).map(Number));
+      const current = new Set(
+        (f.perfil_consultores?.[pid] || []).map(Number)
+      );
 
-      if (set.has(mid)) {
-        set.delete(mid);
+      if (current.has(cid)) {
+        current.delete(cid);
       } else {
-        set.add(mid);
+        current.add(cid);
       }
 
       return {
         ...f,
-        modulos: Array.from(set),
+        perfil_consultores: {
+          ...(f.perfil_consultores || {}),
+          [pid]: Array.from(current),
+        },
       };
+    });
+  };
+
+  const getConsultoresPorPerfil = (perfil) => {
+    const modulosPerfil = getPerfilModuloIds(perfil);
+    const modulosPerfilSet = new Set(modulosPerfil.map(Number));
+
+    const modsPerfilNombres = (perfil.modulos || [])
+      .map((m) =>
+        String(m?.nombre ?? m?.modulo?.nombre ?? "")
+          .trim()
+          .toUpperCase()
+      )
+      .filter(Boolean);
+
+    return (consultores || []).filter((c) => {
+      if (c?.activo === false) return false;
+
+      const modsConsultor = Array.isArray(c.modulos) ? c.modulos : [];
+
+      const idsConsultor = modsConsultor
+        .map((m) => Number(m?.id ?? m?.modulo_id ?? m?.modulo?.id))
+        .filter((n) => Number.isFinite(n));
+
+      const nombresConsultor = modsConsultor
+        .map((m) => String(m?.nombre ?? m).trim().toUpperCase())
+        .filter(Boolean);
+
+      const matchPorId = idsConsultor.some((mid) => modulosPerfilSet.has(mid));
+
+      const matchPorNombre = nombresConsultor.some((nombre) =>
+        modsPerfilNombres.includes(nombre)
+      );
+
+      return matchPorId || matchPorNombre;
     });
   };
 
@@ -554,7 +673,7 @@ export default function Proyectos() {
       tipo_negocio: p?.tipo_negocio || (opp?.tipo_negocio ?? ""),
       activo: asBool(p.activo),
       perfiles: getProyectoPerfilesIds(p),
-      modulos: getProyectoModulosIds(p),
+      perfil_consultores: getProyectoPerfilConsultoresMap(p),
       fases: getProyectoFasesIds(p),
       cliente_id: p?.cliente_id != null ? String(p.cliente_id) : "",
     });
@@ -642,8 +761,17 @@ export default function Proyectos() {
       return "Debes seleccionar al menos 1 perfil";
     }
 
-    if (!Array.isArray(form.modulos) || form.modulos.length === 0) {
-      return "Debes seleccionar al menos 1 módulo permitido por los perfiles";
+    if (!Array.isArray(modulosAutomaticosIds) || modulosAutomaticosIds.length === 0) {
+      return "Los perfiles seleccionados no tienen módulos asociados";
+    }
+
+    const perfilesSinConsultor = (form.perfiles || []).filter((perfilId) => {
+      const ids = form.perfil_consultores?.[String(perfilId)] || [];
+      return ids.length === 0;
+    });
+
+    if (perfilesSinConsultor.length > 0) {
+      return "Debes seleccionar al menos 1 consultor para cada perfil del proyecto";
     }
 
     return null;
@@ -675,7 +803,8 @@ export default function Proyectos() {
       nombre: norm(form.nombre),
       activo: !!form.activo,
       perfiles: (form.perfiles || []).map(Number),
-      modulos: (form.modulos || []).map(Number),
+      modulos: modulosAutomaticosIds,
+      perfil_consultores: form.perfil_consultores || {},
       fases: fasesIds,
       cliente_id: clienteIdClean ? Number(clienteIdClean) : null,
       oportunidad_id: oportunidadIdClean ? Number(oportunidadIdClean) : null,
@@ -724,7 +853,8 @@ export default function Proyectos() {
             <h2 className="proj-title">Gestión de Proyectos</h2>
             <p className="proj-subtitle">
               Crear / editar proyectos desde oportunidades ganadas, asignar cliente,
-              perfiles permitidos, módulos según perfil, múltiples fases y estado activo.
+              perfiles permitidos, módulos automáticos por perfil, consultores por
+              perfil, múltiples fases y estado activo.
             </p>
           </div>
 
@@ -950,46 +1080,105 @@ export default function Proyectos() {
                 </div>
 
                 <div className="muted">
-                  Al seleccionar perfiles, se habilitan únicamente los módulos asociados a esos perfiles.
+                  Al seleccionar perfiles, los módulos se cargan automáticamente desde la configuración del perfil.
                 </div>
               </div>
             </div>
 
             <div className="grid-1">
               <div className="field">
-                <label>Módulos permitidos según perfiles</label>
+                <label>Módulos automáticos y consultores por perfil</label>
 
-                <div className="mods-box">
-                  {(form.perfiles || []).length === 0 ? (
-                    <div className="muted">
-                      Primero selecciona uno o más perfiles
-                    </div>
-                  ) : modulosDisponiblesPorPerfil.length === 0 ? (
-                    <div className="muted">
-                      Los perfiles seleccionados no tienen módulos asociados
-                    </div>
-                  ) : (
-                    modulosDisponiblesPorPerfil.map((m) => {
-                      const checked = (form.modulos || [])
-                        .map(Number)
-                        .includes(Number(m.id));
+                {(form.perfiles || []).length === 0 ? (
+                  <div className="muted">
+                    Primero selecciona uno o más perfiles.
+                  </div>
+                ) : (
+                  <div className="perfil-config-list">
+                    {perfilesSeleccionados.map((perfil) => {
+                      const perfilId = Number(perfil.id);
+                      const modulosPerfil =
+                        modulosAutomaticosPorPerfil.get(perfilId) || [];
+
+                      const consultoresPerfil = getConsultoresPorPerfil(perfil);
+
+                      const selectedConsultores =
+                        form.perfil_consultores?.[String(perfilId)] || [];
 
                       return (
-                        <label
-                          key={m.id}
-                          className={`mod-chip ${checked ? "is-on" : ""}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleModulo(m.id)}
-                          />
-                          <span>{m.nombre}</span>
-                        </label>
+                        <div key={perfil.id} className="perfil-config-card">
+                          <div className="perfil-config-head">
+                            <strong>{perfil.nombre}</strong>
+
+                            <span className="muted">
+                              {modulosPerfil.length} módulo(s)
+                            </span>
+                          </div>
+
+                          <div className="perfil-config-modulos">
+                            {modulosPerfil.length === 0 ? (
+                              <span className="muted">
+                                Sin módulos asociados al perfil
+                              </span>
+                            ) : (
+                              modulosPerfil.map((m) => (
+                                <span
+                                  key={`${perfil.id}-${m.id}`}
+                                  className="pill"
+                                >
+                                  {m.nombre}
+                                </span>
+                              ))
+                            )}
+                          </div>
+
+                          <div className="perfil-config-consultores">
+                            <div className="muted" style={{ marginBottom: 6 }}>
+                              Consultores disponibles para este perfil:
+                            </div>
+
+                            {consultoresPerfil.length === 0 ? (
+                              <div className="muted">
+                                No hay consultores asociados a los módulos de este perfil.
+                              </div>
+                            ) : (
+                              <div className="mods-box">
+                                {consultoresPerfil.map((c) => {
+                                  const checked = selectedConsultores
+                                    .map(Number)
+                                    .includes(Number(c.id));
+
+                                  return (
+                                    <label
+                                      key={`${perfil.id}-consultor-${c.id}`}
+                                      className={`mod-chip ${checked ? "is-on" : ""}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() =>
+                                          toggleConsultorPerfil(perfil.id, c.id)
+                                        }
+                                      />
+                                      <span>{c.nombre || c.usuario}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       );
-                    })
-                  )}
-                </div>
+                    })}
+                  </div>
+                )}
+
+                {modulosAutomaticosNames.length > 0 && (
+                  <div className="muted" style={{ marginTop: 10 }}>
+                    Módulos del proyecto:{" "}
+                    <b>{modulosAutomaticosNames.join(", ")}</b>
+                  </div>
+                )}
               </div>
             </div>
           </form>
@@ -1040,18 +1229,23 @@ export default function Proyectos() {
                   const activo = asBool(p.activo);
 
                   const fasesNames = getProyectoFasesNames(p, fasesMap);
-                  const fasesTxt = fasesNames.length ? fasesNames.join(", ") : "—";
+                  const fasesTxt = fasesNames.length
+                    ? fasesNames.join(", ")
+                    : "—";
 
                   const clienteTxt =
                     p?.cliente?.nombre_cliente ??
                     p?.cliente?.nombre ??
-                    (p?.cliente_id != null ? clientesMap.get(Number(p?.cliente_id)) : "") ??
+                    (p?.cliente_id != null
+                      ? clientesMap.get(Number(p?.cliente_id))
+                      : "") ??
                     "";
 
                   const perfilesNames = getProyectoPerfilesNames(p);
                   const modulosNames = getProyectoModulosNames(p, modulosMap);
 
-                  const costosSelected = proyectoCostos?.id === p.id && costosOpen;
+                  const costosSelected =
+                    proyectoCostos?.id === p.id && costosOpen;
 
                   return (
                     <tr key={p.id}>

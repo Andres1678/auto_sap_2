@@ -280,7 +280,7 @@
 }
 
 /* =========================================================
-   Chips: fases, perfiles, módulos
+   Chips: fases, perfiles, módulos, consultores
 ========================================================= */
 
 .proyectos-page-scope .mods-box {
@@ -300,21 +300,27 @@
 
 .proyectos-page-scope .mods-box::-webkit-scrollbar,
 .proyectos-page-scope .proj-table-wrap::-webkit-scrollbar,
-.proyectos-page-scope .proj-costos-shell pre::-webkit-scrollbar {
+.proyectos-page-scope .proj-costos-shell pre::-webkit-scrollbar,
+.proyectos-page-scope .perfil-config-list::-webkit-scrollbar,
+.proyectos-page-scope .perfil-config-consultores .mods-box::-webkit-scrollbar {
   width: 9px;
   height: 9px;
 }
 
 .proyectos-page-scope .mods-box::-webkit-scrollbar-thumb,
 .proyectos-page-scope .proj-table-wrap::-webkit-scrollbar-thumb,
-.proyectos-page-scope .proj-costos-shell pre::-webkit-scrollbar-thumb {
+.proyectos-page-scope .proj-costos-shell pre::-webkit-scrollbar-thumb,
+.proyectos-page-scope .perfil-config-list::-webkit-scrollbar-thumb,
+.proyectos-page-scope .perfil-config-consultores .mods-box::-webkit-scrollbar-thumb {
   background: rgba(100, 116, 139, 0.35);
   border-radius: 999px;
 }
 
 .proyectos-page-scope .mods-box::-webkit-scrollbar-track,
 .proyectos-page-scope .proj-table-wrap::-webkit-scrollbar-track,
-.proyectos-page-scope .proj-costos-shell pre::-webkit-scrollbar-track {
+.proyectos-page-scope .proj-costos-shell pre::-webkit-scrollbar-track,
+.proyectos-page-scope .perfil-config-list::-webkit-scrollbar-track,
+.proyectos-page-scope .perfil-config-consultores .mods-box::-webkit-scrollbar-track {
   background: rgba(226, 232, 240, 0.55);
   border-radius: 999px;
 }
@@ -367,6 +373,104 @@
 .proyectos-page-scope .mod-chip span {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* =========================================================
+   Nueva sección: módulos automáticos y consultores por perfil
+========================================================= */
+
+.proyectos-page-scope .perfil-config-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  max-height: 620px;
+  overflow: auto;
+  padding: 2px;
+}
+
+.proyectos-page-scope .perfil-config-card {
+  position: relative;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #dbe7f3;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.04);
+}
+
+.proyectos-page-scope .perfil-config-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--p-red), rgba(183, 28, 28, 0.18));
+}
+
+.proyectos-page-scope .perfil-config-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding-left: 8px;
+}
+
+.proyectos-page-scope .perfil-config-head strong {
+  color: var(--p-text);
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.25;
+}
+
+.proyectos-page-scope .perfil-config-head .muted {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid rgba(2, 6, 23, 0.08);
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.proyectos-page-scope .perfil-config-modulos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-left: 8px;
+}
+
+.proyectos-page-scope .perfil-config-consultores {
+  margin-top: 10px;
+  padding-top: 12px;
+  padding-left: 8px;
+  border-top: 1px solid #edf2f7;
+}
+
+.proyectos-page-scope .perfil-config-consultores .mods-box {
+  max-height: 180px;
+  min-height: 48px;
+  background: #ffffff;
+}
+
+.proyectos-page-scope .perfil-config-consultores .mod-chip {
+  border-radius: 12px;
+}
+
+.proyectos-page-scope .perfil-config-consultores .mod-chip.is-on {
+  border-color: rgba(37, 99, 235, 0.42);
+  background: var(--p-blue-soft);
+  color: #1e3a8a;
+}
+
+.proyectos-page-scope .perfil-config-consultores .mod-chip input {
+  accent-color: var(--p-blue);
 }
 
 /* =========================================================
@@ -821,6 +925,15 @@
     min-width: unset;
     width: 100%;
   }
+
+  .proyectos-page-scope .perfil-config-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .proyectos-page-scope .perfil-config-head .muted {
+    align-self: flex-start;
+  }
 }
 
 @media (max-width: 560px) {
@@ -857,5 +970,23 @@
 
   .proyectos-page-scope .pill {
     max-width: 150px;
+  }
+
+  .proyectos-page-scope .perfil-config-list {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .proyectos-page-scope .perfil-config-card {
+    padding: 12px;
+  }
+
+  .proyectos-page-scope .perfil-config-card::before {
+    top: 12px;
+    bottom: 12px;
+  }
+
+  .proyectos-page-scope .perfil-config-consultores .mods-box {
+    max-height: 260px;
   }
 }

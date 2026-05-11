@@ -7,7 +7,7 @@ from backend.models import (
     ConsultorPresupuesto, Proyecto, ProyectoFase, ProyectoModulo, ProyectoFaseProyecto,
     ProyectoMapeo,
     ProyectoPresupuestoMensual, ProyectoPerfilPlan, ProyectoCostoAdicional,
-    Perfil, ModuloPerfil, ConsultorPerfil, ProyectoModulo, ProyectoPerfil, ProyectoPerfilPlan, ProyectoCostoAdicional, ProyectoMapeo
+    Perfil, ModuloPerfil, ConsultorPerfil, ProyectoModulo, ProyectoPerfil, ProyectoPerfilPlan, ProyectoCostoAdicional, ProyectoMapeo, ProyectoPerfilConsultor
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
@@ -6250,16 +6250,23 @@ def crear_proyecto():
         cliente_id = data.get("cliente_id", None)
         fase_id = data.get("fase_id")
         oportunidad_id = data.get("oportunidad_id", None)
+        perfil_consultores = data.get("perfil_consultores")
 
         try:
             perfiles_ids = _clean_int_list(
                 data.get("perfiles") or data.get("perfiles_ids") or [],
                 "perfiles"
             )
-            modulos_ids = _clean_int_list(
-                data.get("modulos") or data.get("modulos_ids") or [],
-                "modulos"
-            )
+
+            # Ahora los módulos pueden venir desde el frontend o calcularse
+            # automáticamente desde los perfiles seleccionados.
+            modulos_ids_payload = data.get("modulos") or data.get("modulos_ids") or []
+
+            if modulos_ids_payload:
+                modulos_ids = _clean_int_list(modulos_ids_payload, "modulos")
+            else:
+                modulos_ids = _get_modulos_ids_de_perfiles(perfiles_ids)
+
             fases_ids = _clean_int_list(
                 data.get("fases") or data.get("fases_ids") or [],
                 "fases"
@@ -6269,6 +6276,16 @@ def crear_proyecto():
 
         if not nombre:
             return jsonify({"mensaje": "nombre requerido"}), 400
+
+        if not perfiles_ids:
+            return jsonify({
+                "mensaje": "Debes seleccionar al menos un perfil"
+            }), 400
+
+        if not modulos_ids:
+            return jsonify({
+                "mensaje": "Los perfiles seleccionados no tienen módulos asociados"
+            }), 400
 
         # ------------------------------------------------------------
         # oportunidad obligatoria
@@ -6282,12 +6299,16 @@ def crear_proyecto():
             return jsonify({"mensaje": "oportunidad_id inválido"}), 400
 
         opp = Oportunidad.query.get(oportunidad_id)
+
         if not opp:
             return jsonify({"mensaje": "La oportunidad no existe"}), 400
 
         prc = (opp.codigo_prc or "").strip().upper()
+
         if not prc:
-            return jsonify({"mensaje": "La oportunidad no tiene código PRC"}), 400
+            return jsonify({
+                "mensaje": "La oportunidad no tiene código PRC"
+            }), 400
 
         estado = _norm_key_for_match(opp.estado_oferta)
         resultado = _norm_key_for_match(opp.resultado_oferta)
@@ -6335,53 +6356,50 @@ def crear_proyecto():
             except Exception:
                 return jsonify({"mensaje": "cliente_id inválido"}), 400
 
-            if cliente_id > 0:
-                exists_cli = Cliente.query.get(cliente_id)
-                if not exists_cli:
-                    return jsonify({"mensaje": "cliente_id no existe"}), 400
-            else:
-                cliente_id = None
+            if not Cliente.query.get(cliente_id):
+                return jsonify({"mensaje": "Cliente no existe"}), 400
 
         # ------------------------------------------------------------
         # fase principal opcional
         # ------------------------------------------------------------
-        if fase_id is not None and fase_id not in ("", "null"):
+        if fase_id in ("", "null", None):
+            fase_id = None
+        else:
             try:
                 fase_id = int(fase_id)
             except Exception:
                 return jsonify({"mensaje": "fase_id inválido"}), 400
 
-            if fase_id and not ProyectoFase.query.get(fase_id):
-                return jsonify({"mensaje": "fase_id no existe"}), 400
-        else:
-            fase_id = None
+            if not ProyectoFase.query.get(fase_id):
+                return jsonify({"mensaje": "Fase no existe"}), 400
 
         # ------------------------------------------------------------
         # perfiles obligatorios
         # ------------------------------------------------------------
         ok, msg, perfiles_db = _validar_perfiles_ids(perfiles_ids)
+
         if not ok:
             return jsonify({"mensaje": msg}), 400
 
         # ------------------------------------------------------------
-        # módulos obligatorios
+        # módulos automáticos / enviados
         # ------------------------------------------------------------
         ok, msg, modulos_db = _validar_modulos_ids(modulos_ids)
+
         if not ok:
             return jsonify({"mensaje": msg}), 400
 
-        # ------------------------------------------------------------
-        # validar módulos contra perfiles seleccionados
-        # ------------------------------------------------------------
+        # Cada módulo del proyecto debe pertenecer a mínimo uno de los perfiles.
         ok, msg = _validar_modulos_pertenecen_a_perfiles(
             perfiles_ids,
             modulos_ids
         )
+
         if not ok:
             return jsonify({"mensaje": msg}), 400
 
         # ------------------------------------------------------------
-        # fases
+        # fases multi
         # ------------------------------------------------------------
         if fases_ids:
             fases_db = ProyectoFase.query.filter(
@@ -6412,7 +6430,9 @@ def crear_proyecto():
         db.session.add(p)
         db.session.flush()
 
+        # ------------------------------------------------------------
         # perfiles del proyecto
+        # ------------------------------------------------------------
         for perfil_id in perfiles_ids:
             db.session.add(
                 ProyectoPerfil(
@@ -6422,7 +6442,10 @@ def crear_proyecto():
                 )
             )
 
+        # ------------------------------------------------------------
         # módulos del proyecto
+        # Ahora salen automáticamente de los perfiles.
+        # ------------------------------------------------------------
         for modulo_id in modulos_ids:
             db.session.add(
                 ProyectoModulo(
@@ -6432,7 +6455,9 @@ def crear_proyecto():
                 )
             )
 
+        # ------------------------------------------------------------
         # fases multi
+        # ------------------------------------------------------------
         for fase_id_item in fases_ids:
             db.session.add(
                 ProyectoFaseProyecto(
@@ -6441,6 +6466,16 @@ def crear_proyecto():
                     activo=True,
                 )
             )
+
+        db.session.flush()
+
+        # ------------------------------------------------------------
+        # consultores asignados a cada perfil del proyecto
+        # ------------------------------------------------------------
+        _save_proyecto_perfil_consultores(
+            p.id,
+            perfil_consultores
+        )
 
         db.session.commit()
 
@@ -6457,13 +6492,17 @@ def crear_proyecto():
 
         return jsonify({
             "mensaje": "Proyecto creado",
-            "proyecto": proyecto_to_dict(
+            "proyecto": _proyecto_response_dict(
                 p,
                 include_modulos=True,
                 include_fases=True,
                 include_perfiles=True,
             )
         }), 201
+
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"mensaje": str(e)}), 400
 
     except IntegrityError as e:
         db.session.rollback()
@@ -6500,8 +6539,10 @@ def editar_proyecto(id):
         # ------------------------------------------------------------
         if "nombre" in data:
             nombre = (data.get("nombre") or "").strip()
+
             if not nombre:
                 return jsonify({"mensaje": "nombre inválido"}), 400
+
             p.nombre = nombre
 
         # ------------------------------------------------------------
@@ -6524,21 +6565,18 @@ def editar_proyecto(id):
                 except Exception:
                     return jsonify({"mensaje": "cliente_id inválido"}), 400
 
-                if cliente_id > 0:
-                    exists_cli = Cliente.query.get(cliente_id)
-                    if not exists_cli:
-                        return jsonify({"mensaje": "cliente_id no existe"}), 400
-                    p.cliente_id = cliente_id
-                else:
-                    p.cliente_id = None
+                if not Cliente.query.get(cliente_id):
+                    return jsonify({"mensaje": "Cliente no existe"}), 400
+
+                p.cliente_id = cliente_id
 
         # ------------------------------------------------------------
         # fase_id principal
         # ------------------------------------------------------------
         if "fase_id" in data:
-            fase_id = data.get("fase_id")
+            fase_id = data.get("fase_id", None)
 
-            if fase_id in (None, "", "null"):
+            if fase_id in ("", "null", None):
                 p.fase_id = None
             else:
                 try:
@@ -6547,34 +6585,40 @@ def editar_proyecto(id):
                     return jsonify({"mensaje": "fase_id inválido"}), 400
 
                 if not ProyectoFase.query.get(fase_id):
-                    return jsonify({"mensaje": "fase_id no existe"}), 400
+                    return jsonify({"mensaje": "Fase no existe"}), 400
 
                 p.fase_id = fase_id
 
         # ------------------------------------------------------------
-        # oportunidad_id
+        # oportunidad
         # ------------------------------------------------------------
         if "oportunidad_id" in data:
             oportunidad_id = data.get("oportunidad_id", None)
 
             if oportunidad_id in ("", "null", None):
                 return jsonify({
-                    "mensaje": "El proyecto debe estar ligado a una oportunidad válida"
+                    "mensaje": "oportunidad_id requerido"
                 }), 400
 
             try:
                 oportunidad_id = int(oportunidad_id)
             except Exception:
-                return jsonify({"mensaje": "oportunidad_id inválido"}), 400
+                return jsonify({
+                    "mensaje": "oportunidad_id inválido"
+                }), 400
 
             opp = Oportunidad.query.get(oportunidad_id)
+
             if not opp:
-                return jsonify({"mensaje": "La oportunidad no existe"}), 400
+                return jsonify({
+                    "mensaje": "La oportunidad no existe"
+                }), 400
 
             prc = (opp.codigo_prc or "").strip().upper()
+
             if not prc:
                 return jsonify({
-                    "mensaje": "La oportunidad no tiene código PRC"
+                    "mensaje": "La oportunidad no tiene código PRC válido"
                 }), 400
 
             estado = _norm_key_for_match(opp.estado_oferta)
@@ -6620,7 +6664,10 @@ def editar_proyecto(id):
         # ------------------------------------------------------------
         if "codigo" in data and p.oportunidad_id:
             opp_actual = Oportunidad.query.get(p.oportunidad_id)
-            prc_actual = (opp_actual.codigo_prc or "").strip().upper() if opp_actual else ""
+            prc_actual = (
+                (opp_actual.codigo_prc or "").strip().upper()
+                if opp_actual else ""
+            )
 
             if not prc_actual:
                 return jsonify({
@@ -6643,7 +6690,13 @@ def editar_proyecto(id):
             except ValueError as e:
                 return jsonify({"mensaje": str(e)}), 400
 
+            if not perfiles_ids:
+                return jsonify({
+                    "mensaje": "Debes seleccionar al menos un perfil"
+                }), 400
+
             ok, msg, perfiles_db = _validar_perfiles_ids(perfiles_ids)
+
             if not ok:
                 return jsonify({"mensaje": msg}), 400
 
@@ -6660,34 +6713,53 @@ def editar_proyecto(id):
                     )
                 )
 
+        # Si no llegaron perfiles en este PUT, se toman los actuales.
+        if perfiles_ids is None:
+            perfiles_ids = [
+                int(x.perfil_id)
+                for x in (
+                    ProyectoPerfil.query
+                    .filter_by(proyecto_id=p.id)
+                    .filter(ProyectoPerfil.activo == True)
+                    .all()
+                )
+                if x.perfil_id
+            ]
+
         # ------------------------------------------------------------
         # módulos
+        # Ahora pueden venir desde frontend o derivarse de perfiles.
         # ------------------------------------------------------------
+        modulos_ids = None
+
         if "modulos" in data or "modulos_ids" in data:
             try:
-                modulos_ids = _clean_int_list(
-                    data.get("modulos") or data.get("modulos_ids") or [],
-                    "modulos"
-                )
+                modulos_ids_payload = data.get("modulos") or data.get("modulos_ids") or []
+
+                if modulos_ids_payload:
+                    modulos_ids = _clean_int_list(
+                        modulos_ids_payload,
+                        "modulos"
+                    )
+                else:
+                    modulos_ids = _get_modulos_ids_de_perfiles(perfiles_ids)
             except ValueError as e:
                 return jsonify({"mensaje": str(e)}), 400
 
+        elif "perfiles" in data or "perfiles_ids" in data:
+            # Si cambiaron los perfiles, recalculamos módulos automáticamente.
+            modulos_ids = _get_modulos_ids_de_perfiles(perfiles_ids)
+
+        if modulos_ids is not None:
+            if not modulos_ids:
+                return jsonify({
+                    "mensaje": "Los perfiles seleccionados no tienen módulos asociados"
+                }), 400
+
             ok, msg, modulos_db = _validar_modulos_ids(modulos_ids)
+
             if not ok:
                 return jsonify({"mensaje": msg}), 400
-
-            # Si en este PUT no llegaron perfiles, usar los perfiles actuales del proyecto.
-            if perfiles_ids is None:
-                perfiles_ids = [
-                    int(x.perfil_id)
-                    for x in (
-                        ProyectoPerfil.query
-                        .filter_by(proyecto_id=p.id)
-                        .filter(ProyectoPerfil.activo == True)
-                        .all()
-                    )
-                    if x.perfil_id
-                ]
 
             ok, msg = _validar_modulos_pertenecen_a_perfiles(
                 perfiles_ids,
@@ -6748,6 +6820,17 @@ def editar_proyecto(id):
                     )
                 )
 
+        db.session.flush()
+
+        # ------------------------------------------------------------
+        # consultores por perfil del proyecto
+        # ------------------------------------------------------------
+        if "perfil_consultores" in data:
+            _save_proyecto_perfil_consultores(
+                p.id,
+                data.get("perfil_consultores")
+            )
+
         db.session.commit()
 
         opts2 = [
@@ -6763,13 +6846,17 @@ def editar_proyecto(id):
 
         return jsonify({
             "mensaje": "Proyecto actualizado",
-            "proyecto": proyecto_to_dict(
+            "proyecto": _proyecto_response_dict(
                 p,
                 include_modulos=True,
                 include_fases=True,
                 include_perfiles=True,
             )
         }), 200
+
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"mensaje": str(e)}), 400
 
     except IntegrityError as e:
         db.session.rollback()
@@ -6784,7 +6871,7 @@ def editar_proyecto(id):
         return jsonify({
             "mensaje": f"No se pudo actualizar el proyecto: {str(e)}"
         }), 500
-
+    
 @bp.route("/proyectos/<int:id>/toggle-activo", methods=["PUT"])
 @permission_required("PROYECTOS_EDITAR")
 def toggle_activo_proyecto(id):
@@ -9023,6 +9110,241 @@ def _safe_float_report(v):
         return float(v or 0)
     except Exception:
         return 0.0
+
+def _get_modulos_ids_de_perfiles(perfiles_ids):
+    perfiles_ids = [int(x) for x in (perfiles_ids or []) if x]
+
+    if not perfiles_ids:
+        return []
+
+    rows = (
+        ModuloPerfil.query
+        .filter(ModuloPerfil.perfil_id.in_(perfiles_ids))
+        .filter(ModuloPerfil.activo == True)
+        .all()
+    )
+
+    modulos_ids = sorted({
+        int(r.modulo_id)
+        for r in rows
+        if r.modulo_id
+    })
+
+    return modulos_ids
+
+
+def _proyecto_perfil_consultores_to_map(proyecto_id):
+    rows = (
+        ProyectoPerfilConsultor.query
+        .options(
+            joinedload(ProyectoPerfilConsultor.perfil),
+            joinedload(ProyectoPerfilConsultor.consultor),
+        )
+        .filter(ProyectoPerfilConsultor.proyecto_id == proyecto_id)
+        .filter(ProyectoPerfilConsultor.activo == True)
+        .all()
+    )
+
+    mapa = {}
+    detalle = []
+
+    for row in rows:
+        pid = str(row.perfil_id)
+        cid = int(row.consultor_id)
+
+        if pid not in mapa:
+            mapa[pid] = []
+
+        if cid not in mapa[pid]:
+            mapa[pid].append(cid)
+
+        detalle.append({
+            "id": row.id,
+            "proyecto_id": row.proyecto_id,
+            "perfil_id": row.perfil_id,
+            "consultor_id": row.consultor_id,
+            "activo": bool(row.activo),
+            "perfil": {
+                "id": row.perfil.id,
+                "nombre": row.perfil.nombre,
+                "codigo": row.perfil.codigo,
+            } if row.perfil else None,
+            "consultor": {
+                "id": row.consultor.id,
+                "nombre": row.consultor.nombre,
+                "usuario": row.consultor.usuario,
+            } if row.consultor else None,
+        })
+
+    return mapa, detalle
+
+
+def _proyecto_response_dict(p, include_modulos=True, include_fases=True, include_perfiles=True):
+    out = proyecto_to_dict(
+        p,
+        include_modulos=include_modulos,
+        include_fases=include_fases,
+        include_perfiles=include_perfiles,
+    )
+
+    try:
+        mapa, detalle = _proyecto_perfil_consultores_to_map(p.id)
+        out["perfil_consultores"] = mapa
+        out["perfil_consultores_detalle"] = detalle
+    except Exception:
+        out["perfil_consultores"] = {}
+        out["perfil_consultores_detalle"] = []
+
+    return out
+
+
+def _validar_consultor_pertenece_a_modulos_perfil(consultor, perfil_id):
+    relaciones = (
+        ModuloPerfil.query
+        .filter(ModuloPerfil.perfil_id == int(perfil_id))
+        .filter(ModuloPerfil.activo == True)
+        .all()
+    )
+
+    modulos_perfil_ids = {
+        int(r.modulo_id)
+        for r in relaciones
+        if r.modulo_id
+    }
+
+    if not modulos_perfil_ids:
+        return False, "El perfil no tiene módulos asociados"
+
+    modulos_consultor_ids = {
+        int(m.id)
+        for m in (getattr(consultor, "modulos", None) or [])
+        if getattr(m, "id", None)
+    }
+
+    if not modulos_consultor_ids:
+        return False, (
+            f"El consultor {consultor.nombre or consultor.usuario} "
+            "no tiene módulos asociados"
+        )
+
+    if not modulos_consultor_ids.intersection(modulos_perfil_ids):
+        return False, (
+            f"El consultor {consultor.nombre or consultor.usuario} "
+            f"no pertenece a los módulos del perfil {perfil_id}"
+        )
+
+    return True, None
+
+
+def _save_proyecto_perfil_consultores(proyecto_id, perfil_consultores):
+    """
+    Espera payload:
+    {
+      "1": [3, 4],
+      "2": [5]
+    }
+
+    Donde:
+    - key = perfil_id
+    - value = lista de consultor_id
+    """
+    if perfil_consultores is None:
+        return
+
+    if not isinstance(perfil_consultores, dict):
+        raise ValueError("perfil_consultores debe ser un objeto")
+
+    perfiles_proyecto_ids = {
+        int(x.perfil_id)
+        for x in (
+            ProyectoPerfil.query
+            .filter(ProyectoPerfil.proyecto_id == proyecto_id)
+            .filter(ProyectoPerfil.activo == True)
+            .all()
+        )
+        if x.perfil_id
+    }
+
+    if not perfiles_proyecto_ids:
+        raise ValueError("El proyecto no tiene perfiles asociados")
+
+    # Validar todo antes de borrar
+    normalized = []
+    seen = set()
+
+    for perfil_id_raw, consultores_ids in perfil_consultores.items():
+        try:
+            perfil_id = int(perfil_id_raw)
+        except Exception:
+            raise ValueError(f"perfil_id inválido: {perfil_id_raw}")
+
+        if perfil_id not in perfiles_proyecto_ids:
+            raise ValueError(
+                f"El perfil {perfil_id} no está asociado al proyecto"
+            )
+
+        perfil = Perfil.query.get(perfil_id)
+        if not perfil:
+            raise ValueError(f"Perfil no existe: {perfil_id}")
+
+        if not isinstance(consultores_ids, list):
+            raise ValueError(
+                f"Los consultores del perfil {perfil_id} deben venir como lista"
+            )
+
+        for consultor_id_raw in consultores_ids:
+            try:
+                consultor_id = int(consultor_id_raw)
+            except Exception:
+                raise ValueError(f"consultor_id inválido: {consultor_id_raw}")
+
+            key = (perfil_id, consultor_id)
+
+            if key in seen:
+                continue
+
+            consultor = (
+                Consultor.query
+                .options(joinedload(Consultor.modulos))
+                .get(consultor_id)
+            )
+
+            if not consultor:
+                raise ValueError(f"Consultor no existe: {consultor_id}")
+
+            if getattr(consultor, "activo", True) is False:
+                raise ValueError(
+                    f"El consultor {consultor.nombre or consultor.usuario} está inactivo"
+                )
+
+            ok, msg = _validar_consultor_pertenece_a_modulos_perfil(
+                consultor,
+                perfil_id
+            )
+
+            if not ok:
+                raise ValueError(msg)
+
+            seen.add(key)
+
+            normalized.append({
+                "perfil_id": perfil_id,
+                "consultor_id": consultor_id,
+            })
+
+    ProyectoPerfilConsultor.query.filter_by(
+        proyecto_id=proyecto_id
+    ).delete(synchronize_session=False)
+
+    for row in normalized:
+        db.session.add(
+            ProyectoPerfilConsultor(
+                proyecto_id=proyecto_id,
+                perfil_id=row["perfil_id"],
+                consultor_id=row["consultor_id"],
+                activo=True,
+            )
+        )
 
 @bp.route("/reporte/horas-consultor-cliente-detalle", methods=["GET"])
 @permission_required("GRAFICOS_VER")
