@@ -53,12 +53,46 @@ const chartMoneyTick = (v) => {
   return `${n.toFixed(0)}`;
 };
 
-const buildQuery = (periodo, filtros = {}) => {
+const periodParts = (periodo) => {
+  const [anio, mes] = String(periodo || "").split("-");
+  return {
+    anio: anio ? Number(anio) : null,
+    mes: mes ? Number(mes) : null,
+  };
+};
+
+const comparePeriod = (a, b) => {
+  const pa = periodParts(a);
+  const pb = periodParts(b);
+
+  const va = (pa.anio || 0) * 100 + (pa.mes || 0);
+  const vb = (pb.anio || 0) * 100 + (pb.mes || 0);
+
+  return va - vb;
+};
+
+const buildQuery = (periodoDesde, periodoHasta, filtros = {}) => {
   const params = new URLSearchParams();
 
-  const [anio, mes] = String(periodo || "").split("-");
-  if (anio) params.set("anio", anio);
-  if (mes) params.set("mes", mes);
+  let desde = periodoDesde;
+  let hasta = periodoHasta;
+
+  if (desde && hasta && comparePeriod(desde, hasta) > 0) {
+    const tmp = desde;
+    desde = hasta;
+    hasta = tmp;
+  }
+
+  const d = periodParts(desde);
+  const h = periodParts(hasta);
+
+  if (d.anio && d.mes && h.anio && h.mes) {
+    params.set("modo", "rango_meses");
+    params.set("anio_desde", String(d.anio));
+    params.set("mes_desde", String(d.mes));
+    params.set("anio_hasta", String(h.anio));
+    params.set("mes_hasta", String(h.mes));
+  }
 
   (filtros?.equipos || []).forEach((equipo) => {
     if (equipo) params.append("equipo", equipo);
@@ -100,7 +134,8 @@ export default function ProyectoCostosGraficas({
   const [open, setOpen] = useState(defaultOpen);
 
   const [periodos, setPeriodos] = useState([]);
-  const [periodo, setPeriodo] = useState("");
+  const [periodoDesde, setPeriodoDesde] = useState("");
+  const [periodoHasta, setPeriodoHasta] = useState("");
   const [graficas, setGraficas] = useState(null);
 
   const horasPorPerfilData = Array.isArray(graficas?.horas_por_perfil)
@@ -144,14 +179,20 @@ export default function ProyectoCostosGraficas({
     }
   };
 
-  const fetchGraficas = async (periodoToLoad) => {
-    if (!proyectoId || !periodoToLoad) return;
+  const fetchGraficas = async (desdeToLoad, hastaToLoad) => {
+    if (!proyectoId || !desdeToLoad || !hastaToLoad) return;
 
     setLoadingCharts(true);
+
     try {
       const res = await jfetch(
-        `/proyectos/${proyectoId}/costos/graficas${buildQuery(periodoToLoad, filtros)}`
+        `/proyectos/${proyectoId}/costos/graficas${buildQuery(
+          desdeToLoad,
+          hastaToLoad,
+          filtros
+        )}`
       );
+
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
@@ -177,6 +218,7 @@ export default function ProyectoCostosGraficas({
       if (!proyectoId) return;
 
       let nextPeriods = Array.isArray(periodosOptions) ? periodosOptions : [];
+
       nextPeriods = nextPeriods
         .map((p) => String(p || "").trim())
         .filter(Boolean)
@@ -190,15 +232,21 @@ export default function ProyectoCostosGraficas({
 
       setPeriodos(nextPeriods);
 
-      const nextPeriodo =
-        nextPeriods.includes(periodo) && periodo
-          ? periodo
+      const nextDesde =
+        nextPeriods.includes(periodoDesde) && periodoDesde
+          ? periodoDesde
+          : nextPeriods[0] || "";
+
+      const nextHasta =
+        nextPeriods.includes(periodoHasta) && periodoHasta
+          ? periodoHasta
           : nextPeriods[nextPeriods.length - 1] || "";
 
-      setPeriodo(nextPeriodo);
+      setPeriodoDesde(nextDesde);
+      setPeriodoHasta(nextHasta);
 
-      if (nextPeriodo) {
-        await fetchGraficas(nextPeriodo);
+      if (nextDesde && nextHasta) {
+        await fetchGraficas(nextDesde, nextHasta);
       } else {
         setGraficas(null);
       }
@@ -209,7 +257,6 @@ export default function ProyectoCostosGraficas({
     return () => {
       mounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proyectoId, JSON.stringify(periodosOptions), JSON.stringify(filtros)]);
 
   useEffect(() => {
@@ -261,8 +308,7 @@ export default function ProyectoCostosGraficas({
           <div>
             <h3>Gráficas por perfil</h3>
             <p className="pcg-note">
-              Comparativo planeado vs real por perfil para el período
-              seleccionado.
+              Comparativo planeado vs real por perfil, acumulando la sumatoria del rango seleccionado.
             </p>
           </div>
           <span className="pcg-collapse-icon">{open ? "▾" : "▸"}</span>
@@ -270,26 +316,45 @@ export default function ProyectoCostosGraficas({
 
         {open && (
           <div className="pcg-actions">
-            <select
-              value={periodo}
-              onChange={(e) => setPeriodo(e.target.value)}
-              disabled={loadingPeriods || periodos.length === 0}
-            >
-              {periodos.length === 0 && <option value="">Sin períodos</option>}
-              {periodos.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
+            <label className="pcg-range-field">
+              <span>Desde</span>
+              <select
+                value={periodoDesde}
+                onChange={(e) => setPeriodoDesde(e.target.value)}
+                disabled={loadingPeriods || periodos.length === 0}
+              >
+                {periodos.length === 0 && <option value="">Sin períodos</option>}
+                {periodos.map((p) => (
+                  <option key={`desde-${p}`} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="pcg-range-field">
+              <span>Hasta</span>
+              <select
+                value={periodoHasta}
+                onChange={(e) => setPeriodoHasta(e.target.value)}
+                disabled={loadingPeriods || periodos.length === 0}
+              >
+                {periodos.length === 0 && <option value="">Sin períodos</option>}
+                {periodos.map((p) => (
+                  <option key={`hasta-${p}`} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <button
               type="button"
               className="pcg-btn secondary"
-              onClick={() => fetchGraficas(periodo)}
-              disabled={!periodo || loadingCharts}
+              onClick={() => fetchGraficas(periodoDesde, periodoHasta)}
+              disabled={!periodoDesde || !periodoHasta || loadingCharts}
             >
-              {loadingCharts ? "Cargando..." : "Recargar"}
+              {loadingCharts ? "Cargando..." : "Aplicar rango"}
             </button>
           </div>
         )}
@@ -321,7 +386,7 @@ export default function ProyectoCostosGraficas({
 
           <div className="pcg-grid">
             <div className="pcg-chart-card">
-              <h4>Horas estimadas vs reales por perfil</h4>
+              <h4>Horas estimadas vs reales por perfil — total del rango</h4>
 
               {horasPorPerfilData.length === 0 ? (
                 <div className="pcg-empty">Sin datos para esta gráfica</div>
@@ -367,7 +432,7 @@ export default function ProyectoCostosGraficas({
             </div>
 
             <div className="pcg-chart-card">
-              <h4>Costo estimado vs real por perfil</h4>
+              <h4>Costo estimado vs real por perfil — total del rango</h4>
 
               {costosPorPerfilData.length === 0 ? (
                 <div className="pcg-empty">Sin datos para esta gráfica</div>

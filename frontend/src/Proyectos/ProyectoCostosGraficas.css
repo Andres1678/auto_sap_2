@@ -166,3 +166,16 @@
     width: 100%;
   }
 }
+
+.pcg-range-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.pcg-range-field select {
+  min-width: 120px;
+}

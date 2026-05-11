@@ -8492,8 +8492,15 @@ def get_proyecto_costos_graficas(proyecto_id):
     def _period_key(anio, mes):
         return f"{int(anio):04d}-{int(mes):02d}"
 
-    def _period_leq(anio_a, mes_a, anio_b, mes_b):
-        return (int(anio_a), int(mes_a)) <= (int(anio_b), int(mes_b))
+    def _period_tuple(anio, mes):
+        return (int(anio), int(mes))
+
+    def _period_in_range(anio_periodo, mes_periodo):
+        if not anio_periodo or not mes_periodo:
+            return False
+
+        current = _period_tuple(anio_periodo, mes_periodo)
+        return periodo_desde <= current <= periodo_hasta
 
     def _ensure_bucket(perfil_nombre):
         if perfil_nombre not in horas_por_perfil:
@@ -8539,44 +8546,106 @@ def get_proyecto_costos_graficas(proyecto_id):
     ]
 
     # ---------------------------------------------------------
-    # 2) Periodo solicitado
-    # ---------------------------------------------------------
-    anio_raw = request.args.get("anio")
-    mes_raw = request.args.get("mes")
-
-    if anio_raw and mes_raw:
-        try:
-            anio = int(anio_raw)
-            mes = int(mes_raw)
-        except Exception:
-            return jsonify({
-                "mensaje": "Periodo inválido. Debes enviar anio y mes numéricos."
-            }), 400
-    else:
-        hoy = datetime.now(ZoneInfo("America/Bogota")).date()
-        anio, mes = hoy.year, hoy.month
-
-    if anio <= 0 or mes < 1 or mes > 12:
-        return jsonify({
-            "mensaje": "Periodo inválido. El mes debe estar entre 1 y 12."
-        }), 400
-
-    # ---------------------------------------------------------
-    # 3) Proyecto con planeación
+    # 2) Proyecto con planeación
     # ---------------------------------------------------------
     p = (
-        Proyecto.query
-        .options(
+        Proyecto.query.options(
             joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.perfil),
             joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.modulo),
+            joinedload(Proyecto.presupuestos_mensuales),
+            joinedload(Proyecto.costos_adicionales),
             joinedload(Proyecto.mapeos),
         )
         .get_or_404(proyecto_id)
     )
 
     # ---------------------------------------------------------
+    # 3) Rango de meses
+    #    Soporta:
+    #    - anio_desde, mes_desde, anio_hasta, mes_hasta
+    #    - fallback viejo: anio, mes
+    #    - si no viene nada, toma el último período disponible
+    # ---------------------------------------------------------
+    anio_desde = request.args.get("anio_desde", type=int)
+    mes_desde = request.args.get("mes_desde", type=int)
+    anio_hasta = request.args.get("anio_hasta", type=int)
+    mes_hasta = request.args.get("mes_hasta", type=int)
+
+    anio_single = request.args.get("anio", type=int)
+    mes_single = request.args.get("mes", type=int)
+
+    if anio_desde and mes_desde and anio_hasta and mes_hasta:
+        if mes_desde < 1 or mes_desde > 12 or mes_hasta < 1 or mes_hasta > 12:
+            return jsonify({
+                "mensaje": "Rango de meses inválido. El mes debe estar entre 1 y 12."
+            }), 400
+
+        periodo_desde = _period_tuple(anio_desde, mes_desde)
+        periodo_hasta = _period_tuple(anio_hasta, mes_hasta)
+
+        if periodo_desde > periodo_hasta:
+            periodo_desde, periodo_hasta = periodo_hasta, periodo_desde
+
+    elif anio_single and mes_single:
+        if mes_single < 1 or mes_single > 12:
+            return jsonify({
+                "mensaje": "Periodo inválido. El mes debe estar entre 1 y 12."
+            }), 400
+
+        periodo_desde = _period_tuple(anio_single, mes_single)
+        periodo_hasta = _period_tuple(anio_single, mes_single)
+
+    else:
+        periodos = set()
+
+        for row in (p.perfiles_plan or []):
+            if row.anio and row.mes:
+                periodos.add(_period_tuple(row.anio, row.mes))
+
+        for row in (p.presupuestos_mensuales or []):
+            if row.anio and row.mes:
+                periodos.add(_period_tuple(row.anio, row.mes))
+
+        consultor_join_cond_periodos = db.or_(
+            func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.usuario)),
+            func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.nombre)),
+        )
+
+        reg_periodos_query = (
+            db.session.query(
+                extract("year", cast(Registro.fecha, db.Date)).label("anio"),
+                extract("month", cast(Registro.fecha, db.Date)).label("mes"),
+            )
+            .select_from(Registro)
+            .outerjoin(Consultor, consultor_join_cond_periodos)
+            .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
+        )
+
+        reg_periodos = (
+            _apply_project_filter_shared(reg_periodos_query, proyecto_id)
+            .distinct()
+            .all()
+        )
+
+        for rp in reg_periodos:
+            if rp.anio and rp.mes:
+                periodos.add(_period_tuple(rp.anio, rp.mes))
+
+        if periodos:
+            ultimo = sorted(periodos)[-1]
+            periodo_desde = ultimo
+            periodo_hasta = ultimo
+        else:
+            hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+            periodo_desde = _period_tuple(hoy.year, hoy.month)
+            periodo_hasta = _period_tuple(hoy.year, hoy.month)
+
+    anio_desde, mes_desde = periodo_desde
+    anio_hasta, mes_hasta = periodo_hasta
+
+    # ---------------------------------------------------------
     # 4) Helper: perfil vigente del consultor en una fecha
-    #    Fallback cuando no se logra identificar perfil por planeación.
+    #    Fallback cuando no se puede identificar perfil por módulo planeado.
     # ---------------------------------------------------------
     consultor_perfiles_rows = (
         ConsultorPerfil.query
@@ -8617,10 +8686,10 @@ def get_proyecto_costos_graficas(proyecto_id):
         return None
 
     # ---------------------------------------------------------
-    # 5) Mapa perfil planeado por módulo y periodo
-    #    Este es el cambio clave:
-    #    Si un registro real viene con módulo X, primero buscamos
-    #    qué perfil planeó ese módulo en ese periodo.
+    # 5) Mapa perfil planeado por módulo y período
+    #    Cambio clave:
+    #    El real primero intenta caer en el perfil planeado para
+    #    el módulo del registro y el mes exacto.
     # ---------------------------------------------------------
     perfil_planeado_por_periodo_modulo = defaultdict(set)
     perfil_planeado_por_modulo = defaultdict(set)
@@ -8656,21 +8725,14 @@ def get_proyecto_costos_graficas(proyecto_id):
             set()
         )
 
-        # Si para ese periodo y módulo solo hay un perfil planeado,
-        # se usa ese perfil.
         if len(perfiles_periodo) == 1:
             return next(iter(perfiles_periodo))
 
-        # Si no hay planeación específica en ese mes, pero ese módulo
-        # solo pertenece a un perfil en toda la planeación del proyecto,
-        # se usa ese perfil.
         perfiles_modulo = perfil_planeado_por_modulo.get(modulo_reg, set())
 
         if len(perfiles_modulo) == 1:
             return next(iter(perfiles_modulo))
 
-        # Si hay varios perfiles posibles para el mismo módulo,
-        # no se fuerza para evitar costear en un perfil incorrecto.
         return None
 
     # ---------------------------------------------------------
@@ -8682,9 +8744,16 @@ def get_proyecto_costos_graficas(proyecto_id):
 
     # ---------------------------------------------------------
     # 7) PLANEADO por perfil
+    #    Ahora suma todos los meses dentro del rango.
     # ---------------------------------------------------------
     for row in (p.perfiles_plan or []):
         if not bool(getattr(row, "activo", True)):
+            continue
+
+        if not row.anio or not row.mes:
+            continue
+
+        if not _period_in_range(row.anio, row.mes):
             continue
 
         row_modulo = _up(
@@ -8706,16 +8775,14 @@ def get_proyecto_costos_graficas(proyecto_id):
         horas_est = _dec(row.horas_estimadas)
         costo_est = _dec(row.costo_estimado)
 
-        if int(row.anio) == int(anio) and int(row.mes) == int(mes):
-            horas_por_perfil[perfil_nombre]["estimadas"] += horas_est
-            costos_por_perfil[perfil_nombre]["estimado"] += costo_est
+        horas_por_perfil[perfil_nombre]["estimadas"] += horas_est
+        costos_por_perfil[perfil_nombre]["estimado"] += costo_est
 
-        if _period_leq(row.anio, row.mes, anio, mes):
-            acumulado_horas_por_perfil[perfil_nombre]["estimadas"] += horas_est
+        acumulado_horas_por_perfil[perfil_nombre]["estimadas"] += horas_est
 
     # ---------------------------------------------------------
     # 8) REAL por perfil desde registros del proyecto
-    #    Se usa _apply_project_filter_shared para que coincida
+    #    Ahora usa _apply_project_filter_shared para coincidir
     #    con resumen: proyecto_id, PRC y mapeos.
     # ---------------------------------------------------------
     consultor_join_cond = db.or_(
@@ -8740,6 +8807,9 @@ def get_proyecto_costos_graficas(proyecto_id):
         if not ry or not rm:
             continue
 
+        if not _period_in_range(ry, rm):
+            continue
+
         modulo_reg = _up(reg.modulo)
         equipo_reg = _up(getattr(equipo, "nombre", None) or reg.equipo)
         usuario_reg = _low(getattr(consultor, "usuario", None) or reg.usuario_consultor)
@@ -8753,18 +8823,10 @@ def get_proyecto_costos_graficas(proyecto_id):
         if filtro_consultores and usuario_reg not in filtro_consultores:
             continue
 
-        # -----------------------------------------------------
-        # Cambio clave:
-        # Primero intentamos cruzar el real contra la planeación
-        # por módulo y periodo.
-        # -----------------------------------------------------
+        # Primero intenta tomar el perfil planeado por módulo + período
         perfil_nombre = _perfil_planeado_para_registro(ry, rm, modulo_reg)
 
-        # -----------------------------------------------------
-        # Fallback:
-        # Si el módulo no permite identificar un único perfil,
-        # usamos el perfil vigente del consultor.
-        # -----------------------------------------------------
+        # Fallback al perfil vigente del consultor
         if not perfil_nombre:
             perfil_obj = _perfil_vigente(getattr(consultor, "id", None), fecha_ref)
             perfil_nombre = getattr(perfil_obj, "nombre", None) or "SIN PERFIL ASIGNADO"
@@ -8804,12 +8866,10 @@ def get_proyecto_costos_graficas(proyecto_id):
             rounding=ROUND_HALF_UP
         )
 
-        if int(ry) == int(anio) and int(rm) == int(mes):
-            horas_por_perfil[perfil_nombre]["reales"] += horas_real
-            costos_por_perfil[perfil_nombre]["real"] += costo_real
+        horas_por_perfil[perfil_nombre]["reales"] += horas_real
+        costos_por_perfil[perfil_nombre]["real"] += costo_real
 
-        if _period_leq(ry, rm, anio, mes):
-            acumulado_horas_por_perfil[perfil_nombre]["reales"] += horas_real
+        acumulado_horas_por_perfil[perfil_nombre]["reales"] += horas_real
 
     # ---------------------------------------------------------
     # 9) Serialización
@@ -8854,9 +8914,14 @@ def get_proyecto_costos_graficas(proyecto_id):
     ]
 
     return jsonify({
-        "anio": int(anio),
-        "mes": int(mes),
-        "periodo": _period_key(anio, mes),
+        "anio_desde": int(anio_desde),
+        "mes_desde": int(mes_desde),
+        "anio_hasta": int(anio_hasta),
+        "mes_hasta": int(mes_hasta),
+        "periodo_desde": _period_key(anio_desde, mes_desde),
+        "periodo_hasta": _period_key(anio_hasta, mes_hasta),
+        "periodo": f"{_period_key(anio_desde, mes_desde)} a {_period_key(anio_hasta, mes_hasta)}",
+
         "horas_por_perfil": horas_out,
         "costos_por_perfil": costos_out,
         "acumulado_horas_por_perfil": acumulado_out,
