@@ -158,7 +158,7 @@ export default function ProyectoCostosGraficas({
     setLoadingPeriods(true);
     try {
       const res = await jfetch(
-        `/proyectos/${proyectoId}/costos/resumen${buildQuery("", filtros)}`
+        `/proyectos/${proyectoId}/costos/resumen${buildQuery("", "", filtros)}`
       );
       const data = await res.json().catch(() => ({}));
 
@@ -258,12 +258,6 @@ export default function ProyectoCostosGraficas({
       mounted = false;
     };
   }, [proyectoId, JSON.stringify(periodosOptions), JSON.stringify(filtros)]);
-
-  useEffect(() => {
-    if (!proyectoId || !periodo) return;
-    fetchGraficas(periodo);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periodo]);
 
   const resumenCards = useMemo(() => {
     const horasEstimadas = horasPorPerfilData.reduce(
