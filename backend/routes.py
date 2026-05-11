@@ -8363,7 +8363,7 @@ def get_proyecto_costos_resumen(proyecto_id):
         costo_adicional = _dec(item["costo_adicional"])
         costo_planeado_total = costo_planeado + costo_adicional
         costo_real = _dec(item["costo_real"])
-        variacion_costo = costo_real - costo_planeado_total
+        variacion_costo = costo_planeado_total - costo_real
 
         pct_uso = None
         if costo_planeado_total > 0:

@@ -794,7 +794,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
       const costoReal = toNumber(row.costo_real);
       const baseCostos = costoPlaneado + costoAdicional;
 
-      const variacionCosto = costoReal - baseCostos;
+      const variacionCosto = baseCostos - costoReal;
       const pctUsoCostos =
         baseCostos > 0 ? (costoReal / baseCostos) * 100 : null;
 
