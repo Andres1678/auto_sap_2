@@ -436,7 +436,7 @@ export default function ProyectoCostosPanel({ proyectoId }) {
 
         const next = { ...row, [key]: value };
 
-        if (key === "perfil_id" && !value) {
+        if (key === "perfil_id" && String(value) !== String(row.perfil_id ?? "")) {
           next.modulo_id = "";
         }
 
@@ -1089,6 +1089,28 @@ export default function ProyectoCostosPanel({ proyectoId }) {
   );
 
   if (!proyectoId) return null;
+
+  const getModulosPlaneacionByPerfil = (perfilId) => {
+    const perfil = (catalogos.perfiles || []).find(
+      (p) => String(p.id) === String(perfilId)
+    );
+
+    const modulosPerfil = Array.isArray(perfil?.modulos) ? perfil.modulos : [];
+
+    if (modulosPerfil.length === 0) {
+      return [];
+    }
+
+    const permitidos = new Set(
+      modulosPerfil
+        .map((m) => String(m.id ?? m.modulo_id ?? m.modulo?.id ?? ""))
+        .filter(Boolean)
+    );
+
+    return (catalogos.modulosPlaneacion || []).filter((m) =>
+      permitidos.has(String(m.id))
+    );
+  };
 
   return (
     <div className="pcp">
@@ -1764,7 +1786,8 @@ export default function ProyectoCostosPanel({ proyectoId }) {
                             disabled={!row.perfil_id}
                           >
                             <option value="">Seleccione</option>
-                            {(catalogos.modulosPlaneacion || []).map((m) => (
+
+                            {getModulosPlaneacionByPerfil(row.perfil_id).map((m) => (
                               <option key={String(m.id)} value={String(m.id)}>
                                 {m.nombre}
                               </option>

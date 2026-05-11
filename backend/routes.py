@@ -7239,15 +7239,50 @@ def _cost_parse_decimal(v):
     except Exception:
         return None
 
-def _perfil_to_dict(x: Perfil, permitido_en_modulos=True):
-    return {
+def _perfil_to_dict(x: Perfil, permitido_en_modulos=True, include_modulos=False, modulos_permitidos_ids=None):
+    modulos_permitidos_ids = (
+        {int(m) for m in modulos_permitidos_ids}
+        if modulos_permitidos_ids
+        else None
+    )
+
+    out = {
         "id": x.id,
         "codigo": x.codigo,
         "nombre": x.nombre,
+        "descripcion": getattr(x, "descripcion", None),
         "activo": bool(x.activo),
         "orden": int(x.orden or 0),
         "permitido_en_modulos": bool(permitido_en_modulos),
     }
+
+    if include_modulos:
+        modulos = []
+
+        for mp in (getattr(x, "modulos", None) or []):
+            modulo = getattr(mp, "modulo", None)
+
+            if not modulo:
+                continue
+
+            if not bool(getattr(mp, "activo", True)):
+                continue
+
+            if modulos_permitidos_ids is not None and int(modulo.id) not in modulos_permitidos_ids:
+                continue
+
+            modulos.append({
+                "id": modulo.id,
+                "modulo_id": modulo.id,
+                "nombre": modulo.nombre,
+                "activo": bool(getattr(mp, "activo", True)),
+                "modulo_perfil_id": mp.id,
+            })
+
+        modulos.sort(key=lambda m: str(m["nombre"] or "").upper())
+        out["modulos"] = modulos
+
+    return out
 
 def _presupuesto_mensual_to_dict(x: ProyectoPresupuestoMensual):
     return {
@@ -7341,6 +7376,10 @@ def get_proyecto_costos(proyecto_id):
             joinedload(Proyecto.cliente),
             joinedload(Proyecto.oportunidad),
             joinedload(Proyecto.modulos).joinedload(ProyectoModulo.modulo),
+            joinedload(Proyecto.perfiles)
+                .joinedload(ProyectoPerfil.perfil)
+                .joinedload(Perfil.modulos)
+                .joinedload(ModuloPerfil.modulo),
             joinedload(Proyecto.fase),
             joinedload(Proyecto.fases).joinedload(ProyectoFaseProyecto.fase),
             joinedload(Proyecto.presupuestos_mensuales),
@@ -7351,17 +7390,56 @@ def get_proyecto_costos(proyecto_id):
         .get_or_404(proyecto_id)
     )
 
-    modulos_planeacion = (
-        Modulo.query
-        .order_by(Modulo.nombre.asc())
-        .all()
-    )
+    perfiles_proyecto = []
+    perfiles_proyecto_ids = set()
 
-    perfiles_catalogo = (
-        Perfil.query
-        .filter(Perfil.activo == True)
-        .order_by(Perfil.orden.asc(), Perfil.nombre.asc())
-        .all()
+    for pp in (getattr(p, "perfiles", None) or []):
+        perfil = getattr(pp, "perfil", None)
+
+        if not perfil:
+            continue
+
+        if not bool(getattr(pp, "activo", True)):
+            continue
+
+        perfiles_proyecto.append(perfil)
+        perfiles_proyecto_ids.add(int(perfil.id))
+
+    modulos_proyecto = []
+    modulos_proyecto_ids = set()
+
+    for pm in (getattr(p, "modulos", None) or []):
+        modulo = getattr(pm, "modulo", None)
+
+        if not modulo:
+            continue
+
+        if not bool(getattr(pm, "activo", True)):
+            continue
+
+        modulos_proyecto.append(modulo)
+        modulos_proyecto_ids.add(int(modulo.id))
+
+    modulos_planeacion_map = {}
+
+    for perfil in perfiles_proyecto:
+        for mp in (getattr(perfil, "modulos", None) or []):
+            modulo = getattr(mp, "modulo", None)
+
+            if not modulo:
+                continue
+
+            if not bool(getattr(mp, "activo", True)):
+                continue
+
+            if modulos_proyecto_ids and int(modulo.id) not in modulos_proyecto_ids:
+                continue
+
+            modulos_planeacion_map[int(modulo.id)] = modulo
+
+    modulos_planeacion = sorted(
+        modulos_planeacion_map.values(),
+        key=lambda m: str(m.nombre or "").upper()
     )
 
     consultor_join_cond = db.or_(
@@ -7436,9 +7514,24 @@ def get_proyecto_costos(proyecto_id):
                 consultores_map[usuario]["modulos"].append(modulo)
 
     return jsonify({
-        "proyecto": proyecto_to_dict(p, include_modulos=True, include_fases=True),
+        "proyecto": proyecto_to_dict(
+            p,
+            include_modulos=True,
+            include_fases=True,
+            include_perfiles=True,
+        ),
         "catalogos": {
-            "perfiles": [_perfil_to_dict(x) for x in perfiles_catalogo],
+            "perfiles": [
+                _perfil_to_dict(
+                    perfil,
+                    include_modulos=True,
+                    modulos_permitidos_ids=modulos_proyecto_ids,
+                )
+                for perfil in sorted(
+                    perfiles_proyecto,
+                    key=lambda x: (int(x.orden or 0), str(x.nombre or "").upper())
+                )
+            ],
             "equipos": sorted(
                 equipos_map.values(),
                 key=lambda x: x["nombre"].upper()
@@ -7451,7 +7544,6 @@ def get_proyecto_costos(proyecto_id):
                 consultores_map.values(),
                 key=lambda x: x["nombre"].upper()
             ),
-
             "modulos_planeacion": [
                 {
                     "id": m.id,
@@ -7626,9 +7718,51 @@ def save_proyecto_perfil_plan(proyecto_id):
             }), 400
 
         # ============================================================
-        # 1) VALIDAR FILAS ANTES DE BORRAR / GUARDAR
+        # 1) PERFILES Y MÓDULOS PERMITIDOS EN EL PROYECTO
+        # ============================================================
+        proyecto_perfil_ids = {
+            int(x.perfil_id)
+            for x in (
+                ProyectoPerfil.query
+                .filter_by(proyecto_id=proyecto_id)
+                .filter(ProyectoPerfil.activo == True)
+                .all()
+            )
+            if x.perfil_id
+        }
+
+        proyecto_modulo_ids = {
+            int(x.modulo_id)
+            for x in (
+                ProyectoModulo.query
+                .filter_by(proyecto_id=proyecto_id)
+                .filter(ProyectoModulo.activo == True)
+                .all()
+            )
+            if x.modulo_id
+        }
+
+        if rows and not proyecto_perfil_ids:
+            return jsonify({
+                "mensaje": (
+                    "El proyecto no tiene perfiles asociados. "
+                    "Primero agrega perfiles al proyecto antes de planear costos."
+                )
+            }), 400
+
+        if rows and not proyecto_modulo_ids:
+            return jsonify({
+                "mensaje": (
+                    "El proyecto no tiene módulos asociados. "
+                    "Primero agrega módulos al proyecto antes de planear costos."
+                )
+            }), 400
+
+        # ============================================================
+        # 2) VALIDAR FILAS ANTES DE BORRAR / GUARDAR
         # ============================================================
         seen = set()
+        normalized_rows = []
 
         for idx, row in enumerate(rows):
             if not isinstance(row, dict):
@@ -7656,39 +7790,32 @@ def save_proyecto_perfil_plan(proyecto_id):
                     "mensaje": f"Fila inválida en planeación por perfil (índice {idx})"
                 }), 400
 
-            consultor_id_raw = row.get("consultor_id")
-            consultor_id_key = None
-
-            if consultor_id_raw not in ("", "null", "None", None):
-                try:
-                    consultor_id_key = int(consultor_id_raw)
-                except Exception:
-                    return jsonify({
-                        "mensaje": f"Consultor inválido en planeación por perfil (índice {idx})"
-                    }), 400
-
-            key = (anio, mes, perfil_id, modulo_id, consultor_id_key)
-
-            if key in seen:
+            # --------------------------------------------------------
+            # Validar que el perfil esté asociado directamente al proyecto
+            # --------------------------------------------------------
+            if perfil_id not in proyecto_perfil_ids:
                 return jsonify({
                     "mensaje": (
-                        "Fila duplicada para el mismo periodo/perfil/módulo/consultor: "
-                        f"{anio}-{mes}, perfil {perfil_id}, módulo {modulo_id}, "
-                        f"consultor {consultor_id_key or 'SIN CONSULTOR'}"
+                        f"El perfil {perfil_id} no está asociado al proyecto. "
+                        "Primero debes agregarlo en la configuración del proyecto."
                     )
                 }), 400
 
-            seen.add(key)
+            # --------------------------------------------------------
+            # Validar que el módulo esté asociado directamente al proyecto
+            # --------------------------------------------------------
+            if modulo_id not in proyecto_modulo_ids:
+                return jsonify({
+                    "mensaje": (
+                        f"El módulo {modulo_id} no está asociado al proyecto. "
+                        "Primero debes agregarlo en la configuración del proyecto."
+                    )
+                }), 400
 
             perfil = Perfil.query.get(perfil_id)
             if not perfil:
                 return jsonify({
                     "mensaje": f"Perfil no existe: {perfil_id}"
-                }), 400
-
-            if not bool(perfil.activo):
-                return jsonify({
-                    "mensaje": f"El perfil está inactivo: {perfil.nombre}"
                 }), 400
 
             modulo = Modulo.query.get(modulo_id)
@@ -7697,40 +7824,104 @@ def save_proyecto_perfil_plan(proyecto_id):
                     "mensaje": f"Módulo no existe: {modulo_id}"
                 }), 400
 
-            if consultor_id_key:
-                consultor = Consultor.query.get(consultor_id_key)
-                if not consultor:
-                    return jsonify({
-                        "mensaje": f"Consultor no existe: {consultor_id_key}"
-                    }), 400
-
-        # ============================================================
-        # 2) AUTO-ASOCIAR MÓDULOS AL PROYECTO
-        #    Si existe inactivo, lo reactiva.
-        # ============================================================
-        for row in rows:
-            modulo_id = int(row.get("modulo_id"))
-
-            proyecto_modulo = (
-                ProyectoModulo.query
-                .filter_by(
-                    proyecto_id=proyecto_id,
-                    modulo_id=modulo_id
-                )
+            # --------------------------------------------------------
+            # Validar que el módulo pertenezca al perfil
+            # --------------------------------------------------------
+            relacion_perfil_modulo = (
+                ModuloPerfil.query
+                .filter(ModuloPerfil.perfil_id == perfil_id)
+                .filter(ModuloPerfil.modulo_id == modulo_id)
+                .filter(ModuloPerfil.activo == True)
                 .first()
             )
 
-            if proyecto_modulo:
-                proyecto_modulo.activo = True
-            else:
-                db.session.add(ProyectoModulo(
-                    proyecto_id=proyecto_id,
-                    modulo_id=modulo_id,
-                    activo=True,
-                ))
+            if not relacion_perfil_modulo:
+                return jsonify({
+                    "mensaje": (
+                        f"El módulo '{modulo.nombre}' no pertenece al perfil "
+                        f"'{perfil.nombre}'. Selecciona un módulo permitido "
+                        "para ese perfil."
+                    )
+                }), 400
+
+            consultor_id_raw = row.get("consultor_id")
+            consultor_id = None
+
+            if consultor_id_raw not in ("", "null", "None", None):
+                try:
+                    consultor_id = int(consultor_id_raw)
+                except Exception:
+                    return jsonify({
+                        "mensaje": f"Consultor inválido en planeación por perfil (índice {idx})"
+                    }), 400
+
+                consultor = Consultor.query.get(consultor_id)
+                if not consultor:
+                    return jsonify({
+                        "mensaje": f"Consultor no existe: {consultor_id}"
+                    }), 400
+
+            key = (anio, mes, perfil_id, modulo_id, consultor_id)
+
+            if key in seen:
+                return jsonify({
+                    "mensaje": (
+                        "Fila duplicada para el mismo periodo/perfil/módulo/consultor: "
+                        f"{anio}-{mes}, perfil {perfil_id}, módulo {modulo_id}, "
+                        f"consultor {consultor_id or 'SIN CONSULTOR'}"
+                    )
+                }), 400
+
+            seen.add(key)
+
+            # --------------------------------------------------------
+            # Recalcular costo e ingreso en backend
+            # --------------------------------------------------------
+            valor_hora_ingreso_raw = (
+                row.get("valor_hora_ingreso")
+                if row.get("valor_hora_ingreso") not in ("", None, "null", "None")
+                else row.get("fte_estimado")
+            )
+
+            horas_estimadas = _cost_parse_decimal(row.get("horas_estimadas")) or Decimal("0.00")
+            valor_hora_ingreso_dec = _cost_parse_decimal(valor_hora_ingreso_raw) or Decimal("0.00")
+            valor_hora_planeado_dec = _cost_parse_decimal(row.get("valor_hora_planeado")) or Decimal("0.00")
+
+            costo_estimado = (horas_estimadas * valor_hora_planeado_dec).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP
+            )
+
+            ingreso_estimado = (horas_estimadas * valor_hora_ingreso_dec).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP
+            )
+
+            try:
+                orden = int(row.get("orden") or idx)
+            except Exception:
+                orden = idx
+
+            normalized_rows.append({
+                "anio": anio,
+                "mes": mes,
+                "perfil_id": perfil_id,
+                "modulo_id": modulo_id,
+                "consultor_id": consultor_id,
+                "horas_estimadas": horas_estimadas,
+                "fte_estimado": valor_hora_ingreso_dec,
+                "valor_hora_planeado": valor_hora_planeado_dec,
+                "costo_estimado": costo_estimado,
+                "ingreso_estimado": ingreso_estimado,
+                "observacion": (row.get("observacion") or "").strip() or None,
+                "orden": orden,
+                "activo": _to_bool2(row.get("activo"), default=True),
+            })
 
         # ============================================================
         # 3) BORRAR PLANEACIÓN ACTUAL DEL PROYECTO
+        #    IMPORTANTE:
+        #    Ya NO se autoasocian módulos al proyecto desde esta ruta.
         # ============================================================
         ProyectoPerfilPlan.query.filter_by(
             proyecto_id=proyecto_id
@@ -7739,39 +7930,24 @@ def save_proyecto_perfil_plan(proyecto_id):
         # ============================================================
         # 4) INSERTAR NUEVA PLANEACIÓN
         # ============================================================
-        for idx, row in enumerate(rows):
-            consultor_id = row.get("consultor_id")
-
-            if consultor_id in ("", "null", "None", None):
-                consultor_id = None
-            else:
-                consultor_id = int(consultor_id)
-
-            # El frontend puede enviar valor_hora_ingreso.
-            # En BD se está usando fte_estimado para ese valor.
-            valor_hora_ingreso = (
-                row.get("valor_hora_ingreso")
-                if row.get("valor_hora_ingreso") not in ("", None, "null", "None")
-                else row.get("fte_estimado")
-            )
-
+        for row in normalized_rows:
             db.session.add(ProyectoPerfilPlan(
                 proyecto_id=proyecto_id,
-                anio=int(row.get("anio")),
-                mes=int(row.get("mes")),
-                perfil_id=int(row.get("perfil_id")),
-                modulo_id=int(row.get("modulo_id")),
-                consultor_id=consultor_id,
+                anio=row["anio"],
+                mes=row["mes"],
+                perfil_id=row["perfil_id"],
+                modulo_id=row["modulo_id"],
+                consultor_id=row["consultor_id"],
 
-                horas_estimadas=_cost_parse_decimal(row.get("horas_estimadas")),
-                fte_estimado=_cost_parse_decimal(valor_hora_ingreso),
-                valor_hora_planeado=_cost_parse_decimal(row.get("valor_hora_planeado")),
-                costo_estimado=_cost_parse_decimal(row.get("costo_estimado")),
-                ingreso_estimado=_cost_parse_decimal(row.get("ingreso_estimado")),
+                horas_estimadas=row["horas_estimadas"],
+                fte_estimado=row["fte_estimado"],
+                valor_hora_planeado=row["valor_hora_planeado"],
+                costo_estimado=row["costo_estimado"],
+                ingreso_estimado=row["ingreso_estimado"],
 
-                observacion=(row.get("observacion") or "").strip() or None,
-                orden=int(row.get("orden") or idx),
-                activo=_to_bool2(row.get("activo"), default=True),
+                observacion=row["observacion"],
+                orden=row["orden"],
+                activo=row["activo"],
             ))
 
         db.session.commit()
@@ -7790,7 +7966,8 @@ def save_proyecto_perfil_plan(proyecto_id):
             .order_by(
                 ProyectoPerfilPlan.anio.asc(),
                 ProyectoPerfilPlan.mes.asc(),
-                ProyectoPerfilPlan.orden.asc()
+                ProyectoPerfilPlan.orden.asc(),
+                ProyectoPerfilPlan.id.asc(),
             )
             .all()
         )
@@ -8318,16 +8495,30 @@ def get_proyecto_costos_graficas(proyecto_id):
     def _period_leq(anio_a, mes_a, anio_b, mes_b):
         return (int(anio_a), int(mes_a)) <= (int(anio_b), int(mes_b))
 
-    def _empty_bucket():
-        return {
-            "horas_estimadas": Decimal("0.00"),
-            "horas_reales": Decimal("0.00"),
-            "costo_estimado": Decimal("0.00"),
-            "costo_real": Decimal("0.00"),
-        }
+    def _ensure_bucket(perfil_nombre):
+        if perfil_nombre not in horas_por_perfil:
+            horas_por_perfil[perfil_nombre] = {
+                "perfil": perfil_nombre,
+                "estimadas": Decimal("0.00"),
+                "reales": Decimal("0.00"),
+            }
+
+        if perfil_nombre not in costos_por_perfil:
+            costos_por_perfil[perfil_nombre] = {
+                "perfil": perfil_nombre,
+                "estimado": Decimal("0.00"),
+                "real": Decimal("0.00"),
+            }
+
+        if perfil_nombre not in acumulado_horas_por_perfil:
+            acumulado_horas_por_perfil[perfil_nombre] = {
+                "perfil": perfil_nombre,
+                "estimadas": Decimal("0.00"),
+                "reales": Decimal("0.00"),
+            }
 
     # ---------------------------------------------------------
-    # filtros globales opcionales
+    # 1) Filtros globales opcionales
     # ---------------------------------------------------------
     filtro_equipos = [
         str(v).strip().upper()
@@ -8348,57 +8539,49 @@ def get_proyecto_costos_graficas(proyecto_id):
     ]
 
     # ---------------------------------------------------------
-    # proyecto + periodo seleccionado
+    # 2) Periodo solicitado
+    # ---------------------------------------------------------
+    anio_raw = request.args.get("anio")
+    mes_raw = request.args.get("mes")
+
+    if anio_raw and mes_raw:
+        try:
+            anio = int(anio_raw)
+            mes = int(mes_raw)
+        except Exception:
+            return jsonify({
+                "mensaje": "Periodo inválido. Debes enviar anio y mes numéricos."
+            }), 400
+    else:
+        hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+        anio, mes = hoy.year, hoy.month
+
+    if anio <= 0 or mes < 1 or mes > 12:
+        return jsonify({
+            "mensaje": "Periodo inválido. El mes debe estar entre 1 y 12."
+        }), 400
+
+    # ---------------------------------------------------------
+    # 3) Proyecto con planeación
     # ---------------------------------------------------------
     p = (
-        Proyecto.query.options(
+        Proyecto.query
+        .options(
             joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.perfil),
             joinedload(Proyecto.perfiles_plan).joinedload(ProyectoPerfilPlan.modulo),
-            joinedload(Proyecto.presupuestos_mensuales),
-            joinedload(Proyecto.costos_adicionales),
+            joinedload(Proyecto.mapeos),
         )
         .get_or_404(proyecto_id)
     )
 
-    anio = request.args.get("anio", type=int)
-    mes = request.args.get("mes", type=int)
-
-    if not anio or not mes or mes < 1 or mes > 12:
-        periodos = set()
-
-        for row in (p.perfiles_plan or []):
-            if row.anio and row.mes:
-                periodos.add((int(row.anio), int(row.mes)))
-
-        for row in (p.presupuestos_mensuales or []):
-            if row.anio and row.mes:
-                periodos.add((int(row.anio), int(row.mes)))
-
-        reg_periodos = (
-            db.session.query(
-                extract("year", cast(Registro.fecha, db.Date)).label("anio"),
-                extract("month", cast(Registro.fecha, db.Date)).label("mes"),
-            )
-            .filter(Registro.proyecto_id == proyecto_id)
-            .distinct()
-            .all()
-        )
-
-        for rp in reg_periodos:
-            if rp.anio and rp.mes:
-                periodos.add((int(rp.anio), int(rp.mes)))
-
-        if periodos:
-            anio, mes = sorted(periodos)[-1]
-        else:
-            hoy = datetime.now()
-            anio, mes = hoy.year, hoy.month
-
     # ---------------------------------------------------------
-    # helper: perfil vigente del consultor en una fecha
+    # 4) Helper: perfil vigente del consultor en una fecha
+    #    Fallback cuando no se logra identificar perfil por planeación.
     # ---------------------------------------------------------
     consultor_perfiles_rows = (
-        ConsultorPerfil.query.options(joinedload(ConsultorPerfil.perfil))
+        ConsultorPerfil.query
+        .options(joinedload(ConsultorPerfil.perfil))
+        .filter(ConsultorPerfil.activo == True)
         .order_by(
             ConsultorPerfil.consultor_id.asc(),
             ConsultorPerfil.fecha_inicio.desc(),
@@ -8408,6 +8591,7 @@ def get_proyecto_costos_graficas(proyecto_id):
     )
 
     perfiles_por_consultor = defaultdict(list)
+
     for cp in consultor_perfiles_rows:
         perfiles_por_consultor[cp.consultor_id].append(cp)
 
@@ -8415,13 +8599,15 @@ def get_proyecto_costos_graficas(proyecto_id):
         if not consultor_id or not fecha_ref:
             return None
 
-        rows = perfiles_por_consultor.get(consultor_id, [])
-        for cp in rows:
+        rows_cp = perfiles_por_consultor.get(consultor_id, [])
+
+        for cp in rows_cp:
             fi = cp.fecha_inicio
             ff = cp.fecha_fin
 
             if fi and fecha_ref < fi:
                 continue
+
             if ff and fecha_ref > ff:
                 continue
 
@@ -8431,17 +8617,82 @@ def get_proyecto_costos_graficas(proyecto_id):
         return None
 
     # ---------------------------------------------------------
-    # 1) PLANEADO por perfil
+    # 5) Mapa perfil planeado por módulo y periodo
+    #    Este es el cambio clave:
+    #    Si un registro real viene con módulo X, primero buscamos
+    #    qué perfil planeó ese módulo en ese periodo.
     # ---------------------------------------------------------
-    horas_por_perfil = {}
-    costos_por_perfil = {}
-    acumulado_horas_por_perfil = {}
+    perfil_planeado_por_periodo_modulo = defaultdict(set)
+    perfil_planeado_por_modulo = defaultdict(set)
 
     for row in (p.perfiles_plan or []):
         if not bool(getattr(row, "activo", True)):
             continue
 
-        row_modulo = _up(getattr(row.modulo, "nombre", None) if getattr(row, "modulo", None) else None)
+        modulo_obj = getattr(row, "modulo", None)
+        perfil_obj = getattr(row, "perfil", None)
+
+        modulo_nombre = _up(getattr(modulo_obj, "nombre", None))
+        perfil_nombre = getattr(perfil_obj, "nombre", None)
+
+        if not modulo_nombre or not perfil_nombre:
+            continue
+
+        if row.anio and row.mes:
+            perfil_planeado_por_periodo_modulo[
+                (int(row.anio), int(row.mes), modulo_nombre)
+            ].add(perfil_nombre)
+
+        perfil_planeado_por_modulo[modulo_nombre].add(perfil_nombre)
+
+    def _perfil_planeado_para_registro(anio_reg, mes_reg, modulo_reg):
+        modulo_reg = _up(modulo_reg)
+
+        if not modulo_reg:
+            return None
+
+        perfiles_periodo = perfil_planeado_por_periodo_modulo.get(
+            (int(anio_reg), int(mes_reg), modulo_reg),
+            set()
+        )
+
+        # Si para ese periodo y módulo solo hay un perfil planeado,
+        # se usa ese perfil.
+        if len(perfiles_periodo) == 1:
+            return next(iter(perfiles_periodo))
+
+        # Si no hay planeación específica en ese mes, pero ese módulo
+        # solo pertenece a un perfil en toda la planeación del proyecto,
+        # se usa ese perfil.
+        perfiles_modulo = perfil_planeado_por_modulo.get(modulo_reg, set())
+
+        if len(perfiles_modulo) == 1:
+            return next(iter(perfiles_modulo))
+
+        # Si hay varios perfiles posibles para el mismo módulo,
+        # no se fuerza para evitar costear en un perfil incorrecto.
+        return None
+
+    # ---------------------------------------------------------
+    # 6) Estructuras de salida
+    # ---------------------------------------------------------
+    horas_por_perfil = {}
+    costos_por_perfil = {}
+    acumulado_horas_por_perfil = {}
+
+    # ---------------------------------------------------------
+    # 7) PLANEADO por perfil
+    # ---------------------------------------------------------
+    for row in (p.perfiles_plan or []):
+        if not bool(getattr(row, "activo", True)):
+            continue
+
+        row_modulo = _up(
+            getattr(row.modulo, "nombre", None)
+            if getattr(row, "modulo", None)
+            else None
+        )
+
         if filtro_modulos and row_modulo not in filtro_modulos:
             continue
 
@@ -8450,26 +8701,7 @@ def get_proyecto_costos_graficas(proyecto_id):
             or "SIN PERFIL"
         )
 
-        if perfil_nombre not in horas_por_perfil:
-            horas_por_perfil[perfil_nombre] = {
-                "perfil": perfil_nombre,
-                "estimadas": Decimal("0.00"),
-                "reales": Decimal("0.00"),
-            }
-
-        if perfil_nombre not in costos_por_perfil:
-            costos_por_perfil[perfil_nombre] = {
-                "perfil": perfil_nombre,
-                "estimado": Decimal("0.00"),
-                "real": Decimal("0.00"),
-            }
-
-        if perfil_nombre not in acumulado_horas_por_perfil:
-            acumulado_horas_por_perfil[perfil_nombre] = {
-                "perfil": perfil_nombre,
-                "estimadas": Decimal("0.00"),
-                "reales": Decimal("0.00"),
-            }
+        _ensure_bucket(perfil_nombre)
 
         horas_est = _dec(row.horas_estimadas)
         costo_est = _dec(row.costo_estimado)
@@ -8482,7 +8714,9 @@ def get_proyecto_costos_graficas(proyecto_id):
             acumulado_horas_por_perfil[perfil_nombre]["estimadas"] += horas_est
 
     # ---------------------------------------------------------
-    # 2) REAL por perfil desde registro oficial del proyecto
+    # 8) REAL por perfil desde registros del proyecto
+    #    Se usa _apply_project_filter_shared para que coincida
+    #    con resumen: proyecto_id, PRC y mapeos.
     # ---------------------------------------------------------
     consultor_join_cond = db.or_(
         func.lower(func.trim(Registro.usuario_consultor)) == func.lower(func.trim(Consultor.usuario)),
@@ -8490,16 +8724,19 @@ def get_proyecto_costos_graficas(proyecto_id):
     )
 
     rows_reg = (
-        db.session.query(Registro, Consultor, Equipo)
-        .select_from(Registro)
-        .outerjoin(Consultor, consultor_join_cond)
-        .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
-        .filter(Registro.proyecto_id == proyecto_id)
+        _apply_project_filter_shared(
+            db.session.query(Registro, Consultor, Equipo)
+            .select_from(Registro)
+            .outerjoin(Consultor, consultor_join_cond)
+            .outerjoin(Equipo, Consultor.equipo_id == Equipo.id),
+            proyecto_id
+        )
         .all()
     )
 
     for reg, consultor, equipo in rows_reg:
         ry, rm, fecha_ref = _fecha_to_parts(reg.fecha)
+
         if not ry or not rm:
             continue
 
@@ -8509,48 +8746,54 @@ def get_proyecto_costos_graficas(proyecto_id):
 
         if filtro_modulos and modulo_reg not in filtro_modulos:
             continue
+
         if filtro_equipos and equipo_reg not in filtro_equipos:
             continue
+
         if filtro_consultores and usuario_reg not in filtro_consultores:
             continue
 
-        perfil_obj = _perfil_vigente(getattr(consultor, "id", None), fecha_ref)
-        perfil_nombre = getattr(perfil_obj, "nombre", None) or "SIN PERFIL ASIGNADO"
+        # -----------------------------------------------------
+        # Cambio clave:
+        # Primero intentamos cruzar el real contra la planeación
+        # por módulo y periodo.
+        # -----------------------------------------------------
+        perfil_nombre = _perfil_planeado_para_registro(ry, rm, modulo_reg)
 
-        if perfil_nombre not in horas_por_perfil:
-            horas_por_perfil[perfil_nombre] = {
-                "perfil": perfil_nombre,
-                "estimadas": Decimal("0.00"),
-                "reales": Decimal("0.00"),
-            }
+        # -----------------------------------------------------
+        # Fallback:
+        # Si el módulo no permite identificar un único perfil,
+        # usamos el perfil vigente del consultor.
+        # -----------------------------------------------------
+        if not perfil_nombre:
+            perfil_obj = _perfil_vigente(getattr(consultor, "id", None), fecha_ref)
+            perfil_nombre = getattr(perfil_obj, "nombre", None) or "SIN PERFIL ASIGNADO"
 
-        if perfil_nombre not in costos_por_perfil:
-            costos_por_perfil[perfil_nombre] = {
-                "perfil": perfil_nombre,
-                "estimado": Decimal("0.00"),
-                "real": Decimal("0.00"),
-            }
-
-        if perfil_nombre not in acumulado_horas_por_perfil:
-            acumulado_horas_por_perfil[perfil_nombre] = {
-                "perfil": perfil_nombre,
-                "estimadas": Decimal("0.00"),
-                "reales": Decimal("0.00"),
-            }
+        _ensure_bucket(perfil_nombre)
 
         horas_real = _dec(
             reg.total_horas
             if reg.total_horas is not None
-            else (reg.tiempo_invertido if reg.tiempo_invertido is not None else 0)
+            else (
+                reg.tiempo_invertido
+                if reg.tiempo_invertido is not None
+                else 0
+            )
         )
 
         if horas_real <= 0:
             continue
 
         valor_hora = Decimal("0.00")
+
         if consultor and getattr(consultor, "id", None):
             try:
-                presupuesto = _presupuesto_consultor_mes(consultor.id, int(ry), int(rm))
+                presupuesto = _presupuesto_consultor_mes(
+                    consultor.id,
+                    int(ry),
+                    int(rm)
+                )
+
                 if presupuesto:
                     valor_hora = _dec(presupuesto.get("valor_hora"))
             except Exception:
@@ -8569,7 +8812,7 @@ def get_proyecto_costos_graficas(proyecto_id):
             acumulado_horas_por_perfil[perfil_nombre]["reales"] += horas_real
 
     # ---------------------------------------------------------
-    # 3) serialización
+    # 9) Serialización
     # ---------------------------------------------------------
     horas_out = [
         {
