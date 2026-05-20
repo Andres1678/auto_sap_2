@@ -6,11 +6,11 @@
 
   --title-red:#dc2626;
 
-  --head:#334155;        /* encabezado tablas */
+  --head:#334155;
   --text:#111827;
   --muted:#6b7280;
 
-  --sidebar:#e5e5e5;     /* panel derecho gris */
+  --sidebar:#e5e5e5;
   --sidebar-border:#bfbfbf;
 
   --btn-blue:#1e3a8a;
@@ -19,12 +19,13 @@
   --radius: 10px;
   --radius-sm: 8px;
 
-  /* alturas consistentes */
   --card-min: 230px;
   --card-min-small: 210px;
 }
 
-*{ box-sizing:border-box; }
+*{
+  box-sizing:border-box;
+}
 
 /* ===========================================================
    WRAPPER
@@ -71,7 +72,13 @@
   font-weight: 700;
 }
 
-/* Botón limpiar */
+.oport-topbar-actions{
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Botones */
 .oport-btn{
   border:1px solid var(--border);
   background:#fff;
@@ -167,7 +174,7 @@
 }
 
 /* ===========================================================
-   TOOLTIP KPIs A LA DERECHA
+   TOOLTIP KPIs
 =========================================================== */
 .kpi-card.has-tooltip{
   position: relative;
@@ -316,7 +323,7 @@
 }
 
 /* ===========================================================
-   TABLAS
+   TABLAS GENERALES
 =========================================================== */
 .table-scroll{
   padding: 0;
@@ -354,35 +361,172 @@
   background:#f9fafb;
 }
 
+.table tbody tr:hover{
+  background:#eef2ff;
+}
+
 .table-total td{
   background:#eef2f7;
   font-weight: 900;
 }
 
 /* ===========================================================
-   DETALLE
+   DETALLE DE OPORTUNIDADES - COMPACTO
 =========================================================== */
 .detalle-scroll{
   overflow:auto;
-  max-height: 360px;
+  max-height: 430px;
   border-top: 1px solid var(--border-soft);
+  overscroll-behavior: contain;
 }
 
+/* 
+   Antes la tabla se iba demasiado hacia la derecha.
+   Ahora se fuerza una distribución más compacta.
+*/
 .table-detalle{
-  min-width: 1100px;
+  width: 100%;
+  min-width: 880px;
+  table-layout: fixed;
+  font-size: .72rem;
 }
 
+/* Encabezado del detalle */
 .table.table-detalle thead th{
   position: sticky;
   top: 0;
   z-index: 2;
+  padding: 7px 6px;
+  line-height: 1.15;
+  white-space: normal;
+  text-align: left;
+  vertical-align: middle;
 }
 
+/* Celdas del detalle: permite renglones */
+.table.table-detalle tbody td{
+  padding: 6px 6px;
+  line-height: 1.22;
+  vertical-align: top;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Cliente */
+.table-detalle th:nth-child(1),
+.table-detalle td:nth-child(1){
+  width: 11%;
+}
+
+/* Servicio */
+.table-detalle th:nth-child(2),
+.table-detalle td:nth-child(2){
+  width: 12%;
+}
+
+/* Fecha */
+.table-detalle th:nth-child(3),
+.table-detalle td:nth-child(3){
+  width: 7%;
+  white-space: nowrap !important;
+}
+
+/* Calificación */
+.table-detalle th:nth-child(4),
+.table-detalle td:nth-child(4){
+  width: 8%;
+}
+
+/* Estado oferta */
+.table-detalle th:nth-child(5),
+.table-detalle td:nth-child(5){
+  width: 10%;
+}
+
+/* Resultado oferta */
+.table-detalle th:nth-child(6),
+.table-detalle td:nth-child(6){
+  width: 10%;
+}
+
+/* OTC y MRC */
+.table-detalle th:nth-child(7),
+.table-detalle td:nth-child(7),
+.table-detalle th:nth-child(8),
+.table-detalle td:nth-child(8){
+  width: 6%;
+  text-align: right;
+  white-space: nowrap !important;
+}
+
+/* Gerencia */
+.table-detalle th:nth-child(9),
+.table-detalle td:nth-child(9){
+  width: 8%;
+}
+
+/* Comercial */
+.table-detalle th:nth-child(10),
+.table-detalle td:nth-child(10){
+  width: 8%;
+}
+
+/* Observaciones */
+.table-detalle th:nth-child(11),
+.table-detalle td:nth-child(11){
+  width: 14%;
+}
+
+/* Celda de observaciones */
 .td-wrap{
   white-space: normal !important;
-  min-width: 320px;
-  max-width: 520px;
-  line-height: 1.25;
+  min-width: 0;
+  max-width: none;
+  line-height: 1.22;
+}
+
+/* Observaciones renderizadas desde React */
+.obs-box{
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 145px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.obs-item{
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.obs-date{
+  background: #f1f5f9;
+  color: #334155;
+  font-size: .64rem;
+  font-weight: 900;
+  padding: 3px 5px;
+  line-height: 1.1;
+}
+
+.obs-text{
+  padding: 4px 5px;
+  color: #111827;
+  font-size: .69rem;
+  line-height: 1.22;
+}
+
+/* Scroll interno de observaciones */
+.obs-box::-webkit-scrollbar{
+  width: 7px;
+}
+
+.obs-box::-webkit-scrollbar-thumb{
+  background: rgba(107,114,128,.4);
+  border-radius: 999px;
 }
 
 /* ===========================================================
@@ -498,37 +642,81 @@
 /* ===========================================================
    REACT-SELECT
 =========================================================== */
-.react-select__control{
+.react-select__control,
+.rs__control{
   border-radius: 10px !important;
   border-color: var(--border) !important;
   min-height: 38px !important;
   box-shadow: none !important;
 }
 
-.react-select__control--is-focused{
+.react-select__control--is-focused,
+.rs__control--is-focused{
   border-color: #cbd5e1 !important;
   box-shadow: 0 0 0 3px rgba(148,163,184,.25) !important;
 }
 
-.react-select__menu{
+.react-select__menu,
+.rs__menu{
   border-radius: 10px !important;
   overflow:hidden !important;
   border: 1px solid var(--border) !important;
 }
 
-.react-select__option{
+.react-select__option,
+.rs__option{
   font-size: 13px !important;
   font-weight: 700 !important;
 }
 
-.react-select__multi-value{
+.react-select__multi-value,
+.rs__multi-value{
   border-radius: 999px !important;
   background: #e5e7eb !important;
 }
 
-.react-select__multi-value__label{
+.react-select__multi-value__label,
+.rs__multi-value__label{
   font-weight: 900 !important;
   color:#111827 !important;
+}
+
+.rs__value-container{
+  max-height: 76px;
+  overflow-y: auto;
+}
+
+/* ===========================================================
+   CHECKBOX OPTION
+=========================================================== */
+.rs-check{
+  width:16px;
+  height:16px;
+  border:2px solid var(--border);
+  border-radius:4px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:900;
+  font-size:12px;
+  line-height:1;
+  color:#fff;
+  background:#fff;
+  flex:0 0 auto;
+}
+
+.rs-check.is-on{
+  background: var(--btn-blue);
+  border-color: var(--btn-blue);
+}
+
+.rs-check.is-disabled{
+  opacity:.55;
+}
+
+.rs-label{
+  font-weight:800;
+  font-size:13px;
 }
 
 /* ===========================================================
@@ -541,6 +729,10 @@
 
   .main-grid{
     grid-template-columns: 1fr;
+  }
+
+  .table-detalle{
+    min-width: 900px;
   }
 }
 
@@ -578,6 +770,16 @@
   .kpi-card.has-tooltip:focus .kpi-tooltip{
     transform: translateY(0);
   }
+
+  .table-detalle{
+    min-width: 920px;
+    font-size: .7rem;
+  }
+
+  .table.table-detalle thead th,
+  .table.table-detalle tbody td{
+    padding: 6px 5px;
+  }
 }
 
 @media (max-width: 650px){
@@ -587,6 +789,15 @@
 
   .two-col{
     grid-template-columns: 1fr;
+  }
+
+  .oport-topbar{
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .oport-topbar-actions{
+    justify-content: center;
   }
 
   .oport-dash-title{
@@ -599,6 +810,15 @@
 
   .table-scroll{
     max-height: 240px;
+  }
+
+  .detalle-scroll{
+    max-height: 360px;
+  }
+
+  .table-detalle{
+    min-width: 900px;
+    font-size: .68rem;
   }
 
   .kpi-tooltip{
@@ -626,43 +846,4 @@
   background: rgba(107,114,128,.45);
   border-radius: 999px;
   border: 2px solid rgba(243,244,246,.65);
-}
-
-/* ===========================================================
-   CHECKBOX OPTION
-=========================================================== */
-.rs-check{
-  width:16px;
-  height:16px;
-  border:2px solid var(--border);
-  border-radius:4px;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  font-weight:900;
-  font-size:12px;
-  line-height:1;
-  color:#fff;
-  background:#fff;
-  flex:0 0 auto;
-}
-
-.rs-check.is-on{
-  background: var(--btn-blue);
-  border-color: var(--btn-blue);
-}
-
-.rs-check.is-disabled{
-  opacity:.55;
-}
-
-.rs-label{
-  font-weight:800;
-  font-size:13px;
-}
-
-.oport-topbar-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
 }
