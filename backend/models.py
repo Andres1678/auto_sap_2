@@ -288,6 +288,11 @@ class Oportunidad(db.Model):
     tipo_servicio = db.Column(db.String(255))
     semestre_ejecucion = db.Column(db.String(32))
     publicacion_sharepoint = db.Column(db.String(255))
+    mostrar_dashboard = db.Column(
+        db.String(10),
+        nullable=True,
+        server_default=text("'SI'")
+    )
 
     def to_dict(self):
         def serializar_fecha(f):
@@ -352,6 +357,7 @@ class Oportunidad(db.Model):
             "tipo_servicio": self.tipo_servicio,
             "semestre_ejecucion": self.semestre_ejecucion,
             "publicacion_sharepoint": self.publicacion_sharepoint,
+            "mostrar_dashboard": self.mostrar_dashboard
         }
 
 class Cliente(db.Model):

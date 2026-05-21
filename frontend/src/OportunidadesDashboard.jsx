@@ -65,6 +65,18 @@ function displayLabel(v) {
     .replace(/\s+/g, " ");
 }
 
+function mostrarEnDashboard(row) {
+  const raw =
+    row?.mostrar_dashboard ??
+    row?.mostrarDashboard ??
+    row?.["MOSTRAR EN DASHBOARD"] ??
+    "";
+
+  const value = normKeyForMatch(raw);
+
+  return !["NO", "N", "FALSE", "0"].includes(value);
+}
+
 /* ===================== Exclusiones (no deben salir en tablas/pivots) ===================== */
 const EXCLUDE_SET = new Set(
   [
@@ -432,11 +444,17 @@ export default function DashboardOportunidades() {
 
   const dataBase = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
-  const dataFiltrada = useMemo(() => {
-    return dataBase.filter(
-      (op) => !isExcludedLabel(op?.estado_oferta ?? "") && !isExcludedLabel(op?.resultado_oferta ?? "")
-    );
+  const dataDashboard = useMemo(() => {
+    return dataBase.filter(mostrarEnDashboard);
   }, [dataBase]);
+
+  const dataFiltrada = useMemo(() => {
+    return dataDashboard.filter(
+      (op) =>
+        !isExcludedLabel(op?.estado_oferta ?? "") &&
+        !isExcludedLabel(op?.resultado_oferta ?? "")
+    );
+  }, [dataDashboard]);
 
   function normalizeOportunidadRow(row) {
     const estado = displayLabel(row?.estado_oferta ?? "");
@@ -534,21 +552,20 @@ export default function DashboardOportunidades() {
   }, [filtrosDebounced]);
 
   const tablaEstadoOferta = useMemo(() => {
-    return buildPivot(dataBase, "estado_oferta", { excludeKeyFn: (_key, raw) => isExcludedLabel(raw) });
-  }, [dataBase]);
-
-  const totEstadoOferta = useMemo(() => sumPivotRows(tablaEstadoOferta.rows), [tablaEstadoOferta.rows]);
+    return buildPivot(dataFiltrada, "estado_oferta", {
+      excludeKeyFn: (_key, raw) => isExcludedLabel(raw),
+    });
+  }, [dataFiltrada]);
 
   const tablaResultadoOferta = useMemo(() => {
-    return buildPivot(dataBase, "resultado_oferta", {
-      excludeKeyFn: (_key, raw, row) => isExcludedLabel(row?.estado_oferta ?? "") || isExcludedLabel(raw),
+    return buildPivot(dataFiltrada, "resultado_oferta", {
+      excludeKeyFn: (_key, raw, row) =>
+        isExcludedLabel(row?.estado_oferta ?? "") || isExcludedLabel(raw),
     });
-  }, [dataBase]);
-
-  const totResultadoOferta = useMemo(() => sumPivotRows(tablaResultadoOferta.rows), [tablaResultadoOferta.rows]);
+  }, [dataFiltrada]);
 
   const kpis = useMemo(() => {
-    const rows = Array.isArray(dataBase) ? dataBase : [];
+    const rows = Array.isArray(dataFiltrada) ? dataFiltrada : [];
     let activas = 0;
     let cerradas = 0;
     let ganadas = 0;
@@ -576,15 +593,15 @@ export default function DashboardOportunidades() {
       ganadas,
       porcentajeGanadas: total ? (ganadas / total) * 100 : 0,
     };
-  }, [dataBase]);
+  }, [dataFiltrada]);
 
   const kpiEstadosInfo = useMemo(() => {
     return {
-      total: buildEstadoBreakdown(dataBase, ESTADOS_TOTAL_KPI_N),
-      activas: buildEstadoBreakdown(dataBase, ESTADOS_ACTIVOS_N),
-      cerradas: buildEstadoBreakdown(dataBase, ESTADOS_CERRADOS_N),
+      total: buildEstadoBreakdown(dataFiltrada, ESTADOS_TOTAL_KPI_N),
+      activas: buildEstadoBreakdown(dataFiltrada, ESTADOS_ACTIVOS_N),
+      cerradas: buildEstadoBreakdown(dataFiltrada, ESTADOS_CERRADOS_N),
     };
-  }, [dataBase]);
+  }, [dataFiltrada]);
 
   const limpiar = () => {
     setFiltros({
@@ -788,7 +805,7 @@ export default function DashboardOportunidades() {
 
               <div className="card">
                 <div className="card-title">Resumen Calificación</div>
-                <ResumenCalificacion data={dataBase} />
+                <ResumenCalificacion data={dataFiltrada} />
               </div>
             </div>
           </section>
@@ -985,7 +1002,7 @@ export default function DashboardOportunidades() {
       <ModalWinRate
         isOpen={openWinRateModal}
         onClose={() => setOpenWinRateModal(false)}
-        rows={dataBase}
+        rows={dataFiltrada}
         options={opciones}
         selectCommon={selectCommon}
         baseTitle="1ER SEMESTRE 2025"

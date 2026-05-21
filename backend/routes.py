@@ -3359,6 +3359,32 @@ def _to_int_round(v_dec):
     except Exception:
         return None
 
+def _normalizar_mostrar_dashboard(v):
+    """
+    Regla:
+    - Si viene NO / N / FALSE / 0 => guarda 'NO'
+    - Si viene SI / SÍ / S / TRUE / 1 / YES => guarda 'SI'
+    - Si viene vacío, None, null, nan => deja None
+      En el dashboard None o vacío se interpreta como visible.
+    - Cualquier otro valor no vacío se toma como 'SI'
+    """
+    if v is None:
+        return None
+
+    s = str(v).replace("\u00A0", " ").strip().upper()
+
+    if s in ("", "NAN", "NONE", "NULL"):
+        return None
+
+    if s in ("NO", "N", "FALSE", "0"):
+        return "NO"
+
+    if s in ("SI", "SÍ", "S", "TRUE", "1", "YES", "Y"):
+        return "SI"
+
+    return "SI"
+
+
 def clean_payload(data: dict) -> dict:
     out = {}
     data = data or {}
@@ -3378,6 +3404,9 @@ def clean_payload(data: dict) -> dict:
         if k == "mrc_normalizado":
             v = None
 
+        if k == "mostrar_dashboard":
+            v = _normalizar_mostrar_dashboard(v)
+
         out[k] = v
 
     moneda = out.get("tipo_moneda")
@@ -3387,34 +3416,41 @@ def clean_payload(data: dict) -> dict:
 
     estado = out.get("estado_oferta")
     resultado = out.get("resultado_oferta")
+
     if estado:
         estado_n = _upper(estado)
         allowed = ESTADO_RESULTADO.get(estado_n)
+
         if allowed:
             if resultado:
                 res_n = _upper(resultado)
                 allowed_up = {a.upper() for a in allowed}
+
                 if res_n not in allowed_up:
                     out["resultado_oferta"] = None
+
             if not out.get("resultado_oferta") and len(allowed) == 1:
                 out["resultado_oferta"] = next(iter(allowed))
 
     cat = out.get("categoria_perdida")
     sub = out.get("subcategoria_perdida")
+
     if cat:
         cat_n = _upper(cat)
         allowed = CATEGORIA_SUBCATEGORIA.get(cat_n)
-        if allowed:
-            if sub:
-                sub_n = _upper(sub)
-                allowed_up = {a.upper() for a in allowed}
-                if sub_n not in allowed_up:
-                    out["subcategoria_perdida"] = None
+
+        if allowed and sub:
+            sub_n = _upper(sub)
+            allowed_up = {a.upper() for a in allowed}
+
+            if sub_n not in allowed_up:
+                out["subcategoria_perdida"] = None
 
     otc = out.get("otc")
     mrc = out.get("mrc")
 
     mrc_norm = None
+
     try:
         if otc is not None and mrc is not None:
             mrc_norm = (Decimal(str(otc)) / Decimal("12")) + Decimal(str(mrc))

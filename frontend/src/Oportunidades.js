@@ -99,6 +99,7 @@ const COLUMN_LABELS = {
   id: "ID OPORTUNIDAD",
   fecha_creacion: "FECHA ASIGNACIÓN",
   anio_creacion_ot: "AÑO CREACIÓN OT",
+  mostrar_dashboard: "MOSTRAR EN DASHBOARD",
 };
 
 const CLIENTE_COL = "nombre_cliente";
@@ -108,6 +109,8 @@ const PRC_START_COL = "codigo_prc";
 const nf = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 
 const EMPTY_FILTER_VALUE = "__EMPTY__";
+
+const MOSTRAR_DASHBOARD_OPTS = ["SI", "NO"];
 
 function isNumericCol(col) {
   return NUMERIC_COLS.has(col);
@@ -529,6 +532,18 @@ function renderMultilineTextCell(value) {
   return <span className="cell-multiline-text">{text}</span>;
 }
 
+function normalizeMostrarDashboard(value) {
+  const normalized = normalizeForCompare(value);
+
+  if (!normalized) return "";
+
+  if (["NO", "N", "FALSE", "0"].includes(normalized)) {
+    return "NO";
+  }
+
+  return "SI";
+}
+
 export default function Oportunidades() {
   const [data, setData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
@@ -600,6 +615,8 @@ export default function Oportunidades() {
       "tipo_servicio",
       "semestre_ejecucion",
       "publicacion_sharepoint",
+      "mostrar_dashboard",
+      "calificacion_oportunidad",
     ],
     []
   );
@@ -766,6 +783,7 @@ export default function Oportunidades() {
       resultado_oferta: normalizeText(rest.resultado_oferta),
       categoria_perdida: normalizeText(rest.categoria_perdida),
       subcategoria_perdida: normalizeText(rest.subcategoria_perdida),
+      mostrar_dashboard: normalizeMostrarDashboard(rest.mostrar_dashboard),
     };
 
     return limpiarPerdidaSiNoAplica(normalized);
@@ -1124,6 +1142,7 @@ export default function Oportunidades() {
     const empty = {};
     columnOrder.forEach((c) => (empty[c] = ""));
     empty.tipo_moneda = "COP";
+    empty.mostrar_dashboard = "SI";
     setNewRow(empty);
   };
 
@@ -1264,6 +1283,10 @@ export default function Oportunidades() {
 
     if (col === "tipo_moneda") {
       return renderSelect(row, col, ["COP", "USD"]);
+    }
+
+    if (col === "mostrar_dashboard") {
+      return renderSelect(row, col, MOSTRAR_DASHBOARD_OPTS);
     }
 
     if (col === "tipo_cliente") {
@@ -1503,6 +1526,23 @@ export default function Oportunidades() {
           <option value="">-</option>
           <option value="COP">COP</option>
           <option value="USD">USD</option>
+        </select>
+      );
+    }
+
+    if (col === "mostrar_dashboard") {
+      return (
+        <select
+          className="cell-input"
+          value={newRow[col] ?? ""}
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        >
+          <option value="">-</option>
+          {MOSTRAR_DASHBOARD_OPTS.map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
         </select>
       );
     }
