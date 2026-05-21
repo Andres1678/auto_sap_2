@@ -15,7 +15,7 @@ const rsStyles = {
     minHeight: 38,
     borderRadius: 10,
     borderColor: state.isFocused ? "#cbd5e1" : "#e2e8f0",
-    boxShadow: state.isFocused ? "0 0 0 3px rgba(148,163,184,.25)" : "none",
+    boxShadow: state.isFocused ? "0 0 0 3px rgba(148, 163, 184, .25)" : "none",
     ":hover": { borderColor: "#cbd5e1" },
     fontSize: 13,
   }),
@@ -33,6 +33,7 @@ const portalTarget = typeof document !== "undefined" ? document.body : null;
 function CheckboxOption(props) {
   const selected = props.isSelected;
   const disabled = props.isDisabled;
+
   return (
     <components.Option {...props}>
       <span className={`rs-check ${selected ? "is-on" : ""} ${disabled ? "is-disabled" : ""}`}>
@@ -77,7 +78,7 @@ function mostrarEnDashboard(row) {
   return !["NO", "N", "FALSE", "0"].includes(value);
 }
 
-/* ===================== Exclusiones (no deben salir en tablas/pivots) ===================== */
+/* ===================== Exclusiones ===================== */
 const EXCLUDE_SET = new Set(
   [
     "OTP",
@@ -89,7 +90,7 @@ const EXCLUDE_SET = new Set(
     "0TP",
     "0TE",
     "0TL",
-    "OT"
+    "OT",
   ].map(normKeyForMatch)
 );
 
@@ -101,10 +102,11 @@ function isExcludedLabel(raw) {
   for (const x of EXCLUDE_SET) {
     if (k.includes(x)) return true;
   }
+
   return false;
 }
 
-/* ===================== Money helpers (SIN BigInt) ===================== */
+/* ===================== Money helpers ===================== */
 const nfMoney = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 });
 
 function toNumberSmart(v) {
@@ -114,7 +116,6 @@ function toNumberSmart(v) {
   let s = String(v).trim();
   if (!s) return 0;
 
-  // limpia moneda/espacios/%/COP
   s = s
     .replace(/\u00A0/g, " ")
     .replace(/\s/g, "")
@@ -143,8 +144,12 @@ function toNumberSmart(v) {
     if (commaCount === 1) {
       const after = s.slice(lastComma + 1);
       const before = s.slice(0, lastComma).replace(/^[+-]/, "");
-      if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
-      else s = s.replace(",", ".");
+
+      if (after.length === 3 && before.length <= 3) {
+        s = s.replace(",", "");
+      } else {
+        s = s.replace(",", ".");
+      }
     } else {
       s = s.replace(/,/g, "");
     }
@@ -175,6 +180,7 @@ function toNumberSmart(v) {
   }
 
   s = s.replace(/[^\d.+-eE]/g, "");
+
   const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 }
@@ -186,8 +192,12 @@ function fmtMoney(n) {
 function readMoney(row, keys) {
   for (const k of keys) {
     const v = row?.[k];
-    if (v !== null && v !== undefined && String(v).trim() !== "") return toNumberSmart(v);
+
+    if (v !== null && v !== undefined && String(v).trim() !== "") {
+      return toNumberSmart(v);
+    }
   }
+
   return 0;
 }
 
@@ -209,6 +219,7 @@ function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {})
 
   (Array.isArray(rows) ? rows : []).forEach((r) => {
     const raw = String(r?.[field] ?? "").replace(/\u00A0/g, " ").trim();
+
     if (skipBlank && !raw) return;
 
     const key = normKeyForMatch(raw);
@@ -216,10 +227,14 @@ function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {})
 
     if (excludeKeyFn && excludeKeyFn(key, raw, r)) return;
 
-    const prev = m.get(key) || { label: displayLabel(raw), count: 0, otc: 0, mrc: 0 };
+    const prev = m.get(key) || {
+      label: displayLabel(raw),
+      count: 0,
+      otc: 0,
+      mrc: 0,
+    };
 
     prev.count += 1;
-
     prev.otc += readMoney(r, ["otc", "otr", "OTC", "OTR"]);
     prev.mrc += readMoney(r, ["mrc", "MRC"]);
 
@@ -227,10 +242,11 @@ function buildPivot(rows, field, { skipBlank = true, excludeKeyFn = null } = {})
   });
 
   const pivotRows = Array.from(m.values()).sort((a, b) => b.count - a.count);
+
   return { rows: pivotRows };
 }
 
-/* ===================== filtros/query ===================== */
+/* ===================== Filtros/query ===================== */
 function toOptions(arr) {
   return (Array.isArray(arr) ? arr : [])
     .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
@@ -264,19 +280,22 @@ function toQuery(f) {
   add("calificacion_oportunidad", valuesOf(f.calificacion));
 
   const qs = p.toString();
+
   return qs ? `?${qs}` : "";
 }
 
 function useDebouncedValue(value, delay = 350) {
   const [debounced, setDebounced] = useState(value);
+
   useEffect(() => {
     const t = setTimeout(() => setDebounced(value), delay);
     return () => clearTimeout(t);
   }, [value, delay]);
+
   return debounced;
 }
 
-/* ===================== sets de KPIs ===================== */
+/* ===================== Sets de KPIs ===================== */
 const ESTADOS_ACTIVOS_N = new Set(
   [
     "EN PROCESO",
@@ -302,7 +321,7 @@ const ESTADOS_CERRADOS_N = new Set(
 const ESTADO_RESULTADO_FORZADO = {
   "EN ESPERA DEL RFI / RFP": "EN ESPERA DEL CLIENTE",
   "RFI PRESENTADO": "EN ESPERA DEL CLIENTE",
-  "SUSPENDIDA": "EN ESPERA DEL CLIENTE",
+  SUSPENDIDA: "EN ESPERA DEL CLIENTE",
 };
 
 const ESTADOS_TOTAL_KPI_N = new Set([...ESTADOS_ACTIVOS_N, ...ESTADOS_CERRADOS_N]);
@@ -312,9 +331,11 @@ function buildEstadoBreakdown(rows, allowedStates) {
 
   for (const op of Array.isArray(rows) ? rows : []) {
     const raw = op?.estado_oferta ?? "";
+
     if (isExcludedLabel(raw)) continue;
 
     const estadoN = normKeyForMatch(raw);
+
     if (allowedStates && !allowedStates.has(estadoN)) continue;
 
     const prev = map.get(estadoN) || {
@@ -334,7 +355,7 @@ function buildEstadoBreakdown(rows, allowedStates) {
   );
 }
 
-/* ===================== Observaciones: separar por fechas ===================== */
+/* ===================== Observaciones ===================== */
 const OBS_DATE_TOKEN = /(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})/g;
 
 function normObsText(v) {
@@ -357,10 +378,12 @@ function splitObservacionesByDate(raw) {
     .filter(Boolean);
 
   const out = [];
+
   for (const line of lines) {
     const m = line.match(
       /^(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*(.*)$/
     );
+
     if (m) {
       out.push({ date: m[1], text: (m[2] || "").trim() || "-" });
     } else {
@@ -368,10 +391,11 @@ function splitObservacionesByDate(raw) {
     }
   }
 
-  // Si hay líneas sin fecha después de una fechada, se pegan como continuación
   const merged = [];
+
   for (const it of out) {
     const last = merged[merged.length - 1];
+
     if (!it.date && last && last.date) {
       last.text = `${last.text}\n${it.text}`.trim();
     } else {
@@ -384,6 +408,7 @@ function splitObservacionesByDate(raw) {
 
 function renderObservacionesCell(value) {
   const items = splitObservacionesByDate(value);
+
   if (!items.length) return "-";
 
   return (
@@ -391,6 +416,7 @@ function renderObservacionesCell(value) {
       {items.map((it, idx) => (
         <div key={idx} className={`obs-item ${it.date ? "has-date" : "no-date"}`}>
           <div className="obs-date">{it.date ? it.date : "SIN FECHA"}</div>
+
           <div className="obs-text">
             {it.text.split("\n").map((p, i) => (
               <div key={i}>{p}</div>
@@ -471,13 +497,17 @@ export default function DashboardOportunidades() {
   function mergeOptions(base, extras) {
     const map = new Map();
 
-    [...(base || []), ...(extras || []).map((v) => ({ value: v, label: v }))].forEach((opt) => {
-      const key = String(opt?.value ?? "").trim();
-      if (!key) return;
-      if (!map.has(key)) {
-        map.set(key, { value: key, label: String(opt?.label ?? key) });
+    [...(base || []), ...(extras || []).map((v) => ({ value: v, label: v }))].forEach(
+      (opt) => {
+        const key = String(opt?.value ?? "").trim();
+
+        if (!key) return;
+
+        if (!map.has(key)) {
+          map.set(key, { value: key, label: String(opt?.label ?? key) });
+        }
       }
-    });
+    );
 
     return Array.from(map.values()).sort((a, b) =>
       a.label.localeCompare(b.label, "es", { sensitivity: "base" })
@@ -486,7 +516,9 @@ export default function DashboardOportunidades() {
 
   const fetchFilters = async () => {
     const res = await jfetch(`/oportunidades/filters`);
+
     if (!res.ok) throw new Error("filters");
+
     const json = await res.json();
 
     setOpciones({
@@ -514,14 +546,15 @@ export default function DashboardOportunidades() {
 
   const fetchData = async (current) => {
     setLoading(true);
+
     try {
       const res = await jfetch(`/oportunidades${toQuery(current)}`);
+
       if (!res.ok) throw new Error("data");
+
       const json = await res.json();
 
-      const rows = Array.isArray(json)
-        ? json.map(normalizeOportunidadRow)
-        : [];
+      const rows = Array.isArray(json) ? json.map(normalizeOportunidadRow) : [];
 
       setData(rows);
     } catch (e) {
@@ -541,6 +574,7 @@ export default function DashboardOportunidades() {
         Swal.fire("Error", "No se pudo inicializar", "error");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -549,6 +583,7 @@ export default function DashboardOportunidades() {
         await fetchData(filtrosDebounced);
       } catch (e) {}
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtrosDebounced]);
 
   const tablaEstadoOferta = useMemo(() => {
@@ -557,12 +592,20 @@ export default function DashboardOportunidades() {
     });
   }, [dataFiltrada]);
 
+  const totEstadoOferta = useMemo(() => {
+    return sumPivotRows(tablaEstadoOferta.rows);
+  }, [tablaEstadoOferta.rows]);
+
   const tablaResultadoOferta = useMemo(() => {
     return buildPivot(dataFiltrada, "resultado_oferta", {
       excludeKeyFn: (_key, raw, row) =>
         isExcludedLabel(row?.estado_oferta ?? "") || isExcludedLabel(raw),
     });
   }, [dataFiltrada]);
+
+  const totResultadoOferta = useMemo(() => {
+    return sumPivotRows(tablaResultadoOferta.rows);
+  }, [tablaResultadoOferta.rows]);
 
   const kpis = useMemo(() => {
     const rows = Array.isArray(dataFiltrada) ? dataFiltrada : [];
@@ -574,14 +617,20 @@ export default function DashboardOportunidades() {
 
     for (const op of rows) {
       const estadoRaw = op?.estado_oferta ?? "";
+
       if (isExcludedLabel(estadoRaw)) continue;
 
       const estadoN = normKeyForMatch(estadoRaw);
 
-      if (ESTADOS_ACTIVOS_N.has(estadoN)) activas++;
-      else if (ESTADOS_CERRADOS_N.has(estadoN)) cerradas++;
+      if (ESTADOS_ACTIVOS_N.has(estadoN)) {
+        activas++;
+      } else if (ESTADOS_CERRADOS_N.has(estadoN)) {
+        cerradas++;
+      }
 
-      if (estadoN === GANADA_N) ganadas++;
+      if (estadoN === GANADA_N) {
+        ganadas++;
+      }
     }
 
     const total = activas + cerradas;
@@ -712,6 +761,7 @@ export default function DashboardOportunidades() {
             <div className="main-col">
               <div className="card">
                 <div className="card-title">Estado de Oferta</div>
+
                 <div className="table-scroll">
                   <table className="table">
                     <thead>
@@ -732,7 +782,10 @@ export default function DashboardOportunidades() {
                           <td>{fmtMoney(it.otc)}</td>
                           <td>{fmtMoney(it.mrc)}</td>
                           <td>
-                            {totEstadoOferta.count ? ((it.count / totEstadoOferta.count) * 100).toFixed(2) : "0.00"}%
+                            {totEstadoOferta.count
+                              ? ((it.count / totEstadoOferta.count) * 100).toFixed(2)
+                              : "0.00"}
+                            %
                           </td>
                         </tr>
                       ))}
@@ -751,6 +804,7 @@ export default function DashboardOportunidades() {
 
               <div className="card">
                 <div className="card-title">Resultado de Oferta</div>
+
                 <div className="table-scroll">
                   <table className="table">
                     <thead>
@@ -830,6 +884,7 @@ export default function DashboardOportunidades() {
                     <th>OBSERVACIONES</th>
                   </tr>
                 </thead>
+
                 <tbody>
                   {dataFiltrada.map((row, i) => (
                     <tr key={row.id ?? i}>
@@ -859,6 +914,7 @@ export default function DashboardOportunidades() {
 
           <div className="filtro-item">
             <label>Año / Mes</label>
+
             <div className="two-col">
               <Select
                 {...selectCommon}
@@ -867,6 +923,7 @@ export default function DashboardOportunidades() {
                 value={filtros.anios}
                 onChange={(v) => setFiltros((p) => ({ ...p, anios: v || [] }))}
               />
+
               <Select
                 {...selectCommon}
                 placeholder="Mes"
@@ -879,6 +936,7 @@ export default function DashboardOportunidades() {
 
           <div className="filtro-item">
             <label>Tipo</label>
+
             <Select
               {...selectCommon}
               placeholder="Todos"
@@ -890,28 +948,35 @@ export default function DashboardOportunidades() {
 
           <div className="filtro-item">
             <label>Dirección Comercial</label>
+
             <Select
               {...selectCommon}
               placeholder="Todas"
               options={opciones.direccionComercial}
               value={filtros.direccionComercial}
-              onChange={(v) => setFiltros((p) => ({ ...p, direccionComercial: v || [] }))}
+              onChange={(v) =>
+                setFiltros((p) => ({ ...p, direccionComercial: v || [] }))
+              }
             />
           </div>
 
           <div className="filtro-item">
             <label>Gerencia Comercial</label>
+
             <Select
               {...selectCommon}
               placeholder="Todas"
               options={opciones.gerenciaComercial}
               value={filtros.gerenciaComercial}
-              onChange={(v) => setFiltros((p) => ({ ...p, gerenciaComercial: v || [] }))}
+              onChange={(v) =>
+                setFiltros((p) => ({ ...p, gerenciaComercial: v || [] }))
+              }
             />
           </div>
 
           <div className="filtro-item">
             <label>Nombre Cliente</label>
+
             <Select
               {...selectCommon}
               placeholder="Todos"
@@ -923,6 +988,7 @@ export default function DashboardOportunidades() {
 
           <div className="filtro-item">
             <label>Estado Oferta</label>
+
             <Select
               {...selectCommon}
               placeholder="Todos"
@@ -934,39 +1000,49 @@ export default function DashboardOportunidades() {
 
           <div className="filtro-item">
             <label>Resultado Oferta</label>
+
             <Select
               {...selectCommon}
               placeholder="Todos"
               options={opciones.resultadoOferta}
               value={filtros.resultadoOferta}
-              onChange={(v) => setFiltros((p) => ({ ...p, resultadoOferta: v || [] }))}
+              onChange={(v) =>
+                setFiltros((p) => ({ ...p, resultadoOferta: v || [] }))
+              }
             />
           </div>
 
           <div className="filtro-item">
             <label>Fecha Acta Cierre OT</label>
+
             <Select
               {...selectCommon}
               placeholder="Todas"
               options={opciones.fechaActaCierreOT}
               value={filtros.fechaActaCierreOT}
-              onChange={(v) => setFiltros((p) => ({ ...p, fechaActaCierreOT: v || [] }))}
+              onChange={(v) =>
+                setFiltros((p) => ({ ...p, fechaActaCierreOT: v || [] }))
+              }
             />
           </div>
 
           <div className="filtro-item">
             <label>Fecha Cierre Oportunidad</label>
+
             <Select
               {...selectCommon}
               placeholder="Todas"
               options={opciones.fechaCierreOportunidad}
               value={filtros.fechaCierreOportunidad}
-              onChange={(v) => setFiltros((p) => ({ ...p, fechaCierreOportunidad: v || [] }))}
+              onChange={(v) =>
+                setFiltros((p) => ({ ...p, fechaCierreOportunidad: v || [] }))
+              }
             />
           </div>
 
           <div className="filtro-item">
             <label>Estado OT</label>
+
             <Select
               {...selectCommon}
               placeholder="Todos"
@@ -978,6 +1054,7 @@ export default function DashboardOportunidades() {
 
           <div className="filtro-item">
             <label>Último Mes</label>
+
             <Select
               {...selectCommon}
               placeholder="Todos"
@@ -989,6 +1066,7 @@ export default function DashboardOportunidades() {
 
           <div className="filtro-item">
             <label>Calificación Oportunidad</label>
+
             <Select
               {...selectCommon}
               placeholder="Todas"
@@ -999,6 +1077,7 @@ export default function DashboardOportunidades() {
           </div>
         </aside>
       </div>
+
       <ModalWinRate
         isOpen={openWinRateModal}
         onClose={() => setOpenWinRateModal(false)}
