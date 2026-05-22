@@ -19,7 +19,7 @@
   --col-cliente-w: 290px;
   --col-servicio-w: 380px;
   --col-default-w: 190px;
-  --col-long-w: 520px;
+  --col-long-w: 560px;
 }
 
 .oportunidades-wrapper {
@@ -146,7 +146,7 @@
   min-width: 3600px;
   border-collapse: separate;
   border-spacing: 0;
-  table-layout: fixed;
+  table-layout: fixed !important;
   font-size: 0.82rem;
   color: #111827;
 }
@@ -163,8 +163,13 @@
 }
 
 .oportunidades-wrapper .tabla-oportunidades thead th {
-  white-space: normal;
-  overflow-wrap: anywhere;
+  text-align: center !important;
+  vertical-align: middle !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  line-height: 1.25 !important;
+  box-sizing: border-box !important;
 }
 
 .oportunidades-wrapper .tabla-oportunidades thead tr:first-child th {
@@ -181,13 +186,13 @@
 
 .oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas th {
   background: #e2e8f0;
-  padding: 8px;
+  padding: 10px !important;
   position: sticky;
   top: var(--thead-row-1);
   z-index: 59;
   text-align: center;
-  vertical-align: top;
-  min-height: 64px;
+  vertical-align: middle !important;
+  height: 78px !important;
 }
 
 .oportunidades-wrapper .filtros-columnas th .select-filter {
@@ -200,17 +205,22 @@
 .oportunidades-wrapper .react-select__control {
   min-height: 38px !important;
   height: auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
   border-radius: 8px !important;
   border: 1px solid var(--gray-border) !important;
   background: #fff !important;
   box-shadow: none !important;
   align-items: flex-start !important;
+  box-sizing: border-box !important;
 }
 
 .oportunidades-wrapper .react-select__value-container {
   padding: 2px 6px !important;
   max-height: 72px;
-  overflow-y: auto;
+  max-width: 100% !important;
+  overflow: hidden !important;
 }
 
 .oportunidades-wrapper .react-select__placeholder {
@@ -248,11 +258,16 @@
 .oportunidades-wrapper .react-select__multi-value {
   background: #dbeafe !important;
   border-radius: 6px !important;
+  max-width: 95px !important;
 }
 
 .oportunidades-wrapper .react-select__multi-value__label {
   color: #1e3a8a !important;
   font-size: 0.72rem !important;
+  max-width: 70px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
 }
 
 .oportunidades-wrapper .react-select__multi-value__remove {
@@ -264,16 +279,23 @@
   color: #0f172a !important;
 }
 
+.oportunidades-wrapper .select-filter {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
 .oportunidades-wrapper .tabla-oportunidades tbody td {
-  padding: 8px 10px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  text-align: left !important;
+  vertical-align: middle !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  line-height: 1.35 !important;
+  padding: 10px 12px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
   color: #111827;
-  text-align: left;
-  vertical-align: middle;
   background: #fff;
-  line-height: 1.35;
 }
 
 .oportunidades-wrapper .tabla-oportunidades tbody tr:hover td {
@@ -288,8 +310,8 @@
 }
 
 .oportunidades-wrapper .tabla-oportunidades td.id-col {
-  text-align: center;
-  font-weight: 700;
+  text-align: center !important;
+  font-weight: 700 !important;
 }
 
 .oportunidades-wrapper .tabla-oportunidades td.cliente-col,
@@ -380,16 +402,20 @@
 }
 
 /* =========================
-   SERVICIO ajustado
+   SERVICIO
 ========================= */
 .oportunidades-wrapper .tabla-oportunidades th.servicio-col,
 .oportunidades-wrapper .tabla-oportunidades td.servicio-col,
 .oportunidades-wrapper .tabla-oportunidades td.servicio-wrap-cell {
-  white-space: normal !important;
-  word-break: break-word;
-  overflow-wrap: anywhere;
+  min-width: 380px !important;
+  width: 380px !important;
+  max-width: 380px !important;
+  white-space: pre-wrap !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
   line-height: 1.3;
-  vertical-align: top;
+  vertical-align: top !important;
+  overflow: hidden !important;
 }
 
 .oportunidades-wrapper .tabla-oportunidades td.servicio-col,
@@ -398,20 +424,31 @@
   padding-bottom: 10px;
 }
 
+.oportunidades-wrapper .cell-multiline-text {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  width: 100%;
+  line-height: 1.35;
+}
+
 /* =========================
-   DESCRIPCION OT ajustado
+   DESCRIPCION OT
 ========================= */
 .oportunidades-wrapper .tabla-oportunidades th.descripcion-ot-col,
 .oportunidades-wrapper .tabla-oportunidades td.descripcion-ot-col,
-.oportunidades-wrapper .tabla-oportunidades td.descripcion-ot-wrap-cell {
-  min-width: 320px !important;
-  max-width: 320px !important;
-  width: 320px !important;
+.oportunidades-wrapper .tabla-oportunidades td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .descripcion-ot-col,
+.oportunidades-wrapper .descripcion-ot-wrap-cell {
+  min-width: 360px !important;
+  max-width: 360px !important;
+  width: 360px !important;
   white-space: normal !important;
   word-break: break-word;
   overflow-wrap: anywhere;
   line-height: 1.3;
-  vertical-align: top;
+  vertical-align: top !important;
 }
 
 .oportunidades-wrapper .tabla-oportunidades td.descripcion-ot-col,
@@ -445,14 +482,16 @@
   background: #eef7ff !important;
 }
 
-/* ========================= */
-
+/* =========================
+   Inputs / edición
+========================= */
 .oportunidades-wrapper .editing {
   background: #e0f2fe !important;
 }
 
 .oportunidades-wrapper .cell-input {
-  width: 100%;
+  width: 100% !important;
+  max-width: 100% !important;
   border: 1px solid var(--brand-blue);
   border-radius: 6px;
   padding: 6px 8px;
@@ -460,9 +499,9 @@
   color: #111827;
   outline: none;
   font-size: 0.82rem;
-  box-sizing: border-box;
+  box-sizing: border-box !important;
   min-width: 0;
-  max-width: 100%;
+  text-align: left !important;
 }
 
 .oportunidades-wrapper .cell-input:focus {
@@ -470,6 +509,51 @@
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
+.oportunidades-wrapper .tabla-oportunidades select,
+.oportunidades-wrapper .tabla-oportunidades input {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  text-align: left !important;
+}
+
+.oportunidades-wrapper .cell-textarea {
+  display: block !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  min-height: 92px !important;
+  max-height: 180px !important;
+  resize: vertical !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: break-word !important;
+  word-break: normal !important;
+  line-height: 1.35 !important;
+  font-family: inherit !important;
+}
+
+.oportunidades-wrapper .servicio-editor,
+.oportunidades-wrapper .servicio-new-editor {
+  background: #eef6ff !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades td.editing.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades td.editing.servicio-wrap-cell {
+  overflow: hidden !important;
+  position: sticky !important;
+  z-index: 75 !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody td.editing.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades tbody td.editing.servicio-wrap-cell {
+  background: #e0f2fe !important;
+}
+
+/* =========================
+   Nueva fila
+========================= */
 .oportunidades-wrapper .new-row td {
   background: #ecfdf5;
 }
@@ -480,6 +564,9 @@
   background: #ecfdf5 !important;
 }
 
+/* =========================
+   Acciones
+========================= */
 .oportunidades-wrapper .acciones {
   white-space: normal;
   text-align: center;
@@ -524,6 +611,7 @@
   0% {
     background: #d1fae5;
   }
+
   100% {
     background: transparent;
   }
@@ -554,58 +642,9 @@
   transform: scale(1.05);
 }
 
-.oportunidades-wrapper .tabla-oportunidades td.obs-col {
-  width: var(--col-long-w) !important;
-  min-width: var(--col-long-w) !important;
-  max-width: var(--col-long-w) !important;
-  white-space: normal !important;
-  overflow: hidden;
-  line-height: 1.25;
-  padding: 10px 12px;
-  vertical-align: top;
-}
-
-.oportunidades-wrapper .obs-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 180px;
-  overflow: auto;
-  padding-right: 6px;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.oportunidades-wrapper .obs-list::-webkit-scrollbar {
-  width: 10px;
-}
-
-.oportunidades-wrapper .obs-list::-webkit-scrollbar-thumb {
-  background: rgba(37, 99, 235, 0.45);
-  border-radius: 10px;
-}
-
-.oportunidades-wrapper .obs-item {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 8px 10px;
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  box-sizing: border-box;
-}
-
-.oportunidades-wrapper .obs-date {
-  font-weight: 800;
-  color: #1e293b;
-  margin-right: 8px;
-}
-
-.oportunidades-wrapper .obs-text {
-  color: #0f172a;
-}
-
+/* =========================
+   Exportación / filtros
+========================= */
 .oportunidades-wrapper .acciones-exportacion {
   display: flex;
   gap: 10px;
@@ -633,126 +672,9 @@
   cursor: not-allowed;
 }
 
-@media (max-width: 768px) {
-  .oportunidades-wrapper {
-    --col-id-w: 90px;
-    --col-cliente-w: 220px;
-    --col-servicio-w: 280px;
-    --col-default-w: 170px;
-    --col-long-w: 420px;
-  }
-
-  .oportunidades-wrapper .upload-section {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .oportunidades-wrapper .file-name {
-    max-width: 100%;
-  }
-
-  .oportunidades-wrapper .tabla-oportunidades {
-    min-width: 3000px;
-  }
-}
-
-.oportunidades-wrapper .tabla-oportunidades {
-  table-layout: fixed !important;
-  border-collapse: separate !important;
-  border-spacing: 0 !important;
-}
-
-/* Todas las celdas del cuerpo */
-.oportunidades-wrapper .tabla-oportunidades tbody td {
-  text-align: left !important;
-  vertical-align: middle !important;
-  white-space: normal !important;
-  word-break: normal !important;
-  overflow-wrap: break-word !important;
-  line-height: 1.35 !important;
-  padding: 10px 12px !important;
-  box-sizing: border-box !important;
-  overflow: hidden !important;
-}
-
-/* Encabezados */
-.oportunidades-wrapper .tabla-oportunidades thead th {
-  text-align: center !important;
-  vertical-align: middle !important;
-  white-space: normal !important;
-  word-break: normal !important;
-  overflow-wrap: break-word !important;
-  line-height: 1.25 !important;
-  box-sizing: border-box !important;
-}
-
-/* Fila de filtros */
-.oportunidades-wrapper .tabla-oportunidades thead tr.filtros-columnas th {
-  vertical-align: middle !important;
-  padding: 10px !important;
-  height: 78px !important;
-}
-
-/* Inputs y selects dentro de la tabla */
-.oportunidades-wrapper .cell-input,
-.oportunidades-wrapper .tabla-oportunidades select,
-.oportunidades-wrapper .tabla-oportunidades input {
-  width: 100% !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-  text-align: left !important;
-}
-
-/* React select de filtros */
-.oportunidades-wrapper .select-filter {
-  width: 100% !important;
-  min-width: 0 !important;
-}
-
-.oportunidades-wrapper .react-select__control {
-  width: 100% !important;
-  min-width: 0 !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-}
-
-.oportunidades-wrapper .react-select__value-container {
-  max-width: 100% !important;
-  overflow: hidden !important;
-}
-
-.oportunidades-wrapper .react-select__multi-value {
-  max-width: 95px !important;
-}
-
-.oportunidades-wrapper .react-select__multi-value__label {
-  max-width: 70px !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-}
-
-/* Anchos más estables por columna */
-.oportunidades-wrapper .id-col {
-  text-align: center !important;
-  font-weight: 700 !important;
-}
-
-.oportunidades-wrapper .cliente-col {
-  min-width: 290px !important;
-  width: 290px !important;
-  max-width: 290px !important;
-}
-
-.oportunidades-wrapper .servicio-col,
-.oportunidades-wrapper .servicio-wrap-cell {
-  min-width: 380px !important;
-  width: 380px !important;
-  max-width: 380px !important;
-  vertical-align: top !important;
-}
-
-/* Columnas de estado y listas */
+/* =========================
+   Columnas de estado y listas
+========================= */
 .oportunidades-wrapper .tabla-oportunidades th:nth-child(5),
 .oportunidades-wrapper .tabla-oportunidades td:nth-child(5),
 .oportunidades-wrapper .tabla-oportunidades th:nth-child(6),
@@ -764,23 +686,6 @@
   min-width: 230px !important;
   width: 230px !important;
   max-width: 230px !important;
-}
-
-/* Observaciones y seguimiento */
-.oportunidades-wrapper .tabla-oportunidades td.obs-col {
-  min-width: 520px !important;
-  width: 520px !important;
-  max-width: 520px !important;
-  vertical-align: top !important;
-}
-
-/* Descripción OT */
-.oportunidades-wrapper .descripcion-ot-col,
-.oportunidades-wrapper .descripcion-ot-wrap-cell {
-  min-width: 360px !important;
-  width: 360px !important;
-  max-width: 360px !important;
-  vertical-align: top !important;
 }
 
 /* Evita que los textos se monten sobre bordes o columnas */
@@ -808,62 +713,153 @@
 .oportunidades-wrapper .tabla-oportunidades tbody tr {
   min-height: 72px !important;
 }
+
 /* =========================================================
-   Ajuste edición columna SERVICIO
-   - Evita que la vista se corra al editar.
-   - Permite ver saltos de línea guardados.
-   - En el textarea: Enter guarda/sale; Alt + Enter crea renglón.
+   OBSERVACIONES / SEGUIMIENTO OT
+   Vista organizada con scroll interno vertical
 ========================================================= */
-.oportunidades-wrapper .tabla-oportunidades td.servicio-col,
-.oportunidades-wrapper .tabla-oportunidades td.servicio-wrap-cell {
-  white-space: pre-wrap !important;
-  overflow-wrap: break-word !important;
-  word-break: normal !important;
-  overflow: hidden !important;
+.oportunidades-wrapper .tabla-oportunidades td.obs-col {
+  min-width: var(--col-long-w) !important;
+  width: var(--col-long-w) !important;
+  max-width: var(--col-long-w) !important;
+  height: 190px !important;
+  max-height: 190px !important;
+  padding: 10px 12px !important;
   vertical-align: top !important;
+  overflow: hidden !important;
+  background: #ffffff !important;
+  line-height: 1.3 !important;
 }
 
-.oportunidades-wrapper .cell-multiline-text {
-  display: block;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  word-break: normal;
-  width: 100%;
-  line-height: 1.35;
-}
-
-.oportunidades-wrapper .cell-textarea {
-  display: block !important;
+/* Contenedor interno con scroll */
+.oportunidades-wrapper .obs-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
   width: 100% !important;
-  min-width: 100% !important;
-  max-width: 100% !important;
-  min-height: 92px !important;
-  max-height: 180px !important;
-  resize: vertical !important;
+  max-height: 165px !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  white-space: pre-wrap !important;
-  overflow-wrap: break-word !important;
+  padding: 4px 8px 4px 2px !important;
+  box-sizing: border-box !important;
+  scroll-behavior: smooth;
+}
+
+/* Scroll interno más limpio */
+.oportunidades-wrapper .obs-list::-webkit-scrollbar {
+  width: 9px !important;
+}
+
+.oportunidades-wrapper .obs-list::-webkit-scrollbar-track {
+  background: #eef2f7 !important;
+  border-radius: 999px !important;
+}
+
+.oportunidades-wrapper .obs-list::-webkit-scrollbar-thumb {
+  background: #93b4f6 !important;
+  border-radius: 999px !important;
+  border: 2px solid #eef2f7 !important;
+}
+
+.oportunidades-wrapper .obs-list::-webkit-scrollbar-thumb:hover {
+  background: #2563eb !important;
+}
+
+/* Tarjeta individual */
+.oportunidades-wrapper .obs-item {
+  display: grid !important;
+  grid-template-columns: auto 1fr !important;
+  align-items: flex-start !important;
+  column-gap: 10px !important;
+  row-gap: 4px !important;
+  width: 100% !important;
+  min-height: auto !important;
+  padding: 10px 12px !important;
+  background: #f8fafc !important;
+  border: 1px solid #dbe3ef !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.05) !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+}
+
+/* Fecha como badge */
+.oportunidades-wrapper .obs-date {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 72px !important;
+  max-width: 92px !important;
+  padding: 4px 8px !important;
+  border-radius: 999px !important;
+  background: #e0edff !important;
+  color: #0f3f91 !important;
+  font-size: 0.72rem !important;
+  font-weight: 800 !important;
+  line-height: 1.1 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  margin: 0 !important;
+}
+
+/* Texto de observación */
+.oportunidades-wrapper .obs-text {
+  display: block !important;
+  width: 100% !important;
+  color: #0f172a !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  line-height: 1.45 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
   word-break: normal !important;
-  line-height: 1.35 !important;
-  font-family: inherit !important;
 }
 
-.oportunidades-wrapper .servicio-editor,
-.oportunidades-wrapper .servicio-new-editor {
-  background: #eef6ff !important;
+/* Cuando una observación no tiene fecha */
+.oportunidades-wrapper .obs-item > .obs-text:first-child {
+  grid-column: 1 / -1 !important;
 }
 
-/* No permitir que la celda de SERVICIO se expanda visualmente sobre otras columnas */
-.oportunidades-wrapper .tabla-oportunidades td.editing.servicio-col,
-.oportunidades-wrapper .tabla-oportunidades td.editing.servicio-wrap-cell {
-  overflow: hidden !important;
-  position: sticky !important;
-  z-index: 75 !important;
+/* Hover limpio */
+.oportunidades-wrapper .tabla-oportunidades tbody tr:hover td.obs-col {
+  background: #ffffff !important;
 }
 
-/* Si agregaste antes el ajuste global td.editing { overflow: visible }, este lo corrige para SERVICIO */
-.oportunidades-wrapper .tabla-oportunidades tbody td.editing.servicio-col,
-.oportunidades-wrapper .tabla-oportunidades tbody td.editing.servicio-wrap-cell {
-  background: #e0f2fe !important;
+.oportunidades-wrapper .tabla-oportunidades tbody tr:hover .obs-item {
+  background: #f8fafc !important;
+}
+
+/* =========================
+   Responsive
+========================= */
+@media (max-width: 768px) {
+  .oportunidades-wrapper {
+    --col-id-w: 90px;
+    --col-cliente-w: 220px;
+    --col-servicio-w: 280px;
+    --col-default-w: 170px;
+    --col-long-w: 430px;
+  }
+
+  .oportunidades-wrapper .upload-section {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .oportunidades-wrapper .file-name {
+    max-width: 100%;
+  }
+
+  .oportunidades-wrapper .tabla-oportunidades {
+    min-width: 3000px;
+  }
+
+  .oportunidades-wrapper .obs-item {
+    grid-template-columns: 1fr !important;
+  }
+
+  .oportunidades-wrapper .obs-date {
+    width: fit-content !important;
+    max-width: 100% !important;
+  }
 }
