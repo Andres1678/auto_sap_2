@@ -7,6 +7,7 @@ import ResumenCalificacion from "./ResumenCalificacion";
 import "./DashboardOportunidades.css";
 import { jfetch } from "./lib/api";
 import ModalWinRate from "./ModalWinRate";
+import ModalDetalleConsultoria from "./ModalDetalleConsultoria";
 
 /* ===================== React-Select styles ===================== */
 const rsStyles = {
@@ -433,6 +434,7 @@ export default function DashboardOportunidades() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState([]);
   const [openWinRateModal, setOpenWinRateModal] = useState(false);
+  const [openDetalleConsultoriaModal, setOpenDetalleConsultoriaModal] = useState(false);
 
   const [filtros, setFiltros] = useState({
     anios: [],
@@ -717,6 +719,15 @@ export default function DashboardOportunidades() {
             disabled={loading}
           >
             Ver Win Rate
+          </button>
+
+          <button
+            className="oport-btn"
+            type="button"
+            onClick={() => setOpenDetalleConsultoriaModal(true)}
+            disabled={loading}
+          >
+            Detalle Consultoría
           </button>
 
           <button className="oport-btn" onClick={limpiar} disabled={loading}>
@@ -1085,6 +1096,14 @@ export default function DashboardOportunidades() {
         options={opciones}
         selectCommon={selectCommon}
         baseTitle="1ER SEMESTRE 2025"
+      />
+
+      <ModalDetalleConsultoria
+        isOpen={openDetalleConsultoriaModal}
+        onClose={() => setOpenDetalleConsultoriaModal(false)}
+        rows={dataFiltrada}
+        options={opciones}
+        selectCommon={selectCommon}
       />
     </div>
   );
