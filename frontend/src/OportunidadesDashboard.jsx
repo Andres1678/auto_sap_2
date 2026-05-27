@@ -8,6 +8,7 @@ import "./DashboardOportunidades.css";
 import { jfetch } from "./lib/api";
 import ModalWinRate from "./ModalWinRate";
 import ModalDetalleConsultoria from "./ModalDetalleConsultoria";
+import DetalleComercial from "./DetalleComercial";
 
 /* ===================== React-Select styles ===================== */
 const rsStyles = {
@@ -431,6 +432,8 @@ function renderObservacionesCell(value) {
 
 /* ===================== Component ===================== */
 export default function DashboardOportunidades() {
+  const [activeTab, setActiveTab] = useState("resumen");
+
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState([]);
   const [openWinRateModal, setOpenWinRateModal] = useState(false);
@@ -684,6 +687,32 @@ export default function DashboardOportunidades() {
     classNamePrefix: "rs",
   };
 
+  const handleNavigate = (tab) => {
+    if (tab === "resumen") {
+      setActiveTab("resumen");
+      return;
+    }
+
+    if (tab === "win-rate") {
+      setActiveTab("resumen");
+      setOpenWinRateModal(true);
+      return;
+    }
+
+    if (tab === "detalle-consultorias") {
+      setActiveTab("resumen");
+      setOpenDetalleConsultoriaModal(true);
+      return;
+    }
+
+    if (tab === "detalle-comercial") {
+      setActiveTab("detalle-comercial");
+      return;
+    }
+
+    Swal.fire("En construcción", "Esta vista aún no está implementada.", "info");
+  };
+
   const renderKpiTooltip = (titulo, items) => (
     <div className="kpi-tooltip">
       <div className="kpi-tooltip-title">{titulo}</div>
@@ -703,8 +732,70 @@ export default function DashboardOportunidades() {
     </div>
   );
 
+  if (activeTab === "detalle-comercial") {
+    return <DetalleComercial onNavigate={handleNavigate} />;
+  }
+
   return (
     <div className="oport-dash-wrapper">
+      <div className="oport-tabs">
+        <button
+          type="button"
+          className="oport-tab-btn is-active"
+          onClick={() => handleNavigate("resumen")}
+        >
+          Resumen
+        </button>
+
+        <button
+          type="button"
+          className="oport-tab-btn"
+          onClick={() => handleNavigate("win-rate")}
+        >
+          Win Rate
+        </button>
+
+        <button
+          type="button"
+          className="oport-tab-btn"
+          onClick={() => handleNavigate("detalle-perdidas")}
+        >
+          Detalle perdidas
+        </button>
+
+        <button
+          type="button"
+          className="oport-tab-btn"
+          onClick={() => handleNavigate("detalle-consultorias")}
+        >
+          Detalle Consultorias
+        </button>
+
+        <button
+          type="button"
+          className="oport-tab-btn"
+          onClick={() => handleNavigate("detalle-comercial")}
+        >
+          Detalle Comercial
+        </button>
+
+        <button
+          type="button"
+          className="oport-tab-btn"
+          onClick={() => handleNavigate("detalle-ots")}
+        >
+          Detalle OTS
+        </button>
+
+        <button
+          type="button"
+          className="oport-tab-btn"
+          onClick={() => handleNavigate("ingreso-cierre-mes")}
+        >
+          Ingreso por cierre de mes
+        </button>
+      </div>
+
       <div className="oport-topbar">
         <div>
           <h2 className="oport-dash-title">Consultorías y oportunidades comerciales CoE SAP</h2>
@@ -712,24 +803,6 @@ export default function DashboardOportunidades() {
         </div>
 
         <div className="oport-topbar-actions">
-          <button
-            className="oport-btn"
-            type="button"
-            onClick={() => setOpenWinRateModal(true)}
-            disabled={loading}
-          >
-            Ver Win Rate
-          </button>
-
-          <button
-            className="oport-btn"
-            type="button"
-            onClick={() => setOpenDetalleConsultoriaModal(true)}
-            disabled={loading}
-          >
-            Detalle Consultoría
-          </button>
-
           <button className="oport-btn" onClick={limpiar} disabled={loading}>
             Limpiar filtros
           </button>

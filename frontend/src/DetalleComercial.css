@@ -1,0 +1,377 @@
+:root {
+  --dcom-bg: #f3f4f6;
+  --dcom-card: #ffffff;
+  --dcom-border: #d1d5db;
+  --dcom-border-soft: #e5e7eb;
+  --dcom-title-red: #dc2626;
+  --dcom-head: #334155;
+  --dcom-text: #111827;
+  --dcom-muted: #6b7280;
+  --dcom-sidebar: #e5e5e5;
+  --dcom-sidebar-border: #bfbfbf;
+  --dcom-blue: #0b74b8;
+  --dcom-btn-blue: #0b4f8a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.dcom-wrapper {
+  min-height: 100vh;
+  background: var(--dcom-bg);
+  color: var(--dcom-text);
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 6px 10px 16px;
+}
+
+/* =========================
+   TABS
+========================= */
+.dcom-tabs {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dcom-tab-btn {
+  height: 31px;
+  border: 1px solid #8e8e8e;
+  background: #ffffff;
+  color: #333333;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.dcom-tab-btn.is-active {
+  background: #2d2d2d;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+/* =========================
+   HEADER
+========================= */
+.dcom-header {
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.dcom-header h1 {
+  margin: 4px 0 8px;
+  text-align: center;
+  color: var(--dcom-title-red);
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.dcom-logo {
+  position: absolute;
+  right: 8px;
+  top: -4px;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 25%, #ff5555, #b80000);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 13px;
+  box-shadow:
+    inset 0 2px 8px rgba(255, 255, 255, 0.35),
+    0 4px 10px rgba(15, 23, 42, 0.18);
+}
+
+/* =========================
+   LAYOUT
+========================= */
+.dcom-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  gap: 12px;
+  align-items: start;
+}
+
+.dcom-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dcom-sidebar {
+  background: var(--dcom-sidebar);
+  border: 1px solid var(--dcom-sidebar-border);
+  border-radius: 16px;
+  padding: 12px;
+  min-height: calc(100vh - 126px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* =========================
+   LOADING
+========================= */
+.dcom-loading {
+  background: #ffffff;
+  border: 1px solid var(--dcom-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--dcom-muted);
+  font-weight: 800;
+}
+
+/* =========================
+   KPIS
+========================= */
+.dcom-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 8px;
+  max-width: 580px;
+}
+
+.dcom-kpi-card {
+  background: var(--dcom-card);
+  border: 1px solid var(--dcom-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-height: 72px;
+}
+
+.dcom-kpi-card span {
+  display: block;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 2px;
+}
+
+.dcom-kpi-card strong {
+  display: block;
+  color: var(--dcom-blue);
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+/* =========================
+   TABLE
+========================= */
+.dcom-table-card {
+  background: #ffffff;
+  border: 1px solid var(--dcom-border);
+  border-radius: 8px;
+  padding: 6px;
+  min-height: 640px;
+}
+
+.dcom-table-scroll {
+  width: 100%;
+  overflow: auto;
+  max-height: 650px;
+}
+
+.dcom-table {
+  width: 740px;
+  min-width: 740px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.dcom-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--dcom-head);
+  color: #ffffff;
+  border: 1px solid #9ca3af;
+  padding: 8px 10px;
+  font-size: 12px;
+  text-align: center;
+  font-weight: 900;
+}
+
+.dcom-table thead th:first-child {
+  text-align: center;
+  width: 450px;
+}
+
+.dcom-table tbody td {
+  border-bottom: 1px solid #e5e7eb;
+  border-right: 1px solid #e5e7eb;
+  padding: 6px 8px;
+  color: #333333;
+}
+
+.dcom-table tbody td:first-child {
+  text-align: left;
+}
+
+.dcom-table tbody td:nth-child(2),
+.dcom-table tbody td:nth-child(3),
+.dcom-table tbody td:nth-child(4) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.dcom-parent-row td {
+  background: #fafafa;
+}
+
+.dcom-parent-label {
+  font-weight: 900;
+  color: #333333;
+}
+
+.dcom-child-row td {
+  background: #ffffff;
+}
+
+.dcom-child-row td:first-child {
+  font-weight: 700;
+  color: #3f3f46;
+}
+
+.dcom-child-indent {
+  display: inline-block;
+  width: 18px;
+}
+
+.dcom-expand-btn {
+  width: 18px;
+  height: 18px;
+  margin-right: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #555555;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.dcom-total-row td {
+  background: #f3f4f6;
+  font-weight: 900;
+}
+
+.dcom-empty {
+  text-align: center !important;
+  color: #6b7280;
+  font-weight: 800;
+  padding: 18px !important;
+}
+
+/* =========================
+   SIDEBAR FILTERS
+========================= */
+.dcom-filter-item {
+  background: #f7f7f7;
+  border: 1px solid #cfcfcf;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.dcom-filter-item label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.15;
+  color: #4b5563;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.dcom-filter-double {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dcom-clear-btn {
+  margin-top: auto;
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #0b3e6d;
+  background: var(--dcom-btn-blue);
+  color: #ffffff;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.dcom-clear-btn:hover {
+  background: #0f63aa;
+}
+
+/* =========================
+   REACT SELECT
+========================= */
+.dcom-rs-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dcom-wrapper .rs__menu {
+  z-index: 99999 !important;
+}
+
+.dcom-wrapper .rs__option {
+  font-size: 12px !important;
+}
+
+.dcom-wrapper .rs__multi-value {
+  max-width: 115px;
+}
+
+.dcom-wrapper .rs__multi-value__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+@media (max-width: 1200px) {
+  .dcom-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .dcom-sidebar {
+    min-height: auto;
+  }
+
+  .dcom-table {
+    width: 100%;
+    min-width: 740px;
+  }
+}
+
+@media (max-width: 900px) {
+  .dcom-tabs {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dcom-header h1 {
+    font-size: 1.45rem;
+    padding-right: 62px;
+  }
+
+  .dcom-kpis {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 100%;
+  }
+}

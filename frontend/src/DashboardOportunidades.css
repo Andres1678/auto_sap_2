@@ -40,6 +40,37 @@
   padding: 10px 14px 18px;
 }
 
+
+/* ===========================================================
+   TABS SUPERIORES
+=========================================================== */
+.oport-tabs {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.oport-tab-btn {
+  height: 31px;
+  border: 1px solid #8e8e8e;
+  background: #ffffff;
+  color: #333333;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.oport-tab-btn:hover {
+  background: #f3f4f6;
+}
+
+.oport-tab-btn.is-active {
+  background: #2d2d2d;
+  color: #ffffff;
+  font-weight: 800;
+}
+
 /* ===========================================================
    TOPBAR
 =========================================================== */
@@ -924,6 +955,13 @@
     min-width: 220px;
     max-width: calc(100vw - 50px);
     left: 8px;
+  }
+}
+
+
+@media (max-width: 900px) {
+  .oport-tabs {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
