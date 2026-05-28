@@ -585,19 +585,6 @@ export default function DetalleOTS({ onNavigate }) {
         ))}
       </div>
 
-      <header className="dots-header">
-        <div>
-          <h1>CoE Avances SAP</h1>
-          <div className="dots-red-line" />
-          <h2>3. Gestión Ordenes de Trabajo</h2>
-        </div>
-
-        <div className="dots-cycle-badge">
-          <strong>P</strong>
-          <span>A</span>
-        </div>
-      </header>
-
       <div className="dots-layout">
         <main className="dots-main">
           {loading && <div className="dots-loading">Cargando detalle de OTS...</div>}

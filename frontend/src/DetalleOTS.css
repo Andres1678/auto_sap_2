@@ -1,5 +1,5 @@
 :root {
-  --dots-bg: #f3f4f6;
+  --dots-bg: #f5f6f8;
   --dots-red: #c90000;
   --dots-red-title: #d40000;
   --dots-head: #c90000;
@@ -23,10 +23,7 @@
   padding: 6px 10px 18px;
   font-family: "Segoe UI", Roboto, Arial, sans-serif;
   color: var(--dots-text);
-  background:
-    radial-gradient(circle at 8% 96%, rgba(0, 0, 0, 0.08) 0 2px, transparent 3px) 0 0 / 18px 18px,
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(245, 245, 245, 0.86)),
-    var(--dots-bg);
+background: var(--dots-bg);
 }
 
 .dots-tabs {
@@ -114,11 +111,12 @@
   grid-template-columns: minmax(0, 1fr) 250px;
   gap: 12px;
   align-items: start;
+  margin-top: 8px;
 }
 
 .dots-main {
   min-width: 0;
-  padding: 0 16px 0 62px;
+  padding: 0 8px 0 8px;
 }
 
 .dots-loading {
