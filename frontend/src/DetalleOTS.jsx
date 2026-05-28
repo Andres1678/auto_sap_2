@@ -1,0 +1,806 @@
+import React, { useEffect, useMemo, useState } from "react";
+import Select, { components } from "react-select";
+import Swal from "sweetalert2";
+import { jfetch } from "./lib/api";
+import "./DetalleOTS.css";
+
+const nfMoney = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 });
+
+const MONTH_LABELS = {
+  1: "ENERO",
+  2: "FEBRERO",
+  3: "MARZO",
+  4: "ABRIL",
+  5: "MAYO",
+  6: "JUNIO",
+  7: "JULIO",
+  8: "AGOSTO",
+  9: "SEPTIEMBRE",
+  10: "OCTUBRE",
+  11: "NOVIEMBRE",
+  12: "DICIEMBRE",
+};
+
+const CERRADAS_OT = new Set(
+  [
+    "CERRADA",
+    "CERRADAS",
+    "CERRADO",
+    "CERRADOS",
+    "CERRADO SIN PAGO",
+    "FINALIZADO",
+    "FINALIZADA",
+  ].map(normKeyForMatch)
+);
+
+const SUSPENDIDAS_OT = new Set(
+  [
+    "SUSPENDIDA",
+    "SUSPENDIDAS",
+    "SUSPENDIDO",
+    "SUSPENDIDOS",
+    "CANCELADA",
+    "CANCELADO",
+  ].map(normKeyForMatch)
+);
+
+const EN_PROCESO_OT = new Set(
+  [
+    "EN PROCESO",
+    "EN TRAMITE",
+    "EN TRÁMITE",
+    "NO INICIADO",
+    "ABIERTA",
+    "ABIERTO",
+    "PENDIENTE",
+  ].map(normKeyForMatch)
+);
+
+const rsStyles = {
+  control: (base, state) => ({
+    ...base,
+    minHeight: 34,
+    borderRadius: 7,
+    borderColor: state.isFocused ? "#94a3b8" : "#d1d5db",
+    boxShadow: state.isFocused ? "0 0 0 3px rgba(148, 163, 184, .18)" : "none",
+    ":hover": { borderColor: "#94a3b8" },
+    fontSize: 12,
+  }),
+  placeholder: (base) => ({ ...base, color: "#64748b", fontSize: 12 }),
+  valueContainer: (base) => ({ ...base, padding: "0 8px", maxHeight: 66, overflowY: "auto" }),
+  multiValue: (base) => ({ ...base, borderRadius: 999, background: "#e2e8f0" }),
+  multiValueLabel: (base) => ({ ...base, fontSize: 11, fontWeight: 800 }),
+  menuPortal: (base) => ({ ...base, zIndex: 99999 }),
+  menu: (base) => ({ ...base, zIndex: 99999 }),
+};
+
+function CheckboxOption(props) {
+  return (
+    <components.Option {...props}>
+      <div className="dots-rs-option">
+        <input type="checkbox" checked={props.isSelected} readOnly />
+        <span>{props.label}</span>
+      </div>
+    </components.Option>
+  );
+}
+
+function normalizeText(value) {
+  return String(value ?? "").replace(/\u00A0/g, " ").trim();
+}
+
+function normKeyForMatch(value) {
+  let s = normalizeText(value)
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
+  s = s.replace(/\b0TP\b/g, "OTP").replace(/\b0TE\b/g, "OTE").replace(/\b0TL\b/g, "OTL");
+
+  return s;
+}
+
+function displayText(value, fallback = "-") {
+  const s = normalizeText(value);
+  return s || fallback;
+}
+
+function displayLabel(value) {
+  return normalizeText(value).toUpperCase();
+}
+
+function toNumberSmart(value) {
+  if (value === null || value === undefined || value === "") return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
+  let s = String(value).trim();
+  if (!s) return 0;
+
+  s = s
+    .replace(/\u00A0/g, " ")
+    .replace(/\s/g, "")
+    .replace(/COP/gi, "")
+    .replace(/USD/gi, "")
+    .replace(/[$€£]/g, "")
+    .replace(/%/g, "");
+
+  if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s)) {
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  const commaCount = (s.match(/,/g) || []).length;
+  const dotCount = (s.match(/\./g) || []).length;
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+
+  if (commaCount > 0 && dotCount > 0) {
+    const decimalSep = lastComma > lastDot ? "," : ".";
+    const thousandSep = decimalSep === "," ? "." : ",";
+    s = s.split(thousandSep).join("");
+    if (decimalSep === ",") s = s.replace(",", ".");
+  } else if (commaCount > 0 && dotCount === 0) {
+    if (commaCount === 1) {
+      const after = s.slice(lastComma + 1);
+      const before = s.slice(0, lastComma).replace(/^[+-]/, "");
+      if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
+      else s = s.replace(",", ".");
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (dotCount > 0 && commaCount === 0) {
+    if (dotCount === 1) {
+      const after = s.slice(lastDot + 1);
+      const before = s.slice(0, lastDot).replace(/^[+-]/, "");
+      if (after.length === 3 && before.length <= 3) s = s.replace(".", "");
+    } else {
+      s = s.replace(/\./g, "");
+    }
+  }
+
+  s = s.replace(/[^\d.+-eE]/g, "");
+
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function readMoney(row, keys) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== null && value !== undefined && String(value).trim() !== "") {
+      return toNumberSmart(value);
+    }
+  }
+  return 0;
+}
+
+function fmtMoney(value) {
+  return `$ ${nfMoney.format(toNumberSmart(value))}`;
+}
+
+function toIsoDate(value) {
+  if (!value) return "";
+
+  const raw = String(value).trim();
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function formatDate(value) {
+  const iso = toIsoDate(value);
+  if (!iso) return "-";
+
+  const [, mm, dd] = iso.split("-");
+  return `${dd}/${mm}`;
+}
+
+function getYearFromRow(row) {
+  const raw = String(row?.fecha_creacion ?? "").trim();
+  const match = raw.match(/^(\d{4})-/);
+  return match?.[1] || "";
+}
+
+function getMonthFromRow(row) {
+  const raw = String(row?.fecha_creacion ?? "").trim();
+  const match = raw.match(/^\d{4}-(\d{2})-/);
+  if (!match?.[1]) return "";
+  return String(Number(match[1]));
+}
+
+function getNoOT(row) {
+  return (
+    row?.num_ot ??
+    row?.no_ot ??
+    row?.numero_ot ??
+    row?.ot ??
+    row?.["No OT"] ??
+    row?.["NO OT"] ??
+    ""
+  );
+}
+
+function getEstadoOT(row) {
+  return row?.estado_ot ?? row?.estadoOT ?? row?.["ESTADO OT"] ?? "";
+}
+
+function getFechaCierre(row) {
+  return row?.fecha_cierre ?? row?.fecha_acta_cierre_ot ?? row?.fecha_cierre_oportunidad ?? "";
+}
+
+function getFechaCompromiso(row) {
+  return row?.fecha_compromiso ?? row?.proyeccion_ingreso ?? row?.fecha_cierre_oportunidad ?? "";
+}
+
+function getOtBucket(row) {
+  const estadoN = normKeyForMatch(getEstadoOT(row));
+
+  if (CERRADAS_OT.has(estadoN)) return "cerradas";
+  if (SUSPENDIDAS_OT.has(estadoN)) return "suspendidas";
+  if (EN_PROCESO_OT.has(estadoN)) return "proceso";
+
+  return "otros";
+}
+
+function mostrarEnDashboard(row) {
+  const raw = row?.mostrar_dashboard ?? row?.mostrarDashboard ?? row?.["MOSTRAR EN DASHBOARD"] ?? "";
+  const value = normKeyForMatch(raw);
+  return !["NO", "N", "FALSE", "0"].includes(value);
+}
+
+function toOptions(values = []) {
+  const map = new Map();
+
+  values.forEach((value) => {
+    const raw = normalizeText(value);
+    if (!raw) return;
+
+    const key = normKeyForMatch(raw);
+    if (!map.has(key)) {
+      map.set(key, { value: raw, label: displayLabel(raw) });
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) =>
+    String(a.label).localeCompare(String(b.label), "es", { sensitivity: "base" })
+  );
+}
+
+function toDateOptions(values = []) {
+  return [...new Set(values.map(toIsoDate).filter(Boolean))]
+    .sort()
+    .map((value) => ({ value, label: value }));
+}
+
+function matchMulti(value, selected) {
+  if (!Array.isArray(selected) || !selected.length) return true;
+  const current = normKeyForMatch(value);
+  return selected.some((opt) => normKeyForMatch(opt?.value) === current);
+}
+
+function matchDateMulti(value, selected) {
+  if (!Array.isArray(selected) || !selected.length) return true;
+  const current = toIsoDate(value);
+  return selected.some((opt) => toIsoDate(opt?.value) === current);
+}
+
+function valuesOf(selected = []) {
+  return selected.map((item) => item.value);
+}
+
+function buildBackendQuery(filters) {
+  const params = new URLSearchParams();
+  const add = (key, values) => valuesOf(values).forEach((v) => params.append(`${key}[]`, v));
+
+  add("anio", filters.anios);
+  add("mes", filters.meses);
+  add("estado_ot", filters.estadoOT);
+  add("direccion_comercial", filters.direccionComercial);
+  add("gerencia_comercial", filters.gerenciaComercial);
+  add("nombre_cliente", filters.cliente);
+  add("fecha_acta_cierre_ot", filters.fechaActaCierreOT);
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function getGroupDate(row, dateType) {
+  if (dateType === "cierre") return formatDate(getFechaCierre(row));
+  if (dateType === "compromiso") return formatDate(getFechaCompromiso(row));
+  return "";
+}
+
+function buildDetalleRows(rows, config) {
+  const map = new Map();
+
+  rows.forEach((row) => {
+    const fecha = getGroupDate(row, config.dateType);
+    const nombreCliente = displayText(row?.nombre_cliente, "SIN CLIENTE");
+    const servicio = displayText(row?.servicio, "SIN SERVICIO");
+    const noOT = displayText(getNoOT(row), "SIN OT");
+    const tipoMoneda = displayText(row?.tipo_moneda, "COP").toUpperCase();
+    const otc = readMoney(row, ["otc", "OTC", "otr", "OTR"]);
+    const mrc = readMoney(row, ["mrc", "MRC"]);
+
+    const keyParts = config.dateType
+      ? [fecha, nombreCliente, servicio, noOT, tipoMoneda]
+      : [nombreCliente, servicio, noOT, tipoMoneda];
+
+    const key = keyParts.map(normKeyForMatch).join("||");
+
+    if (!map.has(key)) {
+      map.set(key, {
+        fecha,
+        nombreCliente,
+        servicio,
+        noOT,
+        tipoMoneda,
+        otc: 0,
+        mrc: 0,
+        cantidad: 0,
+      });
+    }
+
+    const item = map.get(key);
+    item.otc += otc;
+    item.mrc += mrc;
+    item.cantidad += 1;
+  });
+
+  return Array.from(map.values()).sort((a, b) => {
+    const fechaA = a.fecha === "-" ? "99/99" : a.fecha;
+    const fechaB = b.fecha === "-" ? "99/99" : b.fecha;
+
+    if (config.dateType && fechaA !== fechaB) return fechaA.localeCompare(fechaB);
+    return a.nombreCliente.localeCompare(b.nombreCliente, "es", { sensitivity: "base" });
+  });
+}
+
+export default function DetalleOTS({ onNavigate }) {
+  const [loading, setLoading] = useState(false);
+  const [rows, setRows] = useState([]);
+  const [filters, setFilters] = useState({
+    anios: [],
+    meses: [],
+    estadoOT: [],
+    direccionComercial: [],
+    gerenciaComercial: [],
+    cliente: [],
+    tipoMoneda: [],
+    noOT: [],
+    fechaActaCierreOT: [],
+  });
+
+  const [options, setOptions] = useState({
+    anios: [],
+    meses: [],
+    estadoOT: [],
+    direccionComercial: [],
+    gerenciaComercial: [],
+    cliente: [],
+    fechaActaCierreOT: [],
+  });
+
+  const portalTarget = typeof document !== "undefined" ? document.body : null;
+
+  const selectCommon = {
+    isMulti: true,
+    closeMenuOnSelect: false,
+    hideSelectedOptions: false,
+    styles: rsStyles,
+    menuPortalTarget: portalTarget,
+    getOptionValue: (item) => String(item.value),
+    getOptionLabel: (item) => String(item.label),
+    components: { Option: CheckboxOption },
+    classNamePrefix: "rs",
+  };
+
+  const backendQuery = useMemo(() => buildBackendQuery(filters), [
+    filters.anios,
+    filters.meses,
+    filters.estadoOT,
+    filters.direccionComercial,
+    filters.gerenciaComercial,
+    filters.cliente,
+    filters.fechaActaCierreOT,
+  ]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadFilters() {
+      try {
+        const res = await jfetch("/oportunidades/filters");
+        const json = await res.json();
+
+        if (!active) return;
+
+        setOptions({
+          anios: (json.anios || []).map((year) => ({ value: String(year), label: String(year) })),
+          meses: (json.meses || []).map((month) => ({
+            value: String(month),
+            label: MONTH_LABELS[Number(month)] || String(month),
+          })),
+          estadoOT: toOptions(json.estado_ot || []),
+          direccionComercial: toOptions(json.direccion_comercial || []),
+          gerenciaComercial: toOptions(json.gerencia_comercial || []),
+          cliente: toOptions(json.nombre_cliente || []),
+          fechaActaCierreOT: toDateOptions(json.fecha_acta_cierre_ot || []),
+        });
+      } catch (error) {
+        console.error("Error cargando filtros de Detalle OTS:", error);
+      }
+    }
+
+    loadFilters();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRows() {
+      setLoading(true);
+
+      try {
+        const res = await jfetch(`/oportunidades${backendQuery}`);
+
+        if (!res.ok) throw new Error("No se pudo consultar oportunidades");
+
+        const json = await res.json();
+
+        if (!active) return;
+
+        setRows(Array.isArray(json) ? json : []);
+      } catch (error) {
+        console.error("Error cargando Detalle OTS:", error);
+        if (active) setRows([]);
+        Swal.fire("Error", "No se pudo consultar el detalle de OTS", "error");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadRows();
+
+    return () => {
+      active = false;
+    };
+  }, [backendQuery]);
+
+  const dynamicOptions = useMemo(() => {
+    return {
+      tipoMoneda: toOptions(rows.map((row) => row?.tipo_moneda)),
+      noOT: toOptions(rows.map(getNoOT)),
+    };
+  }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    return (rows || []).filter((row) => {
+      if (!mostrarEnDashboard(row)) return false;
+
+      return (
+        matchMulti(getYearFromRow(row), filters.anios) &&
+        matchMulti(getMonthFromRow(row), filters.meses) &&
+        matchMulti(getEstadoOT(row), filters.estadoOT) &&
+        matchMulti(row?.direccion_comercial, filters.direccionComercial) &&
+        matchMulti(row?.gerencia_comercial, filters.gerenciaComercial) &&
+        matchMulti(row?.nombre_cliente, filters.cliente) &&
+        matchMulti(row?.tipo_moneda, filters.tipoMoneda) &&
+        matchMulti(getNoOT(row), filters.noOT) &&
+        matchDateMulti(row?.fecha_acta_cierre_ot, filters.fechaActaCierreOT)
+      );
+    });
+  }, [rows, filters]);
+
+  const buckets = useMemo(() => {
+    const out = {
+      cerradas: [],
+      suspendidas: [],
+      proceso: [],
+      otros: [],
+    };
+
+    filteredRows.forEach((row) => {
+      const bucket = getOtBucket(row);
+      out[bucket].push(row);
+    });
+
+    return out;
+  }, [filteredRows]);
+
+  const tablaCerradas = useMemo(
+    () => buildDetalleRows(buckets.cerradas, { dateType: "cierre" }),
+    [buckets.cerradas]
+  );
+
+  const tablaSuspendidas = useMemo(
+    () => buildDetalleRows(buckets.suspendidas, { dateType: null }),
+    [buckets.suspendidas]
+  );
+
+  const tablaProceso = useMemo(
+    () => buildDetalleRows(buckets.proceso, { dateType: "compromiso" }),
+    [buckets.proceso]
+  );
+
+  const kpis = useMemo(() => {
+    return {
+      total: filteredRows.length,
+      cerradas: buckets.cerradas.length,
+      suspendidas: buckets.suspendidas.length,
+      proceso: buckets.proceso.length,
+    };
+  }, [filteredRows, buckets]);
+
+  const clearFilters = () => {
+    setFilters({
+      anios: [],
+      meses: [],
+      estadoOT: [],
+      direccionComercial: [],
+      gerenciaComercial: [],
+      cliente: [],
+      tipoMoneda: [],
+      noOT: [],
+      fechaActaCierreOT: [],
+    });
+  };
+
+  const tabs = [
+    { key: "resumen", label: "Resumen" },
+    { key: "win-rate", label: "Win Rate" },
+    { key: "detalle-perdidas", label: "Detalle perdidas" },
+    { key: "detalle-consultorias", label: "Detalle Consultorias" },
+    { key: "detalle-comercial", label: "Detalle Comercial" },
+    { key: "detalle-ots", label: "Detalle OTS" },
+    { key: "ingreso-cierre-mes", label: "Ingreso por cierre de mes" },
+  ];
+
+  return (
+    <div className="dots-wrapper">
+      <div className="dots-tabs">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            className={`dots-tab-btn ${tab.key === "detalle-ots" ? "is-active" : ""}`}
+            onClick={() => onNavigate?.(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <header className="dots-header">
+        <div>
+          <h1>CoE Avances SAP</h1>
+          <div className="dots-red-line" />
+          <h2>3. Gestión Ordenes de Trabajo</h2>
+        </div>
+
+        <div className="dots-cycle-badge">
+          <strong>P</strong>
+          <span>A</span>
+        </div>
+      </header>
+
+      <div className="dots-layout">
+        <main className="dots-main">
+          {loading && <div className="dots-loading">Cargando detalle de OTS...</div>}
+
+          <section className="dots-kpis">
+            <div className="dots-kpi-card">
+              <span>Total OTS</span>
+              <strong>{kpis.total}</strong>
+            </div>
+            <div className="dots-kpi-card">
+              <span>Cerradas</span>
+              <strong>{kpis.cerradas}</strong>
+            </div>
+            <div className="dots-kpi-card">
+              <span>Suspendidas</span>
+              <strong>{kpis.suspendidas}</strong>
+            </div>
+            <div className="dots-kpi-card">
+              <span>En proceso</span>
+              <strong>{kpis.proceso}</strong>
+            </div>
+          </section>
+
+          <DetalleTable
+            title="Cerradas"
+            rows={tablaCerradas}
+            firstColumn="FECHA DE CIERRE"
+            showDate
+          />
+
+          <DetalleTable
+            title="Suspendida"
+            rows={tablaSuspendidas}
+            firstColumn={null}
+            showDate={false}
+          />
+
+          <DetalleTable
+            title="En proceso"
+            rows={tablaProceso}
+            firstColumn="FECHA DE COMPROMISO"
+            showDate
+          />
+        </main>
+
+        <aside className="dots-sidebar">
+          <div className="dots-filter-item">
+            <label>Año, Mes</label>
+            <div className="dots-filter-double">
+              <Select
+                {...selectCommon}
+                placeholder="Año"
+                options={options.anios}
+                value={filters.anios}
+                onChange={(value) => setFilters((prev) => ({ ...prev, anios: value || [] }))}
+              />
+
+              <Select
+                {...selectCommon}
+                placeholder="Mes"
+                options={options.meses}
+                value={filters.meses}
+                onChange={(value) => setFilters((prev) => ({ ...prev, meses: value || [] }))}
+              />
+            </div>
+          </div>
+
+          <div className="dots-filter-item">
+            <label>ESTADO OT</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todas"
+              options={options.estadoOT}
+              value={filters.estadoOT}
+              onChange={(value) => setFilters((prev) => ({ ...prev, estadoOT: value || [] }))}
+            />
+          </div>
+
+          <div className="dots-filter-item">
+            <label>No OT</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todas"
+              options={dynamicOptions.noOT}
+              value={filters.noOT}
+              onChange={(value) => setFilters((prev) => ({ ...prev, noOT: value || [] }))}
+            />
+          </div>
+
+          <div className="dots-filter-item">
+            <label>Tipo de moneda</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todas"
+              options={dynamicOptions.tipoMoneda}
+              value={filters.tipoMoneda}
+              onChange={(value) => setFilters((prev) => ({ ...prev, tipoMoneda: value || [] }))}
+            />
+          </div>
+
+          <div className="dots-filter-item">
+            <label>Nombre Cliente</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todos"
+              options={options.cliente}
+              value={filters.cliente}
+              onChange={(value) => setFilters((prev) => ({ ...prev, cliente: value || [] }))}
+            />
+          </div>
+
+          <div className="dots-filter-item">
+            <label>Dirección Comercial</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todas"
+              options={options.direccionComercial}
+              value={filters.direccionComercial}
+              onChange={(value) =>
+                setFilters((prev) => ({ ...prev, direccionComercial: value || [] }))
+              }
+            />
+          </div>
+
+          <div className="dots-filter-item">
+            <label>Gerencia Comercial</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todas"
+              options={options.gerenciaComercial}
+              value={filters.gerenciaComercial}
+              onChange={(value) =>
+                setFilters((prev) => ({ ...prev, gerenciaComercial: value || [] }))
+              }
+            />
+          </div>
+
+          <div className="dots-filter-item">
+            <label>Fecha Acta de Cierre y/o OT</label>
+            <Select
+              {...selectCommon}
+              placeholder="Todas"
+              options={options.fechaActaCierreOT}
+              value={filters.fechaActaCierreOT}
+              onChange={(value) =>
+                setFilters((prev) => ({ ...prev, fechaActaCierreOT: value || [] }))
+              }
+            />
+          </div>
+
+          <button type="button" className="dots-clear-btn" onClick={clearFilters}>
+            Borrar todas las segmentaciones
+          </button>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function DetalleTable({ title, rows, firstColumn, showDate }) {
+  return (
+    <section className="dots-table-section">
+      <h3>{title}</h3>
+
+      <div className="dots-table-scroll">
+        <table className="dots-table">
+          <thead>
+            <tr>
+              {showDate && <th>{firstColumn}</th>}
+              <th>NOMBRE CLIENTE</th>
+              <th>SERVICIO</th>
+              <th>No OT</th>
+              <th>TIPO DE MONEDA</th>
+              <th>Suma de OTC</th>
+              <th>Suma de MRC</th>
+              <th>CANTIDAD</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.length ? (
+              rows.map((row, index) => (
+                <tr key={`${title}-${index}`}>
+                  {showDate && <td>{row.fecha}</td>}
+                  <td>{row.nombreCliente}</td>
+                  <td>{row.servicio}</td>
+                  <td>{row.noOT}</td>
+                  <td>{row.tipoMoneda}</td>
+                  <td>{fmtMoney(row.otc)}</td>
+                  <td>{fmtMoney(row.mrc)}</td>
+                  <td>{row.cantidad}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={showDate ? 8 : 7} className="dots-empty">
+                  Sin registros para este estado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
