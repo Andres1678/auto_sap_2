@@ -109,6 +109,7 @@ const PRC_START_COL = "codigo_prc";
 const nf = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 
 const EMPTY_FILTER_VALUE = "__EMPTY__";
+const EMPTY_FILTER_LABEL = "(Blanco)";
 
 const MOSTRAR_DASHBOARD_OPTS = ["SI", "NO"];
 
@@ -410,25 +411,33 @@ function buildEstadoResultadoMap(rows) {
   );
 }
 
+function getFilterCellValue(row, col) {
+  const value = row?.[col];
+
+  if (isDateCol(col)) {
+    return toIsoDate(value);
+  }
+
+  return normalizeText(value);
+}
+
 function buildSelectOptionsFromRows(rows, col) {
-  const mappedValues = rows.map((r) =>
-    isDateCol(col) ? toIsoDate(r?.[col]) : normalizeText(r?.[col])
+  const mappedValues = (rows || []).map((row) => getFilterCellValue(row, col));
+
+  const hasBlank = mappedValues.some((value) => value === "");
+
+  const uniqueNonBlank = [...new Set(mappedValues.filter((value) => value !== ""))].sort(
+    (a, b) => String(a).localeCompare(String(b), "es", { sensitivity: "base" })
   );
 
-  const hasEmpty = mappedValues.some((v) => v === "");
-
-  const uniqueNonEmpty = [...new Set(mappedValues.filter((v) => v !== ""))].sort((a, b) =>
-    String(a).localeCompare(String(b), "es", { sensitivity: "base" })
-  );
-
-  const options = uniqueNonEmpty.map((v) => ({
-    label: v,
-    value: v,
+  const options = uniqueNonBlank.map((value) => ({
+    label: value,
+    value,
   }));
 
-  if (hasEmpty && col === "caso_sm") {
+  if (hasBlank) {
     options.unshift({
-      label: "(Vacío)",
+      label: EMPTY_FILTER_LABEL,
       value: EMPTY_FILTER_VALUE,
     });
   }
@@ -438,7 +447,7 @@ function buildSelectOptionsFromRows(rows, col) {
 
 function toFilterOption(value) {
   return {
-    label: value === EMPTY_FILTER_VALUE ? "(Vacío)" : value,
+    label: value === EMPTY_FILTER_VALUE ? EMPTY_FILTER_LABEL : value,
     value,
   };
 }
@@ -735,7 +744,9 @@ export default function Oportunidades() {
           Object.fromEntries(
             Object.entries(filters).map(([k, v]) => [
               k,
-              Array.isArray(v) ? v.join(", ") : v,
+              Array.isArray(v)
+                ? v.map((item) => (item === EMPTY_FILTER_VALUE ? EMPTY_FILTER_LABEL : item)).join(", ")
+                : v,
             ])
           )
         ),
@@ -793,15 +804,16 @@ export default function Oportunidades() {
 
     Object.entries(currentFilters).forEach(([col, selectedValues]) => {
       if (Array.isArray(selectedValues) && selectedValues.length > 0) {
-        result = result.filter((r) => {
-          const cell = isDateCol(col) ? toIsoDate(r?.[col]) : normalizeText(r?.[col]);
-          const isEmptyCell = cell === "";
+        result = result.filter((row) => {
+          const cell = getFilterCellValue(row, col);
+          const isBlankCell = cell === "";
 
-          return selectedValues.some((val) => {
-            if (val === EMPTY_FILTER_VALUE) {
-              return isEmptyCell;
+          return selectedValues.some((selectedValue) => {
+            if (selectedValue === EMPTY_FILTER_VALUE) {
+              return isBlankCell;
             }
-            return normalizeForCompare(val) === normalizeForCompare(cell);
+
+            return normalizeForCompare(selectedValue) === normalizeForCompare(cell);
           });
         });
       }

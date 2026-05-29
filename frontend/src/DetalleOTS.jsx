@@ -745,9 +745,9 @@ export default function DetalleOTS({ onNavigate }) {
           </section>
 
           <DetalleTable
-            title="Cerradas"
-            rows={tablaCerradas}
-            firstColumn="FECHA DE CIERRE"
+            title="En proceso"
+            rows={tablaProceso}
+            firstColumn="FECHA DE COMPROMISO"
             showDate
           />
 
@@ -759,9 +759,9 @@ export default function DetalleOTS({ onNavigate }) {
           />
 
           <DetalleTable
-            title="En proceso"
-            rows={tablaProceso}
-            firstColumn="FECHA DE COMPROMISO"
+            title="Cerradas"
+            rows={tablaCerradas}
+            firstColumn="FECHA DE CIERRE"
             showDate
           />
         </main>
