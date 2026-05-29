@@ -285,6 +285,10 @@ function getFechaCompromiso(row) {
   ]);
 }
 
+function getFechaSuspendida(row) {
+  return getFechaCierre(row) || getFechaCompromiso(row) || row?.fecha_creacion || "";
+}
+
 function getRelevantDateForFilter(row) {
   const bucket = getOtBucket(row);
 
@@ -293,7 +297,7 @@ function getRelevantDateForFilter(row) {
   }
 
   if (bucket === "suspendidas") {
-    return getFechaCierre(row) || getFechaCompromiso(row) || row?.fecha_creacion || "";
+    return getFechaSuspendida(row);
   }
 
   if (bucket === "proceso") {
@@ -439,6 +443,7 @@ function buildBackendQuery(filters) {
 function getGroupDateValue(row, dateType) {
   if (dateType === "cierre") return getFechaCierre(row);
   if (dateType === "compromiso") return getFechaCompromiso(row);
+  if (dateType === "suspendida") return getFechaSuspendida(row);
   return "";
 }
 
@@ -659,7 +664,7 @@ export default function DetalleOTS({ onNavigate }) {
   );
 
   const tablaSuspendidas = useMemo(
-    () => buildDetalleRows(buckets.suspendidas, { dateType: null }),
+    () => buildDetalleRows(buckets.suspendidas, { dateType: "suspendida" }),
     [buckets.suspendidas]
   );
 
@@ -749,8 +754,8 @@ export default function DetalleOTS({ onNavigate }) {
           <DetalleTable
             title="Suspendida"
             rows={tablaSuspendidas}
-            firstColumn={null}
-            showDate={false}
+            firstColumn="FECHA"
+            showDate
           />
 
           <DetalleTable
@@ -899,14 +904,14 @@ function DetalleTable({ title, rows, firstColumn, showDate }) {
             {rows.length ? (
               rows.map((row, index) => (
                 <tr key={`${title}-${index}`}>
-                  {showDate && <td>{row.fecha}</td>}
-                  <td>{row.nombreCliente}</td>
-                  <td>{row.servicio}</td>
-                  <td>{row.noOT}</td>
-                  <td>{row.tipoMoneda}</td>
-                  <td>{fmtMoney(row.otc)}</td>
-                  <td>{fmtMoney(row.mrc)}</td>
-                  <td>{row.cantidad}</td>
+                  {showDate && <td title={row.fecha}>{row.fecha}</td>}
+                  <td title={row.nombreCliente}>{row.nombreCliente}</td>
+                  <td title={row.servicio}>{row.servicio}</td>
+                  <td title={row.noOT}>{row.noOT}</td>
+                  <td title={row.tipoMoneda}>{row.tipoMoneda}</td>
+                  <td title={fmtMoney(row.otc)}>{fmtMoney(row.otc)}</td>
+                  <td title={fmtMoney(row.mrc)}>{fmtMoney(row.mrc)}</td>
+                  <td title={String(row.cantidad)}>{row.cantidad}</td>
                 </tr>
               ))
             ) : (
