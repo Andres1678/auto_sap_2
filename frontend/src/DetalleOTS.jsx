@@ -28,8 +28,13 @@ const CERRADAS_OT = new Set(
     "CERRADO",
     "CERRADOS",
     "CERRADO SIN PAGO",
+    "CERRADA SIN PAGO",
+    "CERRADO CON PAGO",
+    "CERRADA CON PAGO",
     "FINALIZADO",
     "FINALIZADA",
+    "COMPLETADA",
+    "COMPLETADO",
   ].map(normKeyForMatch)
 );
 
@@ -53,6 +58,10 @@ const EN_PROCESO_OT = new Set(
     "ABIERTA",
     "ABIERTO",
     "PENDIENTE",
+    "EN EJECUCION",
+    "EN EJECUCIÓN",
+    "EN CURSO",
+    "OT",
   ].map(normKeyForMatch)
 );
 
@@ -205,41 +214,104 @@ function formatDate(value) {
   return `${dd}/${mm}`;
 }
 
-function getYearFromRow(row) {
-  const raw = String(row?.fecha_creacion ?? "").trim();
-  const match = raw.match(/^(\d{4})-/);
-  return match?.[1] || "";
-}
+function firstValue(row, keys) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== null && value !== undefined && String(value).trim() !== "") {
+      return value;
+    }
+  }
 
-function getMonthFromRow(row) {
-  const raw = String(row?.fecha_creacion ?? "").trim();
-  const match = raw.match(/^\d{4}-(\d{2})-/);
-  if (!match?.[1]) return "";
-  return String(Number(match[1]));
+  return "";
 }
 
 function getNoOT(row) {
-  return (
-    row?.num_ot ??
-    row?.no_ot ??
-    row?.numero_ot ??
-    row?.ot ??
-    row?.["No OT"] ??
-    row?.["NO OT"] ??
-    ""
-  );
+  return firstValue(row, [
+    "num_ot",
+    "no_ot",
+    "nro_ot",
+    "numero_ot",
+    "codigo_ot",
+    "orden_trabajo",
+    "ot",
+    "No OT",
+    "NO OT",
+  ]);
 }
 
 function getEstadoOT(row) {
-  return row?.estado_ot ?? row?.estadoOT ?? row?.["ESTADO OT"] ?? "";
+  const estadoDirecto = firstValue(row, [
+    "estado_ot",
+    "estadoOT",
+    "estado_proyecto",
+    "estadoProyecto",
+    "ESTADO OT",
+  ]);
+
+  if (estadoDirecto && normKeyForMatch(estadoDirecto) !== "NO APLICA") {
+    return estadoDirecto;
+  }
+
+  const estadoOferta = firstValue(row, ["estado_oferta", "estadoOferta", "ESTADO OFERTA"]);
+  const resultadoOferta = firstValue(row, [
+    "resultado_oferta",
+    "resultadoOferta",
+    "RESULTADO_OFERTA_GLOBAL",
+  ]);
+
+  if (normKeyForMatch(estadoOferta) === "OT" || normKeyForMatch(resultadoOferta) === "OT") {
+    return "OT";
+  }
+
+  return "";
 }
 
 function getFechaCierre(row) {
-  return row?.fecha_cierre ?? row?.fecha_acta_cierre_ot ?? row?.fecha_cierre_oportunidad ?? "";
+  return firstValue(row, [
+    "fecha_acta_cierre_ot",
+    "fecha_cierre",
+    "fecha_cierre_oportunidad",
+    "fecha_cierre_sm",
+    "fecha_entrega_oferta_final",
+  ]);
 }
 
 function getFechaCompromiso(row) {
-  return row?.fecha_compromiso ?? row?.proyeccion_ingreso ?? row?.fecha_cierre_oportunidad ?? "";
+  return firstValue(row, [
+    "fecha_compromiso",
+    "proyeccion_ingreso",
+    "fecha_cierre_oportunidad",
+    "fecha_creacion",
+  ]);
+}
+
+function getRelevantDateForFilter(row) {
+  const bucket = getOtBucket(row);
+
+  if (bucket === "cerradas") {
+    return getFechaCierre(row) || getFechaCompromiso(row) || row?.fecha_creacion || "";
+  }
+
+  if (bucket === "suspendidas") {
+    return getFechaCierre(row) || getFechaCompromiso(row) || row?.fecha_creacion || "";
+  }
+
+  if (bucket === "proceso") {
+    return getFechaCompromiso(row) || getFechaCierre(row) || row?.fecha_creacion || "";
+  }
+
+  return getFechaCompromiso(row) || getFechaCierre(row) || row?.fecha_creacion || "";
+}
+
+function getYearFromRow(row) {
+  const iso = toIsoDate(getRelevantDateForFilter(row));
+  return iso ? iso.slice(0, 4) : "";
+}
+
+function getMonthFromRow(row) {
+  const iso = toIsoDate(getRelevantDateForFilter(row));
+  if (!iso) return "";
+  return String(Number(iso.slice(5, 7)));
 }
 
 function getOtBucket(row) {
@@ -249,13 +321,63 @@ function getOtBucket(row) {
   if (SUSPENDIDAS_OT.has(estadoN)) return "suspendidas";
   if (EN_PROCESO_OT.has(estadoN)) return "proceso";
 
+  if (toIsoDate(getFechaCierre(row))) return "cerradas";
+  if (normalizeText(getNoOT(row))) return "proceso";
+
   return "otros";
 }
 
-function mostrarEnDashboard(row) {
-  const raw = row?.mostrar_dashboard ?? row?.mostrarDashboard ?? row?.["MOSTRAR EN DASHBOARD"] ?? "";
-  const value = normKeyForMatch(raw);
-  return !["NO", "N", "FALSE", "0"].includes(value);
+function isOTDetailRow(row) {
+  const noOT = normalizeText(getNoOT(row));
+  const estadoOT = normKeyForMatch(getEstadoOT(row));
+  const resultado = normKeyForMatch(row?.resultado_oferta);
+
+  return Boolean(
+    noOT ||
+      estadoOT ||
+      resultado === "OT" ||
+      toIsoDate(row?.fecha_acta_cierre_ot) ||
+      toIsoDate(row?.fecha_compromiso)
+  );
+}
+
+function normalizeMonthValue(value) {
+  const raw = normalizeText(value);
+  if (!raw) return "";
+
+  if (/^\d{1,2}$/.test(raw)) {
+    const n = Number(raw);
+    return n >= 1 && n <= 12 ? String(n) : "";
+  }
+
+  const key = normKeyForMatch(raw);
+  const found = Object.entries(MONTH_LABELS).find(([, label]) => normKeyForMatch(label) === key);
+
+  return found ? String(Number(found[0])) : "";
+}
+
+function matchMonthMulti(value, selected) {
+  if (!Array.isArray(selected) || !selected.length) return true;
+
+  const current = normalizeMonthValue(value);
+  if (!current) return false;
+
+  return selected.some((opt) => normalizeMonthValue(opt?.value) === current);
+}
+
+function yearOptionsFromRows(rows) {
+  return [...new Set((rows || []).map(getYearFromRow).filter(Boolean))]
+    .sort((a, b) => Number(a) - Number(b))
+    .map((year) => ({ value: year, label: year }));
+}
+
+function monthOptionsFromRows(rows) {
+  return [...new Set((rows || []).map(getMonthFromRow).filter(Boolean))]
+    .sort((a, b) => Number(a) - Number(b))
+    .map((month) => ({
+      value: month,
+      label: MONTH_LABELS[Number(month)] || month,
+    }));
 }
 
 function toOptions(values = []) {
@@ -302,8 +424,8 @@ function buildBackendQuery(filters) {
   const params = new URLSearchParams();
   const add = (key, values) => valuesOf(values).forEach((v) => params.append(`${key}[]`, v));
 
-  add("anio", filters.anios);
-  add("mes", filters.meses);
+  // No enviamos anio/mes al backend porque el endpoint los aplica sobre fecha_creacion.
+  // En Detalle OTS el mes debe salir de la fecha de cierre o compromiso según el estado de la OT.
   add("estado_ot", filters.estadoOT);
   add("direccion_comercial", filters.direccionComercial);
   add("gerencia_comercial", filters.gerenciaComercial);
@@ -314,17 +436,23 @@ function buildBackendQuery(filters) {
   return query ? `?${query}` : "";
 }
 
-function getGroupDate(row, dateType) {
-  if (dateType === "cierre") return formatDate(getFechaCierre(row));
-  if (dateType === "compromiso") return formatDate(getFechaCompromiso(row));
+function getGroupDateValue(row, dateType) {
+  if (dateType === "cierre") return getFechaCierre(row);
+  if (dateType === "compromiso") return getFechaCompromiso(row);
   return "";
+}
+
+function getGroupDate(row, dateType) {
+  return formatDate(getGroupDateValue(row, dateType));
 }
 
 function buildDetalleRows(rows, config) {
   const map = new Map();
 
   rows.forEach((row) => {
-    const fecha = getGroupDate(row, config.dateType);
+    const fechaRaw = getGroupDateValue(row, config.dateType);
+    const fechaIso = toIsoDate(fechaRaw);
+    const fecha = formatDate(fechaRaw);
     const nombreCliente = displayText(row?.nombre_cliente, "SIN CLIENTE");
     const servicio = displayText(row?.servicio, "SIN SERVICIO");
     const noOT = displayText(getNoOT(row), "SIN OT");
@@ -333,7 +461,7 @@ function buildDetalleRows(rows, config) {
     const mrc = readMoney(row, ["mrc", "MRC"]);
 
     const keyParts = config.dateType
-      ? [fecha, nombreCliente, servicio, noOT, tipoMoneda]
+      ? [fechaIso || fecha, nombreCliente, servicio, noOT, tipoMoneda]
       : [nombreCliente, servicio, noOT, tipoMoneda];
 
     const key = keyParts.map(normKeyForMatch).join("||");
@@ -341,6 +469,7 @@ function buildDetalleRows(rows, config) {
     if (!map.has(key)) {
       map.set(key, {
         fecha,
+        fechaIso,
         nombreCliente,
         servicio,
         noOT,
@@ -358,8 +487,8 @@ function buildDetalleRows(rows, config) {
   });
 
   return Array.from(map.values()).sort((a, b) => {
-    const fechaA = a.fecha === "-" ? "99/99" : a.fecha;
-    const fechaB = b.fecha === "-" ? "99/99" : b.fecha;
+    const fechaA = a.fechaIso || "9999-99-99";
+    const fechaB = b.fechaIso || "9999-99-99";
 
     if (config.dateType && fechaA !== fechaB) return fechaA.localeCompare(fechaB);
     return a.nombreCliente.localeCompare(b.nombreCliente, "es", { sensitivity: "base" });
@@ -406,8 +535,6 @@ export default function DetalleOTS({ onNavigate }) {
   };
 
   const backendQuery = useMemo(() => buildBackendQuery(filters), [
-    filters.anios,
-    filters.meses,
     filters.estadoOT,
     filters.direccionComercial,
     filters.gerenciaComercial,
@@ -482,19 +609,23 @@ export default function DetalleOTS({ onNavigate }) {
   }, [backendQuery]);
 
   const dynamicOptions = useMemo(() => {
+    const otRows = (rows || []).filter(isOTDetailRow);
+
     return {
-      tipoMoneda: toOptions(rows.map((row) => row?.tipo_moneda)),
-      noOT: toOptions(rows.map(getNoOT)),
+      anios: yearOptionsFromRows(otRows),
+      meses: monthOptionsFromRows(otRows),
+      tipoMoneda: toOptions(otRows.map((row) => row?.tipo_moneda)),
+      noOT: toOptions(otRows.map(getNoOT)),
     };
   }, [rows]);
 
   const filteredRows = useMemo(() => {
     return (rows || []).filter((row) => {
-      if (!mostrarEnDashboard(row)) return false;
+      if (!isOTDetailRow(row)) return false;
 
       return (
         matchMulti(getYearFromRow(row), filters.anios) &&
-        matchMulti(getMonthFromRow(row), filters.meses) &&
+        matchMonthMulti(getMonthFromRow(row), filters.meses) &&
         matchMulti(getEstadoOT(row), filters.estadoOT) &&
         matchMulti(row?.direccion_comercial, filters.direccionComercial) &&
         matchMulti(row?.gerencia_comercial, filters.gerenciaComercial) &&
@@ -637,7 +768,7 @@ export default function DetalleOTS({ onNavigate }) {
               <Select
                 {...selectCommon}
                 placeholder="Año"
-                options={options.anios}
+                options={dynamicOptions.anios.length ? dynamicOptions.anios : options.anios}
                 value={filters.anios}
                 onChange={(value) => setFilters((prev) => ({ ...prev, anios: value || [] }))}
               />
@@ -645,7 +776,7 @@ export default function DetalleOTS({ onNavigate }) {
               <Select
                 {...selectCommon}
                 placeholder="Mes"
-                options={options.meses}
+                options={dynamicOptions.meses.length ? dynamicOptions.meses : options.meses}
                 value={filters.meses}
                 onChange={(value) => setFilters((prev) => ({ ...prev, meses: value || [] }))}
               />
