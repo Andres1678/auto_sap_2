@@ -616,7 +616,6 @@ export default function Oportunidades() {
       "semestre_ejecucion",
       "publicacion_sharepoint",
       "mostrar_dashboard",
-      "calificacion_oportunidad",
     ],
     []
   );
@@ -642,7 +641,7 @@ export default function Oportunidades() {
   };
 
   const columnOrder = useMemo(
-    () => baseColumnOrder.filter((c) => !REMOVE_COLS.has(c)),
+    () => [...new Set(baseColumnOrder.filter((c) => !REMOVE_COLS.has(c)))],
     [baseColumnOrder]
   );
 
@@ -1854,8 +1853,8 @@ export default function Oportunidades() {
         <table className="tabla-oportunidades">
           <thead>
             <tr>
-              {tableColumnOrder.map((col) => (
-                <th key={col} className={getColumnClassNames(col)}>
+              {tableColumnOrder.map((col, idx) => (
+                <th key={`header-${col}-${idx}`} className={getColumnClassNames(col)}>
                   {COLUMN_LABELS[col] || col.replace(/_/g, " ").toUpperCase()}
                 </th>
               ))}
@@ -1863,8 +1862,8 @@ export default function Oportunidades() {
             </tr>
 
             <tr className="filtros-columnas">
-              {tableColumnOrder.map((col) => (
-                <th key={col} className={getColumnClassNames(col)}>
+              {tableColumnOrder.map((col, idx) => (
+                <th key={`filter-${col}-${idx}`} className={getColumnClassNames(col)}>
                   {col === "id" ? null : (
                     <Select
                       options={uniqueValues[col] || []}
@@ -1895,9 +1894,9 @@ export default function Oportunidades() {
               <tr className="new-row">
                 <td className={getColumnClassNames("id")}>-</td>
 
-                {displayColumnOrder.map((col) => (
+                {displayColumnOrder.map((col, idx) => (
                   <td
-                    key={col}
+                    key={`new-${col}-${idx}`}
                     className={[
                       getColumnClassNames(col),
                       col === SERVICIO_COL ? "servicio-wrap-cell" : "",
@@ -1920,12 +1919,12 @@ export default function Oportunidades() {
 
             {filteredData.map((row, i) => (
               <tr key={row.id ?? i} data-row-id={row.id ?? ""}>
-                {tableColumnOrder.map((col) => {
+                {tableColumnOrder.map((col, colIdx) => {
                   const isLong = isObservationsCol(col);
 
                   return (
                     <td
-                      key={col}
+                      key={`${row.id ?? i}-${col}-${colIdx}`}
                       onDoubleClick={() => {
                         if (col === "id") return;
                         if (isLong) return editLongText(row.id, col);
