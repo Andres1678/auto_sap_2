@@ -94,6 +94,8 @@ const EXCLUDE_SET = new Set(
     "0TE",
     "0TL",
     "OT",
+    "EJECUCION CONTRACTUAL",
+    "CONSUMO DE BOLSA DE HORAS",
   ].map(normKeyForMatch)
 );
 
