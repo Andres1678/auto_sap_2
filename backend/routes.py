@@ -3049,6 +3049,7 @@ EXCLUDE_LIST = [
     "0TL",
     "OT",
     "EJECUCION CONTRACTUAL",
+    "N/A",
 ]
 
 
