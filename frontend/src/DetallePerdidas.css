@@ -716,3 +716,145 @@
     text-align: left;
   }
 }
+
+
+/* =========================================================
+   Gráfica mejorada: Cantidad y pérdidas por año y mes
+   - Cantidad como barras
+   - Pérdidas como línea
+   - Scroll horizontal para evitar textos montados
+========================================================= */
+.dper-trend-wrap {
+  min-height: 310px;
+  padding: 10px 12px 8px;
+  overflow: hidden;
+}
+
+.dper-trend-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 4px 8px 0;
+}
+
+.dper-trend-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.dper-trend-scroll::-webkit-scrollbar-track {
+  background: #eef2f7;
+  border-radius: 999px;
+}
+
+.dper-trend-scroll::-webkit-scrollbar-thumb {
+  background: #93b4f6;
+  border-radius: 999px;
+  border: 2px solid #eef2f7;
+}
+
+.dper-trend-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--dper-blue);
+}
+
+.dper-trend-legend {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin: 0 0 8px;
+  font-size: 0.76rem;
+  color: #475569;
+  font-weight: 900;
+}
+
+.dper-trend-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dper-trend-legend span::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.dper-trend-legend .is-total::before {
+  background: #2563eb;
+}
+
+.dper-trend-legend .is-lost::before {
+  background: #dc2626;
+}
+
+.dper-trend-svg {
+  width: 100%;
+  height: 285px;
+  display: block;
+}
+
+.dper-grid-line {
+  stroke: #dbeafe;
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+}
+
+.dper-axis-line {
+  stroke: #cbd5e1;
+  stroke-width: 1.3;
+}
+
+.dper-axis-text {
+  fill: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.dper-month-label {
+  font-size: 10px;
+  fill: #475569;
+}
+
+.dper-bar-total {
+  fill: rgba(37, 99, 235, 0.18);
+  stroke: rgba(37, 99, 235, 0.45);
+  stroke-width: 1;
+}
+
+.dper-bar-hover {
+  fill: transparent;
+}
+
+.dper-line {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dper-line-lost {
+  stroke: #dc2626;
+}
+
+.dper-dot-lost {
+  fill: #dc2626;
+  stroke: #ffffff;
+  stroke-width: 2;
+}
+
+.dper-value-text {
+  font-size: 10px;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.dper-value-total {
+  fill: #2563eb;
+}
+
+.dper-value-lost {
+  fill: #dc2626;
+}

@@ -1087,24 +1087,47 @@ function CategoryStackedBars({ rows }) {
 }
 
 function TrendChart({ rows }) {
-  const width = 760;
-  const height = 245;
-  const padding = { top: 26, right: 22, bottom: 58, left: 42 };
+  const data = Array.isArray(rows) ? rows : [];
+
+  const width = Math.max(900, data.length * 58 + 90);
+  const height = 285;
+  const padding = { top: 28, right: 28, bottom: 58, left: 46 };
   const innerWidth = width - padding.left - padding.right;
   const innerHeight = height - padding.top - padding.bottom;
 
-  const maxValue = Math.max(...(rows || []).flatMap((row) => [row.cantidad, row.perdidas]), 1);
-  const denominator = Math.max((rows || []).length - 1, 1);
+  const maxValue = Math.max(...data.flatMap((row) => [row.cantidad, row.perdidas]), 1);
+  const roundedMax = Math.ceil(maxValue / 10) * 10 || 10;
+  const barGap = 18;
+  const step = data.length ? innerWidth / data.length : innerWidth;
+  const barWidth = Math.max(14, Math.min(32, step - barGap));
 
-  const x = (index) => padding.left + (index / denominator) * innerWidth;
-  const y = (value) => padding.top + innerHeight - (value / maxValue) * innerHeight;
+  const xCenter = (index) => padding.left + index * step + step / 2;
+  const y = (value) => padding.top + innerHeight - (value / roundedMax) * innerHeight;
+  const barX = (index) => xCenter(index) - barWidth / 2;
+  const barHeight = (value) => Math.max(0, padding.top + innerHeight - y(value));
 
-  const pathFor = (field) => {
-    if (!rows.length) return "";
-    return rows.map((row, index) => `${index === 0 ? "M" : "L"} ${x(index)} ${y(row[field])}`).join(" ");
+  const pathLost = data
+    .map((row, index) => `${index === 0 ? "M" : "L"} ${xCenter(index)} ${y(row.perdidas)}`)
+    .join(" ");
+
+  const labelEvery = data.length <= 14 ? 1 : data.length <= 26 ? 2 : data.length <= 42 ? 3 : 4;
+  const ticks = [0, Math.ceil(roundedMax / 2), roundedMax];
+
+  const shouldShowTotalLabel = (row, index) => {
+    if (!row.cantidad) return false;
+    if (data.length <= 16) return true;
+    if (row.cantidad >= roundedMax * 0.45) return true;
+    const prev = data[index - 1]?.cantidad ?? -1;
+    const next = data[index + 1]?.cantidad ?? -1;
+    return row.cantidad > prev && row.cantidad > next && row.cantidad >= 8;
   };
 
-  const ticks = [0, Math.ceil(maxValue / 2), maxValue];
+  const shouldShowLostLabel = (row, index) => {
+    if (!row.perdidas) return false;
+    if (data.length <= 20) return true;
+    if (row.perdidas >= 5) return true;
+    return index % labelEvery === 0;
+  };
 
   return (
     <div className="dper-trend-wrap">
@@ -1113,70 +1136,117 @@ function TrendChart({ rows }) {
         <span className="is-lost">Perdidas</span>
       </div>
 
-      {rows.length ? (
-        <svg viewBox={`0 0 ${width} ${height}`} className="dper-trend-svg" role="img">
-          {ticks.map((tick) => (
-            <g key={tick}>
-              <line
-                x1={padding.left}
-                x2={width - padding.right}
-                y1={y(tick)}
-                y2={y(tick)}
-                className="dper-grid-line"
-              />
-              <text x={8} y={y(tick) + 4} className="dper-axis-text">
-                {tick}
-              </text>
-            </g>
-          ))}
-
-          <path d={pathFor("cantidad")} className="dper-line dper-line-total" />
-          <path d={pathFor("perdidas")} className="dper-line dper-line-lost" />
-
-          {rows.map((row, index) => (
-            <g key={row.key}>
-              <circle cx={x(index)} cy={y(row.cantidad)} r="4" className="dper-dot-total" />
-              <circle cx={x(index)} cy={y(row.perdidas)} r="4" className="dper-dot-lost" />
-
-              {(rows.length <= 14 || index % 2 === 0) && (
-                <text
-                  x={x(index)}
-                  y={height - 22}
-                  className="dper-axis-text dper-month-label"
-                  textAnchor="end"
-                  transform={`rotate(-55 ${x(index)} ${height - 22})`}
-                >
-                  {row.label}
+      {data.length ? (
+        <div className="dper-trend-scroll">
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            className="dper-trend-svg"
+            style={{ minWidth: width }}
+            role="img"
+          >
+            {ticks.map((tick) => (
+              <g key={tick}>
+                <line
+                  x1={padding.left}
+                  x2={width - padding.right}
+                  y1={y(tick)}
+                  y2={y(tick)}
+                  className="dper-grid-line"
+                />
+                <text x={12} y={y(tick) + 4} className="dper-axis-text">
+                  {tick}
                 </text>
-              )}
+              </g>
+            ))}
 
-              {row.perdidas > 0 && (
-                <text
-                  x={x(index)}
-                  y={y(row.perdidas) - 8}
-                  className="dper-value-text dper-value-lost"
-                  textAnchor="middle"
-                >
-                  {row.perdidas}
-                </text>
-              )}
+            <line
+              x1={padding.left}
+              x2={width - padding.right}
+              y1={padding.top + innerHeight}
+              y2={padding.top + innerHeight}
+              className="dper-axis-line"
+            />
 
-              {row.cantidad > 0 && (
-                <text
-                  x={x(index)}
-                  y={y(row.cantidad) - 8}
-                  className="dper-value-text"
-                  textAnchor="middle"
+            {data.map((row, index) => (
+              <g key={`bar-${row.key}`}>
+                <rect
+                  x={barX(index)}
+                  y={y(row.cantidad)}
+                  width={barWidth}
+                  height={barHeight(row.cantidad)}
+                  rx="6"
+                  className="dper-bar-total"
                 >
-                  {row.cantidad}
-                </text>
-              )}
-            </g>
-          ))}
-        </svg>
+                  <title>
+                    {`${row.label}\nCantidad: ${row.cantidad}\nPerdidas: ${row.perdidas}`}
+                  </title>
+                </rect>
+
+                <rect
+                  x={barX(index)}
+                  y={padding.top}
+                  width={barWidth}
+                  height={innerHeight}
+                  className="dper-bar-hover"
+                >
+                  <title>
+                    {`${row.label}\nCantidad: ${row.cantidad}\nPerdidas: ${row.perdidas}`}
+                  </title>
+                </rect>
+
+                {shouldShowTotalLabel(row, index) && (
+                  <text
+                    x={xCenter(index)}
+                    y={y(row.cantidad) - 7}
+                    className="dper-value-text dper-value-total"
+                    textAnchor="middle"
+                  >
+                    {row.cantidad}
+                  </text>
+                )}
+
+                {index % labelEvery === 0 && (
+                  <text
+                    x={xCenter(index)}
+                    y={height - 21}
+                    className="dper-axis-text dper-month-label"
+                    textAnchor="end"
+                    transform={`rotate(-45 ${xCenter(index)} ${height - 21})`}
+                  >
+                    {row.label}
+                  </text>
+                )}
+              </g>
+            ))}
+
+            <path d={pathLost} className="dper-line dper-line-lost" />
+
+            {data.map((row, index) => (
+              <g key={`lost-${row.key}`}>
+                <circle cx={xCenter(index)} cy={y(row.perdidas)} r="4" className="dper-dot-lost">
+                  <title>
+                    {`${row.label}\nCantidad: ${row.cantidad}\nPerdidas: ${row.perdidas}`}
+                  </title>
+                </circle>
+
+                {shouldShowLostLabel(row, index) && (
+                  <text
+                    x={xCenter(index)}
+                    y={Math.max(12, y(row.perdidas) - 9)}
+                    className="dper-value-text dper-value-lost"
+                    textAnchor="middle"
+                  >
+                    {row.perdidas}
+                  </text>
+                )}
+              </g>
+            ))}
+          </svg>
+        </div>
       ) : (
         <div className="dper-empty dper-empty-chart">Sin datos de tendencia.</div>
       )}
     </div>
   );
 }
+
