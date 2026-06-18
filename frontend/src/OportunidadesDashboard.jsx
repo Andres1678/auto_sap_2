@@ -10,6 +10,7 @@ import ModalWinRate from "./ModalWinRate";
 import ModalDetalleConsultoria from "./ModalDetalleConsultoria";
 import DetalleComercial from "./DetalleComercial";
 import DetalleOTS from "./DetalleOTS";
+import DetallePerdidas from "./DetallePerdidas";
 
 /* ===================== React-Select styles ===================== */
 const rsStyles = {
@@ -719,6 +720,11 @@ export default function DashboardOportunidades() {
       return;
     }
 
+    if (tab === "detalle-perdidas") {
+      setActiveTab("detalle-perdidas");
+      return;
+    }
+
     Swal.fire("En construcción", "Esta vista aún no está implementada.", "info");
   };
 
@@ -748,6 +754,11 @@ export default function DashboardOportunidades() {
   if (activeTab === "detalle-ots") {
     return <DetalleOTS onNavigate={handleNavigate} />;
   }
+
+  if (activeTab === "detalle-perdidas") {
+    return <DetallePerdidas onNavigate={handleNavigate} />;
+  }
+
 
   return (
     <div className="oport-dash-wrapper">
