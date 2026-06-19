@@ -294,6 +294,29 @@ class Oportunidad(db.Model):
         server_default=text("'SI'")
     )
 
+    tipo_oportunidad = db.Column(
+        db.String(30),
+        nullable=False,
+        server_default=text("'SUBOPORTUNIDAD'")
+    )
+
+    oportunidad_padre_id = db.Column(
+        db.Integer,
+        db.ForeignKey("oportunidades.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    codigo_control = db.Column(db.String(30), nullable=True)
+    consecutivo_principal = db.Column(db.Integer, nullable=True)
+    consecutivo_sub = db.Column(db.Integer, nullable=True)
+    cliente_grupo_key = db.Column(db.String(255), nullable=True)
+
+    suboportunidades = relationship(
+        "Oportunidad",
+        backref=backref("oportunidad_principal", remote_side=[id]),
+        foreign_keys=[oportunidad_padre_id],
+        lazy="select"
+    )
     def to_dict(self):
         def serializar_fecha(f):
             return f.isoformat() if f else None
@@ -357,7 +380,13 @@ class Oportunidad(db.Model):
             "tipo_servicio": self.tipo_servicio,
             "semestre_ejecucion": self.semestre_ejecucion,
             "publicacion_sharepoint": self.publicacion_sharepoint,
-            "mostrar_dashboard": self.mostrar_dashboard
+            "mostrar_dashboard": self.mostrar_dashboard,
+            "tipo_oportunidad": self.tipo_oportunidad,
+            "oportunidad_padre_id": self.oportunidad_padre_id,
+            "codigo_control": self.codigo_control,
+            "consecutivo_principal": self.consecutivo_principal,
+            "consecutivo_sub": self.consecutivo_sub,
+            "cliente_grupo_key": self.cliente_grupo_key,
         }
 
 class Cliente(db.Model):

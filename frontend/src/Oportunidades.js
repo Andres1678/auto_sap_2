@@ -97,7 +97,7 @@ const CATEGORIA_SUBCATEGORIA = {
 };
 
 const COLUMN_LABELS = {
-  id: "ID OPORTUNIDAD",
+  id: "COD. CONTROL",
   fecha_creacion: "FECHA ASIGNACIÓN",
   anio_creacion_ot: "AÑO CREACIÓN OT",
   mostrar_dashboard: "MOSTRAR EN DASHBOARD",
@@ -554,6 +554,122 @@ function normalizeMostrarDashboard(value) {
   return "SI";
 }
 
+const CLIENT_WITHOUT_NAME = "SIN CLIENTE";
+const TIPO_PRINCIPAL = "PRINCIPAL";
+const TIPO_SUBOPORTUNIDAD = "SUBOPORTUNIDAD";
+const ESTADOS_SUMAN_PRINCIPAL = new Set(["OT", "GANADA"]);
+
+function stripAccents(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizeClientGroupKey(value) {
+  return stripAccents(normalizeText(value || CLIENT_WITHOUT_NAME))
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeTipoOportunidad(value) {
+  const normalized = normalizeForCompare(value);
+
+  if (["PRINCIPAL", "PADRE", "MASTER"].includes(normalized)) {
+    return TIPO_PRINCIPAL;
+  }
+
+  return TIPO_SUBOPORTUNIDAD;
+}
+
+function estadoSumaEnPrincipal(row) {
+  const estadoOferta = normalizeForCompare(row?.estado_oferta);
+  const resultadoOferta = normalizeForCompare(row?.resultado_oferta);
+
+  return (
+    ESTADOS_SUMAN_PRINCIPAL.has(estadoOferta) ||
+    ESTADOS_SUMAN_PRINCIPAL.has(resultadoOferta)
+  );
+}
+
+function sumRowsByColumn(rows, col) {
+  let hasValue = false;
+
+  const total = (rows || []).reduce((acc, row) => {
+    const n = parseNumberSmart(row?.[col]);
+
+    if (n === "") return acc;
+
+    hasValue = true;
+    return acc + Number(n);
+  }, 0);
+
+  return hasValue ? Number(total.toFixed(2)) : "";
+}
+
+function getPrincipalTotals(rows) {
+  const validRows = (rows || []).filter(estadoSumaEnPrincipal);
+
+  const totalOtc = sumRowsByColumn(validRows, "otc");
+  const totalMrc = sumRowsByColumn(validRows, "mrc");
+
+  const otcNumber = totalOtc === "" ? 0 : Number(totalOtc);
+  const mrcNumber = totalMrc === "" ? 0 : Number(totalMrc);
+
+  const mrcNormalizado =
+    validRows.length > 0 ? Number((mrcNumber + otcNumber / 12).toFixed(2)) : "";
+
+  const valorComercial =
+    validRows.length > 0 ? Number((otcNumber + mrcNumber).toFixed(2)) : "";
+
+  return {
+    totalOtc,
+    totalMrc,
+    mrcNormalizado,
+    valorComercial,
+    cantidadValidas: validRows.length,
+  };
+}
+
+function compareSubOportunidades(a, b) {
+  const subA = parseNumberSmart(a?.consecutivo_sub);
+  const subB = parseNumberSmart(b?.consecutivo_sub);
+
+  if (subA !== "" && subB !== "") return subA - subB;
+
+  const otA = parseNumberSmart(a?.num_ot);
+  const otB = parseNumberSmart(b?.num_ot);
+
+  if (otA !== "" && otB !== "") return otA - otB;
+
+  return String(a?.id ?? "").localeCompare(String(b?.id ?? ""), "es", {
+    numeric: true,
+  });
+}
+
+function getUniqueText(rows, col, maxItems = 3) {
+  const values = [
+    ...new Set(
+      (rows || [])
+        .map((row) => normalizeText(row?.[col]))
+        .filter(Boolean)
+    ),
+  ];
+
+  if (!values.length) return "-";
+  if (values.length <= maxItems) return values.join(" / ");
+
+  return `${values.slice(0, maxItems).join(" / ")} +${values.length - maxItems}`;
+}
+
+function toPositiveInteger(value) {
+  const parsed = parseNumberSmart(value);
+  if (parsed === "") return null;
+
+  const n = Number(parsed);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+
 export default function Oportunidades() {
   const [data, setData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
@@ -568,6 +684,7 @@ export default function Oportunidades() {
   const [estadoResultadoMap, setEstadoResultadoMap] = useState(ESTADO_RESULTADO_BASE);
   const [clientesCatalogo, setClientesCatalogo] = useState([]);
   const [openCategoriaModal, setOpenCategoriaModal] = useState(false);
+  const [expandedClientes, setExpandedClientes] = useState({});
 
   const baseColumnOrder = useMemo(
     () => [
@@ -795,6 +912,15 @@ export default function Oportunidades() {
       categoria_perdida: normalizeText(rest.categoria_perdida),
       subcategoria_perdida: normalizeText(rest.subcategoria_perdida),
       mostrar_dashboard: normalizeMostrarDashboard(rest.mostrar_dashboard),
+
+      tipo_oportunidad: normalizeTipoOportunidad(rest.tipo_oportunidad),
+      oportunidad_padre_id: rest.oportunidad_padre_id ?? null,
+      codigo_control: normalizeText(rest.codigo_control),
+      consecutivo_principal: rest.consecutivo_principal ?? null,
+      consecutivo_sub: rest.consecutivo_sub ?? null,
+      cliente_grupo_key:
+        normalizeText(rest.cliente_grupo_key) ||
+        normalizeClientGroupKey(rest.nombre_cliente),
     };
 
     return limpiarPerdidaSiNoAplica(normalized);
@@ -1786,6 +1912,309 @@ export default function Oportunidades() {
     );
   };
 
+
+  const clienteNumeroMap = useMemo(() => {
+    const clientes = [
+      ...new Map(
+        (data || []).map((row) => {
+          const cliente = normalizeText(row?.[CLIENTE_COL]) || CLIENT_WITHOUT_NAME;
+          const key = normalizeClientGroupKey(cliente);
+          const consecutivo = toPositiveInteger(row?.consecutivo_principal);
+
+          return [key, { key, cliente, consecutivo }];
+        })
+      ).values(),
+    ].sort((a, b) => {
+      const aHasConsecutivo = Number.isFinite(a.consecutivo);
+      const bHasConsecutivo = Number.isFinite(b.consecutivo);
+
+      if (aHasConsecutivo && bHasConsecutivo && a.consecutivo !== b.consecutivo) {
+        return a.consecutivo - b.consecutivo;
+      }
+
+      if (aHasConsecutivo && !bHasConsecutivo) return -1;
+      if (!aHasConsecutivo && bHasConsecutivo) return 1;
+
+      return a.cliente.localeCompare(b.cliente, "es", { sensitivity: "base" });
+    });
+
+    let next = 1;
+    const out = {};
+
+    clientes.forEach((item) => {
+      if (Number.isFinite(item.consecutivo)) {
+        out[item.key] = item.consecutivo;
+        next = Math.max(next, item.consecutivo + 1);
+      }
+    });
+
+    clientes.forEach((item) => {
+      if (!out[item.key]) {
+        out[item.key] = next;
+        next += 1;
+      }
+    });
+
+    return out;
+  }, [data]);
+
+  const oportunidadesAgrupadas = useMemo(() => {
+    const grouped = new Map();
+
+    (filteredData || []).forEach((row) => {
+      const cliente = normalizeText(row?.[CLIENTE_COL]) || CLIENT_WITHOUT_NAME;
+      const key = normalizeClientGroupKey(cliente);
+
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          cliente,
+          rows: [],
+          principalRow: null,
+        });
+      }
+
+      const group = grouped.get(key);
+      const tipo = normalizeTipoOportunidad(row?.tipo_oportunidad);
+
+      if (tipo === TIPO_PRINCIPAL && !group.principalRow) {
+        group.principalRow = row;
+      } else {
+        group.rows.push(row);
+      }
+    });
+
+    return Array.from(grouped.values())
+      .map((grupo) => {
+        const numeroPrincipal =
+          toPositiveInteger(grupo.principalRow?.consecutivo_principal) ||
+          clienteNumeroMap[grupo.key] ||
+          0;
+
+        const codigoPrincipal =
+          normalizeText(grupo.principalRow?.codigo_control) || String(numeroPrincipal);
+
+        let nextSub = 1;
+        const usedSub = new Set();
+
+        const rowsOrdenadas = [...grupo.rows].sort(compareSubOportunidades).map((row) => {
+          let consecutivoSub = toPositiveInteger(row?.consecutivo_sub);
+
+          if (!consecutivoSub || usedSub.has(consecutivoSub)) {
+            while (usedSub.has(nextSub)) nextSub += 1;
+            consecutivoSub = nextSub;
+          }
+
+          usedSub.add(consecutivoSub);
+          nextSub = Math.max(nextSub, consecutivoSub + 1);
+
+          return {
+            ...row,
+            tipo_oportunidad: normalizeTipoOportunidad(row?.tipo_oportunidad),
+            codigo_control:
+              normalizeText(row?.codigo_control) || `${codigoPrincipal}.${consecutivoSub}`,
+            consecutivo_principal: numeroPrincipal,
+            consecutivo_sub: consecutivoSub,
+          };
+        });
+
+        return {
+          ...grupo,
+          numeroPrincipal,
+          codigo_control: codigoPrincipal,
+          rows: rowsOrdenadas,
+          totals: getPrincipalTotals(rowsOrdenadas),
+        };
+      })
+      .sort((a, b) => {
+        if (a.numeroPrincipal !== b.numeroPrincipal) {
+          return a.numeroPrincipal - b.numeroPrincipal;
+        }
+
+        return a.cliente.localeCompare(b.cliente, "es", { sensitivity: "base" });
+      });
+  }, [filteredData, clienteNumeroMap]);
+
+  const toggleClienteGroup = useCallback((clienteKey) => {
+    setExpandedClientes((prev) => ({
+      ...prev,
+      [clienteKey]: !prev[clienteKey],
+    }));
+  }, []);
+
+  const expandAllClienteGroups = () => {
+    setExpandedClientes(
+      Object.fromEntries(oportunidadesAgrupadas.map((g) => [g.key, true]))
+    );
+  };
+
+  const collapseAllClienteGroups = () => {
+    setExpandedClientes({});
+  };
+
+  const renderOpportunityRow = (row, i) => (
+    <tr
+      key={`sub-${row.id ?? i}`}
+      data-row-id={row.id ?? ""}
+      className="sub-oportunidad-row"
+    >
+      {tableColumnOrder.map((col, colIdx) => {
+        const isLong = isObservationsCol(col);
+
+        return (
+          <td
+            key={`${row.id ?? i}-${col}-${colIdx}`}
+            onDoubleClick={() => {
+              if (col === "id") return;
+              if (isLong) return editLongText(row.id, col);
+              startEdit(row, col);
+            }}
+            className={[
+              getColumnClassNames(col),
+              sameId(editing.rowId, row?.id) && editing.col === col ? "editing" : "",
+              isLong ? "obs-col" : "",
+              col === SERVICIO_COL ? "servicio-wrap-cell" : "",
+            ]
+              .join(" ")
+              .trim()}
+            title={
+              col === "id"
+                ? `Código control: ${row?.codigo_control ?? "-"} | ID BD: ${row?.id ?? "-"}`
+                : isLong
+                ? undefined
+                : String(row?.[col] ?? "")
+            }
+          >
+            {col === "id"
+              ? row?.codigo_control ?? row?.id ?? "-"
+              : sameId(editing.rowId, row?.id) && editing.col === col
+              ? renderEditorCell(row, col)
+              : isLong
+              ? renderLongTextCell(row?.[col])
+              : col === SERVICIO_COL
+              ? renderMultilineTextCell(row?.[col])
+              : formatCell(col, row[col])}
+          </td>
+        );
+      })}
+
+      <td className="acciones"></td>
+    </tr>
+  );
+
+  const renderClientePrincipalRow = (grupo) => {
+    const isOpen = !!expandedClientes[grupo.key];
+    const totals = grupo.totals;
+    const rowsQueSuman = grupo.rows.filter(estadoSumaEnPrincipal);
+
+    return (
+      <tr
+        key={`principal-${grupo.key}`}
+        className="cliente-principal-row"
+        data-cliente-key={grupo.key}
+      >
+        {tableColumnOrder.map((col, colIdx) => {
+          let content = "-";
+
+          if (col === "id") {
+            content = (
+              <div className="principal-id-box">
+                <button
+                  type="button"
+                  className="cliente-toggle-btn"
+                  onClick={() => toggleClienteGroup(grupo.key)}
+                  title={isOpen ? "Ocultar sub oportunidades" : "Ver sub oportunidades"}
+                >
+                  {isOpen ? "−" : "+"}
+                </button>
+                <strong>{grupo.codigo_control}</strong>
+              </div>
+            );
+          }
+
+          if (col === CLIENTE_COL) {
+            content = (
+              <div className="cliente-principal-info">
+                <strong>{grupo.cliente}</strong>
+                <span>
+                  {grupo.rows.length} sub oportunidad{grupo.rows.length === 1 ? "" : "es"}
+                </span>
+                <small>
+                  {totals.cantidadValidas} suma{totals.cantidadValidas === 1 ? "" : "n"} por estado OT/GANADA
+                </small>
+              </div>
+            );
+          }
+
+          if (col === SERVICIO_COL) {
+            content = "OPORTUNIDAD PRINCIPAL / CONSOLIDADO POR CLIENTE";
+          }
+
+          if (col === "estado_oferta") {
+            content = TIPO_PRINCIPAL;
+          }
+
+          if (col === "resultado_oferta") {
+            content = getUniqueText(rowsQueSuman, "resultado_oferta");
+          }
+
+          if (col === "otc") {
+            content = totals.totalOtc === "" ? "-" : formatCell("otc", totals.totalOtc);
+          }
+
+          if (col === "mrc") {
+            content = totals.totalMrc === "" ? "-" : formatCell("mrc", totals.totalMrc);
+          }
+
+          if (col === "mrc_normalizado") {
+            content =
+              totals.mrcNormalizado === ""
+                ? "-"
+                : formatCell("mrc_normalizado", totals.mrcNormalizado);
+          }
+
+          if (col === "valor_oferta_claro") {
+            content =
+              totals.valorComercial === ""
+                ? "-"
+                : formatCell("valor_oferta_claro", totals.valorComercial);
+          }
+
+          if (col === "num_ot") {
+            content = `${rowsQueSuman.length} OT válidas`;
+          }
+
+          return (
+            <td
+              key={`principal-${grupo.key}-${col}-${colIdx}`}
+              className={[
+                getColumnClassNames(col),
+                col === SERVICIO_COL ? "servicio-wrap-cell" : "",
+                ["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"].includes(col)
+                  ? "principal-total-cell"
+                  : "",
+              ]
+                .join(" ")
+                .trim()}
+            >
+              {content}
+            </td>
+          );
+        })}
+
+        <td className="acciones">
+          <button
+            type="button"
+            className="cliente-ver-btn"
+            onClick={() => toggleClienteGroup(grupo.key)}
+          >
+            {isOpen ? "Ocultar" : "Ver"}
+          </button>
+        </td>
+      </tr>
+    );
+  };
+
   return (
     <div className="oportunidades-wrapper">
       <h2>Gestión de Oportunidades</h2>
@@ -1838,6 +2267,24 @@ export default function Oportunidades() {
             disabled={loading}
           >
             Ver Categoría Perdida
+          </button>
+
+          <button
+            className="upload-btn"
+            type="button"
+            onClick={expandAllClienteGroups}
+            disabled={loading || !oportunidadesAgrupadas.length}
+          >
+            Expandir clientes
+          </button>
+
+          <button
+            className="clear-filters-btn"
+            type="button"
+            onClick={collapseAllClienteGroups}
+            disabled={loading || !oportunidadesAgrupadas.length}
+          >
+            Contraer clientes
           </button>
 
           <button
@@ -1930,41 +2377,13 @@ export default function Oportunidades() {
               </tr>
             )}
 
-            {filteredData.map((row, i) => (
-              <tr key={row.id ?? i} data-row-id={row.id ?? ""}>
-                {tableColumnOrder.map((col, colIdx) => {
-                  const isLong = isObservationsCol(col);
+            {oportunidadesAgrupadas.map((grupo) => (
+              <React.Fragment key={`grupo-${grupo.key}`}>
+                {renderClientePrincipalRow(grupo)}
 
-                  return (
-                    <td
-                      key={`${row.id ?? i}-${col}-${colIdx}`}
-                      onDoubleClick={() => {
-                        if (col === "id") return;
-                        if (isLong) return editLongText(row.id, col);
-                        startEdit(row, col);
-                      }}
-                      className={[
-                        getColumnClassNames(col),
-                        sameId(editing.rowId, row?.id) && editing.col === col ? "editing" : "",
-                        isLong ? "obs-col" : "",
-                        col === SERVICIO_COL ? "servicio-wrap-cell" : "",
-                      ].join(" ").trim()}
-                      title={isLong ? undefined : String(row?.[col] ?? "")}
-                    >
-                      {col === "id"
-                        ? row?.id ?? "-"
-                        : sameId(editing.rowId, row?.id) && editing.col === col
-                        ? renderEditorCell(row, col)
-                        : isLong
-                        ? renderLongTextCell(row?.[col])
-                        : col === SERVICIO_COL
-                        ? renderMultilineTextCell(row?.[col])
-                        : formatCell(col, row[col])}
-                    </td>
-                  );
-                })}
-                <td className="acciones"></td>
-              </tr>
+                {expandedClientes[grupo.key] &&
+                  grupo.rows.map((row, i) => renderOpportunityRow(row, i))}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
