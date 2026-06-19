@@ -145,6 +145,35 @@ const getModulosLocal = (u) => {
   return single ? normalizeModulos([single]) : [];
 };
 
+const getModulosFromConsultorData = (data, userData) => {
+  const fromDetalle = Array.isArray(data?.modulos_detalle)
+    ? data.modulos_detalle
+    : [];
+
+  const fromModulos = Array.isArray(data?.modulos)
+    ? data.modulos
+    : [];
+
+  const fromModulo = data?.modulo
+    ? [data.modulo]
+    : [];
+
+  const fromUser = getModulosLocal(userData);
+
+  return [
+    ...new Set(
+      normalizeModulos([
+        ...fromDetalle,
+        ...fromModulos,
+        ...fromModulo,
+        ...fromUser,
+      ])
+        .map((m) => String(m || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+};
+
 const pad2 = (n) => String(n).padStart(2, "0");
 const toISODate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
@@ -571,7 +600,16 @@ const Registro = ({ userData }) => {
   ).toUpperCase();
 
   const nombreUser = (userData?.nombre ?? userData?.user?.nombre) || '';
-  const moduloUser = (userData?.modulo ?? userData?.user?.modulo) || '';
+
+  const modulosUserLocal = getModulosLocal(userData);
+
+  const moduloUser = String(
+    userData?.modulo ??
+    userData?.user?.modulo ??
+    modulosUserLocal?.[0] ??
+    ''
+  ).trim();
+
   const equipoUser = (userData?.equipo ?? userData?.user?.equipo) || '';
 
   const usuarioLogin = String(
@@ -635,11 +673,12 @@ const Registro = ({ userData }) => {
     ? userEquipoUpper
     : (isAdmin ? vistaEquipo : (userEquipoUpper === 'BASIS' ? 'BASIS' : 'FUNCIONAL'));
 
-  const [modulos, setModulos] = useState(getModulosLocal(userData));
+  const [modulos, setModulos] = useState(() => getModulosLocal(userData));
   const [moduloElegido, setModuloElegido] = useState('');
 
   useEffect(() => {
     const locals = getModulosLocal(userData);
+
     setModulos(locals);
     setModuloElegido(locals.length === 1 ? locals[0] : '');
   }, [userData]);
@@ -1088,9 +1127,15 @@ const Registro = ({ userData }) => {
         setConsultorActivo(act);
         localStorage.setItem("consultorActivo", act ? "1" : "0");
 
-        const norm = normalizeModulos(Array.isArray(data.modulos) ? data.modulos : []);
+        const norm = getModulosFromConsultorData(data, userData);
+
         if (norm.length) {
-          setModulos(prev => uniq([...(prev || []), ...norm]));
+          setModulos((prev) => uniq([...(prev || []), ...norm]));
+
+          setModuloElegido((prev) => {
+            if (prev) return prev;
+            return norm.length === 1 ? norm[0] : "";
+          });
         }
       } catch {}
     })();
@@ -1997,16 +2042,20 @@ const Registro = ({ userData }) => {
         });
       }
 
-      const lista = Array.isArray(data.modulos) ? data.modulos : [];
-      const norm = normalizeModulos(lista);
+      const norm = getModulosFromConsultorData(data, userData);
+
+      const moduloPreferido = String(data?.modulo || "").trim();
+      const moduloInicial =
+        moduloPreferido ||
+        (norm.length === 1 ? norm[0] : "");
 
       setModulos(norm);
-      setModuloElegido(norm.length === 1 ? norm[0] : "");
+      setModuloElegido(moduloInicial);
 
       setRegistro({
         ...initRegistro(),
         fecha: todayISO,
-        modulo: norm.length === 1 ? norm[0] : "",
+        modulo: moduloInicial,
         equipo: data.equipo ? String(data.equipo).toUpperCase() : userEquipoUpper,
       });
 
@@ -2348,7 +2397,7 @@ const Registro = ({ userData }) => {
                     <input
                       ref={firstFieldRef}
                       type="text"
-                      value={modulos[0] || ''}
+                      value={registro.modulo || modulos[0] || moduloUser || ''}
                       readOnly
                       placeholder="Módulo"
                     />

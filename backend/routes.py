@@ -581,6 +581,35 @@ def consultor_perfil_to_dict(x: ConsultorPerfil):
         "perfil": perfil_to_dict(x.perfil) if x.perfil else None,
     }
 
+def _consultor_modulos_payload(consultor):
+    """
+    Devuelve los módulos del consultor desde:
+    1. Relación muchos a muchos consultor.modulos
+    2. Campo directo consultor.modulo_id
+    """
+    modulos_map = {}
+
+    # Relación muchos a muchos
+    for m in getattr(consultor, "modulos", []) or []:
+        if m and getattr(m, "id", None):
+            modulos_map[int(m.id)] = {
+                "id": int(m.id),
+                "nombre": m.nombre,
+            }
+
+    # Campo directo modulo_id
+    modulo_id = getattr(consultor, "modulo_id", None)
+
+    if modulo_id and int(modulo_id) not in modulos_map:
+        modulo = Modulo.query.get(int(modulo_id))
+
+        if modulo:
+            modulos_map[int(modulo.id)] = {
+                "id": int(modulo.id),
+                "nombre": modulo.nombre,
+            }
+
+    return list(modulos_map.values())
 # ===============================
 # Catálogos
 # ===============================
@@ -701,6 +730,8 @@ def login():
 
     permisos_list = sorted(list(obtener_permisos_finales(consultor)))
 
+    modulos_payload = _consultor_modulos_payload(consultor)
+
     user_payload = {
         "id": consultor.id,
         "usuario": consultor.usuario,
@@ -709,7 +740,8 @@ def login():
         "equipo": consultor.equipo_obj.nombre.upper() if consultor.equipo_obj else "SIN EQUIPO",
         "horario": consultor.horario_obj.rango if consultor.horario_obj else (horario or "N/D"),
         "consultor_id": consultor.id,
-        "modulos": [{"id": m.id, "nombre": m.nombre} for m in consultor.modulos],
+        "modulos": modulos_payload,
+        "modulo": modulos_payload[0]["nombre"] if modulos_payload else "SIN MODULO",
         "permisos": permisos_list
     }
 
@@ -1253,10 +1285,12 @@ def registrar_hora():
     # 6) MÓDULO
     # ------------------------------------------------------------------
     modulo_final = pick(data, "modulo")
+    
     if modulo_final:
         modulo_final = str(modulo_final).strip()
     else:
-        modulo_final = consultor.modulos[0].nombre if consultor.modulos else "SIN MODULO"
+        modulos_payload = _consultor_modulos_payload(consultor)
+        modulo_final = modulos_payload[0]["nombre"] if modulos_payload else "SIN MODULO"
 
     # ------------------------------------------------------------------
     # 7) HORARIO DE TRABAJO
@@ -2922,22 +2956,32 @@ def listar_base_registros():
 def get_consultor_modulos():
     try:
         usuario = request.args.get('usuario', '').strip().lower()
+
         if not usuario:
             return jsonify({'error': 'Parámetro "usuario" requerido'}), 400
 
-        
-        consultor = Consultor.query.filter(func.lower(Consultor.usuario) == usuario).first()
+        consultor = (
+            Consultor.query
+            .options(joinedload(Consultor.modulos))
+            .filter(func.lower(Consultor.usuario) == usuario)
+            .first()
+        )
+
         if not consultor:
             return jsonify({'error': f'Consultor "{usuario}" no encontrado'}), 404
 
-        
-        modulos = [m.nombre for m in consultor.modulos] if consultor.modulos else []
+        modulos_payload = _consultor_modulos_payload(consultor)
 
-        
+        modulos = [m["nombre"] for m in modulos_payload]
+
         if not modulos:
-            modulos = ['SIN MODULO']
+            modulos = ["SIN MODULO"]
 
-        return jsonify({'modulos': modulos}), 200
+        return jsonify({
+            "modulos": modulos,
+            "modulos_detalle": modulos_payload,
+            "modulo": modulos[0] if modulos else "SIN MODULO",
+        }), 200
 
     except Exception as e:
         app.logger.exception("Error en get_consultor_modulos")
@@ -3022,16 +3066,19 @@ def get_datos_consultor():
     rol = consultor.rol_obj.nombre if consultor.rol_obj else None
     equipo = consultor.equipo_obj.nombre if consultor.equipo_obj else None
     horario = consultor.horario_obj.rango if consultor.horario_obj else None
-    modulos = [m.nombre for m in consultor.modulos] if consultor.modulos else []
+    modulos_payload = _consultor_modulos_payload(consultor)
+    modulos = [m["nombre"] for m in modulos_payload]
 
     return jsonify({
-        "usuario": consultor.usuario, 
+        "usuario": consultor.usuario,
         "nombre": consultor.nombre,
         "rol": rol,
         "equipo": equipo,
         "horario": horario,
         "modulos": modulos,
-        "activo": bool(consultor.activo), 
+        "modulos_detalle": modulos_payload,
+        "modulo": modulos[0] if modulos else "SIN MODULO",
+        "activo": bool(consultor.activo),
     }), 200
 
 # ===============================
