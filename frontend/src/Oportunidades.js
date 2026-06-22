@@ -168,8 +168,14 @@ function valueInOptions(value, options = []) {
 
 function isOportunidadPerdida(row) {
   const estado = normalizeForCompare(row?.estado_oferta);
+  const resultado = normalizeForCompare(row?.resultado_oferta);
 
-  return estado === "PERDIDA" || estado === "PERDIDA - SIN FEEDBACK";
+  return (
+    estado === "PERDIDA" ||
+    estado === "PERDIDA - SIN FEEDBACK" ||
+    estado === "DECLINADA" ||
+    resultado === "OPORTUNIDAD PERDIDA"
+  );
 }
 
 function limpiarPerdidaSiNoAplica(row) {
