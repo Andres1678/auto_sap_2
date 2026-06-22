@@ -27,8 +27,6 @@ const CERRADAS_OT = new Set(
     "CERRADAS",
     "CERRADO",
     "CERRADOS",
-    "CERRADO SIN PAGO",
-    "CERRADA SIN PAGO",
     "CERRADO CON PAGO",
     "CERRADA CON PAGO",
     "FINALIZADO",
@@ -59,16 +57,13 @@ const CANCELADAS_OT = new Set(
 const EN_PROCESO_OT = new Set(
   [
     "EN PROCESO",
+  ].map(normKeyForMatch)
+);
+
+const EN_TRAMITE_OT = new Set(
+  [
     "EN TRAMITE",
     "EN TRÁMITE",
-    "NO INICIADO",
-    "ABIERTA",
-    "ABIERTO",
-    "PENDIENTE",
-    "EN EJECUCION",
-    "EN EJECUCIÓN",
-    "EN CURSO",
-    "OT",
   ].map(normKeyForMatch)
 );
 
@@ -246,16 +241,30 @@ function getNoOT(row) {
   ]);
 }
 
-function getEstadoOT(row) {
-  const estadoDirecto = firstValue(row, [
-    "estado_ot",
-    "estadoOT",
-    "estado_proyecto",
-    "estadoProyecto",
-    "ESTADO OT",
-  ]);
+const ESTADO_OT_KEYS = [
+  "estado_ot",
+  "estadoOT",
+  "estado_proyecto",
+  "estadoProyecto",
+  "ESTADO OT",
+];
 
-  if (estadoDirecto && normKeyForMatch(estadoDirecto) !== "NO APLICA") {
+function getEstadoOTDirecto(row) {
+  return firstValue(row, ESTADO_OT_KEYS);
+}
+
+function isEstadoOTNoAplica(row) {
+  return normKeyForMatch(getEstadoOTDirecto(row)) === "NO APLICA";
+}
+
+function getEstadoOT(row) {
+  const estadoDirecto = getEstadoOTDirecto(row);
+
+  if (isEstadoOTNoAplica(row)) {
+    return "NO APLICA";
+  }
+
+  if (estadoDirecto) {
     return estadoDirecto;
   }
 
@@ -300,6 +309,10 @@ function getFechaCancelada(row) {
   return getFechaCierre(row) || getFechaCompromiso(row) || row?.fecha_creacion || "";
 }
 
+function getFechaTramite(row) {
+  return getFechaCompromiso(row) || getFechaCierre(row) || row?.fecha_creacion || "";
+}
+
 function getRelevantDateForFilter(row) {
   const bucket = getOtBucket(row);
 
@@ -313,6 +326,10 @@ function getRelevantDateForFilter(row) {
 
   if (bucket === "canceladas") {
     return getFechaCancelada(row);
+  }
+
+  if (bucket === "tramite") {
+    return getFechaTramite(row);
   }
 
   if (bucket === "proceso") {
@@ -334,11 +351,14 @@ function getMonthFromRow(row) {
 }
 
 function getOtBucket(row) {
+  if (isEstadoOTNoAplica(row)) return "otros";
+
   const estadoN = normKeyForMatch(getEstadoOT(row));
 
   if (CERRADAS_OT.has(estadoN)) return "cerradas";
   if (SUSPENDIDAS_OT.has(estadoN)) return "suspendidas";
   if (CANCELADAS_OT.has(estadoN)) return "canceladas";
+  if (EN_TRAMITE_OT.has(estadoN)) return "tramite";
   if (EN_PROCESO_OT.has(estadoN)) return "proceso";
 
   if (toIsoDate(getFechaCierre(row))) return "cerradas";
@@ -348,6 +368,8 @@ function getOtBucket(row) {
 }
 
 function isOTDetailRow(row) {
+  if (isEstadoOTNoAplica(row)) return false;
+
   const noOT = normalizeText(getNoOT(row));
   const estadoOT = normKeyForMatch(getEstadoOT(row));
   const resultado = normKeyForMatch(row?.resultado_oferta);
@@ -418,6 +440,12 @@ function toOptions(values = []) {
   );
 }
 
+function removeNoAplicaValues(values = []) {
+  return (Array.isArray(values) ? values : []).filter(
+    (value) => normKeyForMatch(value) !== "NO APLICA"
+  );
+}
+
 function toDateOptions(values = []) {
   return [...new Set(values.map(toIsoDate).filter(Boolean))]
     .sort()
@@ -461,6 +489,7 @@ function getGroupDateValue(row, dateType) {
   if (dateType === "compromiso") return getFechaCompromiso(row);
   if (dateType === "suspendida") return getFechaSuspendida(row);
   if (dateType === "cancelada") return getFechaCancelada(row);
+  if (dateType === "tramite") return getFechaTramite(row);
   return "";
 }
 
@@ -580,7 +609,7 @@ export default function DetalleOTS({ onNavigate }) {
             value: String(month),
             label: MONTH_LABELS[Number(month)] || String(month),
           })),
-          estadoOT: toOptions(json.estado_ot || []),
+          estadoOT: toOptions(removeNoAplicaValues(json.estado_ot || [])),
           direccionComercial: toOptions(json.direccion_comercial || []),
           gerenciaComercial: toOptions(json.gerencia_comercial || []),
           cliente: toOptions(json.nombre_cliente || []),
@@ -664,6 +693,7 @@ export default function DetalleOTS({ onNavigate }) {
       cerradas: [],
       suspendidas: [],
       canceladas: [],
+      tramite: [],
       proceso: [],
       otros: [],
     };
@@ -691,6 +721,11 @@ export default function DetalleOTS({ onNavigate }) {
     [buckets.canceladas]
   );
 
+  const tablaTramite = useMemo(
+    () => buildDetalleRows(buckets.tramite, { dateType: "tramite" }),
+    [buckets.tramite]
+  );
+
   const tablaProceso = useMemo(
     () => buildDetalleRows(buckets.proceso, { dateType: "compromiso" }),
     [buckets.proceso]
@@ -702,6 +737,7 @@ export default function DetalleOTS({ onNavigate }) {
       cerradas: buckets.cerradas.length,
       suspendidas: buckets.suspendidas.length,
       canceladas: buckets.canceladas.length,
+      tramite: buckets.tramite.length,
       proceso: buckets.proceso.length,
     };
   }, [filteredRows, buckets]);
@@ -759,6 +795,10 @@ export default function DetalleOTS({ onNavigate }) {
               <strong>{kpis.proceso}</strong>
             </div>
             <div className="dots-kpi-card">
+              <span>En trámite</span>
+              <strong>{kpis.tramite}</strong>
+            </div>
+            <div className="dots-kpi-card">
               <span>Suspendidas</span>
               <strong>{kpis.suspendidas}</strong>
             </div>
@@ -775,6 +815,13 @@ export default function DetalleOTS({ onNavigate }) {
           <DetalleTable
             title="En proceso"
             rows={tablaProceso}
+            firstColumn="FECHA DE COMPROMISO"
+            showDate
+          />
+
+          <DetalleTable
+            title="En trámite"
+            rows={tablaTramite}
             firstColumn="FECHA DE COMPROMISO"
             showDate
           />
