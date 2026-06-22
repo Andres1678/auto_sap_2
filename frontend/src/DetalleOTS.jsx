@@ -44,8 +44,15 @@ const SUSPENDIDAS_OT = new Set(
     "SUSPENDIDAS",
     "SUSPENDIDO",
     "SUSPENDIDOS",
+  ].map(normKeyForMatch)
+);
+
+const CANCELADAS_OT = new Set(
+  [
     "CANCELADA",
+    "CANCELADAS",
     "CANCELADO",
+    "CANCELADOS",
   ].map(normKeyForMatch)
 );
 
@@ -289,6 +296,10 @@ function getFechaSuspendida(row) {
   return getFechaCierre(row) || getFechaCompromiso(row) || row?.fecha_creacion || "";
 }
 
+function getFechaCancelada(row) {
+  return getFechaCierre(row) || getFechaCompromiso(row) || row?.fecha_creacion || "";
+}
+
 function getRelevantDateForFilter(row) {
   const bucket = getOtBucket(row);
 
@@ -298,6 +309,10 @@ function getRelevantDateForFilter(row) {
 
   if (bucket === "suspendidas") {
     return getFechaSuspendida(row);
+  }
+
+  if (bucket === "canceladas") {
+    return getFechaCancelada(row);
   }
 
   if (bucket === "proceso") {
@@ -323,6 +338,7 @@ function getOtBucket(row) {
 
   if (CERRADAS_OT.has(estadoN)) return "cerradas";
   if (SUSPENDIDAS_OT.has(estadoN)) return "suspendidas";
+  if (CANCELADAS_OT.has(estadoN)) return "canceladas";
   if (EN_PROCESO_OT.has(estadoN)) return "proceso";
 
   if (toIsoDate(getFechaCierre(row))) return "cerradas";
@@ -444,6 +460,7 @@ function getGroupDateValue(row, dateType) {
   if (dateType === "cierre") return getFechaCierre(row);
   if (dateType === "compromiso") return getFechaCompromiso(row);
   if (dateType === "suspendida") return getFechaSuspendida(row);
+  if (dateType === "cancelada") return getFechaCancelada(row);
   return "";
 }
 
@@ -646,6 +663,7 @@ export default function DetalleOTS({ onNavigate }) {
     const out = {
       cerradas: [],
       suspendidas: [],
+      canceladas: [],
       proceso: [],
       otros: [],
     };
@@ -668,6 +686,11 @@ export default function DetalleOTS({ onNavigate }) {
     [buckets.suspendidas]
   );
 
+  const tablaCanceladas = useMemo(
+    () => buildDetalleRows(buckets.canceladas, { dateType: "cancelada" }),
+    [buckets.canceladas]
+  );
+
   const tablaProceso = useMemo(
     () => buildDetalleRows(buckets.proceso, { dateType: "compromiso" }),
     [buckets.proceso]
@@ -678,6 +701,7 @@ export default function DetalleOTS({ onNavigate }) {
       total: filteredRows.length,
       cerradas: buckets.cerradas.length,
       suspendidas: buckets.suspendidas.length,
+      canceladas: buckets.canceladas.length,
       proceso: buckets.proceso.length,
     };
   }, [filteredRows, buckets]);
@@ -731,16 +755,20 @@ export default function DetalleOTS({ onNavigate }) {
               <strong>{kpis.total}</strong>
             </div>
             <div className="dots-kpi-card">
-              <span>Cerradas</span>
-              <strong>{kpis.cerradas}</strong>
+              <span>En proceso</span>
+              <strong>{kpis.proceso}</strong>
             </div>
             <div className="dots-kpi-card">
               <span>Suspendidas</span>
               <strong>{kpis.suspendidas}</strong>
             </div>
             <div className="dots-kpi-card">
-              <span>En proceso</span>
-              <strong>{kpis.proceso}</strong>
+              <span>Canceladas</span>
+              <strong>{kpis.canceladas}</strong>
+            </div>
+            <div className="dots-kpi-card">
+              <span>Cerradas</span>
+              <strong>{kpis.cerradas}</strong>
             </div>
           </section>
 
@@ -754,6 +782,13 @@ export default function DetalleOTS({ onNavigate }) {
           <DetalleTable
             title="Suspendida"
             rows={tablaSuspendidas}
+            firstColumn="FECHA"
+            showDate
+          />
+
+          <DetalleTable
+            title="Canceladas"
+            rows={tablaCanceladas}
             firstColumn="FECHA"
             showDate
           />
