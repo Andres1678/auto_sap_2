@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import Select, { components } from "react-select";
 import Swal from "sweetalert2";
 import { jfetch } from "./lib/api";
@@ -27,6 +28,8 @@ const CERRADAS_OT = new Set(
     "CERRADAS",
     "CERRADO",
     "CERRADOS",
+    "CERRADO SIN PAGO",
+    "CERRADA SIN PAGO",
     "CERRADO CON PAGO",
     "CERRADA CON PAGO",
     "FINALIZADO",
@@ -57,7 +60,14 @@ const CANCELADAS_OT = new Set(
 const EN_PROCESO_OT = new Set(
   [
     "EN PROCESO",
-    "EN PROCESO DE EJECUCION",
+    "NO INICIADO",
+    "ABIERTA",
+    "ABIERTO",
+    "PENDIENTE",
+    "EN EJECUCION",
+    "EN EJECUCIÓN",
+    "EN CURSO",
+    "OT",
   ].map(normKeyForMatch)
 );
 
@@ -489,6 +499,9 @@ function valuesOf(selected = []) {
 function buildBackendQuery(filters) {
   const params = new URLSearchParams();
   const add = (key, values) => valuesOf(values).forEach((v) => params.append(`${key}[]`, v));
+
+  // No enviamos anio/mes al backend porque el endpoint los aplica sobre fecha_creacion.
+  // En Detalle OTS el mes debe salir de la fecha de cierre o compromiso según el estado de la OT.
   add("estado_ot", filters.estadoOT);
   add("direccion_comercial", filters.direccionComercial);
   add("gerencia_comercial", filters.gerenciaComercial);
@@ -559,6 +572,86 @@ function buildDetalleRows(rows, config) {
     if (config.dateType && fechaA !== fechaB) return fechaA.localeCompare(fechaB);
     return a.nombreCliente.localeCompare(b.nombreCliente, "es", { sensitivity: "base" });
   });
+}
+
+const EXPORT_COLUMNS = [
+  { key: "fecha", label: "FECHA" },
+  { key: "nombreCliente", label: "NOMBRE CLIENTE" },
+  { key: "servicio", label: "SERVICIO" },
+  { key: "noOT", label: "No OT" },
+  { key: "tipoMoneda", label: "TIPO DE MONEDA" },
+  { key: "otc", label: "Suma de OTC" },
+  { key: "mrc", label: "Suma de MRC" },
+  { key: "cantidad", label: "CANTIDAD" },
+];
+
+function todayStamp() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function safeSheetName(value) {
+  return String(value || "Hoja")
+    .replace(/[\\/*?:\[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 31) || "Hoja";
+}
+
+function rowsForExcel(rows = [], firstColumnLabel = "FECHA") {
+  return (rows || []).map((row) => ({
+    [firstColumnLabel]: row?.fecha ?? "",
+    "NOMBRE CLIENTE": row?.nombreCliente ?? "",
+    SERVICIO: row?.servicio ?? "",
+    "No OT": row?.noOT ?? "",
+    "TIPO DE MONEDA": row?.tipoMoneda ?? "",
+    "Suma de OTC": toNumberSmart(row?.otc),
+    "Suma de MRC": toNumberSmart(row?.mrc),
+    CANTIDAD: toNumberSmart(row?.cantidad),
+  }));
+}
+
+function buildWorksheet(rows = [], firstColumnLabel = "FECHA") {
+  const headers = EXPORT_COLUMNS.map((col) =>
+    col.key === "fecha" ? firstColumnLabel : col.label
+  );
+
+  const excelRows = rowsForExcel(rows, firstColumnLabel);
+
+  const worksheet = excelRows.length
+    ? XLSX.utils.json_to_sheet(excelRows, { header: headers })
+    : XLSX.utils.aoa_to_sheet([headers]);
+
+  worksheet["!cols"] = [
+    { wch: 18 },
+    { wch: 35 },
+    { wch: 48 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 12 },
+  ];
+
+  return worksheet;
+}
+
+function exportDetalleOTSWorkbook(sheets, filename) {
+  const workbook = XLSX.utils.book_new();
+
+  sheets.forEach((sheet) => {
+    const worksheet = buildWorksheet(sheet.rows, sheet.firstColumnLabel);
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      safeSheetName(sheet.name)
+    );
+  });
+
+  XLSX.writeFile(workbook, filename);
 }
 
 export default function DetalleOTS({ onNavigate }) {
@@ -761,6 +854,66 @@ export default function DetalleOTS({ onNavigate }) {
     };
   }, [filteredRows, buckets]);
 
+  const exportTables = useMemo(
+    () => [
+      {
+        name: "En proceso",
+        rows: tablaProceso,
+        firstColumnLabel: "FECHA DE COMPROMISO",
+      },
+      {
+        name: "En trámite",
+        rows: tablaTramite,
+        firstColumnLabel: "FECHA DE COMPROMISO",
+      },
+      {
+        name: "Suspendidas",
+        rows: tablaSuspendidas,
+        firstColumnLabel: "FECHA",
+      },
+      {
+        name: "Canceladas",
+        rows: tablaCanceladas,
+        firstColumnLabel: "FECHA",
+      },
+      {
+        name: "Cerradas",
+        rows: tablaCerradas,
+        firstColumnLabel: "FECHA DE CIERRE",
+      },
+    ],
+    [tablaProceso, tablaTramite, tablaSuspendidas, tablaCanceladas, tablaCerradas]
+  );
+
+  const hasExportRows = useMemo(
+    () => exportTables.some((table) => table.rows.length > 0),
+    [exportTables]
+  );
+
+  const handleExportAllTables = () => {
+    if (!hasExportRows) {
+      Swal.fire("Info", "No hay información para exportar.", "info");
+      return;
+    }
+
+    exportDetalleOTSWorkbook(
+      exportTables,
+      `detalle_ots_${todayStamp()}.xlsx`
+    );
+  };
+
+  const handleExportOneTable = (table) => {
+    if (!table?.rows?.length) {
+      Swal.fire("Info", `La tabla ${table?.name || "seleccionada"} no tiene información para exportar.`, "info");
+      return;
+    }
+
+    exportDetalleOTSWorkbook(
+      [table],
+      `detalle_ots_${safeSheetName(table.name).toLowerCase().replace(/\s+/g, "_")}_${todayStamp()}.xlsx`
+    );
+  };
+
   const clearFilters = () => {
     setFilters({
       anios: [],
@@ -831,11 +984,28 @@ export default function DetalleOTS({ onNavigate }) {
             </div>
           </section>
 
+          <div className="dots-export-bar">
+            <div>
+              <strong>Exportar detalle de OTS</strong>
+              <span>Descarga las tablas según los filtros aplicados.</span>
+            </div>
+
+            <button
+              type="button"
+              className="dots-export-btn"
+              onClick={handleExportAllTables}
+              disabled={!hasExportRows}
+            >
+              Descargar Excel completo
+            </button>
+          </div>
+
           <DetalleTable
             title="En proceso"
             rows={tablaProceso}
             firstColumn="FECHA DE COMPROMISO"
             showDate
+            onExport={() => handleExportOneTable(exportTables[0])}
           />
 
           <DetalleTable
@@ -843,6 +1013,7 @@ export default function DetalleOTS({ onNavigate }) {
             rows={tablaTramite}
             firstColumn="FECHA DE COMPROMISO"
             showDate
+            onExport={() => handleExportOneTable(exportTables[1])}
           />
 
           <DetalleTable
@@ -850,6 +1021,7 @@ export default function DetalleOTS({ onNavigate }) {
             rows={tablaSuspendidas}
             firstColumn="FECHA"
             showDate
+            onExport={() => handleExportOneTable(exportTables[2])}
           />
 
           <DetalleTable
@@ -857,6 +1029,7 @@ export default function DetalleOTS({ onNavigate }) {
             rows={tablaCanceladas}
             firstColumn="FECHA"
             showDate
+            onExport={() => handleExportOneTable(exportTables[3])}
           />
 
           <DetalleTable
@@ -864,6 +1037,7 @@ export default function DetalleOTS({ onNavigate }) {
             rows={tablaCerradas}
             firstColumn="FECHA DE CIERRE"
             showDate
+            onExport={() => handleExportOneTable(exportTables[4])}
           />
         </main>
 
@@ -981,10 +1155,21 @@ export default function DetalleOTS({ onNavigate }) {
   );
 }
 
-function DetalleTable({ title, rows, firstColumn, showDate }) {
+function DetalleTable({ title, rows, firstColumn, showDate, onExport }) {
   return (
     <section className="dots-table-section">
-      <h3>{title}</h3>
+      <div className="dots-table-section-head">
+        <h3>{title}</h3>
+
+        <button
+          type="button"
+          className="dots-table-export-btn"
+          onClick={onExport}
+          disabled={!rows.length}
+        >
+          Descargar tabla
+        </button>
+      </div>
 
       <div className="dots-table-scroll">
         <table className="dots-table">
