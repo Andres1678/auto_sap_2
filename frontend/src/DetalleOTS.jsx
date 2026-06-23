@@ -489,9 +489,6 @@ function valuesOf(selected = []) {
 function buildBackendQuery(filters) {
   const params = new URLSearchParams();
   const add = (key, values) => valuesOf(values).forEach((v) => params.append(`${key}[]`, v));
-
-  // No enviamos anio/mes al backend porque el endpoint los aplica sobre fecha_creacion.
-  // En Detalle OTS el mes debe salir de la fecha de cierre o compromiso según el estado de la OT.
   add("estado_ot", filters.estadoOT);
   add("direccion_comercial", filters.direccionComercial);
   add("gerencia_comercial", filters.gerenciaComercial);

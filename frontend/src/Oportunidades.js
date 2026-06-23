@@ -101,6 +101,7 @@ const COLUMN_LABELS = {
   fecha_creacion: "FECHA ASIGNACIÓN",
   anio_creacion_ot: "AÑO CREACIÓN OT",
   mostrar_dashboard: "MOSTRAR EN DASHBOARD",
+  num_enlace: "ID ENLACE",
 };
 
 const CLIENTE_COL = "nombre_cliente";
