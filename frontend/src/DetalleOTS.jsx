@@ -27,6 +27,8 @@ const CERRADAS_OT = new Set(
     "CERRADAS",
     "CERRADO",
     "CERRADOS",
+    "CERRADO SIN PAGO",
+    "CERRADA SIN PAGO",
     "CERRADO CON PAGO",
     "CERRADA CON PAGO",
     "FINALIZADO",
@@ -57,6 +59,14 @@ const CANCELADAS_OT = new Set(
 const EN_PROCESO_OT = new Set(
   [
     "EN PROCESO",
+    "NO INICIADO",
+    "ABIERTA",
+    "ABIERTO",
+    "PENDIENTE",
+    "EN EJECUCION",
+    "EN EJECUCIÓN",
+    "EN CURSO",
+    "OT",
   ].map(normKeyForMatch)
 );
 
@@ -241,6 +251,23 @@ function getNoOT(row) {
   ]);
 }
 
+function isNoAplicaValue(value) {
+  const normalized = normKeyForMatch(value);
+
+  return [
+    "NO APLICA",
+    "NO APLICABLE",
+    "N/A",
+    "NA",
+    "N.A",
+    "N.A.",
+  ].includes(normalized);
+}
+
+function isNoOTNoAplica(row) {
+  return isNoAplicaValue(getNoOT(row));
+}
+
 const ESTADO_OT_KEYS = [
   "estado_ot",
   "estadoOT",
@@ -254,7 +281,7 @@ function getEstadoOTDirecto(row) {
 }
 
 function isEstadoOTNoAplica(row) {
-  return normKeyForMatch(getEstadoOTDirecto(row)) === "NO APLICA";
+  return isNoAplicaValue(getEstadoOTDirecto(row));
 }
 
 function getEstadoOT(row) {
@@ -362,13 +389,14 @@ function getOtBucket(row) {
   if (EN_PROCESO_OT.has(estadoN)) return "proceso";
 
   if (toIsoDate(getFechaCierre(row))) return "cerradas";
-  if (normalizeText(getNoOT(row))) return "proceso";
+  if (normalizeText(getNoOT(row)) && !isNoOTNoAplica(row)) return "proceso";
 
   return "otros";
 }
 
 function isOTDetailRow(row) {
   if (isEstadoOTNoAplica(row)) return false;
+  if (isNoOTNoAplica(row)) return false;
 
   const noOT = normalizeText(getNoOT(row));
   const estadoOT = normKeyForMatch(getEstadoOT(row));
@@ -382,7 +410,6 @@ function isOTDetailRow(row) {
       toIsoDate(row?.fecha_compromiso)
   );
 }
-
 function normalizeMonthValue(value) {
   const raw = normalizeText(value);
   if (!raw) return "";
@@ -666,7 +693,11 @@ export default function DetalleOTS({ onNavigate }) {
       anios: yearOptionsFromRows(otRows),
       meses: monthOptionsFromRows(otRows),
       tipoMoneda: toOptions(otRows.map((row) => row?.tipo_moneda)),
-      noOT: toOptions(otRows.map(getNoOT)),
+      noOT: toOptions(
+        otRows
+          .map(getNoOT)
+          .filter((value) => !isNoAplicaValue(value))
+      ),
     };
   }, [rows]);
 
