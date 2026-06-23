@@ -27,8 +27,6 @@ const CERRADAS_OT = new Set(
     "CERRADAS",
     "CERRADO",
     "CERRADOS",
-    "CERRADO SIN PAGO",
-    "CERRADA SIN PAGO",
     "CERRADO CON PAGO",
     "CERRADA CON PAGO",
     "FINALIZADO",
@@ -59,14 +57,7 @@ const CANCELADAS_OT = new Set(
 const EN_PROCESO_OT = new Set(
   [
     "EN PROCESO",
-    "NO INICIADO",
-    "ABIERTA",
-    "ABIERTO",
-    "PENDIENTE",
-    "EN EJECUCION",
-    "EN EJECUCIÓN",
-    "EN CURSO",
-    "OT",
+    "EN PROCESO DE EJECUCION",
   ].map(normKeyForMatch)
 );
 
