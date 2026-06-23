@@ -858,3 +858,52 @@
 .dper-value-lost {
   fill: #dc2626;
 }
+
+/* =========================================================
+   Columnas fijas Detalle de oportunidades perdidas
+   Fija: Nombre Cliente y Servicio
+========================================================= */
+
+/* Nombre Cliente */
+.dper-detail-table th:nth-child(1),
+.dper-detail-table td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  z-index: 12;
+  background: #ffffff;
+}
+
+/* Servicio */
+.dper-detail-table th:nth-child(2),
+.dper-detail-table td:nth-child(2) {
+  position: sticky;
+  left: 190px; /* mismo ancho de Nombre Cliente */
+  z-index: 12;
+  background: #ffffff;
+}
+
+/* Headers fijos */
+.dper-detail-table thead th:nth-child(1),
+.dper-detail-table thead th:nth-child(2) {
+  z-index: 30;
+  background: var(--dper-head);
+  color: #ffffff;
+}
+
+/* Mantener fondo correcto en filas pares */
+.dper-detail-table tbody tr:nth-child(even) td:nth-child(1),
+.dper-detail-table tbody tr:nth-child(even) td:nth-child(2) {
+  background: #f8fafc;
+}
+
+/* Mantener fondo correcto al pasar el mouse */
+.dper-detail-table tbody tr:hover td:nth-child(1),
+.dper-detail-table tbody tr:hover td:nth-child(2) {
+  background: #eff6ff;
+}
+
+/* Separador visual después de Servicio */
+.dper-detail-table th:nth-child(2),
+.dper-detail-table td:nth-child(2) {
+  box-shadow: 8px 0 12px -10px rgba(15, 23, 42, 0.5);
+}
