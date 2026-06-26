@@ -486,7 +486,7 @@
    Inputs / edición
 ========================= */
 .oportunidades-wrapper .editing {
-  background: #e0f2fe !important;
+  background: #dbeafe !important;
 }
 
 .oportunidades-wrapper .cell-input {
@@ -548,7 +548,7 @@
 
 .oportunidades-wrapper .tabla-oportunidades tbody td.editing.servicio-col,
 .oportunidades-wrapper .tabla-oportunidades tbody td.editing.servicio-wrap-cell {
-  background: #e0f2fe !important;
+  background: #dbeafe !important;
 }
 
 /* =========================
@@ -1019,7 +1019,7 @@
 .oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row .sticky-col-1,
 .oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row .sticky-col-2,
 .oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row .sticky-col-3 {
-  background: #f0f9ff !important;
+  background: #eaf4ff !important;
   border-top-color: #bae6fd !important;
   border-bottom-color: #bae6fd !important;
 }
@@ -1030,7 +1030,7 @@
 .oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row:hover .sticky-col-1,
 .oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row:hover .sticky-col-2,
 .oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row:hover .sticky-col-3 {
-  background: #e0f2fe !important;
+  background: #dbeafe !important;
 }
 
 .oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row td.sticky-col-1 {

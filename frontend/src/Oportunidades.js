@@ -717,10 +717,15 @@ function isAsiCloudRow(row) {
       stripAccents(normalizeText(value))
         .toUpperCase()
         .replace(/[^A-Z0-9]+/g, " ")
+        .trim()
     )
     .join(" ");
 
-  return texto.includes("ASI CLOUD");
+  // Detecta tanto "ASÍ CLOUD / ASI CLOUD" como servicios que vienen solo como "CLOUD - ..."
+  return (
+    texto.includes("ASI CLOUD") ||
+    /(^|\s)CLOUD(\s|$)/.test(texto)
+  );
 }
 
 export default function Oportunidades() {
