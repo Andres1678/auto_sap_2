@@ -677,6 +677,52 @@ function toPositiveInteger(value) {
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
 }
 
+function getFechaAsignacionValue(row) {
+  return (
+    row?.fecha_creacion ??
+    row?.fecha_asignacion ??
+    row?.["FECHA ASIGNACIÓN"] ??
+    row?.["FECHA ASIGNACION"] ??
+    ""
+  );
+}
+
+function getFechaAsignacionTimestamp(row) {
+  const iso = toIsoDate(getFechaAsignacionValue(row));
+  if (!iso) return 0;
+
+  const timestamp = new Date(`${iso}T00:00:00`).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function compareOportunidadesPorFechaAsignacionDesc(a, b) {
+  const fechaA = getFechaAsignacionTimestamp(a);
+  const fechaB = getFechaAsignacionTimestamp(b);
+
+  if (fechaA !== fechaB) {
+    return fechaB - fechaA;
+  }
+
+  return compareSubOportunidades(a, b);
+}
+
+function isAsiCloudRow(row) {
+  const texto = [
+    row?.servicio,
+    row?.descripcion_ot,
+    row?.observaciones,
+    row?.nombre_cliente,
+  ]
+    .map((value) =>
+      stripAccents(normalizeText(value))
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, " ")
+    )
+    .join(" ");
+
+  return texto.includes("ASI CLOUD");
+}
+
 export default function Oportunidades() {
   const [data, setData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
@@ -2004,7 +2050,9 @@ export default function Oportunidades() {
         let nextSub = 1;
         const usedSub = new Set();
 
-        const rowsOrdenadas = [...grupo.rows].sort(compareSubOportunidades).map((row) => {
+        const rowsOrdenadas = [...grupo.rows]
+          .sort(compareOportunidadesPorFechaAsignacionDesc)
+          .map((row) => {
           let consecutivoSub = toPositiveInteger(row?.consecutivo_sub);
 
           if (!consecutivoSub || usedSub.has(consecutivoSub)) {
@@ -2034,11 +2082,10 @@ export default function Oportunidades() {
         };
       })
       .sort((a, b) => {
-        if (a.numeroPrincipal !== b.numeroPrincipal) {
-          return a.numeroPrincipal - b.numeroPrincipal;
-        }
+        const byCliente = a.cliente.localeCompare(b.cliente, "es", { sensitivity: "base" });
+        if (byCliente !== 0) return byCliente;
 
-        return a.cliente.localeCompare(b.cliente, "es", { sensitivity: "base" });
+        return a.numeroPrincipal - b.numeroPrincipal;
       });
   }, [filteredData, clienteNumeroMap]);
 
@@ -2063,7 +2110,7 @@ export default function Oportunidades() {
     <tr
       key={`sub-${row.id ?? i}`}
       data-row-id={row.id ?? ""}
-      className="sub-oportunidad-row"
+      className={`sub-oportunidad-row ${isAsiCloudRow(row) ? "asi-cloud-row" : ""}`}
     >
       {tableColumnOrder.map((col, colIdx) => {
         const isLong = isObservationsCol(col);

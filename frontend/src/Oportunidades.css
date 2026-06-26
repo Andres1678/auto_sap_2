@@ -1008,3 +1008,42 @@
   color: #1e3a8a !important;
   font-weight: 900 !important;
 }
+
+/* =========================================================
+   Resaltado ASÍ CLOUD
+   Fila completa con color suave alineado a la tabla
+========================================================= */
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row td,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row td.post-prc-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row td.obs-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row .sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row .sticky-col-2,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row .sticky-col-3 {
+  background: #f0f9ff !important;
+  border-top-color: #bae6fd !important;
+  border-bottom-color: #bae6fd !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row:hover td,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row:hover td.post-prc-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row:hover td.obs-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row:hover .sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row:hover .sticky-col-2,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row:hover .sticky-col-3 {
+  background: #e0f2fe !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row td.sticky-col-1 {
+  box-shadow: inset 4px 0 0 #38bdf8, 2px 0 0 #e2e8f0 !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row td.sticky-col-2,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row td.sticky-col-3 {
+  box-shadow: 2px 0 0 #e2e8f0 !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.asi-cloud-row .obs-item {
+  background: #ffffff !important;
+  border-color: #bae6fd !important;
+}
+
