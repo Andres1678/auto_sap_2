@@ -223,8 +223,8 @@ function formatDate(value) {
   const iso = toIsoDate(value);
   if (!iso) return "-";
 
-  const [, mm, dd] = iso.split("-");
-  return `${dd}/${mm}`;
+  const [yyyy, mm, dd] = iso.split("-");
+  return `${dd}/${mm}/${yyyy}`;
 }
 
 function firstValue(row, keys) {
@@ -249,6 +249,20 @@ function getNoOT(row) {
     "ot",
     "No OT",
     "NO OT",
+  ]);
+}
+
+function getIdEnlace(row) {
+  return firstValue(row, [
+    "num_enlace",
+    "id_enlace",
+    "idEnlace",
+    "numero_enlace",
+    "enlace_id",
+    "ID ENLACE",
+    "NUM ENLACE",
+    "No ENLACE",
+    "NO ENLACE",
   ]);
 }
 
@@ -535,13 +549,14 @@ function buildDetalleRows(rows, config) {
     const nombreCliente = displayText(row?.nombre_cliente, "SIN CLIENTE");
     const servicio = displayText(row?.servicio, "SIN SERVICIO");
     const noOT = displayText(getNoOT(row), "SIN OT");
+    const idEnlace = displayText(getIdEnlace(row), "-");
     const tipoMoneda = displayText(row?.tipo_moneda, "COP").toUpperCase();
     const otc = readMoney(row, ["otc", "OTC", "otr", "OTR"]);
     const mrc = readMoney(row, ["mrc", "MRC"]);
 
     const keyParts = config.dateType
-      ? [fechaIso || fecha, nombreCliente, servicio, noOT, tipoMoneda]
-      : [nombreCliente, servicio, noOT, tipoMoneda];
+      ? [fechaIso || fecha, nombreCliente, servicio, noOT, idEnlace, tipoMoneda]
+      : [nombreCliente, servicio, noOT, idEnlace, tipoMoneda];
 
     const key = keyParts.map(normKeyForMatch).join("||");
 
@@ -552,6 +567,7 @@ function buildDetalleRows(rows, config) {
         nombreCliente,
         servicio,
         noOT,
+        idEnlace,
         tipoMoneda,
         otc: 0,
         mrc: 0,
@@ -579,6 +595,7 @@ const EXPORT_COLUMNS = [
   { key: "nombreCliente", label: "NOMBRE CLIENTE" },
   { key: "servicio", label: "SERVICIO" },
   { key: "noOT", label: "No OT" },
+  { key: "idEnlace", label: "ID ENLACE" },
   { key: "tipoMoneda", label: "TIPO DE MONEDA" },
   { key: "otc", label: "Suma de OTC" },
   { key: "mrc", label: "Suma de MRC" },
@@ -607,6 +624,7 @@ function rowsForExcel(rows = [], firstColumnLabel = "FECHA") {
     "NOMBRE CLIENTE": row?.nombreCliente ?? "",
     SERVICIO: row?.servicio ?? "",
     "No OT": row?.noOT ?? "",
+    "ID ENLACE": row?.idEnlace ?? "",
     "TIPO DE MONEDA": row?.tipoMoneda ?? "",
     "Suma de OTC": toNumberSmart(row?.otc),
     "Suma de MRC": toNumberSmart(row?.mrc),
@@ -629,6 +647,7 @@ function buildWorksheet(rows = [], firstColumnLabel = "FECHA") {
     { wch: 18 },
     { wch: 35 },
     { wch: 48 },
+    { wch: 18 },
     { wch: 18 },
     { wch: 18 },
     { wch: 16 },
@@ -1179,6 +1198,7 @@ function DetalleTable({ title, rows, firstColumn, showDate, onExport }) {
               <th>NOMBRE CLIENTE</th>
               <th>SERVICIO</th>
               <th>No OT</th>
+              <th>ID ENLACE</th>
               <th>TIPO DE MONEDA</th>
               <th>Suma de OTC</th>
               <th>Suma de MRC</th>
@@ -1194,6 +1214,7 @@ function DetalleTable({ title, rows, firstColumn, showDate, onExport }) {
                   <td title={row.nombreCliente}>{row.nombreCliente}</td>
                   <td title={row.servicio}>{row.servicio}</td>
                   <td title={row.noOT}>{row.noOT}</td>
+                  <td title={row.idEnlace}>{row.idEnlace}</td>
                   <td title={row.tipoMoneda}>{row.tipoMoneda}</td>
                   <td title={fmtMoney(row.otc)}>{fmtMoney(row.otc)}</td>
                   <td title={fmtMoney(row.mrc)}>{fmtMoney(row.mrc)}</td>
@@ -1202,7 +1223,7 @@ function DetalleTable({ title, rows, firstColumn, showDate, onExport }) {
               ))
             ) : (
               <tr>
-                <td colSpan={showDate ? 8 : 7} className="dots-empty">
+                <td colSpan={showDate ? 9 : 8} className="dots-empty">
                   Sin registros para este estado.
                 </td>
               </tr>
