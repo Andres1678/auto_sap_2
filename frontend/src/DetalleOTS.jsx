@@ -201,6 +201,24 @@ function fmtMoney(value) {
   return `$ ${nfMoney.format(toNumberSmart(value))}`;
 }
 
+function getMrcNormalizadoValue(row, otcValue, mrcValue) {
+  const stored = firstValue(row, [
+    "mrc_normalizado",
+    "mrcNormalizado",
+    "MRC NORMALIZADO",
+    "MRC_NORMALIZADO",
+  ]);
+
+  if (stored !== "") {
+    return toNumberSmart(stored);
+  }
+
+  const otc = otcValue !== undefined ? toNumberSmart(otcValue) : readMoney(row, ["otc", "OTC", "otr", "OTR"]);
+  const mrc = mrcValue !== undefined ? toNumberSmart(mrcValue) : readMoney(row, ["mrc", "MRC"]);
+
+  return Number((mrc + otc / 12).toFixed(2));
+}
+
 function toIsoDate(value) {
   if (!value) return "";
 
@@ -553,6 +571,7 @@ function buildDetalleRows(rows, config) {
     const tipoMoneda = displayText(row?.tipo_moneda, "COP").toUpperCase();
     const otc = readMoney(row, ["otc", "OTC", "otr", "OTR"]);
     const mrc = readMoney(row, ["mrc", "MRC"]);
+    const mrcNormalizado = getMrcNormalizadoValue(row, otc, mrc);
 
     const keyParts = config.dateType
       ? [fechaIso || fecha, nombreCliente, servicio, noOT, idEnlace, tipoMoneda]
@@ -571,6 +590,7 @@ function buildDetalleRows(rows, config) {
         tipoMoneda,
         otc: 0,
         mrc: 0,
+        mrcNormalizado: 0,
         cantidad: 0,
       });
     }
@@ -578,6 +598,7 @@ function buildDetalleRows(rows, config) {
     const item = map.get(key);
     item.otc += otc;
     item.mrc += mrc;
+    item.mrcNormalizado += mrcNormalizado;
     item.cantidad += 1;
   });
 
@@ -599,6 +620,7 @@ const EXPORT_COLUMNS = [
   { key: "tipoMoneda", label: "TIPO DE MONEDA" },
   { key: "otc", label: "Suma de OTC" },
   { key: "mrc", label: "Suma de MRC" },
+  { key: "mrcNormalizado", label: "Suma de MRC Normalizado" },
   { key: "cantidad", label: "CANTIDAD" },
 ];
 
@@ -628,6 +650,7 @@ function rowsForExcel(rows = [], firstColumnLabel = "FECHA") {
     "TIPO DE MONEDA": row?.tipoMoneda ?? "",
     "Suma de OTC": toNumberSmart(row?.otc),
     "Suma de MRC": toNumberSmart(row?.mrc),
+    "Suma de MRC Normalizado": toNumberSmart(row?.mrcNormalizado),
     CANTIDAD: toNumberSmart(row?.cantidad),
   }));
 }
@@ -652,6 +675,7 @@ function buildWorksheet(rows = [], firstColumnLabel = "FECHA") {
     { wch: 18 },
     { wch: 16 },
     { wch: 16 },
+    { wch: 24 },
     { wch: 12 },
   ];
 
@@ -1202,6 +1226,7 @@ function DetalleTable({ title, rows, firstColumn, showDate, onExport }) {
               <th>TIPO DE MONEDA</th>
               <th>Suma de OTC</th>
               <th>Suma de MRC</th>
+              <th>Suma de MRC Normalizado</th>
               <th>CANTIDAD</th>
             </tr>
           </thead>
@@ -1218,12 +1243,13 @@ function DetalleTable({ title, rows, firstColumn, showDate, onExport }) {
                   <td title={row.tipoMoneda}>{row.tipoMoneda}</td>
                   <td title={fmtMoney(row.otc)}>{fmtMoney(row.otc)}</td>
                   <td title={fmtMoney(row.mrc)}>{fmtMoney(row.mrc)}</td>
+                  <td title={fmtMoney(row.mrcNormalizado)}>{fmtMoney(row.mrcNormalizado)}</td>
                   <td title={String(row.cantidad)}>{row.cantidad}</td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={showDate ? 9 : 8} className="dots-empty">
+                <td colSpan={showDate ? 10 : 9} className="dots-empty">
                   Sin registros para este estado.
                 </td>
               </tr>

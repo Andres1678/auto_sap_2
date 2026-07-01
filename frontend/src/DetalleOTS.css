@@ -191,7 +191,7 @@
 
 .dots-table {
   width: max-content;
-  min-width: 1080px;
+  min-width: 1420px;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -269,25 +269,35 @@
 }
 
 .dots-table th:nth-child(5),
-.dots-table td:nth-child(5) {
+.dots-table td:nth-child(5),
+.dots-table th:nth-child(6),
+.dots-table td:nth-child(6) {
   width: 120px;
   min-width: 120px;
   max-width: 120px;
   text-align: center;
 }
 
-.dots-table th:nth-child(6),
-.dots-table td:nth-child(6),
 .dots-table th:nth-child(7),
-.dots-table td:nth-child(7) {
+.dots-table td:nth-child(7),
+.dots-table th:nth-child(8),
+.dots-table td:nth-child(8) {
   width: 150px;
   min-width: 150px;
   max-width: 150px;
   text-align: right;
 }
 
-.dots-table th:nth-child(8),
-.dots-table td:nth-child(8) {
+.dots-table th:nth-child(9),
+.dots-table td:nth-child(9) {
+  width: 190px;
+  min-width: 190px;
+  max-width: 190px;
+  text-align: right;
+}
+
+.dots-table th:nth-child(10),
+.dots-table td:nth-child(10) {
   width: 105px;
   min-width: 105px;
   max-width: 105px;
