@@ -1148,6 +1148,185 @@ export default function Oportunidades() {
     setEditingContext(null);
   };
 
+  const marcarComoPrincipal = async (row) => {
+    if (!row?.id) return;
+
+    const confirm = await Swal.fire({
+      icon: "question",
+      title: "Marcar como principal",
+      html: `
+        <div style="text-align:left;line-height:1.5;">
+          <b>Cliente:</b> ${escapeHtml(row?.nombre_cliente || "-")}<br/>
+          <b>Servicio:</b> ${escapeHtml(row?.servicio || "-")}<br/><br/>
+          Esta oportunidad quedará como una oportunidad principal independiente.
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: "Sí, marcar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#2563eb",
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      setLoading(true);
+
+      const resp = await jfetch(`/oportunidades/${row.id}/marcar-principal`, {
+        method: "PUT",
+      });
+
+      const json = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        Swal.fire("Error", json?.mensaje || "No se pudo marcar como principal", "error");
+        return;
+      }
+
+      await fetchData();
+      setExpandedClientes((prev) => ({
+        ...prev,
+        [`principal-${row.id}`]: true,
+      }));
+
+      Swal.fire("Listo", "La oportunidad quedó como principal.", "success");
+    } catch (e) {
+      Swal.fire("Error", e?.message || "Error inesperado", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const asignarAPrincipal = async (row) => {
+    if (!row?.id) return;
+
+    const principales = (data || [])
+      .filter((item) => {
+        return (
+          normalizeTipoOportunidad(item?.tipo_oportunidad) === TIPO_PRINCIPAL &&
+          normalizeClientGroupKey(item?.nombre_cliente) === normalizeClientGroupKey(row?.nombre_cliente) &&
+          String(item?.id) !== String(row?.id)
+        );
+      })
+      .sort((a, b) => {
+        const byFecha = compareOportunidadesPorFechaAsignacionDesc(a, b);
+        if (byFecha !== 0) return byFecha;
+
+        return String(a?.servicio || "").localeCompare(String(b?.servicio || ""), "es", {
+          sensitivity: "base",
+        });
+      });
+
+    if (!principales.length) {
+      Swal.fire(
+        "Sin principales",
+        "Este cliente no tiene oportunidades principales disponibles. Primero marca una oportunidad como principal.",
+        "info"
+      );
+      return;
+    }
+
+    const inputOptions = Object.fromEntries(
+      principales.map((item) => [
+        String(item.id),
+        `${item.codigo_control || item.id} - ${item.servicio || "SIN SERVICIO"}`,
+      ])
+    );
+
+    const result = await Swal.fire({
+      icon: "question",
+      title: "Asignar a principal",
+      html: `
+        <div style="text-align:left;line-height:1.5;">
+          <b>Cliente:</b> ${escapeHtml(row?.nombre_cliente || "-")}<br/>
+          <b>OT / oportunidad:</b> ${escapeHtml(row?.servicio || "-")}
+        </div>
+      `,
+      input: "select",
+      inputOptions,
+      inputPlaceholder: "Selecciona una oportunidad principal",
+      showCancelButton: true,
+      confirmButtonText: "Asignar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#10b981",
+      inputValidator: (value) => {
+        if (!value) return "Debes seleccionar una oportunidad principal.";
+        return null;
+      },
+    });
+
+    if (!result.isConfirmed || !result.value) return;
+
+    try {
+      setLoading(true);
+
+      const resp = await jfetch(`/oportunidades/${row.id}/asignar-principal`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          oportunidad_padre_id: Number(result.value),
+        }),
+      });
+
+      const json = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        Swal.fire("Error", json?.mensaje || "No se pudo asignar la oportunidad", "error");
+        return;
+      }
+
+      await fetchData();
+      setExpandedClientes((prev) => ({
+        ...prev,
+        [`principal-${result.value}`]: true,
+      }));
+
+      Swal.fire("Listo", "La oportunidad fue asignada a la principal.", "success");
+    } catch (e) {
+      Swal.fire("Error", e?.message || "Error inesperado", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const quitarDePrincipal = async (row) => {
+    if (!row?.id) return;
+
+    const confirm = await Swal.fire({
+      icon: "warning",
+      title: "Quitar de principal",
+      text: "La oportunidad quedará sin principal asignada.",
+      showCancelButton: true,
+      confirmButtonText: "Sí, quitar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#ef4444",
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      setLoading(true);
+
+      const resp = await jfetch(`/oportunidades/${row.id}/quitar-principal`, {
+        method: "PUT",
+      });
+
+      const json = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        Swal.fire("Error", json?.mensaje || "No se pudo quitar la asignación", "error");
+        return;
+      }
+
+      await fetchData();
+      Swal.fire("Listo", "La oportunidad quedó sin principal asignada.", "success");
+    } catch (e) {
+      Swal.fire("Error", e?.message || "Error inesperado", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const closeEditing = () => {
     setEditing({ rowId: null, col: null });
     setEditingContext(null);
@@ -1971,128 +2150,143 @@ export default function Oportunidades() {
   };
 
 
-  const clienteNumeroMap = useMemo(() => {
-    const clientes = [
-      ...new Map(
-        (data || []).map((row) => {
-          const cliente = normalizeText(row?.[CLIENTE_COL]) || CLIENT_WITHOUT_NAME;
-          const key = normalizeClientGroupKey(cliente);
-          const consecutivo = toPositiveInteger(row?.consecutivo_principal);
-
-          return [key, { key, cliente, consecutivo }];
-        })
-      ).values(),
-    ].sort((a, b) => {
-      const aHasConsecutivo = Number.isFinite(a.consecutivo);
-      const bHasConsecutivo = Number.isFinite(b.consecutivo);
-
-      if (aHasConsecutivo && bHasConsecutivo && a.consecutivo !== b.consecutivo) {
-        return a.consecutivo - b.consecutivo;
-      }
-
-      if (aHasConsecutivo && !bHasConsecutivo) return -1;
-      if (!aHasConsecutivo && bHasConsecutivo) return 1;
-
-      return a.cliente.localeCompare(b.cliente, "es", { sensitivity: "base" });
-    });
-
-    let next = 1;
-    const out = {};
-
-    clientes.forEach((item) => {
-      if (Number.isFinite(item.consecutivo)) {
-        out[item.key] = item.consecutivo;
-        next = Math.max(next, item.consecutivo + 1);
-      }
-    });
-
-    clientes.forEach((item) => {
-      if (!out[item.key]) {
-        out[item.key] = next;
-        next += 1;
-      }
-    });
-
-    return out;
-  }, [data]);
-
   const oportunidadesAgrupadas = useMemo(() => {
-    const grouped = new Map();
+    const principalesPorId = new Map();
+    const gruposPorPrincipal = new Map();
+    const sinPrincipalPorCliente = new Map();
 
-    (filteredData || []).forEach((row) => {
+    const makeClienteInfo = (row) => {
       const cliente = normalizeText(row?.[CLIENTE_COL]) || CLIENT_WITHOUT_NAME;
-      const key = normalizeClientGroupKey(cliente);
+      const clienteKey = normalizeClientGroupKey(cliente);
 
-      if (!grouped.has(key)) {
-        grouped.set(key, {
+      return { cliente, clienteKey };
+    };
+
+    const ensureGrupoPrincipal = (principal) => {
+      if (!principal?.id) return null;
+
+      const { cliente, clienteKey } = makeClienteInfo(principal);
+      const key = `principal-${principal.id}`;
+
+      if (!gruposPorPrincipal.has(key)) {
+        const numeroPrincipal =
+          toPositiveInteger(principal?.consecutivo_principal) || Number(principal.id) || 0;
+
+        gruposPorPrincipal.set(key, {
           key,
           cliente,
+          clienteKey,
+          principalRow: principal,
+          numeroPrincipal,
+          codigo_control:
+            normalizeText(principal?.codigo_control) || String(numeroPrincipal || principal.id),
           rows: [],
-          principalRow: null,
+          sinPrincipal: false,
         });
       }
 
-      const group = grouped.get(key);
-      const tipo = normalizeTipoOportunidad(row?.tipo_oportunidad);
+      return gruposPorPrincipal.get(key);
+    };
 
-      if (tipo === TIPO_PRINCIPAL && !group.principalRow) {
-        group.principalRow = row;
-      } else {
-        group.rows.push(row);
+    (data || []).forEach((row) => {
+      if (normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL && row?.id) {
+        principalesPorId.set(String(row.id), row);
       }
     });
 
-    return Array.from(grouped.values())
-      .map((grupo) => {
-        const numeroPrincipal =
-          toPositiveInteger(grupo.principalRow?.consecutivo_principal) ||
-          clienteNumeroMap[grupo.key] ||
-          0;
+    (filteredData || []).forEach((row) => {
+      const tipo = normalizeTipoOportunidad(row?.tipo_oportunidad);
+      const padreId = row?.oportunidad_padre_id;
 
-        const codigoPrincipal =
-          normalizeText(grupo.principalRow?.codigo_control) || String(numeroPrincipal);
+      if (tipo === TIPO_PRINCIPAL) {
+        ensureGrupoPrincipal(row);
+        return;
+      }
 
-        let nextSub = 1;
-        const usedSub = new Set();
+      if (padreId && principalesPorId.has(String(padreId))) {
+        const principal = principalesPorId.get(String(padreId));
+        const grupo = ensureGrupoPrincipal(principal);
 
-        const rowsOrdenadas = [...grupo.rows]
-          .sort(compareOportunidadesPorFechaAsignacionDesc)
-          .map((row) => {
-          let consecutivoSub = toPositiveInteger(row?.consecutivo_sub);
+        if (grupo) {
+          grupo.rows.push(row);
+          return;
+        }
+      }
 
-          if (!consecutivoSub || usedSub.has(consecutivoSub)) {
-            while (usedSub.has(nextSub)) nextSub += 1;
-            consecutivoSub = nextSub;
-          }
+      const { cliente, clienteKey } = makeClienteInfo(row);
+      const key = `sin-principal-${clienteKey}`;
 
-          usedSub.add(consecutivoSub);
-          nextSub = Math.max(nextSub, consecutivoSub + 1);
-
-          return {
-            ...row,
-            tipo_oportunidad: normalizeTipoOportunidad(row?.tipo_oportunidad),
-            codigo_control:
-              normalizeText(row?.codigo_control) || `${codigoPrincipal}.${consecutivoSub}`,
-            consecutivo_principal: numeroPrincipal,
-            consecutivo_sub: consecutivoSub,
-          };
+      if (!sinPrincipalPorCliente.has(key)) {
+        sinPrincipalPorCliente.set(key, {
+          key,
+          cliente,
+          clienteKey,
+          principalRow: null,
+          numeroPrincipal: 999999,
+          codigo_control: "SIN PRINCIPAL",
+          rows: [],
+          sinPrincipal: true,
         });
+      }
 
-        return {
-          ...grupo,
-          numeroPrincipal,
-          codigo_control: codigoPrincipal,
-          rows: rowsOrdenadas,
-          totals: getPrincipalTotals(rowsOrdenadas),
-        };
-      })
-      .sort((a, b) => {
-        const byCliente = a.cliente.localeCompare(b.cliente, "es", { sensitivity: "base" });
-        if (byCliente !== 0) return byCliente;
+      sinPrincipalPorCliente.get(key).rows.push(row);
+    });
 
-        return a.numeroPrincipal - b.numeroPrincipal;
-      });
-  }, [filteredData, clienteNumeroMap]);
+    const gruposPrincipales = Array.from(gruposPorPrincipal.values()).map((grupo) => {
+      const principalCodigo =
+        normalizeText(grupo.principalRow?.codigo_control) ||
+        String(grupo.numeroPrincipal || grupo.principalRow?.id || "");
+
+      const rowsOrdenadas = [...grupo.rows]
+        .sort(compareOportunidadesPorFechaAsignacionDesc)
+        .map((row, index) => ({
+          ...row,
+          tipo_oportunidad: normalizeTipoOportunidad(row?.tipo_oportunidad),
+          codigo_control:
+            normalizeText(row?.codigo_control) ||
+            `${principalCodigo}.${toPositiveInteger(row?.consecutivo_sub) || index + 1}`,
+          consecutivo_principal: grupo.numeroPrincipal,
+          consecutivo_sub: toPositiveInteger(row?.consecutivo_sub) || index + 1,
+        }));
+
+      return {
+        ...grupo,
+        rows: rowsOrdenadas,
+        totals: getPrincipalTotals(rowsOrdenadas),
+      };
+    });
+
+    const gruposSinPrincipal = Array.from(sinPrincipalPorCliente.values()).map((grupo) => {
+      const rowsOrdenadas = [...grupo.rows]
+        .sort(compareOportunidadesPorFechaAsignacionDesc)
+        .map((row, index) => ({
+          ...row,
+          tipo_oportunidad: normalizeTipoOportunidad(row?.tipo_oportunidad),
+          codigo_control: normalizeText(row?.codigo_control) || `PENDIENTE.${index + 1}`,
+        }));
+
+      return {
+        ...grupo,
+        rows: rowsOrdenadas,
+        totals: getPrincipalTotals(rowsOrdenadas),
+      };
+    });
+
+    return [...gruposPrincipales, ...gruposSinPrincipal].sort((a, b) => {
+      const byCliente = a.cliente.localeCompare(b.cliente, "es", { sensitivity: "base" });
+      if (byCliente !== 0) return byCliente;
+
+      if (a.sinPrincipal && !b.sinPrincipal) return 1;
+      if (!a.sinPrincipal && b.sinPrincipal) return -1;
+
+      const fechaA = getFechaAsignacionTimestamp(a.principalRow);
+      const fechaB = getFechaAsignacionTimestamp(b.principalRow);
+
+      if (fechaA !== fechaB) return fechaB - fechaA;
+
+      return a.numeroPrincipal - b.numeroPrincipal;
+    });
+  }, [data, filteredData]);
 
   const toggleClienteGroup = useCallback((clienteKey) => {
     setExpandedClientes((prev) => ({
@@ -2157,7 +2351,41 @@ export default function Oportunidades() {
         );
       })}
 
-      <td className="acciones"></td>
+      <td className="acciones">
+        <div className="op-actions">
+          <button
+            type="button"
+            className="op-action-btn op-action-main"
+            onClick={() => marcarComoPrincipal(row)}
+            disabled={loading}
+            title="Marcar esta fila como oportunidad principal"
+          >
+            Principal
+          </button>
+
+          <button
+            type="button"
+            className="op-action-btn op-action-assign"
+            onClick={() => asignarAPrincipal(row)}
+            disabled={loading}
+            title="Asignar esta OT/suboportunidad a una principal"
+          >
+            Asignar
+          </button>
+
+          {row?.oportunidad_padre_id && (
+            <button
+              type="button"
+              className="op-action-btn op-action-remove"
+              onClick={() => quitarDePrincipal(row)}
+              disabled={loading}
+              title="Quitar esta OT/suboportunidad de la principal"
+            >
+              Quitar
+            </button>
+          )}
+        </div>
+      </td>
     </tr>
   );
 
@@ -2168,12 +2396,14 @@ export default function Oportunidades() {
 
     return (
       <tr
-        key={`principal-${grupo.key}`}
-        className="cliente-principal-row"
+        key={grupo.key}
+        className={`cliente-principal-row ${grupo.sinPrincipal ? "sin-principal-row" : ""}`}
         data-cliente-key={grupo.key}
       >
         {tableColumnOrder.map((col, colIdx) => {
-          let content = "-";
+          let content = grupo.principalRow && !grupo.sinPrincipal
+            ? formatCell(col, grupo.principalRow?.[col])
+            : "-";
 
           if (col === "id") {
             content = (
@@ -2199,18 +2429,24 @@ export default function Oportunidades() {
                   {grupo.rows.length} sub oportunidad{grupo.rows.length === 1 ? "" : "es"}
                 </span>
                 <small>
-                  {totals.cantidadValidas} suma{totals.cantidadValidas === 1 ? "" : "n"} por estado OT/GANADA
+                  {grupo.sinPrincipal
+                    ? "Pendientes por asignar a una oportunidad principal"
+                    : `${totals.cantidadValidas} suma${totals.cantidadValidas === 1 ? "" : "n"} por estado OT/GANADA`}
                 </small>
               </div>
             );
           }
 
           if (col === SERVICIO_COL) {
-            content = "OPORTUNIDAD PRINCIPAL / CONSOLIDADO POR CLIENTE";
+            content = grupo.sinPrincipal
+              ? "OPORTUNIDADES SIN PRINCIPAL / PENDIENTES DE ASIGNAR"
+              : renderMultilineTextCell(grupo.principalRow?.servicio || "OPORTUNIDAD PRINCIPAL");
           }
 
           if (col === "estado_oferta") {
-            content = TIPO_PRINCIPAL;
+            content = grupo.sinPrincipal
+              ? "SIN PRINCIPAL"
+              : formatCell(col, grupo.principalRow?.[col]);
           }
 
           if (col === "resultado_oferta") {

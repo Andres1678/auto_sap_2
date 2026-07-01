@@ -1047,3 +1047,120 @@
   border-color: #bae6fd !important;
 }
 
+
+/* =========================================================
+   Acciones: Principal / Asignar / Quitar
+========================================================= */
+.oportunidades-wrapper .tabla-oportunidades .acciones {
+  min-width: 165px !important;
+  max-width: 165px !important;
+  width: 165px !important;
+}
+
+.oportunidades-wrapper .op-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.oportunidades-wrapper .op-action-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 7px 8px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  cursor: pointer;
+  line-height: 1.1;
+  transition: background 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+}
+
+.oportunidades-wrapper .op-action-btn:hover {
+  transform: translateY(-1px);
+}
+
+.oportunidades-wrapper .op-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.oportunidades-wrapper .op-action-main {
+  background: #dbeafe;
+  color: #1e3a8a;
+  border: 1px solid #bfdbfe;
+}
+
+.oportunidades-wrapper .op-action-main:hover {
+  background: #bfdbfe;
+}
+
+.oportunidades-wrapper .op-action-assign {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.oportunidades-wrapper .op-action-assign:hover {
+  background: #bbf7d0;
+}
+
+.oportunidades-wrapper .op-action-remove {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.oportunidades-wrapper .op-action-remove:hover {
+  background: #fecaca;
+}
+
+/* =========================================================
+   Grupo sin oportunidad principal asignada
+========================================================= */
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.obs-col {
+  background: #fff7ed !important;
+  border-top: 2px solid #fdba74 !important;
+  border-bottom: 2px solid #fed7aa !important;
+  color: #7c2d12 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td.obs-col {
+  background: #ffedd5 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .sticky-col-1,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .sticky-col-2,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .sticky-col-3 {
+  background: #fff7ed !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover .sticky-col-1,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover .sticky-col-2,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover .sticky-col-3 {
+  background: #ffedd5 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .principal-id-box strong {
+  color: #9a3412 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .cliente-principal-info span {
+  background: #fed7aa !important;
+  color: #9a3412 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .cliente-toggle-btn,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .cliente-ver-btn {
+  background: #f97316 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .cliente-toggle-btn:hover,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .cliente-ver-btn:hover {
+  background: #ea580c !important;
+}

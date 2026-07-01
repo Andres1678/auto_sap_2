@@ -12848,3 +12848,157 @@ def desactivar_perfil_catalogo(perfil_id):
         db.session.rollback()
         app.logger.exception("Error desactivando perfil")
         return jsonify({"mensaje": f"No se pudo desactivar el perfil: {str(e)}"}), 500
+
+### Herencias oportunidades 
+
+@bp.route("/oportunidades/<int:id>/marcar-principal", methods=["PUT"])
+@permission_required("OPORTUNIDADES_EDITAR")
+def marcar_oportunidad_principal(id):
+    try:
+        oportunidad = Oportunidad.query.get_or_404(id)
+
+        cliente_key = _norm_key_for_match(oportunidad.nombre_cliente)
+
+        ultimo_consecutivo = (
+            db.session.query(func.max(Oportunidad.consecutivo_principal))
+            .filter(Oportunidad.cliente_grupo_key == cliente_key)
+            .scalar()
+        )
+
+        consecutivo = int(ultimo_consecutivo or 0) + 1
+
+        oportunidad.tipo_oportunidad = "PRINCIPAL"
+        oportunidad.oportunidad_padre_id = None
+        oportunidad.cliente_grupo_key = cliente_key
+
+        if not oportunidad.consecutivo_principal:
+            oportunidad.consecutivo_principal = consecutivo
+
+        if not oportunidad.codigo_control:
+            oportunidad.codigo_control = str(oportunidad.consecutivo_principal)
+
+        oportunidad.consecutivo_sub = None
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Oportunidad marcada como principal",
+            "oportunidad": oportunidad.to_dict()
+        }), 200
+
+    except Exception:
+        db.session.rollback()
+        return jsonify({
+            "mensaje": "Error marcando oportunidad como principal",
+            "trace": traceback.format_exc()
+        }), 500
+    
+@bp.route("/oportunidades/<int:id>/asignar-principal", methods=["PUT"])
+@permission_required("OPORTUNIDADES_EDITAR")
+def asignar_oportunidad_a_principal(id):
+    try:
+        data = request.get_json() or {}
+        padre_id = data.get("oportunidad_padre_id")
+
+        if not padre_id:
+            return jsonify({"mensaje": "Debe enviar oportunidad_padre_id"}), 400
+
+        oportunidad = Oportunidad.query.get_or_404(id)
+        principal = Oportunidad.query.get_or_404(int(padre_id))
+
+        if oportunidad.id == principal.id:
+            return jsonify({"mensaje": "Una oportunidad no puede asignarse a sí misma"}), 400
+
+        if _norm_key_for_match(oportunidad.nombre_cliente) != _norm_key_for_match(principal.nombre_cliente):
+            return jsonify({
+                "mensaje": "Solo se pueden asociar oportunidades del mismo cliente"
+            }), 400
+
+        if _norm_key_for_match(principal.tipo_oportunidad) != "PRINCIPAL":
+            return jsonify({
+                "mensaje": "La oportunidad seleccionada no está marcada como principal"
+            }), 400
+
+        ultimo_sub = (
+            db.session.query(func.max(Oportunidad.consecutivo_sub))
+            .filter(Oportunidad.oportunidad_padre_id == principal.id)
+            .scalar()
+        )
+
+        consecutivo_sub = int(ultimo_sub or 0) + 1
+
+        oportunidad.tipo_oportunidad = "SUBOPORTUNIDAD"
+        oportunidad.oportunidad_padre_id = principal.id
+        oportunidad.cliente_grupo_key = principal.cliente_grupo_key or _norm_key_for_match(principal.nombre_cliente)
+        oportunidad.consecutivo_principal = principal.consecutivo_principal
+        oportunidad.consecutivo_sub = consecutivo_sub
+        oportunidad.codigo_control = f"{principal.codigo_control or principal.consecutivo_principal}.{consecutivo_sub}"
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Oportunidad asignada a principal",
+            "oportunidad": oportunidad.to_dict()
+        }), 200
+
+    except Exception:
+        db.session.rollback()
+        return jsonify({
+            "mensaje": "Error asignando oportunidad a principal",
+            "trace": traceback.format_exc()
+        }), 500
+    
+@bp.route("/oportunidades/<int:id>/quitar-principal", methods=["PUT"])
+@permission_required("OPORTUNIDADES_EDITAR")
+def quitar_oportunidad_de_principal(id):
+    try:
+        oportunidad = Oportunidad.query.get_or_404(id)
+
+        oportunidad.tipo_oportunidad = "SUBOPORTUNIDAD"
+        oportunidad.oportunidad_padre_id = None
+        oportunidad.consecutivo_sub = None
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Oportunidad retirada de la principal",
+            "oportunidad": oportunidad.to_dict()
+        }), 200
+
+    except Exception:
+        db.session.rollback()
+        return jsonify({
+            "mensaje": "Error retirando oportunidad de la principal",
+            "trace": traceback.format_exc()
+        }), 500
+    
+@bp.route("/oportunidades/principales", methods=["GET"])
+@permission_required("OPORTUNIDADES_VER")
+def listar_oportunidades_principales():
+    try:
+        cliente = (request.args.get("cliente") or "").strip()
+
+        query = Oportunidad.query.filter(
+            func.upper(Oportunidad.tipo_oportunidad) == "PRINCIPAL"
+        )
+
+        if cliente:
+            query = query.filter(
+                func.upper(func.trim(Oportunidad.nombre_cliente)) ==
+                cliente.strip().upper()
+            )
+
+        rows = query.order_by(
+            Oportunidad.nombre_cliente.asc(),
+            Oportunidad.consecutivo_principal.asc(),
+            Oportunidad.id.asc()
+        ).all()
+
+        return jsonify([o.to_dict() for o in rows]), 200
+
+    except Exception:
+        return jsonify({
+            "mensaje": "Error consultando oportunidades principales",
+            "trace": traceback.format_exc()
+        }), 500
+    

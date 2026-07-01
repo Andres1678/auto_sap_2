@@ -317,6 +317,12 @@ class Oportunidad(db.Model):
         foreign_keys=[oportunidad_padre_id],
         lazy="select"
     )
+
+    __table_args__ = (
+        db.Index("ix_oportunidades_padre", "oportunidad_padre_id"),
+        db.Index("ix_oportunidades_cliente_tipo", "cliente_grupo_key", "tipo_oportunidad"),
+    )
+    
     def to_dict(self):
         def serializar_fecha(f):
             return f.isoformat() if f else None
