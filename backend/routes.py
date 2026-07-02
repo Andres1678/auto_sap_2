@@ -12926,6 +12926,24 @@ def asignar_oportunidad_a_principal(id):
                 "mensaje": "La oportunidad seleccionada no está marcada como principal"
             }), 400
 
+        cliente_key = principal.cliente_grupo_key or _norm_key_for_match(principal.nombre_cliente)
+
+        if not principal.consecutivo_principal:
+            ultimo_principal = (
+                db.session.query(func.max(Oportunidad.consecutivo_principal))
+                .filter(
+                    or_(
+                        Oportunidad.cliente_grupo_key == cliente_key,
+                        _sql_norm_estado(Oportunidad.nombre_cliente) == cliente_key
+                    )
+                )
+                .scalar()
+            )
+
+            principal.consecutivo_principal = int(ultimo_principal or 0) + 1
+            principal.codigo_control = str(principal.consecutivo_principal)
+            principal.cliente_grupo_key = cliente_key
+
         ultimo_sub = (
             db.session.query(func.max(Oportunidad.consecutivo_sub))
             .filter(Oportunidad.oportunidad_padre_id == principal.id)
@@ -12936,7 +12954,7 @@ def asignar_oportunidad_a_principal(id):
 
         oportunidad.tipo_oportunidad = "SUBOPORTUNIDAD"
         oportunidad.oportunidad_padre_id = principal.id
-        oportunidad.cliente_grupo_key = principal.cliente_grupo_key or _norm_key_for_match(principal.nombre_cliente)
+        oportunidad.cliente_grupo_key = cliente_key
         oportunidad.consecutivo_principal = principal.consecutivo_principal
         oportunidad.consecutivo_sub = consecutivo_sub
         oportunidad.codigo_control = f"{principal.codigo_control or principal.consecutivo_principal}.{consecutivo_sub}"
@@ -12948,10 +12966,12 @@ def asignar_oportunidad_a_principal(id):
             "oportunidad": oportunidad.to_dict()
         }), 200
 
-    except Exception:
+    except Exception as e:
         db.session.rollback()
+        app.logger.exception(f"Error asignando oportunidad id={id} a principal")
+
         return jsonify({
-            "mensaje": "Error asignando oportunidad a principal",
+            "mensaje": f"Error asignando oportunidad a principal: {str(e)}",
             "trace": traceback.format_exc()
         }), 500
     
