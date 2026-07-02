@@ -12859,9 +12859,19 @@ def marcar_oportunidad_principal(id):
 
         cliente_key = _norm_key_for_match(oportunidad.nombre_cliente)
 
+        if not cliente_key:
+            return jsonify({
+                "mensaje": "La oportunidad no tiene nombre de cliente válido"
+            }), 400
+
         ultimo_consecutivo = (
             db.session.query(func.max(Oportunidad.consecutivo_principal))
-            .filter(Oportunidad.cliente_grupo_key == cliente_key)
+            .filter(
+                or_(
+                    Oportunidad.cliente_grupo_key == cliente_key,
+                    _sql_norm_estado(Oportunidad.nombre_cliente) == cliente_key
+                )
+            )
             .scalar()
         )
 
@@ -12870,14 +12880,9 @@ def marcar_oportunidad_principal(id):
         oportunidad.tipo_oportunidad = "PRINCIPAL"
         oportunidad.oportunidad_padre_id = None
         oportunidad.cliente_grupo_key = cliente_key
-
-        if not oportunidad.consecutivo_principal:
-            oportunidad.consecutivo_principal = consecutivo
-
-        if not oportunidad.codigo_control:
-            oportunidad.codigo_control = str(oportunidad.consecutivo_principal)
-
+        oportunidad.consecutivo_principal = consecutivo
         oportunidad.consecutivo_sub = None
+        oportunidad.codigo_control = str(consecutivo)
 
         db.session.commit()
 
@@ -12886,10 +12891,12 @@ def marcar_oportunidad_principal(id):
             "oportunidad": oportunidad.to_dict()
         }), 200
 
-    except Exception:
+    except Exception as e:
         db.session.rollback()
+        app.logger.exception(f"Error marcando oportunidad como principal id={id}")
+
         return jsonify({
-            "mensaje": "Error marcando oportunidad como principal",
+            "mensaje": f"Error marcando oportunidad como principal: {str(e)}",
             "trace": traceback.format_exc()
         }), 500
     
