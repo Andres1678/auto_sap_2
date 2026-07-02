@@ -2456,8 +2456,12 @@ export default function Oportunidades() {
         data-cliente-key={grupo.key}
       >
         {tableColumnOrder.map((col, colIdx) => {
+          const isLong = isObservationsCol(col);
+
           let content = grupo.principalRow && !grupo.sinPrincipal
-            ? formatCell(col, grupo.principalRow?.[col])
+            ? isLong
+              ? renderLongTextCell(grupo.principalRow?.[col])
+              : formatCell(col, grupo.principalRow?.[col])
             : "-";
 
           if (col === "id") {
@@ -2539,6 +2543,7 @@ export default function Oportunidades() {
               key={`principal-${grupo.key}-${col}-${colIdx}`}
               className={[
                 getColumnClassNames(col),
+                isLong ? "obs-col" : "",
                 col === SERVICIO_COL ? "servicio-wrap-cell" : "",
                 ["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"].includes(col)
                   ? "principal-total-cell"

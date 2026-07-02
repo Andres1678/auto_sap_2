@@ -1433,3 +1433,110 @@
   max-height: 78px !important;
   overflow: hidden !important;
 }
+
+
+/* =========================================================
+   FIX DEFINITIVO: Observaciones con scroll interno
+   Aplica en filas normales, principales y sin principal
+========================================================= */
+
+/* La celda NO debe crecer por el texto */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col {
+  height: 112px !important;
+  min-height: 112px !important;
+  max-height: 112px !important;
+  padding: 8px 10px !important;
+  vertical-align: top !important;
+  overflow: hidden !important;
+}
+
+/* En filas principales la observación va más compacta */
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row td.obs-col {
+  height: 76px !important;
+  min-height: 76px !important;
+  max-height: 76px !important;
+}
+
+/* Este es el contenedor que realmente hace scroll */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col > .obs-list {
+  display: block !important;
+  width: 100% !important;
+  height: 94px !important;
+  max-height: 94px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 0 6px 0 0 !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* Scroll más pequeño para principales */
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row td.obs-col > .obs-list {
+  height: 58px !important;
+  max-height: 58px !important;
+}
+
+/* Evita que cada bloque interno expanda la fila */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-item {
+  display: block !important;
+  max-width: 100% !important;
+  padding: 5px 7px !important;
+  margin: 0 0 5px 0 !important;
+  border-radius: 8px !important;
+  line-height: 1.22 !important;
+  box-sizing: border-box !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* Texto largo dentro de observaciones */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-text {
+  display: block !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  font-size: 0.74rem !important;
+  line-height: 1.22 !important;
+}
+
+/* Fecha de cada observación */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-date {
+  display: inline-block !important;
+  margin-bottom: 3px !important;
+  font-size: 0.66rem !important;
+  line-height: 1.15 !important;
+}
+
+/* Altura controlada de filas normales */
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row {
+  height: 112px !important;
+  max-height: 112px !important;
+}
+
+/* Altura controlada de filas principales */
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row {
+  height: 76px !important;
+  max-height: 76px !important;
+}
+
+/* Si alguna celda normal intenta crecer, se recorta visualmente */
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row td:not(.obs-col),
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row td:not(.obs-col) {
+  max-height: 112px !important;
+  overflow: hidden !important;
+}
+
+/* Scrollbar dentro de observaciones */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col > .obs-list::-webkit-scrollbar {
+  width: 6px !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col > .obs-list::-webkit-scrollbar-thumb {
+  background: #94a3b8 !important;
+  border-radius: 999px !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col > .obs-list::-webkit-scrollbar-track {
+  background: #e5e7eb !important;
+  border-radius: 999px !important;
+}
