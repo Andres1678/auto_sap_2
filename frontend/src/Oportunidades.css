@@ -1164,3 +1164,172 @@
 .oportunidades-wrapper .cliente-principal-row.sin-principal-row .cliente-ver-btn:hover {
   background: #ea580c !important;
 }
+
+
+/* =========================================================
+   Ajuste compacto para principales y suboportunidades
+   Evita filas demasiado altas por columnas largas/observaciones
+========================================================= */
+.oportunidades-wrapper {
+  --col-id-w: 115px;
+  --col-cliente-w: 280px;
+  --col-servicio-w: 360px;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr {
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody td {
+  padding: 8px 10px !important;
+  vertical-align: middle !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades td.obs-col {
+  height: 118px !important;
+  max-height: 118px !important;
+  padding: 8px 10px !important;
+}
+
+.oportunidades-wrapper .obs-list {
+  max-height: 94px !important;
+  gap: 6px !important;
+}
+
+.oportunidades-wrapper .obs-item {
+  padding: 7px 9px !important;
+  border-radius: 9px !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row td,
+.oportunidades-wrapper .cliente-principal-row td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row td.obs-col,
+.oportunidades-wrapper .cliente-principal-row td.descripcion-ot-col,
+.oportunidades-wrapper .cliente-principal-row td.descripcion-ot-wrap-cell {
+  height: 74px !important;
+  max-height: 74px !important;
+  min-height: 74px !important;
+  padding: 8px 10px !important;
+  vertical-align: middle !important;
+  overflow: hidden !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row .obs-list {
+  max-height: 52px !important;
+  overflow: hidden !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row .cell-multiline-text,
+.oportunidades-wrapper .cliente-principal-row .servicio-wrap-cell .cell-multiline-text {
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  max-height: 42px !important;
+  overflow: hidden !important;
+}
+
+.oportunidades-wrapper .cliente-principal-info {
+  gap: 3px !important;
+}
+
+.oportunidades-wrapper .cliente-principal-info strong {
+  font-size: 0.82rem !important;
+}
+
+.oportunidades-wrapper .cliente-principal-info span,
+.oportunidades-wrapper .cliente-principal-info small {
+  font-size: 0.68rem !important;
+}
+
+.oportunidades-wrapper .principal-id-box {
+  gap: 6px !important;
+}
+
+.oportunidades-wrapper .principal-id-box strong {
+  font-size: 0.82rem !important;
+  line-height: 1.15 !important;
+}
+
+.oportunidades-wrapper .cliente-toggle-btn {
+  width: 27px !important;
+  height: 27px !important;
+  min-width: 27px !important;
+  font-size: 1rem !important;
+}
+
+.oportunidades-wrapper .cliente-ver-btn {
+  padding: 6px 10px !important;
+  font-size: 0.72rem !important;
+}
+
+.oportunidades-wrapper .sub-oportunidad-row td,
+.oportunidades-wrapper .sub-oportunidad-row td.post-prc-col,
+.oportunidades-wrapper .sub-oportunidad-row td.descripcion-ot-col,
+.oportunidades-wrapper .sub-oportunidad-row td.descripcion-ot-wrap-cell {
+  min-height: 68px !important;
+  padding: 8px 10px !important;
+  vertical-align: middle !important;
+}
+
+.oportunidades-wrapper .sub-oportunidad-row td.obs-col {
+  height: 118px !important;
+  max-height: 118px !important;
+  vertical-align: top !important;
+}
+
+.oportunidades-wrapper .sub-oportunidad-row .cell-multiline-text {
+  display: -webkit-box !important;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  max-height: 72px !important;
+  overflow: hidden !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.obs-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.descripcion-ot-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.descripcion-ot-wrap-cell {
+  height: 74px !important;
+  max-height: 74px !important;
+  min-height: 74px !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .principal-id-box strong {
+  font-size: 0.76rem !important;
+}
+
+.oportunidades-wrapper .op-actions {
+  gap: 4px !important;
+}
+
+.oportunidades-wrapper .op-action-btn {
+  padding: 5px 7px !important;
+  font-size: 0.68rem !important;
+  border-radius: 7px !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades .acciones {
+  min-width: 145px !important;
+  max-width: 145px !important;
+  width: 145px !important;
+}
+
+@media (max-width: 768px) {
+  .oportunidades-wrapper {
+    --col-id-w: 90px;
+    --col-cliente-w: 215px;
+    --col-servicio-w: 285px;
+  }
+
+  .oportunidades-wrapper .cliente-principal-row td,
+  .oportunidades-wrapper .cliente-principal-row td.post-prc-col,
+  .oportunidades-wrapper .cliente-principal-row td.obs-col,
+  .oportunidades-wrapper .cliente-principal-row td.descripcion-ot-col,
+  .oportunidades-wrapper .cliente-principal-row td.descripcion-ot-wrap-cell {
+    height: 70px !important;
+    max-height: 70px !important;
+    min-height: 70px !important;
+  }
+}

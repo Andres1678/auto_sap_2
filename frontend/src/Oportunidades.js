@@ -2151,6 +2151,42 @@ export default function Oportunidades() {
 
 
   const oportunidadesAgrupadas = useMemo(() => {
+    const principales = (data || []).filter(
+      (row) => normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL && row?.id
+    );
+
+    const codigoPrincipalCounts = new Map();
+
+    principales.forEach((principal) => {
+      const codigo = normalizeText(principal?.codigo_control);
+
+      if (codigo) {
+        codigoPrincipalCounts.set(codigo, (codigoPrincipalCounts.get(codigo) || 0) + 1);
+      }
+    });
+
+    const principalesOrdenadasGlobal = [...principales].sort((a, b) => {
+      const consecutivoA = toPositiveInteger(a?.consecutivo_principal);
+      const consecutivoB = toPositiveInteger(b?.consecutivo_principal);
+
+      if (consecutivoA !== null && consecutivoB !== null && consecutivoA !== consecutivoB) {
+        return consecutivoA - consecutivoB;
+      }
+
+      const idA = Number(a?.id || 0);
+      const idB = Number(b?.id || 0);
+
+      if (idA !== idB) return idA - idB;
+
+      return compareOportunidadesPorFechaAsignacionDesc(a, b);
+    });
+
+    const principalVisualConsecutivoMap = new Map();
+
+    principalesOrdenadasGlobal.forEach((principal, index) => {
+      principalVisualConsecutivoMap.set(String(principal.id), index + 1);
+    });
+
     const principalesPorId = new Map();
     const gruposPorPrincipal = new Map();
     const sinPrincipalPorCliente = new Map();
@@ -2162,6 +2198,19 @@ export default function Oportunidades() {
       return { cliente, clienteKey };
     };
 
+    const getCodigoPrincipalSeguro = (principal) => {
+      const codigoBackend = normalizeText(principal?.codigo_control);
+      const codigoDuplicado = codigoBackend && (codigoPrincipalCounts.get(codigoBackend) || 0) > 1;
+      const consecutivoVisual = principalVisualConsecutivoMap.get(String(principal?.id));
+      const consecutivoBackend = toPositiveInteger(principal?.consecutivo_principal);
+
+      if (codigoBackend && !codigoDuplicado) {
+        return codigoBackend;
+      }
+
+      return String(consecutivoVisual || consecutivoBackend || principal?.id || "");
+    };
+
     const ensureGrupoPrincipal = (principal) => {
       if (!principal?.id) return null;
 
@@ -2170,7 +2219,12 @@ export default function Oportunidades() {
 
       if (!gruposPorPrincipal.has(key)) {
         const numeroPrincipal =
-          toPositiveInteger(principal?.consecutivo_principal) || Number(principal.id) || 0;
+          principalVisualConsecutivoMap.get(String(principal.id)) ||
+          toPositiveInteger(principal?.consecutivo_principal) ||
+          Number(principal.id) ||
+          0;
+
+        const codigoControl = getCodigoPrincipalSeguro(principal);
 
         gruposPorPrincipal.set(key, {
           key,
@@ -2178,8 +2232,7 @@ export default function Oportunidades() {
           clienteKey,
           principalRow: principal,
           numeroPrincipal,
-          codigo_control:
-            normalizeText(principal?.codigo_control) || String(numeroPrincipal || principal.id),
+          codigo_control: codigoControl,
           rows: [],
           sinPrincipal: false,
         });
@@ -2188,10 +2241,8 @@ export default function Oportunidades() {
       return gruposPorPrincipal.get(key);
     };
 
-    (data || []).forEach((row) => {
-      if (normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL && row?.id) {
-        principalesPorId.set(String(row.id), row);
-      }
+    principales.forEach((row) => {
+      principalesPorId.set(String(row.id), row);
     });
 
     (filteredData || []).forEach((row) => {
@@ -2233,21 +2284,25 @@ export default function Oportunidades() {
     });
 
     const gruposPrincipales = Array.from(gruposPorPrincipal.values()).map((grupo) => {
-      const principalCodigo =
-        normalizeText(grupo.principalRow?.codigo_control) ||
-        String(grupo.numeroPrincipal || grupo.principalRow?.id || "");
+      const principalCodigo = grupo.codigo_control || String(grupo.numeroPrincipal || "");
 
       const rowsOrdenadas = [...grupo.rows]
         .sort(compareOportunidadesPorFechaAsignacionDesc)
-        .map((row, index) => ({
-          ...row,
-          tipo_oportunidad: normalizeTipoOportunidad(row?.tipo_oportunidad),
-          codigo_control:
-            normalizeText(row?.codigo_control) ||
-            `${principalCodigo}.${toPositiveInteger(row?.consecutivo_sub) || index + 1}`,
-          consecutivo_principal: grupo.numeroPrincipal,
-          consecutivo_sub: toPositiveInteger(row?.consecutivo_sub) || index + 1,
-        }));
+        .map((row, index) => {
+          const consecutivoSub = toPositiveInteger(row?.consecutivo_sub) || index + 1;
+          const codigoBackend = normalizeText(row?.codigo_control);
+          const codigoCalculado = `${principalCodigo}.${consecutivoSub}`;
+
+          return {
+            ...row,
+            tipo_oportunidad: normalizeTipoOportunidad(row?.tipo_oportunidad),
+            codigo_control: codigoBackend && codigoBackend.startsWith(`${principalCodigo}.`)
+              ? codigoBackend
+              : codigoCalculado,
+            consecutivo_principal: grupo.numeroPrincipal,
+            consecutivo_sub: consecutivoSub,
+          };
+        });
 
       return {
         ...grupo,
@@ -2439,7 +2494,7 @@ export default function Oportunidades() {
 
           if (col === SERVICIO_COL) {
             content = grupo.sinPrincipal
-              ? "OPORTUNIDADES SIN PRINCIPAL / PENDIENTES DE ASIGNAR"
+              ? "SIN PRINCIPAL / PENDIENTES DE ASIGNAR"
               : renderMultilineTextCell(grupo.principalRow?.servicio || "OPORTUNIDAD PRINCIPAL");
           }
 
@@ -2570,7 +2625,7 @@ export default function Oportunidades() {
             onClick={expandAllClienteGroups}
             disabled={loading || !oportunidadesAgrupadas.length}
           >
-            Expandir clientes
+            Expandir grupos
           </button>
 
           <button
@@ -2579,7 +2634,7 @@ export default function Oportunidades() {
             onClick={collapseAllClienteGroups}
             disabled={loading || !oportunidadesAgrupadas.length}
           >
-            Contraer clientes
+            Contraer grupos
           </button>
 
           <button
