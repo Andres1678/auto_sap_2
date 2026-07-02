@@ -1333,3 +1333,103 @@
     min-height: 70px !important;
   }
 }
+
+
+/* =========================================================
+   Corrección scroll interno en Observaciones / Seguimiento OT
+   Evita que la fila crezca por textos largos
+========================================================= */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col,
+.oportunidades-wrapper .tabla-oportunidades tbody td.seguimiento-ot-col {
+  height: 120px !important;
+  min-height: 120px !important;
+  max-height: 120px !important;
+  padding: 8px 10px !important;
+  vertical-align: top !important;
+  overflow: hidden !important;
+}
+
+/* El contenido largo debe hacer scroll dentro de la celda */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-list,
+.oportunidades-wrapper .tabla-oportunidades tbody td.seguimiento-ot-col .obs-list {
+  display: block !important;
+  height: 100px !important;
+  max-height: 100px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-right: 6px !important;
+}
+
+/* Cada observación queda compacta, sin expandir la fila */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-item,
+.oportunidades-wrapper .tabla-oportunidades tbody td.seguimiento-ot-col .obs-item {
+  display: block !important;
+  padding: 6px 8px !important;
+  margin-bottom: 6px !important;
+  border-radius: 8px !important;
+  line-height: 1.25 !important;
+  max-width: 100% !important;
+  word-break: break-word !important;
+}
+
+/* Texto interno de observaciones */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-text,
+.oportunidades-wrapper .tabla-oportunidades tbody td.seguimiento-ot-col .obs-text {
+  display: block !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  font-size: 0.76rem !important;
+  line-height: 1.25 !important;
+}
+
+/* Fecha dentro de observaciones */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-date,
+.oportunidades-wrapper .tabla-oportunidades tbody td.seguimiento-ot-col .obs-date {
+  display: inline-block !important;
+  margin-bottom: 3px !important;
+  font-size: 0.68rem !important;
+  line-height: 1.15 !important;
+}
+
+/* Scroll más limpio dentro de la celda */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-list::-webkit-scrollbar,
+.oportunidades-wrapper .tabla-oportunidades tbody td.seguimiento-ot-col .obs-list::-webkit-scrollbar {
+  width: 6px !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-list::-webkit-scrollbar-thumb,
+.oportunidades-wrapper .tabla-oportunidades tbody td.seguimiento-ot-col .obs-list::-webkit-scrollbar-thumb {
+  background: #94a3b8 !important;
+  border-radius: 999px !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-list::-webkit-scrollbar-track,
+.oportunidades-wrapper .tabla-oportunidades tbody td.seguimiento-ot-col .obs-list::-webkit-scrollbar-track {
+  background: #e5e7eb !important;
+  border-radius: 999px !important;
+}
+
+/* Filas con suboportunidad: altura controlada aunque tenga observaciones largas */
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row {
+  height: 120px !important;
+  max-height: 120px !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row td:not(.obs-col):not(.seguimiento-ot-col) {
+  height: 120px !important;
+  max-height: 120px !important;
+  overflow: hidden !important;
+}
+
+/* Principales y sin principal no deben crecer por campos largos */
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row {
+  height: 78px !important;
+  max-height: 78px !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row td {
+  height: 78px !important;
+  max-height: 78px !important;
+  overflow: hidden !important;
+}
