@@ -638,6 +638,48 @@ function getPrincipalTotals(rows) {
   };
 }
 
+function getPrincipalOwnTotals(principalRow) {
+  if (!principalRow) {
+    return {
+      totalOtc: "",
+      totalMrc: "",
+      mrcNormalizado: "",
+      valorComercial: "",
+      cantidadValidas: 0,
+    };
+  }
+
+  const totalOtc = parseNumberSmart(principalRow?.otc);
+  const totalMrc = parseNumberSmart(principalRow?.mrc);
+  const mrcNormalizadoDirecto = parseNumberSmart(principalRow?.mrc_normalizado);
+  const valorComercialDirecto = parseNumberSmart(principalRow?.valor_oferta_claro);
+
+  const otcNumber = totalOtc === "" ? 0 : Number(totalOtc);
+  const mrcNumber = totalMrc === "" ? 0 : Number(totalMrc);
+
+  const mrcNormalizado =
+    mrcNormalizadoDirecto !== ""
+      ? mrcNormalizadoDirecto
+      : totalOtc !== "" || totalMrc !== ""
+      ? Number((mrcNumber + otcNumber / 12).toFixed(2))
+      : "";
+
+  const valorComercial =
+    valorComercialDirecto !== ""
+      ? valorComercialDirecto
+      : totalOtc !== "" || totalMrc !== ""
+      ? Number((otcNumber + mrcNumber).toFixed(2))
+      : "";
+
+  return {
+    totalOtc,
+    totalMrc,
+    mrcNormalizado,
+    valorComercial,
+    cantidadValidas: 0,
+  };
+}
+
 function compareSubOportunidades(a, b) {
   const subA = parseNumberSmart(a?.consecutivo_sub);
   const subB = parseNumberSmart(b?.consecutivo_sub);
@@ -1148,21 +1190,25 @@ export default function Oportunidades() {
     setEditingContext(null);
   };
 
-  const marcarComoPrincipal = async (row) => {
+  const copiarComoPrincipal = async (row) => {
     if (!row?.id) return;
 
     const confirm = await Swal.fire({
       icon: "question",
-      title: "Marcar como principal",
+      title: "Crear principal desde copia",
       html: `
         <div style="text-align:left;line-height:1.5;">
           <b>Cliente:</b> ${escapeHtml(row?.nombre_cliente || "-")}<br/>
           <b>Servicio:</b> ${escapeHtml(row?.servicio || "-")}<br/><br/>
-          Esta oportunidad quedará como una oportunidad principal independiente.
+          Se creará una nueva oportunidad principal copiando esta fila.
+          La fila original quedará asignada automáticamente a esa principal.
+          <br/><br/>
+          La nueva principal conservará los valores comerciales iniciales,
+          pero no copiará la información del bloque de OT/Proyecto.
         </div>
       `,
       showCancelButton: true,
-      confirmButtonText: "Sí, marcar",
+      confirmButtonText: "Sí, crear copia",
       cancelButtonText: "Cancelar",
       confirmButtonColor: "#2563eb",
     });
@@ -1172,24 +1218,37 @@ export default function Oportunidades() {
     try {
       setLoading(true);
 
-      const resp = await jfetch(`/oportunidades/${row.id}/marcar-principal`, {
-        method: "PUT",
+      const resp = await jfetch(`/oportunidades/${row.id}/copiar-como-principal`, {
+        method: "POST",
       });
 
       const json = await resp.json().catch(() => ({}));
 
       if (!resp.ok) {
-        Swal.fire("Error", json?.mensaje || "No se pudo marcar como principal", "error");
+        Swal.fire(
+          "Error",
+          json?.mensaje || json?.error || "No se pudo crear la principal desde la copia",
+          "error"
+        );
         return;
       }
 
-      await fetchData();
-      setExpandedClientes((prev) => ({
-        ...prev,
-        [`principal-${row.id}`]: true,
-      }));
+      const principalId = json?.principal?.id || json?.oportunidad_principal?.id || json?.id;
 
-      Swal.fire("Listo", "La oportunidad quedó como principal.", "success");
+      await fetchData();
+
+      if (principalId) {
+        setExpandedClientes((prev) => ({
+          ...prev,
+          [`principal-${principalId}`]: true,
+        }));
+      }
+
+      Swal.fire(
+        "Listo",
+        "Se creó la oportunidad principal y la fila original quedó asignada.",
+        "success"
+      );
     } catch (e) {
       Swal.fire("Error", e?.message || "Error inesperado", "error");
     } finally {
@@ -2410,12 +2469,12 @@ export default function Oportunidades() {
         <div className="op-actions">
           <button
             type="button"
-            className="op-action-btn op-action-main"
-            onClick={() => marcarComoPrincipal(row)}
+            className="op-action-btn op-action-copy"
+            onClick={() => copiarComoPrincipal(row)}
             disabled={loading}
-            title="Marcar esta fila como oportunidad principal"
+            title="Crear una oportunidad principal copiando esta fila"
           >
-            Principal
+            Copiar principal
           </button>
 
           <button
@@ -2446,8 +2505,11 @@ export default function Oportunidades() {
 
   const renderClientePrincipalRow = (grupo) => {
     const isOpen = !!expandedClientes[grupo.key];
-    const totals = grupo.totals;
     const rowsQueSuman = grupo.rows.filter(estadoSumaEnPrincipal);
+    const tieneHijosQueSuman = rowsQueSuman.length > 0;
+    const totals = tieneHijosQueSuman
+      ? grupo.totals
+      : getPrincipalOwnTotals(grupo.principalRow);
 
     return (
       <tr
@@ -2490,7 +2552,9 @@ export default function Oportunidades() {
                 <small>
                   {grupo.sinPrincipal
                     ? "Pendientes por asignar a una oportunidad principal"
-                    : `${totals.cantidadValidas} suma${totals.cantidadValidas === 1 ? "" : "n"} por estado OT/GANADA`}
+                    : tieneHijosQueSuman
+                    ? `${totals.cantidadValidas} suma${totals.cantidadValidas === 1 ? "" : "n"} por estado OT/GANADA`
+                    : "Valor propio de la principal"}
                 </small>
               </div>
             );
@@ -2509,7 +2573,11 @@ export default function Oportunidades() {
           }
 
           if (col === "resultado_oferta") {
-            content = getUniqueText(rowsQueSuman, "resultado_oferta");
+            content = tieneHijosQueSuman
+              ? getUniqueText(rowsQueSuman, "resultado_oferta")
+              : grupo.principalRow && !grupo.sinPrincipal
+              ? formatCell(col, grupo.principalRow?.[col])
+              : "-";
           }
 
           if (col === "otc") {
@@ -2535,7 +2603,11 @@ export default function Oportunidades() {
           }
 
           if (col === "num_ot") {
-            content = `${rowsQueSuman.length} OT válidas`;
+            content = tieneHijosQueSuman
+              ? `${rowsQueSuman.length} OT válidas`
+              : grupo.principalRow && !grupo.sinPrincipal
+              ? formatCell(col, grupo.principalRow?.[col])
+              : "-";
           }
 
           return (
