@@ -126,6 +126,10 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
           <Link to="/configuracion/importar-presupuesto">Importar presupuesto</Link>
         )}*/}
 
+        {can("BASE_REGISTRO_VER") && (
+          <Link to="/coe-sap-funcional">Base COE SAP Funcional</Link>
+        )}
+
         {can("CONFIGURACION_VER") && (
           <Link to="/configuracion" className="navc-settings">⚙️</Link>
         )}

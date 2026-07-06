@@ -30,6 +30,7 @@ import DashboardCostos from "./DashboardCostos";
 import Graficos from './Graficos';
 import { jfetch } from './lib/api';
 import PerfilesModulos from './PerfilesModulos';
+import BaseCoeSapFuncional from './BaseCoeSapFuncional';
 
 const AUTO_LOGOUT_HOURS = [6, 7, 8, 10, 18, 22];
 
@@ -305,6 +306,15 @@ function App() {
               element={
                 <AdminRoute allow={['ADMIN', 'CONSULTOR']} requirePermiso="DASHBOARD_VER">
                   <OportunidadesDashboard />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/coe-sap-funcional"
+              element={
+                <AdminRoute allow={['ADMIN']} requirePermiso="BASE_REGISTRO_VER">
+                  <BaseCoeSapFuncional />
                 </AdminRoute>
               }
             />

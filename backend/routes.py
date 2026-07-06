@@ -1,13 +1,14 @@
 from flask import request, jsonify, Blueprint, current_app as app, g
 from backend.models import (
-    db, Modulo, Consultor, Registro, BaseRegistro, Login,
+    db, Modulo, Consultor, Registro, BaseRegistro, BaseRegistroInfoCoeSapFuncional, Login,
     Rol, Equipo, Horario, Oportunidad, Cliente,
     Permiso, RolPermiso, EquipoPermiso, ConsultorPermiso,
     Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel,
     ConsultorPresupuesto, Proyecto, ProyectoFase, ProyectoModulo, ProyectoFaseProyecto,
     ProyectoMapeo,
     ProyectoPresupuestoMensual, ProyectoPerfilPlan, ProyectoCostoAdicional,
-    Perfil, ModuloPerfil, ConsultorPerfil, ProyectoModulo, ProyectoPerfil, ProyectoPerfilPlan, ProyectoCostoAdicional, ProyectoMapeo, ProyectoPerfilConsultor
+    Perfil, ModuloPerfil, ConsultorPerfil, ProyectoModulo, ProyectoPerfil,
+    ProyectoPerfilPlan, ProyectoCostoAdicional, ProyectoMapeo, ProyectoPerfilConsultor
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
@@ -13124,3 +13125,396 @@ def copiar_oportunidad_como_principal(id):
             "mensaje": f"Error copiando oportunidad como principal: {str(e)}",
             "trace": traceback.format_exc()
         }), 500
+
+# ============================================================
+# BASE DE REGISTRO DE INFORMACION COE SAP FUNCIONAL
+# ============================================================
+
+COE_SAP_FUNCIONAL_COLMAP = {
+    "NÚMERO": "numero",
+    "NUMERO": "numero",
+
+    "CATEGORÍA": "categoria",
+    "CATEGORIA": "categoria",
+
+    "FECHA DE ENTREGA": "fecha_entrega",
+    "PRIORIDAD": "prioridad",
+    "ESTADO": "estado",
+    "TÍTULO": "titulo",
+    "TITULO": "titulo",
+
+    "FECHA DE RESOLUCION": "fecha_resolucion",
+    "FECHA DE RESOLUCIÓN": "fecha_resolucion",
+
+    "ASIGNADO A": "asignado_a",
+    "NOMBRE COMPLETO CONTACTO": "nombre_completo_contacto",
+
+    "INCUMPLIMIENTO DE SLA": "incumplimiento_sla",
+    "ALERTA": "alerta",
+    "ESTADO DE ALERTA ANS": "estado_alerta_ans",
+
+    "IMPACTO": "impacto",
+    "URGENCIA": "urgencia",
+
+    "COMPAÑÍA": "compania",
+    "COMPANIA": "compania",
+
+    "SUBCATEGORÍA": "subcategoria",
+    "SUBCATEGORIA": "subcategoria",
+
+    "MODELO": "modelo",
+
+    "ID DE INTERACCIÓN": "id_interaccion",
+    "ID DE INTERACCION": "id_interaccion",
+}
+
+
+def _coe_norm_col(value):
+    s = str(value or "").replace("\u00A0", " ").strip().upper()
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+
+def _coe_parse_bool(value):
+    if value is None:
+        return None
+
+    s = str(value).strip().lower()
+
+    if s in ("", "nan", "none", "null"):
+        return None
+
+    if s in ("true", "1", "si", "sí", "s", "yes", "y"):
+        return True
+
+    if s in ("false", "0", "no", "n"):
+        return False
+
+    return None
+
+
+def _coe_parse_datetime(value):
+    if value is None:
+        return None
+
+    s = str(value).strip()
+
+    if s == "" or s.lower() in ("nan", "none", "null"):
+        return None
+
+    try:
+        parsed = pd.to_datetime(s, errors="coerce", dayfirst=True)
+        if pd.isna(parsed):
+            return None
+        return parsed.to_pydatetime()
+    except Exception:
+        return None
+
+
+def _coe_parse_str(value):
+    if value is None:
+        return None
+
+    s = str(value).replace("\u00A0", " ").strip()
+
+    if s == "" or s.lower() in ("nan", "none", "null"):
+        return None
+
+    return s
+
+
+def _leer_archivo_coe_sap_funcional(file):
+    filename = (file.filename or "").lower()
+
+    if filename.endswith(".csv"):
+        df = pd.read_csv(file, dtype=str, sep=None, engine="python")
+    else:
+        df = pd.read_excel(file, dtype=str, engine="openpyxl")
+
+    df = df.where(pd.notnull(df), None)
+
+    columnas_originales = list(df.columns)
+    columnas_normalizadas = {_coe_norm_col(c): c for c in columnas_originales}
+
+    faltantes = []
+
+    for col_esperada in [
+        "NUMERO",
+        "CATEGORIA",
+        "FECHA DE ENTREGA",
+        "PRIORIDAD",
+        "ESTADO",
+        "TITULO",
+        "ASIGNADO A",
+        "COMPANIA",
+    ]:
+        if col_esperada not in columnas_normalizadas:
+            faltantes.append(col_esperada)
+
+    if faltantes:
+        raise ValueError(f"Faltan columnas obligatorias: {', '.join(faltantes)}")
+
+    registros = []
+
+    for _, row in df.iterrows():
+        obj = {}
+
+        for col_norm, campo in COE_SAP_FUNCIONAL_COLMAP.items():
+            col_original = columnas_normalizadas.get(_coe_norm_col(col_norm))
+
+            if not col_original:
+                continue
+
+            raw = row.get(col_original)
+
+            if campo in ("fecha_entrega", "fecha_resolucion"):
+                obj[campo] = _coe_parse_datetime(raw)
+            elif campo in ("incumplimiento_sla", "alerta"):
+                obj[campo] = _coe_parse_bool(raw)
+            else:
+                obj[campo] = _coe_parse_str(raw)
+
+        if not obj.get("numero"):
+            continue
+
+        registros.append(obj)
+
+    return registros
+
+
+def coe_sap_funcional_to_dict(r):
+    return r.to_dict()
+
+
+@bp.route("/coe-sap-funcional", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def listar_coe_sap_funcional():
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+        page_size = min(max(int(request.args.get("page_size", 50)), 1), 1000)
+
+        q = (request.args.get("q") or "").strip()
+        estado = (request.args.get("estado") or "").strip()
+        prioridad = (request.args.get("prioridad") or "").strip()
+        categoria = (request.args.get("categoria") or "").strip()
+        compania = (request.args.get("compania") or "").strip()
+        asignado_a = (request.args.get("asignado_a") or "").strip()
+        fecha_desde = (request.args.get("fecha_desde") or "").strip()
+        fecha_hasta = (request.args.get("fecha_hasta") or "").strip()
+
+        qry = BaseRegistroInfoCoeSapFuncional.query
+
+        if q:
+            like = f"%{q}%"
+            qry = qry.filter(or_(
+                BaseRegistroInfoCoeSapFuncional.numero.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.titulo.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.asignado_a.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.nombre_completo_contacto.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.compania.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.id_interaccion.ilike(like),
+            ))
+
+        if estado:
+            qry = qry.filter(BaseRegistroInfoCoeSapFuncional.estado.ilike(f"%{estado}%"))
+
+        if prioridad:
+            qry = qry.filter(BaseRegistroInfoCoeSapFuncional.prioridad.ilike(f"%{prioridad}%"))
+
+        if categoria:
+            qry = qry.filter(BaseRegistroInfoCoeSapFuncional.categoria.ilike(f"%{categoria}%"))
+
+        if compania:
+            qry = qry.filter(BaseRegistroInfoCoeSapFuncional.compania.ilike(f"%{compania}%"))
+
+        if asignado_a:
+            qry = qry.filter(BaseRegistroInfoCoeSapFuncional.asignado_a.ilike(f"%{asignado_a}%"))
+
+        if fecha_desde:
+            try:
+                desde_dt = datetime.strptime(fecha_desde[:10], "%Y-%m-%d")
+                qry = qry.filter(BaseRegistroInfoCoeSapFuncional.fecha_entrega >= desde_dt)
+            except Exception:
+                pass
+
+        if fecha_hasta:
+            try:
+                hasta_dt = datetime.strptime(fecha_hasta[:10], "%Y-%m-%d") + timedelta(days=1)
+                qry = qry.filter(BaseRegistroInfoCoeSapFuncional.fecha_entrega < hasta_dt)
+            except Exception:
+                pass
+
+        total = qry.count()
+
+        rows = (
+            qry.order_by(
+                BaseRegistroInfoCoeSapFuncional.fecha_entrega.desc(),
+                BaseRegistroInfoCoeSapFuncional.id.desc()
+            )
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
+        return jsonify({
+            "data": [coe_sap_funcional_to_dict(r) for r in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": math.ceil(total / page_size) if page_size else 1,
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error listando COE SAP Funcional")
+        return jsonify({"mensaje": "Error interno", "error": str(e)}), 500
+
+
+@bp.route("/coe-sap-funcional/import-principal", methods=["POST"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def importar_coe_sap_funcional_principal():
+    file = request.files.get("file")
+
+    if not file:
+        return jsonify({"mensaje": "Archivo no recibido"}), 400
+
+    try:
+        registros = _leer_archivo_coe_sap_funcional(file)
+
+        if not registros:
+            return jsonify({"mensaje": "El archivo no contiene registros válidos"}), 400
+
+        usuario_cargue = ""
+        try:
+            usuario_cargue = g.current_user.usuario if g.current_user else ""
+        except Exception:
+            usuario_cargue = ""
+
+        try:
+            db.session.execute(text("TRUNCATE TABLE base_registro_info_coe_sap_funcional"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            db.session.execute(text("DELETE FROM base_registro_info_coe_sap_funcional"))
+            db.session.execute(text("ALTER TABLE base_registro_info_coe_sap_funcional AUTO_INCREMENT = 1"))
+            db.session.commit()
+
+        objetos = []
+
+        for reg in registros:
+            reg["origen_cargue"] = "PRINCIPAL"
+            reg["usuario_cargue"] = usuario_cargue
+            objetos.append(BaseRegistroInfoCoeSapFuncional(**reg))
+
+        db.session.bulk_save_objects(objetos)
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Carga principal COE SAP Funcional realizada correctamente",
+            "total_recibidos": len(registros),
+            "insertados": len(objetos),
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error importando carga principal COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error importando carga principal",
+            "error": str(e),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/import-adicional", methods=["POST"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def importar_coe_sap_funcional_adicional():
+    file = request.files.get("file")
+
+    if not file:
+        return jsonify({"mensaje": "Archivo no recibido"}), 400
+
+    try:
+        registros = _leer_archivo_coe_sap_funcional(file)
+
+        if not registros:
+            return jsonify({"mensaje": "El archivo no contiene registros válidos"}), 400
+
+        usuario_cargue = ""
+        try:
+            usuario_cargue = g.current_user.usuario if g.current_user else ""
+        except Exception:
+            usuario_cargue = ""
+
+        insertados = 0
+        actualizados = 0
+
+        for reg in registros:
+            numero = reg.get("numero")
+
+            existente = BaseRegistroInfoCoeSapFuncional.query.filter_by(numero=numero).first()
+
+            if existente:
+                for k, v in reg.items():
+                    setattr(existente, k, v)
+
+                existente.origen_cargue = "ADICIONAL"
+                existente.usuario_cargue = usuario_cargue
+                existente.fecha_cargue = datetime.utcnow()
+                actualizados += 1
+            else:
+                reg["origen_cargue"] = "ADICIONAL"
+                reg["usuario_cargue"] = usuario_cargue
+
+                db.session.add(BaseRegistroInfoCoeSapFuncional(**reg))
+                insertados += 1
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Carga adicional COE SAP Funcional procesada correctamente",
+            "total_recibidos": len(registros),
+            "insertados": insertados,
+            "actualizados": actualizados,
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error importando carga adicional COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error importando carga adicional",
+            "error": str(e),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/filters", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def filtros_coe_sap_funcional():
+    try:
+        base = BaseRegistroInfoCoeSapFuncional.query
+
+        def distinct_col(col):
+            rows = (
+                base.with_entities(col)
+                .filter(col.isnot(None))
+                .filter(func.trim(col) != "")
+                .distinct()
+                .order_by(col.asc())
+                .all()
+            )
+            return [r[0] for r in rows if r[0]]
+
+        return jsonify({
+            "categoria": distinct_col(BaseRegistroInfoCoeSapFuncional.categoria),
+            "prioridad": distinct_col(BaseRegistroInfoCoeSapFuncional.prioridad),
+            "estado": distinct_col(BaseRegistroInfoCoeSapFuncional.estado),
+            "asignado_a": distinct_col(BaseRegistroInfoCoeSapFuncional.asignado_a),
+            "compania": distinct_col(BaseRegistroInfoCoeSapFuncional.compania),
+            "subcategoria": distinct_col(BaseRegistroInfoCoeSapFuncional.subcategoria),
+            "modelo": distinct_col(BaseRegistroInfoCoeSapFuncional.modelo),
+            "impacto": distinct_col(BaseRegistroInfoCoeSapFuncional.impacto),
+            "urgencia": distinct_col(BaseRegistroInfoCoeSapFuncional.urgencia),
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error generando filtros COE SAP Funcional")
+        return jsonify({"mensaje": "Error interno", "error": str(e)}), 500
