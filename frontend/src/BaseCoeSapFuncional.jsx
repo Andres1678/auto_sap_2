@@ -1,10 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
-
-const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  import.meta.env.VITE_API_BASE_URL ||
-  "http://localhost:5000/api";
+import { jfetch } from "./lib/api";
+import "./BaseCoeSapFuncional.css";
 
 const INITIAL_FILTERS = {
   q: "",
@@ -17,65 +14,113 @@ const INITIAL_FILTERS = {
   fecha_hasta: "",
 };
 
-function getAuthHeaders() {
-  const token =
-    localStorage.getItem("token") ||
-    localStorage.getItem("authToken") ||
-    sessionStorage.getItem("token") ||
-    "";
+const COLUMNS = [
+  { key: "numero", label: "Número", w: 16, cls: "mono strong" },
+  { key: "categoria", label: "Categoría", w: 22 },
+  { key: "fechaEntrega", label: "Fecha entrega", w: 20, cls: "mono" },
+  { key: "prioridad", label: "Prioridad", w: 14, cls: "pill-priority" },
+  { key: "estado", label: "Estado", w: 18, cls: "pill-status" },
+  { key: "titulo", label: "Título", w: 50, cls: "clip-2" },
+  { key: "fechaResolucion", label: "Fecha resolución", w: 20, cls: "mono" },
+  { key: "asignadoA", label: "Asignado a", w: 26 },
+  { key: "nombreCompletoContacto", label: "Contacto", w: 28 },
+  { key: "incumplimientoSla", label: "Inc. SLA", w: 12, cls: "center" },
+  { key: "alerta", label: "Alerta", w: 11, cls: "center" },
+  { key: "estadoAlertaAns", label: "Estado ANS", w: 15 },
+  { key: "impacto", label: "Impacto", w: 14 },
+  { key: "urgencia", label: "Urgencia", w: 14 },
+  { key: "compania", label: "Compañía", w: 32 },
+  { key: "subcategoria", label: "Subcategoría", w: 24 },
+  { key: "modelo", label: "Modelo", w: 26 },
+  { key: "idInteraccion", label: "ID interacción", w: 18, cls: "mono" },
+  { key: "origenCargue", label: "Origen", w: 14, cls: "center" },
+];
 
-  let user = null;
-
+function readStoredUser() {
   try {
-    user = JSON.parse(localStorage.getItem("user") || sessionStorage.getItem("user") || "{}");
+    const raw =
+      localStorage.getItem("userData") ||
+      localStorage.getItem("user") ||
+      sessionStorage.getItem("userData") ||
+      sessionStorage.getItem("user") ||
+      "{}";
+
+    return JSON.parse(raw);
   } catch {
-    user = {};
+    return {};
   }
-
-  const headers = {};
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  if (user?.usuario) {
-    headers["X-User-Usuario"] = user.usuario;
-  }
-
-  if (user?.rol) {
-    headers["X-User-Rol"] = user.rol;
-  }
-
-  return headers;
 }
 
-function buildQuery(params) {
-  const searchParams = new URLSearchParams();
+function normalizePermisos(user) {
+  const raw = user?.permisos || user?.user?.permisos || [];
 
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && String(value).trim() !== "") {
-      searchParams.append(key, String(value).trim());
-    }
-  });
+  if (!Array.isArray(raw)) return [];
 
-  return searchParams.toString();
+  return raw
+    .map((p) => (typeof p === "string" ? p : p?.codigo || p?.code || p?.nombre))
+    .filter(Boolean)
+    .map((p) => String(p).trim().toUpperCase());
+}
+
+function formatCell(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value);
 }
 
 function formatBool(value) {
   if (value === true) return "Sí";
   if (value === false) return "No";
-  if (value === null || value === undefined || value === "") return "-";
-  return String(value);
+  return "—";
 }
 
-function formatText(value) {
-  if (value === null || value === undefined || value === "") return "-";
-  return String(value);
+function getStatusClass(value) {
+  const s = String(value || "").toUpperCase();
+
+  if (s.includes("RESUELTO") || s.includes("CERRADO") || s.includes("SOLUCIONADO")) {
+    return "ok";
+  }
+
+  if (s.includes("PENDIENTE") || s.includes("ABIERTO") || s.includes("ASIGNADO")) {
+    return "warn";
+  }
+
+  if (s.includes("VENCIDO") || s.includes("INCUMPL")) {
+    return "danger";
+  }
+
+  return "neutral";
+}
+
+function getPriorityClass(value) {
+  const s = String(value || "").toUpperCase();
+
+  if (s.includes("CRITICA") || s.includes("CRÍTICA") || s.includes("ALTA")) {
+    return "danger";
+  }
+
+  if (s.includes("MEDIA")) {
+    return "warn";
+  }
+
+  if (s.includes("BAJA")) {
+    return "ok";
+  }
+
+  return "neutral";
 }
 
 export default function BaseCoeSapFuncional() {
   const principalInputRef = useRef(null);
   const adicionalInputRef = useRef(null);
+
+  const user = useMemo(() => readStoredUser(), []);
+  const rol = String(user?.rol || user?.user?.rol || "").toUpperCase();
+  const nombre = user?.nombre || user?.user?.nombre || "";
+  const permisos = useMemo(() => normalizePermisos(user), [user]);
+
+  const isAdmin = rol === "ADMIN";
+  const canView = isAdmin || permisos.includes("BASE_REGISTRO_VER");
+  const canImport = isAdmin || permisos.includes("BASE_REGISTRO_IMPORTAR");
 
   const [rows, setRows] = useState([]);
   const [filtersOptions, setFiltersOptions] = useState({
@@ -96,83 +141,114 @@ export default function BaseCoeSapFuncional() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
+  const [totalPagesApi, setTotalPagesApi] = useState(1);
 
   const [loading, setLoading] = useState(false);
+  const [loadingFilters, setLoadingFilters] = useState(false);
   const [uploadingPrincipal, setUploadingPrincipal] = useState(false);
   const [uploadingAdicional, setUploadingAdicional] = useState(false);
 
-  const queryString = useMemo(() => {
-    return buildQuery({
-      ...appliedFilters,
-      page,
-      page_size: pageSize,
+  const totalPages = Math.max(1, Number(totalPagesApi || Math.ceil(total / pageSize) || 1));
+  const canPrev = page > 1;
+  const canNext = page < totalPages;
+
+  const commonHeaders = useMemo(() => {
+    return {
+      "X-User-Rol": rol,
+      "X-User-Usuario": user?.usuario || user?.user?.usuario || "",
+    };
+  }, [rol, user]);
+
+  const buildQuery = useCallback(() => {
+    const qs = new URLSearchParams();
+
+    qs.set("page", String(page));
+    qs.set("page_size", String(pageSize));
+
+    Object.entries(appliedFilters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        qs.set(key, String(value).trim());
+      }
     });
-  }, [appliedFilters, page, pageSize]);
+
+    return qs.toString();
+  }, [page, pageSize, appliedFilters]);
 
   const fetchFilters = useCallback(async () => {
+    if (!canView) return;
+
+    setLoadingFilters(true);
+
     try {
-      const response = await fetch(`${API_BASE}/coe-sap-funcional/filters`, {
+      const res = await jfetch("/coe-sap-funcional/filters", {
         method: "GET",
-        headers: {
-          ...getAuthHeaders(),
-        },
+        headers: commonHeaders,
       });
 
-      const data = await response.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(data?.mensaje || data?.error || "No se pudieron cargar los filtros");
+      if (!res.ok) {
+        throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
       }
 
       setFiltersOptions({
-        categoria: data.categoria || [],
-        prioridad: data.prioridad || [],
-        estado: data.estado || [],
-        asignado_a: data.asignado_a || [],
-        compania: data.compania || [],
-        subcategoria: data.subcategoria || [],
-        modelo: data.modelo || [],
-        impacto: data.impacto || [],
-        urgencia: data.urgencia || [],
+        categoria: data?.categoria || [],
+        prioridad: data?.prioridad || [],
+        estado: data?.estado || [],
+        asignado_a: data?.asignado_a || [],
+        compania: data?.compania || [],
+        subcategoria: data?.subcategoria || [],
+        modelo: data?.modelo || [],
+        impacto: data?.impacto || [],
+        urgencia: data?.urgencia || [],
       });
     } catch (error) {
-      console.error(error);
+      console.error("Error cargando filtros COE SAP Funcional:", error);
+    } finally {
+      setLoadingFilters(false);
     }
-  }, []);
+  }, [canView, commonHeaders]);
 
   const fetchRows = useCallback(async () => {
+    if (!canView) return;
+
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE}/coe-sap-funcional?${queryString}`, {
+      const qs = buildQuery();
+
+      const res = await jfetch(`/coe-sap-funcional?${qs}`, {
         method: "GET",
-        headers: {
-          ...getAuthHeaders(),
-        },
+        headers: commonHeaders,
       });
 
-      const data = await response.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(data?.mensaje || data?.error || "No se pudo cargar la información");
+      if (!res.ok) {
+        throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
       }
 
-      setRows(data.data || []);
-      setTotal(Number(data.total || 0));
-      setTotalPages(Number(data.total_pages || 1));
+      setRows(Array.isArray(data?.data) ? data.data : []);
+      setTotal(Number(data?.total || 0));
+      setTotalPagesApi(Number(data?.total_pages || 1));
     } catch (error) {
-      console.error(error);
+      console.error("Error listando COE SAP Funcional:", error);
+      setRows([]);
+      setTotal(0);
+      setTotalPagesApi(1);
 
       Swal.fire({
         icon: "error",
-        title: "Error",
-        text: error.message || "No se pudo cargar la base COE SAP Funcional",
+        title: "No se pudo consultar la base",
+        text:
+          error?.message ||
+          "Revisa que el backend esté activo y que la ruta /coe-sap-funcional exista.",
+        confirmButtonColor: "#DA291C",
       });
     } finally {
       setLoading(false);
     }
-  }, [queryString]);
+  }, [canView, commonHeaders, buildQuery]);
 
   useEffect(() => {
     fetchFilters();
@@ -189,38 +265,57 @@ export default function BaseCoeSapFuncional() {
     }));
   };
 
-  const handleApplyFilters = () => {
+  const handleBuscar = () => {
     setPage(1);
-    setAppliedFilters(filters);
+    setAppliedFilters({ ...filters });
   };
 
-  const handleClearFilters = () => {
+  const limpiarFiltros = () => {
     setFilters(INITIAL_FILTERS);
     setAppliedFilters(INITIAL_FILTERS);
     setPage(1);
   };
 
-  const uploadFile = async ({ type }) => {
-    const isPrincipal = type === "principal";
-    const inputRef = isPrincipal ? principalInputRef : adicionalInputRef;
-    const file = inputRef.current?.files?.[0];
-
-    if (!file) {
+  const triggerPrincipal = () => {
+    if (!canImport) {
       Swal.fire({
         icon: "warning",
-        title: "Archivo requerido",
-        text: "Selecciona un archivo Excel o CSV para continuar.",
+        title: "Sin permiso",
+        text: "No tienes permiso para importar esta base.",
+        confirmButtonColor: "#DA291C",
       });
       return;
     }
+
+    principalInputRef.current?.click();
+  };
+
+  const triggerAdicional = () => {
+    if (!canImport) {
+      Swal.fire({
+        icon: "warning",
+        title: "Sin permiso",
+        text: "No tienes permiso para importar esta base.",
+        confirmButtonColor: "#DA291C",
+      });
+      return;
+    }
+
+    adicionalInputRef.current?.click();
+  };
+
+  const uploadFile = async (file, tipo) => {
+    if (!file) return;
+
+    const isPrincipal = tipo === "principal";
 
     if (isPrincipal) {
       const confirm = await Swal.fire({
         icon: "warning",
         title: "Carga principal",
-        text: "La carga principal reemplaza toda la información actual de esta base. ¿Deseas continuar?",
+        text: "Esta acción reemplazará toda la información actual de la base COE SAP Funcional.",
         showCancelButton: true,
-        confirmButtonText: "Sí, cargar",
+        confirmButtonText: "Sí, reemplazar",
         cancelButtonText: "Cancelar",
         confirmButtonColor: "#DA291C",
       });
@@ -239,51 +334,52 @@ export default function BaseCoeSapFuncional() {
 
     try {
       const endpoint = isPrincipal
-        ? `${API_BASE}/coe-sap-funcional/import-principal`
-        : `${API_BASE}/coe-sap-funcional/import-adicional`;
+        ? "/coe-sap-funcional/import-principal"
+        : "/coe-sap-funcional/import-adicional";
 
-      const response = await fetch(endpoint, {
+      const res = await jfetch(endpoint, {
         method: "POST",
-        headers: {
-          ...getAuthHeaders(),
-        },
+        headers: commonHeaders,
         body: formData,
       });
 
-      const data = await response.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(data?.mensaje || data?.error || "No se pudo procesar el archivo");
+      if (!res.ok) {
+        throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
       }
-
-      inputRef.current.value = "";
 
       await Swal.fire({
         icon: "success",
         title: "Carga realizada",
         html: `
           <div style="text-align:left">
-            <p><b>Mensaje:</b> ${data.mensaje || "Proceso finalizado"}</p>
-            <p><b>Total recibidos:</b> ${data.total_recibidos ?? "-"}</p>
-            <p><b>Insertados:</b> ${data.insertados ?? "-"}</p>
+            <p><b>Mensaje:</b> ${data?.mensaje || "Proceso finalizado"}</p>
+            <p><b>Total recibidos:</b> ${data?.total_recibidos ?? "—"}</p>
+            <p><b>Insertados:</b> ${data?.insertados ?? "—"}</p>
             ${
-              data.actualizados !== undefined
+              data?.actualizados !== undefined
                 ? `<p><b>Actualizados:</b> ${data.actualizados}</p>`
                 : ""
             }
           </div>
         `,
+        confirmButtonColor: "#008C67",
       });
+
+      if (principalInputRef.current) principalInputRef.current.value = "";
+      if (adicionalInputRef.current) adicionalInputRef.current.value = "";
 
       fetchFilters();
       fetchRows();
     } catch (error) {
-      console.error(error);
+      console.error("Error importando COE SAP Funcional:", error);
 
       Swal.fire({
         icon: "error",
         title: "Error en la carga",
-        text: error.message || "No se pudo cargar el archivo",
+        text: error?.message || "No se pudo procesar el archivo.",
+        confirmButtonColor: "#DA291C",
       });
     } finally {
       setUploadingPrincipal(false);
@@ -292,11 +388,12 @@ export default function BaseCoeSapFuncional() {
   };
 
   const renderSelect = (label, field, options) => (
-    <div className="coe-filter-field">
-      <label>{label}</label>
+    <label className="coe-filter">
+      <span>{label}</span>
       <select
         value={filters[field]}
         onChange={(e) => handleFilterChange(field, e.target.value)}
+        disabled={loadingFilters}
       >
         <option value="">Todos</option>
         {(options || []).map((item) => (
@@ -305,95 +402,122 @@ export default function BaseCoeSapFuncional() {
           </option>
         ))}
       </select>
-    </div>
+    </label>
   );
+
+  if (!canView) {
+    return (
+      <div className="coe-page">
+        <div className="coe-access-card">
+          <div className="coe-access-icon">🔒</div>
+          <h2>Acceso restringido</h2>
+          <p>Necesitas el permiso BASE_REGISTRO_VER para consultar esta información.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="coe-page">
-      <div className="coe-header">
+      <section className="coe-hero">
         <div>
+          <span className="coe-eyebrow">Base principal</span>
           <h1>BASE DE REGISTRO DE INFORMACION COE SAP FUNCIONAL</h1>
           <p>
-            Consulta, filtra y carga información principal o adicional de la base COE SAP
-            Funcional.
+            Consulta, filtra y carga información principal o adicional desde archivos
+            Excel o CSV.
           </p>
         </div>
-      </div>
 
-      <div className="coe-upload-grid">
-        <div className="coe-upload-card">
-          <h3>Carga principal</h3>
-          <p>
-            Reemplaza toda la información actual de la base y carga el archivo como fuente
-            principal.
-          </p>
-
-          <div className="coe-upload-actions">
-            <input
-              ref={principalInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              disabled={uploadingPrincipal || uploadingAdicional}
-            />
-
-            <button
-              type="button"
-              className="btn btn-danger"
-              disabled={uploadingPrincipal || uploadingAdicional}
-              onClick={() => uploadFile({ type: "principal" })}
-            >
-              {uploadingPrincipal ? "Cargando..." : "Cargar principal"}
-            </button>
+        <div className="coe-hero-stats">
+          <div className="coe-stat">
+            <span>Total registros</span>
+            <strong>{total.toLocaleString("es-CO")}</strong>
+          </div>
+          <div className="coe-stat">
+            <span>Usuario</span>
+            <strong>{nombre || "Usuario"}</strong>
           </div>
         </div>
+      </section>
 
-        <div className="coe-upload-card">
-          <h3>Carga adicional</h3>
-          <p>
-            Agrega nuevos registros o actualiza los existentes usando el campo{" "}
-            <b>Número</b> como identificador.
-          </p>
-
-          <div className="coe-upload-actions">
-            <input
-              ref={adicionalInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              disabled={uploadingPrincipal || uploadingAdicional}
-            />
-
-            <button
-              type="button"
-              className="btn btn-dark"
-              disabled={uploadingPrincipal || uploadingAdicional}
-              onClick={() => uploadFile({ type: "adicional" })}
-            >
-              {uploadingAdicional ? "Cargando..." : "Cargar adicional"}
-            </button>
+      <section className="coe-upload-grid">
+        <article className="coe-upload-card principal">
+          <div className="coe-upload-icon">📌</div>
+          <div>
+            <h3>Carga principal</h3>
+            <p>Reemplaza toda la información actual y deja el archivo como base oficial.</p>
           </div>
-        </div>
-      </div>
 
-      <div className="coe-filters-card">
-        <div className="coe-filters-title">
-          <h3>Filtros</h3>
+          <input
+            ref={principalInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            style={{ display: "none" }}
+            onChange={(e) => uploadFile(e.target.files?.[0], "principal")}
+          />
+
+          <button
+            type="button"
+            className="coe-btn danger"
+            onClick={triggerPrincipal}
+            disabled={uploadingPrincipal || uploadingAdicional}
+          >
+            {uploadingPrincipal ? "Cargando..." : "Cargar principal"}
+          </button>
+        </article>
+
+        <article className="coe-upload-card adicional">
+          <div className="coe-upload-icon">➕</div>
+          <div>
+            <h3>Carga adicional</h3>
+            <p>Inserta nuevos registros o actualiza los existentes usando el campo Número.</p>
+          </div>
+
+          <input
+            ref={adicionalInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            style={{ display: "none" }}
+            onChange={(e) => uploadFile(e.target.files?.[0], "adicional")}
+          />
+
+          <button
+            type="button"
+            className="coe-btn dark"
+            onClick={triggerAdicional}
+            disabled={uploadingPrincipal || uploadingAdicional}
+          >
+            {uploadingAdicional ? "Cargando..." : "Cargar adicional"}
+          </button>
+        </article>
+      </section>
+
+      <section className="coe-card coe-filters-card">
+        <div className="coe-card-head">
+          <div>
+            <h2>Filtros de consulta</h2>
+            <p>Busca por número, título, asignado, compañía, estado o rango de fechas.</p>
+          </div>
+
+          <button className="coe-btn ghost" type="button" onClick={limpiarFiltros}>
+            Limpiar
+          </button>
         </div>
 
         <div className="coe-filters-grid">
-          <div className="coe-filter-field coe-filter-search">
-            <label>Búsqueda general</label>
+          <label className="coe-filter search">
+            <span>Búsqueda general</span>
             <input
               type="text"
               value={filters.q}
-              placeholder="Número, título, asignado, contacto, compañía..."
+              placeholder="Número, título, contacto, compañía..."
               onChange={(e) => handleFilterChange("q", e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleApplyFilters();
-                }
+                if (e.key === "Enter") handleBuscar();
               }}
             />
-          </div>
+          </label>
 
           {renderSelect("Estado", "estado", filtersOptions.estado)}
           {renderSelect("Prioridad", "prioridad", filtersOptions.prioridad)}
@@ -401,45 +525,48 @@ export default function BaseCoeSapFuncional() {
           {renderSelect("Compañía", "compania", filtersOptions.compania)}
           {renderSelect("Asignado a", "asignado_a", filtersOptions.asignado_a)}
 
-          <div className="coe-filter-field">
-            <label>Fecha desde</label>
+          <label className="coe-filter">
+            <span>Fecha desde</span>
             <input
               type="date"
               value={filters.fecha_desde}
               onChange={(e) => handleFilterChange("fecha_desde", e.target.value)}
             />
-          </div>
+          </label>
 
-          <div className="coe-filter-field">
-            <label>Fecha hasta</label>
+          <label className="coe-filter">
+            <span>Fecha hasta</span>
             <input
               type="date"
               value={filters.fecha_hasta}
               onChange={(e) => handleFilterChange("fecha_hasta", e.target.value)}
             />
-          </div>
+          </label>
         </div>
 
-        <div className="coe-filters-actions">
-          <button type="button" className="btn btn-danger" onClick={handleApplyFilters}>
-            Buscar
+        <div className="coe-actions">
+          <button className="coe-btn danger" type="button" onClick={handleBuscar} disabled={loading}>
+            {loading ? "Buscando..." : "Buscar"}
           </button>
 
-          <button type="button" className="btn btn-light" onClick={handleClearFilters}>
-            Limpiar
+          <button className="coe-btn light" type="button" onClick={limpiarFiltros} disabled={loading}>
+            Restablecer
           </button>
         </div>
-      </div>
+      </section>
 
-      <div className="coe-table-card">
-        <div className="coe-table-toolbar">
+      <section className="coe-card coe-table-card">
+        <div className="coe-table-head">
           <div>
-            <h3>Información cargada</h3>
-            <span>{total} registros encontrados</span>
+            <h2>Información cargada</h2>
+            <p>
+              Total: <b>{total.toLocaleString("es-CO")}</b> registros • Página{" "}
+              <b>{page}</b> de <b>{totalPages}</b>
+            </p>
           </div>
 
           <div className="coe-page-size">
-            <label>Mostrar</label>
+            <span>Mostrar</span>
             <select
               value={pageSize}
               onChange={(e) => {
@@ -447,77 +574,96 @@ export default function BaseCoeSapFuncional() {
                 setPageSize(Number(e.target.value));
               }}
             >
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={200}>200</option>
+              {[25, 50, 100, 200, 500, 1000].map((n) => (
+                <option key={n} value={n}>
+                  {n}/página
+                </option>
+              ))}
             </select>
           </div>
         </div>
 
-        <div className="coe-table-wrapper">
+        <div className="coe-table-wrap">
           <table className="coe-table">
+            <colgroup>
+              {COLUMNS.map((col) => (
+                <col key={col.key} style={{ width: `${col.w}ch` }} />
+              ))}
+            </colgroup>
+
             <thead>
               <tr>
-                <th>Número</th>
-                <th>Categoría</th>
-                <th>Fecha de entrega</th>
-                <th>Prioridad</th>
-                <th>Estado</th>
-                <th>Título</th>
-                <th>Fecha resolución</th>
-                <th>Asignado a</th>
-                <th>Contacto</th>
-                <th>Incumplimiento SLA</th>
-                <th>Alerta</th>
-                <th>Estado alerta ANS</th>
-                <th>Impacto</th>
-                <th>Urgencia</th>
-                <th>Compañía</th>
-                <th>Subcategoría</th>
-                <th>Modelo</th>
-                <th>ID interacción</th>
-                <th>Origen cargue</th>
+                {COLUMNS.map((col) => (
+                  <th key={col.key}>{col.label}</th>
+                ))}
               </tr>
             </thead>
 
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={19} className="coe-empty">
+                  <td colSpan={COLUMNS.length} className="coe-empty">
+                    <div className="coe-loader" />
                     Cargando información...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={19} className="coe-empty">
+                  <td colSpan={COLUMNS.length} className="coe-empty">
                     No hay información para mostrar.
                   </td>
                 </tr>
               ) : (
-                rows.map((row) => (
-                  <tr key={row.id || row.numero}>
-                    <td>{formatText(row.numero)}</td>
-                    <td>{formatText(row.categoria)}</td>
-                    <td>{formatText(row.fechaEntrega)}</td>
-                    <td>{formatText(row.prioridad)}</td>
-                    <td>{formatText(row.estado)}</td>
-                    <td className="coe-title-cell" title={row.titulo || ""}>
-                      {formatText(row.titulo)}
-                    </td>
-                    <td>{formatText(row.fechaResolucion)}</td>
-                    <td>{formatText(row.asignadoA)}</td>
-                    <td>{formatText(row.nombreCompletoContacto)}</td>
-                    <td>{formatBool(row.incumplimientoSla)}</td>
-                    <td>{formatBool(row.alerta)}</td>
-                    <td>{formatText(row.estadoAlertaAns)}</td>
-                    <td>{formatText(row.impacto)}</td>
-                    <td>{formatText(row.urgencia)}</td>
-                    <td>{formatText(row.compania)}</td>
-                    <td>{formatText(row.subcategoria)}</td>
-                    <td>{formatText(row.modelo)}</td>
-                    <td>{formatText(row.idInteraccion)}</td>
-                    <td>{formatText(row.origenCargue)}</td>
+                rows.map((row, index) => (
+                  <tr key={`${row.id || row.numero || "row"}-${index}`}>
+                    {COLUMNS.map((col) => {
+                      const value = row[col.key];
+
+                      if (col.key === "incumplimientoSla" || col.key === "alerta") {
+                        const boolValue = formatBool(value);
+                        return (
+                          <td key={col.key} className="center">
+                            <span
+                              className={`coe-mini-pill ${
+                                value === true ? "danger" : value === false ? "ok" : "neutral"
+                              }`}
+                            >
+                              {boolValue}
+                            </span>
+                          </td>
+                        );
+                      }
+
+                      if (col.key === "estado") {
+                        return (
+                          <td key={col.key}>
+                            <span className={`coe-pill ${getStatusClass(value)}`}>
+                              {formatCell(value)}
+                            </span>
+                          </td>
+                        );
+                      }
+
+                      if (col.key === "prioridad") {
+                        return (
+                          <td key={col.key}>
+                            <span className={`coe-pill ${getPriorityClass(value)}`}>
+                              {formatCell(value)}
+                            </span>
+                          </td>
+                        );
+                      }
+
+                      return (
+                        <td
+                          key={col.key}
+                          className={col.cls || ""}
+                          title={col.cls?.includes("clip") ? formatCell(value) : undefined}
+                        >
+                          {formatCell(value)}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))
               )}
@@ -525,14 +671,23 @@ export default function BaseCoeSapFuncional() {
           </table>
         </div>
 
-        <div className="coe-pagination">
+        <div className="coe-pager">
           <button
+            className="coe-btn icon"
             type="button"
-            className="btn btn-light"
-            disabled={page <= 1 || loading}
-            onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+            onClick={() => setPage(1)}
+            disabled={!canPrev || loading}
           >
-            Anterior
+            ⏮
+          </button>
+
+          <button
+            className="coe-btn icon"
+            type="button"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={!canPrev || loading}
+          >
+            ◀
           </button>
 
           <span>
@@ -540,15 +695,24 @@ export default function BaseCoeSapFuncional() {
           </span>
 
           <button
+            className="coe-btn icon"
             type="button"
-            className="btn btn-light"
-            disabled={page >= totalPages || loading}
-            onClick={() => setPage((prev) => prev + 1)}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={!canNext || loading}
           >
-            Siguiente
+            ▶
+          </button>
+
+          <button
+            className="coe-btn icon"
+            type="button"
+            onClick={() => setPage(totalPages)}
+            disabled={!canNext || loading}
+          >
+            ⏭
           </button>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
