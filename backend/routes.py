@@ -13129,7 +13129,7 @@ def copiar_oportunidad_como_principal(id):
         }), 500
 
 # ============================================================
-# BASE DE REGISTRO DE INFORMACION COE SAP FUNCIONAL - HELPERS
+# BASE DE REGISTRO DE INFORMACION COE SAP FUNCIONAL
 # ============================================================
 
 COE_SAP_FUNCIONAL_ALIASES = {
@@ -13143,6 +13143,8 @@ COE_SAP_FUNCIONAL_ALIASES = {
         "N°",
         "N",
         "#",
+        "NUM",
+        "ID",
     ],
     "categoria": [
         "CATEGORIA",
@@ -13218,9 +13220,11 @@ COE_SAP_FUNCIONAL_ALIASES = {
 def _coe_norm_col(value):
     s = str(value or "")
 
-    # Quitar BOM y caracteres invisibles
+    # Quitar BOM y caracteres invisibles comunes
     s = s.replace("\ufeff", "")
     s = s.replace("\u200b", "")
+    s = s.replace("\u200c", "")
+    s = s.replace("\u200d", "")
     s = s.replace("\u00A0", " ")
 
     s = s.strip().upper()
@@ -13236,8 +13240,9 @@ def _coe_norm_col(value):
     s = s.replace(":", " ")
     s = s.replace("-", " ")
     s = s.replace("_", " ")
+    s = s.replace("/", " ")
 
-    # Espacios dobles
+    # Normalizar espacios
     s = re.sub(r"\s+", " ", s).strip()
 
     return s
@@ -13247,12 +13252,15 @@ def _coe_parse_bool(value):
     if value is None:
         return None
 
+    if isinstance(value, bool):
+        return value
+
     s = str(value).strip().lower()
 
     if s in ("", "nan", "none", "null"):
         return None
 
-    if s in ("true", "1", "si", "sí", "s", "yes", "y"):
+    if s in ("true", "1", "si", "sí", "s", "yes", "y", "x"):
         return True
 
     if s in ("false", "0", "no", "n"):
@@ -13264,6 +13272,15 @@ def _coe_parse_bool(value):
 def _coe_parse_datetime(value):
     if value is None:
         return None
+
+    if hasattr(value, "to_pydatetime"):
+        try:
+            return value.to_pydatetime()
+        except Exception:
+            pass
+
+    if isinstance(value, datetime):
+        return value
 
     s = str(value).strip()
 
@@ -13293,14 +13310,54 @@ def _coe_parse_str(value):
     return s
 
 
+def _coe_format_datetime(value):
+    if value is None:
+        return None
+
+    if hasattr(value, "strftime"):
+        try:
+            return value.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            pass
+
+    s = str(value).strip()
+
+    if s == "" or s.lower() in ("nan", "none", "null"):
+        return None
+
+    try:
+        parsed = pd.to_datetime(s, errors="coerce", dayfirst=True)
+
+        if pd.isna(parsed):
+            return s
+
+        return parsed.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return s
+
+
+def _coe_format_bool(value):
+    if value is None:
+        return None
+
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, (int, float)):
+        return bool(value)
+
+    s = str(value).strip().lower()
+
+    if s in ("true", "1", "si", "sí", "s", "yes", "y", "x"):
+        return True
+
+    if s in ("false", "0", "no", "n"):
+        return False
+
+    return None
+
+
 def _coe_find_column(columnas_normalizadas, aliases):
-    """
-    columnas_normalizadas:
-    {
-      'NUMERO': 'Número',
-      'FECHA DE ENTREGA': 'Fecha de entrega'
-    }
-    """
     for alias in aliases:
         alias_norm = _coe_norm_col(alias)
 
@@ -13310,36 +13367,58 @@ def _coe_find_column(columnas_normalizadas, aliases):
     return None
 
 
-def _leer_archivo_coe_sap_funcional(file):
-    filename = (file.filename or "").lower()
+def _coe_read_csv_from_bytes(contenido):
+    intentos = [
+        {"sep": None, "encoding": "utf-8-sig"},
+        {"sep": ";", "encoding": "utf-8-sig"},
+        {"sep": ",", "encoding": "utf-8-sig"},
+        {"sep": None, "encoding": "latin1"},
+        {"sep": ";", "encoding": "latin1"},
+        {"sep": ",", "encoding": "latin1"},
+        {"sep": None, "encoding": "cp1252"},
+        {"sep": ";", "encoding": "cp1252"},
+        {"sep": ",", "encoding": "cp1252"},
+    ]
 
-    # IMPORTANTE:
-    # Leemos el contenido primero para poder reintentarlo si hace falta.
+    ultimo_error = None
+
+    for intento in intentos:
+        try:
+            return pd.read_csv(
+                BytesIO(contenido),
+                dtype=str,
+                sep=intento["sep"],
+                engine="python",
+                encoding=intento["encoding"],
+            )
+        except Exception as e:
+            ultimo_error = e
+
+    raise ultimo_error
+
+
+def _leer_archivo_coe_sap_funcional(file):
+    filename = (file.filename or "").lower().strip()
+
     contenido = file.read()
 
+    if not contenido:
+        raise ValueError("El archivo está vacío.")
+
     if filename.endswith(".csv"):
+        df = _coe_read_csv_from_bytes(contenido)
+    else:
         try:
-            df = pd.read_csv(
+            df = pd.read_excel(
                 BytesIO(contenido),
                 dtype=str,
-                sep=None,
-                engine="python",
-                encoding="utf-8-sig"
+                engine="openpyxl"
             )
         except Exception:
-            df = pd.read_csv(
+            df = pd.read_excel(
                 BytesIO(contenido),
-                dtype=str,
-                sep=";",
-                engine="python",
-                encoding="latin1"
+                dtype=str
             )
-    else:
-        df = pd.read_excel(
-            BytesIO(contenido),
-            dtype=str,
-            engine="openpyxl"
-        )
 
     df = df.where(pd.notnull(df), None)
 
@@ -13360,7 +13439,6 @@ def _leer_archivo_coe_sap_funcional(file):
         list(columnas_normalizadas.keys())
     )
 
-    # Mapeo real: campo_modelo -> columna_excel_encontrada
     columnas_encontradas = {}
 
     for campo, aliases in COE_SAP_FUNCIONAL_ALIASES.items():
@@ -13369,8 +13447,6 @@ def _leer_archivo_coe_sap_funcional(file):
         if col:
             columnas_encontradas[campo] = col
 
-    # Dejamos como obligatorias solo las mínimas.
-    # Si quieres hacerlas todas obligatorias, se puede endurecer después.
     obligatorias = {
         "numero": "NUMERO",
     }
@@ -13414,6 +13490,33 @@ def _leer_archivo_coe_sap_funcional(file):
     return registros
 
 
+def coe_sap_funcional_to_dict(r):
+    return {
+        "id": r.id,
+        "numero": r.numero,
+        "categoria": r.categoria,
+        "fechaEntrega": _coe_format_datetime(r.fecha_entrega),
+        "prioridad": r.prioridad,
+        "estado": r.estado,
+        "titulo": r.titulo,
+        "fechaResolucion": _coe_format_datetime(r.fecha_resolucion),
+        "asignadoA": r.asignado_a,
+        "nombreCompletoContacto": r.nombre_completo_contacto,
+        "incumplimientoSla": _coe_format_bool(r.incumplimiento_sla),
+        "alerta": _coe_format_bool(r.alerta),
+        "estadoAlertaAns": r.estado_alerta_ans,
+        "impacto": r.impacto,
+        "urgencia": r.urgencia,
+        "compania": r.compania,
+        "subcategoria": r.subcategoria,
+        "modelo": r.modelo,
+        "idInteraccion": r.id_interaccion,
+        "origenCargue": r.origen_cargue,
+        "fechaCargue": _coe_format_datetime(r.fecha_cargue),
+        "usuarioCargue": r.usuario_cargue,
+    }
+
+
 @bp.route("/coe-sap-funcional", methods=["GET"])
 @permission_required("BASE_REGISTRO_VER")
 def listar_coe_sap_funcional():
@@ -13441,6 +13544,11 @@ def listar_coe_sap_funcional():
                 BaseRegistroInfoCoeSapFuncional.nombre_completo_contacto.ilike(like),
                 BaseRegistroInfoCoeSapFuncional.compania.ilike(like),
                 BaseRegistroInfoCoeSapFuncional.id_interaccion.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.categoria.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.estado.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.prioridad.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.subcategoria.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.modelo.ilike(like),
             ))
 
         if estado:
@@ -13476,7 +13584,6 @@ def listar_coe_sap_funcional():
 
         rows = (
             qry.order_by(
-                BaseRegistroInfoCoeSapFuncional.fecha_entrega.desc(),
                 BaseRegistroInfoCoeSapFuncional.id.desc()
             )
             .offset((page - 1) * page_size)
@@ -13494,7 +13601,11 @@ def listar_coe_sap_funcional():
 
     except Exception as e:
         app.logger.exception("Error listando COE SAP Funcional")
-        return jsonify({"mensaje": "Error interno", "error": str(e)}), 500
+        return jsonify({
+            "mensaje": "Error interno",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
 
 
 @bp.route("/coe-sap-funcional/import-principal", methods=["POST"])
@@ -13514,17 +13625,17 @@ def importar_coe_sap_funcional_principal():
             }), 400
 
         usuario_cargue = ""
+
         try:
             usuario_cargue = g.current_user.usuario if g.current_user else ""
         except Exception:
             usuario_cargue = ""
 
-        # Evita error si el archivo trae el mismo Número repetido.
-        # Si se repite, se conserva el último registro encontrado.
         registros_por_numero = {}
 
         for reg in registros:
             numero = str(reg.get("numero") or "").strip()
+
             if not numero:
                 continue
 
@@ -13538,7 +13649,6 @@ def importar_coe_sap_funcional_principal():
                 "mensaje": "El archivo no contiene registros con Número válido"
             }), 400
 
-        # Carga principal: limpia toda la tabla.
         try:
             db.session.execute(text("TRUNCATE TABLE base_registro_info_coe_sap_funcional"))
             db.session.commit()
@@ -13583,6 +13693,7 @@ def importar_coe_sap_funcional_principal():
             "trace": traceback.format_exc(),
         }), 500
 
+
 @bp.route("/coe-sap-funcional/import-adicional", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def importar_coe_sap_funcional_adicional():
@@ -13600,17 +13711,17 @@ def importar_coe_sap_funcional_adicional():
             }), 400
 
         usuario_cargue = ""
+
         try:
             usuario_cargue = g.current_user.usuario if g.current_user else ""
         except Exception:
             usuario_cargue = ""
 
-        # Evita problemas si el archivo trae el mismo Número repetido.
-        # Si se repite, se conserva el último registro encontrado.
         registros_por_numero = {}
 
         for reg in registros:
             numero = str(reg.get("numero") or "").strip()
+
             if not numero:
                 continue
 
@@ -13695,6 +13806,7 @@ def filtros_coe_sap_funcional():
                 .order_by(col.asc())
                 .all()
             )
+
             return [r[0] for r in rows if r[0]]
 
         return jsonify({
@@ -13711,4 +13823,8 @@ def filtros_coe_sap_funcional():
 
     except Exception as e:
         app.logger.exception("Error generando filtros COE SAP Funcional")
-        return jsonify({"mensaje": "Error interno", "error": str(e)}), 500
+        return jsonify({
+            "mensaje": "Error interno",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
