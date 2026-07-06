@@ -28,6 +28,8 @@ from zoneinfo import ZoneInfo
 import bcrypt
 import holidays
 import secrets
+import re
+from sqlalchemy import text
 
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
@@ -13127,60 +13129,116 @@ def copiar_oportunidad_como_principal(id):
         }), 500
 
 # ============================================================
-# BASE DE REGISTRO DE INFORMACION COE SAP FUNCIONAL
+# BASE DE REGISTRO DE INFORMACION COE SAP FUNCIONAL - HELPERS
 # ============================================================
 
-COE_SAP_FUNCIONAL_COLMAP = {
-    "NÚMERO": "numero",
-    "NUMERO": "numero",
-
-    "CATEGORÍA": "categoria",
-    "CATEGORIA": "categoria",
-
-    "FECHA DE ENTREGA": "fecha_entrega",
-    "PRIORIDAD": "prioridad",
-    "ESTADO": "estado",
-    "TÍTULO": "titulo",
-    "TITULO": "titulo",
-
-    "FECHA DE RESOLUCION": "fecha_resolucion",
-    "FECHA DE RESOLUCIÓN": "fecha_resolucion",
-
-    "ASIGNADO A": "asignado_a",
-    "NOMBRE COMPLETO CONTACTO": "nombre_completo_contacto",
-
-    "INCUMPLIMIENTO DE SLA": "incumplimiento_sla",
-    "ALERTA": "alerta",
-    "ESTADO DE ALERTA ANS": "estado_alerta_ans",
-
-    "IMPACTO": "impacto",
-    "URGENCIA": "urgencia",
-
-    "COMPAÑÍA": "compania",
-    "COMPANIA": "compania",
-
-    "SUBCATEGORÍA": "subcategoria",
-    "SUBCATEGORIA": "subcategoria",
-
-    "MODELO": "modelo",
-
-    "ID DE INTERACCIÓN": "id_interaccion",
-    "ID DE INTERACCION": "id_interaccion",
+COE_SAP_FUNCIONAL_ALIASES = {
+    "numero": [
+        "NUMERO",
+        "NÚMERO",
+        "NO",
+        "NO.",
+        "NRO",
+        "NRO.",
+        "N°",
+        "N",
+        "#",
+    ],
+    "categoria": [
+        "CATEGORIA",
+        "CATEGORÍA",
+    ],
+    "fecha_entrega": [
+        "FECHA DE ENTREGA",
+        "FECHA ENTREGA",
+    ],
+    "prioridad": [
+        "PRIORIDAD",
+    ],
+    "estado": [
+        "ESTADO",
+    ],
+    "titulo": [
+        "TITULO",
+        "TÍTULO",
+    ],
+    "fecha_resolucion": [
+        "FECHA DE RESOLUCION",
+        "FECHA DE RESOLUCIÓN",
+        "FECHA RESOLUCION",
+        "FECHA RESOLUCIÓN",
+    ],
+    "asignado_a": [
+        "ASIGNADO A",
+        "ASIGNADO",
+    ],
+    "nombre_completo_contacto": [
+        "NOMBRE COMPLETO CONTACTO",
+        "CONTACTO",
+        "NOMBRE CONTACTO",
+    ],
+    "incumplimiento_sla": [
+        "INCUMPLIMIENTO DE SLA",
+        "INCUMPLIMIENTO SLA",
+    ],
+    "alerta": [
+        "ALERTA",
+    ],
+    "estado_alerta_ans": [
+        "ESTADO DE ALERTA ANS",
+        "ESTADO ALERTA ANS",
+    ],
+    "impacto": [
+        "IMPACTO",
+    ],
+    "urgencia": [
+        "URGENCIA",
+    ],
+    "compania": [
+        "COMPANIA",
+        "COMPAÑIA",
+        "COMPAÑÍA",
+    ],
+    "subcategoria": [
+        "SUBCATEGORIA",
+        "SUBCATEGORÍA",
+    ],
+    "modelo": [
+        "MODELO",
+    ],
+    "id_interaccion": [
+        "ID DE INTERACCION",
+        "ID DE INTERACCIÓN",
+        "ID INTERACCION",
+        "ID INTERACCIÓN",
+    ],
 }
 
 
 def _coe_norm_col(value):
     s = str(value or "")
 
+    # Quitar BOM y caracteres invisibles
     s = s.replace("\ufeff", "")
+    s = s.replace("\u200b", "")
     s = s.replace("\u00A0", " ")
+
     s = s.strip().upper()
 
+    # Quitar tildes
     s = unicodedata.normalize("NFD", s)
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
 
-    # Normaliza espacios
-    s = re.sub(r"\s+", " ", s)
+    # Normalizar símbolos comunes
+    s = s.replace("º", "")
+    s = s.replace("°", "")
+    s = s.replace(".", " ")
+    s = s.replace(":", " ")
+    s = s.replace("-", " ")
+    s = s.replace("_", " ")
+
+    # Espacios dobles
+    s = re.sub(r"\s+", " ", s).strip()
 
     return s
 
@@ -13214,8 +13272,10 @@ def _coe_parse_datetime(value):
 
     try:
         parsed = pd.to_datetime(s, errors="coerce", dayfirst=True)
+
         if pd.isna(parsed):
             return None
+
         return parsed.to_pydatetime()
     except Exception:
         return None
@@ -13233,50 +13293,99 @@ def _coe_parse_str(value):
     return s
 
 
+def _coe_find_column(columnas_normalizadas, aliases):
+    """
+    columnas_normalizadas:
+    {
+      'NUMERO': 'Número',
+      'FECHA DE ENTREGA': 'Fecha de entrega'
+    }
+    """
+    for alias in aliases:
+        alias_norm = _coe_norm_col(alias)
+
+        if alias_norm in columnas_normalizadas:
+            return columnas_normalizadas[alias_norm]
+
+    return None
+
+
 def _leer_archivo_coe_sap_funcional(file):
     filename = (file.filename or "").lower()
 
+    # IMPORTANTE:
+    # Leemos el contenido primero para poder reintentarlo si hace falta.
+    contenido = file.read()
+
     if filename.endswith(".csv"):
-        df = pd.read_csv(
-            file,
-            dtype=str,
-            sep=None,
-            engine="python",
-            encoding="utf-8-sig"
-        )
+        try:
+            df = pd.read_csv(
+                BytesIO(contenido),
+                dtype=str,
+                sep=None,
+                engine="python",
+                encoding="utf-8-sig"
+            )
+        except Exception:
+            df = pd.read_csv(
+                BytesIO(contenido),
+                dtype=str,
+                sep=";",
+                engine="python",
+                encoding="latin1"
+            )
     else:
-        df = pd.read_excel(file, dtype=str, engine="openpyxl")
+        df = pd.read_excel(
+            BytesIO(contenido),
+            dtype=str,
+            engine="openpyxl"
+        )
 
     df = df.where(pd.notnull(df), None)
 
     columnas_originales = list(df.columns)
-    columnas_normalizadas = {_coe_norm_col(c): c for c in columnas_originales}
 
-    app.logger.info("Columnas originales COE SAP Funcional: %s", columnas_originales)
-    app.logger.info("Columnas normalizadas COE SAP Funcional: %s", list(columnas_normalizadas.keys()))
+    columnas_normalizadas = {
+        _coe_norm_col(c): c
+        for c in columnas_originales
+    }
+
+    app.logger.info(
+        "COE SAP Funcional - columnas originales recibidas: %s",
+        columnas_originales
+    )
+
+    app.logger.info(
+        "COE SAP Funcional - columnas normalizadas recibidas: %s",
+        list(columnas_normalizadas.keys())
+    )
+
+    # Mapeo real: campo_modelo -> columna_excel_encontrada
+    columnas_encontradas = {}
+
+    for campo, aliases in COE_SAP_FUNCIONAL_ALIASES.items():
+        col = _coe_find_column(columnas_normalizadas, aliases)
+
+        if col:
+            columnas_encontradas[campo] = col
+
+    # Dejamos como obligatorias solo las mínimas.
+    # Si quieres hacerlas todas obligatorias, se puede endurecer después.
+    obligatorias = {
+        "numero": "NUMERO",
+    }
 
     faltantes = []
 
-    columnas_obligatorias = [
-        "NUMERO",
-        "CATEGORIA",
-        "FECHA DE ENTREGA",
-        "PRIORIDAD",
-        "ESTADO",
-        "TITULO",
-        "ASIGNADO A",
-        "COMPANIA",
-    ]
-
-    for col_esperada in columnas_obligatorias:
-        if col_esperada not in columnas_normalizadas:
-            faltantes.append(col_esperada)
+    for campo, nombre_visible in obligatorias.items():
+        if campo not in columnas_encontradas:
+            faltantes.append(nombre_visible)
 
     if faltantes:
         raise ValueError(
             "Faltan columnas obligatorias: "
             + ", ".join(faltantes)
-            + ". Columnas recibidas: "
+            + ". Columnas recibidas normalizadas: "
             + ", ".join(list(columnas_normalizadas.keys()))
         )
 
@@ -13285,18 +13394,15 @@ def _leer_archivo_coe_sap_funcional(file):
     for _, row in df.iterrows():
         obj = {}
 
-        for col_excel, campo in COE_SAP_FUNCIONAL_COLMAP.items():
-            col_original = columnas_normalizadas.get(_coe_norm_col(col_excel))
-
-            if not col_original:
-                continue
-
+        for campo, col_original in columnas_encontradas.items():
             raw = row.get(col_original)
 
             if campo in ("fecha_entrega", "fecha_resolucion"):
                 obj[campo] = _coe_parse_datetime(raw)
+
             elif campo in ("incumplimiento_sla", "alerta"):
                 obj[campo] = _coe_parse_bool(raw)
+
             else:
                 obj[campo] = _coe_parse_str(raw)
 
@@ -13306,10 +13412,6 @@ def _leer_archivo_coe_sap_funcional(file):
         registros.append(obj)
 
     return registros
-
-
-def coe_sap_funcional_to_dict(r):
-    return r.to_dict()
 
 
 @bp.route("/coe-sap-funcional", methods=["GET"])
