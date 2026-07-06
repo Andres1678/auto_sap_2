@@ -13029,3 +13029,98 @@ def listar_oportunidades_principales():
             "trace": traceback.format_exc()
         }), 500
     
+POST_PRC_CLEAR_FIELDS = [
+    "codigo_prc",
+    "fecha_firma_aos",
+    "pm_asignado_claro",
+    "pm_asignado_hitss",
+    "descripcion_ot",
+    "num_enlace",
+    "num_incidente",
+    "num_ot",
+    "estado_ot",
+    "proyeccion_ingreso",
+    "fecha_compromiso",
+    "fecha_cierre",
+    "estado_proyecto",
+    "anio_creacion_ot",
+    "fecha_acta_cierre_ot",
+    "seguimiento_ot",
+    "tipo_servicio",
+    "semestre_ejecucion",
+    "publicacion_sharepoint",
+]
+
+
+@bp.route("/oportunidades/<int:id>/copiar-como-principal", methods=["POST"])
+@permission_required("OPORTUNIDADES_EDITAR")
+def copiar_oportunidad_como_principal(id):
+    try:
+        origen = Oportunidad.query.get_or_404(id)
+
+        cliente_key = _norm_key_for_match(origen.nombre_cliente)
+
+        if not cliente_key:
+            return jsonify({
+                "mensaje": "La oportunidad origen no tiene nombre de cliente válido"
+            }), 400
+
+        ultimo_principal = (
+            db.session.query(func.max(Oportunidad.consecutivo_principal))
+            .filter(_sql_norm_estado(Oportunidad.tipo_oportunidad) == "PRINCIPAL")
+            .scalar()
+        )
+
+        consecutivo_principal = int(ultimo_principal or 0) + 1
+
+        data = {}
+
+        for column in Oportunidad.__table__.columns:
+            field = column.name
+
+            if field in ["id", "created_at", "updated_at"]:
+                continue
+
+            data[field] = getattr(origen, field, None)
+
+        # Limpia bloque OT/Proyecto desde CODIGO PRC hacia la derecha
+        for field in POST_PRC_CLEAR_FIELDS:
+            if field in data:
+                data[field] = None
+
+        data["tipo_oportunidad"] = "PRINCIPAL"
+        data["oportunidad_padre_id"] = None
+        data["cliente_grupo_key"] = cliente_key
+        data["consecutivo_principal"] = consecutivo_principal
+        data["consecutivo_sub"] = None
+        data["codigo_control"] = str(consecutivo_principal)
+
+        principal = Oportunidad(**data)
+
+        db.session.add(principal)
+        db.session.flush()
+
+        # La oportunidad original queda asignada a la principal creada
+        origen.tipo_oportunidad = "SUBOPORTUNIDAD"
+        origen.oportunidad_padre_id = principal.id
+        origen.cliente_grupo_key = cliente_key
+        origen.consecutivo_principal = consecutivo_principal
+        origen.consecutivo_sub = 1
+        origen.codigo_control = f"{principal.codigo_control}.1"
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Oportunidad principal creada desde copia",
+            "principal": principal.to_dict(),
+            "suboportunidad": origen.to_dict(),
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception(f"Error copiando oportunidad como principal id={id}")
+
+        return jsonify({
+            "mensaje": f"Error copiando oportunidad como principal: {str(e)}",
+            "trace": traceback.format_exc()
+        }), 500
