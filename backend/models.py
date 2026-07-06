@@ -1179,60 +1179,39 @@ class ProyectoPerfilConsultor(db.Model):
         ),
     )
 
+from sqlalchemy.dialects.mysql import LONGTEXT
+
 class BaseRegistroInfoCoeSapFuncional(db.Model):
     __tablename__ = "base_registro_info_coe_sap_funcional"
 
     id = db.Column(db.Integer, primary_key=True)
 
     numero = db.Column(db.String(80), nullable=False, unique=True, index=True)
-    categoria = db.Column(db.String(200))
+    id_interaccion = db.Column(db.String(100))
+    compania = db.Column(db.String(255))
+
     fecha_entrega = db.Column(db.DateTime)
-    prioridad = db.Column(db.String(100))
+    fecha_resolucion = db.Column(db.DateTime)
+    fecha_cierre = db.Column(db.DateTime)
+
     estado = db.Column(db.String(100))
     titulo = db.Column(db.Text)
-    fecha_resolucion = db.Column(db.DateTime)
     asignado_a = db.Column(db.String(200))
     nombre_completo_contacto = db.Column(db.String(200))
+
     incumplimiento_sla = db.Column(db.Boolean)
     alerta = db.Column(db.Boolean)
-    estado_alerta_ans = db.Column(db.String(50))
+    estado_alerta_ans = db.Column(db.String(100))
+
     impacto = db.Column(db.String(100))
     urgencia = db.Column(db.String(100))
-    compania = db.Column(db.String(255))
-    subcategoria = db.Column(db.String(200))
-    modelo = db.Column(db.String(255))
-    id_interaccion = db.Column(db.String(100))
+    prioridad = db.Column(db.String(100))
+
+    accion_actualizacion = db.Column(LONGTEXT)
+    canal_resolucion = db.Column(db.String(200))
+    clr_txt_servicio = db.Column(db.String(255))
+    clr_txt_client_type = db.Column(db.String(255))
 
     origen_cargue = db.Column(db.String(30), nullable=False, server_default=text("'PRINCIPAL'"))
     fecha_cargue = db.Column(db.DateTime, default=datetime.utcnow)
     usuario_cargue = db.Column(db.String(100))
-
-    def to_dict(self):
-        def dt(v):
-            return v.strftime("%Y-%m-%d %H:%M:%S") if v else None
-
-        return {
-            "id": self.id,
-            "numero": self.numero,
-            "categoria": self.categoria,
-            "fechaEntrega": dt(self.fecha_entrega),
-            "prioridad": self.prioridad,
-            "estado": self.estado,
-            "titulo": self.titulo,
-            "fechaResolucion": dt(self.fecha_resolucion),
-            "asignadoA": self.asignado_a,
-            "nombreCompletoContacto": self.nombre_completo_contacto,
-            "incumplimientoSla": bool(self.incumplimiento_sla) if self.incumplimiento_sla is not None else None,
-            "alerta": bool(self.alerta) if self.alerta is not None else None,
-            "estadoAlertaAns": self.estado_alerta_ans,
-            "impacto": self.impacto,
-            "urgencia": self.urgencia,
-            "compania": self.compania,
-            "subcategoria": self.subcategoria,
-            "modelo": self.modelo,
-            "idInteraccion": self.id_interaccion,
-            "origenCargue": self.origen_cargue,
-            "fechaCargue": dt(self.fecha_cargue),
-            "usuarioCargue": self.usuario_cargue,
-        }
-    

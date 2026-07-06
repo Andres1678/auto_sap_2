@@ -28,8 +28,7 @@ from zoneinfo import ZoneInfo
 import bcrypt
 import holidays
 import secrets
-import re
-from sqlalchemy import text
+
 
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
@@ -13141,21 +13140,32 @@ COE_SAP_FUNCIONAL_ALIASES = {
         "NRO",
         "NRO.",
         "N°",
-        "N",
         "#",
-        "NUM",
-        "ID",
     ],
-    "categoria": [
-        "CATEGORIA",
-        "CATEGORÍA",
+    "id_interaccion": [
+        "ID DE INTERACCION",
+        "ID DE INTERACCIÓN",
+        "ID INTERACCION",
+        "ID INTERACCIÓN",
+    ],
+    "compania": [
+        "COMPANIA",
+        "COMPAÑIA",
+        "COMPAÑÍA",
     ],
     "fecha_entrega": [
         "FECHA DE ENTREGA",
         "FECHA ENTREGA",
     ],
-    "prioridad": [
-        "PRIORIDAD",
+    "fecha_resolucion": [
+        "FECHA DE RESOLUCION",
+        "FECHA DE RESOLUCIÓN",
+        "FECHA RESOLUCION",
+        "FECHA RESOLUCIÓN",
+    ],
+    "fecha_cierre": [
+        "FECHA DE CIERRE",
+        "FECHA CIERRE",
     ],
     "estado": [
         "ESTADO",
@@ -13163,12 +13173,6 @@ COE_SAP_FUNCIONAL_ALIASES = {
     "titulo": [
         "TITULO",
         "TÍTULO",
-    ],
-    "fecha_resolucion": [
-        "FECHA DE RESOLUCION",
-        "FECHA DE RESOLUCIÓN",
-        "FECHA RESOLUCION",
-        "FECHA RESOLUCIÓN",
     ],
     "asignado_a": [
         "ASIGNADO A",
@@ -13196,26 +13200,28 @@ COE_SAP_FUNCIONAL_ALIASES = {
     "urgencia": [
         "URGENCIA",
     ],
-    "compania": [
-        "COMPANIA",
-        "COMPAÑIA",
-        "COMPAÑÍA",
+    "prioridad": [
+        "PRIORIDAD",
     ],
-    "subcategoria": [
-        "SUBCATEGORIA",
-        "SUBCATEGORÍA",
+    "accion_actualizacion": [
+        "ACCION DE ACTUALIZACION",
+        "ACCIÓN DE ACTUALIZACIÓN",
+        "ACCION ACTUALIZACION",
+        "ACCIÓN ACTUALIZACIÓN",
     ],
-    "modelo": [
-        "MODELO",
+    "canal_resolucion": [
+        "CANAL DE RESOLUCION",
+        "CANAL DE RESOLUCIÓN",
+        "CANAL RESOLUCION",
+        "CANAL RESOLUCIÓN",
     ],
-    "id_interaccion": [
-        "ID DE INTERACCION",
-        "ID DE INTERACCIÓN",
-        "ID INTERACCION",
-        "ID INTERACCIÓN",
+    "clr_txt_servicio": [
+        "CLR TXT SERVICIO",
+    ],
+    "clr_txt_client_type": [
+        "CLR TXT CLIENT TYPE",
     ],
 }
-
 
 def _coe_norm_col(value):
     s = str(value or "")
@@ -13473,7 +13479,7 @@ def _leer_archivo_coe_sap_funcional(file):
         for campo, col_original in columnas_encontradas.items():
             raw = row.get(col_original)
 
-            if campo in ("fecha_entrega", "fecha_resolucion"):
+            if campo in ("fecha_entrega", "fecha_resolucion", "fecha_cierre"):
                 obj[campo] = _coe_parse_datetime(raw)
 
             elif campo in ("incumplimiento_sla", "alerta"):
@@ -13494,12 +13500,13 @@ def coe_sap_funcional_to_dict(r):
     return {
         "id": r.id,
         "numero": r.numero,
-        "categoria": r.categoria,
+        "idInteraccion": r.id_interaccion,
+        "compania": r.compania,
         "fechaEntrega": _coe_format_datetime(r.fecha_entrega),
-        "prioridad": r.prioridad,
+        "fechaResolucion": _coe_format_datetime(r.fecha_resolucion),
+        "fechaCierre": _coe_format_datetime(r.fecha_cierre),
         "estado": r.estado,
         "titulo": r.titulo,
-        "fechaResolucion": _coe_format_datetime(r.fecha_resolucion),
         "asignadoA": r.asignado_a,
         "nombreCompletoContacto": r.nombre_completo_contacto,
         "incumplimientoSla": _coe_format_bool(r.incumplimiento_sla),
@@ -13507,10 +13514,11 @@ def coe_sap_funcional_to_dict(r):
         "estadoAlertaAns": r.estado_alerta_ans,
         "impacto": r.impacto,
         "urgencia": r.urgencia,
-        "compania": r.compania,
-        "subcategoria": r.subcategoria,
-        "modelo": r.modelo,
-        "idInteraccion": r.id_interaccion,
+        "prioridad": r.prioridad,
+        "accionActualizacion": r.accion_actualizacion,
+        "canalResolucion": r.canal_resolucion,
+        "clrTxtServicio": r.clr_txt_servicio,
+        "clrTxtClientType": r.clr_txt_client_type,
         "origenCargue": r.origen_cargue,
         "fechaCargue": _coe_format_datetime(r.fecha_cargue),
         "usuarioCargue": r.usuario_cargue,
@@ -13527,56 +13535,119 @@ def listar_coe_sap_funcional():
         q = (request.args.get("q") or "").strip()
         estado = (request.args.get("estado") or "").strip()
         prioridad = (request.args.get("prioridad") or "").strip()
-        categoria = (request.args.get("categoria") or "").strip()
         compania = (request.args.get("compania") or "").strip()
         asignado_a = (request.args.get("asignado_a") or "").strip()
+        impacto = (request.args.get("impacto") or "").strip()
+        urgencia = (request.args.get("urgencia") or "").strip()
+        estado_alerta_ans = (request.args.get("estado_alerta_ans") or "").strip()
+        canal_resolucion = (request.args.get("canal_resolucion") or "").strip()
+        clr_txt_servicio = (request.args.get("clr_txt_servicio") or "").strip()
+        clr_txt_client_type = (request.args.get("clr_txt_client_type") or "").strip()
         fecha_desde = (request.args.get("fecha_desde") or "").strip()
         fecha_hasta = (request.args.get("fecha_hasta") or "").strip()
 
         qry = BaseRegistroInfoCoeSapFuncional.query
 
+        # Búsqueda general
         if q:
             like = f"%{q}%"
+
             qry = qry.filter(or_(
                 BaseRegistroInfoCoeSapFuncional.numero.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.id_interaccion.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.compania.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.fecha_entrega.cast(db.String).ilike(like),
+                BaseRegistroInfoCoeSapFuncional.fecha_resolucion.cast(db.String).ilike(like),
+                BaseRegistroInfoCoeSapFuncional.fecha_cierre.cast(db.String).ilike(like),
+                BaseRegistroInfoCoeSapFuncional.estado.ilike(like),
                 BaseRegistroInfoCoeSapFuncional.titulo.ilike(like),
                 BaseRegistroInfoCoeSapFuncional.asignado_a.ilike(like),
                 BaseRegistroInfoCoeSapFuncional.nombre_completo_contacto.ilike(like),
-                BaseRegistroInfoCoeSapFuncional.compania.ilike(like),
-                BaseRegistroInfoCoeSapFuncional.id_interaccion.ilike(like),
-                BaseRegistroInfoCoeSapFuncional.categoria.ilike(like),
-                BaseRegistroInfoCoeSapFuncional.estado.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.estado_alerta_ans.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.impacto.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.urgencia.ilike(like),
                 BaseRegistroInfoCoeSapFuncional.prioridad.ilike(like),
-                BaseRegistroInfoCoeSapFuncional.subcategoria.ilike(like),
-                BaseRegistroInfoCoeSapFuncional.modelo.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.accion_actualizacion.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.canal_resolucion.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.clr_txt_servicio.ilike(like),
+                BaseRegistroInfoCoeSapFuncional.clr_txt_client_type.ilike(like),
             ))
 
+        # Filtros específicos
         if estado:
-            qry = qry.filter(BaseRegistroInfoCoeSapFuncional.estado.ilike(f"%{estado}%"))
+            qry = qry.filter(
+                BaseRegistroInfoCoeSapFuncional.estado.ilike(f"%{estado}%")
+            )
 
         if prioridad:
-            qry = qry.filter(BaseRegistroInfoCoeSapFuncional.prioridad.ilike(f"%{prioridad}%"))
-
-        if categoria:
-            qry = qry.filter(BaseRegistroInfoCoeSapFuncional.categoria.ilike(f"%{categoria}%"))
+            qry = qry.filter(
+                BaseRegistroInfoCoeSapFuncional.prioridad.ilike(f"%{prioridad}%")
+            )
 
         if compania:
-            qry = qry.filter(BaseRegistroInfoCoeSapFuncional.compania.ilike(f"%{compania}%"))
+            qry = qry.filter(
+                BaseRegistroInfoCoeSapFuncional.compania.ilike(f"%{compania}%")
+            )
 
         if asignado_a:
-            qry = qry.filter(BaseRegistroInfoCoeSapFuncional.asignado_a.ilike(f"%{asignado_a}%"))
+            qry = qry.filter(
+                BaseRegistroInfoCoeSapFuncional.asignado_a.ilike(f"%{asignado_a}%")
+            )
 
+        if impacto:
+            qry = qry.filter(
+                BaseRegistroInfoCoeSapFuncional.impacto.ilike(f"%{impacto}%")
+            )
+
+        if urgencia:
+            qry = qry.filter(
+                BaseRegistroInfoCoeSapFuncional.urgencia.ilike(f"%{urgencia}%")
+            )
+
+        if estado_alerta_ans:
+            qry = qry.filter(
+                BaseRegistroInfoCoeSapFuncional.estado_alerta_ans.ilike(
+                    f"%{estado_alerta_ans}%"
+                )
+            )
+
+        if canal_resolucion:
+            qry = qry.filter(
+                BaseRegistroInfoCoeSapFuncional.canal_resolucion.ilike(
+                    f"%{canal_resolucion}%"
+                )
+            )
+
+        if clr_txt_servicio:
+            qry = qry.filter(
+                BaseRegistroInfoCoeSapFuncional.clr_txt_servicio.ilike(
+                    f"%{clr_txt_servicio}%"
+                )
+            )
+
+        if clr_txt_client_type:
+            qry = qry.filter(
+                BaseRegistroInfoCoeSapFuncional.clr_txt_client_type.ilike(
+                    f"%{clr_txt_client_type}%"
+                )
+            )
+
+        # Filtro por fecha de entrega
         if fecha_desde:
             try:
                 desde_dt = datetime.strptime(fecha_desde[:10], "%Y-%m-%d")
-                qry = qry.filter(BaseRegistroInfoCoeSapFuncional.fecha_entrega >= desde_dt)
+                qry = qry.filter(
+                    BaseRegistroInfoCoeSapFuncional.fecha_entrega >= desde_dt
+                )
             except Exception:
                 pass
 
         if fecha_hasta:
             try:
                 hasta_dt = datetime.strptime(fecha_hasta[:10], "%Y-%m-%d") + timedelta(days=1)
-                qry = qry.filter(BaseRegistroInfoCoeSapFuncional.fecha_entrega < hasta_dt)
+                qry = qry.filter(
+                    BaseRegistroInfoCoeSapFuncional.fecha_entrega < hasta_dt
+                )
             except Exception:
                 pass
 
@@ -13810,15 +13881,16 @@ def filtros_coe_sap_funcional():
             return [r[0] for r in rows if r[0]]
 
         return jsonify({
-            "categoria": distinct_col(BaseRegistroInfoCoeSapFuncional.categoria),
-            "prioridad": distinct_col(BaseRegistroInfoCoeSapFuncional.prioridad),
             "estado": distinct_col(BaseRegistroInfoCoeSapFuncional.estado),
+            "prioridad": distinct_col(BaseRegistroInfoCoeSapFuncional.prioridad),
             "asignado_a": distinct_col(BaseRegistroInfoCoeSapFuncional.asignado_a),
             "compania": distinct_col(BaseRegistroInfoCoeSapFuncional.compania),
-            "subcategoria": distinct_col(BaseRegistroInfoCoeSapFuncional.subcategoria),
-            "modelo": distinct_col(BaseRegistroInfoCoeSapFuncional.modelo),
             "impacto": distinct_col(BaseRegistroInfoCoeSapFuncional.impacto),
             "urgencia": distinct_col(BaseRegistroInfoCoeSapFuncional.urgencia),
+            "estado_alerta_ans": distinct_col(BaseRegistroInfoCoeSapFuncional.estado_alerta_ans),
+            "canal_resolucion": distinct_col(BaseRegistroInfoCoeSapFuncional.canal_resolucion),
+            "clr_txt_servicio": distinct_col(BaseRegistroInfoCoeSapFuncional.clr_txt_servicio),
+            "clr_txt_client_type": distinct_col(BaseRegistroInfoCoeSapFuncional.clr_txt_client_type),
         }), 200
 
     except Exception as e:
