@@ -1,0 +1,760 @@
+:root {
+  --calcoe-red: #da291c;
+  --calcoe-red-dark: #b91f15;
+  --calcoe-green: #008c67;
+  --calcoe-bg: #f7f8fa;
+  --calcoe-card: #ffffff;
+  --calcoe-text: #222222;
+  --calcoe-muted: #6b7280;
+  --calcoe-border: #e8e8e8;
+  --calcoe-soft-red: #fff3f2;
+  --calcoe-header: #faf5f5;
+  --calcoe-blue: #2563eb;
+  --calcoe-blue-soft: #eff6ff;
+  --calcoe-yellow: #f59e0b;
+  --calcoe-yellow-soft: #fff7db;
+  --calcoe-green-soft: #e6f6f1;
+  --calcoe-shadow: 0 18px 40px rgba(17, 24, 39, 0.08);
+  --calcoe-radius: 18px;
+}
+
+.calcoe-page {
+  min-height: calc(100vh - 72px);
+  padding: 26px;
+  background:
+    radial-gradient(circle at top left, rgba(218, 41, 28, 0.08), transparent 35%),
+    linear-gradient(180deg, #ffffff 0%, var(--calcoe-bg) 42%, var(--calcoe-bg) 100%);
+  color: var(--calcoe-text);
+}
+
+.calcoe-hero {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 28px;
+  margin-bottom: 16px;
+  border-radius: 24px;
+  color: #ffffff;
+  background:
+    linear-gradient(135deg, rgba(34, 34, 34, 0.96), rgba(218, 41, 28, 0.92)),
+    linear-gradient(120deg, #222222, #da291c);
+  box-shadow: var(--calcoe-shadow);
+  position: relative;
+  overflow: hidden;
+}
+
+.calcoe-hero::after {
+  content: "";
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  right: -170px;
+  top: -170px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.calcoe-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.calcoe-hero h1 {
+  margin: 0;
+  font-size: clamp(25px, 3vw, 38px);
+  line-height: 1.08;
+  font-weight: 950;
+  letter-spacing: -0.035em;
+}
+
+.calcoe-hero p {
+  max-width: 780px;
+  margin: 12px 0 0;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.calcoe-hero-actions {
+  min-width: 245px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  z-index: 1;
+}
+
+.calcoe-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(170px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.calcoe-summary-card {
+  padding: 18px;
+  border-radius: var(--calcoe-radius);
+  background: var(--calcoe-card);
+  border: 1px solid var(--calcoe-border);
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.055);
+}
+
+.calcoe-summary-card span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--calcoe-muted);
+}
+
+.calcoe-summary-card strong {
+  display: block;
+  font-size: 22px;
+  font-weight: 950;
+  color: var(--calcoe-text);
+}
+
+.calcoe-card {
+  background: var(--calcoe-card);
+  border: 1px solid var(--calcoe-border);
+  border-radius: var(--calcoe-radius);
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.055);
+}
+
+.calcoe-filters-card {
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.calcoe-card-head,
+.calcoe-table-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.calcoe-card-head h2,
+.calcoe-table-head h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 950;
+  letter-spacing: -0.02em;
+}
+
+.calcoe-card-head p,
+.calcoe-table-head p {
+  margin: 5px 0 0;
+  font-size: 13px;
+  color: var(--calcoe-muted);
+}
+
+.calcoe-filters-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  gap: 14px;
+}
+
+.calcoe-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.calcoe-filter.search {
+  grid-column: span 2;
+}
+
+.calcoe-filter.obs {
+  grid-column: span 2;
+}
+
+.calcoe-filter span {
+  font-size: 12px;
+  font-weight: 850;
+  color: #4b5563;
+}
+
+.calcoe-filter input,
+.calcoe-filter select,
+.calcoe-page-size select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--calcoe-border);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--calcoe-text);
+  padding: 0 12px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.calcoe-filter input:focus,
+.calcoe-filter select:focus,
+.calcoe-page-size select:focus {
+  border-color: rgba(218, 41, 28, 0.5);
+  box-shadow: 0 0 0 4px rgba(218, 41, 28, 0.1);
+}
+
+.calcoe-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.calcoe-btn {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid var(--calcoe-border);
+  background: #ffffff;
+  color: var(--calcoe-text);
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.calcoe-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(17, 24, 39, 0.09);
+}
+
+.calcoe-btn:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.calcoe-btn.danger {
+  color: #ffffff;
+  background: var(--calcoe-red);
+  border-color: var(--calcoe-red);
+}
+
+.calcoe-btn.danger:hover:not(:disabled) {
+  background: var(--calcoe-red-dark);
+}
+
+.calcoe-btn.dark {
+  color: #ffffff;
+  background: #222222;
+  border-color: #222222;
+}
+
+.calcoe-btn.light {
+  background: #f5f5f5;
+  color: #222222;
+}
+
+.calcoe-btn.ghost {
+  background: var(--calcoe-soft-red);
+  border-color: #ffd7d3;
+  color: var(--calcoe-red);
+}
+
+.calcoe-btn.icon {
+  width: 42px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.calcoe-table-card {
+  overflow: hidden;
+}
+
+.calcoe-table-head {
+  padding: 18px 20px;
+  margin: 0;
+  background: linear-gradient(180deg, #ffffff, #fffafa);
+  border-bottom: 1px solid var(--calcoe-border);
+}
+
+.calcoe-page-size {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.calcoe-page-size span {
+  font-size: 12px;
+  font-weight: 850;
+  color: var(--calcoe-muted);
+}
+
+.calcoe-page-size select {
+  width: 130px;
+}
+
+.calcoe-table-wrap {
+  width: 100%;
+  max-height: 65vh;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.calcoe-table {
+  width: 100%;
+  min-width: 3600px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.calcoe-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 13px 12px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 950;
+  color: #3f3f46;
+  background: var(--calcoe-header);
+  border-bottom: 1px solid var(--calcoe-border);
+  white-space: nowrap;
+}
+
+.calcoe-table tbody td {
+  padding: 12px;
+  font-size: 13px;
+  vertical-align: top;
+  border-bottom: 1px solid #f0f0f0;
+  color: #2f2f35;
+  background: #ffffff;
+}
+
+.calcoe-table tbody tr:nth-child(even) td {
+  background: #fcfcfd;
+}
+
+.calcoe-table tbody tr:hover td {
+  background: #fff7f6;
+}
+
+.calcoe-table .mono,
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.calcoe-table .strong {
+  font-weight: 950;
+}
+
+.center {
+  text-align: center;
+}
+
+.right {
+  text-align: right;
+}
+
+.clip-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.35;
+}
+
+.sticky-actions {
+  position: sticky !important;
+  right: 0;
+  z-index: 6;
+  background: #ffffff !important;
+  box-shadow: -8px 0 16px rgba(17, 24, 39, 0.06);
+}
+
+thead .sticky-actions {
+  background: var(--calcoe-header) !important;
+}
+
+.calcoe-row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.calcoe-mini-btn {
+  min-height: 31px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid #ffd7d3;
+  background: var(--calcoe-soft-red);
+  color: var(--calcoe-red);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.calcoe-mini-btn.dark {
+  background: #222222;
+  border-color: #222222;
+  color: #ffffff;
+}
+
+.calcoe-pill,
+.calcoe-mini-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 950;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calcoe-pill.ok {
+  color: #006b4f;
+  background: var(--calcoe-green-soft);
+  border: 1px solid rgba(0, 140, 103, 0.18);
+}
+
+.calcoe-pill.warn {
+  color: #8a5a00;
+  background: var(--calcoe-yellow-soft);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+}
+
+.calcoe-pill.info {
+  color: var(--calcoe-blue);
+  background: var(--calcoe-blue-soft);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+.calcoe-pill.neutral,
+.calcoe-mini-pill {
+  color: #4b5563;
+  background: #f4f5f7;
+  border: 1px solid #e5e7eb;
+}
+
+.calcoe-empty {
+  height: 160px;
+  text-align: center;
+  color: var(--calcoe-muted);
+  font-weight: 850;
+  background: #ffffff !important;
+}
+
+.calcoe-empty.small {
+  height: 90px;
+}
+
+.calcoe-loader {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  border: 3px solid #f0f0f0;
+  border-top-color: var(--calcoe-red);
+  animation: calcoe-spin 0.9s linear infinite;
+}
+
+@keyframes calcoe-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.calcoe-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 14px 18px;
+  background: #ffffff;
+  border-top: 1px solid var(--calcoe-border);
+}
+
+.calcoe-pager span {
+  margin: 0 6px;
+  font-size: 13px;
+  color: var(--calcoe-muted);
+}
+
+.calcoe-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  padding: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(17, 24, 39, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.calcoe-modal {
+  width: min(760px, 96vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-radius: 24px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.calcoe-modal.large {
+  width: min(1180px, 96vw);
+}
+
+.calcoe-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--calcoe-border);
+  background: linear-gradient(180deg, #ffffff, #fffafa);
+}
+
+.calcoe-modal-head h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 950;
+  letter-spacing: -0.02em;
+}
+
+.calcoe-modal-head p {
+  margin: 5px 0 0;
+  font-size: 13px;
+  color: var(--calcoe-muted);
+}
+
+.calcoe-close {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--calcoe-border);
+  border-radius: 12px;
+  background: #ffffff;
+  cursor: pointer;
+  font-weight: 950;
+}
+
+.calcoe-modal-body {
+  padding: 20px 22px;
+  overflow: auto;
+}
+
+.calcoe-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 22px;
+  border-top: 1px solid var(--calcoe-border);
+  background: #ffffff;
+}
+
+.calcoe-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(170px, 1fr));
+  gap: 14px;
+}
+
+.calcoe-hours-form {
+  display: grid;
+  grid-template-columns: 150px 150px 150px minmax(240px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 16px;
+  border-radius: 18px;
+  background: #fafafa;
+  border: 1px solid var(--calcoe-border);
+  margin-bottom: 16px;
+}
+
+.calcoe-hours-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.calcoe-hours-summary div {
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--calcoe-soft-red);
+  border: 1px solid #ffd7d3;
+}
+
+.calcoe-hours-summary span {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 12px;
+  font-weight: 850;
+  color: var(--calcoe-muted);
+}
+
+.calcoe-hours-summary strong {
+  display: block;
+  font-size: 20px;
+  font-weight: 950;
+  color: var(--calcoe-red);
+}
+
+.calcoe-hours-table-wrap {
+  max-height: 330px;
+  overflow: auto;
+  border: 1px solid var(--calcoe-border);
+  border-radius: 16px;
+}
+
+.calcoe-hours-table {
+  width: 100%;
+  min-width: 1050px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.calcoe-hours-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 12px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 950;
+  background: var(--calcoe-header);
+  border-bottom: 1px solid var(--calcoe-border);
+}
+
+.calcoe-hours-table td {
+  padding: 11px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #ffffff;
+}
+
+.calcoe-access-card {
+  max-width: 520px;
+  margin: 80px auto;
+  text-align: center;
+  background: #ffffff;
+  border: 1px solid var(--calcoe-border);
+  border-radius: 24px;
+  padding: 38px;
+  box-shadow: var(--calcoe-shadow);
+}
+
+.calcoe-access-icon {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 18px;
+  border-radius: 24px;
+  background: var(--calcoe-soft-red);
+  font-size: 34px;
+}
+
+.calcoe-access-card h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 950;
+}
+
+.calcoe-access-card p {
+  color: var(--calcoe-muted);
+}
+
+@media (max-width: 1180px) {
+  .calcoe-hero {
+    flex-direction: column;
+  }
+
+  .calcoe-hero-actions {
+    min-width: 0;
+  }
+
+  .calcoe-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .calcoe-filters-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .calcoe-filter.search {
+    grid-column: span 2;
+  }
+
+  .calcoe-edit-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .calcoe-hours-form {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .calcoe-hours-form .obs {
+    grid-column: span 2;
+  }
+
+  .calcoe-hours-summary {
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .calcoe-page {
+    padding: 16px;
+  }
+
+  .calcoe-hero {
+    padding: 22px;
+    border-radius: 20px;
+  }
+
+  .calcoe-card-head,
+  .calcoe-table-head {
+    flex-direction: column;
+  }
+
+  .calcoe-filters-grid,
+  .calcoe-edit-grid,
+  .calcoe-hours-form,
+  .calcoe-hours-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .calcoe-filter.search,
+  .calcoe-filter.obs,
+  .calcoe-hours-form .obs {
+    grid-column: span 1;
+  }
+
+  .calcoe-actions,
+  .calcoe-pager {
+    flex-wrap: wrap;
+  }
+
+  .calcoe-pager {
+    justify-content: center;
+  }
+
+  .calcoe-modal-overlay {
+    padding: 12px;
+  }
+
+  .calcoe-modal-head,
+  .calcoe-modal-body,
+  .calcoe-modal-foot {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}

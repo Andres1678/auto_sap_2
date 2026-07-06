@@ -8,7 +8,8 @@ from backend.models import (
     ProyectoMapeo,
     ProyectoPresupuestoMensual, ProyectoPerfilPlan, ProyectoCostoAdicional,
     Perfil, ModuloPerfil, ConsultorPerfil, ProyectoModulo, ProyectoPerfil,
-    ProyectoPerfilPlan, ProyectoCostoAdicional, ProyectoMapeo, ProyectoPerfilConsultor
+    ProyectoPerfilPlan, ProyectoCostoAdicional, ProyectoMapeo, ProyectoPerfilConsultor, CoeSapFuncionalCalificacion,
+    CoeSapFuncionalCalificacionHora
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
@@ -13897,6 +13898,1624 @@ def filtros_coe_sap_funcional():
         app.logger.exception("Error generando filtros COE SAP Funcional")
         return jsonify({
             "mensaje": "Error interno",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+# ============================================================
+# CALIFICACION COE SAP FUNCIONAL
+# ============================================================
+
+CALIFICACION_FUNCIONALES_ESTIMADAS = [
+    "fi", "mm", "sd", "co", "ps", "slcm", "crm", "crm2",
+    "pca", "fm", "pp", "pm", "hcm", "ssff", "fiori", "wf"
+]
+
+CALIFICACION_EJECUTADAS = [
+    "fi", "mm", "sd", "co", "ps", "pca", "fm", "hcm",
+    "ssff", "fiori", "wf", "abap", "basis"
+]
+
+
+def _calificacion_decimal(value):
+    try:
+        if value is None or value == "":
+            return 0
+        return float(value)
+    except Exception:
+        return 0
+
+
+def _calificacion_fecha(value):
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        return value
+
+    try:
+        parsed = pd.to_datetime(value, errors="coerce", dayfirst=True)
+        if pd.isna(parsed):
+            return None
+        return parsed.to_pydatetime()
+    except Exception:
+        return None
+
+
+def _calificacion_fecha_str(value):
+    if value is None:
+        return None
+
+    if hasattr(value, "strftime"):
+        try:
+            return value.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return str(value)
+
+    return str(value)
+
+
+def _calificacion_diff_dias(fecha_fin, fecha_ini):
+    if not fecha_fin or not fecha_ini:
+        return None
+
+    try:
+        return round((fecha_fin - fecha_ini).total_seconds() / 86400, 2)
+    except Exception:
+        return None
+
+
+def _calificacion_networkdays(fecha_inicio, fecha_fin):
+    if not fecha_inicio or not fecha_fin:
+        return None
+
+    try:
+        inicio = fecha_inicio.date()
+        fin = fecha_fin.date()
+
+        if fin < inicio:
+            return 0
+
+        dias = 0
+        actual = inicio
+
+        while actual <= fin:
+            if actual.weekday() < 5:
+                dias += 1
+            actual += timedelta(days=1)
+
+        return dias
+    except Exception:
+        return None
+
+
+def _calificacion_estado_consolidado(estado):
+    s = str(estado or "").strip().upper()
+
+    if not s:
+        return ""
+
+    if s in ("CERRADO", "CERRADA", "RESUELTO", "RESUELTA", "SOLUCIONADO", "SOLUCIONADA"):
+        return "CERRADO"
+
+    if s in ("CANCELADO", "CANCELADA", "ANULADO", "ANULADA"):
+        return "CANCELADO"
+
+    if s in ("PENDIENTE", "ABIERTO", "ABIERTA", "ASIGNADO", "ASIGNADA", "EN PROCESO", "EN CURSO"):
+        return "ABIERTO"
+
+    if "ESPERA" in s:
+        return "EN ESPERA"
+
+    return estado
+
+
+def _calificacion_responsable_estado(estado):
+    consolidado = _calificacion_estado_consolidado(estado)
+
+    if consolidado in ("CERRADO", "CANCELADO"):
+        return "CLARO"
+
+    if consolidado in ("ABIERTO", "EN ESPERA"):
+        return "CONSULTOR"
+
+    return ""
+
+
+def _calificacion_recalcular(campos):
+    fecha_asignacion = campos.get("fecha_asignacion")
+    fecha_respuesta = campos.get("fecha_respuesta")
+    fecha_resolucion = campos.get("fecha_resolucion")
+    fecha_finalizacion_cierre = campos.get("fecha_finalizacion_cierre")
+    fecha_estimacion = campos.get("fecha_estimacion")
+    fecha_aprobacion_estimacion = campos.get("fecha_aprobacion_estimacion")
+
+    if campos.get("numero"):
+        campos["sistema"] = str(campos.get("numero") or "")[:2]
+
+    if fecha_asignacion:
+        campos["dia_creacion"] = fecha_asignacion.day
+        campos["mes_creacion"] = fecha_asignacion.month
+        campos["anio_creacion"] = fecha_asignacion.year
+    else:
+        campos["dia_creacion"] = None
+        campos["mes_creacion"] = None
+        campos["anio_creacion"] = None
+
+    if fecha_finalizacion_cierre:
+        campos["dia_cierre"] = fecha_finalizacion_cierre.day
+        campos["mes_cierre"] = fecha_finalizacion_cierre.month
+        campos["anio_cierre"] = fecha_finalizacion_cierre.year
+    else:
+        campos["dia_cierre"] = None
+        campos["mes_cierre"] = None
+        campos["anio_cierre"] = None
+
+    campos["tiempo_respuesta"] = _calificacion_diff_dias(fecha_respuesta, fecha_asignacion)
+    campos["tiempo_resolucion"] = _calificacion_diff_dias(fecha_resolucion, fecha_asignacion)
+    campos["tiempo_finalizacion_cierre"] = _calificacion_diff_dias(fecha_finalizacion_cierre, fecha_asignacion)
+
+    fecha_fin_estimacion = fecha_estimacion or datetime.utcnow()
+
+    if fecha_asignacion:
+        campos["dias_entrega_estimacion"] = _calificacion_networkdays(
+            fecha_asignacion + timedelta(days=1),
+            fecha_fin_estimacion
+        )
+    else:
+        campos["dias_entrega_estimacion"] = None
+
+    if fecha_estimacion:
+        campos["mes_estimacion"] = fecha_estimacion.month
+        campos["anio_estimacion"] = fecha_estimacion.year
+    else:
+        campos["mes_estimacion"] = None
+        campos["anio_estimacion"] = None
+
+    if fecha_aprobacion_estimacion:
+        campos["mes_aprobado_estimacion"] = fecha_aprobacion_estimacion.month
+        campos["anio_aprobado_estimacion"] = fecha_aprobacion_estimacion.year
+    else:
+        campos["mes_aprobado_estimacion"] = None
+        campos["anio_aprobado_estimacion"] = None
+
+    total_funcionales = 0
+
+    for modulo in CALIFICACION_FUNCIONALES_ESTIMADAS:
+        total_funcionales += _calificacion_decimal(campos.get(f"horas_estimadas_{modulo}"))
+
+    campos["total_horas_funcionales"] = total_funcionales
+
+    total_estimadas = (
+        total_funcionales
+        + _calificacion_decimal(campos.get("horas_estimadas_abap"))
+        + _calificacion_decimal(campos.get("horas_estimadas_basis"))
+    )
+
+    campos["total_horas_estimadas"] = total_estimadas
+
+    campos["total_horas_estimadas2"] = (
+        total_estimadas
+        + _calificacion_decimal(campos.get("horas_estimadas_pmo"))
+    )
+
+    estado = campos.get("estado")
+    campos["estado_consolidado"] = _calificacion_estado_consolidado(estado)
+    campos["responsable_estado"] = _calificacion_responsable_estado(estado)
+
+    if not campos.get("estado_herramienta_gestion"):
+        campos["estado_herramienta_gestion"] = estado
+
+    return campos
+
+
+def _calificacion_to_dict(r):
+    return {
+        "id": r.id,
+        "baseRegistroId": r.base_registro_id,
+
+        "numero": r.numero,
+        "sistema": r.sistema,
+        "casoSm": r.caso_sm,
+
+        "documentacion": r.documentacion,
+        "casoTransporte": r.caso_transporte,
+        "controlHoras": r.control_horas,
+        "errorSap": r.error_sap,
+        "notaOssSap": r.nota_oss_sap,
+
+        "tipoContrato": r.tipo_contrato,
+        "sociedad": r.sociedad,
+        "asunto": r.asunto,
+        "observaciones": r.observaciones,
+        "nombreSolicitante": r.nombre_solicitante,
+
+        "impacto": r.impacto,
+        "urgencia": r.urgencia,
+        "prioridad": r.prioridad,
+
+        "tipoSolicitud": r.tipo_solicitud,
+        "modulo": r.modulo,
+        "categoria": r.categoria,
+        "subcategoria": r.subcategoria,
+        "articulo": r.articulo,
+
+        "estado": r.estado,
+        "estadoHerramientaGestion": r.estado_herramienta_gestion,
+        "responsableEstado": r.responsable_estado,
+        "estadoConsolidado": r.estado_consolidado,
+
+        "asignadoA": r.asignado_a,
+        "apoyo1": r.apoyo_1,
+        "apoyo2": r.apoyo_2,
+        "apoyo3": r.apoyo_3,
+
+        "requiereAbap": r.requiere_abap,
+        "asignacionAbap": r.asignacion_abap,
+
+        "fechaAsignacion": _calificacion_fecha_str(r.fecha_asignacion),
+        "diaCreacion": r.dia_creacion,
+        "mesCreacion": r.mes_creacion,
+        "anioCreacion": r.anio_creacion,
+
+        "horaUltimaActualizacion": _calificacion_fecha_str(r.hora_ultima_actualizacion),
+        "fechaRespuesta": _calificacion_fecha_str(r.fecha_respuesta),
+        "fechaResolucion": _calificacion_fecha_str(r.fecha_resolucion),
+        "fechaFinalizacionCierre": _calificacion_fecha_str(r.fecha_finalizacion_cierre),
+
+        "diaCierre": r.dia_cierre,
+        "mesCierre": r.mes_cierre,
+        "anioCierre": r.anio_cierre,
+
+        "tiempoRespuesta": float(r.tiempo_respuesta or 0) if r.tiempo_respuesta is not None else None,
+        "tiempoResolucion": float(r.tiempo_resolucion or 0) if r.tiempo_resolucion is not None else None,
+        "tiempoFinalizacionCierre": float(r.tiempo_finalizacion_cierre or 0) if r.tiempo_finalizacion_cierre is not None else None,
+
+        "fechaCompromiso": _calificacion_fecha_str(r.fecha_compromiso),
+        "liderClaro": r.lider_claro,
+        "tipoIngreso": r.tipo_ingreso,
+
+        "fechaEstimacion": _calificacion_fecha_str(r.fecha_estimacion),
+        "diasEntregaEstimacion": r.dias_entrega_estimacion,
+        "mesEstimacion": r.mes_estimacion,
+        "anioEstimacion": r.anio_estimacion,
+
+        "fechaAprobacionEstimacion": _calificacion_fecha_str(r.fecha_aprobacion_estimacion),
+        "mesAprobadoEstimacion": r.mes_aprobado_estimacion,
+        "anioAprobadoEstimacion": r.anio_aprobado_estimacion,
+        "estadoEstimacion": r.estado_estimacion,
+
+        "horasEstimadasFi": float(r.horas_estimadas_fi or 0),
+        "horasEstimadasMm": float(r.horas_estimadas_mm or 0),
+        "horasEstimadasSd": float(r.horas_estimadas_sd or 0),
+        "horasEstimadasCo": float(r.horas_estimadas_co or 0),
+        "horasEstimadasPs": float(r.horas_estimadas_ps or 0),
+        "horasEstimadasSlcm": float(r.horas_estimadas_slcm or 0),
+        "horasEstimadasCrm": float(r.horas_estimadas_crm or 0),
+        "horasEstimadasCrm2": float(r.horas_estimadas_crm2 or 0),
+        "horasEstimadasPca": float(r.horas_estimadas_pca or 0),
+        "horasEstimadasFm": float(r.horas_estimadas_fm or 0),
+        "horasEstimadasPp": float(r.horas_estimadas_pp or 0),
+        "horasEstimadasPm": float(r.horas_estimadas_pm or 0),
+        "horasEstimadasHcm": float(r.horas_estimadas_hcm or 0),
+        "horasEstimadasSsff": float(r.horas_estimadas_ssff or 0),
+        "horasEstimadasFiori": float(r.horas_estimadas_fiori or 0),
+        "horasEstimadasWf": float(r.horas_estimadas_wf or 0),
+
+        "horasEstimadasAbap": float(r.horas_estimadas_abap or 0),
+        "horasEstimadasBasis": float(r.horas_estimadas_basis or 0),
+        "horasEstimadasPmo": float(r.horas_estimadas_pmo or 0),
+
+        "totalHorasFuncionales": float(r.total_horas_funcionales or 0),
+        "totalHorasEstimadas": float(r.total_horas_estimadas or 0),
+        "totalHorasEstimadas2": float(r.total_horas_estimadas2 or 0),
+
+        "horasEjecutadasFi": float(r.horas_ejecutadas_fi or 0),
+        "horasEjecutadasMm": float(r.horas_ejecutadas_mm or 0),
+        "horasEjecutadasSd": float(r.horas_ejecutadas_sd or 0),
+        "horasEjecutadasCo": float(r.horas_ejecutadas_co or 0),
+        "horasEjecutadasPs": float(r.horas_ejecutadas_ps or 0),
+        "horasEjecutadasPca": float(r.horas_ejecutadas_pca or 0),
+        "horasEjecutadasFm": float(r.horas_ejecutadas_fm or 0),
+        "horasEjecutadasHcm": float(r.horas_ejecutadas_hcm or 0),
+        "horasEjecutadasSsff": float(r.horas_ejecutadas_ssff or 0),
+        "horasEjecutadasFiori": float(r.horas_ejecutadas_fiori or 0),
+        "horasEjecutadasWf": float(r.horas_ejecutadas_wf or 0),
+        "horasEjecutadasAbap": float(r.horas_ejecutadas_abap or 0),
+        "horasEjecutadasBasis": float(r.horas_ejecutadas_basis or 0),
+
+        "horasGarantia": float(r.horas_garantia or 0),
+        "horasProyectoAbap": float(r.horas_proyecto_abap or 0),
+
+        "creadoPor": r.creado_por,
+        "actualizadoPor": r.actualizado_por,
+        "createdAt": _calificacion_fecha_str(r.created_at),
+        "updatedAt": _calificacion_fecha_str(r.updated_at),
+    }
+
+
+def _calificacion_hora_to_dict(h):
+    return {
+        "id": h.id,
+        "calificacionId": h.calificacion_id,
+        "numero": h.numero,
+        "tipo": h.tipo,
+        "modulo": h.modulo,
+        "horas": float(h.horas or 0),
+        "observacion": h.observacion,
+        "origen": getattr(h, "origen", None),
+        "excelFila": getattr(h, "excel_fila", None),
+        "usuarioRegistro": h.usuario_registro,
+        "createdAt": _calificacion_fecha_str(h.created_at),
+    }
+
+
+def _calificacion_usuario_actual():
+    try:
+        return g.current_user.usuario if g.current_user else ""
+    except Exception:
+        return ""
+
+
+def _calificacion_campos_desde_base(base):
+    campos = {
+        "base_registro_id": base.id,
+
+        "numero": base.numero,
+        "sistema": str(base.numero or "")[:2],
+        "caso_sm": base.id_interaccion,
+
+        "sociedad": base.compania,
+        "asunto": base.titulo,
+        "observaciones": base.accion_actualizacion,
+        "nombre_solicitante": base.nombre_completo_contacto,
+
+        "impacto": base.impacto,
+        "urgencia": base.urgencia,
+        "prioridad": base.prioridad,
+
+        "tipo_solicitud": base.clr_txt_client_type,
+        "articulo": base.clr_txt_servicio,
+
+        "estado": base.estado,
+        "estado_herramienta_gestion": base.estado,
+        "asignado_a": base.asignado_a,
+
+        "fecha_asignacion": base.fecha_entrega,
+        "hora_ultima_actualizacion": base.fecha_cargue,
+        "fecha_resolucion": base.fecha_resolucion,
+        "fecha_finalizacion_cierre": base.fecha_cierre,
+
+        "tipo_contrato": "BOLSA DE HORAS",
+    }
+
+    return _calificacion_recalcular(campos)
+
+# ============================================================
+# IMPORTACION EXCEL HISTORICO - CALIFICACION COE SAP FUNCIONAL
+# ============================================================
+
+CALIFICACION_EXCEL_ALIASES = {
+    "numero": [
+        "ID",
+        "NUMERO",
+        "NÚMERO",
+    ],
+    "caso_sm": [
+        "N CASO SM",
+        "N° CASO SM",
+        "NO CASO SM",
+        "NRO CASO SM",
+        "CASO SM",
+    ],
+    "documentacion": [
+        "DOCUMENTACION",
+        "DOCUMENTACIÓN",
+    ],
+    "caso_transporte": [
+        "CASO TRANSPORTE",
+    ],
+    "control_horas": [
+        "CONTROL HORAS",
+    ],
+    "error_sap": [
+        "N ERROR SAP",
+        "N° ERROR SAP",
+        "NO ERROR SAP",
+        "NUMERO ERROR SAP",
+    ],
+    "nota_oss_sap": [
+        "N NOTA OSS SAP",
+        "N° NOTA OSS SAP",
+        "NO NOTA OSS SAP",
+        "NUMERO NOTA OSS SAP",
+    ],
+    "tipo_contrato": [
+        "TIPO CONTRATO",
+    ],
+    "sociedad": [
+        "SOCIEDAD",
+        "COMPAÑIA",
+        "COMPAÑÍA",
+        "COMPANIA",
+    ],
+    "asunto": [
+        "ASUNTO",
+        "TITULO",
+        "TÍTULO",
+    ],
+    "observaciones": [
+        "OBSERVACIONES",
+    ],
+    "nombre_solicitante": [
+        "NOMBRE DEL SOLICITANTE",
+        "SOLICITANTE",
+        "NOMBRE COMPLETO CONTACTO",
+    ],
+    "impacto": [
+        "IMPACTO",
+    ],
+    "urgencia": [
+        "URGENCIA",
+    ],
+    "prioridad": [
+        "PRIORIDAD",
+    ],
+    "tipo_solicitud": [
+        "TIPO DE SOLICITUD",
+        "TIPO SOLICITUD",
+    ],
+    "modulo": [
+        "MODULO",
+        "MÓDULO",
+    ],
+    "categoria": [
+        "CATEGORIA",
+        "CATEGORÍA",
+    ],
+    "subcategoria": [
+        "SUBCATEGORIA",
+        "SUBCATEGORÍA",
+    ],
+    "articulo": [
+        "ARTICULO",
+        "ARTÍCULO",
+    ],
+    "estado": [
+        "ESTADO",
+    ],
+    "estado_herramienta_gestion": [
+        "ESTADO CASOS EN HERRAMIENTAS DE GESTION",
+        "ESTADO CASOS EN HERRAMIENTAS DE GESTIÓN",
+    ],
+    "responsable_estado": [
+        "RESPONSABLE ESTADO",
+    ],
+    "estado_consolidado": [
+        "ESTADO CONSOLIDADO",
+    ],
+    "asignado_a": [
+        "ASIGNADO A",
+    ],
+    "apoyo_1": [
+        "APOYO 1",
+    ],
+    "apoyo_2": [
+        "APOYO 2",
+    ],
+    "apoyo_3": [
+        "APOYO 3",
+    ],
+    "requiere_abap": [
+        "REQUIERE ABAP",
+    ],
+    "asignacion_abap": [
+        "ASIGNACION ABAP",
+        "ASIGNACIÓN ABAP",
+    ],
+    "fecha_asignacion": [
+        "FECHA DE ASIGNACION",
+        "FECHA DE ASIGNACIÓN",
+    ],
+    "hora_ultima_actualizacion": [
+        "HORA DE LA ULTIMA ACTUALIZACION",
+        "HORA DE LA ÚLTIMA ACTUALIZACIÓN",
+    ],
+    "fecha_respuesta": [
+        "FECHA DE RESPUESTA",
+    ],
+    "fecha_resolucion": [
+        "FECHA DE RESOLUCION",
+        "FECHA DE RESOLUCIÓN",
+    ],
+    "fecha_finalizacion_cierre": [
+        "FECHA DE FINALIZACION CIERRE",
+        "FECHA DE FINALIZACIÓN CIERRE",
+        "FECHA DE FINALIZACION / CIERRE",
+        "FECHA DE FINALIZACIÓN / CIERRE",
+    ],
+    "fecha_compromiso": [
+        "FECHA COMPROMISO",
+    ],
+    "lider_claro": [
+        "LIDER CLARO",
+        "LÍDER CLARO",
+    ],
+    "tipo_ingreso": [
+        "TIPO DE INGRESO",
+        "TIPO INGRESO",
+    ],
+    "fecha_estimacion": [
+        "FECHA ESTIMACION",
+        "FECHA ESTIMACIÓN",
+    ],
+    "fecha_aprobacion_estimacion": [
+        "FECHA APROBACION ESTIMACION",
+        "FECHA APROBACIÓN ESTIMACIÓN",
+    ],
+    "estado_estimacion": [
+        "ESTADO ESTIMACION",
+        "ESTADO ESTIMACIÓN",
+    ],
+}
+
+
+CALIFICACION_EXCEL_HORAS = [
+    ("ESTIMADA", "FI", "horas_estimadas_fi", ["HORAS ESTIMADAS FI"]),
+    ("ESTIMADA", "MM", "horas_estimadas_mm", ["HORAS ESTIMADAS MM"]),
+    ("ESTIMADA", "SD", "horas_estimadas_sd", ["HORAS ESTIMADAS SD"]),
+    ("ESTIMADA", "CO", "horas_estimadas_co", ["HORAS ESTIMADAS CO"]),
+    ("ESTIMADA", "PS", "horas_estimadas_ps", ["HORAS ESTIMADAS PS"]),
+    ("ESTIMADA", "SLCM", "horas_estimadas_slcm", ["HORAS ESTIMADAS SLCM"]),
+    ("ESTIMADA", "CRM", "horas_estimadas_crm", ["HORAS ESTIMADAS CRM"]),
+    ("ESTIMADA", "CRM2", "horas_estimadas_crm2", ["HORAS ESTIMADAS CRM2"]),
+    ("ESTIMADA", "PCA", "horas_estimadas_pca", ["HORAS ESTIMADAS PCA", "HORAS ESTIMADAS PCA OPEX RENTABILIDAD"]),
+    ("ESTIMADA", "FM", "horas_estimadas_fm", ["HORAS ESTIMADAS FM"]),
+    ("ESTIMADA", "PP", "horas_estimadas_pp", ["HORAS ESTIMADAS PP"]),
+    ("ESTIMADA", "PM", "horas_estimadas_pm", ["HORAS ESTIMADAS PM"]),
+    ("ESTIMADA", "HCM", "horas_estimadas_hcm", ["HORAS ESTIMADAS HCM"]),
+    ("ESTIMADA", "SSFF", "horas_estimadas_ssff", ["HORAS ESTIMADAS SSFF"]),
+    ("ESTIMADA", "FIORI", "horas_estimadas_fiori", ["HORAS ESTIMADAS FIORI"]),
+    ("ESTIMADA", "WF", "horas_estimadas_wf", ["HORAS ESTIMADAS WF"]),
+    ("ESTIMADA", "ABAP", "horas_estimadas_abap", ["HORAS ESTIMADAS ABAP"]),
+    ("ESTIMADA", "BASIS", "horas_estimadas_basis", ["HORAS ESTIMADAS BASIS"]),
+    ("ESTIMADA", "PMO", "horas_estimadas_pmo", ["HORAS ESTIMADAS PMO"]),
+
+    ("EJECUTADA", "FI", "horas_ejecutadas_fi", ["HORAS EJECUTADAS FI"]),
+    ("EJECUTADA", "MM", "horas_ejecutadas_mm", ["HORAS EJECUTADAS MM"]),
+    ("EJECUTADA", "SD", "horas_ejecutadas_sd", ["HORAS EJECUTADAS SD"]),
+    ("EJECUTADA", "CO", "horas_ejecutadas_co", ["HORAS EJECUTADAS CO"]),
+    ("EJECUTADA", "PS", "horas_ejecutadas_ps", ["HORAS EJECUTADAS PS"]),
+    ("EJECUTADA", "PCA", "horas_ejecutadas_pca", ["HORAS EJECUTADAS PCA", "HORAS EJECUTADAS PCA OPEX RENTABILIDAD"]),
+    ("EJECUTADA", "FM", "horas_ejecutadas_fm", ["HORAS EJECUTADAS FM"]),
+    ("EJECUTADA", "HCM", "horas_ejecutadas_hcm", ["HORAS EJECUTADAS HCM"]),
+    ("EJECUTADA", "SSFF", "horas_ejecutadas_ssff", ["HORAS EJECUTADAS SSFF"]),
+    ("EJECUTADA", "FIORI", "horas_ejecutadas_fiori", ["HORAS EJECUTADAS FIORI"]),
+    ("EJECUTADA", "WF", "horas_ejecutadas_wf", ["HORAS EJECUTADAS WF"]),
+    ("EJECUTADA", "ABAP", "horas_ejecutadas_abap", ["HORAS EJECUTADAS ABAP"]),
+    ("EJECUTADA", "BASIS", "horas_ejecutadas_basis", ["HORAS EJECUTADAS BASIS"]),
+
+    ("GARANTIA", "GARANTIA", "horas_garantia", ["HORAS GARANTIA", "HORAS GARANTÍA"]),
+    ("PROYECTO_ABAP", "ABAP", "horas_proyecto_abap", ["HORAS PROYECTO ABAP"]),
+]
+
+
+CALIFICACION_EXCEL_FECHAS = {
+    "fecha_asignacion",
+    "hora_ultima_actualizacion",
+    "fecha_respuesta",
+    "fecha_resolucion",
+    "fecha_finalizacion_cierre",
+    "fecha_compromiso",
+    "fecha_estimacion",
+    "fecha_aprobacion_estimacion",
+}
+
+
+CALIFICACION_EXCEL_MANUALES = [
+    "caso_sm",
+    "documentacion",
+    "caso_transporte",
+    "control_horas",
+    "error_sap",
+    "nota_oss_sap",
+    "tipo_contrato",
+    "tipo_solicitud",
+    "modulo",
+    "categoria",
+    "subcategoria",
+    "articulo",
+    "estado_herramienta_gestion",
+    "responsable_estado",
+    "estado_consolidado",
+    "apoyo_1",
+    "apoyo_2",
+    "apoyo_3",
+    "requiere_abap",
+    "asignacion_abap",
+    "fecha_respuesta",
+    "fecha_compromiso",
+    "lider_claro",
+    "tipo_ingreso",
+    "fecha_estimacion",
+    "fecha_aprobacion_estimacion",
+    "estado_estimacion",
+]
+
+
+CALIFICACION_EXCEL_SOLO_EXCEL = [
+    "sociedad",
+    "asunto",
+    "observaciones",
+    "nombre_solicitante",
+    "impacto",
+    "urgencia",
+    "prioridad",
+    "estado",
+    "asignado_a",
+    "fecha_asignacion",
+    "hora_ultima_actualizacion",
+    "fecha_resolucion",
+    "fecha_finalizacion_cierre",
+]
+
+
+def _calificacion_norm_col(value):
+    s = str(value or "")
+
+    s = s.replace("\ufeff", "")
+    s = s.replace("\u200b", "")
+    s = s.replace("\u200c", "")
+    s = s.replace("\u200d", "")
+    s = s.replace("\u00A0", " ")
+
+    s = s.strip().upper()
+
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+
+    s = s.replace("º", "")
+    s = s.replace("°", "")
+    s = s.replace(".", " ")
+    s = s.replace(":", " ")
+    s = s.replace("-", " ")
+    s = s.replace("_", " ")
+    s = s.replace("/", " ")
+    s = s.replace("(", " ")
+    s = s.replace(")", " ")
+
+    s = re.sub(r"\s+", " ", s).strip()
+
+    return s
+
+
+def _calificacion_get_excel(row, aliases):
+    for alias in aliases:
+        key = _calificacion_norm_col(alias)
+
+        if key in row:
+            return row.get(key)
+
+    return None
+
+
+def _calificacion_value_present(value):
+    if value is None:
+        return False
+
+    s = str(value).strip()
+
+    if s == "" or s.lower() in ("nan", "none", "null"):
+        return False
+
+    return True
+
+
+def _calificacion_excel_str(value):
+    if not _calificacion_value_present(value):
+        return None
+
+    return str(value).replace("\u00A0", " ").strip()
+
+
+def _calificacion_excel_fecha(value):
+    if not _calificacion_value_present(value):
+        return None
+
+    return _calificacion_fecha(value)
+
+
+def _calificacion_excel_horas(value):
+    if not _calificacion_value_present(value):
+        return 0
+
+    try:
+        # Excel puede traer duración como timedelta.
+        if isinstance(value, timedelta):
+            return round(value.total_seconds() / 3600, 2)
+
+        # Excel puede traer hora como time.
+        if hasattr(value, "hour") and hasattr(value, "minute") and not isinstance(value, datetime):
+            return round(value.hour + (value.minute / 60) + (value.second / 3600), 2)
+
+        # Si viene datetime real, normalmente no debería ser una hora.
+        # Solo se toma la parte horaria si el año es 1899/1900.
+        if isinstance(value, datetime):
+            if value.year in (1899, 1900):
+                return round(value.hour + (value.minute / 60) + (value.second / 3600), 2)
+            return 0
+
+        s = str(value).strip()
+
+        if s == "" or s.lower() in ("nan", "none", "null"):
+            return 0
+
+        s = s.replace(",", ".")
+
+        # Formato tipo "1 day, 11:00:00"
+        m_day = re.search(r"(\d+)\s+day[s]?,\s+(\d{1,2}):(\d{2})(?::(\d{2}))?", s, re.IGNORECASE)
+        if m_day:
+            dias = int(m_day.group(1))
+            horas = int(m_day.group(2))
+            minutos = int(m_day.group(3))
+            segundos = int(m_day.group(4) or 0)
+            return round((dias * 24) + horas + (minutos / 60) + (segundos / 3600), 2)
+
+        # Formato tipo "18:30:00" o "18:30"
+        m_hora = re.match(r"^(\d{1,4}):(\d{2})(?::(\d{2}))?$", s)
+        if m_hora:
+            horas = int(m_hora.group(1))
+            minutos = int(m_hora.group(2))
+            segundos = int(m_hora.group(3) or 0)
+            return round(horas + (minutos / 60) + (segundos / 3600), 2)
+
+        return round(float(s), 2)
+
+    except Exception:
+        return 0
+
+
+def _calificacion_excel_detectar_header(filas):
+    for idx, fila in enumerate(filas[:50]):
+        normalizados = [_calificacion_norm_col(v) for v in fila if v is not None]
+
+        if "ID" in normalizados and ("SOCIEDAD" in normalizados or "ASUNTO" in normalizados):
+            return idx
+
+    raise ValueError("No se encontró la fila de encabezados. Debe existir una columna ID y columnas como SOCIEDAD o ASUNTO.")
+
+
+def _leer_excel_historico_calificacion(file):
+    filename = (file.filename or "").lower().strip()
+    contenido = file.read()
+
+    if not contenido:
+        raise ValueError("El archivo está vacío.")
+
+    if filename.endswith(".csv"):
+        df = _coe_read_csv_from_bytes(contenido)
+        df = df.where(pd.notnull(df), None)
+
+        columnas = [_calificacion_norm_col(c) for c in list(df.columns)]
+        rows = []
+
+        for index, row in df.iterrows():
+            item = {
+                columnas[i]: row.iloc[i]
+                for i in range(len(columnas))
+                if columnas[i]
+            }
+
+            item["_excel_fila"] = int(index) + 2
+            rows.append(item)
+
+        return rows
+
+    wb = load_workbook(
+        BytesIO(contenido),
+        data_only=True,
+        read_only=True
+    )
+
+    ws = wb["BASE"] if "BASE" in wb.sheetnames else wb.active
+
+    filas = list(ws.iter_rows(values_only=True))
+
+    if not filas:
+        raise ValueError("El archivo no tiene información.")
+
+    header_idx = _calificacion_excel_detectar_header(filas)
+    headers_raw = filas[header_idx]
+
+    headers = [_calificacion_norm_col(h) for h in headers_raw]
+
+    rows = []
+
+    for excel_idx, fila in enumerate(filas[header_idx + 1:], start=header_idx + 2):
+        item = {}
+
+        tiene_datos = False
+
+        for i, value in enumerate(fila):
+            if i >= len(headers):
+                continue
+
+            header = headers[i]
+
+            if not header:
+                continue
+
+            item[header] = value
+
+            if _calificacion_value_present(value):
+                tiene_datos = True
+
+        if not tiene_datos:
+            continue
+
+        item["_excel_fila"] = excel_idx
+        rows.append(item)
+
+    return rows
+
+
+def _calificacion_extraer_campos_excel(row):
+    campos = {}
+
+    for campo, aliases in CALIFICACION_EXCEL_ALIASES.items():
+        value = _calificacion_get_excel(row, aliases)
+
+        if not _calificacion_value_present(value):
+            continue
+
+        if campo in CALIFICACION_EXCEL_FECHAS:
+            campos[campo] = _calificacion_excel_fecha(value)
+        else:
+            campos[campo] = _calificacion_excel_str(value)
+
+    return campos
+
+
+def _calificacion_horas_desde_row_excel(row):
+    horas = []
+
+    for tipo, modulo, campo_modelo, aliases in CALIFICACION_EXCEL_HORAS:
+        value = _calificacion_get_excel(row, aliases)
+        cantidad = _calificacion_excel_horas(value)
+
+        if cantidad and cantidad > 0:
+            horas.append({
+                "tipo": tipo,
+                "modulo": modulo,
+                "campo_modelo": campo_modelo,
+                "horas": cantidad,
+                "excel_fila": row.get("_excel_fila"),
+            })
+
+    return horas
+
+
+def _calificacion_merge_ultimo_valor(rows, campo):
+    aliases = CALIFICACION_EXCEL_ALIASES.get(campo, [])
+
+    ultimo = None
+
+    for row in rows:
+        value = _calificacion_get_excel(row, aliases)
+
+        if _calificacion_value_present(value):
+            ultimo = value
+
+    if not _calificacion_value_present(ultimo):
+        return None
+
+    if campo in CALIFICACION_EXCEL_FECHAS:
+        return _calificacion_excel_fecha(ultimo)
+
+    return _calificacion_excel_str(ultimo)
+
+
+def _calificacion_comparar_base_excel(base, campos_excel):
+    diferencias = []
+
+    comparaciones = [
+        ("sociedad", getattr(base, "compania", None), campos_excel.get("sociedad")),
+        ("asunto", getattr(base, "titulo", None), campos_excel.get("asunto")),
+        ("observaciones", getattr(base, "accion_actualizacion", None), campos_excel.get("observaciones")),
+        ("nombre_solicitante", getattr(base, "nombre_completo_contacto", None), campos_excel.get("nombre_solicitante")),
+        ("impacto", getattr(base, "impacto", None), campos_excel.get("impacto")),
+        ("urgencia", getattr(base, "urgencia", None), campos_excel.get("urgencia")),
+        ("prioridad", getattr(base, "prioridad", None), campos_excel.get("prioridad")),
+        ("estado", getattr(base, "estado", None), campos_excel.get("estado")),
+        ("asignado_a", getattr(base, "asignado_a", None), campos_excel.get("asignado_a")),
+    ]
+
+    for campo, valor_base, valor_excel in comparaciones:
+        if not _calificacion_value_present(valor_base) or not _calificacion_value_present(valor_excel):
+            continue
+
+        if _calificacion_norm_col(valor_base) != _calificacion_norm_col(valor_excel):
+            diferencias.append({
+                "campo": campo,
+                "base": str(valor_base),
+                "excel": str(valor_excel),
+            })
+
+    return diferencias
+
+@bp.route("/coe-sap-funcional/calificacion/generar", methods=["POST"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def generar_calificacion_coe_sap_funcional():
+    try:
+        usuario = _calificacion_usuario_actual()
+
+        bases = BaseRegistroInfoCoeSapFuncional.query.all()
+
+        creados = 0
+        actualizados = 0
+
+        for base in bases:
+            if not base.numero:
+                continue
+
+            campos = _calificacion_campos_desde_base(base)
+
+            existente = CoeSapFuncionalCalificacion.query.filter_by(
+                numero=base.numero
+            ).first()
+
+            if existente:
+                # Se actualizan solo campos automáticos.
+                # Los manuales se conservan.
+                campos_automaticos = [
+                    "base_registro_id",
+                    "sistema",
+                    "caso_sm",
+                    "sociedad",
+                    "asunto",
+                    "observaciones",
+                    "nombre_solicitante",
+                    "impacto",
+                    "urgencia",
+                    "prioridad",
+                    "tipo_solicitud",
+                    "articulo",
+                    "estado",
+                    "estado_herramienta_gestion",
+                    "responsable_estado",
+                    "estado_consolidado",
+                    "asignado_a",
+                    "fecha_asignacion",
+                    "dia_creacion",
+                    "mes_creacion",
+                    "anio_creacion",
+                    "hora_ultima_actualizacion",
+                    "fecha_resolucion",
+                    "fecha_finalizacion_cierre",
+                    "dia_cierre",
+                    "mes_cierre",
+                    "anio_cierre",
+                    "tiempo_resolucion",
+                    "tiempo_finalizacion_cierre",
+                    "dias_entrega_estimacion",
+                    "mes_estimacion",
+                    "anio_estimacion",
+                    "mes_aprobado_estimacion",
+                    "anio_aprobado_estimacion",
+                    "total_horas_funcionales",
+                    "total_horas_estimadas",
+                    "total_horas_estimadas2",
+                ]
+
+                for campo in campos_automaticos:
+                    if campo in campos and hasattr(existente, campo):
+                        setattr(existente, campo, campos[campo])
+
+                existente.actualizado_por = usuario
+                existente.updated_at = datetime.utcnow()
+                actualizados += 1
+
+            else:
+                campos["creado_por"] = usuario
+                campos["actualizado_por"] = usuario
+                nuevo = CoeSapFuncionalCalificacion(**campos)
+                db.session.add(nuevo)
+                creados += 1
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Calificación generada correctamente desde la base COE SAP Funcional",
+            "base_registros": len(bases),
+            "creados": creados,
+            "actualizados": actualizados,
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error generando calificación COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error generando calificación",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def listar_calificacion_coe_sap_funcional():
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+        page_size = min(max(int(request.args.get("page_size", 50)), 1), 1000)
+
+        q = (request.args.get("q") or "").strip()
+        estado = (request.args.get("estado") or "").strip()
+        sociedad = (request.args.get("sociedad") or "").strip()
+        asignado_a = (request.args.get("asignado_a") or "").strip()
+        sistema = (request.args.get("sistema") or "").strip()
+        modulo = (request.args.get("modulo") or "").strip()
+        estado_consolidado = (request.args.get("estado_consolidado") or "").strip()
+
+        qry = CoeSapFuncionalCalificacion.query
+
+        if q:
+            like = f"%{q}%"
+            qry = qry.filter(or_(
+                CoeSapFuncionalCalificacion.numero.ilike(like),
+                CoeSapFuncionalCalificacion.sistema.ilike(like),
+                CoeSapFuncionalCalificacion.caso_sm.ilike(like),
+                CoeSapFuncionalCalificacion.sociedad.ilike(like),
+                CoeSapFuncionalCalificacion.asunto.ilike(like),
+                CoeSapFuncionalCalificacion.observaciones.ilike(like),
+                CoeSapFuncionalCalificacion.nombre_solicitante.ilike(like),
+                CoeSapFuncionalCalificacion.asignado_a.ilike(like),
+                CoeSapFuncionalCalificacion.estado.ilike(like),
+                CoeSapFuncionalCalificacion.estado_consolidado.ilike(like),
+                CoeSapFuncionalCalificacion.modulo.ilike(like),
+                CoeSapFuncionalCalificacion.categoria.ilike(like),
+                CoeSapFuncionalCalificacion.subcategoria.ilike(like),
+                CoeSapFuncionalCalificacion.articulo.ilike(like),
+            ))
+
+        if estado:
+            qry = qry.filter(CoeSapFuncionalCalificacion.estado.ilike(f"%{estado}%"))
+
+        if sociedad:
+            qry = qry.filter(CoeSapFuncionalCalificacion.sociedad.ilike(f"%{sociedad}%"))
+
+        if asignado_a:
+            qry = qry.filter(CoeSapFuncionalCalificacion.asignado_a.ilike(f"%{asignado_a}%"))
+
+        if sistema:
+            qry = qry.filter(CoeSapFuncionalCalificacion.sistema.ilike(f"%{sistema}%"))
+
+        if modulo:
+            qry = qry.filter(CoeSapFuncionalCalificacion.modulo.ilike(f"%{modulo}%"))
+
+        if estado_consolidado:
+            qry = qry.filter(
+                CoeSapFuncionalCalificacion.estado_consolidado.ilike(f"%{estado_consolidado}%")
+            )
+
+        total = qry.count()
+
+        rows = (
+            qry.order_by(CoeSapFuncionalCalificacion.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
+        return jsonify({
+            "data": [_calificacion_to_dict(r) for r in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": math.ceil(total / page_size) if page_size else 1,
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error listando calificación COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error interno",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/<int:calificacion_id>", methods=["PATCH"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def actualizar_calificacion_coe_sap_funcional(calificacion_id):
+    try:
+        row = CoeSapFuncionalCalificacion.query.get(calificacion_id)
+
+        if not row:
+            return jsonify({"mensaje": "Registro de calificación no encontrado"}), 404
+
+        data = request.get_json(silent=True) or {}
+        usuario = _calificacion_usuario_actual()
+
+        campos_editables = {
+            "documentacion": "documentacion",
+            "casoTransporte": "caso_transporte",
+            "controlHoras": "control_horas",
+            "errorSap": "error_sap",
+            "notaOssSap": "nota_oss_sap",
+            "tipoContrato": "tipo_contrato",
+            "tipoSolicitud": "tipo_solicitud",
+            "modulo": "modulo",
+            "categoria": "categoria",
+            "subcategoria": "subcategoria",
+            "articulo": "articulo",
+            "apoyo1": "apoyo_1",
+            "apoyo2": "apoyo_2",
+            "apoyo3": "apoyo_3",
+            "requiereAbap": "requiere_abap",
+            "asignacionAbap": "asignacion_abap",
+            "fechaRespuesta": "fecha_respuesta",
+            "fechaCompromiso": "fecha_compromiso",
+            "liderClaro": "lider_claro",
+            "tipoIngreso": "tipo_ingreso",
+            "fechaEstimacion": "fecha_estimacion",
+            "fechaAprobacionEstimacion": "fecha_aprobacion_estimacion",
+            "estadoEstimacion": "estado_estimacion",
+
+            "horasEstimadasFi": "horas_estimadas_fi",
+            "horasEstimadasMm": "horas_estimadas_mm",
+            "horasEstimadasSd": "horas_estimadas_sd",
+            "horasEstimadasCo": "horas_estimadas_co",
+            "horasEstimadasPs": "horas_estimadas_ps",
+            "horasEstimadasSlcm": "horas_estimadas_slcm",
+            "horasEstimadasCrm": "horas_estimadas_crm",
+            "horasEstimadasCrm2": "horas_estimadas_crm2",
+            "horasEstimadasPca": "horas_estimadas_pca",
+            "horasEstimadasFm": "horas_estimadas_fm",
+            "horasEstimadasPp": "horas_estimadas_pp",
+            "horasEstimadasPm": "horas_estimadas_pm",
+            "horasEstimadasHcm": "horas_estimadas_hcm",
+            "horasEstimadasSsff": "horas_estimadas_ssff",
+            "horasEstimadasFiori": "horas_estimadas_fiori",
+            "horasEstimadasWf": "horas_estimadas_wf",
+            "horasEstimadasAbap": "horas_estimadas_abap",
+            "horasEstimadasBasis": "horas_estimadas_basis",
+            "horasEstimadasPmo": "horas_estimadas_pmo",
+        }
+
+        campos_fecha = {
+            "fechaRespuesta",
+            "fechaCompromiso",
+            "fechaEstimacion",
+            "fechaAprobacionEstimacion",
+        }
+
+        campos_decimal = {
+            "horasEstimadasFi",
+            "horasEstimadasMm",
+            "horasEstimadasSd",
+            "horasEstimadasCo",
+            "horasEstimadasPs",
+            "horasEstimadasSlcm",
+            "horasEstimadasCrm",
+            "horasEstimadasCrm2",
+            "horasEstimadasPca",
+            "horasEstimadasFm",
+            "horasEstimadasPp",
+            "horasEstimadasPm",
+            "horasEstimadasHcm",
+            "horasEstimadasSsff",
+            "horasEstimadasFiori",
+            "horasEstimadasWf",
+            "horasEstimadasAbap",
+            "horasEstimadasBasis",
+            "horasEstimadasPmo",
+        }
+
+        for json_key, model_key in campos_editables.items():
+            if json_key not in data:
+                continue
+
+            value = data.get(json_key)
+
+            if json_key in campos_fecha:
+                value = _calificacion_fecha(value)
+
+            if json_key in campos_decimal:
+                value = _calificacion_decimal(value)
+
+            setattr(row, model_key, value)
+
+        campos = {
+            c.name: getattr(row, c.name)
+            for c in CoeSapFuncionalCalificacion.__table__.columns
+        }
+
+        campos = _calificacion_recalcular(campos)
+
+        for k, v in campos.items():
+            if hasattr(row, k):
+                setattr(row, k, v)
+
+        row.actualizado_por = usuario
+        row.updated_at = datetime.utcnow()
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Calificación actualizada correctamente",
+            "data": _calificacion_to_dict(row),
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error actualizando calificación COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error actualizando calificación",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/<int:calificacion_id>/horas", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def listar_horas_calificacion_coe_sap_funcional(calificacion_id):
+    try:
+        row = CoeSapFuncionalCalificacion.query.get(calificacion_id)
+
+        if not row:
+            return jsonify({"mensaje": "Registro de calificación no encontrado"}), 404
+
+        horas = (
+            CoeSapFuncionalCalificacionHora.query
+            .filter_by(calificacion_id=calificacion_id)
+            .order_by(CoeSapFuncionalCalificacionHora.id.desc())
+            .all()
+        )
+
+        return jsonify({
+            "data": [_calificacion_hora_to_dict(h) for h in horas],
+            "total": len(horas),
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error listando horas calificación COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error interno",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/<int:calificacion_id>/horas", methods=["POST"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def agregar_horas_calificacion_coe_sap_funcional(calificacion_id):
+    try:
+        row = CoeSapFuncionalCalificacion.query.get(calificacion_id)
+
+        if not row:
+            return jsonify({"mensaje": "Registro de calificación no encontrado"}), 404
+
+        data = request.get_json(silent=True) or {}
+
+        tipo = str(data.get("tipo") or "").strip().upper()
+        modulo = str(data.get("modulo") or "").strip().upper()
+        horas = _calificacion_decimal(data.get("horas"))
+        observacion = data.get("observacion")
+
+        if tipo not in ("ESTIMADA", "EJECUTADA", "GARANTIA", "PROYECTO_ABAP"):
+            return jsonify({
+                "mensaje": "Tipo inválido. Usa ESTIMADA, EJECUTADA, GARANTIA o PROYECTO_ABAP"
+            }), 400
+
+        if not modulo:
+            return jsonify({"mensaje": "Debes seleccionar un módulo"}), 400
+
+        if horas <= 0:
+            return jsonify({"mensaje": "Las horas deben ser mayores a cero"}), 400
+
+        usuario = _calificacion_usuario_actual()
+
+        nueva_hora = CoeSapFuncionalCalificacionHora(
+            calificacion_id=row.id,
+            numero=row.numero,
+            tipo=tipo,
+            modulo=modulo,
+            horas=horas,
+            observacion=observacion,
+            usuario_registro=usuario,
+            created_at=datetime.utcnow(),
+        )
+
+        db.session.add(nueva_hora)
+
+        modulo_key = modulo.lower()
+
+        if tipo == "ESTIMADA":
+            campo = f"horas_estimadas_{modulo_key}"
+            if hasattr(row, campo):
+                setattr(row, campo, _calificacion_decimal(getattr(row, campo)) + horas)
+
+        elif tipo == "EJECUTADA":
+            campo = f"horas_ejecutadas_{modulo_key}"
+            if hasattr(row, campo):
+                setattr(row, campo, _calificacion_decimal(getattr(row, campo)) + horas)
+
+        elif tipo == "GARANTIA":
+            row.horas_garantia = _calificacion_decimal(row.horas_garantia) + horas
+
+        elif tipo == "PROYECTO_ABAP":
+            row.horas_proyecto_abap = _calificacion_decimal(row.horas_proyecto_abap) + horas
+
+        campos = {
+            c.name: getattr(row, c.name)
+            for c in CoeSapFuncionalCalificacion.__table__.columns
+        }
+
+        campos = _calificacion_recalcular(campos)
+
+        for k, v in campos.items():
+            if hasattr(row, k):
+                setattr(row, k, v)
+
+        row.actualizado_por = usuario
+        row.updated_at = datetime.utcnow()
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Horas agregadas correctamente",
+            "hora": _calificacion_hora_to_dict(nueva_hora),
+            "data": _calificacion_to_dict(row),
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error agregando horas calificación COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error agregando horas",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+    
+@bp.route("/coe-sap-funcional/calificacion/import-excel", methods=["POST"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def importar_excel_historico_calificacion_coe_sap_funcional():
+    file = request.files.get("file")
+
+    if not file:
+        return jsonify({"mensaje": "Archivo no recibido"}), 400
+
+    try:
+        usuario = _calificacion_usuario_actual()
+
+        rows_excel = _leer_excel_historico_calificacion(file)
+
+        if not rows_excel:
+            return jsonify({
+                "mensaje": "El Excel no contiene registros válidos"
+            }), 400
+
+        grupos = {}
+
+        for row in rows_excel:
+            numero_raw = _calificacion_get_excel(
+                row,
+                CALIFICACION_EXCEL_ALIASES["numero"]
+            )
+
+            numero = _calificacion_excel_str(numero_raw)
+
+            if not numero:
+                continue
+
+            if numero not in grupos:
+                grupos[numero] = []
+
+            grupos[numero].append(row)
+
+        if not grupos:
+            return jsonify({
+                "mensaje": "No se encontraron registros con ID válido en el Excel"
+            }), 400
+
+        creados = 0
+        actualizados = 0
+        creados_solo_excel = 0
+        no_encontrados_en_base = 0
+        duplicados_excel = 0
+        horas_movimientos = 0
+
+        diferencias_detectadas = []
+
+        for numero, filas_caso in grupos.items():
+            if len(filas_caso) > 1:
+                duplicados_excel += len(filas_caso) - 1
+
+            base = BaseRegistroInfoCoeSapFuncional.query.filter_by(
+                numero=numero
+            ).first()
+
+            campos_excel_primer_row = _calificacion_extraer_campos_excel(filas_caso[0])
+
+            if base:
+                diferencias = _calificacion_comparar_base_excel(
+                    base,
+                    campos_excel_primer_row
+                )
+
+                if diferencias and len(diferencias_detectadas) < 100:
+                    diferencias_detectadas.append({
+                        "numero": numero,
+                        "diferencias": diferencias,
+                    })
+
+            else:
+                no_encontrados_en_base += 1
+
+            row_calificacion = CoeSapFuncionalCalificacion.query.filter_by(
+                numero=numero
+            ).first()
+
+            if row_calificacion:
+                actualizados += 1
+            else:
+                if base:
+                    campos_nuevo = _calificacion_campos_desde_base(base)
+                else:
+                    campos_nuevo = {
+                        "numero": numero,
+                        "sistema": str(numero or "")[:2],
+                        "tipo_contrato": "BOLSA DE HORAS",
+                    }
+
+                    creados_solo_excel += 1
+
+                campos_nuevo["creado_por"] = usuario
+                campos_nuevo["actualizado_por"] = usuario
+
+                row_calificacion = CoeSapFuncionalCalificacion(**campos_nuevo)
+                db.session.add(row_calificacion)
+                db.session.flush()
+
+                creados += 1
+
+            # Si existe base principal, actualizamos los campos oficiales desde la base.
+            # Si no existe base, se toman del Excel.
+            if base:
+                campos_base = _calificacion_campos_desde_base(base)
+
+                campos_automaticos = [
+                    "base_registro_id",
+                    "sistema",
+                    "caso_sm",
+                    "sociedad",
+                    "asunto",
+                    "observaciones",
+                    "nombre_solicitante",
+                    "impacto",
+                    "urgencia",
+                    "prioridad",
+                    "tipo_solicitud",
+                    "articulo",
+                    "estado",
+                    "estado_herramienta_gestion",
+                    "asignado_a",
+                    "fecha_asignacion",
+                    "hora_ultima_actualizacion",
+                    "fecha_resolucion",
+                    "fecha_finalizacion_cierre",
+                ]
+
+                for campo in campos_automaticos:
+                    if campo in campos_base and hasattr(row_calificacion, campo):
+                        setattr(row_calificacion, campo, campos_base[campo])
+
+            else:
+                for campo in CALIFICACION_EXCEL_SOLO_EXCEL:
+                    value = _calificacion_merge_ultimo_valor(filas_caso, campo)
+
+                    if value is not None and hasattr(row_calificacion, campo):
+                        setattr(row_calificacion, campo, value)
+
+            # Campos manuales desde Excel histórico.
+            for campo in CALIFICACION_EXCEL_MANUALES:
+                value = _calificacion_merge_ultimo_valor(filas_caso, campo)
+
+                if value is not None and hasattr(row_calificacion, campo):
+                    setattr(row_calificacion, campo, value)
+
+            # Limpiar horas importadas anteriormente desde Excel para que el proceso sea repetible.
+            try:
+                CoeSapFuncionalCalificacionHora.query.filter_by(
+                    calificacion_id=row_calificacion.id,
+                    origen="EXCEL"
+                ).delete()
+            except Exception:
+                # Por si la columna origen aún no existe en alguna BD de pruebas.
+                pass
+
+            # Inicializar horas en cero antes de sumar lo importado.
+            for _, _, campo_modelo, _ in CALIFICACION_EXCEL_HORAS:
+                if hasattr(row_calificacion, campo_modelo):
+                    setattr(row_calificacion, campo_modelo, 0)
+
+            # Sumar horas de todas las filas del caso.
+            for row_excel in filas_caso:
+                horas_row = _calificacion_horas_desde_row_excel(row_excel)
+
+                for hora_item in horas_row:
+                    campo_modelo = hora_item["campo_modelo"]
+                    cantidad = hora_item["horas"]
+
+                    if hasattr(row_calificacion, campo_modelo):
+                        actual = _calificacion_decimal(
+                            getattr(row_calificacion, campo_modelo)
+                        )
+
+                        setattr(row_calificacion, campo_modelo, actual + cantidad)
+
+                    movimiento = CoeSapFuncionalCalificacionHora(
+                        calificacion_id=row_calificacion.id,
+                        numero=numero,
+                        tipo=hora_item["tipo"],
+                        modulo=hora_item["modulo"],
+                        horas=cantidad,
+                        observacion="Importado desde Excel histórico",
+                        usuario_registro=usuario,
+                        created_at=datetime.utcnow(),
+                    )
+
+                    if hasattr(movimiento, "origen"):
+                        movimiento.origen = "EXCEL"
+
+                    if hasattr(movimiento, "excel_fila"):
+                        movimiento.excel_fila = hora_item.get("excel_fila")
+
+                    db.session.add(movimiento)
+                    horas_movimientos += 1
+
+            campos_actuales = {
+                c.name: getattr(row_calificacion, c.name)
+                for c in CoeSapFuncionalCalificacion.__table__.columns
+            }
+
+            campos_actuales = _calificacion_recalcular(campos_actuales)
+
+            for k, v in campos_actuales.items():
+                if hasattr(row_calificacion, k):
+                    setattr(row_calificacion, k, v)
+
+            row_calificacion.actualizado_por = usuario
+            row_calificacion.updated_at = datetime.utcnow()
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Excel histórico de calificación procesado correctamente",
+            "filas_excel": len(rows_excel),
+            "casos_unicos_excel": len(grupos),
+            "creados": creados,
+            "actualizados": actualizados,
+            "creados_solo_excel": creados_solo_excel,
+            "no_encontrados_en_base": no_encontrados_en_base,
+            "duplicados_excel": duplicados_excel,
+            "horas_movimientos": horas_movimientos,
+            "diferencias_muestra": diferencias_detectadas,
+        }), 200
+
+    except ValueError as e:
+        db.session.rollback()
+
+        return jsonify({
+            "mensaje": "Archivo inválido",
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error importando Excel histórico de calificación COE SAP Funcional")
+
+        return jsonify({
+            "mensaje": "Error importando Excel histórico de calificación",
             "error": str(e),
             "trace": traceback.format_exc(),
         }), 500

@@ -31,6 +31,7 @@ import Graficos from './Graficos';
 import { jfetch } from './lib/api';
 import PerfilesModulos from './PerfilesModulos';
 import BaseCoeSapFuncional from './BaseCoeSapFuncional';
+import CalificacionCoeSapFuncional from './CalificacionCoeSapFuncional';
 
 const AUTO_LOGOUT_HOURS = [6, 7, 8, 10, 18, 22];
 
@@ -318,6 +319,15 @@ function App() {
                 </AdminRoute>
               }
             />
+
+            <Route
+              path="/coe-sap-funcional/calificacion"
+              element={
+                <AdminRoute requirePermiso="BASE_REGISTRO_VER">
+                  <CalificacionCoeSapFuncional />
+                </AdminRoute>
+              }
+            />    
 
             <Route
               path="/configuracion"

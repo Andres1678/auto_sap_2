@@ -6,11 +6,14 @@ import { jfetch } from '../lib/api';
 
 const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogout }) => {
   const [open, setOpen] = useState(false);
-  const [refreshTick, setRefreshTick] = useState(0); 
+  const [coeMenuOpen, setCoeMenuOpen] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+
   const navigate = useNavigate();
 
   const readStoredUser = () => {
     let raw = null;
+
     try {
       raw = JSON.parse(
         localStorage.getItem('userData') ||
@@ -18,26 +21,30 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
         'null'
       );
     } catch {}
+
     return raw;
   };
-
 
   const refreshMe = useCallback(async () => {
     try {
       const res = await jfetch('/me', { method: 'GET' });
 
       const data = res?.user ? res : await (async () => {
-        try { return await res.json(); } catch { return null; }
+        try {
+          return await res.json();
+        } catch {
+          return null;
+        }
       })();
 
       const user = data?.user;
+
       if (!user) return;
 
-      
       localStorage.setItem('userData', JSON.stringify(user));
       setRefreshTick(t => t + 1);
     } catch {
-      
+      // Silencioso para no romper el navbar si /me falla
     }
   }, []);
 
@@ -45,7 +52,6 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
     refreshMe();
   }, [refreshMe]);
 
-  
   const { isAdmin, nombre, rol, permisos } = useMemo(() => {
     const raw = readStoredUser();
 
@@ -53,8 +59,8 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
     const _nombre = nombreProp || raw?.nombre || raw?.user?.nombre || raw?.name || '';
     const rolUpper = String(_rol || '').toUpperCase();
 
-    
     const permsRaw = raw?.permisos ?? raw?.user?.permisos ?? [];
+
     const perms = Array.isArray(permsRaw)
       ? permsRaw
           .map(p => (typeof p === 'string' ? p : (p?.codigo || p?.code || p?.nombre)))
@@ -69,14 +75,25 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
     };
   }, [isAdminProp, rolProp, nombreProp, refreshTick]);
 
-
   const can = useCallback((perm) => {
     if (isAdmin) return true;
     return permisos.includes(perm);
   }, [isAdmin, permisos]);
 
+  const toggleMenu = () => {
+    setOpen(v => !v);
+  };
 
-  const toggleMenu = () => setOpen(v => !v);
+  const closeMenu = () => {
+    setOpen(false);
+    setCoeMenuOpen(false);
+  };
+
+  const toggleCoeMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCoeMenuOpen(v => !v);
+  };
 
   const hardClean = () => {
     try {
@@ -89,49 +106,116 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
   };
 
   const handleLogout = useCallback(async () => {
-    try { await jfetch('/logout', { method: 'POST' }); } catch {}
+    try {
+      await jfetch('/logout', { method: 'POST' });
+    } catch {}
+
     hardClean();
-    try { typeof onLogout === 'function' && onLogout(); } catch {}
+
+    try {
+      typeof onLogout === 'function' && onLogout();
+    } catch {}
+
     navigate('/login', { replace: true });
+
     setTimeout(() => window.location.reload(), 50);
   }, [navigate, onLogout]);
 
   return (
     <header className="navc-header">
-      <button className="navc-hamburger" onClick={toggleMenu} aria-label="Abrir menú">☰</button>
+      <button
+        className="navc-hamburger"
+        onClick={toggleMenu}
+        aria-label="Abrir menú"
+        type="button"
+      >
+        ☰
+      </button>
 
-      <nav className={`navc-navbar ${open ? 'open' : ''}`} onClick={() => setOpen(false)}>
-
-        <Link to="/" className="navc-logo" aria-label="Ir al inicio">
+      <nav className={`navc-navbar ${open ? 'open' : ''}`}>
+        <Link to="/" className="navc-logo" aria-label="Ir al inicio" onClick={closeMenu}>
           <img src={logoNav} alt="CORA" />
         </Link>
 
-        <Link to="/">Inicio</Link>
-        <Link to="/panel-grafico">Panel Gráfico</Link>
+        <Link to="/" onClick={closeMenu}>Inicio</Link>
 
-        {/*{can("BASE_REGISTROS_VER") && <Link to="/BaseRegistros">Base Registros</Link>}
-        {can("GRAFICO_BASE_VER") && <Link to="/GraficoBase">Gráfico Base</Link>}*/}
+        <Link to="/panel-grafico" onClick={closeMenu}>
+          Panel Gráfico
+        </Link>
 
-        {can("OPORTUNIDADES_VER") && <Link to="/Oportunidades">Oportunidades</Link>}
+        {/*{can("BASE_REGISTROS_VER") && (
+          <Link to="/BaseRegistros" onClick={closeMenu}>Base Registros</Link>
+        )}
+
+        {can("GRAFICO_BASE_VER") && (
+          <Link to="/GraficoBase" onClick={closeMenu}>Gráfico Base</Link>
+        )}*/}
+
+        {can("OPORTUNIDADES_VER") && (
+          <Link to="/Oportunidades" onClick={closeMenu}>
+            Oportunidades
+          </Link>
+        )}
 
         {can("DASHBOARD_VER") && (
-          <Link to="/OportunidadesDashboard">Dashboard</Link>
+          <Link to="/OportunidadesDashboard" onClick={closeMenu}>
+            Dashboard
+          </Link>
         )}
 
         {can("PAGE_REPORTE_HORAS_CONSULTOR") && (
-          <Link to="/reportes/horas-consultor-cliente">Reporte Horas</Link>
+          <Link to="/reportes/horas-consultor-cliente" onClick={closeMenu}>
+            Reporte Horas
+          </Link>
         )}
 
         {/*{can("PRESUPUESTO_CONSULTOR_IMPORTAR") && (
-          <Link to="/configuracion/importar-presupuesto">Importar presupuesto</Link>
+          <Link to="/configuracion/importar-presupuesto" onClick={closeMenu}>
+            Importar presupuesto
+          </Link>
         )}*/}
 
         {can("BASE_REGISTRO_VER") && (
-          <Link to="/coe-sap-funcional">Base COE SAP Funcional</Link>
+          <div
+            className={`navc-dropdown ${coeMenuOpen ? 'open' : ''}`}
+            onMouseEnter={() => setCoeMenuOpen(true)}
+            onMouseLeave={() => setCoeMenuOpen(false)}
+          >
+            <button
+              type="button"
+              className="navc-dropdown-trigger"
+              onClick={toggleCoeMenu}
+              aria-expanded={coeMenuOpen}
+              aria-haspopup="true"
+            >
+              <span>Base COE SAP Funcional</span>
+              <span className="navc-dropdown-arrow">▾</span>
+            </button>
+
+            <div className="navc-dropdown-menu">
+              <Link to="/coe-sap-funcional" onClick={closeMenu}>
+                <span className="navc-sub-icon">📄</span>
+                <span>
+                  <strong>Base cargada</strong>
+                  <small>Consulta e importación principal</small>
+                </span>
+              </Link>
+
+              <Link to="/coe-sap-funcional/calificacion" onClick={closeMenu}>
+                <span className="navc-sub-icon">✅</span>
+                <span>
+                  <strong>Calificación</strong>
+                  <small>Calificación, horas y Excel histórico</small>
+                </span>
+              </Link>
+            </div>
+          </div>
         )}
 
         {can("CONFIGURACION_VER") && (
-          <Link to="/configuracion" className="navc-settings">⚙️</Link>
+          <Link to="/configuracion" className="navc-settings" onClick={closeMenu}>
+            ⚙️
+          </Link>
         )}
 
         <span className="navc-spacer" />
@@ -142,7 +226,9 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
           </span>
         )}
 
-        <button className="navc-logout" onClick={handleLogout}>Salir</button>
+        <button className="navc-logout" onClick={handleLogout} type="button">
+          Salir
+        </button>
       </nav>
     </header>
   );

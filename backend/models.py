@@ -1215,3 +1215,165 @@ class BaseRegistroInfoCoeSapFuncional(db.Model):
     origen_cargue = db.Column(db.String(30), nullable=False, server_default=text("'PRINCIPAL'"))
     fecha_cargue = db.Column(db.DateTime, default=datetime.utcnow)
     usuario_cargue = db.Column(db.String(100))
+
+class CoeSapFuncionalCalificacion(db.Model):
+    __tablename__ = "coe_sap_funcional_calificacion"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Relación con base principal
+    base_registro_id = db.Column(
+        db.Integer,
+        db.ForeignKey("base_registro_info_coe_sap_funcional.id"),
+        nullable=True,
+        index=True
+    )
+
+    # Columnas según Excel
+    numero = db.Column(db.String(80), nullable=False, unique=True, index=True)  # ID
+    sistema = db.Column(db.String(20))
+    caso_sm = db.Column(db.String(100))
+
+    documentacion = db.Column(db.String(255))
+    caso_transporte = db.Column(db.String(255))
+    control_horas = db.Column(db.String(255))
+    error_sap = db.Column(db.String(255))
+    nota_oss_sap = db.Column(db.String(255))
+
+    tipo_contrato = db.Column(db.String(150))
+    sociedad = db.Column(db.String(255))
+    asunto = db.Column(db.Text)
+    observaciones = db.Column(db.Text)
+    nombre_solicitante = db.Column(db.String(255))
+
+    impacto = db.Column(db.String(100))
+    urgencia = db.Column(db.String(100))
+    prioridad = db.Column(db.String(100))
+
+    tipo_solicitud = db.Column(db.String(150))
+    modulo = db.Column(db.String(150))
+    categoria = db.Column(db.String(255))
+    subcategoria = db.Column(db.String(255))
+    articulo = db.Column(db.String(255))
+
+    estado = db.Column(db.String(100))
+    estado_herramienta_gestion = db.Column(db.String(150))
+    responsable_estado = db.Column(db.String(150))
+    estado_consolidado = db.Column(db.String(150))
+
+    asignado_a = db.Column(db.String(255))
+    apoyo_1 = db.Column(db.String(255))
+    apoyo_2 = db.Column(db.String(255))
+    apoyo_3 = db.Column(db.String(255))
+
+    requiere_abap = db.Column(db.String(20))
+    asignacion_abap = db.Column(db.String(255))
+
+    fecha_asignacion = db.Column(db.DateTime)
+    dia_creacion = db.Column(db.Integer)
+    mes_creacion = db.Column(db.Integer)
+    anio_creacion = db.Column(db.Integer)
+
+    hora_ultima_actualizacion = db.Column(db.DateTime)
+    fecha_respuesta = db.Column(db.DateTime)
+    fecha_resolucion = db.Column(db.DateTime)
+    fecha_finalizacion_cierre = db.Column(db.DateTime)
+
+    dia_cierre = db.Column(db.Integer)
+    mes_cierre = db.Column(db.Integer)
+    anio_cierre = db.Column(db.Integer)
+
+    tiempo_respuesta = db.Column(db.Numeric(12, 2))
+    tiempo_resolucion = db.Column(db.Numeric(12, 2))
+    tiempo_finalizacion_cierre = db.Column(db.Numeric(12, 2))
+
+    fecha_compromiso = db.Column(db.DateTime)
+    lider_claro = db.Column(db.String(255))
+    tipo_ingreso = db.Column(db.String(150))
+
+    fecha_estimacion = db.Column(db.DateTime)
+    dias_entrega_estimacion = db.Column(db.Integer)
+    mes_estimacion = db.Column(db.Integer)
+    anio_estimacion = db.Column(db.Integer)
+
+    fecha_aprobacion_estimacion = db.Column(db.DateTime)
+    mes_aprobado_estimacion = db.Column(db.Integer)
+    anio_aprobado_estimacion = db.Column(db.Integer)
+    estado_estimacion = db.Column(db.String(150))
+
+    # Horas estimadas funcionales
+    horas_estimadas_fi = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_mm = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_sd = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_co = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_ps = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_slcm = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_crm = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_crm2 = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_pca = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_fm = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_pp = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_pm = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_hcm = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_ssff = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_fiori = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_wf = db.Column(db.Numeric(12, 2), default=0)
+
+    horas_estimadas_abap = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_basis = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_pmo = db.Column(db.Numeric(12, 2), default=0)
+
+    total_horas_funcionales = db.Column(db.Numeric(12, 2), default=0)
+    total_horas_estimadas = db.Column(db.Numeric(12, 2), default=0)
+    total_horas_estimadas2 = db.Column(db.Numeric(12, 2), default=0)
+
+    # Horas ejecutadas
+    horas_ejecutadas_fi = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_mm = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_sd = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_co = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_ps = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_pca = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_fm = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_hcm = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_ssff = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_fiori = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_wf = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_abap = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_basis = db.Column(db.Numeric(12, 2), default=0)
+
+    horas_garantia = db.Column(db.Numeric(12, 2), default=0)
+    horas_proyecto_abap = db.Column(db.Numeric(12, 2), default=0)
+
+    creado_por = db.Column(db.String(100))
+    actualizado_por = db.Column(db.String(100))
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CoeSapFuncionalCalificacionHora(db.Model):
+    __tablename__ = "coe_sap_funcional_calificacion_horas"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    calificacion_id = db.Column(
+        db.Integer,
+        db.ForeignKey("coe_sap_funcional_calificacion.id"),
+        nullable=False,
+        index=True
+    )
+
+    numero = db.Column(db.String(80), nullable=False, index=True)
+
+    tipo = db.Column(db.String(50), nullable=False)
+    modulo = db.Column(db.String(50), nullable=False)
+
+    horas = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    observacion = db.Column(db.Text)
+
+    origen = db.Column(db.String(50), default="MANUAL")
+    excel_fila = db.Column(db.Integer)
+
+    usuario_registro = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
