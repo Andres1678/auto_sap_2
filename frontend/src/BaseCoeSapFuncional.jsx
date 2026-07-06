@@ -188,8 +188,13 @@ export default function BaseCoeSapFuncional() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
-      }
+        const detail = data?.error || data?.detalle || data?.trace || "";
+        throw new Error(
+            detail
+            ? `${data?.mensaje || "Error procesando archivo"}: ${detail}`
+            : data?.mensaje || `HTTP ${res.status}`
+        );
+        }
 
       setFiltersOptions({
         categoria: data?.categoria || [],

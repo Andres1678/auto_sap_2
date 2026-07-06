@@ -13170,10 +13170,18 @@ COE_SAP_FUNCIONAL_COLMAP = {
 
 
 def _coe_norm_col(value):
-    s = str(value or "").replace("\u00A0", " ").strip().upper()
+    s = str(value or "")
+
+    s = s.replace("\ufeff", "")
+    s = s.replace("\u00A0", " ")
+    s = s.strip().upper()
+
     s = unicodedata.normalize("NFD", s)
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+
+    # Normaliza espacios
     s = re.sub(r"\s+", " ", s)
+
     return s
 
 
@@ -13229,7 +13237,13 @@ def _leer_archivo_coe_sap_funcional(file):
     filename = (file.filename or "").lower()
 
     if filename.endswith(".csv"):
-        df = pd.read_csv(file, dtype=str, sep=None, engine="python")
+        df = pd.read_csv(
+            file,
+            dtype=str,
+            sep=None,
+            engine="python",
+            encoding="utf-8-sig"
+        )
     else:
         df = pd.read_excel(file, dtype=str, engine="openpyxl")
 
@@ -13238,9 +13252,12 @@ def _leer_archivo_coe_sap_funcional(file):
     columnas_originales = list(df.columns)
     columnas_normalizadas = {_coe_norm_col(c): c for c in columnas_originales}
 
+    app.logger.info("Columnas originales COE SAP Funcional: %s", columnas_originales)
+    app.logger.info("Columnas normalizadas COE SAP Funcional: %s", list(columnas_normalizadas.keys()))
+
     faltantes = []
 
-    for col_esperada in [
+    columnas_obligatorias = [
         "NUMERO",
         "CATEGORIA",
         "FECHA DE ENTREGA",
@@ -13249,20 +13266,27 @@ def _leer_archivo_coe_sap_funcional(file):
         "TITULO",
         "ASIGNADO A",
         "COMPANIA",
-    ]:
+    ]
+
+    for col_esperada in columnas_obligatorias:
         if col_esperada not in columnas_normalizadas:
             faltantes.append(col_esperada)
 
     if faltantes:
-        raise ValueError(f"Faltan columnas obligatorias: {', '.join(faltantes)}")
+        raise ValueError(
+            "Faltan columnas obligatorias: "
+            + ", ".join(faltantes)
+            + ". Columnas recibidas: "
+            + ", ".join(list(columnas_normalizadas.keys()))
+        )
 
     registros = []
 
     for _, row in df.iterrows():
         obj = {}
 
-        for col_norm, campo in COE_SAP_FUNCIONAL_COLMAP.items():
-            col_original = columnas_normalizadas.get(_coe_norm_col(col_norm))
+        for col_excel, campo in COE_SAP_FUNCIONAL_COLMAP.items():
+            col_original = columnas_normalizadas.get(_coe_norm_col(col_excel))
 
             if not col_original:
                 continue
@@ -13383,7 +13407,9 @@ def importar_coe_sap_funcional_principal():
         registros = _leer_archivo_coe_sap_funcional(file)
 
         if not registros:
-            return jsonify({"mensaje": "El archivo no contiene registros válidos"}), 400
+            return jsonify({
+                "mensaje": "El archivo no contiene registros válidos"
+            }), 400
 
         usuario_cargue = ""
         try:
@@ -13391,6 +13417,26 @@ def importar_coe_sap_funcional_principal():
         except Exception:
             usuario_cargue = ""
 
+        # Evita error si el archivo trae el mismo Número repetido.
+        # Si se repite, se conserva el último registro encontrado.
+        registros_por_numero = {}
+
+        for reg in registros:
+            numero = str(reg.get("numero") or "").strip()
+            if not numero:
+                continue
+
+            reg["numero"] = numero
+            registros_por_numero[numero] = reg
+
+        registros_limpios = list(registros_por_numero.values())
+
+        if not registros_limpios:
+            return jsonify({
+                "mensaje": "El archivo no contiene registros con Número válido"
+            }), 400
+
+        # Carga principal: limpia toda la tabla.
         try:
             db.session.execute(text("TRUNCATE TABLE base_registro_info_coe_sap_funcional"))
             db.session.commit()
@@ -13402,9 +13448,11 @@ def importar_coe_sap_funcional_principal():
 
         objetos = []
 
-        for reg in registros:
+        for reg in registros_limpios:
             reg["origen_cargue"] = "PRINCIPAL"
             reg["usuario_cargue"] = usuario_cargue
+            reg["fecha_cargue"] = datetime.utcnow()
+
             objetos.append(BaseRegistroInfoCoeSapFuncional(**reg))
 
         db.session.bulk_save_objects(objetos)
@@ -13413,8 +13461,16 @@ def importar_coe_sap_funcional_principal():
         return jsonify({
             "mensaje": "Carga principal COE SAP Funcional realizada correctamente",
             "total_recibidos": len(registros),
+            "duplicados_archivo": len(registros) - len(registros_limpios),
             "insertados": len(objetos),
         }), 200
+
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({
+            "mensaje": "Archivo inválido",
+            "error": str(e),
+        }), 400
 
     except Exception as e:
         db.session.rollback()
@@ -13422,8 +13478,8 @@ def importar_coe_sap_funcional_principal():
         return jsonify({
             "mensaje": "Error importando carga principal",
             "error": str(e),
+            "trace": traceback.format_exc(),
         }), 500
-
 
 @bp.route("/coe-sap-funcional/import-adicional", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
@@ -13437,7 +13493,9 @@ def importar_coe_sap_funcional_adicional():
         registros = _leer_archivo_coe_sap_funcional(file)
 
         if not registros:
-            return jsonify({"mensaje": "El archivo no contiene registros válidos"}), 400
+            return jsonify({
+                "mensaje": "El archivo no contiene registros válidos"
+            }), 400
 
         usuario_cargue = ""
         try:
@@ -13445,25 +13503,50 @@ def importar_coe_sap_funcional_adicional():
         except Exception:
             usuario_cargue = ""
 
+        # Evita problemas si el archivo trae el mismo Número repetido.
+        # Si se repite, se conserva el último registro encontrado.
+        registros_por_numero = {}
+
+        for reg in registros:
+            numero = str(reg.get("numero") or "").strip()
+            if not numero:
+                continue
+
+            reg["numero"] = numero
+            registros_por_numero[numero] = reg
+
+        registros_limpios = list(registros_por_numero.values())
+
+        if not registros_limpios:
+            return jsonify({
+                "mensaje": "El archivo no contiene registros con Número válido"
+            }), 400
+
         insertados = 0
         actualizados = 0
 
-        for reg in registros:
+        for reg in registros_limpios:
             numero = reg.get("numero")
 
-            existente = BaseRegistroInfoCoeSapFuncional.query.filter_by(numero=numero).first()
+            existente = BaseRegistroInfoCoeSapFuncional.query.filter_by(
+                numero=numero
+            ).first()
 
             if existente:
                 for k, v in reg.items():
-                    setattr(existente, k, v)
+                    if hasattr(existente, k):
+                        setattr(existente, k, v)
 
                 existente.origen_cargue = "ADICIONAL"
                 existente.usuario_cargue = usuario_cargue
                 existente.fecha_cargue = datetime.utcnow()
+
                 actualizados += 1
+
             else:
                 reg["origen_cargue"] = "ADICIONAL"
                 reg["usuario_cargue"] = usuario_cargue
+                reg["fecha_cargue"] = datetime.utcnow()
 
                 db.session.add(BaseRegistroInfoCoeSapFuncional(**reg))
                 insertados += 1
@@ -13473,9 +13556,17 @@ def importar_coe_sap_funcional_adicional():
         return jsonify({
             "mensaje": "Carga adicional COE SAP Funcional procesada correctamente",
             "total_recibidos": len(registros),
+            "duplicados_archivo": len(registros) - len(registros_limpios),
             "insertados": insertados,
             "actualizados": actualizados,
         }), 200
+
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({
+            "mensaje": "Archivo inválido",
+            "error": str(e),
+        }), 400
 
     except Exception as e:
         db.session.rollback()
@@ -13483,6 +13574,7 @@ def importar_coe_sap_funcional_adicional():
         return jsonify({
             "mensaje": "Error importando carga adicional",
             "error": str(e),
+            "trace": traceback.format_exc(),
         }), 500
 
 
