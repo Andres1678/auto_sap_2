@@ -859,6 +859,11 @@ export default function Oportunidades() {
   const [filtroCierreHasta, setFiltroCierreHasta] = useState("");
   const [openResumenCerradas, setOpenResumenCerradas] = useState(false);
   const [resumenEstadoFilter, setResumenEstadoFilter] = useState("");
+  const [resumenClienteFilter, setResumenClienteFilter] = useState("");
+  const [resumenServicioFilter, setResumenServicioFilter] = useState("");
+  const [resumenMonedaFilter, setResumenMonedaFilter] = useState("");
+  const [resumenFechaDesde, setResumenFechaDesde] = useState("");
+  const [resumenFechaHasta, setResumenFechaHasta] = useState("");
 
   const baseColumnOrder = useMemo(
     () => [
@@ -1313,6 +1318,11 @@ export default function Oportunidades() {
     setFiltroCierreDesde("");
     setFiltroCierreHasta("");
     setResumenEstadoFilter("");
+    setResumenClienteFilter("");
+    setResumenServicioFilter("");
+    setResumenMonedaFilter("");
+    setResumenFechaDesde("");
+    setResumenFechaHasta("");
     setEditing({ rowId: null, col: null });
     setEditingContext(null);
   };
@@ -1506,6 +1516,163 @@ export default function Oportunidades() {
 
       await fetchData();
       Swal.fire("Listo", "La oportunidad quedó sin principal asignada.", "success");
+    } catch (e) {
+      Swal.fire("Error", e?.message || "Error inesperado", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const quitarPrincipalAvanzado = async (grupo) => {
+    const principal = grupo?.principalRow;
+
+    if (!principal?.id || grupo?.sinPrincipal) return;
+
+    const clienteKey = normalizeClientGroupKey(principal?.nombre_cliente);
+    const otrasPrincipales = (data || [])
+      .filter((item) => {
+        return (
+          normalizeTipoOportunidad(item?.tipo_oportunidad) === TIPO_PRINCIPAL &&
+          normalizeClientGroupKey(item?.nombre_cliente) === clienteKey &&
+          String(item?.id) !== String(principal.id)
+        );
+      })
+      .sort((a, b) => {
+        const codA = toPositiveInteger(a?.consecutivo_principal) || Number(a?.id || 0);
+        const codB = toPositiveInteger(b?.consecutivo_principal) || Number(b?.id || 0);
+
+        if (codA !== codB) return codA - codB;
+
+        return String(a?.servicio || "").localeCompare(String(b?.servicio || ""), "es", {
+          sensitivity: "base",
+        });
+      });
+
+    const inputOptions = {
+      crear_nueva: "Crear nueva principal destino y mover todo allí",
+    };
+
+    if (otrasPrincipales.length > 0) {
+      inputOptions.mover_existente = "Mover a otra principal existente del mismo cliente";
+    }
+
+    const modoResult = await Swal.fire({
+      icon: "warning",
+      title: "Quitar oportunidad principal",
+      html: `
+        <div style="text-align:left;line-height:1.5;">
+          <b>Cliente:</b> ${escapeHtml(principal?.nombre_cliente || "-")}<br/>
+          <b>Principal:</b> ${escapeHtml(principal?.servicio || "-")}<br/>
+          <b>OTs asignadas:</b> ${(grupo?.rows || []).length}<br/><br/>
+          Las OTs asignadas no se eliminarán ni se perderán. Serán movidas automáticamente al destino seleccionado.
+        </div>
+      `,
+      input: "select",
+      inputOptions,
+      inputPlaceholder: "Selecciona qué hacer",
+      showCancelButton: true,
+      confirmButtonText: "Continuar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#ef4444",
+      inputValidator: (value) => {
+        if (!value) return "Debes seleccionar una opción.";
+        return null;
+      },
+    });
+
+    if (!modoResult.isConfirmed || !modoResult.value) return;
+
+    let nuevaPrincipalId = null;
+
+    if (modoResult.value === "mover_existente") {
+      const principalOptions = Object.fromEntries(
+        otrasPrincipales.map((item) => [
+          String(item.id),
+          `${item.codigo_control || item.consecutivo_principal || item.id} - ${item.servicio || "SIN SERVICIO"}`,
+        ])
+      );
+
+      const principalResult = await Swal.fire({
+        icon: "question",
+        title: "Selecciona la nueva principal",
+        input: "select",
+        inputOptions: principalOptions,
+        inputPlaceholder: "Oportunidad principal destino",
+        showCancelButton: true,
+        confirmButtonText: "Mover OTs",
+        cancelButtonText: "Cancelar",
+        confirmButtonColor: "#2563eb",
+        inputValidator: (value) => {
+          if (!value) return "Debes seleccionar la principal destino.";
+          return null;
+        },
+      });
+
+      if (!principalResult.isConfirmed || !principalResult.value) return;
+      nuevaPrincipalId = Number(principalResult.value);
+    }
+
+    const confirm = await Swal.fire({
+      icon: "warning",
+      title: "Confirmar cambio",
+      html: `
+        <div style="text-align:left;line-height:1.5;">
+          La oportunidad principal actual dejará de ser principal y quedará como OT/suboportunidad.<br/>
+          Todas sus OTs asignadas serán movidas al nuevo destino automáticamente.
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: "Sí, quitar principal",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#ef4444",
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      setLoading(true);
+
+      const resp = await jfetch(`/oportunidades/${principal.id}/quitar-principal-avanzado`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modo: modoResult.value,
+          nueva_principal_id: nuevaPrincipalId,
+        }),
+      });
+
+      const json = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        Swal.fire(
+          "Error",
+          json?.mensaje || json?.error || "No se pudo quitar la oportunidad principal",
+          "error"
+        );
+        return;
+      }
+
+      const destinoId =
+        json?.principal_destino?.id ||
+        json?.nueva_principal?.id ||
+        json?.nueva_principal_id ||
+        nuevaPrincipalId;
+
+      await fetchData();
+
+      if (destinoId) {
+        setExpandedClientes((prev) => ({
+          ...prev,
+          [`principal-${destinoId}`]: true,
+          [`cliente-${clienteKey}`]: true,
+        }));
+      }
+
+      Swal.fire(
+        "Listo",
+        "La principal fue retirada y sus OTs fueron reasignadas correctamente.",
+        "success"
+      );
     } catch (e) {
       Swal.fire("Error", e?.message || "Error inesperado", "error");
     } finally {
@@ -2620,13 +2787,69 @@ export default function Oportunidades() {
       .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
   }, [resumenCerradas]);
 
-  const resumenCerradasFiltrado = useMemo(() => {
-    if (!resumenEstadoFilter) return resumenCerradas;
+  const resumenClientesOptions = useMemo(() => {
+    return [...new Set(resumenCerradas.map((row) => row.nombre_cliente).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  }, [resumenCerradas]);
 
-    return resumenCerradas.filter(
-      (row) => normalizeForCompare(row.estado) === normalizeForCompare(resumenEstadoFilter)
-    );
-  }, [resumenCerradas, resumenEstadoFilter]);
+  const resumenServiciosOptions = useMemo(() => {
+    return [...new Set(resumenCerradas.map((row) => row.servicio).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  }, [resumenCerradas]);
+
+  const resumenMonedasOptions = useMemo(() => {
+    return [...new Set(resumenCerradas.map((row) => row.tipo_moneda).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  }, [resumenCerradas]);
+
+  const limpiarFiltrosResumenCerradas = () => {
+    setResumenEstadoFilter("");
+    setResumenClienteFilter("");
+    setResumenServicioFilter("");
+    setResumenMonedaFilter("");
+    setResumenFechaDesde("");
+    setResumenFechaHasta("");
+  };
+
+  const resumenCerradasFiltrado = useMemo(() => {
+    return resumenCerradas.filter((row) => {
+      const fecha = toIsoDate(row.fecha_cierre_oportunidad);
+
+      if (resumenEstadoFilter && normalizeForCompare(row.estado) !== normalizeForCompare(resumenEstadoFilter)) {
+        return false;
+      }
+
+      if (resumenClienteFilter && normalizeForCompare(row.nombre_cliente) !== normalizeForCompare(resumenClienteFilter)) {
+        return false;
+      }
+
+      if (resumenServicioFilter && normalizeForCompare(row.servicio) !== normalizeForCompare(resumenServicioFilter)) {
+        return false;
+      }
+
+      if (resumenMonedaFilter && normalizeForCompare(row.tipo_moneda) !== normalizeForCompare(resumenMonedaFilter)) {
+        return false;
+      }
+
+      if (resumenFechaDesde && (!fecha || fecha < resumenFechaDesde)) {
+        return false;
+      }
+
+      if (resumenFechaHasta && (!fecha || fecha > resumenFechaHasta)) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [
+    resumenCerradas,
+    resumenEstadoFilter,
+    resumenClienteFilter,
+    resumenServicioFilter,
+    resumenMonedaFilter,
+    resumenFechaDesde,
+    resumenFechaHasta,
+  ]);
 
   const toggleClienteGroup = useCallback((clienteKey) => {
     setExpandedClientes((prev) => ({
@@ -2958,13 +3181,27 @@ export default function Oportunidades() {
         })}
 
         <td className="acciones">
-          <button
-            type="button"
-            className="cliente-ver-btn"
-            onClick={() => toggleClienteGroup(grupo.key)}
-          >
-            {isOpen ? "Ocultar" : "Ver"}
-          </button>
+          <div className="op-actions principal-row-actions">
+            <button
+              type="button"
+              className="cliente-ver-btn"
+              onClick={() => toggleClienteGroup(grupo.key)}
+            >
+              {isOpen ? "Ocultar" : "Ver"}
+            </button>
+
+            {!grupo.sinPrincipal && grupo.principalRow?.id && (
+              <button
+                type="button"
+                className="op-action-btn op-action-remove-principal"
+                onClick={() => quitarPrincipalAvanzado(grupo)}
+                disabled={loading}
+                title="Quitar esta oportunidad como principal y reasignar sus OTs"
+              >
+                Quitar principal
+              </button>
+            )}
+          </div>
         </td>
       </tr>
     );
@@ -3223,7 +3460,37 @@ export default function Oportunidades() {
               </button>
             </div>
 
-            <div className="opp-summary-filters">
+            <div className="opp-summary-filters opp-summary-filters-grid">
+              <label>
+                Cliente
+                <select
+                  value={resumenClienteFilter}
+                  onChange={(e) => setResumenClienteFilter(e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {resumenClientesOptions.map((cliente) => (
+                    <option key={cliente} value={cliente}>
+                      {cliente}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Servicio
+                <select
+                  value={resumenServicioFilter}
+                  onChange={(e) => setResumenServicioFilter(e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {resumenServiciosOptions.map((servicio) => (
+                    <option key={servicio} value={servicio}>
+                      {servicio}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               <label>
                 Estado
                 <select
@@ -3238,6 +3505,55 @@ export default function Oportunidades() {
                   ))}
                 </select>
               </label>
+
+              <label>
+                Tipo moneda
+                <select
+                  value={resumenMonedaFilter}
+                  onChange={(e) => setResumenMonedaFilter(e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {resumenMonedasOptions.map((moneda) => (
+                    <option key={moneda} value={moneda}>
+                      {moneda}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Cierre desde
+                <input
+                  type="date"
+                  value={resumenFechaDesde}
+                  onChange={(e) => setResumenFechaDesde(e.target.value)}
+                />
+              </label>
+
+              <label>
+                Cierre hasta
+                <input
+                  type="date"
+                  value={resumenFechaHasta}
+                  onChange={(e) => setResumenFechaHasta(e.target.value)}
+                />
+              </label>
+
+              <button
+                type="button"
+                className="opp-summary-clear"
+                onClick={limpiarFiltrosResumenCerradas}
+                disabled={
+                  !resumenEstadoFilter &&
+                  !resumenClienteFilter &&
+                  !resumenServicioFilter &&
+                  !resumenMonedaFilter &&
+                  !resumenFechaDesde &&
+                  !resumenFechaHasta
+                }
+              >
+                Limpiar resumen
+              </button>
 
               <span>
                 {resumenCerradasFiltrado.length} registro{resumenCerradasFiltrado.length === 1 ? "" : "s"}
