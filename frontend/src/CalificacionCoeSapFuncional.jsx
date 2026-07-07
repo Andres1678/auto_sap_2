@@ -1,17 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
+import Select from "react-select";
 import { jfetch } from "./lib/api";
 import "./CalificacionCoeSapFuncional.css";
 
-const INITIAL_FILTERS = {
-  q: "",
-  estado: "",
-  sociedad: "",
-  asignado_a: "",
-  sistema: "",
-  modulo: "",
-  estado_consolidado: "",
-};
+const EMPTY_FILTER_VALUE = "__EMPTY__";
+const EMPTY_FILTER_LABEL = "(Blanco)";
+
+const STORAGE_VISIBLE_COLUMNS = "calcoe_visible_columns_v2";
+const STORAGE_FILTER_COLUMNS = "calcoe_filter_columns_v2";
 
 const INITIAL_HOUR_FORM = {
   tipo: "ESTIMADA",
@@ -50,38 +47,106 @@ const MODULES = [
 ];
 
 const TABLE_COLUMNS = [
-  { key: "numero", label: "ID", w: 15, cls: "mono strong" },
-  { key: "sistema", label: "Sistema", w: 10, cls: "center" },
-  { key: "casoSm", label: "Caso SM", w: 17, cls: "mono" },
-  { key: "sociedad", label: "Sociedad", w: 30 },
-  { key: "asunto", label: "Asunto", w: 46, cls: "clip-2" },
-  { key: "nombreSolicitante", label: "Solicitante", w: 25 },
-  { key: "estado", label: "Estado", w: 18, cls: "status" },
-  { key: "estadoConsolidado", label: "Estado consolidado", w: 20, cls: "status" },
-  { key: "responsableEstado", label: "Responsable estado", w: 20 },
-  { key: "asignadoA", label: "Asignado a", w: 25 },
-  { key: "modulo", label: "Módulo", w: 12, cls: "center" },
-  { key: "categoria", label: "Categoría", w: 22 },
-  { key: "subcategoria", label: "Subcategoría", w: 22 },
-  { key: "articulo", label: "Artículo", w: 24 },
-  { key: "fechaAsignacion", label: "Fecha asignación", w: 20, cls: "mono" },
-  { key: "fechaRespuesta", label: "Fecha respuesta", w: 20, cls: "mono" },
-  { key: "fechaResolucion", label: "Fecha resolución", w: 20, cls: "mono" },
-  { key: "fechaFinalizacionCierre", label: "Fecha cierre", w: 20, cls: "mono" },
-  { key: "tiempoRespuesta", label: "T. respuesta", w: 13, cls: "right" },
-  { key: "tiempoResolucion", label: "T. resolución", w: 13, cls: "right" },
-  { key: "tiempoFinalizacionCierre", label: "T. cierre", w: 13, cls: "right" },
-  { key: "fechaEstimacion", label: "Fecha estimación", w: 20, cls: "mono" },
-  { key: "diasEntregaEstimacion", label: "Días estimación", w: 15, cls: "right" },
-  { key: "estadoEstimacion", label: "Estado estimación", w: 18 },
-  { key: "totalHorasFuncionales", label: "Total H. funcionales", w: 18, cls: "right number" },
-  { key: "totalHorasEstimadas", label: "Total H. estimadas", w: 18, cls: "right number" },
-  { key: "totalHorasEstimadas2", label: "Total H. estimadas 2", w: 20, cls: "right number" },
-  { key: "horasGarantia", label: "H. garantía", w: 14, cls: "right number" },
-  { key: "horasProyectoAbap", label: "H. proyecto ABAP", w: 18, cls: "right number" },
+  { key: "numero", label: "ID", w: 15, cls: "mono strong sticky-col sticky-col-1", group: "auto" },
+  { key: "sistema", label: "Sistema", w: 10, cls: "center sticky-col sticky-col-2", group: "calc" },
+  { key: "casoSm", label: "Caso SM", w: 17, cls: "mono", group: "auto" },
+  { key: "sociedad", label: "Sociedad", w: 30, group: "auto" },
+  { key: "asunto", label: "Asunto", w: 44, cls: "text-long", group: "auto" },
+  { key: "observaciones", label: "Observaciones / Seguimiento semanal", w: 64, cls: "obs-col", group: "manual" },
+  { key: "nombreSolicitante", label: "Solicitante", w: 26, group: "auto" },
+  { key: "impacto", label: "Impacto", w: 13, group: "auto" },
+  { key: "urgencia", label: "Urgencia", w: 13, group: "auto" },
+  { key: "prioridad", label: "Prioridad", w: 13, group: "auto" },
+  { key: "estado", label: "Estado", w: 18, cls: "status", group: "auto" },
+  { key: "estadoHerramientaGestion", label: "Estado herramienta gestión", w: 24, cls: "status", group: "manual" },
+  { key: "estadoConsolidado", label: "Estado consolidado", w: 20, cls: "status", group: "calc" },
+  { key: "responsableEstado", label: "Responsable estado", w: 20, group: "calc" },
+  { key: "asignadoA", label: "Asignado a", w: 25, group: "auto" },
+  { key: "documentacion", label: "Documentación", w: 18, group: "manual" },
+  { key: "casoTransporte", label: "Caso transporte", w: 20, group: "manual" },
+  { key: "controlHoras", label: "Control horas", w: 18, group: "manual" },
+  { key: "errorSap", label: "Error SAP", w: 16, group: "manual" },
+  { key: "notaOssSap", label: "Nota OSS SAP", w: 18, group: "manual" },
+  { key: "tipoContrato", label: "Tipo contrato", w: 18, group: "manual" },
+  { key: "tipoSolicitud", label: "Tipo solicitud", w: 20, group: "manual" },
+  { key: "modulo", label: "Módulo", w: 12, cls: "center", group: "manual" },
+  { key: "categoria", label: "Categoría", w: 22, group: "manual" },
+  { key: "subcategoria", label: "Subcategoría", w: 22, group: "manual" },
+  { key: "articulo", label: "Artículo", w: 24, group: "manual" },
+  { key: "apoyo1", label: "Apoyo 1", w: 22, group: "manual" },
+  { key: "apoyo2", label: "Apoyo 2", w: 22, group: "manual" },
+  { key: "apoyo3", label: "Apoyo 3", w: 22, group: "manual" },
+  { key: "requiereAbap", label: "Requiere ABAP", w: 16, group: "manual" },
+  { key: "asignacionAbap", label: "Asignación ABAP", w: 22, group: "manual" },
+  { key: "fechaAsignacion", label: "Fecha asignación", w: 20, cls: "mono", group: "auto" },
+  { key: "diaCreacion", label: "Día creación", w: 12, cls: "right", group: "calc" },
+  { key: "mesCreacion", label: "Mes creación", w: 12, cls: "right", group: "calc" },
+  { key: "anioCreacion", label: "Año creación", w: 12, cls: "right", group: "calc" },
+  { key: "horaUltimaActualizacion", label: "Hora última actualización", w: 22, cls: "mono", group: "auto" },
+  { key: "fechaRespuesta", label: "Fecha respuesta", w: 20, cls: "mono", group: "manual" },
+  { key: "fechaResolucion", label: "Fecha resolución", w: 20, cls: "mono", group: "auto" },
+  { key: "fechaFinalizacionCierre", label: "Fecha cierre", w: 20, cls: "mono", group: "auto" },
+  { key: "diaCierre", label: "Día cierre", w: 12, cls: "right", group: "calc" },
+  { key: "mesCierre", label: "Mes cierre", w: 12, cls: "right", group: "calc" },
+  { key: "anioCierre", label: "Año cierre", w: 12, cls: "right", group: "calc" },
+  { key: "tiempoRespuesta", label: "T. respuesta", w: 13, cls: "right number", group: "calc" },
+  { key: "tiempoResolucion", label: "T. resolución", w: 13, cls: "right number", group: "calc" },
+  { key: "tiempoFinalizacionCierre", label: "T. cierre", w: 13, cls: "right number", group: "calc" },
+  { key: "fechaCompromiso", label: "Fecha compromiso", w: 20, cls: "mono", group: "manual" },
+  { key: "liderClaro", label: "Líder Claro", w: 22, group: "manual" },
+  { key: "tipoIngreso", label: "Tipo ingreso", w: 18, group: "manual" },
+  { key: "fechaEstimacion", label: "Fecha estimación", w: 20, cls: "mono", group: "manual" },
+  { key: "diasEntregaEstimacion", label: "Días entrega estimación", w: 17, cls: "right", group: "calc" },
+  { key: "mesEstimacion", label: "Mes estimación", w: 14, cls: "right", group: "calc" },
+  { key: "anioEstimacion", label: "Año estimación", w: 14, cls: "right", group: "calc" },
+  { key: "fechaAprobacionEstimacion", label: "Fecha aprobación estimación", w: 24, cls: "mono", group: "manual" },
+  { key: "mesAprobadoEstimacion", label: "Mes aprobado estimación", w: 20, cls: "right", group: "calc" },
+  { key: "anioAprobadoEstimacion", label: "Año aprobado estimación", w: 20, cls: "right", group: "calc" },
+  { key: "estadoEstimacion", label: "Estado estimación", w: 18, group: "manual" },
+
+  { key: "horasEstimadasFi", label: "H. estimadas FI", w: 15, cls: "right number", group: "hours" },
+  { key: "horasEstimadasMm", label: "H. estimadas MM", w: 15, cls: "right number", group: "hours" },
+  { key: "horasEstimadasSd", label: "H. estimadas SD", w: 15, cls: "right number", group: "hours" },
+  { key: "horasEstimadasCo", label: "H. estimadas CO", w: 15, cls: "right number", group: "hours" },
+  { key: "horasEstimadasPs", label: "H. estimadas PS", w: 15, cls: "right number", group: "hours" },
+  { key: "horasEstimadasSlcm", label: "H. estimadas SLCM", w: 17, cls: "right number", group: "hours" },
+  { key: "horasEstimadasCrm", label: "H. estimadas CRM", w: 16, cls: "right number", group: "hours" },
+  { key: "horasEstimadasCrm2", label: "H. estimadas CRM2", w: 17, cls: "right number", group: "hours" },
+  { key: "horasEstimadasPca", label: "H. estimadas PCA", w: 16, cls: "right number", group: "hours" },
+  { key: "horasEstimadasFm", label: "H. estimadas FM", w: 15, cls: "right number", group: "hours" },
+  { key: "horasEstimadasPp", label: "H. estimadas PP", w: 15, cls: "right number", group: "hours" },
+  { key: "horasEstimadasPm", label: "H. estimadas PM", w: 15, cls: "right number", group: "hours" },
+  { key: "horasEstimadasHcm", label: "H. estimadas HCM", w: 16, cls: "right number", group: "hours" },
+  { key: "horasEstimadasSsff", label: "H. estimadas SSFF", w: 16, cls: "right number", group: "hours" },
+  { key: "horasEstimadasFiori", label: "H. estimadas FIORI", w: 18, cls: "right number", group: "hours" },
+  { key: "horasEstimadasWf", label: "H. estimadas WF", w: 15, cls: "right number", group: "hours" },
+  { key: "horasEstimadasAbap", label: "H. estimadas ABAP", w: 18, cls: "right number", group: "hours" },
+  { key: "horasEstimadasBasis", label: "H. estimadas BASIS", w: 18, cls: "right number", group: "hours" },
+  { key: "horasEstimadasPmo", label: "H. estimadas PMO", w: 17, cls: "right number", group: "hours" },
+
+  { key: "totalHorasFuncionales", label: "Total H. funcionales", w: 19, cls: "right number total-cell", group: "calc" },
+  { key: "totalHorasEstimadas", label: "Total H. estimadas", w: 19, cls: "right number total-cell", group: "calc" },
+  { key: "totalHorasEstimadas2", label: "Total H. estimadas 2", w: 21, cls: "right number total-cell", group: "calc" },
+
+  { key: "horasEjecutadasFi", label: "H. ejecutadas FI", w: 16, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasMm", label: "H. ejecutadas MM", w: 16, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasSd", label: "H. ejecutadas SD", w: 16, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasCo", label: "H. ejecutadas CO", w: 16, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasPs", label: "H. ejecutadas PS", w: 16, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasPca", label: "H. ejecutadas PCA", w: 17, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasFm", label: "H. ejecutadas FM", w: 16, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasHcm", label: "H. ejecutadas HCM", w: 17, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasSsff", label: "H. ejecutadas SSFF", w: 18, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasFiori", label: "H. ejecutadas FIORI", w: 19, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasWf", label: "H. ejecutadas WF", w: 16, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasAbap", label: "H. ejecutadas ABAP", w: 19, cls: "right number", group: "hours" },
+  { key: "horasEjecutadasBasis", label: "H. ejecutadas BASIS", w: 19, cls: "right number", group: "hours" },
+  { key: "horasGarantia", label: "H. garantía", w: 14, cls: "right number total-cell", group: "hours" },
+  { key: "horasProyectoAbap", label: "H. proyecto ABAP", w: 18, cls: "right number total-cell", group: "hours" },
 ];
 
 const EDIT_FIELDS = [
+  { key: "observaciones", label: "Observaciones / Seguimiento semanal", type: "textarea", wide: true },
   { key: "documentacion", label: "Documentación", type: "text" },
   { key: "casoTransporte", label: "Caso transporte", type: "text" },
   { key: "controlHoras", label: "Control horas", type: "text" },
@@ -105,6 +170,19 @@ const EDIT_FIELDS = [
   { key: "fechaEstimacion", label: "Fecha estimación", type: "date" },
   { key: "fechaAprobacionEstimacion", label: "Fecha aprobación estimación", type: "date" },
   { key: "estadoEstimacion", label: "Estado estimación", type: "text" },
+];
+
+const DEFAULT_FILTER_COLUMNS = [
+  "numero",
+  "sociedad",
+  "estado",
+  "estadoConsolidado",
+  "responsableEstado",
+  "asignadoA",
+  "modulo",
+  "categoria",
+  "estadoEstimacion",
+  "observaciones",
 ];
 
 function readStoredUser() {
@@ -133,6 +211,14 @@ function normalizePermisos(user) {
     .map((p) => String(p).trim().toUpperCase());
 }
 
+function normalizeText(value) {
+  return String(value ?? "").replace(/\u00A0/g, " ").trim();
+}
+
+function normalizeForCompare(value) {
+  return normalizeText(value).toUpperCase();
+}
+
 function cleanText(value) {
   if (value === null || value === undefined || value === "") return "—";
   return String(value);
@@ -142,6 +228,7 @@ function numberText(value) {
   if (value === null || value === undefined || value === "") return "0";
   const n = Number(value);
   if (Number.isNaN(n)) return String(value);
+
   return n.toLocaleString("es-CO", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
@@ -155,26 +242,30 @@ function toDateInput(value) {
   return "";
 }
 
+function todayStamp() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function getStatusClass(value) {
   const s = String(value || "").toUpperCase();
 
-  if (s.includes("CERR") || s.includes("RESUEL") || s.includes("SOLUCION")) {
-    return "ok";
-  }
-
-  if (s.includes("CANCEL") || s.includes("ANUL")) {
-    return "neutral";
-  }
-
-  if (s.includes("ESPERA") || s.includes("PEND")) {
-    return "warn";
-  }
-
-  if (s.includes("ABIER") || s.includes("ASIGN") || s.includes("PROCES")) {
-    return "info";
-  }
+  if (s.includes("CERR") || s.includes("RESUEL") || s.includes("SOLUCION")) return "ok";
+  if (s.includes("CANCEL") || s.includes("ANUL")) return "neutral";
+  if (s.includes("ESPERA") || s.includes("PEND")) return "warn";
+  if (s.includes("ABIER") || s.includes("ASIGN") || s.includes("PROCES")) return "info";
 
   return "neutral";
+}
+
+function getColumnGroupClass(group) {
+  if (group === "manual") return "col-manual";
+  if (group === "calc") return "col-calc";
+  if (group === "hours") return "col-hours";
+  return "col-auto";
 }
 
 function createEditForm(row) {
@@ -191,6 +282,179 @@ function createEditForm(row) {
   });
 
   return form;
+}
+
+function getStorageArray(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveStorageArray(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+function getCellValue(row, key) {
+  const value = row?.[key];
+
+  if (value === null || value === undefined) return "";
+  if (typeof value === "number") return String(value);
+
+  return normalizeText(value);
+}
+
+function getFilterCellValue(row, key) {
+  const value = getCellValue(row, key);
+  return value === "—" ? "" : value;
+}
+
+function toFilterOption(value) {
+  return {
+    value,
+    label: value === EMPTY_FILTER_VALUE ? EMPTY_FILTER_LABEL : value,
+  };
+}
+
+function buildSelectOptionsFromRows(rows, key) {
+  const mappedValues = (rows || []).map((row) => getFilterCellValue(row, key));
+  const hasBlank = mappedValues.some((value) => value === "");
+
+  const uniqueNonBlank = [...new Set(mappedValues.filter((value) => value !== ""))]
+    .sort((a, b) => String(a).localeCompare(String(b), "es", { sensitivity: "base" }))
+    .slice(0, 500);
+
+  const options = uniqueNonBlank.map((value) => ({
+    label: value,
+    value,
+  }));
+
+  if (hasBlank) {
+    options.unshift({
+      label: EMPTY_FILTER_LABEL,
+      value: EMPTY_FILTER_VALUE,
+    });
+  }
+
+  return options;
+}
+
+function applyColumnFilters(rows, filters) {
+  let result = [...(rows || [])];
+
+  Object.entries(filters || {}).forEach(([key, values]) => {
+    if (!Array.isArray(values) || values.length === 0) return;
+
+    result = result.filter((row) => {
+      const cell = getFilterCellValue(row, key);
+      const isBlank = cell === "";
+
+      return values.some((selected) => {
+        if (selected === EMPTY_FILTER_VALUE) return isBlank;
+        return normalizeForCompare(selected) === normalizeForCompare(cell);
+      });
+    });
+  });
+
+  return result;
+}
+
+function applyQuickSearch(rows, q, columns) {
+  const query = normalizeForCompare(q);
+
+  if (!query) return rows;
+
+  const keys = columns.map((col) => col.key);
+
+  return (rows || []).filter((row) => {
+    return keys.some((key) => normalizeForCompare(getCellValue(row, key)).includes(query));
+  });
+}
+
+const DATE_AT_START = /^\s*(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*/;
+const DATE_ANYWHERE = /(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]\s*/g;
+
+function normalizeCommentText(value) {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim();
+}
+
+function splitDatedEntries(raw) {
+  const text = normalizeCommentText(raw);
+  if (!text) return [];
+
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const out = [];
+
+  for (const line of lines) {
+    const parts = [];
+    let lastIndex = 0;
+    const matches = [...line.matchAll(DATE_ANYWHERE)];
+
+    if (matches.length <= 1) {
+      parts.push(line);
+    } else {
+      for (let i = 0; i < matches.length; i += 1) {
+        const start = matches[i].index ?? 0;
+
+        if (i === 0 && start !== 0) {
+          const pre = line.slice(0, start).trim();
+          if (pre) parts.push(pre);
+        }
+
+        if (i > 0) {
+          const chunk = line.slice(lastIndex, start).trim();
+          if (chunk) parts.push(chunk);
+        }
+
+        lastIndex = start;
+      }
+
+      const tail = line.slice(lastIndex).trim();
+      if (tail) parts.push(tail);
+    }
+
+    for (const part of parts) {
+      const match = part.match(DATE_AT_START);
+
+      if (match) {
+        const date = match[1];
+        const body = part.replace(DATE_AT_START, "").trim();
+        out.push({ date, text: body || "-" });
+      } else {
+        out.push({ date: null, text: part });
+      }
+    }
+  }
+
+  return out;
+}
+
+function renderObservaciones(value) {
+  const items = splitDatedEntries(value);
+
+  if (!items.length) {
+    return <span className="calcoe-empty-text">—</span>;
+  }
+
+  return (
+    <div className="calcoe-obs-list">
+      {items.map((item, index) => (
+        <div key={`${item.date || "obs"}-${index}`} className="calcoe-obs-item">
+          {item.date && <span className="calcoe-obs-date">{item.date}</span>}
+          <span className="calcoe-obs-text">{item.text}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function CalificacionCoeSapFuncional() {
@@ -211,14 +475,29 @@ export default function CalificacionCoeSapFuncional() {
     };
   }, [rol, user]);
 
-  const [rows, setRows] = useState([]);
-  const [filters, setFilters] = useState(INITIAL_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState(INITIAL_FILTERS);
+  const allColumnKeys = useMemo(() => TABLE_COLUMNS.map((col) => col.key), []);
+
+  const [allRows, setAllRows] = useState([]);
+  const [backendTotal, setBackendTotal] = useState(0);
+
+  const [quickSearch, setQuickSearch] = useState("");
+  const [columnFilters, setColumnFilters] = useState({});
+
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() =>
+    getStorageArray(STORAGE_VISIBLE_COLUMNS, allColumnKeys)
+  );
+
+  const [filterColumnKeys, setFilterColumnKeys] = useState(() =>
+    getStorageArray(STORAGE_FILTER_COLUMNS, DEFAULT_FILTER_COLUMNS)
+  );
+
+  const [showFilters, setShowFilters] = useState(true);
+  const [columnPanelOpen, setColumnPanelOpen] = useState(false);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [configSearch, setConfigSearch] = useState("");
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
-  const [total, setTotal] = useState(0);
-  const [totalPagesApi, setTotalPagesApi] = useState(1);
 
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -236,24 +515,84 @@ export default function CalificacionCoeSapFuncional() {
   const [hourForm, setHourForm] = useState(INITIAL_HOUR_FORM);
   const [addingHours, setAddingHours] = useState(false);
 
-  const totalPages = Math.max(1, Number(totalPagesApi || Math.ceil(total / pageSize) || 1));
+  const portalTarget = typeof document !== "undefined" ? document.body : null;
+
+  const visibleColumns = useMemo(() => {
+    const visibleSet = new Set(visibleColumnKeys);
+
+    const cols = TABLE_COLUMNS.filter((col) => visibleSet.has(col.key));
+
+    if (!cols.length) {
+      return TABLE_COLUMNS.filter((col) => ["numero", "observaciones"].includes(col.key));
+    }
+
+    return cols;
+  }, [visibleColumnKeys]);
+
+  const filteredByColumns = useMemo(() => {
+    const selected = applyColumnFilters(allRows, columnFilters);
+    return applyQuickSearch(selected, quickSearch, TABLE_COLUMNS);
+  }, [allRows, columnFilters, quickSearch]);
+
+  const totalFiltered = filteredByColumns.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
   const canPrev = page > 1;
   const canNext = page < totalPages;
 
-  const buildQuery = useCallback(() => {
-    const qs = new URLSearchParams();
+  const pagedRows = useMemo(() => {
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredByColumns.slice(start, start + pageSize);
+  }, [filteredByColumns, page, pageSize, totalPages]);
 
-    qs.set("page", String(page));
-    qs.set("page_size", String(pageSize));
+  const activeFiltersCount = useMemo(() => {
+    return Object.values(columnFilters).filter((values) => Array.isArray(values) && values.length > 0).length;
+  }, [columnFilters]);
 
-    Object.entries(appliedFilters).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && String(value).trim() !== "") {
-        qs.set(key, String(value).trim());
-      }
+  const rowsForFilterOptions = useCallback(
+    (key) => {
+      const otherFilters = Object.fromEntries(
+        Object.entries(columnFilters).filter(([filterKey]) => filterKey !== key)
+      );
+
+      return applyQuickSearch(applyColumnFilters(allRows, otherFilters), quickSearch, TABLE_COLUMNS);
+    },
+    [allRows, columnFilters, quickSearch]
+  );
+
+  const uniqueValues = useMemo(() => {
+    const map = {};
+
+    TABLE_COLUMNS.forEach((col) => {
+      const dynamicOptions = buildSelectOptionsFromRows(rowsForFilterOptions(col.key), col.key);
+      const selectedOptions = (columnFilters[col.key] || []).map(toFilterOption);
+      const merged = [...dynamicOptions];
+
+      selectedOptions.forEach((selected) => {
+        const exists = merged.some(
+          (option) => normalizeForCompare(option.value) === normalizeForCompare(selected.value)
+        );
+
+        if (!exists) merged.unshift(selected);
+      });
+
+      map[col.key] = merged;
     });
 
-    return qs.toString();
-  }, [page, pageSize, appliedFilters]);
+    return map;
+  }, [columnFilters, rowsForFilterOptions]);
+
+  useEffect(() => {
+    saveStorageArray(STORAGE_VISIBLE_COLUMNS, visibleColumnKeys);
+  }, [visibleColumnKeys]);
+
+  useEffect(() => {
+    saveStorageArray(STORAGE_FILTER_COLUMNS, filterColumnKeys);
+  }, [filterColumnKeys]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const fetchRows = useCallback(async () => {
     if (!canView) return;
@@ -261,28 +600,46 @@ export default function CalificacionCoeSapFuncional() {
     setLoading(true);
 
     try {
-      const qs = buildQuery();
+      const pageSizeApi = 1000;
 
-      const res = await jfetch(`/coe-sap-funcional/calificacion?${qs}`, {
+      const firstRes = await jfetch(`/coe-sap-funcional/calificacion?page=1&page_size=${pageSizeApi}`, {
         method: "GET",
         headers: commonHeaders,
       });
 
-      const data = await res.json().catch(() => ({}));
+      const firstData = await firstRes.json().catch(() => ({}));
 
-      if (!res.ok) {
-        throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+      if (!firstRes.ok) {
+        throw new Error(firstData?.error || firstData?.mensaje || `HTTP ${firstRes.status}`);
       }
 
-      setRows(Array.isArray(data?.data) ? data.data : []);
-      setTotal(Number(data?.total || 0));
-      setTotalPagesApi(Number(data?.total_pages || 1));
+      let combined = Array.isArray(firstData?.data) ? firstData.data : [];
+      const apiTotalPages = Number(firstData?.total_pages || 1);
+      const apiTotal = Number(firstData?.total || combined.length || 0);
+
+      for (let currentPage = 2; currentPage <= apiTotalPages; currentPage += 1) {
+        const res = await jfetch(`/coe-sap-funcional/calificacion?page=${currentPage}&page_size=${pageSizeApi}`, {
+          method: "GET",
+          headers: commonHeaders,
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+        }
+
+        combined = combined.concat(Array.isArray(data?.data) ? data.data : []);
+      }
+
+      setAllRows(combined);
+      setBackendTotal(apiTotal);
+      setPage(1);
     } catch (error) {
       console.error("Error listando calificación COE SAP Funcional:", error);
 
-      setRows([]);
-      setTotal(0);
-      setTotalPagesApi(1);
+      setAllRows([]);
+      setBackendTotal(0);
 
       Swal.fire({
         icon: "error",
@@ -293,28 +650,110 @@ export default function CalificacionCoeSapFuncional() {
     } finally {
       setLoading(false);
     }
-  }, [canView, buildQuery, commonHeaders]);
+  }, [canView, commonHeaders]);
 
   useEffect(() => {
     fetchRows();
   }, [fetchRows]);
 
-  const handleFilterChange = (field, value) => {
-    setFilters((prev) => ({
+  const handleFilterChange = (column, selectedOptions) => {
+    const values = Array.isArray(selectedOptions)
+      ? selectedOptions.map((option) => option.value)
+      : [];
+
+    setColumnFilters((prev) => ({
       ...prev,
-      [field]: value,
+      [column]: values,
     }));
+
+    setPage(1);
   };
 
-  const buscar = () => {
+  const clearAllFilters = () => {
+    setQuickSearch("");
+    setColumnFilters({});
     setPage(1);
-    setAppliedFilters({ ...filters });
   };
 
-  const limpiarFiltros = () => {
-    setFilters(INITIAL_FILTERS);
-    setAppliedFilters(INITIAL_FILTERS);
-    setPage(1);
+  const toggleVisibleColumn = (key) => {
+    setVisibleColumnKeys((prev) => {
+      const exists = prev.includes(key);
+
+      if (exists && prev.length <= 1) return prev;
+
+      return exists ? prev.filter((item) => item !== key) : [...prev, key];
+    });
+  };
+
+  const toggleFilterColumn = (key) => {
+    setFilterColumnKeys((prev) => {
+      const exists = prev.includes(key);
+
+      if (exists) {
+        setColumnFilters((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+
+        return prev.filter((item) => item !== key);
+      }
+
+      return [...prev, key];
+    });
+  };
+
+  const setColumnsByGroup = (group) => {
+    if (group === "all") {
+      setVisibleColumnKeys(allColumnKeys);
+      return;
+    }
+
+    if (group === "seguimiento") {
+      setVisibleColumnKeys([
+        "numero",
+        "sistema",
+        "casoSm",
+        "sociedad",
+        "asunto",
+        "observaciones",
+        "nombreSolicitante",
+        "estado",
+        "estadoConsolidado",
+        "responsableEstado",
+        "asignadoA",
+        "modulo",
+        "categoria",
+        "subcategoria",
+        "articulo",
+        "fechaAsignacion",
+        "fechaRespuesta",
+        "fechaResolucion",
+        "fechaFinalizacionCierre",
+        "fechaEstimacion",
+        "diasEntregaEstimacion",
+        "estadoEstimacion",
+        "totalHorasFuncionales",
+        "totalHorasEstimadas",
+      ]);
+      return;
+    }
+
+    setVisibleColumnKeys(TABLE_COLUMNS.filter((col) => col.group === group).map((col) => col.key));
+  };
+
+  const setFilterColumnsByGroup = (group) => {
+    if (group === "all") {
+      setFilterColumnKeys(allColumnKeys);
+      return;
+    }
+
+    if (group === "default") {
+      setFilterColumnKeys(DEFAULT_FILTER_COLUMNS);
+      return;
+    }
+
+    setFilterColumnKeys(TABLE_COLUMNS.filter((col) => col.group === group).map((col) => col.key));
   };
 
   const generarDesdeBase = async () => {
@@ -370,8 +809,6 @@ export default function CalificacionCoeSapFuncional() {
 
       fetchRows();
     } catch (error) {
-      console.error("Error generando calificación:", error);
-
       Swal.fire({
         icon: "error",
         title: "Error generando calificación",
@@ -460,8 +897,6 @@ export default function CalificacionCoeSapFuncional() {
 
       fetchRows();
     } catch (error) {
-      console.error("Error importando Excel histórico:", error);
-
       Swal.fire({
         icon: "error",
         title: "Error importando Excel",
@@ -474,6 +909,8 @@ export default function CalificacionCoeSapFuncional() {
   };
 
   const openEdit = (row) => {
+    if (!canImport) return;
+
     setEditRow(row);
     setEditForm(createEditForm(row));
     setEditOpen(true);
@@ -484,6 +921,13 @@ export default function CalificacionCoeSapFuncional() {
     setEditOpen(false);
     setEditRow(null);
     setEditForm({});
+  };
+
+  const addWeeklyObservation = () => {
+    setEditForm((prev) => ({
+      ...prev,
+      observaciones: `${prev.observaciones ? `${prev.observaciones}\n` : ""}${todayStamp()} - `,
+    }));
   };
 
   const saveEdit = async () => {
@@ -519,8 +963,6 @@ export default function CalificacionCoeSapFuncional() {
       setEditForm({});
       fetchRows();
     } catch (error) {
-      console.error("Error guardando calificación:", error);
-
       Swal.fire({
         icon: "error",
         title: "No se pudo guardar",
@@ -551,7 +993,6 @@ export default function CalificacionCoeSapFuncional() {
 
       setHoursRows(Array.isArray(data?.data) ? data.data : []);
     } catch (error) {
-      console.error("Error listando horas:", error);
       setHoursRows([]);
 
       Swal.fire({
@@ -613,8 +1054,6 @@ export default function CalificacionCoeSapFuncional() {
       fetchHours(hoursRow);
       fetchRows();
     } catch (error) {
-      console.error("Error agregando horas:", error);
-
       Swal.fire({
         icon: "error",
         title: "No se pudieron agregar horas",
@@ -628,6 +1067,10 @@ export default function CalificacionCoeSapFuncional() {
 
   const renderCell = (row, col) => {
     const value = row[col.key];
+
+    if (col.key === "observaciones") {
+      return renderObservaciones(value);
+    }
 
     if (col.cls?.includes("number") || col.cls?.includes("right")) {
       return numberText(value);
@@ -643,6 +1086,15 @@ export default function CalificacionCoeSapFuncional() {
 
     return cleanText(value);
   };
+
+  const configColumns = useMemo(() => {
+    const q = normalizeForCompare(configSearch);
+
+    return TABLE_COLUMNS.filter((col) => {
+      if (!q) return true;
+      return normalizeForCompare(`${col.label} ${col.key} ${col.group}`).includes(q);
+    });
+  }, [configSearch]);
 
   if (!canView) {
     return (
@@ -663,8 +1115,8 @@ export default function CalificacionCoeSapFuncional() {
           <span className="calcoe-eyebrow">Calificación</span>
           <h1>Calificación COE SAP Funcional</h1>
           <p>
-            Genera la calificación desde la base principal, importa el Excel histórico,
-            edita campos manuales y registra horas sin duplicar casos.
+            Consulta, filtra por columnas, selecciona qué columnas ver y lleva el
+            seguimiento semanal desde Observaciones.
           </p>
         </div>
 
@@ -697,130 +1149,175 @@ export default function CalificacionCoeSapFuncional() {
         </div>
       </section>
 
-      <section className="calcoe-summary-grid">
-        <article className="calcoe-summary-card">
-          <span>Registros</span>
-          <strong>{total.toLocaleString("es-CO")}</strong>
-        </article>
-
-        <article className="calcoe-summary-card">
-          <span>Página</span>
-          <strong>
-            {page} / {totalPages}
-          </strong>
-        </article>
-
-        <article className="calcoe-summary-card">
-          <span>Vista</span>
-          <strong>Calificación</strong>
-        </article>
-      </section>
-
-      <section className="calcoe-card calcoe-filters-card">
-        <div className="calcoe-card-head">
-          <div>
-            <h2>Filtros</h2>
-            <p>Busca por ID, caso SM, sociedad, estado, asignado, módulo o categoría.</p>
-          </div>
-
-          <button type="button" className="calcoe-btn ghost" onClick={limpiarFiltros}>
-            Limpiar
-          </button>
-        </div>
-
-        <div className="calcoe-filters-grid">
-          <label className="calcoe-filter search">
-            <span>Búsqueda general</span>
+      <section className="calcoe-toolbar-card">
+        <div className="calcoe-toolbar-left">
+          <label className="calcoe-search">
+            <span>Buscar en toda la tabla</span>
             <input
               type="text"
-              value={filters.q}
-              placeholder="ID, caso SM, asunto, solicitante..."
-              onChange={(e) => handleFilterChange("q", e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") buscar();
+              value={quickSearch}
+              placeholder="ID, asunto, observaciones, estado, sociedad..."
+              onChange={(e) => {
+                setQuickSearch(e.target.value);
+                setPage(1);
               }}
             />
           </label>
 
-          <label className="calcoe-filter">
-            <span>Estado</span>
-            <input
-              type="text"
-              value={filters.estado}
-              placeholder="Estado"
-              onChange={(e) => handleFilterChange("estado", e.target.value)}
-            />
-          </label>
+          <div className="calcoe-metrics">
+            <div>
+              <span>Total cargado</span>
+              <strong>{backendTotal.toLocaleString("es-CO")}</strong>
+            </div>
 
-          <label className="calcoe-filter">
-            <span>Estado consolidado</span>
-            <input
-              type="text"
-              value={filters.estado_consolidado}
-              placeholder="Abierto, cerrado..."
-              onChange={(e) => handleFilterChange("estado_consolidado", e.target.value)}
-            />
-          </label>
+            <div>
+              <span>Filtrado</span>
+              <strong>{totalFiltered.toLocaleString("es-CO")}</strong>
+            </div>
 
-          <label className="calcoe-filter">
-            <span>Sociedad</span>
-            <input
-              type="text"
-              value={filters.sociedad}
-              placeholder="Sociedad"
-              onChange={(e) => handleFilterChange("sociedad", e.target.value)}
-            />
-          </label>
-
-          <label className="calcoe-filter">
-            <span>Asignado a</span>
-            <input
-              type="text"
-              value={filters.asignado_a}
-              placeholder="Asignado a"
-              onChange={(e) => handleFilterChange("asignado_a", e.target.value)}
-            />
-          </label>
-
-          <label className="calcoe-filter">
-            <span>Sistema</span>
-            <input
-              type="text"
-              value={filters.sistema}
-              placeholder="SD, FI..."
-              onChange={(e) => handleFilterChange("sistema", e.target.value)}
-            />
-          </label>
-
-          <label className="calcoe-filter">
-            <span>Módulo</span>
-            <input
-              type="text"
-              value={filters.modulo}
-              placeholder="FI, MM, SD..."
-              onChange={(e) => handleFilterChange("modulo", e.target.value)}
-            />
-          </label>
+            <div>
+              <span>Filtros activos</span>
+              <strong>{activeFiltersCount}</strong>
+            </div>
+          </div>
         </div>
 
-        <div className="calcoe-actions">
-          <button className="calcoe-btn danger" type="button" onClick={buscar} disabled={loading}>
-            {loading ? "Buscando..." : "Buscar"}
+        <div className="calcoe-toolbar-actions">
+          <button
+            type="button"
+            className={`calcoe-btn ${showFilters ? "danger" : "light"}`}
+            onClick={() => setShowFilters((v) => !v)}
+          >
+            {showFilters ? "Ocultar filtros" : "Mostrar filtros"}
           </button>
 
-          <button className="calcoe-btn light" type="button" onClick={limpiarFiltros} disabled={loading}>
-            Restablecer
+          <button
+            type="button"
+            className="calcoe-btn light"
+            onClick={() => {
+              setColumnPanelOpen(true);
+              setFilterPanelOpen(false);
+            }}
+          >
+            Columnas visibles
+          </button>
+
+          <button
+            type="button"
+            className="calcoe-btn light"
+            onClick={() => {
+              setFilterPanelOpen(true);
+              setColumnPanelOpen(false);
+            }}
+          >
+            Filtros visibles
+          </button>
+
+          <button
+            type="button"
+            className="calcoe-btn ghost"
+            onClick={clearAllFilters}
+            disabled={!quickSearch && activeFiltersCount === 0}
+          >
+            Limpiar filtros
+          </button>
+
+          <button
+            type="button"
+            className="calcoe-btn dark"
+            onClick={fetchRows}
+            disabled={loading}
+          >
+            {loading ? "Actualizando..." : "Actualizar"}
           </button>
         </div>
       </section>
+
+      {(columnPanelOpen || filterPanelOpen) && (
+        <section className="calcoe-config-panel">
+          <div className="calcoe-config-head">
+            <div>
+              <h2>{columnPanelOpen ? "Seleccionar columnas visibles" : "Seleccionar filtros visibles"}</h2>
+              <p>
+                Puedes buscar columnas, activar todas o dejar solo las necesarias para seguimiento.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="calcoe-close small"
+              onClick={() => {
+                setColumnPanelOpen(false);
+                setFilterPanelOpen(false);
+                setConfigSearch("");
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="calcoe-config-actions">
+            <input
+              type="text"
+              value={configSearch}
+              placeholder="Buscar columna..."
+              onChange={(e) => setConfigSearch(e.target.value)}
+            />
+
+            {columnPanelOpen ? (
+              <>
+                <button type="button" onClick={() => setColumnsByGroup("all")}>Todas</button>
+                <button type="button" onClick={() => setColumnsByGroup("seguimiento")}>Seguimiento</button>
+                <button type="button" onClick={() => setColumnsByGroup("auto")}>Automáticas</button>
+                <button type="button" onClick={() => setColumnsByGroup("manual")}>Manuales</button>
+                <button type="button" onClick={() => setColumnsByGroup("calc")}>Calculadas</button>
+                <button type="button" onClick={() => setColumnsByGroup("hours")}>Horas</button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => setFilterColumnsByGroup("all")}>Todos</button>
+                <button type="button" onClick={() => setFilterColumnsByGroup("default")}>Recomendados</button>
+                <button type="button" onClick={() => setFilterColumnsByGroup("manual")}>Manuales</button>
+                <button type="button" onClick={() => setFilterColumnsByGroup("calc")}>Calculados</button>
+                <button type="button" onClick={() => setFilterColumnsByGroup("hours")}>Horas</button>
+              </>
+            )}
+          </div>
+
+          <div className="calcoe-column-picker">
+            {configColumns.map((col) => {
+              const checked = columnPanelOpen
+                ? visibleColumnKeys.includes(col.key)
+                : filterColumnKeys.includes(col.key);
+
+              return (
+                <label key={`${columnPanelOpen ? "col" : "filter"}-${col.key}`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => columnPanelOpen ? toggleVisibleColumn(col.key) : toggleFilterColumn(col.key)}
+                  />
+
+                  <span className={`calcoe-col-dot ${getColumnGroupClass(col.group)}`} />
+
+                  <span>
+                    <strong>{col.label}</strong>
+                    <small>{col.group === "auto" ? "Automática" : col.group === "manual" ? "Manual" : col.group === "calc" ? "Calculada" : "Horas"}</small>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="calcoe-card calcoe-table-card">
         <div className="calcoe-table-head">
           <div>
             <h2>Base de calificación</h2>
             <p>
-              Total: <b>{total.toLocaleString("es-CO")}</b> registros • Página{" "}
-              <b>{page}</b> de <b>{totalPages}</b>
+              Mostrando <b>{pagedRows.length}</b> de <b>{totalFiltered.toLocaleString("es-CO")}</b>{" "}
+              registros filtrados • Página <b>{page}</b> de <b>{totalPages}</b>
             </p>
           </div>
 
@@ -845,43 +1342,86 @@ export default function CalificacionCoeSapFuncional() {
         <div className="calcoe-table-wrap">
           <table className="calcoe-table">
             <colgroup>
-              {TABLE_COLUMNS.map((col) => (
+              {visibleColumns.map((col) => (
                 <col key={col.key} style={{ width: `${col.w}ch` }} />
               ))}
-              <col style={{ width: "18ch" }} />
+              <col style={{ width: "19ch" }} />
             </colgroup>
 
             <thead>
               <tr>
-                {TABLE_COLUMNS.map((col) => (
-                  <th key={col.key}>{col.label}</th>
+                {visibleColumns.map((col) => (
+                  <th
+                    key={col.key}
+                    className={`${col.cls || ""} ${getColumnGroupClass(col.group)}`}
+                  >
+                    <span>{col.label}</span>
+                  </th>
                 ))}
                 <th className="sticky-actions">Acciones</th>
               </tr>
+
+              {showFilters && (
+                <tr className="calcoe-filter-row">
+                  {visibleColumns.map((col) => (
+                    <th
+                      key={`filter-${col.key}`}
+                      className={`${col.cls || ""} ${getColumnGroupClass(col.group)}`}
+                    >
+                      {filterColumnKeys.includes(col.key) ? (
+                        <Select
+                          options={uniqueValues[col.key] || []}
+                          value={(columnFilters[col.key] || []).map(toFilterOption)}
+                          onChange={(opts) => handleFilterChange(col.key, opts)}
+                          placeholder="Filtrar..."
+                          className="calcoe-select-filter"
+                          classNamePrefix="calcoe-react-select"
+                          isMulti
+                          isClearable
+                          closeMenuOnSelect={false}
+                          hideSelectedOptions={false}
+                          noOptionsMessage={() => "Sin opciones"}
+                          menuPortalTarget={portalTarget}
+                          styles={{
+                            menuPortal: (base) => ({ ...base, zIndex: 99999 }),
+                          }}
+                        />
+                      ) : (
+                        <span className="calcoe-filter-off">Sin filtro</span>
+                      )}
+                    </th>
+                  ))}
+                  <th className="sticky-actions" />
+                </tr>
+              )}
             </thead>
 
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={TABLE_COLUMNS.length + 1} className="calcoe-empty">
+                  <td colSpan={visibleColumns.length + 1} className="calcoe-empty">
                     <div className="calcoe-loader" />
                     Cargando calificación...
                   </td>
                 </tr>
-              ) : rows.length === 0 ? (
+              ) : pagedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={TABLE_COLUMNS.length + 1} className="calcoe-empty">
+                  <td colSpan={visibleColumns.length + 1} className="calcoe-empty">
                     No hay registros para mostrar.
                   </td>
                 </tr>
               ) : (
-                rows.map((row, index) => (
+                pagedRows.map((row, index) => (
                   <tr key={`${row.id || row.numero || "row"}-${index}`}>
-                    {TABLE_COLUMNS.map((col) => (
+                    {visibleColumns.map((col) => (
                       <td
-                        key={col.key}
-                        className={col.cls || ""}
-                        title={col.cls?.includes("clip") ? cleanText(row[col.key]) : undefined}
+                        key={`${row.id}-${col.key}`}
+                        className={`${col.cls || ""} ${getColumnGroupClass(col.group)}`}
+                        title={
+                          col.key !== "observaciones" && String(row[col.key] ?? "").length > 40
+                            ? cleanText(row[col.key])
+                            : undefined
+                        }
                       >
                         {renderCell(row, col)}
                       </td>
@@ -892,6 +1432,7 @@ export default function CalificacionCoeSapFuncional() {
                         type="button"
                         className="calcoe-mini-btn"
                         onClick={() => openEdit(row)}
+                        disabled={!canImport}
                       >
                         Editar
                       </button>
@@ -973,18 +1514,46 @@ export default function CalificacionCoeSapFuncional() {
             <div className="calcoe-modal-body">
               <div className="calcoe-edit-grid">
                 {EDIT_FIELDS.map((field) => (
-                  <label key={field.key} className="calcoe-filter">
-                    <span>{field.label}</span>
-                    <input
-                      type={field.type}
-                      value={editForm[field.key] || ""}
-                      onChange={(e) =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          [field.key]: e.target.value,
-                        }))
-                      }
-                    />
+                  <label
+                    key={field.key}
+                    className={`calcoe-filter ${field.wide ? "wide" : ""}`}
+                  >
+                    <span>
+                      {field.label}
+                      {field.key === "observaciones" && (
+                        <button
+                          type="button"
+                          className="calcoe-inline-action"
+                          onClick={addWeeklyObservation}
+                        >
+                          + entrada semanal
+                        </button>
+                      )}
+                    </span>
+
+                    {field.type === "textarea" ? (
+                      <textarea
+                        value={editForm[field.key] || ""}
+                        onChange={(e) =>
+                          setEditForm((prev) => ({
+                            ...prev,
+                            [field.key]: e.target.value,
+                          }))
+                        }
+                        placeholder={`${todayStamp()} - Escribe el seguimiento...`}
+                      />
+                    ) : (
+                      <input
+                        type={field.type}
+                        value={editForm[field.key] || ""}
+                        onChange={(e) =>
+                          setEditForm((prev) => ({
+                            ...prev,
+                            [field.key]: e.target.value,
+                          }))
+                        }
+                      />
+                    )}
                   </label>
                 ))}
               </div>
