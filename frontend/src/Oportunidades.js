@@ -565,6 +565,18 @@ const CLIENT_WITHOUT_NAME = "SIN CLIENTE";
 const TIPO_PRINCIPAL = "PRINCIPAL";
 const TIPO_SUBOPORTUNIDAD = "SUBOPORTUNIDAD";
 const ESTADOS_SUMAN_PRINCIPAL = new Set(["OT", "GANADA"]);
+const PRINCIPAL_EDITABLE_COLS = new Set(["fecha_cierre_oportunidad"]);
+
+const ESTADOS_CERRADOS_RESUMEN = new Set([
+  "GANADA",
+  "OT",
+  "PERDIDA",
+  "PERDIDA - SIN FEEDBACK",
+  "DECLINADA",
+  "CERRADA",
+  "OPORTUNIDAD CERRADA",
+  "OPORTUNIDAD PERDIDA",
+]);
 
 function stripAccents(value) {
   return String(value ?? "")
@@ -626,8 +638,7 @@ function getPrincipalTotals(rows) {
   const mrcNormalizado =
     validRows.length > 0 ? Number((mrcNumber + otcNumber / 12).toFixed(2)) : "";
 
-  const valorComercial =
-    validRows.length > 0 ? Number((otcNumber + mrcNumber).toFixed(2)) : "";
+  const valorComercial = sumRowsByColumn(validRows, "valor_oferta_claro");
 
   return {
     totalOtc,
@@ -678,6 +689,65 @@ function getPrincipalOwnTotals(principalRow) {
     valorComercial,
     cantidadValidas: 0,
   };
+}
+
+function getEstadoResumen(row) {
+  return (
+    normalizeText(row?.estado_oferta) ||
+    normalizeText(row?.resultado_oferta) ||
+    normalizeText(row?.estado_ot) ||
+    "-"
+  );
+}
+
+function isClosedResumenRow(row) {
+  const estado = normalizeForCompare(row?.estado_oferta);
+  const resultado = normalizeForCompare(row?.resultado_oferta);
+
+  return Boolean(
+    toIsoDate(row?.fecha_cierre_oportunidad) ||
+      ESTADOS_CERRADOS_RESUMEN.has(estado) ||
+      ESTADOS_CERRADOS_RESUMEN.has(resultado) ||
+      resultado.includes("CERRADA") ||
+      resultado.includes("PERDIDA")
+  );
+}
+
+function getTotalsForPrincipalGroup(grupo) {
+  const rowsQueSuman = (grupo?.rows || []).filter(estadoSumaEnPrincipal);
+
+  if (rowsQueSuman.length > 0) {
+    return getPrincipalTotals(rowsQueSuman);
+  }
+
+  return getPrincipalOwnTotals(grupo?.principalRow);
+}
+
+function compareOtsAsignadas(a, b) {
+  const subA = toPositiveInteger(a?.consecutivo_sub);
+  const subB = toPositiveInteger(b?.consecutivo_sub);
+
+  if (subA !== null && subB !== null && subA !== subB) {
+    return subA - subB;
+  }
+
+  const otA = parseNumberSmart(a?.num_ot);
+  const otB = parseNumberSmart(b?.num_ot);
+
+  if (otA !== "" && otB !== "" && otA !== otB) {
+    return Number(otA) - Number(otB);
+  }
+
+  const fechaA = getFechaAsignacionTimestamp(a);
+  const fechaB = getFechaAsignacionTimestamp(b);
+
+  if (fechaA !== fechaB) {
+    return fechaB - fechaA;
+  }
+
+  return String(a?.id ?? "").localeCompare(String(b?.id ?? ""), "es", {
+    numeric: true,
+  });
 }
 
 function compareSubOportunidades(a, b) {
@@ -785,6 +855,10 @@ export default function Oportunidades() {
   const [clientesCatalogo, setClientesCatalogo] = useState([]);
   const [openCategoriaModal, setOpenCategoriaModal] = useState(false);
   const [expandedClientes, setExpandedClientes] = useState({});
+  const [filtroCierreDesde, setFiltroCierreDesde] = useState("");
+  const [filtroCierreHasta, setFiltroCierreHasta] = useState("");
+  const [openResumenCerradas, setOpenResumenCerradas] = useState(false);
+  const [resumenEstadoFilter, setResumenEstadoFilter] = useState("");
 
   const baseColumnOrder = useMemo(
     () => [
@@ -1049,6 +1123,54 @@ export default function Oportunidades() {
     return result;
   }, []);
 
+  const applyTopFilters = useCallback(
+    (rows) => {
+      if (!filtroCierreDesde && !filtroCierreHasta) {
+        return rows || [];
+      }
+
+      const matchFechaCierre = (row) => {
+        const fechaCierre = toIsoDate(row?.fecha_cierre_oportunidad);
+
+        if (filtroCierreDesde && (!fechaCierre || fechaCierre < filtroCierreDesde)) {
+          return false;
+        }
+
+        if (filtroCierreHasta && (!fechaCierre || fechaCierre > filtroCierreHasta)) {
+          return false;
+        }
+
+        return true;
+      };
+
+      const principalesQuePasan = new Set(
+        (rows || [])
+          .filter(
+            (row) =>
+              normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL &&
+              row?.id &&
+              matchFechaCierre(row)
+          )
+          .map((row) => String(row.id))
+      );
+
+      return (rows || []).filter((row) => {
+        const tipo = normalizeTipoOportunidad(row?.tipo_oportunidad);
+
+        if (tipo === TIPO_PRINCIPAL) {
+          return matchFechaCierre(row);
+        }
+
+        if (row?.oportunidad_padre_id && principalesQuePasan.has(String(row.oportunidad_padre_id))) {
+          return true;
+        }
+
+        return matchFechaCierre(row);
+      });
+    },
+    [filtroCierreDesde, filtroCierreHasta]
+  );
+
   const computeUniqueValues = useCallback(
     (rows, currentFilters = {}) => {
       const uniq = {};
@@ -1139,10 +1261,12 @@ export default function Oportunidades() {
   }, []);
 
   useEffect(() => {
-    const nextFiltered = applyFilters(data, filters);
+    const nextColumnFiltered = applyFilters(data, filters);
+    const nextFiltered = applyTopFilters(nextColumnFiltered);
+
     setFilteredData(nextFiltered);
     setUniqueValues(computeUniqueValues(data, filters));
-  }, [data, filters, computeUniqueValues]);
+  }, [data, filters, computeUniqueValues, applyFilters, applyTopFilters]);
 
   useEffect(() => {
     setEstadoResultadoMap(buildEstadoResultadoMap(data));
@@ -1186,6 +1310,9 @@ export default function Oportunidades() {
 
   const handleClearFilters = () => {
     setFilters({});
+    setFiltroCierreDesde("");
+    setFiltroCierreHasta("");
+    setResumenEstadoFilter("");
     setEditing({ rowId: null, col: null });
     setEditingContext(null);
   };
@@ -1428,6 +1555,21 @@ export default function Oportunidades() {
     if (col === "mrc_normalizado") {
       Swal.fire("Info", "Este campo se calcula automáticamente (OTC/12 + MRC).", "info");
       return;
+    }
+
+    if (col === "valor_oferta_claro") {
+      const isSubAsignada =
+        normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_SUBOPORTUNIDAD &&
+        Boolean(row?.oportunidad_padre_id);
+
+      if (!isSubAsignada) {
+        Swal.fire(
+          "Info",
+          "El valor oferta Claro solo se modifica en las OTs/suboportunidades asignadas a una oportunidad principal.",
+          "info"
+        );
+        return;
+      }
     }
 
     setEditing({ rowId: row.id, col });
@@ -1911,6 +2053,10 @@ export default function Oportunidades() {
       return <span>{formatCell("mrc_normalizado", computeMrcNormalizado(newRow))}</span>;
     }
 
+    if (col === "valor_oferta_claro") {
+      return <span className="cell-readonly-hint">Se edita al asignar OT</span>;
+    }
+
     if (col === CLIENTE_COL) {
       return (
         <input
@@ -2346,7 +2492,7 @@ export default function Oportunidades() {
       const principalCodigo = grupo.codigo_control || String(grupo.numeroPrincipal || "");
 
       const rowsOrdenadas = [...grupo.rows]
-        .sort(compareOportunidadesPorFechaAsignacionDesc)
+        .sort(compareOtsAsignadas)
         .map((row, index) => {
           const consecutivoSub = toPositiveInteger(row?.consecutivo_sub) || index + 1;
           const codigoBackend = normalizeText(row?.codigo_control);
@@ -2372,7 +2518,7 @@ export default function Oportunidades() {
 
     const gruposSinPrincipal = Array.from(sinPrincipalPorCliente.values()).map((grupo) => {
       const rowsOrdenadas = [...grupo.rows]
-        .sort(compareOportunidadesPorFechaAsignacionDesc)
+        .sort(compareOtsAsignadas)
         .map((row, index) => ({
           ...row,
           tipo_oportunidad: normalizeTipoOportunidad(row?.tipo_oportunidad),
@@ -2402,6 +2548,86 @@ export default function Oportunidades() {
     });
   }, [data, filteredData]);
 
+  const clientesAgrupados = useMemo(() => {
+    const grouped = new Map();
+
+    oportunidadesAgrupadas.forEach((grupo) => {
+      const clienteKey = grupo.clienteKey || normalizeClientGroupKey(grupo.cliente);
+      const key = `cliente-${clienteKey}`;
+
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          clienteKey,
+          cliente: grupo.cliente,
+          grupos: [],
+        });
+      }
+
+      grouped.get(key).grupos.push(grupo);
+    });
+
+    return Array.from(grouped.values())
+      .map((clienteGrupo) => ({
+        ...clienteGrupo,
+        totalPrincipales: clienteGrupo.grupos.filter((g) => !g.sinPrincipal).length,
+        totalSinPrincipal: clienteGrupo.grupos
+          .filter((g) => g.sinPrincipal)
+          .reduce((acc, g) => acc + (g.rows?.length || 0), 0),
+        totalOts: clienteGrupo.grupos.reduce((acc, g) => acc + (g.rows?.length || 0), 0),
+      }))
+      .sort((a, b) =>
+        a.cliente.localeCompare(b.cliente, "es", { sensitivity: "base" })
+      );
+  }, [oportunidadesAgrupadas]);
+
+  const resumenCerradas = useMemo(() => {
+    return oportunidadesAgrupadas
+      .filter((grupo) => !grupo.sinPrincipal && grupo.principalRow && isClosedResumenRow(grupo.principalRow))
+      .map((grupo) => {
+        const rowsQueSuman = grupo.rows.filter(estadoSumaEnPrincipal);
+        const totals = rowsQueSuman.length > 0
+          ? grupo.totals
+          : getPrincipalOwnTotals(grupo.principalRow);
+
+        return {
+          id: grupo.principalRow?.id,
+          nombre_cliente: grupo.cliente,
+          servicio: normalizeText(grupo.principalRow?.servicio) || "-",
+          estado: getEstadoResumen(grupo.principalRow),
+          tipo_moneda:
+            rowsQueSuman.length > 0
+              ? getUniqueText(rowsQueSuman, "tipo_moneda", 2)
+              : normalizeText(grupo.principalRow?.tipo_moneda) || "-",
+          valor: totals.valorComercial,
+          fecha_cierre_oportunidad: toIsoDate(grupo.principalRow?.fecha_cierre_oportunidad),
+        };
+      })
+      .sort((a, b) => {
+        const fechaA = toIsoDate(a.fecha_cierre_oportunidad);
+        const fechaB = toIsoDate(b.fecha_cierre_oportunidad);
+
+        if (fechaA !== fechaB) return fechaB.localeCompare(fechaA);
+
+        return a.nombre_cliente.localeCompare(b.nombre_cliente, "es", {
+          sensitivity: "base",
+        });
+      });
+  }, [oportunidadesAgrupadas]);
+
+  const resumenEstadosOptions = useMemo(() => {
+    return [...new Set(resumenCerradas.map((row) => row.estado).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  }, [resumenCerradas]);
+
+  const resumenCerradasFiltrado = useMemo(() => {
+    if (!resumenEstadoFilter) return resumenCerradas;
+
+    return resumenCerradas.filter(
+      (row) => normalizeForCompare(row.estado) === normalizeForCompare(resumenEstadoFilter)
+    );
+  }, [resumenCerradas, resumenEstadoFilter]);
+
   const toggleClienteGroup = useCallback((clienteKey) => {
     setExpandedClientes((prev) => ({
       ...prev,
@@ -2410,9 +2636,16 @@ export default function Oportunidades() {
   }, []);
 
   const expandAllClienteGroups = () => {
-    setExpandedClientes(
-      Object.fromEntries(oportunidadesAgrupadas.map((g) => [g.key, true]))
-    );
+    const expanded = {};
+
+    clientesAgrupados.forEach((clienteGrupo) => {
+      expanded[clienteGrupo.key] = true;
+      clienteGrupo.grupos.forEach((grupo) => {
+        expanded[grupo.key] = true;
+      });
+    });
+
+    setExpandedClientes(expanded);
   };
 
   const collapseAllClienteGroups = () => {
@@ -2502,6 +2735,78 @@ export default function Oportunidades() {
       </td>
     </tr>
   );
+
+  const renderClienteGroupRow = (clienteGrupo) => {
+    const isOpen = !!expandedClientes[clienteGrupo.key];
+
+    return (
+      <tr className="cliente-group-row" data-cliente-key={clienteGrupo.key}>
+        {tableColumnOrder.map((col, colIdx) => {
+          let content = "";
+
+          if (col === "id") {
+            content = (
+              <div className="principal-id-box cliente-group-toggle-box">
+                <button
+                  type="button"
+                  className="cliente-toggle-btn cliente-group-toggle-btn"
+                  onClick={() => toggleClienteGroup(clienteGrupo.key)}
+                  title={isOpen ? "Ocultar oportunidades del cliente" : "Ver oportunidades del cliente"}
+                >
+                  {isOpen ? "−" : "+"}
+                </button>
+              </div>
+            );
+          }
+
+          if (col === CLIENTE_COL) {
+            content = (
+              <div className="cliente-principal-info cliente-group-info">
+                <strong>{clienteGrupo.cliente}</strong>
+                <span>
+                  {clienteGrupo.totalPrincipales} oportunidad{clienteGrupo.totalPrincipales === 1 ? "" : "es"} principal{clienteGrupo.totalPrincipales === 1 ? "" : "es"}
+                </span>
+                <small>
+                  {clienteGrupo.totalOts} OT/suboportunidad{clienteGrupo.totalOts === 1 ? "" : "es"}
+                  {clienteGrupo.totalSinPrincipal > 0
+                    ? ` · ${clienteGrupo.totalSinPrincipal} sin principal`
+                    : ""}
+                </small>
+              </div>
+            );
+          }
+
+          if (col === SERVICIO_COL) {
+            content = "AGRUPACIÓN DE OPORTUNIDADES DEL CLIENTE";
+          }
+
+          return (
+            <td
+              key={`cliente-group-${clienteGrupo.key}-${col}-${colIdx}`}
+              className={[
+                getColumnClassNames(col),
+                col === SERVICIO_COL ? "servicio-wrap-cell" : "",
+              ]
+                .join(" ")
+                .trim()}
+            >
+              {content || "-"}
+            </td>
+          );
+        })}
+
+        <td className="acciones">
+          <button
+            type="button"
+            className="cliente-ver-btn cliente-group-ver-btn"
+            onClick={() => toggleClienteGroup(clienteGrupo.key)}
+          >
+            {isOpen ? "Ocultar" : "Ver"}
+          </button>
+        </td>
+      </tr>
+    );
+  };
 
   const renderClientePrincipalRow = (grupo) => {
     const isOpen = !!expandedClientes[grupo.key];
@@ -2610,19 +2915,42 @@ export default function Oportunidades() {
               : "-";
           }
 
+          if (
+            grupo.principalRow &&
+            !grupo.sinPrincipal &&
+            PRINCIPAL_EDITABLE_COLS.has(col) &&
+            sameId(editing.rowId, grupo.principalRow?.id) &&
+            editing.col === col
+          ) {
+            content = renderEditorCell(grupo.principalRow, col);
+          }
+
           return (
             <td
               key={`principal-${grupo.key}-${col}-${colIdx}`}
+              onDoubleClick={() => {
+                if (!grupo.principalRow || grupo.sinPrincipal) return;
+                if (!PRINCIPAL_EDITABLE_COLS.has(col)) return;
+
+                startEdit(grupo.principalRow, col);
+              }}
               className={[
                 getColumnClassNames(col),
                 isLong ? "obs-col" : "",
                 col === SERVICIO_COL ? "servicio-wrap-cell" : "",
+                PRINCIPAL_EDITABLE_COLS.has(col) ? "principal-editable-cell" : "",
+                sameId(editing.rowId, grupo.principalRow?.id) && editing.col === col ? "editing" : "",
                 ["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"].includes(col)
                   ? "principal-total-cell"
                   : "",
               ]
                 .join(" ")
                 .trim()}
+              title={
+                PRINCIPAL_EDITABLE_COLS.has(col)
+                  ? "Doble clic para editar este campo en la oportunidad principal"
+                  : undefined
+              }
             >
               {content}
             </td>
@@ -2670,6 +2998,43 @@ export default function Oportunidades() {
           {loading ? "Cargando..." : "Subir Excel"}
         </button>
 
+        <div className="top-close-filter-panel">
+          <div className="top-close-filter-title">
+            Filtro fecha cierre oportunidad
+          </div>
+
+          <label>
+            Desde
+            <input
+              type="date"
+              value={filtroCierreDesde}
+              onChange={(e) => setFiltroCierreDesde(e.target.value)}
+            />
+          </label>
+
+          <label>
+            Hasta
+            <input
+              type="date"
+              value={filtroCierreHasta}
+              onChange={(e) => setFiltroCierreHasta(e.target.value)}
+            />
+          </label>
+
+          {(filtroCierreDesde || filtroCierreHasta) && (
+            <button
+              type="button"
+              className="top-close-filter-clear"
+              onClick={() => {
+                setFiltroCierreDesde("");
+                setFiltroCierreHasta("");
+              }}
+            >
+              Limpiar fecha
+            </button>
+          )}
+        </div>
+
         <div className="acciones-exportacion">
           <button
             className="upload-btn"
@@ -2699,6 +3064,15 @@ export default function Oportunidades() {
           <button
             className="upload-btn"
             type="button"
+            onClick={() => setOpenResumenCerradas(true)}
+            disabled={loading}
+          >
+            Resumen cerradas
+          </button>
+
+          <button
+            className="upload-btn"
+            type="button"
             onClick={expandAllClienteGroups}
             disabled={loading || !oportunidadesAgrupadas.length}
           >
@@ -2719,7 +3093,9 @@ export default function Oportunidades() {
             onClick={handleClearFilters}
             disabled={
               loading ||
-              !Object.values(filters).some((vals) => Array.isArray(vals) && vals.length > 0)
+              (!Object.values(filters).some((vals) => Array.isArray(vals) && vals.length > 0) &&
+                !filtroCierreDesde &&
+                !filtroCierreHasta)
             }
           >
             Limpiar filtros
@@ -2804,12 +3180,19 @@ export default function Oportunidades() {
               </tr>
             )}
 
-            {oportunidadesAgrupadas.map((grupo) => (
-              <React.Fragment key={`grupo-${grupo.key}`}>
-                {renderClientePrincipalRow(grupo)}
+            {clientesAgrupados.map((clienteGrupo) => (
+              <React.Fragment key={`cliente-${clienteGrupo.key}`}>
+                {renderClienteGroupRow(clienteGrupo)}
 
-                {expandedClientes[grupo.key] &&
-                  grupo.rows.map((row, i) => renderOpportunityRow(row, i))}
+                {expandedClientes[clienteGrupo.key] &&
+                  clienteGrupo.grupos.map((grupo) => (
+                    <React.Fragment key={`grupo-${grupo.key}`}>
+                      {renderClientePrincipalRow(grupo)}
+
+                      {expandedClientes[grupo.key] &&
+                        grupo.rows.map((row, i) => renderOpportunityRow(row, i))}
+                    </React.Fragment>
+                  ))}
               </React.Fragment>
             ))}
           </tbody>
@@ -2819,6 +3202,88 @@ export default function Oportunidades() {
       <button className="floating-add-btn" onClick={addRow} disabled={loading}>
         +
       </button>
+
+      {openResumenCerradas && (
+        <div className="opp-summary-overlay" role="dialog" aria-modal="true">
+          <div className="opp-summary-modal">
+            <div className="opp-summary-header">
+              <div>
+                <h3>Resumen oportunidades cerradas</h3>
+                <p>
+                  Valor calculado desde la suma de las OTs/suboportunidades asignadas a cada principal.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="opp-summary-close"
+                onClick={() => setOpenResumenCerradas(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="opp-summary-filters">
+              <label>
+                Estado
+                <select
+                  value={resumenEstadoFilter}
+                  onChange={(e) => setResumenEstadoFilter(e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {resumenEstadosOptions.map((estado) => (
+                    <option key={estado} value={estado}>
+                      {estado}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <span>
+                {resumenCerradasFiltrado.length} registro{resumenCerradasFiltrado.length === 1 ? "" : "s"}
+              </span>
+            </div>
+
+            <div className="opp-summary-table-wrap">
+              <table className="opp-summary-table">
+                <thead>
+                  <tr>
+                    <th>NOMBRE CLIENTE</th>
+                    <th>SERVICIO</th>
+                    <th>ESTADO</th>
+                    <th>FECHA CIERRE OPORTUNIDAD</th>
+                    <th>TIPO MONEDA</th>
+                    <th>VALOR</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {resumenCerradasFiltrado.length ? (
+                    resumenCerradasFiltrado.map((row) => (
+                      <tr key={`resumen-${row.id}`}>
+                        <td>{row.nombre_cliente}</td>
+                        <td>{row.servicio}</td>
+                        <td>{row.estado}</td>
+                        <td>{row.fecha_cierre_oportunidad || "-"}</td>
+                        <td>{row.tipo_moneda}</td>
+                        <td className="opp-summary-money">
+                          {row.valor === "" ? "-" : `$ ${nf.format(row.valor)}`}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="opp-summary-empty">
+                        No hay oportunidades cerradas para los filtros seleccionados.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ModalCategoriaPerdida
         isOpen={openCategoriaModal}

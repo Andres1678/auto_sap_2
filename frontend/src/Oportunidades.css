@@ -1554,3 +1554,281 @@
 .oportunidades-wrapper .op-action-copy:hover {
   background: #bae6fd;
 }
+
+
+/* =========================================================
+   Filtros superiores fecha cierre oportunidad
+========================================================= */
+.oportunidades-wrapper .top-close-filter-panel {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.oportunidades-wrapper .top-close-filter-title {
+  width: 100%;
+  font-size: 0.78rem;
+  font-weight: 900;
+  color: #1e3a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.oportunidades-wrapper .top-close-filter-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #334155;
+}
+
+.oportunidades-wrapper .top-close-filter-panel input {
+  min-width: 145px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 9px;
+  font-size: 0.8rem;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.oportunidades-wrapper .top-close-filter-clear {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #e2e8f0;
+  color: #334155;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.oportunidades-wrapper .top-close-filter-clear:hover {
+  background: #cbd5e1;
+}
+
+/* =========================================================
+   Agrupación general por cliente
+========================================================= */
+.oportunidades-wrapper .cliente-group-row td,
+.oportunidades-wrapper .cliente-group-row td.post-prc-col,
+.oportunidades-wrapper .cliente-group-row td.obs-col {
+  background: #e0f2fe !important;
+  color: #082f49 !important;
+  border-top: 3px solid #38bdf8 !important;
+  border-bottom: 3px solid #7dd3fc !important;
+  font-weight: 900 !important;
+}
+
+.oportunidades-wrapper .cliente-group-row:hover td,
+.oportunidades-wrapper .cliente-group-row:hover td.post-prc-col,
+.oportunidades-wrapper .cliente-group-row:hover td.obs-col {
+  background: #bae6fd !important;
+}
+
+.oportunidades-wrapper .cliente-group-row .sticky-col-1,
+.oportunidades-wrapper .cliente-group-row .sticky-col-2,
+.oportunidades-wrapper .cliente-group-row .sticky-col-3 {
+  background: #e0f2fe !important;
+}
+
+.oportunidades-wrapper .cliente-group-row:hover .sticky-col-1,
+.oportunidades-wrapper .cliente-group-row:hover .sticky-col-2,
+.oportunidades-wrapper .cliente-group-row:hover .sticky-col-3 {
+  background: #bae6fd !important;
+}
+
+.oportunidades-wrapper .cliente-group-toggle-box {
+  justify-content: center;
+}
+
+.oportunidades-wrapper .cliente-group-toggle-btn,
+.oportunidades-wrapper .cliente-group-ver-btn {
+  background: #0284c7 !important;
+}
+
+.oportunidades-wrapper .cliente-group-toggle-btn:hover,
+.oportunidades-wrapper .cliente-group-ver-btn:hover {
+  background: #0369a1 !important;
+}
+
+.oportunidades-wrapper .cliente-group-info strong {
+  color: #082f49 !important;
+  font-size: 0.88rem !important;
+}
+
+.oportunidades-wrapper .cliente-group-info span {
+  background: #ffffff !important;
+  color: #075985 !important;
+}
+
+/* =========================================================
+   Celdas editables especiales
+========================================================= */
+.oportunidades-wrapper .principal-editable-cell {
+  cursor: pointer;
+  box-shadow: inset 0 -2px 0 rgba(37, 99, 235, 0.28);
+}
+
+.oportunidades-wrapper .tabla-oportunidades td.principal-total-cell {
+  background-image: linear-gradient(90deg, rgba(219, 234, 254, 0.45), rgba(255, 255, 255, 0));
+}
+
+/* =========================================================
+   Modal resumen oportunidades cerradas
+========================================================= */
+.oportunidades-wrapper .opp-summary-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.oportunidades-wrapper .opp-summary-modal {
+  width: min(1100px, 96vw);
+  max-height: 88vh;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.38);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.oportunidades-wrapper .opp-summary-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  background: #1e293b;
+  color: #ffffff;
+}
+
+.oportunidades-wrapper .opp-summary-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.oportunidades-wrapper .opp-summary-header p {
+  margin: 5px 0 0;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+}
+
+.oportunidades-wrapper .opp-summary-close {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 1.4rem;
+  font-weight: 900;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.oportunidades-wrapper .opp-summary-filters {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+}
+
+.oportunidades-wrapper .opp-summary-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #334155;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.oportunidades-wrapper .opp-summary-filters select {
+  min-width: 220px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.82rem;
+}
+
+.oportunidades-wrapper .opp-summary-filters span {
+  font-size: 0.82rem;
+  font-weight: 900;
+  color: #1e3a8a;
+  background: #dbeafe;
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+
+.oportunidades-wrapper .opp-summary-table-wrap {
+  overflow: auto;
+  padding: 0;
+}
+
+.oportunidades-wrapper .opp-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.oportunidades-wrapper .opp-summary-table th {
+  position: sticky;
+  top: 0;
+  background: #dc2626;
+  color: #ffffff;
+  text-align: center;
+  padding: 9px 10px;
+  border: 1px solid #fecaca;
+  font-weight: 900;
+}
+
+.oportunidades-wrapper .opp-summary-table td {
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  color: #0f172a;
+  vertical-align: top;
+}
+
+.oportunidades-wrapper .opp-summary-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+.oportunidades-wrapper .opp-summary-money {
+  text-align: right;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.oportunidades-wrapper .opp-summary-empty {
+  text-align: center;
+  padding: 24px !important;
+  color: #64748b !important;
+  font-weight: 800;
+}
+
+.oportunidades-wrapper .cell-readonly-hint {
+  display: inline-block;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: #f1f5f9;
+  border-radius: 999px;
+  padding: 4px 8px;
+}
