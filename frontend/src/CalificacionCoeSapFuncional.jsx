@@ -224,6 +224,15 @@ function cleanText(value) {
   return String(value);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function numberText(value) {
   if (value === null || value === undefined || value === "") return "0";
   const n = Number(value);
@@ -519,7 +528,6 @@ export default function CalificacionCoeSapFuncional() {
 
   const visibleColumns = useMemo(() => {
     const visibleSet = new Set(visibleColumnKeys);
-
     const cols = TABLE_COLUMNS.filter((col) => visibleSet.has(col.key));
 
     if (!cols.length) {
@@ -928,6 +936,104 @@ export default function CalificacionCoeSapFuncional() {
       ...prev,
       observaciones: `${prev.observaciones ? `${prev.observaciones}\n` : ""}${todayStamp()} - `,
     }));
+  };
+
+  const editObservaciones = async (row) => {
+    if (!row?.id) return;
+
+    if (!canImport) {
+      Swal.fire({
+        icon: "warning",
+        title: "Sin permiso",
+        text: "No tienes permiso para editar observaciones.",
+        confirmButtonColor: "#DA291C",
+      });
+      return;
+    }
+
+    const current = row?.observaciones || "";
+    const stamp = todayStamp();
+
+    const result = await Swal.fire({
+      title: "Observaciones / Seguimiento semanal",
+      html: `
+        <div class="calcoe-swal-info">
+          <b>ID:</b> ${escapeHtml(row?.numero || "-")}<br/>
+          <b>Sociedad:</b> ${escapeHtml(row?.sociedad || "-")}<br/>
+          <b>Asunto:</b> ${escapeHtml(row?.asunto || "-")}<br/>
+          <b>Estado:</b> ${escapeHtml(row?.estado || "-")}
+        </div>
+        <button type="button" id="calcoe-add-weekly-entry" class="calcoe-swal-weekly-btn">
+          + Agregar entrada semanal (${stamp})
+        </button>
+      `,
+      input: "textarea",
+      inputValue: current,
+      inputAttributes: {
+        placeholder: `${stamp} - Escribe aquí el seguimiento semanal...`,
+      },
+      didOpen: () => {
+        const btn = document.getElementById("calcoe-add-weekly-entry");
+        const textarea = Swal.getInput();
+
+        if (btn && textarea) {
+          btn.addEventListener("click", () => {
+            const prefix = textarea.value ? `${textarea.value}\n` : "";
+            textarea.value = `${prefix}${stamp} - `;
+            textarea.focus();
+            textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+          });
+        }
+      },
+      showCancelButton: true,
+      confirmButtonText: "Guardar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#DA291C",
+      cancelButtonColor: "#6b7280",
+      customClass: {
+        popup: "calcoe-swal-popup",
+        input: "calcoe-swal-textarea",
+      },
+    });
+
+    if (!result.isConfirmed) return;
+
+    const nextValue = result.value ?? "";
+
+    try {
+      const res = await jfetch(`/coe-sap-funcional/calificacion/${row.id}`, {
+        method: "PATCH",
+        headers: {
+          ...commonHeaders,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          observaciones: nextValue,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+      }
+
+      await Swal.fire({
+        icon: "success",
+        title: "Observaciones actualizadas",
+        text: "El seguimiento fue guardado correctamente.",
+        confirmButtonColor: "#008C67",
+      });
+
+      fetchRows();
+    } catch (error) {
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo guardar",
+        text: error?.message || "Revisa el backend.",
+        confirmButtonColor: "#DA291C",
+      });
+    }
   };
 
   const saveEdit = async () => {
@@ -1416,12 +1522,21 @@ export default function CalificacionCoeSapFuncional() {
                     {visibleColumns.map((col) => (
                       <td
                         key={`${row.id}-${col.key}`}
-                        className={`${col.cls || ""} ${getColumnGroupClass(col.group)}`}
+                        className={`${col.cls || ""} ${getColumnGroupClass(col.group)} ${
+                          col.key === "observaciones" ? "editable-observaciones" : ""
+                        }`}
                         title={
-                          col.key !== "observaciones" && String(row[col.key] ?? "").length > 40
-                            ? cleanText(row[col.key])
-                            : undefined
+                          col.key === "observaciones"
+                            ? "Doble clic para editar observaciones"
+                            : String(row[col.key] ?? "").length > 40
+                              ? cleanText(row[col.key])
+                              : undefined
                         }
+                        onDoubleClick={() => {
+                          if (col.key === "observaciones") {
+                            editObservaciones(row);
+                          }
+                        }}
                       >
                         {renderCell(row, col)}
                       </td>
@@ -1579,7 +1694,7 @@ export default function CalificacionCoeSapFuncional() {
               <div>
                 <h3>Horas del caso</h3>
                 <p>
-                  Caso <b>{hoursRow?.numero}</b> • Total estimadas:{" "}
+                  Caso <b>{hoursRow?.numero}</b> • Total estimadas: {" "}
                   <b>{numberText(hoursRow?.totalHorasEstimadas)}</b>
                 </p>
               </div>

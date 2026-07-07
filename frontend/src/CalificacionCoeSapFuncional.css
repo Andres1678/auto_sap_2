@@ -802,6 +802,71 @@ th.col-hours {
   word-break: normal;
 }
 
+.calcoe-table td.editable-observaciones {
+  cursor: pointer;
+  position: relative;
+}
+
+.calcoe-table td.editable-observaciones::after {
+  content: "Doble clic para editar";
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(218, 41, 28, 0.08);
+  color: #b91f15;
+  font-size: 10px;
+  font-weight: 900;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.calcoe-table td.editable-observaciones:hover::after {
+  opacity: 1;
+}
+
+.calcoe-table td.editable-observaciones:hover {
+  background: #fff4df !important;
+}
+
+.calcoe-swal-info {
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.calcoe-swal-weekly-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  background: #dcfce7;
+  color: #166534;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.calcoe-swal-weekly-btn:hover {
+  background: #bbf7d0;
+}
+
+.calcoe-swal-textarea {
+  min-height: 280px !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+  resize: vertical !important;
+}
+
 .calcoe-filter-off {
   display: inline-flex;
   width: 100%;
