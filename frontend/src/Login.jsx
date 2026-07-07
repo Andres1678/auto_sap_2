@@ -33,7 +33,13 @@ const Login = ({ onLoginSuccess }) => {
       try {
         const res = await jfetch(`/horarios-permitidos?usuario=${encodeURIComponent(u)}`);
         const data = await res.json().catch(() => ({}));
-        setHorarios(Array.isArray(data?.horarios) ? data.horarios : []);
+        const horariosPermitidos = Array.isArray(data?.horarios) ? data.horarios : [];
+
+        setHorarios(horariosPermitidos);
+        setHorario((prev) => {
+          if (!prev) return prev;
+          return horariosPermitidos.includes(prev) ? prev : "";
+        });
       } catch {
         setHorarios([]);
       }

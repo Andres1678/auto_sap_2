@@ -36,6 +36,49 @@ bp = Blueprint('routes', __name__, url_prefix="/api")
 
 _HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$", re.I)
 
+FUNCIONAL_HORARIOS_PERMITIDOS = [
+    "08:30 - 18:00",
+    "07:30 - 16:00",
+    "07:00 - 16:00",
+]
+
+FUNCIONAL_HORARIO_DEFAULT = "08:30 - 18:00"
+
+FUNCIONAL_HORARIOS_ANTERIORES = {
+    "08:00 - 18:00": "08:30 - 18:00",
+    "07:00 - 17:00": "08:30 - 18:00",
+}
+
+
+def _norm_equipo_horario(value):
+    s = str(value or "").strip().upper()
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    return s
+
+
+def _normalizar_horario_text(value):
+    s = str(value or "").strip()
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"\s*-\s*", " - ", s)
+    return s
+
+
+def _normalizar_horario_trabajo_por_equipo(horario_trabajo, equipo):
+    equipo_norm = _norm_equipo_horario(equipo)
+    horario = _normalizar_horario_text(horario_trabajo)
+
+    if equipo_norm == "FUNCIONAL":
+        if horario in FUNCIONAL_HORARIOS_PERMITIDOS:
+            return horario
+
+        if horario in FUNCIONAL_HORARIOS_ANTERIORES:
+            return FUNCIONAL_HORARIOS_ANTERIORES[horario]
+
+        return FUNCIONAL_HORARIO_DEFAULT
+
+    return horario or None
+
 ROLE_TEAM_MAP = {
     "ADMIN_BASIS": "BASIS",
     "ADMIN_FUNCIONAL": "FUNCIONAL",
@@ -916,7 +959,21 @@ def registro_to_dict(r: Registro):
         'oncall': r.oncall,
         'desborde': r.desborde,
         'tiempoFacturable': r.tiempo_facturable,
-        'horasAdicionales': r.horas_adicionales,
+        'horasAdicionales': _calcular_horas_adicionales_por_horario(
+            r.hora_inicio,
+            r.hora_fin,
+            getattr(r, "horario_trabajo", None),
+            equipo_name,
+            r.horas_adicionales,
+        ),
+        'horarioTrabajo': _normalizar_horario_trabajo_por_equipo(
+            getattr(r, "horario_trabajo", None),
+            equipo_name,
+        ),
+        'horario_trabajo': _normalizar_horario_trabajo_por_equipo(
+            getattr(r, "horario_trabajo", None),
+            equipo_name,
+        ),
         'descripcion': r.descripcion,
         'totalHoras': r.total_horas,
         'consultor': consul.nombre if consul else None,
@@ -1106,6 +1163,24 @@ def _dividir_registro_por_horario(hora_inicio: str, hora_fin: str, horario_traba
         })
 
     return fragmentos
+
+
+def _calcular_horas_adicionales_por_horario(hora_inicio, hora_fin, horario_trabajo, equipo=None, fallback="N/D"):
+    horario_normalizado = _normalizar_horario_trabajo_por_equipo(horario_trabajo, equipo)
+    fragmentos = _dividir_registro_por_horario(hora_inicio, hora_fin, horario_normalizado)
+
+    if not fragmentos:
+        return fallback or "N/D"
+
+    valores = {str(f.get("horas_adicionales") or "").strip().upper() for f in fragmentos}
+
+    if "SÍ" in valores or "SI" in valores:
+        return "Sí"
+
+    if valores == {"NO"}:
+        return "No"
+
+    return fallback or "N/D"
 
 def _norm_text_basic(value):
     s = str(value or "").strip().upper()
@@ -1298,9 +1373,19 @@ def registrar_hora():
     # ------------------------------------------------------------------
     # 7) HORARIO DE TRABAJO
     # ------------------------------------------------------------------
-    horario_trabajo = (
+    horario_trabajo_raw = (
         pick(data, 'horario_trabajo', 'horarioTrabajo')
         or (Horario.query.get(consultor.horario_id).rango if consultor.horario_id else None)
+    )
+
+    equipo_para_horario = pick(data, 'equipo')
+    if not equipo_para_horario and consultor.equipo_id:
+        eq_horario = Equipo.query.get(consultor.equipo_id)
+        equipo_para_horario = eq_horario.nombre if eq_horario else None
+
+    horario_trabajo = _normalizar_horario_trabajo_por_equipo(
+        horario_trabajo_raw,
+        equipo_para_horario
     )
 
     # ------------------------------------------------------------------
@@ -1928,7 +2013,21 @@ def obtener_registros_graficos():
                 "horaFin": r.hora_fin,
                 "tiempoInvertido": r.tiempo_invertido,
                 "tiempoFacturable": r.tiempo_facturable,
-                "horasAdicionales": r.horas_adicionales,
+                "horasAdicionales": _calcular_horas_adicionales_por_horario(
+                    r.hora_inicio,
+                    r.hora_fin,
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                    r.horas_adicionales,
+                ),
+                "horarioTrabajo": _normalizar_horario_trabajo_por_equipo(
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                ),
+                "horario_trabajo": _normalizar_horario_trabajo_por_equipo(
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                ),
                 "descripcion": r.descripcion,
                 "totalHoras": r.total_horas,
                 "bloqueado": bool(r.bloqueado),
@@ -2160,7 +2259,21 @@ def obtener_registros():
                 "horaFin": r.hora_fin,
                 "tiempoInvertido": r.tiempo_invertido,
                 "tiempoFacturable": r.tiempo_facturable,
-                "horasAdicionales": r.horas_adicionales,
+                "horasAdicionales": _calcular_horas_adicionales_por_horario(
+                    r.hora_inicio,
+                    r.hora_fin,
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                    r.horas_adicionales,
+                ),
+                "horarioTrabajo": _normalizar_horario_trabajo_por_equipo(
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                ),
+                "horario_trabajo": _normalizar_horario_trabajo_por_equipo(
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                ),
                 "descripcion": r.descripcion,
                 "totalHoras": r.total_horas,
 
@@ -2448,6 +2561,23 @@ def editar_registro(id):
         if tiempo_calculado <= 0:
             return jsonify({'mensaje': 'Hora fin debe ser mayor a hora inicio'}), 400
 
+        equipo_para_horario = pick(data, 'equipo', default=registro.equipo)
+        if not equipo_para_horario and getattr(consultor_login, "equipo_obj", None):
+            equipo_para_horario = consultor_login.equipo_obj.nombre
+
+        horario_trabajo = _normalizar_horario_trabajo_por_equipo(
+            pick(data, 'horarioTrabajo', 'horario_trabajo', default=getattr(registro, "horario_trabajo", None)),
+            equipo_para_horario,
+        )
+
+        horas_adicionales_calculadas = _calcular_horas_adicionales_por_horario(
+            nuevo_hora_inicio,
+            nuevo_hora_fin,
+            horario_trabajo,
+            equipo_para_horario,
+            registro.horas_adicionales,
+        )
+
         # ----------------------------------------------------------
         # 3.1) No permitir fechas futuras
         # ----------------------------------------------------------
@@ -2578,12 +2708,8 @@ def editar_registro(id):
             'tiempo_facturable',
             default=registro.tiempo_facturable
         )
-        registro.horas_adicionales = pick(
-            data,
-            'horasAdicionales',
-            'horas_adicionales',
-            default=registro.horas_adicionales
-        )
+        registro.horas_adicionales = horas_adicionales_calculadas
+        registro.horario_trabajo = horario_trabajo
         registro.descripcion = pick(data, 'descripcion', default=registro.descripcion)
         registro.total_horas = pick(
             data,
@@ -5098,7 +5224,21 @@ def export_registros():
                 "horaFin": r.hora_fin,
                 "tiempoInvertido": r.tiempo_invertido,
                 "tiempoFacturable": r.tiempo_facturable,
-                "horasAdicionales": r.horas_adicionales,
+                "horasAdicionales": _calcular_horas_adicionales_por_horario(
+                    r.hora_inicio,
+                    r.hora_fin,
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                    r.horas_adicionales,
+                ),
+                "horarioTrabajo": _normalizar_horario_trabajo_por_equipo(
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                ),
+                "horario_trabajo": _normalizar_horario_trabajo_por_equipo(
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                ),
                 "descripcion": r.descripcion,
                 "totalHoras": r.total_horas,
 
@@ -5152,12 +5292,7 @@ def horarios_permitidos():
 
     equipo = (consultor.equipo_obj.nombre if consultor.equipo_obj else "").strip().upper()
 
-    horarios_funcional = [
-        "07:00 - 17:00",
-        "07:00 - 16:00",
-        "08:00 - 18:00",
-        "DISPONIBLE"
-    ]
+    horarios_funcional = FUNCIONAL_HORARIOS_PERMITIDOS
 
     if equipo == "BASIS":
         horarios = [h.rango for h in Horario.query.order_by(Horario.rango).all()]
@@ -12373,7 +12508,21 @@ def obtener_proyectos_horas_dashboard():
                 "horaFin": r.hora_fin,
                 "tiempoInvertido": round(horas, 2),
                 "tiempoFacturable": _safe_float_report(r.tiempo_facturable),
-                "horasAdicionales": r.horas_adicionales,
+                "horasAdicionales": _calcular_horas_adicionales_por_horario(
+                    r.hora_inicio,
+                    r.hora_fin,
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                    r.horas_adicionales,
+                ),
+                "horarioTrabajo": _normalizar_horario_trabajo_por_equipo(
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                ),
+                "horario_trabajo": _normalizar_horario_trabajo_por_equipo(
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                ),
                 "descripcion": r.descripcion,
                 "totalHoras": round(horas, 2),
 

@@ -93,10 +93,44 @@ const calcularTiempo = (inicio, fin) => {
   return mins > 0 ? parseFloat((mins / 60).toFixed(2)) : 0;
 };
 
-const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario) => {
+const HORARIOS_FUNCIONAL_PERMITIDOS = [
+  "08:30 - 18:00",
+  "07:30 - 16:00",
+  "07:00 - 16:00",
+];
+
+const HORARIO_FUNCIONAL_DEFAULT = "08:30 - 18:00";
+
+const HORARIOS_FUNCIONAL_ANTERIORES = {
+  "08:00 - 18:00": "08:30 - 18:00",
+  "07:00 - 17:00": "08:30 - 18:00",
+};
+
+const normalizeHorarioText = (value) =>
+  String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*-\s*/g, " - ")
+    .trim();
+
+const resolveHorarioTrabajo = (horarioUsuario, equipo = "") => {
+  const horario = normalizeHorarioText(horarioUsuario);
+  const equipoNorm = normKey(equipo);
+
+  if (equipoNorm === "FUNCIONAL") {
+    if (HORARIOS_FUNCIONAL_PERMITIDOS.includes(horario)) return horario;
+    if (HORARIOS_FUNCIONAL_ANTERIORES[horario]) return HORARIOS_FUNCIONAL_ANTERIORES[horario];
+
+    return HORARIO_FUNCIONAL_DEFAULT;
+  }
+
+  return horario;
+};
+
+const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario, equipo = "") => {
   const ini = parseHHMM(horaInicio);
   const fin = parseHHMM(horaFin);
-  const rango = parseRange(horarioUsuario);
+  const horarioTrabajo = resolveHorarioTrabajo(horarioUsuario, equipo);
+  const rango = parseRange(horarioTrabajo);
   if (!ini || !fin || !rango) return 'N/D';
 
   let start = toMinutes(ini);
@@ -591,7 +625,13 @@ const Registro = ({ userData }) => {
     isActiveValue(userData?.activo ?? userData?.user?.activo ?? localStorage.getItem("consultorActivo"))
   );
 
-  const horarioUsuario = (userData?.horario ?? userData?.user?.horario ?? userData?.user?.horarioSesion ?? '');
+  const horarioUsuario = (
+    userData?.horario ??
+    userData?.user?.horario ??
+    userData?.user?.horarioSesion ??
+    localStorage.getItem("horarioSesion") ??
+    ''
+  );
   const rol = String(
     userData?.rol_ref?.nombre ??
     userData?.rol ??
@@ -1189,13 +1229,30 @@ const Registro = ({ userData }) => {
   }, [tareaIdByCodigoNombre, ocupacionLabelByTareaId]);
 
   const registrosProcesados = useMemo(() => {
-    return (registros || []).map((r) => ({
-      ...r,
-      equipoNormalizado: equipoOf(r),
-      ocupacionTexto: obtenerOcupacionDeRegistro(r),
-      tipoTareaTexto: r.tipoTarea || (r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—"),
-    }));
-  }, [registros, obtenerOcupacionDeRegistro]);
+    return (registros || []).map((r) => {
+      const equipoNormalizado = equipoOf(r);
+      const horarioFila =
+        r?.horarioTrabajo ||
+        r?.horario_trabajo ||
+        (String(r?.usuario_consultor || "").trim().toLowerCase() === usuarioLogin ? horarioUsuario : "");
+
+      const horasAdicionalesCalculadas = horarioFila
+        ? calcularHorasAdicionales(r?.horaInicio, r?.horaFin, horarioFila, equipoNormalizado)
+        : r?.horasAdicionales;
+
+      return {
+        ...r,
+        equipoNormalizado,
+        horarioTrabajo: resolveHorarioTrabajo(horarioFila, equipoNormalizado),
+        horasAdicionales:
+          horasAdicionalesCalculadas && horasAdicionalesCalculadas !== "N/D"
+            ? horasAdicionalesCalculadas
+            : r?.horasAdicionales,
+        ocupacionTexto: obtenerOcupacionDeRegistro(r),
+        tipoTareaTexto: r.tipoTarea || (r.tarea ? `${r.tarea.codigo} - ${r.tarea.nombre}` : "—"),
+      };
+    });
+  }, [registros, obtenerOcupacionDeRegistro, horarioUsuario, usuarioLogin]);
 
   const clientesOptions = useMemo(() => {
     return buildOptionsSortedByCount(
@@ -1455,10 +1512,16 @@ const Registro = ({ userData }) => {
       return Swal.fire({ icon: "warning", title: "Selecciona un módulo" });
     }
 
+    const horarioTrabajo = resolveHorarioTrabajo(
+      /^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null,
+      equipoFormulario
+    );
+
     const horasAdic = calcularHorasAdicionales(
       registro.horaInicio,
       registro.horaFin,
-      /^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null
+      horarioTrabajo,
+      equipoFormulario
     );
 
     const moduloFinal = (moduloElegido || modulos[0] || moduloUser || "").trim();
@@ -1493,6 +1556,8 @@ const Registro = ({ userData }) => {
       totalHoras: tiempo,
       modulo: moduloFinal,
       equipo: equipoFormulario,
+      horarioTrabajo,
+      horario_trabajo: horarioTrabajo,
       usuario: usuarioLogin,
       consultor_id: consultorId,
       rol,
