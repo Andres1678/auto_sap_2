@@ -5,6 +5,7 @@ import "./Oportunidades.css";
 import { jfetch } from "./lib/api";
 import { exportOportunidadesExcel } from "./lib/exportExcelOportunidades";
 import ModalCategoriaPerdida from "./ModalCategoriaPerdida";
+import ModalResumenCerradas from "./ModalResumenCerradas";
 
 const NUMERIC_COLS = new Set(["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"]);
 
@@ -858,12 +859,6 @@ export default function Oportunidades() {
   const [filtroCierreDesde, setFiltroCierreDesde] = useState("");
   const [filtroCierreHasta, setFiltroCierreHasta] = useState("");
   const [openResumenCerradas, setOpenResumenCerradas] = useState(false);
-  const [resumenEstadoFilter, setResumenEstadoFilter] = useState("");
-  const [resumenClienteFilter, setResumenClienteFilter] = useState("");
-  const [resumenServicioFilter, setResumenServicioFilter] = useState("");
-  const [resumenMonedaFilter, setResumenMonedaFilter] = useState("");
-  const [resumenFechaDesde, setResumenFechaDesde] = useState("");
-  const [resumenFechaHasta, setResumenFechaHasta] = useState("");
 
   const baseColumnOrder = useMemo(
     () => [
@@ -1317,12 +1312,6 @@ export default function Oportunidades() {
     setFilters({});
     setFiltroCierreDesde("");
     setFiltroCierreHasta("");
-    setResumenEstadoFilter("");
-    setResumenClienteFilter("");
-    setResumenServicioFilter("");
-    setResumenMonedaFilter("");
-    setResumenFechaDesde("");
-    setResumenFechaHasta("");
     setEditing({ rowId: null, col: null });
     setEditingContext(null);
   };
@@ -2782,75 +2771,6 @@ export default function Oportunidades() {
       });
   }, [oportunidadesAgrupadas]);
 
-  const resumenEstadosOptions = useMemo(() => {
-    return [...new Set(resumenCerradas.map((row) => row.estado).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-  }, [resumenCerradas]);
-
-  const resumenClientesOptions = useMemo(() => {
-    return [...new Set(resumenCerradas.map((row) => row.nombre_cliente).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-  }, [resumenCerradas]);
-
-  const resumenServiciosOptions = useMemo(() => {
-    return [...new Set(resumenCerradas.map((row) => row.servicio).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-  }, [resumenCerradas]);
-
-  const resumenMonedasOptions = useMemo(() => {
-    return [...new Set(resumenCerradas.map((row) => row.tipo_moneda).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-  }, [resumenCerradas]);
-
-  const limpiarFiltrosResumenCerradas = () => {
-    setResumenEstadoFilter("");
-    setResumenClienteFilter("");
-    setResumenServicioFilter("");
-    setResumenMonedaFilter("");
-    setResumenFechaDesde("");
-    setResumenFechaHasta("");
-  };
-
-  const resumenCerradasFiltrado = useMemo(() => {
-    return resumenCerradas.filter((row) => {
-      const fecha = toIsoDate(row.fecha_cierre_oportunidad);
-
-      if (resumenEstadoFilter && normalizeForCompare(row.estado) !== normalizeForCompare(resumenEstadoFilter)) {
-        return false;
-      }
-
-      if (resumenClienteFilter && normalizeForCompare(row.nombre_cliente) !== normalizeForCompare(resumenClienteFilter)) {
-        return false;
-      }
-
-      if (resumenServicioFilter && normalizeForCompare(row.servicio) !== normalizeForCompare(resumenServicioFilter)) {
-        return false;
-      }
-
-      if (resumenMonedaFilter && normalizeForCompare(row.tipo_moneda) !== normalizeForCompare(resumenMonedaFilter)) {
-        return false;
-      }
-
-      if (resumenFechaDesde && (!fecha || fecha < resumenFechaDesde)) {
-        return false;
-      }
-
-      if (resumenFechaHasta && (!fecha || fecha > resumenFechaHasta)) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [
-    resumenCerradas,
-    resumenEstadoFilter,
-    resumenClienteFilter,
-    resumenServicioFilter,
-    resumenMonedaFilter,
-    resumenFechaDesde,
-    resumenFechaHasta,
-  ]);
-
   const toggleClienteGroup = useCallback((clienteKey) => {
     setExpandedClientes((prev) => ({
       ...prev,
@@ -3440,166 +3360,11 @@ export default function Oportunidades() {
         +
       </button>
 
-      {openResumenCerradas && (
-        <div className="opp-summary-overlay" role="dialog" aria-modal="true">
-          <div className="opp-summary-modal">
-            <div className="opp-summary-header">
-              <div>
-                <h3>Resumen oportunidades cerradas</h3>
-                <p>
-                  Valor calculado desde la suma de las OTs/suboportunidades asignadas a cada principal.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                className="opp-summary-close"
-                onClick={() => setOpenResumenCerradas(false)}
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="opp-summary-filters opp-summary-filters-grid">
-              <label>
-                Cliente
-                <select
-                  value={resumenClienteFilter}
-                  onChange={(e) => setResumenClienteFilter(e.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {resumenClientesOptions.map((cliente) => (
-                    <option key={cliente} value={cliente}>
-                      {cliente}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Servicio
-                <select
-                  value={resumenServicioFilter}
-                  onChange={(e) => setResumenServicioFilter(e.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {resumenServiciosOptions.map((servicio) => (
-                    <option key={servicio} value={servicio}>
-                      {servicio}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Estado
-                <select
-                  value={resumenEstadoFilter}
-                  onChange={(e) => setResumenEstadoFilter(e.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {resumenEstadosOptions.map((estado) => (
-                    <option key={estado} value={estado}>
-                      {estado}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Tipo moneda
-                <select
-                  value={resumenMonedaFilter}
-                  onChange={(e) => setResumenMonedaFilter(e.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {resumenMonedasOptions.map((moneda) => (
-                    <option key={moneda} value={moneda}>
-                      {moneda}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Cierre desde
-                <input
-                  type="date"
-                  value={resumenFechaDesde}
-                  onChange={(e) => setResumenFechaDesde(e.target.value)}
-                />
-              </label>
-
-              <label>
-                Cierre hasta
-                <input
-                  type="date"
-                  value={resumenFechaHasta}
-                  onChange={(e) => setResumenFechaHasta(e.target.value)}
-                />
-              </label>
-
-              <button
-                type="button"
-                className="opp-summary-clear"
-                onClick={limpiarFiltrosResumenCerradas}
-                disabled={
-                  !resumenEstadoFilter &&
-                  !resumenClienteFilter &&
-                  !resumenServicioFilter &&
-                  !resumenMonedaFilter &&
-                  !resumenFechaDesde &&
-                  !resumenFechaHasta
-                }
-              >
-                Limpiar resumen
-              </button>
-
-              <span>
-                {resumenCerradasFiltrado.length} registro{resumenCerradasFiltrado.length === 1 ? "" : "s"}
-              </span>
-            </div>
-
-            <div className="opp-summary-table-wrap">
-              <table className="opp-summary-table">
-                <thead>
-                  <tr>
-                    <th>NOMBRE CLIENTE</th>
-                    <th>SERVICIO</th>
-                    <th>ESTADO</th>
-                    <th>FECHA CIERRE OPORTUNIDAD</th>
-                    <th>TIPO MONEDA</th>
-                    <th>VALOR</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {resumenCerradasFiltrado.length ? (
-                    resumenCerradasFiltrado.map((row) => (
-                      <tr key={`resumen-${row.id}`}>
-                        <td>{row.nombre_cliente}</td>
-                        <td>{row.servicio}</td>
-                        <td>{row.estado}</td>
-                        <td>{row.fecha_cierre_oportunidad || "-"}</td>
-                        <td>{row.tipo_moneda}</td>
-                        <td className="opp-summary-money">
-                          {row.valor === "" ? "-" : `$ ${nf.format(row.valor)}`}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={6} className="opp-summary-empty">
-                        No hay oportunidades cerradas para los filtros seleccionados.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+      <ModalResumenCerradas
+        isOpen={openResumenCerradas}
+        onClose={() => setOpenResumenCerradas(false)}
+        rows={resumenCerradas}
+      />
 
       <ModalCategoriaPerdida
         isOpen={openCategoriaModal}
