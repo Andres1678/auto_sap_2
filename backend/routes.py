@@ -13277,6 +13277,225 @@ def copiar_oportunidad_como_principal(id):
             "trace": traceback.format_exc()
         }), 500
 
+
+@bp.route("/oportunidades/<int:id>/quitar-principal-avanzado", methods=["PUT"])
+@permission_required("OPORTUNIDADES_EDITAR")
+def quitar_oportunidad_principal_avanzado(id):
+    """
+    Retira una oportunidad que hoy es PRINCIPAL, sin perder sus OTs hijas.
+
+    Payload esperado:
+    {
+        "modo": "mover_existente" | "crear_nueva",
+        "nueva_principal_id": 123  # requerido solo para mover_existente
+    }
+
+    Reglas:
+    - La principal actual pasa a ser SUBOPORTUNIDAD/OT.
+    - Todas las OTs hijas actuales se reasignan al destino.
+    - Si modo = mover_existente, el destino debe ser otra principal del mismo cliente.
+    - Si modo = crear_nueva, se crea una nueva principal destino copiando la actual
+      y limpiando el bloque OT/Proyecto definido en POST_PRC_CLEAR_FIELDS.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+
+        modo = str(data.get("modo") or "").strip().lower()
+        nueva_principal_id = data.get("nueva_principal_id")
+
+        if modo not in {"mover_existente", "crear_nueva"}:
+            return jsonify({
+                "mensaje": "Modo inválido. Use 'mover_existente' o 'crear_nueva'."
+            }), 400
+
+        principal_actual = Oportunidad.query.get_or_404(id)
+
+        if _norm_key_for_match(principal_actual.tipo_oportunidad) != "PRINCIPAL":
+            return jsonify({
+                "mensaje": "La oportunidad seleccionada no está marcada como principal."
+            }), 400
+
+        cliente_key = (
+            principal_actual.cliente_grupo_key
+            or _norm_key_for_match(principal_actual.nombre_cliente)
+        )
+
+        if not cliente_key:
+            return jsonify({
+                "mensaje": "La oportunidad principal no tiene nombre de cliente válido."
+            }), 400
+
+        hijos_actuales = (
+            Oportunidad.query
+            .filter(Oportunidad.oportunidad_padre_id == principal_actual.id)
+            .order_by(
+                Oportunidad.consecutivo_sub.asc(),
+                Oportunidad.fecha_creacion.desc(),
+                Oportunidad.id.asc()
+            )
+            .all()
+        )
+
+        principal_destino = None
+
+        if modo == "mover_existente":
+            if not nueva_principal_id:
+                return jsonify({
+                    "mensaje": "Debe enviar nueva_principal_id para mover a una principal existente."
+                }), 400
+
+            try:
+                nueva_principal_id = int(nueva_principal_id)
+            except Exception:
+                return jsonify({
+                    "mensaje": "nueva_principal_id inválido."
+                }), 400
+
+            if nueva_principal_id == principal_actual.id:
+                return jsonify({
+                    "mensaje": "La principal destino no puede ser la misma que se está quitando."
+                }), 400
+
+            principal_destino = Oportunidad.query.get_or_404(nueva_principal_id)
+
+            if _norm_key_for_match(principal_destino.tipo_oportunidad) != "PRINCIPAL":
+                return jsonify({
+                    "mensaje": "La oportunidad destino no está marcada como principal."
+                }), 400
+
+            destino_cliente_key = (
+                principal_destino.cliente_grupo_key
+                or _norm_key_for_match(principal_destino.nombre_cliente)
+            )
+
+            if _norm_key_for_match(destino_cliente_key) != _norm_key_for_match(cliente_key):
+                return jsonify({
+                    "mensaje": "Solo se pueden mover OTs a una principal del mismo cliente."
+                }), 400
+
+            if not principal_destino.cliente_grupo_key:
+                principal_destino.cliente_grupo_key = cliente_key
+
+        if modo == "crear_nueva":
+            ultimo_principal = (
+                db.session.query(func.max(Oportunidad.consecutivo_principal))
+                .filter(_sql_norm_estado(Oportunidad.tipo_oportunidad) == "PRINCIPAL")
+                .scalar()
+            )
+
+            consecutivo_principal = int(ultimo_principal or 0) + 1
+
+            data_principal = {}
+
+            for column in Oportunidad.__table__.columns:
+                field = column.name
+
+                if field in ["id", "created_at", "updated_at"]:
+                    continue
+
+                data_principal[field] = getattr(principal_actual, field, None)
+
+            # La nueva principal es un contenedor limpio:
+            # conserva datos generales/comerciales, pero no duplica información OT/Proyecto.
+            for field in POST_PRC_CLEAR_FIELDS:
+                if field in data_principal:
+                    data_principal[field] = None
+
+            data_principal["tipo_oportunidad"] = "PRINCIPAL"
+            data_principal["oportunidad_padre_id"] = None
+            data_principal["cliente_grupo_key"] = cliente_key
+            data_principal["consecutivo_principal"] = consecutivo_principal
+            data_principal["consecutivo_sub"] = None
+            data_principal["codigo_control"] = str(consecutivo_principal)
+
+            principal_destino = Oportunidad(**data_principal)
+
+            db.session.add(principal_destino)
+            db.session.flush()
+
+        if not principal_destino or not principal_destino.id:
+            return jsonify({
+                "mensaje": "No se pudo determinar la principal destino."
+            }), 400
+
+        # Asegurar consecutivo/código en la principal destino.
+        if not principal_destino.consecutivo_principal:
+            ultimo_principal = (
+                db.session.query(func.max(Oportunidad.consecutivo_principal))
+                .filter(_sql_norm_estado(Oportunidad.tipo_oportunidad) == "PRINCIPAL")
+                .scalar()
+            )
+
+            principal_destino.consecutivo_principal = int(ultimo_principal or 0) + 1
+
+        if not principal_destino.codigo_control:
+            principal_destino.codigo_control = str(principal_destino.consecutivo_principal)
+
+        principal_destino.tipo_oportunidad = "PRINCIPAL"
+        principal_destino.oportunidad_padre_id = None
+        principal_destino.cliente_grupo_key = cliente_key
+        principal_destino.consecutivo_sub = None
+
+        ultimo_sub_destino = (
+            db.session.query(func.max(Oportunidad.consecutivo_sub))
+            .filter(Oportunidad.oportunidad_padre_id == principal_destino.id)
+            .scalar()
+        )
+
+        siguiente_sub = int(ultimo_sub_destino or 0) + 1
+
+        # La principal que se está quitando queda como OT/suboportunidad del destino.
+        principal_actual.tipo_oportunidad = "SUBOPORTUNIDAD"
+        principal_actual.oportunidad_padre_id = principal_destino.id
+        principal_actual.cliente_grupo_key = cliente_key
+        principal_actual.consecutivo_principal = principal_destino.consecutivo_principal
+        principal_actual.consecutivo_sub = siguiente_sub
+        principal_actual.codigo_control = (
+            f"{principal_destino.codigo_control or principal_destino.consecutivo_principal}.{siguiente_sub}"
+        )
+
+        movidas = [principal_actual]
+        siguiente_sub += 1
+
+        # Las OTs hijas no se pierden: se mueven al mismo destino.
+        for hijo in hijos_actuales:
+            if hijo.id == principal_destino.id:
+                continue
+
+            hijo.tipo_oportunidad = "SUBOPORTUNIDAD"
+            hijo.oportunidad_padre_id = principal_destino.id
+            hijo.cliente_grupo_key = cliente_key
+            hijo.consecutivo_principal = principal_destino.consecutivo_principal
+            hijo.consecutivo_sub = siguiente_sub
+            hijo.codigo_control = (
+                f"{principal_destino.codigo_control or principal_destino.consecutivo_principal}.{siguiente_sub}"
+            )
+
+            movidas.append(hijo)
+            siguiente_sub += 1
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Oportunidad principal retirada y OTs reasignadas correctamente.",
+            "modo": modo,
+            "principal_destino": principal_destino.to_dict(),
+            "principal_convertida": principal_actual.to_dict(),
+            "ots_reasignadas": [o.to_dict() for o in movidas],
+            "total_ots_reasignadas": len(movidas),
+            "nueva_principal_id": principal_destino.id,
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception(f"Error quitando principal avanzada id={id}")
+
+        return jsonify({
+            "mensaje": f"Error quitando oportunidad principal: {str(e)}",
+            "trace": traceback.format_exc()
+        }), 500
+
+
 # ============================================================
 # BASE DE REGISTRO DE INFORMACION COE SAP FUNCIONAL
 # ============================================================
