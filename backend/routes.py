@@ -38,6 +38,7 @@ _HORARIO_RE = re.compile(r"^\s*\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\s*$", re.I)
 
 FUNCIONAL_HORARIOS_PERMITIDOS = [
     "08:30 - 18:00",
+    "08:00 - 17:30",
     "07:30 - 16:30",
     "07:00 - 16:00",
 ]
@@ -47,6 +48,7 @@ FUNCIONAL_HORARIO_DEFAULT = "08:30 - 18:00"
 FUNCIONAL_HORARIOS_ANTERIORES = {
     "08:00 - 18:00": "08:30 - 18:00",
     "07:00 - 17:00": "08:30 - 18:00",
+    "08:00 - 18:00": "08:30 - 18:00",
 }
 
 
