@@ -888,6 +888,19 @@ function compareOportunidadesPorFechaAsignacionDesc(a, b) {
   return compareSubOportunidades(a, b);
 }
 
+function getFechaCierrePrincipalAutomatica(grupo) {
+  if (!grupo) return "";
+
+  const primeraAsignadaConFecha =
+    (grupo.rows || []).find((row) => normalizeText(row?.fecha_cierre_oportunidad)) || null;
+
+  return (
+    primeraAsignadaConFecha?.fecha_cierre_oportunidad ||
+    grupo?.principalRow?.fecha_cierre_oportunidad ||
+    ""
+  );
+}
+
 function isAsiCloudRow(row) {
   const texto = [
     row?.servicio,
@@ -2807,29 +2820,66 @@ export default function Oportunidades() {
   }, [oportunidadesAgrupadas]);
 
   const resumenCerradas = useMemo(() => {
-    return oportunidadesAgrupadas
-      .filter((grupo) => !grupo.sinPrincipal && grupo.principalRow && isClosedResumenRow(grupo.principalRow))
-      .map((grupo) => {
-        const rowsQueSuman = grupo.rows.filter(estadoSumaEnPrincipal);
-        const totals = rowsQueSuman.length > 0
-          ? grupo.totals
-          : getPrincipalOwnTotals(grupo.principalRow);
+    const allRows = Array.isArray(data) ? data : [];
+
+    const principales = allRows.filter(
+      (row) => normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL
+    );
+
+    const principalesPorId = new Map(
+      principales.map((row) => [String(row.id), row])
+    );
+
+    const hijosPorPrincipal = new Map();
+
+    allRows.forEach((row) => {
+      const tipo = normalizeTipoOportunidad(row?.tipo_oportunidad);
+
+      if (tipo === TIPO_PRINCIPAL) return;
+
+      const padreId = row?.oportunidad_padre_id;
+      if (!padreId) return;
+
+      const padreKey = String(padreId);
+      if (!principalesPorId.has(padreKey)) return;
+
+      if (!hijosPorPrincipal.has(padreKey)) {
+        hijosPorPrincipal.set(padreKey, []);
+      }
+
+      hijosPorPrincipal.get(padreKey).push(row);
+    });
+
+    return principales
+      .filter((principal) => isClosedResumenRow(principal))
+      .map((principal) => {
+        const hijos = [...(hijosPorPrincipal.get(String(principal.id)) || [])].sort(compareOtsAsignadas);
+        const rowsQueSuman = hijos.filter(estadoSumaEnPrincipal);
+        const totals =
+          rowsQueSuman.length > 0
+            ? getPrincipalTotals(rowsQueSuman)
+            : getPrincipalOwnTotals(principal);
+
+        const fechaCierreAutomatica =
+          hijos.find((row) => normalizeText(row?.fecha_cierre_oportunidad))?.fecha_cierre_oportunidad ||
+          principal?.fecha_cierre_oportunidad ||
+          "";
 
         return {
-          id: grupo.principalRow?.id,
-          nombre_cliente: grupo.cliente,
-          servicio: normalizeText(grupo.principalRow?.servicio) || "-",
-          estado: getEstadoResumen(grupo.principalRow),
+          id: principal?.id,
+          nombre_cliente: normalizeText(principal?.nombre_cliente) || "-",
+          servicio: normalizeText(principal?.servicio) || "-",
+          estado: getEstadoResumen(principal),
           tipo_moneda:
             rowsQueSuman.length > 0
               ? getUniqueText(rowsQueSuman, "tipo_moneda", 2)
-              : normalizeText(grupo.principalRow?.tipo_moneda) || "-",
+              : normalizeText(principal?.tipo_moneda) || "-",
           otc: totals.totalOtc,
           mrc: totals.totalMrc,
           mrc_normalizado: totals.mrcNormalizado,
           valor_oferta_claro: totals.valorComercial,
           valor: totals.valorComercial,
-          fecha_cierre_oportunidad: toIsoDate(grupo.principalRow?.fecha_cierre_oportunidad),
+          fecha_cierre_oportunidad: toIsoDate(fechaCierreAutomatica),
         };
       })
       .sort((a, b) => {
@@ -2842,7 +2892,7 @@ export default function Oportunidades() {
           sensitivity: "base",
         });
       });
-  }, [oportunidadesAgrupadas]);
+  }, [data]);
 
   const toggleClienteGroup = useCallback((clienteKey) => {
     setExpandedClientes((prev) => ({
@@ -3027,6 +3077,7 @@ export default function Oportunidades() {
   const renderClientePrincipalRow = (grupo) => {
     const isOpen = !!expandedClientes[grupo.key];
     const rowsQueSuman = grupo.rows.filter(estadoSumaEnPrincipal);
+    const fechaCierreAutomaticaPrincipal = getFechaCierrePrincipalAutomatica(grupo);
     const tieneHijosQueSuman = rowsQueSuman.length > 0;
     const totals = tieneHijosQueSuman
       ? grupo.totals
@@ -3035,7 +3086,9 @@ export default function Oportunidades() {
     return (
       <tr
         key={grupo.key}
-        className={`cliente-principal-row ${grupo.sinPrincipal ? "sin-principal-row" : ""}`}
+        className={`cliente-principal-row ${
+          grupo.sinPrincipal ? "sin-principal-row" : "principal-highlight-row"
+        }`}
         data-cliente-key={grupo.key}
       >
         {tableColumnOrder.map((col, colIdx) => {
@@ -3123,6 +3176,14 @@ export default function Oportunidades() {
               totals.valorComercial === ""
                 ? "-"
                 : formatCell("valor_oferta_claro", totals.valorComercial);
+          }
+
+          if (col === "fecha_cierre_oportunidad") {
+            content = grupo.sinPrincipal
+              ? "-"
+              : fechaCierreAutomaticaPrincipal
+              ? toDisplayDateDDMMYYYY(fechaCierreAutomaticaPrincipal)
+              : "-";
           }
 
           if (col === "num_ot") {

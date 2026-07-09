@@ -1814,3 +1814,88 @@
 .oportunidades-wrapper .cliente-principal-row td.principal-editable-cell.post-prc-col {
   background-image: linear-gradient(90deg, rgba(219, 234, 254, 0.7), rgba(255, 247, 237, 0.35)) !important;
 }
+
+
+/* =========================================================
+   AJUSTE FINAL: oportunidad principal con estilo tipo CLOUD
+   Diferente al grupo "sin principal"
+========================================================= */
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td.obs-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td.descripcion-ot-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td.descripcion-ot-wrap-cell {
+  background: #eaf4ff !important;
+  border-top: 2px solid #7dd3fc !important;
+  border-bottom: 2px solid #bae6fd !important;
+  color: #0f172a !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover td,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover td.obs-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover td.descripcion-ot-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover td.descripcion-ot-wrap-cell {
+  background: #dbeafe !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .sticky-col-1,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .sticky-col-2,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .sticky-col-3 {
+  background: #eaf4ff !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover .sticky-col-1,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover .sticky-col-2,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover .sticky-col-3 {
+  background: #dbeafe !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td.sticky-col-1 {
+  box-shadow: inset 4px 0 0 #38bdf8, 2px 0 0 #e2e8f0 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .principal-id-box strong {
+  color: #0f172a !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-principal-info span {
+  background: #ffffff !important;
+  color: #075985 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-principal-info small {
+  color: #0369a1 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-toggle-btn,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-ver-btn {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 10px rgba(2, 132, 199, 0.22) !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-toggle-btn:hover,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-ver-btn:hover {
+  background: #0369a1 !important;
+}
+
+/* Las filas sin principal conservan el naranja cálido para diferenciarse */
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.obs-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.descripcion-ot-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.descripcion-ot-wrap-cell {
+  background: #fff7ed !important;
+  border-top: 2px solid #fdba74 !important;
+  border-bottom: 2px solid #fed7aa !important;
+  color: #7c2d12 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td.obs-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td.descripcion-ot-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td.descripcion-ot-wrap-cell {
+  background: #ffedd5 !important;
+}
