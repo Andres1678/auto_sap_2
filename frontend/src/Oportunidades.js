@@ -652,6 +652,13 @@ function normalizeClientGroupKey(value) {
     .trim();
 }
 
+function normalizeOpportunityServiceKey(value) {
+  return stripAccents(normalizeText(value))
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeTipoOportunidad(value) {
   const normalized = normalizeForCompare(value);
 
@@ -1345,6 +1352,30 @@ export default function Oportunidades() {
     setEstadoResultadoMap(buildEstadoResultadoMap(data));
   }, [data]);
 
+  const existePrincipalMismoClienteServicio = useCallback(
+    (row, excludeId = null) => {
+      const clienteKey = normalizeClientGroupKey(row?.nombre_cliente);
+      const servicioKey = normalizeOpportunityServiceKey(row?.servicio);
+
+      if (!clienteKey || !servicioKey) return null;
+
+      return (
+        (data || []).find((item) => {
+          if (excludeId && String(item?.id) === String(excludeId)) {
+            return false;
+          }
+
+          return (
+            normalizeTipoOportunidad(item?.tipo_oportunidad) === TIPO_PRINCIPAL &&
+            normalizeClientGroupKey(item?.nombre_cliente) === clienteKey &&
+            normalizeOpportunityServiceKey(item?.servicio) === servicioKey
+          );
+        }) || null
+      );
+    },
+    [data]
+  );
+
   const handleUpload = async () => {
     if (!file) return Swal.fire("Seleccione un archivo Excel");
 
@@ -1391,6 +1422,37 @@ export default function Oportunidades() {
 
   const copiarComoPrincipal = async (row) => {
     if (!row?.id) return;
+
+    if (normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL) {
+      Swal.fire(
+        "No permitido",
+        "Esta fila ya es una oportunidad principal. No es necesario copiarla.",
+        "info"
+      );
+      return;
+    }
+
+    if (row?.oportunidad_padre_id) {
+      Swal.fire(
+        "No permitido",
+        "Esta OT/suboportunidad ya está asignada a una principal. Para evitar duplicidad, no se puede copiar como principal.",
+        "warning"
+      );
+      return;
+    }
+
+    const duplicada = existePrincipalMismoClienteServicio(row, row.id);
+
+    if (duplicada) {
+      Swal.fire(
+        "Principal existente",
+        `Ya existe una oportunidad principal para este cliente y servicio: ${
+          duplicada.codigo_control || duplicada.id || ""
+        }. No se permite duplicar la información.`,
+        "warning"
+      );
+      return;
+    }
 
     const confirm = await Swal.fire({
       icon: "question",
@@ -1448,6 +1510,149 @@ export default function Oportunidades() {
         "Se creó la oportunidad principal y la fila original quedó asignada.",
         "success"
       );
+    } catch (e) {
+      Swal.fire("Error", e?.message || "Error inesperado", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const marcarComoPrincipal = async (row) => {
+    if (!row?.id) return;
+
+    if (normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL) {
+      Swal.fire("Info", "Esta oportunidad ya está marcada como principal.", "info");
+      return;
+    }
+
+    const duplicada = existePrincipalMismoClienteServicio(row, row.id);
+
+    if (duplicada) {
+      Swal.fire(
+        "Principal existente",
+        `Ya existe una oportunidad principal para el cliente y servicio seleccionados: ${
+          duplicada.codigo_control || duplicada.id || ""
+        }. Cambia el servicio o usa la principal existente para evitar duplicidad.`,
+        "warning"
+      );
+      return;
+    }
+
+    const confirm = await Swal.fire({
+      icon: "question",
+      title: "Volver oportunidad principal",
+      html: `
+        <div style="text-align:left;line-height:1.5;">
+          <b>Cliente:</b> ${escapeHtml(row?.nombre_cliente || "-")}<br/>
+          <b>Servicio:</b> ${escapeHtml(row?.servicio || "-")}<br/><br/>
+          Esta misma fila quedará como oportunidad principal.
+          <br/><br/>
+          No se creará una copia y no se duplicará la información.
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: "Sí, volver principal",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#2563eb",
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      setLoading(true);
+
+      const resp = await jfetch(`/oportunidades/${row.id}/marcar-principal`, {
+        method: "PUT",
+      });
+
+      const json = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        Swal.fire(
+          "Error",
+          json?.mensaje || json?.error || "No se pudo marcar como principal",
+          "error"
+        );
+        return;
+      }
+
+      await fetchData();
+
+      setExpandedClientes((prev) => ({
+        ...prev,
+        [`principal-${row.id}`]: true,
+        [`cliente-${normalizeClientGroupKey(row?.nombre_cliente)}`]: true,
+      }));
+
+      Swal.fire(
+        "Listo",
+        "La oportunidad quedó como principal sin copiar la información.",
+        "success"
+      );
+    } catch (e) {
+      Swal.fire("Error", e?.message || "Error inesperado", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const eliminarOportunidad = async (row, grupo = null) => {
+    if (!row?.id) return;
+
+    const esPrincipal =
+      normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL;
+
+    const hijosAsignados = esPrincipal
+      ? (grupo?.rows || data.filter((item) => String(item?.oportunidad_padre_id) === String(row.id)))
+      : [];
+
+    if (esPrincipal && hijosAsignados.length > 0) {
+      Swal.fire(
+        "No se puede eliminar",
+        "Esta oportunidad principal tiene OTs/suboportunidades asignadas. Primero usa 'Quitar principal' para moverlas de forma segura.",
+        "warning"
+      );
+      return;
+    }
+
+    const confirm = await Swal.fire({
+      icon: "warning",
+      title: "Eliminar oportunidad",
+      html: `
+        <div style="text-align:left;line-height:1.5;">
+          <b>Cliente:</b> ${escapeHtml(row?.nombre_cliente || "-")}<br/>
+          <b>Servicio:</b> ${escapeHtml(row?.servicio || "-")}<br/><br/>
+          Esta acción eliminará la fila seleccionada. Úsala únicamente cuando la información quedó duplicada por error.
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: "Sí, eliminar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#dc2626",
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      setLoading(true);
+
+      const resp = await jfetch(`/oportunidades/${row.id}`, {
+        method: "DELETE",
+      });
+
+      const json = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        Swal.fire(
+          "Error",
+          json?.mensaje || json?.error || "No se pudo eliminar la oportunidad",
+          "error"
+        );
+        return;
+      }
+
+      await fetchData();
+      Swal.fire("Listo", "La oportunidad fue eliminada correctamente.", "success");
     } catch (e) {
       Swal.fire("Error", e?.message || "Error inesperado", "error");
     } finally {
@@ -1951,8 +2156,23 @@ export default function Oportunidades() {
     setNewRow(empty);
   };
 
-  const saveNewRow = async () => {
+  const saveNewRow = async (crearComoPrincipal = false) => {
     try {
+      if (crearComoPrincipal) {
+        const duplicada = existePrincipalMismoClienteServicio(newRow);
+
+        if (duplicada) {
+          Swal.fire(
+            "Principal existente",
+            `Ya existe una oportunidad principal para este cliente y servicio: ${
+              duplicada.codigo_control || duplicada.id || ""
+            }. No se permite crear otra principal igual.`,
+            "warning"
+          );
+          return;
+        }
+      }
+
       setLoading(true);
       const cleanedNewRow = limpiarPerdidaSiNoAplica(newRow);
       const payload = toDbPayload(cleanedNewRow);
@@ -1970,8 +2190,35 @@ export default function Oportunidades() {
         return;
       }
 
+      const nuevaId = json?.id || json?.oportunidad?.id;
+
+      if (crearComoPrincipal && nuevaId) {
+        const marcarResp = await jfetch(`/oportunidades/${nuevaId}/marcar-principal`, {
+          method: "PUT",
+        });
+
+        const marcarJson = await marcarResp.json().catch(() => ({}));
+
+        if (!marcarResp.ok) {
+          Swal.fire(
+            "Fila creada, pero no quedó principal",
+            marcarJson?.mensaje || "La fila se creó, pero no se pudo marcar como principal.",
+            "warning"
+          );
+          await fetchData();
+          setNewRow(null);
+          return;
+        }
+      }
+
       await fetchData();
-      Swal.fire("Guardado", "Nueva fila creada", "success");
+      Swal.fire(
+        "Guardado",
+        crearComoPrincipal
+          ? "Nueva fila creada y marcada como oportunidad principal"
+          : "Nueva fila creada",
+        "success"
+      );
       setNewRow(null);
     } catch (e) {
       Swal.fire("Error", e?.message || "Error inesperado", "error");
@@ -2913,7 +3160,9 @@ export default function Oportunidades() {
     <tr
       key={`sub-${row.id ?? i}`}
       data-row-id={row.id ?? ""}
-      className={`sub-oportunidad-row ${isAsiCloudRow(row) ? "asi-cloud-row" : ""}`}
+      className={`sub-oportunidad-row ${
+        row?.oportunidad_padre_id ? "assigned-sub-row" : "unassigned-sub-row"
+      } ${isAsiCloudRow(row) ? "asi-cloud-row" : ""}`}
     >
       {tableColumnOrder.map((col, colIdx) => {
         const isLong = isObservationsCol(col);
@@ -2959,6 +3208,16 @@ export default function Oportunidades() {
         <div className="op-actions">
           <button
             type="button"
+            className="op-action-btn op-action-main"
+            onClick={() => marcarComoPrincipal(row)}
+            disabled={loading}
+            title="Volver esta misma fila oportunidad principal sin copiar información"
+          >
+            Hacer principal
+          </button>
+
+          <button
+            type="button"
             className="op-action-btn op-action-copy"
             onClick={() => copiarComoPrincipal(row)}
             disabled={loading}
@@ -2988,6 +3247,16 @@ export default function Oportunidades() {
               Quitar
             </button>
           )}
+
+          <button
+            type="button"
+            className="op-action-btn op-action-delete"
+            onClick={() => eliminarOportunidad(row)}
+            disabled={loading}
+            title="Eliminar oportunidad duplicada por error"
+          >
+            Eliminar
+          </button>
         </div>
       </td>
     </tr>
@@ -3253,6 +3522,18 @@ export default function Oportunidades() {
                 Quitar principal
               </button>
             )}
+
+            {!grupo.sinPrincipal && grupo.principalRow?.id && (
+              <button
+                type="button"
+                className="op-action-btn op-action-delete"
+                onClick={() => eliminarOportunidad(grupo.principalRow, grupo)}
+                disabled={loading}
+                title="Eliminar oportunidad principal duplicada por error"
+              >
+                Eliminar
+              </button>
+            )}
           </div>
         </td>
       </tr>
@@ -3459,8 +3740,16 @@ export default function Oportunidades() {
                 ))}
 
                 <td className="acciones">
-                  <button className="btn-save" onClick={saveNewRow} disabled={loading}>
+                  <button className="btn-save" onClick={() => saveNewRow(false)} disabled={loading}>
                     Guardar
+                  </button>
+                  <button
+                    className="btn-save btn-save-principal"
+                    onClick={() => saveNewRow(true)}
+                    disabled={loading}
+                    title="Crear la fila y marcarla como oportunidad principal sin copiar información"
+                  >
+                    Guardar principal
                   </button>
                   <button className="btn-cancel" onClick={() => setNewRow(null)} disabled={loading}>
                     Cancelar

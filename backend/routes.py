@@ -3264,6 +3264,39 @@ def _sql_norm_estado(col):
     return c
 
 
+
+def _buscar_principal_mismo_cliente_servicio(nombre_cliente, servicio, exclude_id=None):
+    cliente_key = _norm_key_for_match(nombre_cliente)
+    servicio_key = _norm_key_for_match(servicio)
+
+    if not cliente_key or not servicio_key:
+        return None
+
+    query = (
+        Oportunidad.query
+        .filter(_sql_norm_estado(Oportunidad.tipo_oportunidad) == "PRINCIPAL")
+        .filter(_sql_norm_estado(Oportunidad.nombre_cliente) == cliente_key)
+        .filter(_sql_norm_estado(Oportunidad.servicio) == servicio_key)
+    )
+
+    if exclude_id:
+        try:
+            query = query.filter(Oportunidad.id != int(exclude_id))
+        except Exception:
+            pass
+
+    return query.first()
+
+
+def _response_principal_duplicada(duplicada):
+    return jsonify({
+        "mensaje": (
+            "Ya existe una oportunidad principal para este cliente y servicio. "
+            "No se permite duplicar la información."
+        ),
+        "principal_existente": duplicada.to_dict() if duplicada else None,
+    }), 409
+
 def _apply_excluded_states(query):
     col = _sql_norm_estado(Oportunidad.estado_oferta)
     query = query.filter(~col.in_(list(EXCLUDE_NORM_SET)))
@@ -3407,7 +3440,6 @@ ESTADO_RESULTADO = {
     "EN ESPERA DEL RFI / RFP": {"EN ESPERA DEL CLIENTE"},
     "RFI PRESENTADO": {"EN ESPERA DEL CLIENTE"},
     "ENTREGA COMERCIAL": {"OPORTUNIDAD EN PROCESO"},
-    "EJECUCION OPERACION": {"CONSUMO DE BOLSA DE HORAS"},
     "GANADA": {
         "BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN",
         "EVOLUTIVO",
@@ -4030,6 +4062,16 @@ def listar_oportunidades():
 def crear_oportunidad():
     try:
         data = clean_payload(request.get_json() or {})
+
+        if _norm_key_for_match(data.get("tipo_oportunidad")) == "PRINCIPAL":
+            duplicada = _buscar_principal_mismo_cliente_servicio(
+                data.get("nombre_cliente"),
+                data.get("servicio"),
+            )
+
+            if duplicada:
+                return _response_principal_duplicada(duplicada)
+
         o = Oportunidad(**data)
         db.session.add(o)
         db.session.commit()
@@ -4048,6 +4090,18 @@ def editar_oportunidad(id):
         for k, v in data.items():
             if hasattr(o, k):
                 setattr(o, k, v)
+
+        if _norm_key_for_match(o.tipo_oportunidad) == "PRINCIPAL":
+            duplicada = _buscar_principal_mismo_cliente_servicio(
+                o.nombre_cliente,
+                o.servicio,
+                exclude_id=o.id,
+            )
+
+            if duplicada:
+                db.session.rollback()
+                return _response_principal_duplicada(duplicada)
+
         db.session.commit()
         return jsonify({"mensaje": "Actualizado correctamente"}), 200
     except Exception:
@@ -13019,6 +13073,15 @@ def marcar_oportunidad_principal(id):
                 "mensaje": "La oportunidad no tiene nombre de cliente válido"
             }), 400
 
+        duplicada = _buscar_principal_mismo_cliente_servicio(
+            oportunidad.nombre_cliente,
+            oportunidad.servicio,
+            exclude_id=oportunidad.id,
+        )
+
+        if duplicada:
+            return _response_principal_duplicada(duplicada)
+
         ultimo_consecutivo = (
             db.session.query(func.max(Oportunidad.consecutivo_principal))
             .filter(
@@ -13039,7 +13102,6 @@ def marcar_oportunidad_principal(id):
         oportunidad.consecutivo_sub = None
         oportunidad.codigo_control = str(consecutivo)
 
-        # Al volver una oportunidad principal, no debe conservar comentarios/seguimiento
         if hasattr(oportunidad, "observaciones"):
             oportunidad.observaciones = None
 
@@ -13227,6 +13289,28 @@ def copiar_oportunidad_como_principal(id):
             return jsonify({
                 "mensaje": "La oportunidad origen no tiene nombre de cliente válido"
             }), 400
+
+        if _norm_key_for_match(origen.tipo_oportunidad) == "PRINCIPAL":
+            return jsonify({
+                "mensaje": "Esta oportunidad ya es principal. No es necesario copiarla."
+            }), 409
+
+        if origen.oportunidad_padre_id:
+            return jsonify({
+                "mensaje": (
+                    "Esta OT/suboportunidad ya está asignada a una principal. "
+                    "Para evitar duplicidad, no se puede copiar como principal."
+                )
+            }), 409
+
+        duplicada = _buscar_principal_mismo_cliente_servicio(
+            origen.nombre_cliente,
+            origen.servicio,
+            exclude_id=origen.id,
+        )
+
+        if duplicada:
+            return _response_principal_duplicada(duplicada)
 
         ultimo_principal = (
             db.session.query(func.max(Oportunidad.consecutivo_principal))

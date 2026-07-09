@@ -1985,3 +1985,190 @@
 .oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td.descripcion-ot-wrap-cell {
   background: #ffedd5 !important;
 }
+
+
+/* =========================================================
+   AJUSTE FINAL COLORES:
+   - Agrupación cliente: rojo suave
+   - Oportunidad principal: azul suave
+   - Asignaciones a principal: azul medio claro
+========================================================= */
+
+/* Agrupación por cliente */
+.oportunidades-wrapper .cliente-group-row td,
+.oportunidades-wrapper .cliente-group-row td.post-prc-col,
+.oportunidades-wrapper .cliente-group-row td.obs-col,
+.oportunidades-wrapper .cliente-group-row .sticky-col-1,
+.oportunidades-wrapper .cliente-group-row .sticky-col-2,
+.oportunidades-wrapper .cliente-group-row .sticky-col-3 {
+  background: #fff1f2 !important;
+  color: #9f1239 !important;
+  border-top: 3px solid #fb7185 !important;
+  border-bottom: 3px solid #fecdd3 !important;
+  font-weight: 900 !important;
+}
+
+.oportunidades-wrapper .cliente-group-row:hover td,
+.oportunidades-wrapper .cliente-group-row:hover td.post-prc-col,
+.oportunidades-wrapper .cliente-group-row:hover td.obs-col,
+.oportunidades-wrapper .cliente-group-row:hover .sticky-col-1,
+.oportunidades-wrapper .cliente-group-row:hover .sticky-col-2,
+.oportunidades-wrapper .cliente-group-row:hover .sticky-col-3 {
+  background: #ffe4e6 !important;
+}
+
+.oportunidades-wrapper .cliente-group-info strong {
+  color: #881337 !important;
+}
+
+.oportunidades-wrapper .cliente-group-info span {
+  background: #ffffff !important;
+  color: #be123c !important;
+}
+
+.oportunidades-wrapper .cliente-group-info small {
+  color: #9f1239 !important;
+}
+
+.oportunidades-wrapper .cliente-group-toggle-btn,
+.oportunidades-wrapper .cliente-group-ver-btn {
+  background: #e11d48 !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 10px rgba(225, 29, 72, 0.18) !important;
+}
+
+.oportunidades-wrapper .cliente-group-toggle-btn:hover,
+.oportunidades-wrapper .cliente-group-ver-btn:hover {
+  background: #be123c !important;
+}
+
+/* Oportunidad principal */
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td.obs-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td.descripcion-ot-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .sticky-col-1,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .sticky-col-2,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .sticky-col-3 {
+  background: #eff6ff !important;
+  border-top: 2px solid #60a5fa !important;
+  border-bottom: 2px solid #bfdbfe !important;
+  color: #0f172a !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover td,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover td.obs-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover td.descripcion-ot-col,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover .sticky-col-1,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover .sticky-col-2,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row:hover .sticky-col-3 {
+  background: #dbeafe !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row td.sticky-col-1 {
+  box-shadow: inset 4px 0 0 #2563eb, 2px 0 0 #e2e8f0 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .principal-id-box strong,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-principal-info strong {
+  color: #1e3a8a !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-principal-info span {
+  background: #ffffff !important;
+  color: #1d4ed8 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-principal-info small {
+  color: #1e40af !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-toggle-btn,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-ver-btn {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2) !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-toggle-btn:hover,
+.oportunidades-wrapper .cliente-principal-row.principal-highlight-row .cliente-ver-btn:hover {
+  background: #1d4ed8 !important;
+}
+
+/* Asignaciones a oportunidad principal */
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row td,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row td.post-prc-col,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row td.obs-col,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row td.descripcion-ot-col,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row .sticky-col-1,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row .sticky-col-2,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row .sticky-col-3 {
+  background: #dbeafe !important;
+  border-bottom-color: #bfdbfe !important;
+}
+
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row:hover td,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row:hover td.post-prc-col,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row:hover td.obs-col,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row:hover td.descripcion-ot-col,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row:hover td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row:hover .sticky-col-1,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row:hover .sticky-col-2,
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row:hover .sticky-col-3 {
+  background: #bfdbfe !important;
+}
+
+.oportunidades-wrapper .sub-oportunidad-row.assigned-sub-row td.sticky-col-1 {
+  box-shadow: inset 4px 0 0 #3b82f6, 2px 0 0 #e2e8f0 !important;
+}
+
+/* Sin principal queda naranja para diferenciarlo de todo lo anterior */
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.obs-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.descripcion-ot-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .sticky-col-1,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .sticky-col-2,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row .sticky-col-3 {
+  background: #fff7ed !important;
+  border-top: 2px solid #fdba74 !important;
+  border-bottom: 2px solid #fed7aa !important;
+  color: #7c2d12 !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td.post-prc-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td.obs-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td.descripcion-ot-col,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover .sticky-col-1,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover .sticky-col-2,
+.oportunidades-wrapper .cliente-principal-row.sin-principal-row:hover .sticky-col-3 {
+  background: #ffedd5 !important;
+}
+
+/* Botones nuevos */
+.oportunidades-wrapper .op-action-delete {
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+  border: 1px solid #fecaca !important;
+}
+
+.oportunidades-wrapper .op-action-delete:hover {
+  background: #fecaca !important;
+}
+
+.oportunidades-wrapper .btn-save-principal {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  margin-left: 6px;
+}
+
+.oportunidades-wrapper .btn-save-principal:hover {
+  background: #1d4ed8 !important;
+}
