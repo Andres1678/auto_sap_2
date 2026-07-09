@@ -1711,3 +1711,106 @@
   vertical-align: middle !important;
 }
 
+
+/* =========================================================
+   AJUSTE FINAL: Agrupación de clientes en rojo cálido
+   Más suave, menos vivo y más corporativo
+========================================================= */
+.oportunidades-wrapper .cliente-group-row td,
+.oportunidades-wrapper .cliente-group-row td.post-prc-col,
+.oportunidades-wrapper .cliente-group-row td.obs-col {
+  background: #fff1ed !important;
+  color: #7c2d12 !important;
+  border-top: 3px solid #fb923c !important;
+  border-bottom: 3px solid #fed7aa !important;
+  font-weight: 900 !important;
+}
+
+.oportunidades-wrapper .cliente-group-row:hover td,
+.oportunidades-wrapper .cliente-group-row:hover td.post-prc-col,
+.oportunidades-wrapper .cliente-group-row:hover td.obs-col {
+  background: #ffedd5 !important;
+}
+
+.oportunidades-wrapper .cliente-group-row .sticky-col-1,
+.oportunidades-wrapper .cliente-group-row .sticky-col-2,
+.oportunidades-wrapper .cliente-group-row .sticky-col-3 {
+  background: #fff1ed !important;
+}
+
+.oportunidades-wrapper .cliente-group-row:hover .sticky-col-1,
+.oportunidades-wrapper .cliente-group-row:hover .sticky-col-2,
+.oportunidades-wrapper .cliente-group-row:hover .sticky-col-3 {
+  background: #ffedd5 !important;
+}
+
+.oportunidades-wrapper .cliente-group-info strong {
+  color: #7c2d12 !important;
+}
+
+.oportunidades-wrapper .cliente-group-info span {
+  background: #fed7aa !important;
+  color: #9a3412 !important;
+}
+
+.oportunidades-wrapper .cliente-group-info small {
+  color: #9a3412 !important;
+}
+
+.oportunidades-wrapper .cliente-group-toggle-btn,
+.oportunidades-wrapper .cliente-group-ver-btn {
+  background: #c2410c !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 10px rgba(194, 65, 12, 0.22) !important;
+}
+
+.oportunidades-wrapper .cliente-group-toggle-btn:hover,
+.oportunidades-wrapper .cliente-group-ver-btn:hover {
+  background: #9a3412 !important;
+}
+
+/* =========================================================
+   AJUSTE FINAL: Observaciones fecha + comentario en una línea
+========================================================= */
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-item {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  align-items: flex-start !important;
+  column-gap: 9px !important;
+  row-gap: 0 !important;
+  padding: 6px 8px !important;
+  margin-bottom: 6px !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-date {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  line-height: 1.15 !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-text {
+  display: inline !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.25 !important;
+  padding-top: 1px !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody td.obs-col .obs-item > .obs-text:first-child {
+  grid-column: 1 / -1 !important;
+  display: block !important;
+}
+
+/* Marcar mejor las celdas editables de principal, especialmente bloque azul */
+.oportunidades-wrapper .cliente-principal-row td.principal-editable-cell {
+  cursor: pointer !important;
+  box-shadow: inset 0 -2px 0 rgba(194, 65, 12, 0.38) !important;
+}
+
+.oportunidades-wrapper .cliente-principal-row td.principal-editable-cell.post-prc-col {
+  background-image: linear-gradient(90deg, rgba(219, 234, 254, 0.7), rgba(255, 247, 237, 0.35)) !important;
+}

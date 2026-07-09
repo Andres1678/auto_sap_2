@@ -197,13 +197,52 @@ function limpiarPerdidaSiNoAplica(row) {
 function toIsoDate(v) {
   if (!v) return "";
   const s = String(v).trim();
+
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  const ddmmyyyy = s.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
+  if (ddmmyyyy) {
+    const [, dd, mm, yyyy] = ddmmyyyy;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return "";
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function toDisplayDateDDMMYYYY(v) {
+  if (!v) return "";
+
+  const s = String(v).trim();
+
+  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const [, yyyy, mm, dd] = isoMatch;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  const ddmmyyyyDash = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (ddmmyyyyDash) {
+    const [, dd, mm, yyyy] = ddmmyyyyDash;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    return s;
+  }
+
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+
+  return `${dd}/${mm}/${yyyy}`;
 }
 
 function toExcelDateDDMMYYYY(v) {
@@ -273,7 +312,11 @@ function prepareRowsForExcel(rows, columns = []) {
       }
 
       if (DATE_COLS.has(col)) {
-        out[col] = value ? toExcelDateDDMMYYYY(value) : "";
+        out[col] = value
+          ? col === "fecha_cierre_oportunidad"
+            ? toDisplayDateDDMMYYYY(value)
+            : toExcelDateDDMMYYYY(value)
+          : "";
       } else {
         out[col] = value ?? "";
       }
@@ -369,6 +412,10 @@ function computeMrcNormalizado(source) {
 }
 
 function formatCell(col, value) {
+  if (col === "fecha_cierre_oportunidad") {
+    return value ? toDisplayDateDDMMYYYY(value) : "-";
+  }
+
   if (isDateCol(col)) return value ? toIsoDate(value) : "-";
   if (!isNumericCol(col)) return value ?? "-";
   if (value === null || value === undefined || value === "") return "-";
@@ -422,6 +469,10 @@ function buildEstadoResultadoMap(rows) {
 
 function getFilterCellValue(row, col) {
   const value = row?.[col];
+
+  if (col === "fecha_cierre_oportunidad") {
+    return toDisplayDateDDMMYYYY(value);
+  }
 
   if (isDateCol(col)) {
     return toIsoDate(value);
@@ -515,7 +566,7 @@ function splitDatedEntries(raw) {
     for (const p of parts) {
       const m = p.match(DATE_AT_START);
       if (m) {
-        const date = m[1];
+        const date = toDisplayDateDDMMYYYY(m[1]);
         const body = p.replace(DATE_AT_START, "").trim();
         out.push({ date, text: body || "-" });
       } else {
@@ -566,7 +617,25 @@ const CLIENT_WITHOUT_NAME = "SIN CLIENTE";
 const TIPO_PRINCIPAL = "PRINCIPAL";
 const TIPO_SUBOPORTUNIDAD = "SUBOPORTUNIDAD";
 const ESTADOS_SUMAN_PRINCIPAL = new Set(["OT", "GANADA"]);
-const PRINCIPAL_EDITABLE_COLS = new Set(["fecha_cierre_oportunidad"]);
+const PRINCIPAL_EDITABLE_COLS = new Set([
+  "fecha_cierre_oportunidad",
+  "codigo_prc",
+  "fecha_firma_aos",
+  "pm_asignado_claro",
+  "pm_asignado_hitss",
+  "descripcion_ot",
+  "num_enlace",
+  "num_incidente",
+  "num_ot",
+  "estado_ot",
+  "proyeccion_ingreso",
+  "fecha_compromiso",
+  "fecha_cierre",
+  "estado_proyecto",
+  "anio_creacion_ot",
+  "seguimiento_ot",
+  "mostrar_dashboard",
+]);
 
 const ESTADOS_CERRADOS_RESUMEN = new Set([
   "GANADA",
@@ -2755,6 +2824,10 @@ export default function Oportunidades() {
             rowsQueSuman.length > 0
               ? getUniqueText(rowsQueSuman, "tipo_moneda", 2)
               : normalizeText(grupo.principalRow?.tipo_moneda) || "-",
+          otc: totals.totalOtc,
+          mrc: totals.totalMrc,
+          mrc_normalizado: totals.mrcNormalizado,
+          valor_oferta_claro: totals.valorComercial,
           valor: totals.valorComercial,
           fecha_cierre_oportunidad: toIsoDate(grupo.principalRow?.fecha_cierre_oportunidad),
         };
@@ -2969,7 +3042,9 @@ export default function Oportunidades() {
           const isLong = isObservationsCol(col);
 
           let content = grupo.principalRow && !grupo.sinPrincipal
-            ? isLong
+            ? col === "observaciones"
+              ? "-"
+              : isLong
               ? renderLongTextCell(grupo.principalRow?.[col])
               : formatCell(col, grupo.principalRow?.[col])
             : "-";
@@ -3074,6 +3149,11 @@ export default function Oportunidades() {
               onDoubleClick={() => {
                 if (!grupo.principalRow || grupo.sinPrincipal) return;
                 if (!PRINCIPAL_EDITABLE_COLS.has(col)) return;
+                if (col === "observaciones") return;
+
+                if (isLong) {
+                  return editLongText(grupo.principalRow.id, col);
+                }
 
                 startEdit(grupo.principalRow, col);
               }}

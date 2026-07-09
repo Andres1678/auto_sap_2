@@ -3407,6 +3407,7 @@ ESTADO_RESULTADO = {
     "EN ESPERA DEL RFI / RFP": {"EN ESPERA DEL CLIENTE"},
     "RFI PRESENTADO": {"EN ESPERA DEL CLIENTE"},
     "ENTREGA COMERCIAL": {"OPORTUNIDAD EN PROCESO"},
+    "EJECUCION OPERACION": {"CONSUMO DE BOLSA DE HORAS"},
     "GANADA": {
         "BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN",
         "EVOLUTIVO",
@@ -13038,6 +13039,13 @@ def marcar_oportunidad_principal(id):
         oportunidad.consecutivo_sub = None
         oportunidad.codigo_control = str(consecutivo)
 
+        # Al volver una oportunidad principal, no debe conservar comentarios/seguimiento
+        if hasattr(oportunidad, "observaciones"):
+            oportunidad.observaciones = None
+
+        if hasattr(oportunidad, "seguimiento_ot"):
+            oportunidad.seguimiento_ot = None
+
         db.session.commit()
 
         return jsonify({
@@ -13184,6 +13192,7 @@ def listar_oportunidades_principales():
         }), 500
     
 POST_PRC_CLEAR_FIELDS = [
+    "observaciones",
     "codigo_prc",
     "fecha_firma_aos",
     "pm_asignado_claro",

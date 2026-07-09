@@ -285,3 +285,68 @@
     padding: 14px;
   }
 }
+
+
+/* =========================================================
+   AJUSTE FINAL: columnas financieras nuevas
+========================================================= */
+.mrc-table th {
+  background: #b45309 !important;
+  border-right: 1px solid #fed7aa !important;
+  border-bottom: 2px solid #92400e !important;
+}
+
+.mrc-table th:nth-child(1),
+.mrc-table td:nth-child(1) {
+  width: 180px !important;
+  min-width: 180px !important;
+  font-weight: 800;
+}
+
+.mrc-table th:nth-child(2),
+.mrc-table td:nth-child(2) {
+  min-width: 330px !important;
+}
+
+.mrc-table th:nth-child(3),
+.mrc-table td:nth-child(3) {
+  width: 135px !important;
+  min-width: 135px !important;
+  text-align: center;
+}
+
+.mrc-table th:nth-child(4),
+.mrc-table td:nth-child(4),
+.mrc-table th:nth-child(5),
+.mrc-table td:nth-child(5) {
+  width: 145px !important;
+  min-width: 145px !important;
+  text-align: center;
+}
+
+.mrc-table th:nth-child(6),
+.mrc-table td:nth-child(6),
+.mrc-table th:nth-child(7),
+.mrc-table td:nth-child(7),
+.mrc-table th:nth-child(8),
+.mrc-table td:nth-child(8),
+.mrc-table th:nth-child(9),
+.mrc-table td:nth-child(9) {
+  width: 155px !important;
+  min-width: 155px !important;
+}
+
+.mrc-table td:nth-child(6),
+.mrc-table td:nth-child(7),
+.mrc-table td:nth-child(8),
+.mrc-table td:nth-child(9),
+.mrc-money {
+  text-align: right !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+
+.mrc-total {
+  background: #ffedd5 !important;
+  color: #9a3412 !important;
+}

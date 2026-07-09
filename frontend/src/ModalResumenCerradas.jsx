@@ -14,13 +14,52 @@ function normalizeForCompare(value) {
 function toIsoDate(v) {
   if (!v) return "";
   const s = String(v).trim();
+
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  const ddmmyyyy = s.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
+  if (ddmmyyyy) {
+    const [, dd, mm, yyyy] = ddmmyyyy;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return "";
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function toDisplayDateDDMMYYYY(v) {
+  if (!v) return "";
+
+  const s = String(v).trim();
+
+  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const [, yyyy, mm, dd] = isoMatch;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  const ddmmyyyyDash = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (ddmmyyyyDash) {
+    const [, dd, mm, yyyy] = ddmmyyyyDash;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    return s;
+  }
+
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+
+  return `${dd}/${mm}/${yyyy}`;
 }
 
 function parseNumberSmart(input) {
@@ -232,7 +271,7 @@ export default function ModalResumenCerradas({ isOpen, onClose, rows = [] }) {
             </div>
 
             <div className="mrc-total">
-              Total valor: <strong>{money(totalValor)}</strong>
+              Total valor oferta Claro: <strong>{money(totalValor)}</strong>
             </div>
           </div>
         </div>
@@ -246,7 +285,10 @@ export default function ModalResumenCerradas({ isOpen, onClose, rows = [] }) {
                 <th>ESTADO</th>
                 <th>FECHA CIERRE OPORTUNIDAD</th>
                 <th>TIPO MONEDA</th>
-                <th>VALOR</th>
+                <th>OTC</th>
+                <th>MRC</th>
+                <th>MRC NORMALIZADO</th>
+                <th>VALOR OFERTA CLARO</th>
               </tr>
             </thead>
 
@@ -259,14 +301,17 @@ export default function ModalResumenCerradas({ isOpen, onClose, rows = [] }) {
                     <td>
                       <span className="mrc-status-pill">{row.estado || "-"}</span>
                     </td>
-                    <td>{row.fecha_cierre_oportunidad || "-"}</td>
+                    <td>{toDisplayDateDDMMYYYY(row.fecha_cierre_oportunidad) || "-"}</td>
                     <td>{row.tipo_moneda || "-"}</td>
-                    <td className="mrc-money">{money(row.valor)}</td>
+                    <td className="mrc-money">{money(row.otc)}</td>
+                    <td className="mrc-money">{money(row.mrc)}</td>
+                    <td className="mrc-money">{money(row.mrc_normalizado)}</td>
+                    <td className="mrc-money">{money(row.valor_oferta_claro ?? row.valor)}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="mrc-empty">
+                  <td colSpan={9} className="mrc-empty">
                     No hay oportunidades cerradas para los filtros seleccionados.
                   </td>
                 </tr>
