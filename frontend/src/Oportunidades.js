@@ -312,11 +312,7 @@ function prepareRowsForExcel(rows, columns = []) {
       }
 
       if (DATE_COLS.has(col)) {
-        out[col] = value
-          ? col === "fecha_cierre_oportunidad"
-            ? toDisplayDateDDMMYYYY(value)
-            : toExcelDateDDMMYYYY(value)
-          : "";
+        out[col] = value ? toDisplayDateDDMMYYYY(value) : "";
       } else {
         out[col] = value ?? "";
       }
@@ -412,11 +408,10 @@ function computeMrcNormalizado(source) {
 }
 
 function formatCell(col, value) {
-  if (col === "fecha_cierre_oportunidad") {
+  if (isDateCol(col)) {
     return value ? toDisplayDateDDMMYYYY(value) : "-";
   }
 
-  if (isDateCol(col)) return value ? toIsoDate(value) : "-";
   if (!isNumericCol(col)) return value ?? "-";
   if (value === null || value === undefined || value === "") return "-";
   const n = typeof value === "number" ? value : parseNumberSmart(value);
@@ -470,12 +465,8 @@ function buildEstadoResultadoMap(rows) {
 function getFilterCellValue(row, col) {
   const value = row?.[col];
 
-  if (col === "fecha_cierre_oportunidad") {
-    return toDisplayDateDDMMYYYY(value);
-  }
-
   if (isDateCol(col)) {
-    return toIsoDate(value);
+    return toDisplayDateDDMMYYYY(value);
   }
 
   return normalizeText(value);
