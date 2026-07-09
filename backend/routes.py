@@ -4113,13 +4113,235 @@ def editar_oportunidad(id):
 @permission_required("OPORTUNIDADES_ELIMINAR")
 def eliminar_oportunidad(id):
     try:
-        o = Oportunidad.query.get_or_404(id)
-        db.session.delete(o)
+        data = request.get_json(silent=True) or {}
+
+        modo = (
+            data.get("modo")
+            or request.args.get("modo")
+            or "eliminar_simple"
+        )
+
+        modo = str(modo or "eliminar_simple").strip().lower()
+
+        nueva_principal_id = (
+            data.get("nueva_principal_id")
+            or request.args.get("nueva_principal_id")
+        )
+
+        oportunidad = Oportunidad.query.get_or_404(id)
+
+        es_principal = _norm_key_for_match(oportunidad.tipo_oportunidad) == "PRINCIPAL"
+
+        hijos_asignados = []
+
+        if es_principal:
+            hijos_asignados = (
+                Oportunidad.query
+                .filter(Oportunidad.oportunidad_padre_id == oportunidad.id)
+                .order_by(
+                    Oportunidad.consecutivo_sub.asc(),
+                    Oportunidad.fecha_creacion.desc(),
+                    Oportunidad.id.asc()
+                )
+                .all()
+            )
+
+        # Si no es principal o no tiene hijos, se elimina normal.
+        if not es_principal or not hijos_asignados:
+            db.session.delete(oportunidad)
+            db.session.commit()
+
+            return jsonify({
+                "mensaje": "Oportunidad eliminada correctamente.",
+                "modo": "eliminar_simple",
+                "total_eliminadas": 1,
+            }), 200
+
+        modos_validos = {"eliminar_completo", "mover_existente", "crear_nueva"}
+
+        if modo not in modos_validos:
+            return jsonify({
+                "mensaje": (
+                    "Esta oportunidad principal tiene asignaciones. "
+                    "Debe enviar modo: eliminar_completo, mover_existente o crear_nueva."
+                )
+            }), 400
+
+        cliente_key = (
+            oportunidad.cliente_grupo_key
+            or _norm_key_for_match(oportunidad.nombre_cliente)
+        )
+
+        if not cliente_key:
+            return jsonify({
+                "mensaje": "La oportunidad principal no tiene nombre de cliente válido."
+            }), 400
+
+        # Opción 1: eliminar todo completo.
+        if modo == "eliminar_completo":
+            total_hijos = len(hijos_asignados)
+
+            for hijo in hijos_asignados:
+                db.session.delete(hijo)
+
+            db.session.delete(oportunidad)
+            db.session.commit()
+
+            return jsonify({
+                "mensaje": "Oportunidad principal y asignaciones eliminadas correctamente.",
+                "modo": modo,
+                "total_eliminadas": total_hijos + 1,
+                "total_asignaciones_eliminadas": total_hijos,
+            }), 200
+
+        principal_destino = None
+
+        # Opción 2: mover a principal existente.
+        if modo == "mover_existente":
+            if not nueva_principal_id:
+                return jsonify({
+                    "mensaje": "Debe enviar nueva_principal_id para mover las asignaciones."
+                }), 400
+
+            try:
+                nueva_principal_id = int(nueva_principal_id)
+            except Exception:
+                return jsonify({
+                    "mensaje": "nueva_principal_id inválido."
+                }), 400
+
+            if nueva_principal_id == oportunidad.id:
+                return jsonify({
+                    "mensaje": "La principal destino no puede ser la misma que se va a eliminar."
+                }), 400
+
+            principal_destino = Oportunidad.query.get_or_404(nueva_principal_id)
+
+            if _norm_key_for_match(principal_destino.tipo_oportunidad) != "PRINCIPAL":
+                return jsonify({
+                    "mensaje": "La oportunidad destino no está marcada como principal."
+                }), 400
+
+            destino_cliente_key = (
+                principal_destino.cliente_grupo_key
+                or _norm_key_for_match(principal_destino.nombre_cliente)
+            )
+
+            if _norm_key_for_match(destino_cliente_key) != _norm_key_for_match(cliente_key):
+                return jsonify({
+                    "mensaje": "Solo se pueden mover asignaciones a una principal del mismo cliente."
+                }), 400
+
+            if not principal_destino.cliente_grupo_key:
+                principal_destino.cliente_grupo_key = cliente_key
+
+        # Opción 3: crear una nueva principal destino, mover asignaciones y eliminar la actual.
+        if modo == "crear_nueva":
+            duplicada = _buscar_principal_mismo_cliente_servicio(
+                oportunidad.nombre_cliente,
+                oportunidad.servicio,
+                exclude_id=oportunidad.id,
+            )
+
+            if duplicada:
+                return _response_principal_duplicada(duplicada)
+
+            ultimo_principal = (
+                db.session.query(func.max(Oportunidad.consecutivo_principal))
+                .filter(_sql_norm_estado(Oportunidad.tipo_oportunidad) == "PRINCIPAL")
+                .scalar()
+            )
+
+            consecutivo_principal = int(ultimo_principal or 0) + 1
+
+            data_principal = {}
+
+            for column in Oportunidad.__table__.columns:
+                field = column.name
+
+                if field in ["id", "created_at", "updated_at"]:
+                    continue
+
+                data_principal[field] = getattr(oportunidad, field, None)
+
+            for field in POST_PRC_CLEAR_FIELDS:
+                if field in data_principal:
+                    data_principal[field] = None
+
+            data_principal["tipo_oportunidad"] = "PRINCIPAL"
+            data_principal["oportunidad_padre_id"] = None
+            data_principal["cliente_grupo_key"] = cliente_key
+            data_principal["consecutivo_principal"] = consecutivo_principal
+            data_principal["consecutivo_sub"] = None
+            data_principal["codigo_control"] = str(consecutivo_principal)
+
+            principal_destino = Oportunidad(**data_principal)
+
+            db.session.add(principal_destino)
+            db.session.flush()
+
+        if not principal_destino or not principal_destino.id:
+            return jsonify({
+                "mensaje": "No se pudo determinar la principal destino."
+            }), 400
+
+        # Asegurar consecutivo/código de la principal destino.
+        if not principal_destino.consecutivo_principal:
+            ultimo_principal = (
+                db.session.query(func.max(Oportunidad.consecutivo_principal))
+                .filter(_sql_norm_estado(Oportunidad.tipo_oportunidad) == "PRINCIPAL")
+                .scalar()
+            )
+
+            principal_destino.consecutivo_principal = int(ultimo_principal or 0) + 1
+
+        if not principal_destino.codigo_control:
+            principal_destino.codigo_control = str(principal_destino.consecutivo_principal)
+
+        principal_destino.tipo_oportunidad = "PRINCIPAL"
+        principal_destino.oportunidad_padre_id = None
+        principal_destino.cliente_grupo_key = cliente_key
+        principal_destino.consecutivo_sub = None
+
+        ultimo_sub_destino = (
+            db.session.query(func.max(Oportunidad.consecutivo_sub))
+            .filter(Oportunidad.oportunidad_padre_id == principal_destino.id)
+            .scalar()
+        )
+
+        siguiente_sub = int(ultimo_sub_destino or 0) + 1
+
+        for hijo in hijos_asignados:
+            hijo.tipo_oportunidad = "SUBOPORTUNIDAD"
+            hijo.oportunidad_padre_id = principal_destino.id
+            hijo.cliente_grupo_key = cliente_key
+            hijo.consecutivo_principal = principal_destino.consecutivo_principal
+            hijo.consecutivo_sub = siguiente_sub
+            hijo.codigo_control = (
+                f"{principal_destino.codigo_control or principal_destino.consecutivo_principal}.{siguiente_sub}"
+            )
+
+            siguiente_sub += 1
+
+        db.session.delete(oportunidad)
         db.session.commit()
-        return jsonify({"mensaje": "Eliminado correctamente"}), 200
+
+        return jsonify({
+            "mensaje": "Oportunidad principal eliminada y asignaciones movidas correctamente.",
+            "modo": modo,
+            "principal_destino": principal_destino.to_dict(),
+            "nueva_principal_id": principal_destino.id,
+            "total_asignaciones_movidas": len(hijos_asignados),
+        }), 200
+
     except Exception:
         db.session.rollback()
-        return jsonify({"mensaje": "Error eliminando oportunidad", "trace": traceback.format_exc()}), 500
+
+        return jsonify({
+            "mensaje": "Error eliminando oportunidad",
+            "trace": traceback.format_exc()
+        }), 500
+
 
 # ========== CLIENTES ==========
 

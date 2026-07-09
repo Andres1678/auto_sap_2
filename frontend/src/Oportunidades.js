@@ -1606,23 +1606,116 @@ export default function Oportunidades() {
       ? (grupo?.rows || data.filter((item) => String(item?.oportunidad_padre_id) === String(row.id)))
       : [];
 
+    let modoEliminar = "eliminar_simple";
+    let nuevaPrincipalId = null;
+
     if (esPrincipal && hijosAsignados.length > 0) {
-      Swal.fire(
-        "No se puede eliminar",
-        "Esta oportunidad principal tiene OTs/suboportunidades asignadas. Primero usa 'Quitar principal' para moverlas de forma segura.",
-        "warning"
-      );
-      return;
+      const clienteKey = normalizeClientGroupKey(row?.nombre_cliente);
+
+      const otrasPrincipales = (data || [])
+        .filter((item) => {
+          return (
+            normalizeTipoOportunidad(item?.tipo_oportunidad) === TIPO_PRINCIPAL &&
+            normalizeClientGroupKey(item?.nombre_cliente) === clienteKey &&
+            String(item?.id) !== String(row.id)
+          );
+        })
+        .sort((a, b) => {
+          const codA = toPositiveInteger(a?.consecutivo_principal) || Number(a?.id || 0);
+          const codB = toPositiveInteger(b?.consecutivo_principal) || Number(b?.id || 0);
+
+          if (codA !== codB) return codA - codB;
+
+          return String(a?.servicio || "").localeCompare(String(b?.servicio || ""), "es", {
+            sensitivity: "base",
+          });
+        });
+
+      const inputOptions = {
+        eliminar_completo: `Eliminar principal y sus ${hijosAsignados.length} OT/asignación${hijosAsignados.length === 1 ? "" : "es"}`,
+        crear_nueva: "Crear nueva principal destino y mover las asignaciones allí",
+      };
+
+      if (otrasPrincipales.length > 0) {
+        inputOptions.mover_existente = "Mover asignaciones a otra principal existente y eliminar esta";
+      }
+
+      const modoResult = await Swal.fire({
+        icon: "warning",
+        title: "Eliminar oportunidad principal",
+        html: `
+          <div style="text-align:left;line-height:1.5;">
+            <b>Cliente:</b> ${escapeHtml(row?.nombre_cliente || "-")}<br/>
+            <b>Principal:</b> ${escapeHtml(row?.servicio || "-")}<br/>
+            <b>Asignaciones actuales:</b> ${hijosAsignados.length}<br/><br/>
+            Puedes eliminar todo completo o mover las asignaciones a otra principal antes de eliminar esta.
+          </div>
+        `,
+        input: "select",
+        inputOptions,
+        inputPlaceholder: "Selecciona qué hacer",
+        showCancelButton: true,
+        confirmButtonText: "Continuar",
+        cancelButtonText: "Cancelar",
+        confirmButtonColor: "#dc2626",
+        inputValidator: (value) => {
+          if (!value) return "Debes seleccionar una opción.";
+          return null;
+        },
+      });
+
+      if (!modoResult.isConfirmed || !modoResult.value) return;
+
+      modoEliminar = modoResult.value;
+
+      if (modoEliminar === "mover_existente") {
+        const principalOptions = Object.fromEntries(
+          otrasPrincipales.map((item) => [
+            String(item.id),
+            `${item.codigo_control || item.consecutivo_principal || item.id} - ${item.servicio || "SIN SERVICIO"}`,
+          ])
+        );
+
+        const principalResult = await Swal.fire({
+          icon: "question",
+          title: "Selecciona la principal destino",
+          input: "select",
+          inputOptions: principalOptions,
+          inputPlaceholder: "Oportunidad principal destino",
+          showCancelButton: true,
+          confirmButtonText: "Mover y eliminar",
+          cancelButtonText: "Cancelar",
+          confirmButtonColor: "#2563eb",
+          inputValidator: (value) => {
+            if (!value) return "Debes seleccionar la principal destino.";
+            return null;
+          },
+        });
+
+        if (!principalResult.isConfirmed || !principalResult.value) return;
+
+        nuevaPrincipalId = Number(principalResult.value);
+      }
     }
 
     const confirm = await Swal.fire({
       icon: "warning",
-      title: "Eliminar oportunidad",
+      title: "Confirmar eliminación",
       html: `
         <div style="text-align:left;line-height:1.5;">
           <b>Cliente:</b> ${escapeHtml(row?.nombre_cliente || "-")}<br/>
           <b>Servicio:</b> ${escapeHtml(row?.servicio || "-")}<br/><br/>
-          Esta acción eliminará la fila seleccionada. Úsala únicamente cuando la información quedó duplicada por error.
+          ${
+            modoEliminar === "eliminar_completo"
+              ? `<b>Se eliminará la oportunidad principal y también sus ${hijosAsignados.length} OT/asignación${hijosAsignados.length === 1 ? "" : "es"}.</b>`
+              : modoEliminar === "mover_existente"
+              ? "<b>Las asignaciones se moverán a la principal seleccionada y luego se eliminará esta principal.</b>"
+              : modoEliminar === "crear_nueva"
+              ? "<b>Se creará una nueva principal destino, se moverán las asignaciones y luego se eliminará esta principal.</b>"
+              : "<b>Se eliminará la oportunidad seleccionada.</b>"
+          }
+          <br/><br/>
+          Esta acción no se puede deshacer.
         </div>
       `,
       showCancelButton: true,
@@ -1638,6 +1731,11 @@ export default function Oportunidades() {
 
       const resp = await jfetch(`/oportunidades/${row.id}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modo: modoEliminar,
+          nueva_principal_id: nuevaPrincipalId,
+        }),
       });
 
       const json = await resp.json().catch(() => ({}));
@@ -1651,8 +1749,27 @@ export default function Oportunidades() {
         return;
       }
 
+      const destinoId =
+        json?.principal_destino?.id ||
+        json?.nueva_principal?.id ||
+        json?.nueva_principal_id ||
+        nuevaPrincipalId;
+
       await fetchData();
-      Swal.fire("Listo", "La oportunidad fue eliminada correctamente.", "success");
+
+      if (destinoId) {
+        setExpandedClientes((prev) => ({
+          ...prev,
+          [`principal-${destinoId}`]: true,
+          [`cliente-${normalizeClientGroupKey(row?.nombre_cliente)}`]: true,
+        }));
+      }
+
+      Swal.fire(
+        "Listo",
+        json?.mensaje || "La oportunidad fue eliminada correctamente.",
+        "success"
+      );
     } catch (e) {
       Swal.fire("Error", e?.message || "Error inesperado", "error");
     } finally {
