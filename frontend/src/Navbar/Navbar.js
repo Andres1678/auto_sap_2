@@ -219,6 +219,30 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
                   </span>
                 </Link>
               )}
+
+              <Link to="/coe-sap-funcional/dashboard-clientes" onClick={closeMenu}>
+                <span className="navc-sub-icon">📊</span>
+                <span>
+                  <strong>Dashboard clientes</strong>
+                  <small>Indicadores, estados, módulos y OT</small>
+                </span>
+              </Link>
+
+              <Link to="/coe-sap-funcional/detalle-seguimiento" onClick={closeMenu}>
+                <span className="navc-sub-icon">📝</span>
+                <span>
+                  <strong>Detalle seguimiento</strong>
+                  <small>Casos, responsables y observaciones</small>
+                </span>
+              </Link>
+
+              <Link to="/coe-sap-funcional/promedio-atencion" onClick={closeMenu}>
+                <span className="navc-sub-icon">⏱️</span>
+                <span>
+                  <strong>Promedio atención</strong>
+                  <small>Tiempos de respuesta, resolución y cierre</small>
+                </span>
+              </Link>
             </div>
           </div>
         )}

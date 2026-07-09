@@ -33,6 +33,9 @@ import PerfilesModulos from './PerfilesModulos';
 import BaseCoeSapFuncional from './BaseCoeSapFuncional';
 import CalificacionCoeSapFuncional from './CalificacionCoeSapFuncional';
 import CargarBasesAuxiliaresCoeSap from './CargarBasesAuxiliaresCoeSap';
+import DashboardClientesCoeSap from './DashboardClientesCoeSap';
+import DetalleSeguimientoClienteCoeSap from './DetalleSeguimientoClienteCoeSap';
+import PromedioAtencionCoeSap from './PromedioAtencionCoeSap';
 
 const AUTO_LOGOUT_HOURS = [6, 7, 8, 10, 18, 22];
 
@@ -335,6 +338,33 @@ function App() {
               element={
                 <AdminRoute requirePermiso="BASE_REGISTRO_IMPORTAR">
                   <CargarBasesAuxiliaresCoeSap />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/coe-sap-funcional/dashboard-clientes"
+              element={
+                <AdminRoute requirePermiso="BASE_REGISTRO_VER">
+                  <DashboardClientesCoeSap />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/coe-sap-funcional/detalle-seguimiento"
+              element={
+                <AdminRoute requirePermiso="BASE_REGISTRO_VER">
+                  <DetalleSeguimientoClienteCoeSap />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/coe-sap-funcional/promedio-atencion"
+              element={
+                <AdminRoute requirePermiso="BASE_REGISTRO_VER">
+                  <PromedioAtencionCoeSap />
                 </AdminRoute>
               }
             />    

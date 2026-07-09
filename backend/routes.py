@@ -17706,3 +17706,590 @@ def listar_catalogos_coe_sap_funcional():
             "error": str(e),
             "trace": traceback.format_exc(),
         }), 500
+
+
+# ============================================================
+# COE SAP FUNCIONAL - REPORTES / DASHBOARDS
+# Pegar este bloque al final de routes.py, debajo de las rutas
+# de calificación, fuentes, catálogos y sincronización.
+# ============================================================
+
+
+def _coe_rep_str(value):
+    if value is None:
+        return None
+
+    value = str(value).strip()
+
+    if value == "" or value.lower() in ("none", "null", "nan"):
+        return None
+
+    return value
+
+
+def _coe_rep_upper(value):
+    value = _coe_rep_str(value)
+    return value.upper() if value else None
+
+
+def _coe_rep_float(value):
+    try:
+        if value is None:
+            return 0
+        return float(value)
+    except Exception:
+        return 0
+
+
+def _coe_rep_date(value):
+    if not value:
+        return None
+
+    try:
+        return value.isoformat() if hasattr(value, "isoformat") else str(value)
+    except Exception:
+        return str(value)
+
+
+def _coe_rep_month_name(month):
+    meses = {
+        1: "Enero",
+        2: "Febrero",
+        3: "Marzo",
+        4: "Abril",
+        5: "Mayo",
+        6: "Junio",
+        7: "Julio",
+        8: "Agosto",
+        9: "Septiembre",
+        10: "Octubre",
+        11: "Noviembre",
+        12: "Diciembre",
+    }
+
+    try:
+        return meses.get(int(month), str(month))
+    except Exception:
+        return str(month or "")
+
+
+def _coe_rep_bool(value):
+    return bool(value) if value is not None else False
+
+
+def _coe_rep_list_arg(key):
+    values = request.args.getlist(key)
+
+    if not values:
+        values = request.args.getlist(f"{key}[]")
+
+    if len(values) == 1 and "," in str(values[0]):
+        values = str(values[0]).split(",")
+
+    return [str(v).strip() for v in values if str(v or "").strip()]
+
+
+def _coe_rep_apply_filters(query):
+    sociedad = _coe_rep_list_arg("sociedad") or _coe_rep_list_arg("cliente")
+    estado = _coe_rep_list_arg("estado")
+    estado_consolidado = _coe_rep_list_arg("estado_consolidado") or _coe_rep_list_arg("estadoConsolidado")
+    responsable_estado = _coe_rep_list_arg("responsable_estado") or _coe_rep_list_arg("responsableEstado")
+    modulo = _coe_rep_list_arg("modulo")
+    tipo_solicitud = _coe_rep_list_arg("tipo_solicitud") or _coe_rep_list_arg("tipoSolicitud")
+    control_horas = _coe_rep_list_arg("control_horas") or _coe_rep_list_arg("controlHoras")
+    lider_claro = _coe_rep_list_arg("lider_claro") or _coe_rep_list_arg("liderClaro")
+    asignado_a = _coe_rep_list_arg("asignado_a") or _coe_rep_list_arg("asignadoA")
+
+    anio = (request.args.get("anio") or "").strip()
+    mes = (request.args.get("mes") or "").strip()
+    q = (request.args.get("q") or "").strip()
+
+    if sociedad:
+        query = query.filter(CoeSapFuncionalCalificacion.sociedad.in_(sociedad))
+
+    if estado:
+        query = query.filter(CoeSapFuncionalCalificacion.estado.in_(estado))
+
+    if estado_consolidado:
+        query = query.filter(CoeSapFuncionalCalificacion.estado_consolidado.in_(estado_consolidado))
+
+    if responsable_estado:
+        query = query.filter(CoeSapFuncionalCalificacion.responsable_estado.in_(responsable_estado))
+
+    if modulo:
+        query = query.filter(CoeSapFuncionalCalificacion.modulo.in_(modulo))
+
+    if tipo_solicitud:
+        query = query.filter(CoeSapFuncionalCalificacion.tipo_solicitud.in_(tipo_solicitud))
+
+    if control_horas:
+        query = query.filter(CoeSapFuncionalCalificacion.control_horas.in_(control_horas))
+
+    if lider_claro:
+        query = query.filter(CoeSapFuncionalCalificacion.lider_claro.in_(lider_claro))
+
+    if asignado_a:
+        query = query.filter(CoeSapFuncionalCalificacion.asignado_a.in_(asignado_a))
+
+    if anio:
+        try:
+            query = query.filter(CoeSapFuncionalCalificacion.anio_creacion == int(anio))
+        except Exception:
+            pass
+
+    if mes:
+        try:
+            query = query.filter(CoeSapFuncionalCalificacion.mes_creacion == int(mes))
+        except Exception:
+            pass
+
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(
+            CoeSapFuncionalCalificacion.numero.ilike(like),
+            CoeSapFuncionalCalificacion.sociedad.ilike(like),
+            CoeSapFuncionalCalificacion.asunto.ilike(like),
+            CoeSapFuncionalCalificacion.observaciones.ilike(like),
+            CoeSapFuncionalCalificacion.nombre_solicitante.ilike(like),
+            CoeSapFuncionalCalificacion.estado.ilike(like),
+            CoeSapFuncionalCalificacion.estado_consolidado.ilike(like),
+            CoeSapFuncionalCalificacion.asignado_a.ilike(like),
+        ))
+
+    return query
+
+
+def _coe_rep_distinct_options(base_query):
+    def distinct_column(column):
+        rows = (
+            base_query.with_entities(column)
+            .filter(column.isnot(None))
+            .filter(func.trim(column) != "")
+            .distinct()
+            .order_by(column.asc())
+            .all()
+        )
+
+        return [r[0] for r in rows if r and r[0] not in (None, "")]
+
+    anios = (
+        base_query.with_entities(CoeSapFuncionalCalificacion.anio_creacion)
+        .filter(CoeSapFuncionalCalificacion.anio_creacion.isnot(None))
+        .distinct()
+        .order_by(CoeSapFuncionalCalificacion.anio_creacion.desc())
+        .all()
+    )
+
+    meses = (
+        base_query.with_entities(CoeSapFuncionalCalificacion.mes_creacion)
+        .filter(CoeSapFuncionalCalificacion.mes_creacion.isnot(None))
+        .distinct()
+        .order_by(CoeSapFuncionalCalificacion.mes_creacion.asc())
+        .all()
+    )
+
+    return {
+        "sociedad": distinct_column(CoeSapFuncionalCalificacion.sociedad),
+        "estado": distinct_column(CoeSapFuncionalCalificacion.estado),
+        "estadoConsolidado": distinct_column(CoeSapFuncionalCalificacion.estado_consolidado),
+        "responsableEstado": distinct_column(CoeSapFuncionalCalificacion.responsable_estado),
+        "modulo": distinct_column(CoeSapFuncionalCalificacion.modulo),
+        "tipoSolicitud": distinct_column(CoeSapFuncionalCalificacion.tipo_solicitud),
+        "controlHoras": distinct_column(CoeSapFuncionalCalificacion.control_horas),
+        "liderClaro": distinct_column(CoeSapFuncionalCalificacion.lider_claro),
+        "asignadoA": distinct_column(CoeSapFuncionalCalificacion.asignado_a),
+        "anio": [int(r[0]) for r in anios if r and r[0] is not None],
+        "mes": [
+            {
+                "value": int(r[0]),
+                "label": _coe_rep_month_name(r[0]),
+            }
+            for r in meses
+            if r and r[0] is not None
+        ],
+    }
+
+
+def _coe_rep_group_count(query, column, label_key="label"):
+    rows = (
+        query.with_entities(
+            column.label("label"),
+            func.count(CoeSapFuncionalCalificacion.id).label("cantidad")
+        )
+        .group_by(column)
+        .order_by(func.count(CoeSapFuncionalCalificacion.id).desc())
+        .all()
+    )
+
+    return [
+        {
+            label_key: _coe_rep_str(r.label) or "Sin dato",
+            "cantidad": int(r.cantidad or 0),
+        }
+        for r in rows
+    ]
+
+
+def _coe_rep_group_sum(query, group_column, sum_column, label_key="label", value_key="total"):
+    rows = (
+        query.with_entities(
+            group_column.label("label"),
+            func.coalesce(func.sum(sum_column), 0).label("total")
+        )
+        .group_by(group_column)
+        .order_by(func.coalesce(func.sum(sum_column), 0).desc())
+        .all()
+    )
+
+    return [
+        {
+            label_key: _coe_rep_str(r.label) or "Sin dato",
+            value_key: _coe_rep_float(r.total),
+        }
+        for r in rows
+    ]
+
+
+@bp.route("/coe-sap-funcional/calificacion/importaciones", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def listar_importaciones_coe_sap_funcional():
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+        page_size = min(max(int(request.args.get("page_size", 20)), 1), 200)
+        tipo = (request.args.get("tipo") or "").strip().upper()
+
+        query = CoeSapFuncionalImportacion.query
+
+        if tipo:
+            query = query.filter(CoeSapFuncionalImportacion.tipo == tipo)
+
+        total = query.count()
+
+        rows = (
+            query.order_by(CoeSapFuncionalImportacion.created_at.desc(), CoeSapFuncionalImportacion.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
+        return jsonify({
+            "data": [
+                {
+                    "id": r.id,
+                    "tipo": r.tipo,
+                    "archivoNombre": r.archivo_nombre,
+                    "filas": int(r.filas or 0),
+                    "insertados": int(r.insertados or 0),
+                    "actualizados": int(r.actualizados or 0),
+                    "errores": int(r.errores or 0),
+                    "usuario": r.usuario,
+                    "detalleJson": _coe_ext_json_load(r.detalle_json),
+                    "createdAt": _coe_rep_date(r.created_at),
+                }
+                for r in rows
+            ],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": math.ceil(total / page_size) if page_size else 1,
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error listando importaciones COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error listando importaciones",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/dashboard-clientes", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def dashboard_clientes_coe_sap_funcional():
+    try:
+        base_query = CoeSapFuncionalCalificacion.query
+        query = _coe_rep_apply_filters(base_query)
+
+        total_casos = query.count()
+
+        abiertos = query.filter(
+            or_(
+                CoeSapFuncionalCalificacion.estado_consolidado.is_(None),
+                CoeSapFuncionalCalificacion.estado_consolidado.ilike("%SIN CERRAR%"),
+                CoeSapFuncionalCalificacion.estado_consolidado.ilike("%ABIER%"),
+            )
+        ).count()
+
+        cerrados = query.filter(
+            or_(
+                CoeSapFuncionalCalificacion.estado_consolidado.ilike("%CERR%"),
+                CoeSapFuncionalCalificacion.estado.ilike("%CERR%"),
+                CoeSapFuncionalCalificacion.estado.ilike("%SOLUC%"),
+            )
+        ).count()
+
+        con_sm = query.filter(CoeSapFuncionalCalificacion.cruce_sm == True).count()
+        con_itop = query.filter(CoeSapFuncionalCalificacion.cruce_itop == True).count()
+        solo_excel = query.filter(CoeSapFuncionalCalificacion.solo_excel == True).count()
+
+        horas = query.with_entities(
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales), 0).label("total_funcionales"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas), 0).label("total_estimadas"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_garantia), 0).label("garantia"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_proyecto_abap), 0).label("proyecto_abap"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor_ot"),
+        ).first()
+
+        cerrados_por_mes_rows = (
+            query.with_entities(
+                CoeSapFuncionalCalificacion.anio_cierre.label("anio"),
+                CoeSapFuncionalCalificacion.mes_cierre.label("mes"),
+                func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+            )
+            .filter(CoeSapFuncionalCalificacion.anio_cierre.isnot(None))
+            .filter(CoeSapFuncionalCalificacion.mes_cierre.isnot(None))
+            .group_by(CoeSapFuncionalCalificacion.anio_cierre, CoeSapFuncionalCalificacion.mes_cierre)
+            .order_by(CoeSapFuncionalCalificacion.anio_cierre.asc(), CoeSapFuncionalCalificacion.mes_cierre.asc())
+            .all()
+        )
+
+        cerrados_por_mes = [
+            {
+                "anio": int(r.anio),
+                "mes": int(r.mes),
+                "mesNombre": _coe_rep_month_name(r.mes),
+                "periodo": f"{int(r.anio)}-{int(r.mes):02d}",
+                "cantidad": int(r.cantidad or 0),
+            }
+            for r in cerrados_por_mes_rows
+        ]
+
+        horas_modulos = []
+        modulos_horas = [
+            ("FI", CoeSapFuncionalCalificacion.horas_estimadas_fi, CoeSapFuncionalCalificacion.horas_ejecutadas_fi),
+            ("MM", CoeSapFuncionalCalificacion.horas_estimadas_mm, CoeSapFuncionalCalificacion.horas_ejecutadas_mm),
+            ("SD", CoeSapFuncionalCalificacion.horas_estimadas_sd, CoeSapFuncionalCalificacion.horas_ejecutadas_sd),
+            ("CO", CoeSapFuncionalCalificacion.horas_estimadas_co, CoeSapFuncionalCalificacion.horas_ejecutadas_co),
+            ("PS", CoeSapFuncionalCalificacion.horas_estimadas_ps, CoeSapFuncionalCalificacion.horas_ejecutadas_ps),
+            ("PCA", CoeSapFuncionalCalificacion.horas_estimadas_pca, CoeSapFuncionalCalificacion.horas_ejecutadas_pca),
+            ("FM", CoeSapFuncionalCalificacion.horas_estimadas_fm, CoeSapFuncionalCalificacion.horas_ejecutadas_fm),
+            ("HCM", CoeSapFuncionalCalificacion.horas_estimadas_hcm, CoeSapFuncionalCalificacion.horas_ejecutadas_hcm),
+            ("SSFF", CoeSapFuncionalCalificacion.horas_estimadas_ssff, CoeSapFuncionalCalificacion.horas_ejecutadas_ssff),
+            ("FIORI", CoeSapFuncionalCalificacion.horas_estimadas_fiori, CoeSapFuncionalCalificacion.horas_ejecutadas_fiori),
+            ("WF", CoeSapFuncionalCalificacion.horas_estimadas_wf, CoeSapFuncionalCalificacion.horas_ejecutadas_wf),
+            ("ABAP", CoeSapFuncionalCalificacion.horas_estimadas_abap, CoeSapFuncionalCalificacion.horas_ejecutadas_abap),
+            ("BASIS", CoeSapFuncionalCalificacion.horas_estimadas_basis, CoeSapFuncionalCalificacion.horas_ejecutadas_basis),
+        ]
+
+        for modulo, estimada_col, ejecutada_col in modulos_horas:
+            r = query.with_entities(
+                func.coalesce(func.sum(estimada_col), 0).label("estimadas"),
+                func.coalesce(func.sum(ejecutada_col), 0).label("ejecutadas"),
+            ).first()
+
+            estimadas = _coe_rep_float(r.estimadas)
+            ejecutadas = _coe_rep_float(r.ejecutadas)
+
+            if estimadas > 0 or ejecutadas > 0:
+                horas_modulos.append({
+                    "modulo": modulo,
+                    "estimadas": estimadas,
+                    "ejecutadas": ejecutadas,
+                })
+
+        ot_facturacion_rows = (
+            query.with_entities(
+                CoeSapFuncionalCalificacion.estado_facturacion_ot.label("estado"),
+                func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+                func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor"),
+                func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_oferta), 0).label("horas"),
+            )
+            .group_by(CoeSapFuncionalCalificacion.estado_facturacion_ot)
+            .order_by(func.count(CoeSapFuncionalCalificacion.id).desc())
+            .all()
+        )
+
+        return jsonify({
+            "resumen": {
+                "totalCasos": int(total_casos or 0),
+                "abiertos": int(abiertos or 0),
+                "cerrados": int(cerrados or 0),
+                "conSm": int(con_sm or 0),
+                "conItop": int(con_itop or 0),
+                "soloExcel": int(solo_excel or 0),
+                "totalHorasFuncionales": _coe_rep_float(horas.total_funcionales if horas else 0),
+                "totalHorasEstimadas": _coe_rep_float(horas.total_estimadas if horas else 0),
+                "horasGarantia": _coe_rep_float(horas.garantia if horas else 0),
+                "horasProyectoAbap": _coe_rep_float(horas.proyecto_abap if horas else 0),
+                "valorOt": _coe_rep_float(horas.valor_ot if horas else 0),
+            },
+            "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),
+            "casosPorEstadoConsolidado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_consolidado, "estadoConsolidado"),
+            "casosPorModulo": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.modulo, "modulo"),
+            "casosPorTipoSolicitud": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.tipo_solicitud, "tipoSolicitud"),
+            "casosPorResponsable": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.responsable_estado, "responsableEstado"),
+            "estimacionesPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_estimacion, "estadoEstimacion"),
+            "cerradosPorMes": cerrados_por_mes,
+            "horasPorModulo": horas_modulos,
+            "otFacturacion": [
+                {
+                    "estadoFacturacionOt": _coe_rep_str(r.estado) or "Sin dato",
+                    "cantidad": int(r.cantidad or 0),
+                    "valor": _coe_rep_float(r.valor),
+                    "horas": _coe_rep_float(r.horas),
+                }
+                for r in ot_facturacion_rows
+            ],
+            "opciones": _coe_rep_distinct_options(base_query),
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error consultando dashboard clientes COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error consultando dashboard clientes",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/detalle-cliente", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def detalle_cliente_coe_sap_funcional():
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+        page_size = min(max(int(request.args.get("page_size", 50)), 1), 500)
+
+        base_query = CoeSapFuncionalCalificacion.query
+        query = _coe_rep_apply_filters(base_query)
+
+        total = query.count()
+
+        rows = (
+            query.order_by(
+                CoeSapFuncionalCalificacion.responsable_estado.asc(),
+                CoeSapFuncionalCalificacion.estado.asc(),
+                CoeSapFuncionalCalificacion.numero.asc(),
+            )
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+
+        resumen_rows = (
+            query.with_entities(
+                CoeSapFuncionalCalificacion.responsable_estado.label("responsable"),
+                CoeSapFuncionalCalificacion.estado.label("estado"),
+                func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+            )
+            .group_by(CoeSapFuncionalCalificacion.responsable_estado, CoeSapFuncionalCalificacion.estado)
+            .order_by(CoeSapFuncionalCalificacion.responsable_estado.asc(), func.count(CoeSapFuncionalCalificacion.id).desc())
+            .all()
+        )
+
+        return jsonify({
+            "data": [
+                {
+                    "id": r.id,
+                    "responsableEstado": r.responsable_estado,
+                    "estado": r.estado,
+                    "estadoConsolidado": r.estado_consolidado,
+                    "numero": r.numero,
+                    "sistema": r.sistema,
+                    "sociedad": r.sociedad,
+                    "asunto": r.asunto,
+                    "observaciones": r.observaciones,
+                    "modulo": r.modulo,
+                    "tipoSolicitud": r.tipo_solicitud,
+                    "asignadoA": r.asignado_a,
+                    "fechaAsignacion": _coe_rep_date(r.fecha_asignacion),
+                    "fechaRespuesta": _coe_rep_date(r.fecha_respuesta),
+                    "fechaResolucion": _coe_rep_date(r.fecha_resolucion),
+                    "fechaFinalizacionCierre": _coe_rep_date(r.fecha_finalizacion_cierre),
+                    "cantidad": 1,
+                }
+                for r in rows
+            ],
+            "resumen": [
+                {
+                    "responsableEstado": _coe_rep_str(r.responsable) or "Sin dato",
+                    "estado": _coe_rep_str(r.estado) or "Sin dato",
+                    "cantidad": int(r.cantidad or 0),
+                }
+                for r in resumen_rows
+            ],
+            "opciones": _coe_rep_distinct_options(base_query),
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": math.ceil(total / page_size) if page_size else 1,
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error consultando detalle cliente COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error consultando detalle cliente",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/promedio-atencion", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def promedio_atencion_coe_sap_funcional():
+    try:
+        base_query = CoeSapFuncionalCalificacion.query
+        query = _coe_rep_apply_filters(base_query)
+
+        rows = (
+            query.with_entities(
+                CoeSapFuncionalCalificacion.anio_creacion.label("anio"),
+                CoeSapFuncionalCalificacion.mes_creacion.label("mes"),
+                func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+                func.avg(CoeSapFuncionalCalificacion.tiempo_respuesta).label("promedio_respuesta"),
+                func.avg(CoeSapFuncionalCalificacion.tiempo_resolucion).label("promedio_resolucion"),
+                func.avg(CoeSapFuncionalCalificacion.tiempo_finalizacion_cierre).label("promedio_cierre"),
+            )
+            .filter(CoeSapFuncionalCalificacion.anio_creacion.isnot(None))
+            .filter(CoeSapFuncionalCalificacion.mes_creacion.isnot(None))
+            .group_by(CoeSapFuncionalCalificacion.anio_creacion, CoeSapFuncionalCalificacion.mes_creacion)
+            .order_by(CoeSapFuncionalCalificacion.anio_creacion.asc(), CoeSapFuncionalCalificacion.mes_creacion.asc())
+            .all()
+        )
+
+        total_row = query.with_entities(
+            func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+            func.avg(CoeSapFuncionalCalificacion.tiempo_respuesta).label("promedio_respuesta"),
+            func.avg(CoeSapFuncionalCalificacion.tiempo_resolucion).label("promedio_resolucion"),
+            func.avg(CoeSapFuncionalCalificacion.tiempo_finalizacion_cierre).label("promedio_cierre"),
+        ).first()
+
+        return jsonify({
+            "data": [
+                {
+                    "anio": int(r.anio),
+                    "mes": int(r.mes),
+                    "mesNombre": _coe_rep_month_name(r.mes),
+                    "periodo": f"{int(r.anio)}-{int(r.mes):02d}",
+                    "cantidad": int(r.cantidad or 0),
+                    "promedioTiempoRespuesta": round(_coe_rep_float(r.promedio_respuesta), 2),
+                    "promedioTiempoResolucion": round(_coe_rep_float(r.promedio_resolucion), 2),
+                    "promedioTiempoCierre": round(_coe_rep_float(r.promedio_cierre), 2),
+                }
+                for r in rows
+            ],
+            "resumen": {
+                "cantidad": int(total_row.cantidad or 0) if total_row else 0,
+                "promedioTiempoRespuesta": round(_coe_rep_float(total_row.promedio_respuesta if total_row else 0), 2),
+                "promedioTiempoResolucion": round(_coe_rep_float(total_row.promedio_resolucion if total_row else 0), 2),
+                "promedioTiempoCierre": round(_coe_rep_float(total_row.promedio_cierre if total_row else 0), 2),
+            },
+            "opciones": _coe_rep_distinct_options(base_query),
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error consultando promedio de atención COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error consultando promedio de atención",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
