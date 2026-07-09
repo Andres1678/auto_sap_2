@@ -9,7 +9,7 @@ from backend.models import (
     ProyectoPresupuestoMensual, ProyectoPerfilPlan, ProyectoCostoAdicional,
     Perfil, ModuloPerfil, ConsultorPerfil, ProyectoModulo, ProyectoPerfil,
     ProyectoPerfilPlan, ProyectoCostoAdicional, ProyectoMapeo, ProyectoPerfilConsultor, CoeSapFuncionalCalificacion,
-    CoeSapFuncionalCalificacionHora
+    CoeSapFuncionalCalificacionHora, CoeSapFuncionalImportacion, CoeSapFuncionalFuenteGestion, CoeSapFuncionalCatalogo, CoeSapFuncionalCategoriaCatalogo,
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo
 import bcrypt
 import holidays
 import secrets
-
+import json
 
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
@@ -14091,14 +14091,20 @@ def importar_coe_sap_funcional_principal():
                 "mensaje": "El archivo no contiene registros con Número válido"
             }), 400
 
+        # Carga principal: limpia la base sin romper la relación con calificación.
         try:
-            db.session.execute(text("TRUNCATE TABLE base_registro_info_coe_sap_funcional"))
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+            CoeSapFuncionalCalificacion.query.update(
+                {CoeSapFuncionalCalificacion.base_registro_id: None},
+                synchronize_session=False
+            )
+
             db.session.execute(text("DELETE FROM base_registro_info_coe_sap_funcional"))
             db.session.execute(text("ALTER TABLE base_registro_info_coe_sap_funcional AUTO_INCREMENT = 1"))
             db.session.commit()
+
+        except Exception:
+            db.session.rollback()
+            raise
 
         objetos = []
 
@@ -14601,6 +14607,50 @@ def _calificacion_to_dict(r):
         "actualizadoPor": r.actualizado_por,
         "createdAt": _calificacion_fecha_str(r.created_at),
         "updatedAt": _calificacion_fecha_str(r.updated_at),
+                "doc1": r.doc_1,
+        "manejo": r.manejo,
+        "tiqueteProveedorExterno": r.tiquete_proveedor_externo,
+
+        "fechaAsignacionSistemaGestion": _calificacion_fecha_str(r.fecha_asignacion_sistema_gestion),
+        "difFechaAsignacion": float(r.dif_fecha_asignacion or 0) if r.dif_fecha_asignacion is not None else None,
+        "validarFechaAsignacion": r.validar_fecha_asignacion,
+
+        "horaUltimaActualizacionSistemaGestion": _calificacion_fecha_str(r.hora_ultima_actualizacion_sistema_gestion),
+        "validarFechaActualizacion": r.validar_fecha_actualizacion,
+
+        "fechaResolucionSistemaGestion": _calificacion_fecha_str(r.fecha_resolucion_sistema_gestion),
+        "difFechaResolucion": float(r.dif_fecha_resolucion or 0) if r.dif_fecha_resolucion is not None else None,
+        "validarFechaResolucion": r.validar_fecha_resolucion,
+
+        "fechaFinalizacionCierreSistemaGestion": _calificacion_fecha_str(r.fecha_finalizacion_cierre_sistema_gestion),
+        "difFechaCierre": float(r.dif_fecha_cierre or 0) if r.dif_fecha_cierre is not None else None,
+        "validarFechaCierre": r.validar_fecha_cierre,
+
+        "estadoFacturacionOt": r.estado_facturacion_ot,
+        "nroOt": r.nro_ot,
+        "valorOt": float(r.valor_ot or 0) if r.valor_ot is not None else None,
+        "horasOferta": float(r.horas_oferta or 0) if r.horas_oferta is not None else None,
+
+        "fechaReasignacionClaro": _calificacion_fecha_str(r.fecha_reasignacion_claro),
+        "fecha1ReasignacionClaro": _calificacion_fecha_str(r.fecha_1_reasignacion_claro),
+        "fecha2ReasignacionClaro": _calificacion_fecha_str(r.fecha_2_reasignacion_claro),
+        "fecha3ReasignacionClaro": _calificacion_fecha_str(r.fecha_3_reasignacion_claro),
+        "fecha4ReasignacionClaro": _calificacion_fecha_str(r.fecha_4_reasignacion_claro),
+        "fecha5ReasignacionClaro": _calificacion_fecha_str(r.fecha_5_reasignacion_claro),
+        "fecha6ReasignacionClaro": _calificacion_fecha_str(r.fecha_6_reasignacion_claro),
+        "fecha7ReasignacionClaro": _calificacion_fecha_str(r.fecha_7_reasignacion_claro),
+        "fecha8ReasignacionClaro": _calificacion_fecha_str(r.fecha_8_reasignacion_claro),
+        "fecha9ReasignacionClaro": _calificacion_fecha_str(r.fecha_9_reasignacion_claro),
+        "fecha10ReasignacionClaro": _calificacion_fecha_str(r.fecha_10_reasignacion_claro),
+
+        "validarSubcategoria": r.validar_subcategoria,
+        "validarArticulo": r.validar_articulo,
+
+        "soloExcel": bool(r.solo_excel),
+        "cruceSm": bool(r.cruce_sm),
+        "cruceItop": bool(r.cruce_itop),
+        "camposEditadosManual": _coe_ext_json_load(r.campos_editados_manual_json),
+        "origenDatos": _coe_ext_json_load(r.origen_datos_json),
     }
 
 
@@ -15213,6 +15263,776 @@ def _calificacion_comparar_base_excel(base, campos_excel):
 
     return diferencias
 
+# ============================================================
+# COE SAP FUNCIONAL - HELPERS EXTENDIDOS
+# ============================================================
+
+FUENTE_GESTION_ALIASES = {
+    "numero": [
+        "ID",
+        "NUMERO",
+        "NÚMERO",
+        "CASO",
+        "CASO ID",
+        "INCIDENT ID",
+        "REQUEST ID",
+        "N CASO",
+        "N° CASO",
+    ],
+    "caso_sm": [
+        "N CASO SM",
+        "N° CASO SM",
+        "CASO SM",
+        "NO CASO SM",
+        "NRO CASO SM",
+    ],
+    "id_interaccion": [
+        "ID DE INTERACCION",
+        "ID DE INTERACCIÓN",
+        "ID INTERACCION",
+        "ID INTERACCIÓN",
+    ],
+    "sociedad": [
+        "SOCIEDAD",
+        "COMPAÑIA",
+        "COMPAÑÍA",
+        "COMPANIA",
+        "CLIENTE",
+        "COMPAÑIA AFECTADA",
+    ],
+    "asunto": [
+        "ASUNTO",
+        "TITULO",
+        "TÍTULO",
+        "RESUMEN",
+        "DESCRIPCION",
+        "DESCRIPCIÓN",
+    ],
+    "observaciones": [
+        "OBSERVACIONES",
+        "ACCION DE ACTUALIZACION",
+        "ACCIÓN DE ACTUALIZACIÓN",
+        "ULTIMA ACTUALIZACION",
+        "ÚLTIMA ACTUALIZACIÓN",
+    ],
+    "nombre_solicitante": [
+        "NOMBRE DEL SOLICITANTE",
+        "SOLICITANTE",
+        "NOMBRE COMPLETO CONTACTO",
+        "CONTACTO",
+        "USUARIO",
+    ],
+    "impacto": [
+        "IMPACTO",
+    ],
+    "urgencia": [
+        "URGENCIA",
+    ],
+    "prioridad": [
+        "PRIORIDAD",
+    ],
+    "tipo_solicitud": [
+        "TIPO DE SOLICITUD",
+        "TIPO SOLICITUD",
+        "TIPO",
+    ],
+    "modulo": [
+        "MODULO",
+        "MÓDULO",
+    ],
+    "categoria": [
+        "CATEGORIA",
+        "CATEGORÍA",
+    ],
+    "subcategoria": [
+        "SUBCATEGORIA",
+        "SUBCATEGORÍA",
+    ],
+    "articulo": [
+        "ARTICULO",
+        "ARTÍCULO",
+        "SERVICIO",
+        "CLR TXT SERVICIO",
+    ],
+    "estado": [
+        "ESTADO",
+        "STATUS",
+    ],
+    "estado_herramienta_gestion": [
+        "ESTADO CASOS EN HERRAMIENTAS DE GESTION",
+        "ESTADO CASOS EN HERRAMIENTAS DE GESTIÓN",
+        "ESTADO HERRAMIENTA",
+        "ESTADO",
+        "STATUS",
+    ],
+    "asignado_a": [
+        "ASIGNADO A",
+        "ASIGNADO",
+        "RESPONSABLE",
+        "OWNER",
+    ],
+    "fecha_asignacion": [
+        "FECHA DE ASIGNACION",
+        "FECHA DE ASIGNACIÓN",
+        "FECHA ASIGNACION",
+        "FECHA ASIGNACIÓN",
+        "FECHA DE ENTREGA",
+        "OPEN TIME",
+        "FECHA CREACION",
+        "FECHA CREACIÓN",
+    ],
+    "hora_ultima_actualizacion": [
+        "HORA DE LA ULTIMA ACTUALIZACION",
+        "HORA DE LA ÚLTIMA ACTUALIZACIÓN",
+        "ULTIMA ACTUALIZACION",
+        "ÚLTIMA ACTUALIZACIÓN",
+        "FECHA DE ACTUALIZACION",
+        "FECHA DE ACTUALIZACIÓN",
+        "UPDATE TIME",
+    ],
+    "fecha_resolucion": [
+        "FECHA DE RESOLUCION",
+        "FECHA DE RESOLUCIÓN",
+        "FECHA RESOLUCION",
+        "FECHA RESOLUCIÓN",
+        "RESOLUTION TIME",
+    ],
+    "fecha_finalizacion_cierre": [
+        "FECHA DE FINALIZACION CIERRE",
+        "FECHA DE FINALIZACIÓN CIERRE",
+        "FECHA DE FINALIZACION / CIERRE",
+        "FECHA DE FINALIZACIÓN / CIERRE",
+        "FECHA DE CIERRE",
+        "FECHA CIERRE",
+        "CLOSE TIME",
+    ],
+}
+
+
+CATALOGOS_BASICOS = {
+    "SOCIEDAD": ["SOCIEDAD", "CLIENTE", "COMPAÑIA", "COMPAÑÍA"],
+    "IMPACTO": ["IMPACTO"],
+    "URGENCIA": ["URGENCIA"],
+    "PRIORIDAD": ["PRIORIDAD"],
+    "TIPO_SOLICITUD": ["TIPO DE SOLICITUD", "TIPO SOLICITUD"],
+    "MODULO": ["MODULO", "MÓDULO"],
+    "ESTADO_ESTIMACION": ["ESTADO ESTIMACION", "ESTADO ESTIMACIÓN"],
+    "ESTADO_FACTURACION_OT": ["ESTADO FACTURACION OT", "ESTADO FACTURACIÓN OT"],
+}
+
+
+def _coe_ext_norm(value):
+    s = str(value or "")
+
+    s = s.replace("\ufeff", "")
+    s = s.replace("\u200b", "")
+    s = s.replace("\u200c", "")
+    s = s.replace("\u200d", "")
+    s = s.replace("\u00A0", " ")
+
+    s = s.strip().upper()
+
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+
+    s = s.replace("º", "")
+    s = s.replace("°", "")
+    s = s.replace(".", " ")
+    s = s.replace(":", " ")
+    s = s.replace("-", " ")
+    s = s.replace("_", " ")
+    s = s.replace("/", " ")
+    s = s.replace("(", " ")
+    s = s.replace(")", " ")
+
+    s = re.sub(r"\s+", " ", s).strip()
+
+    return s
+
+
+def _coe_ext_present(value):
+    if value is None:
+        return False
+
+    s = str(value).strip()
+
+    if s == "" or s.lower() in ("nan", "none", "null"):
+        return False
+
+    return True
+
+
+def _coe_ext_str(value):
+    if not _coe_ext_present(value):
+        return None
+
+    return str(value).replace("\u00A0", " ").strip()
+
+
+def _coe_ext_json_load(value):
+    if not value:
+        return {}
+
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _coe_ext_json_dumps(value):
+    try:
+        return json.dumps(value or {}, ensure_ascii=False, default=str)
+    except Exception:
+        return "{}"
+
+
+def _coe_ext_decimal(value):
+    try:
+        if value is None or value == "":
+            return 0
+
+        if isinstance(value, str):
+            value = value.strip().replace(",", ".")
+
+        return float(value)
+    except Exception:
+        return 0
+
+
+def _coe_ext_fecha(value):
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        return value
+
+    try:
+        parsed = pd.to_datetime(value, errors="coerce", dayfirst=True)
+
+        if pd.isna(parsed):
+            return None
+
+        return parsed.to_pydatetime()
+    except Exception:
+        return None
+
+
+def _coe_ext_get(row, aliases):
+    for alias in aliases:
+        key = _coe_ext_norm(alias)
+
+        if key in row:
+            return row.get(key)
+
+    return None
+
+
+def _coe_ext_usuario():
+    try:
+        return g.current_user.usuario if g.current_user else ""
+    except Exception:
+        return ""
+
+
+def _coe_ext_read_excel_rows(file, preferred_sheet_names=None):
+    filename = (file.filename or "").lower().strip()
+    contenido = file.read()
+
+    if not contenido:
+        raise ValueError("El archivo está vacío.")
+
+    if filename.endswith(".csv"):
+        df = _coe_read_csv_from_bytes(contenido)
+        df = df.where(pd.notnull(df), None)
+
+        headers = [_coe_ext_norm(c) for c in list(df.columns)]
+        rows = []
+
+        for idx, row in df.iterrows():
+            item = {}
+
+            for i, header in enumerate(headers):
+                if not header:
+                    continue
+
+                item[header] = row.iloc[i]
+
+            item["_excel_fila"] = int(idx) + 2
+            rows.append(item)
+
+        return rows, filename, "CSV"
+
+    wb = load_workbook(
+        BytesIO(contenido),
+        data_only=True,
+        read_only=True
+    )
+
+    sheet_name = None
+
+    preferred_sheet_names = preferred_sheet_names or []
+
+    for wanted in preferred_sheet_names:
+        for real_name in wb.sheetnames:
+            if _coe_ext_norm(real_name) == _coe_ext_norm(wanted):
+                sheet_name = real_name
+                break
+
+        if sheet_name:
+            break
+
+    if not sheet_name:
+        sheet_name = wb.sheetnames[0]
+
+    ws = wb[sheet_name]
+
+    filas = list(ws.iter_rows(values_only=True))
+
+    if not filas:
+        raise ValueError("La hoja no tiene información.")
+
+    header_idx = None
+
+    for idx, fila in enumerate(filas[:60]):
+        normalizados = [_coe_ext_norm(v) for v in fila if _coe_ext_present(v)]
+
+        tiene_id = any(x in normalizados for x in ["ID", "NUMERO", "N CASO SM", "CASO SM"])
+        tiene_base = any(x in normalizados for x in ["ESTADO", "ASUNTO", "SOCIEDAD", "ASIGNADO A"])
+
+        if tiene_id and tiene_base:
+            header_idx = idx
+            break
+
+    if header_idx is None:
+        header_idx = 0
+
+    headers = [_coe_ext_norm(h) for h in filas[header_idx]]
+
+    rows = []
+
+    for excel_idx, fila in enumerate(filas[header_idx + 1:], start=header_idx + 2):
+        item = {}
+        has_data = False
+
+        for i, value in enumerate(fila):
+            if i >= len(headers):
+                continue
+
+            header = headers[i]
+
+            if not header:
+                continue
+
+            item[header] = value
+
+            if _coe_ext_present(value):
+                has_data = True
+
+        if not has_data:
+            continue
+
+        item["_excel_fila"] = excel_idx
+        rows.append(item)
+
+    return rows, filename, sheet_name
+
+
+def _coe_ext_extract_fuente(row):
+    data = {}
+
+    for campo, aliases in FUENTE_GESTION_ALIASES.items():
+        value = _coe_ext_get(row, aliases)
+
+        if not _coe_ext_present(value):
+            continue
+
+        if campo in (
+            "fecha_asignacion",
+            "hora_ultima_actualizacion",
+            "fecha_resolucion",
+            "fecha_finalizacion_cierre",
+        ):
+            data[campo] = _coe_ext_fecha(value)
+        else:
+            data[campo] = _coe_ext_str(value)
+
+    numero = data.get("numero") or data.get("caso_sm") or data.get("id_interaccion")
+
+    if not numero:
+        return None
+
+    data["numero"] = str(numero).strip()
+
+    return data
+
+
+def _coe_ext_crear_importacion(tipo, archivo_nombre, filas, usuario):
+    imp = CoeSapFuncionalImportacion(
+        tipo=tipo,
+        archivo_nombre=archivo_nombre,
+        filas=filas,
+        insertados=0,
+        actualizados=0,
+        errores=0,
+        usuario=usuario,
+        detalle_json=None,
+        created_at=datetime.utcnow(),
+    )
+
+    db.session.add(imp)
+    db.session.flush()
+
+    return imp
+
+
+def _coe_ext_upsert_catalogo(tipo, valor, extra_1=None, extra_2=None, extra_3=None, orden=0):
+    valor = _coe_ext_str(valor)
+
+    if not valor:
+        return None
+
+    tipo = _coe_ext_norm(tipo)
+    valor_normalizado = _coe_ext_norm(valor)
+
+    row = CoeSapFuncionalCatalogo.query.filter_by(
+        tipo=tipo,
+        valor_normalizado=valor_normalizado
+    ).first()
+
+    if not row:
+        row = CoeSapFuncionalCatalogo(
+            tipo=tipo,
+            valor=valor,
+            valor_normalizado=valor_normalizado,
+            extra_1=_coe_ext_str(extra_1),
+            extra_2=_coe_ext_str(extra_2),
+            extra_3=_coe_ext_str(extra_3),
+            orden=orden,
+            activo=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.session.add(row)
+    else:
+        row.valor = valor
+        row.extra_1 = _coe_ext_str(extra_1)
+        row.extra_2 = _coe_ext_str(extra_2)
+        row.extra_3 = _coe_ext_str(extra_3)
+        row.activo = True
+        row.updated_at = datetime.utcnow()
+
+    return row
+
+
+def _coe_ext_upsert_categoria(modulo, categoria, subcategoria=None, articulo=None):
+    modulo = _coe_ext_str(modulo)
+    categoria = _coe_ext_str(categoria)
+    subcategoria = _coe_ext_str(subcategoria)
+    articulo = _coe_ext_str(articulo)
+
+    if not modulo and not categoria and not subcategoria and not articulo:
+        return None
+
+    row = CoeSapFuncionalCategoriaCatalogo.query.filter_by(
+        modulo=modulo,
+        categoria=categoria,
+        subcategoria=subcategoria,
+        articulo=articulo,
+    ).first()
+
+    if not row:
+        row = CoeSapFuncionalCategoriaCatalogo(
+            modulo=modulo,
+            categoria=categoria,
+            subcategoria=subcategoria,
+            articulo=articulo,
+            activo=True,
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(row)
+    else:
+        row.activo = True
+
+    return row
+
+
+def _coe_ext_estado_catalogo(estado):
+    estado_norm = _coe_ext_norm(estado)
+
+    if not estado_norm:
+        return None, None
+
+    row = CoeSapFuncionalCatalogo.query.filter_by(
+        tipo="ESTADO_GESTION",
+        valor_normalizado=estado_norm
+    ).first()
+
+    if not row:
+        row = CoeSapFuncionalCatalogo.query.filter_by(
+            tipo="ESTADO",
+            valor_normalizado=estado_norm
+        ).first()
+
+    if not row:
+        return None, None
+
+    responsable = row.extra_1
+    consolidado = row.extra_2
+
+    return responsable, consolidado
+
+
+def _coe_ext_manual_fields(row):
+    return _coe_ext_json_load(getattr(row, "campos_editados_manual_json", None))
+
+
+def _coe_ext_origen_fields(row):
+    return _coe_ext_json_load(getattr(row, "origen_datos_json", None))
+
+
+def _coe_ext_set_field(row, field, value, source, manual_fields, force=False, only_empty=False):
+    if not hasattr(row, field):
+        return False
+
+    if not _coe_ext_present(value):
+        return False
+
+    current = getattr(row, field)
+
+    if only_empty and _coe_ext_present(current):
+        return False
+
+    if not force and manual_fields.get(field):
+        return False
+
+    setattr(row, field, value)
+
+    origen = _coe_ext_origen_fields(row)
+    origen[field] = source
+    row.origen_datos_json = _coe_ext_json_dumps(origen)
+
+    return True
+
+
+def _coe_ext_diff_days(fin, ini):
+    if not fin or not ini:
+        return None
+
+    try:
+        return round((fin - ini).total_seconds() / 86400, 2)
+    except Exception:
+        return None
+
+
+def _coe_ext_validacion_fecha(app_fecha, fuente_fecha):
+    if not app_fecha or not fuente_fecha:
+        return ""
+
+    diff = _coe_ext_diff_days(app_fecha, fuente_fecha)
+
+    if diff is None:
+        return ""
+
+    if abs(diff) < 0.01:
+        return "OK"
+
+    return "VALIDAR"
+
+
+def _coe_ext_networkdays(fecha_inicio, fecha_fin):
+    if not fecha_inicio or not fecha_fin:
+        return None
+
+    try:
+        inicio = fecha_inicio.date()
+        fin = fecha_fin.date()
+
+        if fin < inicio:
+            return 0
+
+        dias = 0
+        actual = inicio
+
+        while actual <= fin:
+            if actual.weekday() < 5:
+                dias += 1
+
+            actual += timedelta(days=1)
+
+        return dias
+    except Exception:
+        return None
+
+
+def _coe_ext_validar_categoria(row):
+    modulo = _coe_ext_str(getattr(row, "modulo", None))
+    categoria = _coe_ext_str(getattr(row, "categoria", None))
+    subcategoria = _coe_ext_str(getattr(row, "subcategoria", None))
+    articulo = _coe_ext_str(getattr(row, "articulo", None))
+
+    if not modulo and not categoria and not subcategoria and not articulo:
+        row.validar_subcategoria = ""
+        row.validar_articulo = ""
+        return
+
+    if subcategoria:
+        existe_sub = CoeSapFuncionalCategoriaCatalogo.query.filter(
+            func.upper(CoeSapFuncionalCategoriaCatalogo.modulo) == _coe_ext_norm(modulo),
+            func.upper(CoeSapFuncionalCategoriaCatalogo.categoria) == _coe_ext_norm(categoria),
+            func.upper(CoeSapFuncionalCategoriaCatalogo.subcategoria) == _coe_ext_norm(subcategoria),
+        ).first()
+
+        row.validar_subcategoria = "OK" if existe_sub else "VALIDAR"
+
+    if articulo:
+        existe_art = CoeSapFuncionalCategoriaCatalogo.query.filter(
+            func.upper(CoeSapFuncionalCategoriaCatalogo.modulo) == _coe_ext_norm(modulo),
+            func.upper(CoeSapFuncionalCategoriaCatalogo.articulo) == _coe_ext_norm(articulo),
+        ).first()
+
+        row.validar_articulo = "OK" if existe_art else "VALIDAR"
+
+
+def _coe_ext_recalcular_row(row):
+    numero = _coe_ext_str(getattr(row, "numero", None))
+
+    if numero:
+        row.sistema = numero[:2]
+
+    fecha_asignacion = getattr(row, "fecha_asignacion", None)
+    fecha_respuesta = getattr(row, "fecha_respuesta", None)
+    fecha_resolucion = getattr(row, "fecha_resolucion", None)
+    fecha_cierre = getattr(row, "fecha_finalizacion_cierre", None)
+
+    if fecha_asignacion:
+        row.dia_creacion = fecha_asignacion.day
+        row.mes_creacion = fecha_asignacion.month
+        row.anio_creacion = fecha_asignacion.year
+    else:
+        row.dia_creacion = None
+        row.mes_creacion = None
+        row.anio_creacion = None
+
+    if fecha_cierre:
+        row.dia_cierre = fecha_cierre.day
+        row.mes_cierre = fecha_cierre.month
+        row.anio_cierre = fecha_cierre.year
+    else:
+        row.dia_cierre = None
+        row.mes_cierre = None
+        row.anio_cierre = None
+
+    row.tiempo_respuesta = _coe_ext_diff_days(fecha_respuesta, fecha_asignacion)
+    row.tiempo_resolucion = _coe_ext_diff_days(fecha_resolucion, fecha_asignacion)
+    row.tiempo_finalizacion_cierre = _coe_ext_diff_days(fecha_cierre, fecha_asignacion)
+
+    fecha_estimacion = getattr(row, "fecha_estimacion", None)
+    fecha_aprobacion_estimacion = getattr(row, "fecha_aprobacion_estimacion", None)
+
+    if fecha_asignacion:
+        row.dias_entrega_estimacion = _coe_ext_networkdays(
+            fecha_asignacion + timedelta(days=1),
+            fecha_estimacion or datetime.utcnow()
+        )
+
+    if fecha_estimacion:
+        row.mes_estimacion = fecha_estimacion.month
+        row.anio_estimacion = fecha_estimacion.year
+    else:
+        row.mes_estimacion = None
+        row.anio_estimacion = None
+
+    if fecha_aprobacion_estimacion:
+        row.mes_aprobado_estimacion = fecha_aprobacion_estimacion.month
+        row.anio_aprobado_estimacion = fecha_aprobacion_estimacion.year
+    else:
+        row.mes_aprobado_estimacion = None
+        row.anio_aprobado_estimacion = None
+
+    funcionales = [
+        "fi", "mm", "sd", "co", "ps", "slcm", "crm", "crm2",
+        "pca", "fm", "pp", "pm", "hcm", "ssff", "fiori", "wf"
+    ]
+
+    total_funcionales = 0
+
+    for modulo in funcionales:
+        total_funcionales += _coe_ext_decimal(getattr(row, f"horas_estimadas_{modulo}", 0))
+
+    row.total_horas_funcionales = total_funcionales
+
+    row.total_horas_estimadas = (
+        total_funcionales
+        + _coe_ext_decimal(getattr(row, "horas_estimadas_abap", 0))
+        + _coe_ext_decimal(getattr(row, "horas_estimadas_basis", 0))
+    )
+
+    row.total_horas_estimadas2 = (
+        _coe_ext_decimal(row.total_horas_estimadas)
+        + _coe_ext_decimal(getattr(row, "horas_estimadas_pmo", 0))
+    )
+
+    estado_base = (
+        getattr(row, "estado_herramienta_gestion", None)
+        or getattr(row, "estado", None)
+    )
+
+    responsable, consolidado = _coe_ext_estado_catalogo(estado_base)
+
+    if responsable:
+        row.responsable_estado = responsable
+
+    if consolidado:
+        row.estado_consolidado = consolidado
+    else:
+        # fallback básico si no hay catálogo cargado
+        estado_norm = _coe_ext_norm(estado_base)
+
+        if estado_norm in ("CERRADO", "SOLUCIONADO", "CANCELADO", "CERRADO SIN SOLUCION", "SUSPENDIDO"):
+            row.estado_consolidado = "CERRADO"
+        elif estado_norm:
+            row.estado_consolidado = "SIN CERRAR"
+
+    row.dif_fecha_asignacion = _coe_ext_diff_days(
+        getattr(row, "fecha_asignacion", None),
+        getattr(row, "fecha_asignacion_sistema_gestion", None)
+    )
+
+    row.validar_fecha_asignacion = _coe_ext_validacion_fecha(
+        getattr(row, "fecha_asignacion", None),
+        getattr(row, "fecha_asignacion_sistema_gestion", None)
+    )
+
+    row.validar_fecha_actualizacion = _coe_ext_validacion_fecha(
+        getattr(row, "hora_ultima_actualizacion", None),
+        getattr(row, "hora_ultima_actualizacion_sistema_gestion", None)
+    )
+
+    row.dif_fecha_resolucion = _coe_ext_diff_days(
+        getattr(row, "fecha_resolucion", None),
+        getattr(row, "fecha_resolucion_sistema_gestion", None)
+    )
+
+    row.validar_fecha_resolucion = _coe_ext_validacion_fecha(
+        getattr(row, "fecha_resolucion", None),
+        getattr(row, "fecha_resolucion_sistema_gestion", None)
+    )
+
+    row.dif_fecha_cierre = _coe_ext_diff_days(
+        getattr(row, "fecha_finalizacion_cierre", None),
+        getattr(row, "fecha_finalizacion_cierre_sistema_gestion", None)
+    )
+
+    row.validar_fecha_cierre = _coe_ext_validacion_fecha(
+        getattr(row, "fecha_finalizacion_cierre", None),
+        getattr(row, "fecha_finalizacion_cierre_sistema_gestion", None)
+    )
+
+    _coe_ext_validar_categoria(row)
+
+    return row
+
 @bp.route("/coe-sap-funcional/calificacion/generar", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def generar_calificacion_coe_sap_funcional():
@@ -15449,6 +16269,32 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "horasEstimadasAbap": "horas_estimadas_abap",
             "horasEstimadasBasis": "horas_estimadas_basis",
             "horasEstimadasPmo": "horas_estimadas_pmo",
+            "observaciones": "observaciones",
+
+            "doc1": "doc_1",
+            "manejo": "manejo",
+            "tiqueteProveedorExterno": "tiquete_proveedor_externo",
+
+            "estadoHerramientaGestion": "estado_herramienta_gestion",
+            "responsableEstado": "responsable_estado",
+            "estadoConsolidado": "estado_consolidado",
+
+            "estadoFacturacionOt": "estado_facturacion_ot",
+            "nroOt": "nro_ot",
+            "valorOt": "valor_ot",
+            "horasOferta": "horas_oferta",
+
+            "fechaReasignacionClaro": "fecha_reasignacion_claro",
+            "fecha1ReasignacionClaro": "fecha_1_reasignacion_claro",
+            "fecha2ReasignacionClaro": "fecha_2_reasignacion_claro",
+            "fecha3ReasignacionClaro": "fecha_3_reasignacion_claro",
+            "fecha4ReasignacionClaro": "fecha_4_reasignacion_claro",
+            "fecha5ReasignacionClaro": "fecha_5_reasignacion_claro",
+            "fecha6ReasignacionClaro": "fecha_6_reasignacion_claro",
+            "fecha7ReasignacionClaro": "fecha_7_reasignacion_claro",
+            "fecha8ReasignacionClaro": "fecha_8_reasignacion_claro",
+            "fecha9ReasignacionClaro": "fecha_9_reasignacion_claro",
+            "fecha10ReasignacionClaro": "fecha_10_reasignacion_claro",
         }
 
         campos_fecha = {
@@ -15456,6 +16302,17 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "fechaCompromiso",
             "fechaEstimacion",
             "fechaAprobacionEstimacion",
+            "fechaReasignacionClaro",
+            "fecha1ReasignacionClaro",
+            "fecha2ReasignacionClaro",
+            "fecha3ReasignacionClaro",
+            "fecha4ReasignacionClaro",
+            "fecha5ReasignacionClaro",
+            "fecha6ReasignacionClaro",
+            "fecha7ReasignacionClaro",
+            "fecha8ReasignacionClaro",
+            "fecha9ReasignacionClaro",
+            "fecha10ReasignacionClaro",
         }
 
         campos_decimal = {
@@ -15478,6 +16335,8 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "horasEstimadasAbap",
             "horasEstimadasBasis",
             "horasEstimadasPmo",
+            "valorOt",
+            "horasOferta",
         }
 
         for json_key, model_key in campos_editables.items():
@@ -15494,16 +16353,25 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
 
             setattr(row, model_key, value)
 
-        campos = {
-            c.name: getattr(row, c.name)
-            for c in CoeSapFuncionalCalificacion.__table__.columns
-        }
+            manual_fields = _coe_ext_manual_fields(row)
+            manual_fields[model_key] = True
+            row.campos_editados_manual_json = _coe_ext_json_dumps(manual_fields)
 
-        campos = _calificacion_recalcular(campos)
+            origen = _coe_ext_origen_fields(row)
+            origen[model_key] = "MANUAL"
+            row.origen_datos_json = _coe_ext_json_dumps(origen)
 
-        for k, v in campos.items():
-            if hasattr(row, k):
-                setattr(row, k, v)
+        _coe_ext_recalcular_row(row)
+
+        row.actualizado_por = usuario
+        row.updated_at = datetime.utcnow()
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Calificación actualizada correctamente",
+            "data": _calificacion_to_dict(row),
+        }), 200
 
         row.actualizado_por = usuario
         row.updated_at = datetime.utcnow()
@@ -15886,6 +16754,640 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
 
         return jsonify({
             "mensaje": "Error importando Excel histórico de calificación",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+# ============================================================
+# IMPORTAR FUENTES SM / ITOP
+# ============================================================
+
+def _importar_fuente_gestion(fuente):
+    file = request.files.get("file")
+
+    if not file:
+        return jsonify({"mensaje": "Archivo no recibido"}), 400
+
+    try:
+        usuario = _coe_ext_usuario()
+
+        preferred_sheets = []
+
+        if fuente == "SM":
+            preferred_sheets = ["Base Datos SM", "SM", "Base SM"]
+
+        if fuente == "ITOP":
+            preferred_sheets = ["Base Datos ITOP", "ITOP", "Base ITOP"]
+
+        rows, filename, sheet_name = _coe_ext_read_excel_rows(
+            file,
+            preferred_sheet_names=preferred_sheets
+        )
+
+        importacion = _coe_ext_crear_importacion(
+            tipo=fuente,
+            archivo_nombre=filename,
+            filas=len(rows),
+            usuario=usuario
+        )
+
+        insertados = 0
+        actualizados = 0
+        errores = 0
+
+        for row in rows:
+            try:
+                data = _coe_ext_extract_fuente(row)
+
+                if not data or not data.get("numero"):
+                    errores += 1
+                    continue
+
+                numero = data["numero"]
+
+                existente = CoeSapFuncionalFuenteGestion.query.filter_by(
+                    fuente=fuente,
+                    numero=numero
+                ).first()
+
+                raw_json = _coe_ext_json_dumps({
+                    k: str(v) if v is not None else None
+                    for k, v in row.items()
+                })
+
+                if existente:
+                    for k, v in data.items():
+                        if hasattr(existente, k):
+                            setattr(existente, k, v)
+
+                    existente.raw_json = raw_json
+                    existente.importacion_id = importacion.id
+                    existente.updated_at = datetime.utcnow()
+                    actualizados += 1
+
+                else:
+                    nuevo = CoeSapFuncionalFuenteGestion(
+                        fuente=fuente,
+                        raw_json=raw_json,
+                        importacion_id=importacion.id,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                        **data
+                    )
+
+                    db.session.add(nuevo)
+                    insertados += 1
+
+            except Exception:
+                errores += 1
+
+        importacion.insertados = insertados
+        importacion.actualizados = actualizados
+        importacion.errores = errores
+        importacion.detalle_json = _coe_ext_json_dumps({
+            "hoja": sheet_name,
+            "fuente": fuente
+        })
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": f"Fuente {fuente} importada correctamente",
+            "fuente": fuente,
+            "archivo": filename,
+            "hoja": sheet_name,
+            "filas": len(rows),
+            "insertados": insertados,
+            "actualizados": actualizados,
+            "errores": errores,
+        }), 200
+
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({
+            "mensaje": "Archivo inválido",
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error importando fuente %s", fuente)
+        return jsonify({
+            "mensaje": f"Error importando fuente {fuente}",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/fuentes/import-sm", methods=["POST"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def importar_fuente_sm_coe_sap_funcional():
+    return _importar_fuente_gestion("SM")
+
+
+@bp.route("/coe-sap-funcional/calificacion/fuentes/import-itop", methods=["POST"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def importar_fuente_itop_coe_sap_funcional():
+    return _importar_fuente_gestion("ITOP")
+
+
+# ============================================================
+# IMPORTAR LISTAS / CATALOGOS
+# ============================================================
+
+def _catalogo_rows_from_sheet(ws):
+    filas = list(ws.iter_rows(values_only=True))
+
+    if not filas:
+        return [], []
+
+    header_idx = None
+
+    for idx, fila in enumerate(filas[:40]):
+        normalizados = [_coe_ext_norm(v) for v in fila if _coe_ext_present(v)]
+
+        if len(normalizados) >= 2:
+            header_idx = idx
+            break
+
+    if header_idx is None:
+        return [], []
+
+    headers = [_coe_ext_norm(h) for h in filas[header_idx]]
+
+    rows = []
+
+    for excel_idx, fila in enumerate(filas[header_idx + 1:], start=header_idx + 2):
+        item = {}
+        has_data = False
+
+        for i, value in enumerate(fila):
+            if i >= len(headers):
+                continue
+
+            header = headers[i]
+
+            if not header:
+                continue
+
+            item[header] = value
+
+            if _coe_ext_present(value):
+                has_data = True
+
+        if has_data:
+            item["_excel_fila"] = excel_idx
+            rows.append(item)
+
+    return rows, headers
+
+
+@bp.route("/coe-sap-funcional/calificacion/catalogos/import-excel", methods=["POST"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def importar_catalogos_coe_sap_funcional():
+    file = request.files.get("file")
+
+    if not file:
+        return jsonify({"mensaje": "Archivo no recibido"}), 400
+
+    try:
+        usuario = _coe_ext_usuario()
+        filename = file.filename or "catalogos.xlsx"
+        contenido = file.read()
+
+        if not contenido:
+            return jsonify({"mensaje": "Archivo vacío"}), 400
+
+        wb = load_workbook(
+            BytesIO(contenido),
+            data_only=True,
+            read_only=True
+        )
+
+        importacion = _coe_ext_crear_importacion(
+            tipo="LISTAS",
+            archivo_nombre=filename,
+            filas=0,
+            usuario=usuario
+        )
+
+        insertados_actualizados = 0
+        categorias = 0
+        hojas_procesadas = []
+
+        # 1. Hoja LISTAS
+        if "LISTAS" in wb.sheetnames:
+            ws = wb["LISTAS"]
+            rows, headers = _catalogo_rows_from_sheet(ws)
+
+            hojas_procesadas.append("LISTAS")
+
+            for row in rows:
+                # Mapeo especial estado -> responsable / consolidado
+                estado = (
+                    row.get("ESTADO")
+                    or row.get("ESTADO CASOS EN HERRAMIENTAS DE GESTION")
+                    or row.get("ESTADO CASOS EN HERRAMIENTAS DE GESTIÓN")
+                )
+
+                responsable = (
+                    row.get("RESPONSABLE ESTADO")
+                    or row.get("RESPONSABLE")
+                )
+
+                consolidado = (
+                    row.get("ESTADO CONSOLIDADO")
+                    or row.get("CONSOLIDADO")
+                )
+
+                if _coe_ext_present(estado):
+                    _coe_ext_upsert_catalogo(
+                        "ESTADO_GESTION",
+                        estado,
+                        extra_1=responsable,
+                        extra_2=consolidado
+                    )
+                    insertados_actualizados += 1
+
+                # Catálogos por columnas
+                for header in headers:
+                    value = row.get(header)
+
+                    if not _coe_ext_present(value):
+                        continue
+
+                    tipo_detectado = None
+
+                    for tipo, aliases in CATALOGOS_BASICOS.items():
+                        if header in [_coe_ext_norm(a) for a in aliases]:
+                            tipo_detectado = tipo
+                            break
+
+                    if tipo_detectado:
+                        _coe_ext_upsert_catalogo(tipo_detectado, value)
+                        insertados_actualizados += 1
+
+        # 2. Hojas por módulo
+        hojas_ignoradas = {
+            "BASE",
+            "LISTAS",
+            "BASE DATOS SM",
+            "BASE DATOS ITOP",
+            "PROMEDIO DE ATENCION",
+            "PROMEDIO DE ATENCIÓN",
+        }
+
+        for sheet_name in wb.sheetnames:
+            if _coe_ext_norm(sheet_name) in hojas_ignoradas:
+                continue
+
+            if "DETALLE" in _coe_ext_norm(sheet_name):
+                continue
+
+            ws = wb[sheet_name]
+            rows, headers = _catalogo_rows_from_sheet(ws)
+
+            if not rows:
+                continue
+
+            hojas_procesadas.append(sheet_name)
+
+            for row in rows:
+                modulo = sheet_name
+
+                categoria = (
+                    row.get("CATEGORIA")
+                    or row.get("CATEGORÍA")
+                    or row.get("TIPO")
+                    or row.get(headers[0] if headers else "")
+                )
+
+                subcategoria = (
+                    row.get("SUBCATEGORIA")
+                    or row.get("SUBCATEGORÍA")
+                    or row.get(headers[1] if len(headers) > 1 else "")
+                )
+
+                articulo = (
+                    row.get("ARTICULO")
+                    or row.get("ARTÍCULO")
+                    or row.get("SERVICIO")
+                    or row.get(headers[2] if len(headers) > 2 else "")
+                )
+
+                if _coe_ext_present(categoria) or _coe_ext_present(subcategoria) or _coe_ext_present(articulo):
+                    _coe_ext_upsert_categoria(
+                        modulo=modulo,
+                        categoria=categoria,
+                        subcategoria=subcategoria,
+                        articulo=articulo
+                    )
+                    categorias += 1
+
+        importacion.insertados = insertados_actualizados + categorias
+        importacion.actualizados = 0
+        importacion.errores = 0
+        importacion.detalle_json = _coe_ext_json_dumps({
+            "hojas_procesadas": hojas_procesadas
+        })
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Catálogos importados correctamente",
+            "archivo": filename,
+            "catalogos": insertados_actualizados,
+            "categorias": categorias,
+            "hojas_procesadas": hojas_procesadas,
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error importando catálogos COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error importando catálogos",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+# ============================================================
+# SINCRONIZACION CALIFICACION
+# ============================================================
+
+def _coe_ext_upsert_calificacion(numero, usuario):
+    numero = _coe_ext_str(numero)
+
+    if not numero:
+        return None, False
+
+    row = CoeSapFuncionalCalificacion.query.filter_by(numero=numero).first()
+
+    if row:
+        return row, False
+
+    row = CoeSapFuncionalCalificacion(
+        numero=numero,
+        sistema=numero[:2],
+        tipo_contrato="BOLSA DE HORAS",
+        creado_por=usuario,
+        actualizado_por=usuario,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+        campos_editados_manual_json=_coe_ext_json_dumps({}),
+        origen_datos_json=_coe_ext_json_dumps({}),
+    )
+
+    db.session.add(row)
+    db.session.flush()
+
+    return row, True
+
+
+def _coe_ext_sync_desde_base(row, base, modo):
+    force = modo == "forzar"
+    only_empty = modo == "solo_vacios"
+    manual_fields = _coe_ext_manual_fields(row)
+
+    _coe_ext_set_field(row, "base_registro_id", base.id, "BASE_COE", manual_fields, force=True)
+    _coe_ext_set_field(row, "caso_sm", getattr(base, "id_interaccion", None), "BASE_COE", manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "sociedad", getattr(base, "compania", None), "BASE_COE", manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "asunto", getattr(base, "titulo", None), "BASE_COE", manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "observaciones", getattr(base, "accion_actualizacion", None), "BASE_COE", manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "nombre_solicitante", getattr(base, "nombre_completo_contacto", None), "BASE_COE", manual_fields, force, only_empty)
+
+    _coe_ext_set_field(row, "impacto", getattr(base, "impacto", None), "BASE_COE", manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "urgencia", getattr(base, "urgencia", None), "BASE_COE", manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "prioridad", getattr(base, "prioridad", None), "BASE_COE", manual_fields, force, only_empty)
+
+    _coe_ext_set_field(row, "tipo_solicitud", getattr(base, "clr_txt_client_type", None), "BASE_COE", manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "articulo", getattr(base, "clr_txt_servicio", None), "BASE_COE", manual_fields, force, only_empty)
+
+    _coe_ext_set_field(row, "estado", getattr(base, "estado", None), "BASE_COE", manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "estado_herramienta_gestion", getattr(base, "estado", None), "BASE_COE", manual_fields, force, only_empty)
+
+    _coe_ext_set_field(row, "asignado_a", getattr(base, "asignado_a", None), "BASE_COE", manual_fields, force, only_empty)
+
+    _coe_ext_set_field(row, "fecha_asignacion", getattr(base, "fecha_entrega", None), "BASE_COE", manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "hora_ultima_actualizacion", getattr(base, "fecha_cargue", None), "BASE_COE", manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "fecha_resolucion", getattr(base, "fecha_resolucion", None), "BASE_COE", manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "fecha_finalizacion_cierre", getattr(base, "fecha_cierre", None), "BASE_COE", manual_fields, force, only_empty)
+
+    row.solo_excel = False
+
+    return row
+
+
+def _coe_ext_sync_desde_fuente(row, fuente_row, modo):
+    force = modo == "forzar"
+    only_empty = modo == "solo_vacios"
+    manual_fields = _coe_ext_manual_fields(row)
+    source = fuente_row.fuente
+
+    if source == "SM":
+        row.cruce_sm = True
+
+    if source == "ITOP":
+        row.cruce_itop = True
+
+    _coe_ext_set_field(row, "caso_sm", fuente_row.caso_sm, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "sociedad", fuente_row.sociedad, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "asunto", fuente_row.asunto, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "observaciones", fuente_row.observaciones, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "nombre_solicitante", fuente_row.nombre_solicitante, source, manual_fields, force, only_empty)
+
+    _coe_ext_set_field(row, "impacto", fuente_row.impacto, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "urgencia", fuente_row.urgencia, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "prioridad", fuente_row.prioridad, source, manual_fields, force, only_empty)
+
+    _coe_ext_set_field(row, "tipo_solicitud", fuente_row.tipo_solicitud, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "modulo", fuente_row.modulo, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "categoria", fuente_row.categoria, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "subcategoria", fuente_row.subcategoria, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "articulo", fuente_row.articulo, source, manual_fields, force, only_empty)
+
+    _coe_ext_set_field(row, "estado_herramienta_gestion", fuente_row.estado_herramienta_gestion or fuente_row.estado, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "estado", fuente_row.estado, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "asignado_a", fuente_row.asignado_a, source, manual_fields, force, only_empty)
+
+    _coe_ext_set_field(row, "fecha_asignacion_sistema_gestion", fuente_row.fecha_asignacion, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "hora_ultima_actualizacion_sistema_gestion", fuente_row.hora_ultima_actualizacion, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "fecha_resolucion_sistema_gestion", fuente_row.fecha_resolucion, source, manual_fields, force, only_empty)
+    _coe_ext_set_field(row, "fecha_finalizacion_cierre_sistema_gestion", fuente_row.fecha_finalizacion_cierre, source, manual_fields, force, only_empty)
+
+    return row
+
+
+@bp.route("/coe-sap-funcional/calificacion/sincronizar", methods=["POST"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def sincronizar_calificacion_coe_sap_funcional():
+    try:
+        data = request.get_json(silent=True) or {}
+
+        modo = str(data.get("modo") or "preservar_manual").strip().lower()
+
+        if modo not in ("preservar_manual", "solo_vacios", "forzar"):
+            modo = "preservar_manual"
+
+        crear_desde_base = data.get("crear_desde_base", True)
+        crear_desde_fuentes = data.get("crear_desde_fuentes", True)
+
+        usuario = _coe_ext_usuario()
+
+        creados = 0
+        actualizados = 0
+        cruzados_base = 0
+        cruzados_sm = 0
+        cruzados_itop = 0
+
+        # 1. Crear/actualizar desde BASE COE SAP Funcional
+        if crear_desde_base:
+            bases = BaseRegistroInfoCoeSapFuncional.query.all()
+
+            for base in bases:
+                if not getattr(base, "numero", None):
+                    continue
+
+                row, created = _coe_ext_upsert_calificacion(base.numero, usuario)
+
+                if not row:
+                    continue
+
+                if created:
+                    creados += 1
+                else:
+                    actualizados += 1
+
+                _coe_ext_sync_desde_base(row, base, modo)
+
+                row.actualizado_por = usuario
+                row.updated_at = datetime.utcnow()
+
+                _coe_ext_recalcular_row(row)
+
+                cruzados_base += 1
+
+        # 2. Crear/actualizar desde fuentes SM / ITOP
+        if crear_desde_fuentes:
+            fuentes = CoeSapFuncionalFuenteGestion.query.all()
+
+            for fuente_row in fuentes:
+                if not fuente_row.numero:
+                    continue
+
+                row, created = _coe_ext_upsert_calificacion(fuente_row.numero, usuario)
+
+                if not row:
+                    continue
+
+                if created:
+                    creados += 1
+                    row.solo_excel = True
+                else:
+                    actualizados += 1
+
+                _coe_ext_sync_desde_fuente(row, fuente_row, modo)
+
+                row.actualizado_por = usuario
+                row.updated_at = datetime.utcnow()
+
+                _coe_ext_recalcular_row(row)
+
+                if fuente_row.fuente == "SM":
+                    cruzados_sm += 1
+
+                if fuente_row.fuente == "ITOP":
+                    cruzados_itop += 1
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": "Sincronización de calificación realizada correctamente",
+            "modo": modo,
+            "creados": creados,
+            "actualizados": actualizados,
+            "cruzados_base": cruzados_base,
+            "cruzados_sm": cruzados_sm,
+            "cruzados_itop": cruzados_itop,
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error sincronizando calificación COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error sincronizando calificación",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+@bp.route("/coe-sap-funcional/calificacion/catalogos", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def listar_catalogos_coe_sap_funcional():
+    try:
+        tipo = (request.args.get("tipo") or "").strip()
+        modulo = (request.args.get("modulo") or "").strip()
+        categoria = (request.args.get("categoria") or "").strip()
+
+        if tipo:
+            rows = (
+                CoeSapFuncionalCatalogo.query
+                .filter(CoeSapFuncionalCatalogo.tipo == _coe_ext_norm(tipo))
+                .filter(CoeSapFuncionalCatalogo.activo == True)
+                .order_by(CoeSapFuncionalCatalogo.orden.asc(), CoeSapFuncionalCatalogo.valor.asc())
+                .all()
+            )
+
+            return jsonify({
+                "data": [
+                    {
+                        "id": r.id,
+                        "tipo": r.tipo,
+                        "valor": r.valor,
+                        "extra1": r.extra_1,
+                        "extra2": r.extra_2,
+                        "extra3": r.extra_3,
+                    }
+                    for r in rows
+                ]
+            }), 200
+
+        cat_q = CoeSapFuncionalCategoriaCatalogo.query.filter(
+            CoeSapFuncionalCategoriaCatalogo.activo == True
+        )
+
+        if modulo:
+            cat_q = cat_q.filter(
+                func.upper(CoeSapFuncionalCategoriaCatalogo.modulo) == _coe_ext_norm(modulo)
+            )
+
+        if categoria:
+            cat_q = cat_q.filter(
+                func.upper(CoeSapFuncionalCategoriaCatalogo.categoria) == _coe_ext_norm(categoria)
+            )
+
+        categorias = cat_q.order_by(
+            CoeSapFuncionalCategoriaCatalogo.modulo.asc(),
+            CoeSapFuncionalCategoriaCatalogo.categoria.asc(),
+            CoeSapFuncionalCategoriaCatalogo.subcategoria.asc(),
+            CoeSapFuncionalCategoriaCatalogo.articulo.asc(),
+        ).all()
+
+        return jsonify({
+            "categorias": [
+                {
+                    "id": r.id,
+                    "modulo": r.modulo,
+                    "categoria": r.categoria,
+                    "subcategoria": r.subcategoria,
+                    "articulo": r.articulo,
+                }
+                for r in categorias
+            ]
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error listando catálogos COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error listando catálogos",
             "error": str(e),
             "trace": traceback.format_exc(),
         }), 500

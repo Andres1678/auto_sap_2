@@ -50,6 +50,9 @@ const TABLE_COLUMNS = [
   { key: "numero", label: "ID", w: 15, cls: "mono strong sticky-col sticky-col-1", group: "auto" },
   { key: "sistema", label: "Sistema", w: 10, cls: "center sticky-col sticky-col-2", group: "calc" },
   { key: "casoSm", label: "Caso SM", w: 17, cls: "mono", group: "auto" },
+  { key: "doc1", label: "DOC 1", w: 15, group: "manual" },
+  { key: "manejo", label: "Manejo", w: 16, group: "manual" },
+  { key: "tiqueteProveedorExterno", label: "Tiquete proveedor externo", w: 26, group: "manual" },
   { key: "sociedad", label: "Sociedad", w: 30, group: "auto" },
   { key: "asunto", label: "Asunto", w: 44, cls: "text-long", group: "auto" },
   { key: "observaciones", label: "Observaciones / Seguimiento semanal", w: 64, cls: "obs-col", group: "manual" },
@@ -79,13 +82,24 @@ const TABLE_COLUMNS = [
   { key: "requiereAbap", label: "Requiere ABAP", w: 16, group: "manual" },
   { key: "asignacionAbap", label: "Asignación ABAP", w: 22, group: "manual" },
   { key: "fechaAsignacion", label: "Fecha asignación", w: 20, cls: "mono", group: "auto" },
+  { key: "fechaAsignacionSistemaGestion", label: "Fecha asignación sistema gestión", w: 25, cls: "mono", group: "source" },
+  { key: "difFechaAsignacion", label: "Dif. fecha asignación", w: 18, cls: "right number", group: "validation" },
+  { key: "validarFechaAsignacion", label: "Validar fecha asignación", w: 20, cls: "validation", group: "validation" },
   { key: "diaCreacion", label: "Día creación", w: 12, cls: "right", group: "calc" },
   { key: "mesCreacion", label: "Mes creación", w: 12, cls: "right", group: "calc" },
   { key: "anioCreacion", label: "Año creación", w: 12, cls: "right", group: "calc" },
   { key: "horaUltimaActualizacion", label: "Hora última actualización", w: 22, cls: "mono", group: "auto" },
+  { key: "horaUltimaActualizacionSistemaGestion", label: "Hora última act. sistema gestión", w: 26, cls: "mono", group: "source" },
+  { key: "validarFechaActualizacion", label: "Validar actualización", w: 19, cls: "validation", group: "validation" },
   { key: "fechaRespuesta", label: "Fecha respuesta", w: 20, cls: "mono", group: "manual" },
   { key: "fechaResolucion", label: "Fecha resolución", w: 20, cls: "mono", group: "auto" },
+  { key: "fechaResolucionSistemaGestion", label: "Fecha resolución sistema gestión", w: 25, cls: "mono", group: "source" },
+  { key: "difFechaResolucion", label: "Dif. fecha resolución", w: 18, cls: "right number", group: "validation" },
+  { key: "validarFechaResolucion", label: "Validar fecha resolución", w: 20, cls: "validation", group: "validation" },
   { key: "fechaFinalizacionCierre", label: "Fecha cierre", w: 20, cls: "mono", group: "auto" },
+  { key: "fechaFinalizacionCierreSistemaGestion", label: "Fecha cierre sistema gestión", w: 25, cls: "mono", group: "source" },
+  { key: "difFechaCierre", label: "Dif. fecha cierre", w: 16, cls: "right number", group: "validation" },
+  { key: "validarFechaCierre", label: "Validar fecha cierre", w: 18, cls: "validation", group: "validation" },
   { key: "diaCierre", label: "Día cierre", w: 12, cls: "right", group: "calc" },
   { key: "mesCierre", label: "Mes cierre", w: 12, cls: "right", group: "calc" },
   { key: "anioCierre", label: "Año cierre", w: 12, cls: "right", group: "calc" },
@@ -95,6 +109,10 @@ const TABLE_COLUMNS = [
   { key: "fechaCompromiso", label: "Fecha compromiso", w: 20, cls: "mono", group: "manual" },
   { key: "liderClaro", label: "Líder Claro", w: 22, group: "manual" },
   { key: "tipoIngreso", label: "Tipo ingreso", w: 18, group: "manual" },
+  { key: "estadoFacturacionOt", label: "Estado facturación OT", w: 22, cls: "status", group: "ot" },
+  { key: "nroOt", label: "N° OT", w: 15, cls: "mono", group: "ot" },
+  { key: "valorOt", label: "Valor OT", w: 16, cls: "right number", group: "ot" },
+  { key: "horasOferta", label: "Horas oferta", w: 16, cls: "right number", group: "ot" },
   { key: "fechaEstimacion", label: "Fecha estimación", w: 20, cls: "mono", group: "manual" },
   { key: "diasEntregaEstimacion", label: "Días entrega estimación", w: 17, cls: "right", group: "calc" },
   { key: "mesEstimacion", label: "Mes estimación", w: 14, cls: "right", group: "calc" },
@@ -103,6 +121,13 @@ const TABLE_COLUMNS = [
   { key: "mesAprobadoEstimacion", label: "Mes aprobado estimación", w: 20, cls: "right", group: "calc" },
   { key: "anioAprobadoEstimacion", label: "Año aprobado estimación", w: 20, cls: "right", group: "calc" },
   { key: "estadoEstimacion", label: "Estado estimación", w: 18, group: "manual" },
+  { key: "validarSubcategoria", label: "Validar subcategoría", w: 19, cls: "validation", group: "validation" },
+  { key: "validarArticulo", label: "Validar artículo", w: 17, cls: "validation", group: "validation" },
+  { key: "soloExcel", label: "Solo Excel", w: 13, cls: "source-flag", group: "source" },
+  { key: "cruceSm", label: "Cruce SM", w: 13, cls: "source-flag", group: "source" },
+  { key: "cruceItop", label: "Cruce ITOP", w: 14, cls: "source-flag", group: "source" },
+  { key: "camposEditadosManual", label: "Campos manuales", w: 22, group: "source" },
+  { key: "origenDatos", label: "Origen datos", w: 22, group: "source" },
 
   { key: "horasEstimadasFi", label: "H. estimadas FI", w: 15, cls: "right number", group: "hours" },
   { key: "horasEstimadasMm", label: "H. estimadas MM", w: 15, cls: "right number", group: "hours" },
@@ -147,29 +172,59 @@ const TABLE_COLUMNS = [
 
 const EDIT_FIELDS = [
   { key: "observaciones", label: "Observaciones / Seguimiento semanal", type: "textarea", wide: true },
+  { key: "doc1", label: "DOC 1", type: "text" },
   { key: "documentacion", label: "Documentación", type: "text" },
   { key: "casoTransporte", label: "Caso transporte", type: "text" },
   { key: "controlHoras", label: "Control horas", type: "text" },
+  { key: "manejo", label: "Manejo", type: "text" },
   { key: "errorSap", label: "Error SAP", type: "text" },
   { key: "notaOssSap", label: "Nota OSS SAP", type: "text" },
+  { key: "tiqueteProveedorExterno", label: "Tiquete proveedor externo", type: "text" },
   { key: "tipoContrato", label: "Tipo contrato", type: "text" },
-  { key: "tipoSolicitud", label: "Tipo solicitud", type: "text" },
-  { key: "modulo", label: "Módulo", type: "text" },
-  { key: "categoria", label: "Categoría", type: "text" },
-  { key: "subcategoria", label: "Subcategoría", type: "text" },
-  { key: "articulo", label: "Artículo", type: "text" },
+
+  { key: "impacto", label: "Impacto", type: "select", catalog: "IMPACTO" },
+  { key: "urgencia", label: "Urgencia", type: "select", catalog: "URGENCIA" },
+  { key: "prioridad", label: "Prioridad", type: "select", catalog: "PRIORIDAD" },
+  { key: "tipoSolicitud", label: "Tipo solicitud", type: "select", catalog: "TIPO_SOLICITUD" },
+  { key: "modulo", label: "Módulo", type: "select", catalog: "MODULO" },
+  { key: "categoria", label: "Categoría", type: "select", dependent: "categoria" },
+  { key: "subcategoria", label: "Subcategoría", type: "select", dependent: "subcategoria" },
+  { key: "articulo", label: "Artículo", type: "select", dependent: "articulo" },
+
+  { key: "estadoHerramientaGestion", label: "Estado herramienta gestión", type: "text" },
+  { key: "responsableEstado", label: "Responsable estado", type: "text" },
+  { key: "estadoConsolidado", label: "Estado consolidado", type: "text" },
+
   { key: "apoyo1", label: "Apoyo 1", type: "text" },
   { key: "apoyo2", label: "Apoyo 2", type: "text" },
   { key: "apoyo3", label: "Apoyo 3", type: "text" },
   { key: "requiereAbap", label: "Requiere ABAP", type: "text" },
   { key: "asignacionAbap", label: "Asignación ABAP", type: "text" },
+
   { key: "fechaRespuesta", label: "Fecha respuesta", type: "date" },
   { key: "fechaCompromiso", label: "Fecha compromiso", type: "date" },
   { key: "liderClaro", label: "Líder Claro", type: "text" },
   { key: "tipoIngreso", label: "Tipo ingreso", type: "text" },
   { key: "fechaEstimacion", label: "Fecha estimación", type: "date" },
   { key: "fechaAprobacionEstimacion", label: "Fecha aprobación estimación", type: "date" },
-  { key: "estadoEstimacion", label: "Estado estimación", type: "text" },
+  { key: "estadoEstimacion", label: "Estado estimación", type: "select", catalog: "ESTADO_ESTIMACION" },
+
+  { key: "estadoFacturacionOt", label: "Estado facturación OT", type: "select", catalog: "ESTADO_FACTURACION_OT" },
+  { key: "nroOt", label: "N° OT", type: "text" },
+  { key: "valorOt", label: "Valor OT", type: "number" },
+  { key: "horasOferta", label: "Horas oferta", type: "number" },
+
+  { key: "fechaReasignacionClaro", label: "Fecha reasignación Claro", type: "date" },
+  { key: "fecha1ReasignacionClaro", label: "Fecha 1 reasignación Claro", type: "date" },
+  { key: "fecha2ReasignacionClaro", label: "Fecha 2 reasignación Claro", type: "date" },
+  { key: "fecha3ReasignacionClaro", label: "Fecha 3 reasignación Claro", type: "date" },
+  { key: "fecha4ReasignacionClaro", label: "Fecha 4 reasignación Claro", type: "date" },
+  { key: "fecha5ReasignacionClaro", label: "Fecha 5 reasignación Claro", type: "date" },
+  { key: "fecha6ReasignacionClaro", label: "Fecha 6 reasignación Claro", type: "date" },
+  { key: "fecha7ReasignacionClaro", label: "Fecha 7 reasignación Claro", type: "date" },
+  { key: "fecha8ReasignacionClaro", label: "Fecha 8 reasignación Claro", type: "date" },
+  { key: "fecha9ReasignacionClaro", label: "Fecha 9 reasignación Claro", type: "date" },
+  { key: "fecha10ReasignacionClaro", label: "Fecha 10 reasignación Claro", type: "date" },
 ];
 
 const DEFAULT_FILTER_COLUMNS = [
@@ -182,6 +237,15 @@ const DEFAULT_FILTER_COLUMNS = [
   "modulo",
   "categoria",
   "estadoEstimacion",
+  "estadoFacturacionOt",
+  "validarFechaAsignacion",
+  "validarFechaResolucion",
+  "validarFechaCierre",
+  "validarSubcategoria",
+  "validarArticulo",
+  "cruceSm",
+  "cruceItop",
+  "soloExcel",
   "observaciones",
 ];
 
@@ -274,7 +338,40 @@ function getColumnGroupClass(group) {
   if (group === "manual") return "col-manual";
   if (group === "calc") return "col-calc";
   if (group === "hours") return "col-hours";
+  if (group === "validation") return "col-validation";
+  if (group === "source") return "col-source";
+  if (group === "ot") return "col-ot";
   return "col-auto";
+}
+
+function getValidationClass(value) {
+  const s = String(value || "").toUpperCase();
+  if (!s || s === "—") return "neutral";
+  if (s.includes("OK")) return "ok";
+  if (s.includes("VALIDAR") || s.includes("ERROR")) return "danger";
+  return "warn";
+}
+
+function getBooleanClass(value) {
+  return value ? "ok" : "neutral";
+}
+
+function objectSummary(value) {
+  if (!value || typeof value !== "object") return "—";
+
+  const keys = Object.keys(value).filter((k) => value[k]);
+  if (!keys.length) return "—";
+
+  return keys.slice(0, 4).join(", ") + (keys.length > 4 ? ` +${keys.length - 4}` : "");
+}
+
+function originSummary(value) {
+  if (!value || typeof value !== "object") return "—";
+
+  const origins = [...new Set(Object.values(value).filter(Boolean))];
+  if (!origins.length) return "—";
+
+  return origins.slice(0, 4).join(", ") + (origins.length > 4 ? ` +${origins.length - 4}` : "");
 }
 
 function createEditForm(row) {
@@ -466,6 +563,22 @@ function renderObservaciones(value) {
   );
 }
 
+function uniqueOptions(values) {
+  return [...new Set((values || []).filter(Boolean).map((v) => String(v).trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }))
+    .map((value) => ({ value, label: value }));
+}
+
+const CATALOG_TYPES_TO_LOAD = [
+  "IMPACTO",
+  "URGENCIA",
+  "PRIORIDAD",
+  "TIPO_SOLICITUD",
+  "MODULO",
+  "ESTADO_ESTIMACION",
+  "ESTADO_FACTURACION_OT",
+];
+
 export default function CalificacionCoeSapFuncional() {
   const fileInputRef = useRef(null);
 
@@ -477,12 +590,49 @@ export default function CalificacionCoeSapFuncional() {
   const canView = isAdmin || permisos.includes("BASE_REGISTRO_VER");
   const canImport = isAdmin || permisos.includes("BASE_REGISTRO_IMPORTAR");
 
+  const [catalogos, setCatalogos] = useState({});
+  const [categoriasCatalogo, setCategoriasCatalogo] = useState([]);
+
   const commonHeaders = useMemo(() => {
     return {
       "X-User-Rol": rol,
       "X-User-Usuario": user?.usuario || user?.user?.usuario || "",
     };
   }, [rol, user]);
+
+  const fetchCatalogos = useCallback(async () => {
+    if (!canView) return;
+
+    try {
+      const nextCatalogos = {};
+
+      await Promise.all(
+        CATALOG_TYPES_TO_LOAD.map(async (tipo) => {
+          const res = await jfetch(`/coe-sap-funcional/calificacion/catalogos?tipo=${encodeURIComponent(tipo)}`, {
+            method: "GET",
+            headers: commonHeaders,
+          });
+
+          const data = await res.json().catch(() => ({}));
+          nextCatalogos[tipo] = Array.isArray(data?.data)
+            ? data.data.map((item) => item.valor).filter(Boolean)
+            : [];
+        })
+      );
+
+      const catRes = await jfetch("/coe-sap-funcional/calificacion/catalogos", {
+        method: "GET",
+        headers: commonHeaders,
+      });
+
+      const catData = await catRes.json().catch(() => ({}));
+
+      setCatalogos(nextCatalogos);
+      setCategoriasCatalogo(Array.isArray(catData?.categorias) ? catData.categorias : []);
+    } catch (error) {
+      console.warn("No se pudieron cargar catálogos COE SAP Funcional", error);
+    }
+  }, [canView, commonHeaders]);
 
   const allColumnKeys = useMemo(() => TABLE_COLUMNS.map((col) => col.key), []);
 
@@ -664,6 +814,10 @@ export default function CalificacionCoeSapFuncional() {
     fetchRows();
   }, [fetchRows]);
 
+  useEffect(() => {
+    fetchCatalogos();
+  }, [fetchCatalogos]);
+
   const handleFilterChange = (column, selectedOptions) => {
     const values = Array.isArray(selectedOptions)
       ? selectedOptions.map((option) => option.value)
@@ -741,6 +895,13 @@ export default function CalificacionCoeSapFuncional() {
         "fechaEstimacion",
         "diasEntregaEstimacion",
         "estadoEstimacion",
+        "validarSubcategoria",
+        "validarArticulo",
+        "cruceSm",
+        "cruceItop",
+        "soloExcel",
+        "estadoFacturacionOt",
+        "nroOt",
         "totalHorasFuncionales",
         "totalHorasEstimadas",
       ]);
@@ -769,30 +930,50 @@ export default function CalificacionCoeSapFuncional() {
       Swal.fire({
         icon: "warning",
         title: "Sin permiso",
-        text: "No tienes permiso para generar la calificación.",
+        text: "No tienes permiso para sincronizar la calificación.",
         confirmButtonColor: "#DA291C",
       });
       return;
     }
 
-    const confirm = await Swal.fire({
+    const { value: modo, isConfirmed } = await Swal.fire({
       icon: "question",
-      title: "Generar calificación",
-      text: "Se crearán o actualizarán registros tomando como fuente la base COE SAP Funcional.",
+      title: "Sincronizar calificación",
+      html: `
+        <div style="text-align:left;line-height:1.5">
+          <p>Se cruzará la calificación con la base principal, SM e ITOP.</p>
+          <p><b>Recomendado:</b> preservar manual para no pisar observaciones ni ajustes hechos por el usuario.</p>
+        </div>
+      `,
+      input: "select",
+      inputValue: "preservar_manual",
+      inputOptions: {
+        preservar_manual: "Preservar campos manuales",
+        solo_vacios: "Solo completar campos vacíos",
+        forzar: "Forzar actualización desde bases",
+      },
       showCancelButton: true,
-      confirmButtonText: "Sí, generar",
+      confirmButtonText: "Sí, sincronizar",
       cancelButtonText: "Cancelar",
       confirmButtonColor: "#DA291C",
     });
 
-    if (!confirm.isConfirmed) return;
+    if (!isConfirmed) return;
 
     setGenerating(true);
 
     try {
-      const res = await jfetch("/coe-sap-funcional/calificacion/generar", {
+      const res = await jfetch("/coe-sap-funcional/calificacion/sincronizar", {
         method: "POST",
-        headers: commonHeaders,
+        headers: {
+          ...commonHeaders,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          modo: modo || "preservar_manual",
+          crear_desde_base: true,
+          crear_desde_fuentes: true,
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -803,13 +984,16 @@ export default function CalificacionCoeSapFuncional() {
 
       await Swal.fire({
         icon: "success",
-        title: "Proceso finalizado",
+        title: "Sincronización finalizada",
         html: `
           <div style="text-align:left">
-            <p><b>Mensaje:</b> ${data?.mensaje || "Calificación generada"}</p>
-            <p><b>Base registros:</b> ${data?.base_registros ?? "—"}</p>
+            <p><b>Mensaje:</b> ${data?.mensaje || "Calificación sincronizada"}</p>
+            <p><b>Modo:</b> ${data?.modo ?? "—"}</p>
             <p><b>Creados:</b> ${data?.creados ?? "—"}</p>
             <p><b>Actualizados:</b> ${data?.actualizados ?? "—"}</p>
+            <p><b>Cruces base:</b> ${data?.cruzados_base ?? "—"}</p>
+            <p><b>Cruces SM:</b> ${data?.cruzados_sm ?? "—"}</p>
+            <p><b>Cruces ITOP:</b> ${data?.cruzados_itop ?? "—"}</p>
           </div>
         `,
         confirmButtonColor: "#008C67",
@@ -819,8 +1003,8 @@ export default function CalificacionCoeSapFuncional() {
     } catch (error) {
       Swal.fire({
         icon: "error",
-        title: "Error generando calificación",
-        text: error?.message || "No se pudo generar la información.",
+        title: "Error sincronizando calificación",
+        text: error?.message || "No se pudo sincronizar la información.",
         confirmButtonColor: "#DA291C",
       });
     } finally {
@@ -1171,11 +1355,145 @@ export default function CalificacionCoeSapFuncional() {
     }
   };
 
+
+  const getEditOptions = useCallback((field) => {
+    if (field.catalog) {
+      const baseOptions = catalogos[field.catalog] || [];
+      if (field.catalog === "MODULO" && baseOptions.length === 0) {
+        return MODULES.map((value) => ({ value, label: value }));
+      }
+      return uniqueOptions(baseOptions);
+    }
+
+    if (field.dependent === "categoria") {
+      const modulo = normalizeForCompare(editForm.modulo);
+      return uniqueOptions(
+        categoriasCatalogo
+          .filter((item) => !modulo || normalizeForCompare(item.modulo) === modulo)
+          .map((item) => item.categoria)
+      );
+    }
+
+    if (field.dependent === "subcategoria") {
+      const modulo = normalizeForCompare(editForm.modulo);
+      const categoria = normalizeForCompare(editForm.categoria);
+      return uniqueOptions(
+        categoriasCatalogo
+          .filter((item) => !modulo || normalizeForCompare(item.modulo) === modulo)
+          .filter((item) => !categoria || normalizeForCompare(item.categoria) === categoria)
+          .map((item) => item.subcategoria)
+      );
+    }
+
+    if (field.dependent === "articulo") {
+      const modulo = normalizeForCompare(editForm.modulo);
+      const categoria = normalizeForCompare(editForm.categoria);
+      const subcategoria = normalizeForCompare(editForm.subcategoria);
+      return uniqueOptions(
+        categoriasCatalogo
+          .filter((item) => !modulo || normalizeForCompare(item.modulo) === modulo)
+          .filter((item) => !categoria || normalizeForCompare(item.categoria) === categoria)
+          .filter((item) => !subcategoria || normalizeForCompare(item.subcategoria) === subcategoria)
+          .map((item) => item.articulo)
+      );
+    }
+
+    return [];
+  }, [catalogos, categoriasCatalogo, editForm]);
+
+  const renderEditField = (field) => {
+    if (field.type === "textarea") {
+      return (
+        <textarea
+          value={editForm[field.key] || ""}
+          onChange={(e) =>
+            setEditForm((prev) => ({
+              ...prev,
+              [field.key]: e.target.value,
+            }))
+          }
+          placeholder={`${todayStamp()} - Escribe el seguimiento...`}
+        />
+      );
+    }
+
+    if (field.type === "select") {
+      const options = getEditOptions(field);
+
+      return (
+        <select
+          value={editForm[field.key] || ""}
+          onChange={(e) =>
+            setEditForm((prev) => {
+              const next = {
+                ...prev,
+                [field.key]: e.target.value,
+              };
+
+              if (field.key === "modulo") {
+                next.categoria = "";
+                next.subcategoria = "";
+                next.articulo = "";
+              }
+
+              if (field.key === "categoria") {
+                next.subcategoria = "";
+                next.articulo = "";
+              }
+
+              if (field.key === "subcategoria") {
+                next.articulo = "";
+              }
+
+              return next;
+            })
+          }
+        >
+          <option value="">Seleccione...</option>
+          {options.map((option) => (
+            <option key={`${field.key}-${option.value}`} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    return (
+      <input
+        type={field.type}
+        value={editForm[field.key] || ""}
+        onChange={(e) =>
+          setEditForm((prev) => ({
+            ...prev,
+            [field.key]: e.target.value,
+          }))
+        }
+      />
+    );
+  };
+
   const renderCell = (row, col) => {
     const value = row[col.key];
 
     if (col.key === "observaciones") {
       return renderObservaciones(value);
+    }
+
+    if (["validarFechaAsignacion", "validarFechaActualizacion", "validarFechaResolucion", "validarFechaCierre", "validarSubcategoria", "validarArticulo"].includes(col.key)) {
+      return <span className={`calcoe-pill ${getValidationClass(value)}`}>{cleanText(value)}</span>;
+    }
+
+    if (["cruceSm", "cruceItop", "soloExcel"].includes(col.key)) {
+      return <span className={`calcoe-pill ${getBooleanClass(Boolean(value))}`}>{value ? "Sí" : "No"}</span>;
+    }
+
+    if (col.key === "camposEditadosManual") {
+      return objectSummary(value);
+    }
+
+    if (col.key === "origenDatos") {
+      return originSummary(value);
     }
 
     if (col.cls?.includes("number") || col.cls?.includes("right")) {
@@ -1233,7 +1551,7 @@ export default function CalificacionCoeSapFuncional() {
             onClick={generarDesdeBase}
             disabled={generating || uploadingExcel}
           >
-            {generating ? "Generando..." : "Generar desde base"}
+            {generating ? "Sincronizando..." : "Sincronizar calificación"}
           </button>
 
           <input
@@ -1646,29 +1964,7 @@ export default function CalificacionCoeSapFuncional() {
                       )}
                     </span>
 
-                    {field.type === "textarea" ? (
-                      <textarea
-                        value={editForm[field.key] || ""}
-                        onChange={(e) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            [field.key]: e.target.value,
-                          }))
-                        }
-                        placeholder={`${todayStamp()} - Escribe el seguimiento...`}
-                      />
-                    ) : (
-                      <input
-                        type={field.type}
-                        value={editForm[field.key] || ""}
-                        onChange={(e) =>
-                          setEditForm((prev) => ({
-                            ...prev,
-                            [field.key]: e.target.value,
-                          }))
-                        }
-                      />
-                    )}
+{renderEditField(field)}
                   </label>
                 ))}
               </div>

@@ -65,6 +65,7 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
       ? permsRaw
           .map(p => (typeof p === 'string' ? p : (p?.codigo || p?.code || p?.nombre)))
           .filter(Boolean)
+          .map(p => String(p).trim().toUpperCase())
       : [];
 
     return {
@@ -77,7 +78,7 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
 
   const can = useCallback((perm) => {
     if (isAdmin) return true;
-    return permisos.includes(perm);
+    return permisos.includes(String(perm || '').trim().toUpperCase());
   }, [isAdmin, permisos]);
 
   const toggleMenu = () => {
@@ -205,9 +206,19 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
                 <span className="navc-sub-icon">✅</span>
                 <span>
                   <strong>Calificación</strong>
-                  <small>Calificación, horas y Excel histórico</small>
+                  <small>Calificación, horas y sincronización</small>
                 </span>
               </Link>
+
+              {can("BASE_REGISTRO_IMPORTAR") && (
+                <Link to="/coe-sap-funcional/cargas" onClick={closeMenu}>
+                  <span className="navc-sub-icon">📤</span>
+                  <span>
+                    <strong>Cargar bases auxiliares</strong>
+                    <small>Listas, SM, ITOP y sincronización</small>
+                  </span>
+                </Link>
+              )}
             </div>
           </div>
         )}

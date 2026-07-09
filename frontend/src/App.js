@@ -32,6 +32,7 @@ import { jfetch } from './lib/api';
 import PerfilesModulos from './PerfilesModulos';
 import BaseCoeSapFuncional from './BaseCoeSapFuncional';
 import CalificacionCoeSapFuncional from './CalificacionCoeSapFuncional';
+import CargarBasesAuxiliaresCoeSap from './CargarBasesAuxiliaresCoeSap';
 
 const AUTO_LOGOUT_HOURS = [6, 7, 8, 10, 18, 22];
 
@@ -325,6 +326,15 @@ function App() {
               element={
                 <AdminRoute requirePermiso="BASE_REGISTRO_VER">
                   <CalificacionCoeSapFuncional />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/coe-sap-funcional/cargas"
+              element={
+                <AdminRoute requirePermiso="BASE_REGISTRO_IMPORTAR">
+                  <CargarBasesAuxiliaresCoeSap />
                 </AdminRoute>
               }
             />    

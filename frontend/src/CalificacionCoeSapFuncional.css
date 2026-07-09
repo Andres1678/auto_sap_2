@@ -1334,3 +1334,55 @@ th.col-hours {
     padding-right: 16px;
   }
 }
+
+
+/* ====== Extensiones calificación tipo Excel ====== */
+.col-validation {
+  background-color: #fff7ed;
+}
+
+th.col-validation {
+  background: #ffedd5 !important;
+  color: #9a3412 !important;
+  border-bottom-color: #fb923c !important;
+}
+
+.col-source {
+  background-color: #f8fafc;
+}
+
+th.col-source {
+  background: #e2e8f0 !important;
+  color: #334155 !important;
+  border-bottom-color: #64748b !important;
+}
+
+.col-ot {
+  background-color: #fdf4ff;
+}
+
+th.col-ot {
+  background: #fae8ff !important;
+  color: #86198f !important;
+  border-bottom-color: #d946ef !important;
+}
+
+.calcoe-pill.danger {
+  color: #991b1b;
+  background: #fee2e2;
+  border: 1px solid rgba(220, 38, 38, 0.22);
+}
+
+.calcoe-pill.source {
+  color: #334155;
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+}
+
+.calcoe-modal.large {
+  width: min(1280px, 96vw);
+}
+
+.calcoe-edit-grid .calcoe-filter select {
+  cursor: pointer;
+}

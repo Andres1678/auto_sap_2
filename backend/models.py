@@ -1224,7 +1224,7 @@ class CoeSapFuncionalCalificacion(db.Model):
     # Relación con base principal
     base_registro_id = db.Column(
         db.Integer,
-        db.ForeignKey("base_registro_info_coe_sap_funcional.id"),
+        db.ForeignKey("base_registro_info_coe_sap_funcional.id", ondelete="SET NULL"),
         nullable=True,
         index=True
     )
@@ -1350,6 +1350,51 @@ class CoeSapFuncionalCalificacion(db.Model):
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    doc_1 = db.Column(db.String(255))
+    manejo = db.Column(db.String(255))
+    tiquete_proveedor_externo = db.Column(db.String(255))
+
+    fecha_asignacion_sistema_gestion = db.Column(db.DateTime)
+    dif_fecha_asignacion = db.Column(db.Numeric(12, 2))
+    validar_fecha_asignacion = db.Column(db.String(50))
+
+    hora_ultima_actualizacion_sistema_gestion = db.Column(db.DateTime)
+    validar_fecha_actualizacion = db.Column(db.String(50))
+
+    fecha_resolucion_sistema_gestion = db.Column(db.DateTime)
+    dif_fecha_resolucion = db.Column(db.Numeric(12, 2))
+    validar_fecha_resolucion = db.Column(db.String(50))
+
+    fecha_finalizacion_cierre_sistema_gestion = db.Column(db.DateTime)
+    dif_fecha_cierre = db.Column(db.Numeric(12, 2))
+    validar_fecha_cierre = db.Column(db.String(50))
+
+    estado_facturacion_ot = db.Column(db.String(150))
+    nro_ot = db.Column(db.String(100))
+    valor_ot = db.Column(db.Numeric(18, 2))
+    horas_oferta = db.Column(db.Numeric(12, 2))
+
+    fecha_reasignacion_claro = db.Column(db.DateTime)
+    fecha_1_reasignacion_claro = db.Column(db.DateTime)
+    fecha_2_reasignacion_claro = db.Column(db.DateTime)
+    fecha_3_reasignacion_claro = db.Column(db.DateTime)
+    fecha_4_reasignacion_claro = db.Column(db.DateTime)
+    fecha_5_reasignacion_claro = db.Column(db.DateTime)
+    fecha_6_reasignacion_claro = db.Column(db.DateTime)
+    fecha_7_reasignacion_claro = db.Column(db.DateTime)
+    fecha_8_reasignacion_claro = db.Column(db.DateTime)
+    fecha_9_reasignacion_claro = db.Column(db.DateTime)
+    fecha_10_reasignacion_claro = db.Column(db.DateTime)
+
+    validar_subcategoria = db.Column(db.String(50))
+    validar_articulo = db.Column(db.String(50))
+
+    solo_excel = db.Column(db.Boolean, default=False)
+    cruce_sm = db.Column(db.Boolean, default=False)
+    cruce_itop = db.Column(db.Boolean, default=False)
+
+    campos_editados_manual_json = db.Column(LONGTEXT)
+    origen_datos_json = db.Column(LONGTEXT)
 
 
 class CoeSapFuncionalCalificacionHora(db.Model):
@@ -1377,3 +1422,126 @@ class CoeSapFuncionalCalificacionHora(db.Model):
 
     usuario_registro = db.Column(db.String(100))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class CoeSapFuncionalImportacion(db.Model):
+    __tablename__ = "coe_sap_funcional_importaciones"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    tipo = db.Column(db.String(50), nullable=False, index=True)
+    # BASE_COE / CALIFICACION / SM / ITOP / LISTAS
+
+    archivo_nombre = db.Column(db.String(255))
+    filas = db.Column(db.Integer, default=0)
+    insertados = db.Column(db.Integer, default=0)
+    actualizados = db.Column(db.Integer, default=0)
+    errores = db.Column(db.Integer, default=0)
+
+    usuario = db.Column(db.String(100))
+    detalle_json = db.Column(LONGTEXT)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class CoeSapFuncionalFuenteGestion(db.Model):
+    __tablename__ = "coe_sap_funcional_fuente_gestion"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    fuente = db.Column(db.String(30), nullable=False, index=True)
+    # SM / ITOP
+
+    numero = db.Column(db.String(80), nullable=False, index=True)
+
+    caso_sm = db.Column(db.String(100))
+    id_interaccion = db.Column(db.String(100))
+
+    sociedad = db.Column(db.String(255))
+    asunto = db.Column(db.Text)
+    observaciones = db.Column(db.Text)
+    nombre_solicitante = db.Column(db.String(255))
+
+    impacto = db.Column(db.String(100))
+    urgencia = db.Column(db.String(100))
+    prioridad = db.Column(db.String(100))
+
+    tipo_solicitud = db.Column(db.String(150))
+    modulo = db.Column(db.String(150))
+    categoria = db.Column(db.String(255))
+    subcategoria = db.Column(db.String(255))
+    articulo = db.Column(db.String(255))
+
+    estado = db.Column(db.String(150))
+    estado_herramienta_gestion = db.Column(db.String(150))
+    asignado_a = db.Column(db.String(255))
+
+    fecha_asignacion = db.Column(db.DateTime)
+    hora_ultima_actualizacion = db.Column(db.DateTime)
+    fecha_resolucion = db.Column(db.DateTime)
+    fecha_finalizacion_cierre = db.Column(db.DateTime)
+
+    raw_json = db.Column(LONGTEXT)
+
+    importacion_id = db.Column(
+        db.Integer,
+        db.ForeignKey("coe_sap_funcional_importaciones.id"),
+        nullable=True,
+        index=True
+    )
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("fuente", "numero", name="uq_fuente_gestion_fuente_numero"),
+    )
+
+
+class CoeSapFuncionalCatalogo(db.Model):
+    __tablename__ = "coe_sap_funcional_catalogos"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    tipo = db.Column(db.String(100), nullable=False, index=True)
+    valor = db.Column(db.String(255), nullable=False)
+    valor_normalizado = db.Column(db.String(255), nullable=False, index=True)
+
+    extra_1 = db.Column(db.String(255))
+    extra_2 = db.Column(db.String(255))
+    extra_3 = db.Column(db.String(255))
+
+    activo = db.Column(db.Boolean, default=True)
+    orden = db.Column(db.Integer, default=0)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("tipo", "valor_normalizado", name="uq_catalogo_tipo_valor"),
+    )
+
+
+class CoeSapFuncionalCategoriaCatalogo(db.Model):
+    __tablename__ = "coe_sap_funcional_categorias_catalogo"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    modulo = db.Column(db.String(150), index=True)
+    categoria = db.Column(db.String(255), index=True)
+    subcategoria = db.Column(db.String(255), index=True)
+    articulo = db.Column(db.String(255), index=True)
+
+    activo = db.Column(db.Boolean, default=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "modulo",
+            "categoria",
+            "subcategoria",
+            "articulo",
+            name="uq_categoria_catalogo_full"
+        ),
+    )
+
