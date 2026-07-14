@@ -13518,7 +13518,6 @@ def listar_oportunidades_principales():
 POST_PRC_CLEAR_FIELDS = [
     "observaciones",
     "codigo_prc",
-    "fecha_firma_aos",
     "pm_asignado_claro",
     "pm_asignado_hitss",
     "descripcion_ot",
@@ -13526,17 +13525,18 @@ POST_PRC_CLEAR_FIELDS = [
     "num_incidente",
     "num_ot",
     "estado_ot",
-    "proyeccion_ingreso",
-    "fecha_compromiso",
-    "fecha_cierre",
     "estado_proyecto",
     "anio_creacion_ot",
-    "fecha_acta_cierre_ot",
     "seguimiento_ot",
     "tipo_servicio",
     "semestre_ejecucion",
     "publicacion_sharepoint",
 ]
+
+# Importante:
+# No limpiar columnas de fecha al crear/copiar principales.
+# Si se limpian aquí, las principales quedan con fechas truncadas/vacías en pantalla y exportación.
+# Las fechas se normalizan con _parse_date_any_safe / clean_payload y salen al frontend en ISO.
 
 
 @bp.route("/oportunidades/<int:id>/copiar-como-principal", methods=["POST"])

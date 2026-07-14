@@ -255,6 +255,20 @@ function toIsoDate(v) {
   return `${parts.y}-${pad2(parts.m)}-${pad2(parts.d)}`;
 }
 
+function normalizeDateForPayload(value, col = "fecha") {
+  const raw = normalizeText(value);
+
+  if (!raw) return null;
+
+  const iso = toIsoDate(raw);
+
+  if (!iso) {
+    throw new Error(`Fecha inválida en ${col}: ${raw}. Usa formato DD/MM/YYYY o YYYY-MM-DD.`);
+  }
+
+  return iso;
+}
+
 function toDisplayDateDDMMYYYY(v) {
   const parts = parseDatePartsStrict(v);
   if (!parts) return v ? String(v).trim() : "";
@@ -890,6 +904,16 @@ function getFechaCierrePrincipalAutomatica(grupo) {
   );
 }
 
+function getPrincipalDateValue(grupo, col) {
+  if (!grupo || grupo.sinPrincipal || !isDateCol(col)) return "";
+
+  if (col === "fecha_cierre_oportunidad") {
+    return getFechaCierrePrincipalAutomatica(grupo);
+  }
+
+  return grupo?.principalRow?.[col] || "";
+}
+
 function isAsiCloudRow(row) {
   const texto = [
     row?.servicio,
@@ -1305,7 +1329,7 @@ export default function Oportunidades() {
       const v = row?.[col];
 
       if (isDateCol(col)) {
-        out[col] = v ? toIsoDate(v) : null;
+        out[col] = normalizeDateForPayload(v, col);
         continue;
       }
 
@@ -2184,8 +2208,19 @@ export default function Oportunidades() {
       return;
     }
 
-    const original = isDateCol(col) ? toIsoDate(row?.[col]) : row?.[col];
-    const incoming = isDateCol(col) ? toIsoDate(newValue) : newValue;
+    let original = row?.[col];
+    let incoming = newValue;
+
+    if (isDateCol(col)) {
+      try {
+        original = normalizeDateForPayload(row?.[col], col) || "";
+        incoming = normalizeDateForPayload(newValue, col) || "";
+      } catch (e) {
+        Swal.fire("Fecha inválida", e?.message || "La fecha no tiene un formato válido.", "warning");
+        closeEditing();
+        return;
+      }
+    }
 
     if (String(original ?? "") === String(incoming ?? "")) {
       closeEditing();
@@ -3546,12 +3581,13 @@ export default function Oportunidades() {
                 : formatCell("valor_oferta_claro", totals.valorComercial);
           }
 
-          if (col === "fecha_cierre_oportunidad") {
-            content = grupo.sinPrincipal
-              ? "-"
-              : fechaCierreAutomaticaPrincipal
-              ? toDisplayDateDDMMYYYY(fechaCierreAutomaticaPrincipal)
-              : "-";
+          if (isDateCol(col)) {
+            const principalDateValue = getPrincipalDateValue(grupo, col);
+
+            content =
+              grupo.sinPrincipal || !principalDateValue
+                ? "-"
+                : toDisplayDateDDMMYYYY(principalDateValue);
           }
 
           if (col === "num_ot") {
