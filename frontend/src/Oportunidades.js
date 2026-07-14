@@ -194,89 +194,81 @@ function limpiarPerdidaSiNoAplica(row) {
   };
 }
 
-function toIsoDate(v) {
-  if (!v) return "";
-  const s = String(v).trim();
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+function isValidDateParts(year, month, day) {
+  const y = Number(year);
+  const m = Number(month);
+  const d = Number(day);
 
-  const ddmmyyyy = s.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
-  if (ddmmyyyy) {
-    const [, dd, mm, yyyy] = ddmmyyyy;
-    return `${yyyy}-${mm}-${dd}`;
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return false;
+  if (y < 1900 || y > 2100) return false;
+  if (m < 1 || m > 12) return false;
+  if (d < 1 || d > 31) return false;
+
+  return d <= new Date(y, m, 0).getDate();
+}
+
+function parseDatePartsStrict(value) {
+  if (value === null || value === undefined || value === "") return null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getFullYear();
+    const m = value.getMonth() + 1;
+    const d = value.getDate();
+    return isValidDateParts(y, m, d) ? { y, m, d } : null;
   }
 
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return "";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const base = Date.UTC(1899, 11, 30);
+    const millis = base + Math.trunc(value) * 86400000;
+    const dte = new Date(millis);
+    const y = dte.getUTCFullYear();
+    const m = dte.getUTCMonth() + 1;
+    const d = dte.getUTCDate();
+    return isValidDateParts(y, m, d) ? { y, m, d } : null;
+  }
+
+  const s = String(value).trim();
+  if (!s) return null;
+
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/);
+  if (iso) {
+    const [, y, m, d] = iso.map(Number);
+    return isValidDateParts(y, m, d) ? { y, m, d } : null;
+  }
+
+  const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmy) {
+    const [, d, m, y] = dmy.map(Number);
+    return isValidDateParts(y, m, d) ? { y, m, d } : null;
+  }
+
+  return null;
+}
+
+function toIsoDate(v) {
+  const parts = parseDatePartsStrict(v);
+  if (!parts) return "";
+  return `${parts.y}-${pad2(parts.m)}-${pad2(parts.d)}`;
 }
 
 function toDisplayDateDDMMYYYY(v) {
-  if (!v) return "";
-
-  const s = String(v).trim();
-
-  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoMatch) {
-    const [, yyyy, mm, dd] = isoMatch;
-    return `${dd}/${mm}/${yyyy}`;
-  }
-
-  const ddmmyyyyDash = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-  if (ddmmyyyyDash) {
-    const [, dd, mm, yyyy] = ddmmyyyyDash;
-    return `${dd}/${mm}/${yyyy}`;
-  }
-
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
-    return s;
-  }
-
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return s;
-
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-
-  return `${dd}/${mm}/${yyyy}`;
+  const parts = parseDatePartsStrict(v);
+  if (!parts) return v ? String(v).trim() : "";
+  return `${pad2(parts.d)}/${pad2(parts.m)}/${parts.y}`;
 }
 
 function toExcelDateDDMMYYYY(v) {
-  if (!v) return "";
+  return toDisplayDateDDMMYYYY(v);
+}
 
-  if (v instanceof Date && !Number.isNaN(v.getTime())) {
-    const dd = String(v.getDate()).padStart(2, "0");
-    const mm = String(v.getMonth() + 1).padStart(2, "0");
-    const yyyy = v.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  }
-
-  const s = String(v).trim();
-
-  // Si ya viene dd/mm/yyyy, lo deja igual
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
-    return s;
-  }
-
-  // Si viene yyyy-mm-dd, lo convierte sin usar Date para evitar desfases por zona horaria
-  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoMatch) {
-    const [, yyyy, mm, dd] = isoMatch;
-    return `${dd}/${mm}/${yyyy}`;
-  }
-
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return s;
-
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-
-  return `${dd}/${mm}/${yyyy}`;
+function dateIsoToTimestamp(iso) {
+  const parts = parseDatePartsStrict(iso);
+  if (!parts) return 0;
+  return Date.UTC(parts.y, parts.m - 1, parts.d);
 }
 
 function prepareRowsForExcel(rows, columns = []) {
@@ -312,7 +304,7 @@ function prepareRowsForExcel(rows, columns = []) {
       }
 
       if (DATE_COLS.has(col)) {
-        out[col] = value ? toDisplayDateDDMMYYYY(value) : "";
+        out[col] = value ? toExcelDateDDMMYYYY(value) : "";
       } else {
         out[col] = value ?? "";
       }
@@ -871,8 +863,7 @@ function getFechaAsignacionTimestamp(row) {
   const iso = toIsoDate(getFechaAsignacionValue(row));
   if (!iso) return 0;
 
-  const timestamp = new Date(`${iso}T00:00:00`).getTime();
-  return Number.isNaN(timestamp) ? 0 : timestamp;
+  return dateIsoToTimestamp(iso);
 }
 
 function compareOportunidadesPorFechaAsignacionDesc(a, b) {

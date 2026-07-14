@@ -3496,20 +3496,64 @@ INT_FIELDS_API = {
 def _upper(v):
     return str(v).strip().upper() if v is not None else None
 
-def _parse_iso_date(v):
-    if v is None:
+def _parse_date_any_safe(v):
+    """
+    Parser estricto de fechas para oportunidades.
+    Acepta date/datetime, serial Excel, ISO YYYY-MM-DD y D/M/YYYY.
+    No usa inferencia automática para evitar cruces de día/mes.
+    """
+    if v in (None, "", "null", "None"):
         return None
-    if isinstance(v, date) and not isinstance(v, datetime):
+
+    try:
+        if pd.isna(v):
+            return None
+    except Exception:
+        pass
+
+    if isinstance(v, datetime):
+        return v.date()
+
+    if isinstance(v, date):
         return v
-    s = str(v).strip()
-    if s == "" or s.lower() in ("nan", "none", "null"):
-        return None
-    if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
         try:
-            return datetime.strptime(s, "%Y-%m-%d").date()
+            if 1 <= float(v) <= 80000:
+                return (datetime(1899, 12, 30) + timedelta(days=int(float(v)))).date()
         except Exception:
             return None
+
+    s = str(v).replace("\u00A0", " ").strip()
+    if s == "" or s.lower() in ("nan", "none", "null"):
+        return None
+
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$", s)
+    if m:
+        y, mo, d = map(int, m.groups())
+        try:
+            return date(y, mo, d)
+        except Exception:
+            return None
+
+    m = re.match(r"^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$", s)
+    if m:
+        d, mo, y = map(int, m.groups())
+        try:
+            return date(y, mo, d)
+        except Exception:
+            return None
+
     return None
+
+
+def _date_to_iso_string(v):
+    d = _parse_date_any_safe(v)
+    return d.isoformat() if d else None
+
+
+def _parse_iso_date(v):
+    return _parse_date_any_safe(v)
 
 def _parse_decimal(v):
     if v is None:
@@ -3687,6 +3731,11 @@ ESTADO_RESULTADO_FORZADO = {
 def normalize_oportunidad_dict(row: dict) -> dict:
     row = dict(row or {})
 
+    # Enviar siempre fechas ISO al frontend. Evita que el navegador interprete textos ambiguos.
+    for _field in DATE_FIELDS_API:
+        if _field in row:
+            row[_field] = _date_to_iso_string(row.get(_field))
+
     estado = _upper(row.get("estado_oferta"))
     resultado = _upper(row.get("resultado_oferta"))
 
@@ -3796,16 +3845,7 @@ def importar_oportunidades():
     MONEY_FIELDS = {"otc", "mrc", "mrc_normalizado", "valor_oferta_claro"}
 
     def parse_date(val):
-        if val is None:
-            return None
-        s = str(val).strip()
-        if s == "" or s.lower() in ("nan", "none", "null"):
-            return None
-        try:
-            d = pd.to_datetime(s, errors="coerce", dayfirst=True)
-            return None if pd.isna(d) else d.date()
-        except Exception:
-            return None
+        return _parse_date_any_safe(val)
 
     def parse_str(val):
         if val is None:
