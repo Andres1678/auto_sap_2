@@ -904,6 +904,17 @@ function getFechaCierrePrincipalAutomatica(grupo) {
   );
 }
 
+function swapIsoDateDayMonth(isoValue) {
+  const iso = toIsoDate(isoValue);
+  if (!iso) return "";
+
+  const [yyyy, mm, dd] = iso.split("-").map(Number);
+
+  if (!isValidDateParts(yyyy, dd, mm)) return "";
+
+  return `${yyyy}-${pad2(dd)}-${pad2(mm)}`;
+}
+
 function getPrincipalDateValue(grupo, col) {
   if (!grupo || grupo.sinPrincipal || !isDateCol(col)) return "";
 
@@ -911,7 +922,32 @@ function getPrincipalDateValue(grupo, col) {
     return getFechaCierrePrincipalAutomatica(grupo);
   }
 
-  return grupo?.principalRow?.[col] || "";
+  const principalValue = grupo?.principalRow?.[col] || "";
+  const principalIso = toIsoDate(principalValue);
+
+  if (!principalIso) return "";
+
+  /*
+    Protección para datos históricos:
+    si la fecha de la principal está con día/mes invertido y una asociada
+    tiene exactamente esa fecha corregida, se muestra/exporta la fecha correcta.
+    Ejemplo:
+      principal: 2025-08-11 => 11/08/2025
+      asociada:  2025-11-08 => 08/11/2025
+  */
+  const principalInvertida = swapIsoDateDayMonth(principalIso);
+
+  if (principalInvertida) {
+    const asociadaConFechaCorrecta = (grupo.rows || []).find(
+      (row) => toIsoDate(row?.[col]) === principalInvertida
+    );
+
+    if (asociadaConFechaCorrecta) {
+      return principalInvertida;
+    }
+  }
+
+  return principalValue;
 }
 
 function isAsiCloudRow(row) {
@@ -1239,8 +1275,22 @@ export default function Oportunidades() {
         principal?.fecha_cierre_oportunidad ||
         "";
 
+      const grupoPrincipalExport = {
+        principalRow: principal,
+        rows: hijosOrdenados,
+        sinPrincipal: false,
+      };
+
+      const fechasPrincipalExport = Object.fromEntries(
+        [...DATE_COLS].map((dateCol) => [
+          dateCol,
+          getPrincipalDateValue(grupoPrincipalExport, dateCol),
+        ])
+      );
+
       const principalExport = {
         ...principal,
+        ...fechasPrincipalExport,
         nivel_export: "PRINCIPAL",
         codigo_principal_export: codigoPrincipal,
         id_principal_export: principal.id,
@@ -1250,7 +1300,11 @@ export default function Oportunidades() {
         cantidad_suman_export: hijosQueSuman.length,
         relacion_export: `Principal con ${hijosOrdenados.length} asociada${hijosOrdenados.length === 1 ? "" : "s"}`,
         codigo_control: codigoPrincipal,
-        fecha_cierre_oportunidad: fechaCierreAutomatica || principal?.fecha_cierre_oportunidad || "",
+        fecha_cierre_oportunidad:
+          getPrincipalDateValue(grupoPrincipalExport, "fecha_cierre_oportunidad") ||
+          fechaCierreAutomatica ||
+          principal?.fecha_cierre_oportunidad ||
+          "",
       };
 
       exportRows.push(principalExport);
@@ -1270,7 +1324,9 @@ export default function Oportunidades() {
         mrc: totals.totalMrc,
         mrc_normalizado: totals.mrcNormalizado,
         valor_oferta_claro: totals.valorComercial,
-        fecha_cierre_oportunidad: fechaCierreAutomatica,
+        fecha_cierre_oportunidad:
+          getPrincipalDateValue(grupoPrincipalExport, "fecha_cierre_oportunidad") ||
+          fechaCierreAutomatica,
       });
 
       hijosOrdenados.forEach((hijo, hijoIndex) => {
@@ -3390,8 +3446,8 @@ export default function Oportunidades() {
       if (a.sinPrincipal && !b.sinPrincipal) return 1;
       if (!a.sinPrincipal && b.sinPrincipal) return -1;
 
-      const fechaA = getFechaAsignacionTimestamp(a.principalRow);
-      const fechaB = getFechaAsignacionTimestamp(b.principalRow);
+      const fechaA = dateIsoToTimestamp(toIsoDate(getPrincipalDateValue(a, "fecha_creacion")));
+      const fechaB = dateIsoToTimestamp(toIsoDate(getPrincipalDateValue(b, "fecha_creacion")));
 
       if (fechaA !== fechaB) return fechaB - fechaA;
 
