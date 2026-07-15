@@ -1101,18 +1101,250 @@ export default function Oportunidades() {
     [prcStartIndex, tableColumnOrder]
   );
 
+
+  const buildExportCompletoAgrupado = () => {
+    const metaColumns = [
+      "nivel_export",
+      "codigo_principal_export",
+      "id_principal_export",
+      "cliente_principal_export",
+      "servicio_principal_export",
+      "cantidad_asociadas_export",
+      "cantidad_suman_export",
+      "relacion_export",
+    ];
+
+    const resumenColumns = [
+      "codigo_principal_export",
+      "id_principal_export",
+      "cliente_principal_export",
+      "servicio_principal_export",
+      "cantidad_asociadas_export",
+      "cantidad_suman_export",
+      "tipo_moneda",
+      "otc",
+      "mrc",
+      "mrc_normalizado",
+      "valor_oferta_claro",
+      "fecha_cierre_oportunidad",
+    ];
+
+    const exportColumns = [...metaColumns, ...columnOrder];
+    const rowsBase = Array.isArray(data) ? data : [];
+
+    const principales = rowsBase.filter(
+      (row) => normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL && row?.id
+    );
+
+    const principalesPorId = new Map(
+      principales.map((principal) => [String(principal.id), principal])
+    );
+
+    const hijosPorPrincipal = new Map();
+    const sinPrincipal = [];
+
+    rowsBase.forEach((row) => {
+      const tipo = normalizeTipoOportunidad(row?.tipo_oportunidad);
+
+      if (tipo === TIPO_PRINCIPAL) return;
+
+      const padreId = row?.oportunidad_padre_id;
+
+      if (padreId && principalesPorId.has(String(padreId))) {
+        const key = String(padreId);
+
+        if (!hijosPorPrincipal.has(key)) {
+          hijosPorPrincipal.set(key, []);
+        }
+
+        hijosPorPrincipal.get(key).push(row);
+        return;
+      }
+
+      sinPrincipal.push(row);
+    });
+
+    const codigoPrincipalCounts = new Map();
+
+    principales.forEach((principal) => {
+      const codigo = normalizeText(principal?.codigo_control);
+      if (codigo) {
+        codigoPrincipalCounts.set(codigo, (codigoPrincipalCounts.get(codigo) || 0) + 1);
+      }
+    });
+
+    const principalesOrdenadas = [...principales].sort((a, b) => {
+      const clienteA = normalizeText(a?.nombre_cliente) || CLIENT_WITHOUT_NAME;
+      const clienteB = normalizeText(b?.nombre_cliente) || CLIENT_WITHOUT_NAME;
+      const byCliente = clienteA.localeCompare(clienteB, "es", { sensitivity: "base" });
+      if (byCliente !== 0) return byCliente;
+
+      const fechaA = getFechaAsignacionTimestamp(a);
+      const fechaB = getFechaAsignacionTimestamp(b);
+      if (fechaA !== fechaB) return fechaB - fechaA;
+
+      const consecutivoA = toPositiveInteger(a?.consecutivo_principal);
+      const consecutivoB = toPositiveInteger(b?.consecutivo_principal);
+      if (consecutivoA !== null && consecutivoB !== null && consecutivoA !== consecutivoB) {
+        return consecutivoA - consecutivoB;
+      }
+
+      return String(a?.id ?? "").localeCompare(String(b?.id ?? ""), "es", { numeric: true });
+    });
+
+    const getCodigoPrincipalExport = (principal, index) => {
+      const codigoBackend = normalizeText(principal?.codigo_control);
+      const codigoDuplicado = codigoBackend && (codigoPrincipalCounts.get(codigoBackend) || 0) > 1;
+
+      if (codigoBackend && !codigoDuplicado) {
+        return codigoBackend;
+      }
+
+      return String(
+        toPositiveInteger(principal?.consecutivo_principal) ||
+          index + 1 ||
+          principal?.id ||
+          ""
+      );
+    };
+
+    const exportRows = [];
+    const resumenRows = [];
+
+    principalesOrdenadas.forEach((principal, index) => {
+      const codigoPrincipal = getCodigoPrincipalExport(principal, index);
+      const hijosOrdenados = [...(hijosPorPrincipal.get(String(principal.id)) || [])]
+        .sort(compareOtsAsignadas)
+        .map((hijo, hijoIndex) => {
+          const codigoBackend = normalizeText(hijo?.codigo_control);
+          const codigoCalculado = `${codigoPrincipal}.${hijoIndex + 1}`;
+
+          return {
+            ...hijo,
+            codigo_control:
+              codigoBackend && codigoBackend.startsWith(`${codigoPrincipal}.`)
+                ? codigoBackend
+                : codigoCalculado,
+          };
+        });
+
+      const hijosQueSuman = hijosOrdenados.filter(estadoSumaEnPrincipal);
+      const totals =
+        hijosQueSuman.length > 0
+          ? getPrincipalTotals(hijosOrdenados)
+          : getPrincipalOwnTotals(principal);
+
+      const fechaCierreAutomatica =
+        hijosOrdenados.find((row) => normalizeText(row?.fecha_cierre_oportunidad))?.fecha_cierre_oportunidad ||
+        principal?.fecha_cierre_oportunidad ||
+        "";
+
+      const principalExport = {
+        ...principal,
+        nivel_export: "PRINCIPAL",
+        codigo_principal_export: codigoPrincipal,
+        id_principal_export: principal.id,
+        cliente_principal_export: normalizeText(principal?.nombre_cliente) || CLIENT_WITHOUT_NAME,
+        servicio_principal_export: normalizeText(principal?.servicio) || "OPORTUNIDAD PRINCIPAL",
+        cantidad_asociadas_export: hijosOrdenados.length,
+        cantidad_suman_export: hijosQueSuman.length,
+        relacion_export: `Principal con ${hijosOrdenados.length} asociada${hijosOrdenados.length === 1 ? "" : "s"}`,
+        codigo_control: codigoPrincipal,
+        fecha_cierre_oportunidad: fechaCierreAutomatica || principal?.fecha_cierre_oportunidad || "",
+      };
+
+      exportRows.push(principalExport);
+
+      resumenRows.push({
+        codigo_principal_export: codigoPrincipal,
+        id_principal_export: principal.id,
+        cliente_principal_export: normalizeText(principal?.nombre_cliente) || CLIENT_WITHOUT_NAME,
+        servicio_principal_export: normalizeText(principal?.servicio) || "OPORTUNIDAD PRINCIPAL",
+        cantidad_asociadas_export: hijosOrdenados.length,
+        cantidad_suman_export: hijosQueSuman.length,
+        tipo_moneda:
+          hijosQueSuman.length > 0
+            ? getUniqueText(hijosQueSuman, "tipo_moneda", 2)
+            : normalizeText(principal?.tipo_moneda),
+        otc: totals.totalOtc,
+        mrc: totals.totalMrc,
+        mrc_normalizado: totals.mrcNormalizado,
+        valor_oferta_claro: totals.valorComercial,
+        fecha_cierre_oportunidad: fechaCierreAutomatica,
+      });
+
+      hijosOrdenados.forEach((hijo, hijoIndex) => {
+        exportRows.push({
+          ...hijo,
+          nivel_export: "ASOCIADA",
+          codigo_principal_export: codigoPrincipal,
+          id_principal_export: principal.id,
+          cliente_principal_export: normalizeText(principal?.nombre_cliente) || CLIENT_WITHOUT_NAME,
+          servicio_principal_export: normalizeText(principal?.servicio) || "OPORTUNIDAD PRINCIPAL",
+          cantidad_asociadas_export: "",
+          cantidad_suman_export: estadoSumaEnPrincipal(hijo) ? "SI" : "NO",
+          relacion_export: `Asociada a principal ${codigoPrincipal}`,
+          consecutivo_sub: toPositiveInteger(hijo?.consecutivo_sub) || hijoIndex + 1,
+        });
+      });
+    });
+
+    const sinPrincipalOrdenadas = [...sinPrincipal].sort((a, b) => {
+      const clienteA = normalizeText(a?.nombre_cliente) || CLIENT_WITHOUT_NAME;
+      const clienteB = normalizeText(b?.nombre_cliente) || CLIENT_WITHOUT_NAME;
+      const byCliente = clienteA.localeCompare(clienteB, "es", { sensitivity: "base" });
+      if (byCliente !== 0) return byCliente;
+      return compareSubOportunidades(a, b);
+    });
+
+    sinPrincipalOrdenadas.forEach((row, index) => {
+      exportRows.push({
+        ...row,
+        nivel_export: "SIN PRINCIPAL",
+        codigo_principal_export: "SIN PRINCIPAL",
+        id_principal_export: "",
+        cliente_principal_export: normalizeText(row?.nombre_cliente) || CLIENT_WITHOUT_NAME,
+        servicio_principal_export: "SIN PRINCIPAL / PENDIENTE DE ASIGNAR",
+        cantidad_asociadas_export: "",
+        cantidad_suman_export: estadoSumaEnPrincipal(row) ? "SI" : "NO",
+        relacion_export: "No está asociada a una principal",
+        codigo_control: normalizeText(row?.codigo_control) || `PENDIENTE.${index + 1}`,
+      });
+    });
+
+    return {
+      rows: exportRows,
+      columns: exportColumns,
+      resumenRows,
+      resumenColumns,
+    };
+  };
+
   const handleExportAll = () => {
     if (!data?.length) {
       return Swal.fire("Info", "No hay datos para exportar.", "info");
     }
 
+    const groupedExport = buildExportCompletoAgrupado();
+
     exportOportunidadesExcel(
-      prepareRowsForExcel(data, columnOrder),
-      columnOrder,
-      `oportunidades_completo_${todayStamp()}.xlsx`,
+      prepareRowsForExcel(groupedExport.rows, groupedExport.columns),
+      groupedExport.columns,
+      `oportunidades_completo_agrupado_${todayStamp()}.xlsx`,
       {
         Fuente: "Gestión de Oportunidades",
-        Nota: "Exportado desde pantalla",
+        Nota: "Exportado desde pantalla con relación Principal / Asociadas",
+        TotalFilas: groupedExport.rows.length,
+      },
+      {
+        sheetName: "Oportunidades Agrupadas",
+        extraSheets: [
+          {
+            name: "Resumen Principales",
+            rows: prepareRowsForExcel(groupedExport.resumenRows, groupedExport.resumenColumns),
+            columns: groupedExport.resumenColumns,
+          },
+        ],
       }
     );
   };

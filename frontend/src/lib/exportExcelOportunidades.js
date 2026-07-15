@@ -1,241 +1,136 @@
 import * as XLSX from "xlsx";
 
-const pretty = (col) =>
-  String(col || "")
-    .replace(/_/g, " ")
-    .trim()
-    .toUpperCase();
-
-const DATE_COLS = new Set([
-  "fecha_creacion",
-  "fecha_cierre_sm",
-  "fecha_entrega_oferta_final",
-  "fecha_cierre_oportunidad",
-  "fecha_firma_aos",
-  "fecha_compromiso",
-  "fecha_cierre",
-  "proyeccion_ingreso",
+const DATE_LABELS = new Set([
+  "FECHA ASIGNACIÓN",
+  "FECHA CREACION",
+  "FECHA CREACIÓN",
+  "FECHA CIERRE SM",
+  "FECHA ENTREGA OFERTA FINAL",
+  "FECHA CIERRE OPORTUNIDAD",
+  "FECHA FIRMA AOS",
+  "PROYECCION INGRESO",
+  "PROYECCIÓN INGRESO",
+  "FECHA COMPROMISO",
+  "FECHA CIERRE",
 ]);
 
-const NUMERIC_COLS = new Set([
-  "otc",
-  "mrc",
-  "mrc_normalizado",
-  "valor_oferta_claro",
-]);
+const COLUMN_LABELS = {
+  id: "COD. CONTROL",
+  fecha_creacion: "FECHA ASIGNACIÓN",
+  anio_creacion_ot: "AÑO CREACIÓN OT",
+  mostrar_dashboard: "MOSTRAR EN DASHBOARD",
+  num_enlace: "ID ENLACE",
 
-const toExcelDateDDMMYYYY = (v) => {
-  if (!v) return "";
-
-  if (v instanceof Date && !Number.isNaN(v.getTime())) {
-    const dd = String(v.getDate()).padStart(2, "0");
-    const mm = String(v.getMonth() + 1).padStart(2, "0");
-    const yyyy = v.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  }
-
-  const s = String(v).trim();
-
-  if (
-    !s ||
-    s === "-" ||
-    s.toLowerCase() === "null" ||
-    s.toLowerCase() === "none" ||
-    s.toLowerCase() === "nan"
-  ) {
-    return "";
-  }
-
-  // Si ya viene como dd/mm/yyyy, se deja igual
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
-    return s;
-  }
-
-  // Si viene como dd-mm-yyyy o dd.mm.yyyy, se convierte a dd/mm/yyyy
-  const dmy = s.match(/^(\d{2})[-.](\d{2})[-.](\d{4})$/);
-  if (dmy) {
-    const [, dd, mm, yyyy] = dmy;
-    return `${dd}/${mm}/${yyyy}`;
-  }
-
-  // Si viene como yyyy-mm-dd, se convierte sin usar Date
-  // para evitar desfases por zona horaria
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    const [, yyyy, mm, dd] = iso;
-    return `${dd}/${mm}/${yyyy}`;
-  }
-
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return "";
-
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-
-  return `${dd}/${mm}/${yyyy}`;
+  nivel_export: "TIPO FILA",
+  codigo_principal_export: "CÓDIGO PRINCIPAL",
+  id_principal_export: "ID PRINCIPAL BD",
+  cliente_principal_export: "CLIENTE PRINCIPAL",
+  servicio_principal_export: "SERVICIO PRINCIPAL",
+  cantidad_asociadas_export: "CANTIDAD ASOCIADAS",
+  cantidad_suman_export: "ASOCIADAS QUE SUMAN / SUMA PRINCIPAL",
+  relacion_export: "RELACIÓN PRINCIPAL",
 };
 
-const parseNumberSmart = (input) => {
-  if (input === null || input === undefined || input === "") return "";
-  if (typeof input === "number") return Number.isFinite(input) ? input : "";
+function labelFromColumn(col) {
+  return COLUMN_LABELS[col] || String(col || "").replace(/_/g, " ").toUpperCase();
+}
 
-  let s = String(input).trim();
-  if (!s) return "";
+function isDateColumn(col, label) {
+  const colNorm = String(col || "").toLowerCase();
+  const labelNorm = String(label || "").trim().toUpperCase();
 
-  s = s.replace(/\s/g, "");
-  s = s.replace(/[$€£]/g, "");
-  s = s.replace(/%/g, "");
-  s = s.replace(/\b(COP|USD)\b/gi, "");
+  return (
+    colNorm.startsWith("fecha_") ||
+    colNorm === "proyeccion_ingreso" ||
+    DATE_LABELS.has(labelNorm)
+  );
+}
 
-  if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s)) {
-    const n = Number(s);
-    return Number.isFinite(n) ? n : "";
-  }
+function normalizeCellValue(value) {
+  if (value === null || value === undefined) return "";
+  return value;
+}
 
-  const commaCount = (s.match(/,/g) || []).length;
-  const dotCount = (s.match(/\./g) || []).length;
-  const lastComma = s.lastIndexOf(",");
-  const lastDot = s.lastIndexOf(".");
+function buildWorksheet(rows = [], columns = []) {
+  const headers = columns.map(labelFromColumn);
 
-  if (commaCount > 0 && dotCount > 0) {
-    const decimalSep = lastComma > lastDot ? "," : ".";
-    const thousandSep = decimalSep === "," ? "." : ",";
-    s = s.split(thousandSep).join("");
-    if (decimalSep === ",") s = s.replace(",", ".");
-  } else if (commaCount > 0 && dotCount === 0) {
-    if (commaCount === 1) {
-      const after = s.slice(lastComma + 1);
-      const before = s.slice(0, lastComma).replace(/^[+-]/, "");
-      if (after.length === 3 && before.length <= 3) s = s.replace(",", "");
-      else s = s.replace(",", ".");
-    } else {
-      s = s.replace(/,/g, "");
-    }
-  } else if (dotCount > 0 && commaCount === 0) {
-    if (dotCount === 1) {
-      const after = s.slice(lastDot + 1);
-      const before = s.slice(0, lastDot).replace(/^[+-]/, "");
-      if (after.length === 3 && before.length <= 3) s = s.replace(".", "");
-    } else {
-      const parts = s.split(".");
-      const last = parts[parts.length - 1];
-      const mid = parts.slice(1, -1);
-      const midAll3 = mid.every((p) => p.length === 3);
-      const firstOk = parts[0].replace(/^[+-]/, "").length <= 3;
-      const looksLikeGrouped = midAll3 && firstOk;
-
-      if (looksLikeGrouped && last.length !== 3) {
-        const intPart = parts.slice(0, -1).join("");
-        s = intPart + "." + last;
-      } else {
-        s = s.replace(/\./g, "");
-      }
-    }
-  }
-
-  s = s.replace(/[^\d.+-eE]/g, "");
-  if (!s || s === "-" || s === "." || s === "-.") return "";
-
-  const n = Number(s);
-  return Number.isFinite(n) ? n : "";
-};
-
-const getCellValue = (row, col) => {
-  if (!row) return "";
-
-  if (col === "fecha_compromiso") {
-    return (
-      row.fecha_compromiso ??
-      row.fechaCompromiso ??
-      row["FECHA COMPROMISO"] ??
-      ""
-    );
-  }
-
-  if (col === "proyeccion_ingreso") {
-    return (
-      row.proyeccion_ingreso ??
-      row.proyeccionIngreso ??
-      row["PROYECCION INGRESO"] ??
-      ""
-    );
-  }
-
-  if (col === "fecha_cierre") {
-    return (
-      row.fecha_cierre ??
-      row.fechaCierre ??
-      row["FECHA CIERRE"] ??
-      ""
-    );
-  }
-
-  return row[col] ?? "";
-};
-
-export function exportOportunidadesExcel(
-  rows,
-  columnOrder,
-  filename = "oportunidades.xlsx",
-  meta = {}
-) {
-  const safeRows = Array.isArray(rows) ? rows : [];
-  const safeCols = Array.isArray(columnOrder) ? columnOrder : [];
-
-  const headers = safeCols.map((c) => pretty(c));
-  const headerToCol = new Map(headers.map((h, idx) => [h, safeCols[idx]]));
-
-  const data = safeRows.map((r) => {
-    const out = {};
-
-    for (const h of headers) {
-      const col = headerToCol.get(h);
-      const v = getCellValue(r, col);
-
-      if (DATE_COLS.has(col)) {
-        out[h] = v ? toExcelDateDDMMYYYY(v) : "";
-        continue;
-      }
-
-      if (NUMERIC_COLS.has(col)) {
-        const n = typeof v === "number" ? v : parseNumberSmart(v);
-        out[h] = n === "" ? v ?? "" : n;
-        continue;
-      }
-
-      out[h] = v ?? "";
-    }
-
-    return out;
-  });
-
-  const ws = XLSX.utils.json_to_sheet(data, { header: headers });
-
-  ws["!cols"] = headers.map((h) => ({
-    wch: Math.min(50, Math.max(12, h.length + 4)),
-  }));
-
-  const metaRows = [
-    { Campo: "Generado", Valor: new Date().toLocaleString() },
-    { Campo: "Total filas", Valor: String(safeRows.length) },
-    ...Object.entries(meta || {}).map(([k, v]) => ({
-      Campo: k,
-      Valor: String(v ?? ""),
-    })),
+  const aoa = [
+    headers,
+    ...(rows || []).map((row) =>
+      columns.map((col) => normalizeCellValue(row?.[col]))
+    ),
   ];
 
-  const wsMeta = XLSX.utils.json_to_sheet(
-    metaRows.length ? metaRows : [{ Campo: "Info", Valor: "—" }]
-  );
+  const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: false });
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, wsMeta, "Metadata");
-  XLSX.utils.book_append_sheet(wb, ws, "Oportunidades");
+  // Forzar fechas como texto para que Excel no cambie día/mes según configuración regional.
+  columns.forEach((col, index) => {
+    const header = headers[index];
 
-  const safeName = filename.toLowerCase().endsWith(".xlsx")
-    ? filename
-    : `${filename}.xlsx`;
+    if (!isDateColumn(col, header)) return;
 
-  XLSX.writeFile(wb, safeName);
+    const columnLetter = XLSX.utils.encode_col(index);
+
+    for (let rowIndex = 2; rowIndex <= aoa.length; rowIndex += 1) {
+      const ref = `${columnLetter}${rowIndex}`;
+      const cell = ws[ref];
+
+      if (!cell || cell.v === null || cell.v === undefined || cell.v === "") continue;
+
+      cell.t = "s";
+      cell.v = String(cell.v);
+      cell.w = String(cell.v);
+      cell.z = "@";
+    }
+  });
+
+  ws["!cols"] = headers.map((header, idx) => ({
+    wch: isDateColumn(columns[idx], header)
+      ? 14
+      : Math.min(Math.max(String(header).length + 4, 12), 42),
+  }));
+
+  return ws;
 }
+
+function safeSheetName(name, fallback = "Hoja") {
+  const clean = String(name || fallback)
+    .replace(/[\\/?*\[\]:]/g, " ")
+    .trim()
+    .slice(0, 31);
+
+  return clean || fallback;
+}
+
+export function exportOportunidadesExcel(
+  rows = [],
+  columns = [],
+  filename = "oportunidades.xlsx",
+  metadata = {},
+  options = {}
+) {
+  const wb = XLSX.utils.book_new();
+
+  if (metadata && Object.keys(metadata).length > 0) {
+    const metaRows = [["Campo", "Valor"], ...Object.entries(metadata)];
+    const metaWs = XLSX.utils.aoa_to_sheet(metaRows);
+    XLSX.utils.book_append_sheet(wb, metaWs, "Metadata");
+  }
+
+  const mainSheetName = safeSheetName(options.sheetName || "Oportunidades");
+  XLSX.utils.book_append_sheet(wb, buildWorksheet(rows, columns), mainSheetName);
+
+  (options.extraSheets || []).forEach((sheet, index) => {
+    if (!sheet) return;
+
+    const name = safeSheetName(sheet.name || `Hoja ${index + 2}`);
+    const sheetRows = Array.isArray(sheet.rows) ? sheet.rows : [];
+    const sheetColumns = Array.isArray(sheet.columns) ? sheet.columns : [];
+
+    XLSX.utils.book_append_sheet(wb, buildWorksheet(sheetRows, sheetColumns), name);
+  });
+
+  XLSX.writeFile(wb, filename);
+}
+
+export default exportOportunidadesExcel;
