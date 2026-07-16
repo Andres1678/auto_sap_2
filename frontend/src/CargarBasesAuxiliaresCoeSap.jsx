@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { jfetch } from "./lib/api";
 import "./CargarBasesAuxiliaresCoeSap.css";
-
 
 function getFilenameFromDisposition(disposition, fallback) {
   const header = disposition || "";
@@ -16,17 +15,13 @@ function getFilenameFromDisposition(disposition, fallback) {
 }
 
 async function downloadExcelFile(url, headers, fallbackName) {
-  const res = await jfetch(url, {
-    method: "GET",
-    headers,
-  });
+  const res = await jfetch(url, { method: "GET", headers });
 
   if (!res.ok) {
     let data = {};
     try {
       data = await res.json();
     } catch {}
-
     throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
   }
 
@@ -63,7 +58,6 @@ function readStoredUser() {
 
 function normalizePermisos(user) {
   const raw = user?.permisos || user?.user?.permisos || [];
-
   if (!Array.isArray(raw)) return [];
 
   return raw
@@ -72,74 +66,71 @@ function normalizePermisos(user) {
     .map((p) => String(p).trim().toUpperCase());
 }
 
-function cleanText(value) {
+function text(value) {
   if (value === null || value === undefined || value === "") return "—";
   return String(value);
 }
 
 function numberText(value) {
-  const n = Number(value || 0);
-  return n.toLocaleString("es-CO");
+  return Number(value || 0).toLocaleString("es-CO");
 }
 
-const UPLOAD_ACTIONS = [
-  {
-    key: "catalogos",
-    title: "Catálogos / Listas",
-    subtitle: "Carga LISTAS y hojas por módulo del Excel maestro.",
-    icon: "📚",
-    endpoint: "/coe-sap-funcional/calificacion/catalogos/import-excel",
-    fileLabel: "Seleccionar Excel de listas",
-    accept: ".xlsx,.xls,.xlsm",
-  },
-  {
-    key: "sm",
-    title: "Base Datos SM",
-    subtitle: "Carga los casos SD para cruzarlos contra la calificación.",
-    icon: "🟢",
-    endpoint: "/coe-sap-funcional/calificacion/fuentes/import-sm",
-    fileLabel: "Seleccionar Excel SM",
-    accept: ".xlsx,.xls,.xlsm,.csv",
-  },
-  {
-    key: "itop",
-    title: "Base Datos ITOP",
-    subtitle: "Carga los casos R- u otros casos de ITOP.",
-    icon: "🔵",
-    endpoint: "/coe-sap-funcional/calificacion/fuentes/import-itop",
-    fileLabel: "Seleccionar Excel ITOP",
-    accept: ".xlsx,.xls,.xlsm,.csv",
-  },
-];
+const EMPTY_ESTADO = {
+  id: null,
+  nombre: "",
+  descripcion: "",
+  orden: 0,
+  activo: true,
+};
+
+const EMPTY_SUBESTADO = {
+  id: null,
+  estadoId: "",
+  nombre: "",
+  descripcion: "",
+  orden: 0,
+  activo: true,
+};
 
 export default function CargarBasesAuxiliaresCoeSap() {
-  const refs = {
-    catalogos: useRef(null),
-    sm: useRef(null),
-    itop: useRef(null),
-  };
-
   const user = useMemo(() => readStoredUser(), []);
   const permisos = useMemo(() => normalizePermisos(user), [user]);
 
   const rol = String(user?.rol || user?.user?.rol || "").toUpperCase();
   const isAdmin = rol === "ADMIN";
   const canImport = isAdmin || permisos.includes("BASE_REGISTRO_IMPORTAR");
+  const canView = canImport || permisos.includes("BASE_REGISTRO_VER");
 
   const commonHeaders = useMemo(() => {
+    return {
+      "Content-Type": "application/json",
+      "X-User-Rol": rol,
+      "X-User-Usuario": user?.usuario || user?.user?.usuario || "",
+    };
+  }, [rol, user]);
+
+  const downloadHeaders = useMemo(() => {
     return {
       "X-User-Rol": rol,
       "X-User-Usuario": user?.usuario || user?.user?.usuario || "",
     };
   }, [rol, user]);
 
-  const [loadingKey, setLoadingKey] = useState("");
+  const [activeTab, setActiveTab] = useState("estados");
+  const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMode, setSyncMode] = useState("preservar_manual");
-  const [lastResults, setLastResults] = useState([]);
+
+  const [estados, setEstados] = useState([]);
+  const [subestados, setSubestados] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [clientePendientes, setClientePendientes] = useState(0);
   const [importaciones, setImportaciones] = useState([]);
-  const [loadingImportaciones, setLoadingImportaciones] = useState(false);
-  const [downloadingImportaciones, setDownloadingImportaciones] = useState(false);
+
+  const [estadoForm, setEstadoForm] = useState(EMPTY_ESTADO);
+  const [subestadoForm, setSubestadoForm] = useState(EMPTY_SUBESTADO);
+  const [clienteManual, setClienteManual] = useState({ sociedad: "", clienteId: "" });
+  const [lastResults, setLastResults] = useState([]);
 
   const pushResult = (type, title, payload, ok = true) => {
     setLastResults((prev) => [
@@ -155,15 +146,14 @@ export default function CargarBasesAuxiliaresCoeSap() {
     ].slice(0, 8));
   };
 
-
-
-  const fetchImportaciones = useCallback(async () => {
-    setLoadingImportaciones(true);
-
-    try {
-      const res = await jfetch("/coe-sap-funcional/calificacion/importaciones?page=1&page_size=20", {
-        method: "GET",
-        headers: commonHeaders,
+  const requestJson = useCallback(
+    async (url, options = {}) => {
+      const res = await jfetch(url, {
+        ...options,
+        headers: {
+          ...commonHeaders,
+          ...(options.headers || {}),
+        },
       });
 
       const data = await res.json().catch(() => ({}));
@@ -172,126 +162,234 @@ export default function CargarBasesAuxiliaresCoeSap() {
         throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
       }
 
-      setImportaciones(Array.isArray(data?.data) ? data.data : []);
-    } catch (error) {
-      console.error("Error consultando importaciones COE SAP:", error);
-      setImportaciones([]);
-    } finally {
-      setLoadingImportaciones(false);
-    }
-  }, [commonHeaders]);
+      return data;
+    },
+    [commonHeaders]
+  );
 
-  useEffect(() => {
-    fetchImportaciones();
-  }, [fetchImportaciones]);
+  const fetchEstados = useCallback(async () => {
+    const data = await requestJson("/coe-sap-funcional/config/estados?include_inactive=1", {
+      method: "GET",
+    });
+    setEstados(Array.isArray(data?.data) ? data.data : []);
+  }, [requestJson]);
 
-  const descargarImportacionesExcel = async () => {
-    setDownloadingImportaciones(true);
+  const fetchSubestados = useCallback(async () => {
+    const data = await requestJson("/coe-sap-funcional/config/subestados?include_inactive=1", {
+      method: "GET",
+    });
+    setSubestados(Array.isArray(data?.data) ? data.data : []);
+  }, [requestJson]);
 
+  const fetchClientes = useCallback(async () => {
+    const data = await requestJson("/coe-sap-funcional/config/clientes", { method: "GET" });
+    setClientes(Array.isArray(data?.data) ? data.data : []);
+    setClientePendientes(Number(data?.pendientes || 0));
+  }, [requestJson]);
+
+  const fetchImportaciones = useCallback(async () => {
+    const data = await requestJson("/coe-sap-funcional/calificacion/importaciones?page=1&page_size=20", {
+      method: "GET",
+    });
+    setImportaciones(Array.isArray(data?.data) ? data.data : []);
+  }, [requestJson]);
+
+  const fetchAll = useCallback(async () => {
+    if (!canView) return;
+
+    setLoading(true);
     try {
-      await downloadExcelFile(
-        "/coe-sap-funcional/calificacion/importaciones/export-excel",
-        commonHeaders,
-        "importaciones_coe_sap_funcional.xlsx"
-      );
+      await Promise.all([
+        fetchEstados(),
+        fetchSubestados(),
+        fetchClientes(),
+        fetchImportaciones(),
+      ]);
     } catch (error) {
+      console.error("Error cargando configuración COE SAP:", error);
       Swal.fire({
         icon: "error",
-        title: "No se pudo descargar el Excel",
+        title: "No se pudo cargar la configuración",
         text: error?.message || "Revisa el backend.",
         confirmButtonColor: "#DA291C",
       });
     } finally {
-      setDownloadingImportaciones(false);
+      setLoading(false);
     }
+  }, [canView, fetchEstados, fetchSubestados, fetchClientes, fetchImportaciones]);
+
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
+
+  const requireImport = () => {
+    if (canImport) return true;
+    Swal.fire({
+      icon: "warning",
+      title: "Sin permiso",
+      text: "No tienes permiso para modificar la configuración.",
+      confirmButtonColor: "#DA291C",
+    });
+    return false;
   };
 
-  const triggerFile = (key) => {
-    if (!canImport) {
-      Swal.fire({
-        icon: "warning",
-        title: "Sin permiso",
-        text: "No tienes permiso para cargar bases auxiliares.",
-        confirmButtonColor: "#DA291C",
-      });
+  const saveEstado = async () => {
+    if (!requireImport()) return;
+    if (!String(estadoForm.nombre || "").trim()) {
+      Swal.fire({ icon: "warning", title: "Nombre requerido", confirmButtonColor: "#DA291C" });
       return;
     }
 
-    refs[key]?.current?.click();
+    try {
+      const isEdit = Boolean(estadoForm.id);
+      const data = await requestJson(
+        isEdit
+          ? `/coe-sap-funcional/config/estados/${estadoForm.id}`
+          : "/coe-sap-funcional/config/estados",
+        {
+          method: isEdit ? "PUT" : "POST",
+          body: JSON.stringify(estadoForm),
+        }
+      );
+
+      pushResult("estado", isEdit ? "Estado actualizado" : "Estado creado", data, true);
+      setEstadoForm(EMPTY_ESTADO);
+      await fetchEstados();
+      await fetchSubestados();
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "Error guardando estado", text: error.message, confirmButtonColor: "#DA291C" });
+    }
   };
 
-  const uploadFile = async (action, file) => {
-    if (!file) return;
+  const saveSubestado = async () => {
+    if (!requireImport()) return;
+    if (!subestadoForm.estadoId) {
+      Swal.fire({ icon: "warning", title: "Selecciona el estado principal", confirmButtonColor: "#DA291C" });
+      return;
+    }
+    if (!String(subestadoForm.nombre || "").trim()) {
+      Swal.fire({ icon: "warning", title: "Nombre requerido", confirmButtonColor: "#DA291C" });
+      return;
+    }
+
+    try {
+      const isEdit = Boolean(subestadoForm.id);
+      const data = await requestJson(
+        isEdit
+          ? `/coe-sap-funcional/config/subestados/${subestadoForm.id}`
+          : "/coe-sap-funcional/config/subestados",
+        {
+          method: isEdit ? "PUT" : "POST",
+          body: JSON.stringify(subestadoForm),
+        }
+      );
+
+      pushResult("subestado", isEdit ? "Subestado actualizado" : "Subestado creado", data, true);
+      setSubestadoForm(EMPTY_SUBESTADO);
+      await fetchSubestados();
+      await fetchEstados();
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "Error guardando subestado", text: error.message, confirmButtonColor: "#DA291C" });
+    }
+  };
+
+  const deleteEstado = async (row) => {
+    if (!requireImport()) return;
 
     const confirm = await Swal.fire({
-      icon: "question",
-      title: action.title,
-      text: `Se cargará el archivo: ${file.name}`,
+      icon: "warning",
+      title: "Inactivar estado",
+      text: `Se inactivará el estado ${row.valor} y sus subestados.`,
       showCancelButton: true,
-      confirmButtonText: "Sí, cargar",
+      confirmButtonText: "Sí, inactivar",
       cancelButtonText: "Cancelar",
       confirmButtonColor: "#DA291C",
     });
 
-    if (!confirm.isConfirmed) {
-      if (refs[action.key]?.current) refs[action.key].current.value = "";
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    setLoadingKey(action.key);
+    if (!confirm.isConfirmed) return;
 
     try {
-      const res = await jfetch(action.endpoint, {
-        method: "POST",
-        headers: commonHeaders,
-        body: formData,
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
-      }
-
-      pushResult(action.key, action.title, data, true);
-      fetchImportaciones();
-
-      await Swal.fire({
-        icon: "success",
-        title: "Carga finalizada",
-        html: renderSummaryHtml(data),
-        confirmButtonColor: "#008C67",
-      });
+      const data = await requestJson(`/coe-sap-funcional/config/estados/${row.id}`, { method: "DELETE" });
+      pushResult("estado", "Estado inactivado", data, true);
+      await fetchEstados();
+      await fetchSubestados();
     } catch (error) {
-      pushResult(action.key, action.title, { error: error?.message }, false);
-
-      Swal.fire({
-        icon: "error",
-        title: "No se pudo cargar",
-        text: error?.message || "Revisa el backend.",
-        confirmButtonColor: "#DA291C",
-      });
-    } finally {
-      setLoadingKey("");
-      if (refs[action.key]?.current) refs[action.key].current.value = "";
+      Swal.fire({ icon: "error", title: "Error inactivando estado", text: error.message, confirmButtonColor: "#DA291C" });
     }
   };
 
-  const syncCalificacion = async () => {
-    if (!canImport) return;
+  const deleteSubestado = async (row) => {
+    if (!requireImport()) return;
+
+    const confirm = await Swal.fire({
+      icon: "warning",
+      title: "Inactivar subestado",
+      text: `Se inactivará el subestado ${row.valor}.`,
+      showCancelButton: true,
+      confirmButtonText: "Sí, inactivar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#DA291C",
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const data = await requestJson(`/coe-sap-funcional/config/subestados/${row.id}`, { method: "DELETE" });
+      pushResult("subestado", "Subestado inactivado", data, true);
+      await fetchSubestados();
+      await fetchEstados();
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "Error inactivando subestado", text: error.message, confirmButtonColor: "#DA291C" });
+    }
+  };
+
+  const asociarClientesAuto = async () => {
+    if (!requireImport()) return;
+
+    try {
+      const data = await requestJson("/coe-sap-funcional/config/asociar-clientes", {
+        method: "POST",
+        body: JSON.stringify({ modo: "auto" }),
+      });
+      pushResult("clientes", "Asociación automática de clientes", data, true);
+      await fetchClientes();
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "Error asociando clientes", text: error.message, confirmButtonColor: "#DA291C" });
+    }
+  };
+
+  const asociarClienteManual = async () => {
+    if (!requireImport()) return;
+    if (!clienteManual.sociedad || !clienteManual.clienteId) {
+      Swal.fire({
+        icon: "warning",
+        title: "Datos incompletos",
+        text: "Debes escribir la sociedad y seleccionar el cliente.",
+        confirmButtonColor: "#DA291C",
+      });
+      return;
+    }
+
+    try {
+      const data = await requestJson("/coe-sap-funcional/config/asociar-clientes", {
+        method: "POST",
+        body: JSON.stringify({ ...clienteManual, modo: "manual" }),
+      });
+      pushResult("clientes", "Asociación manual de cliente", data, true);
+      setClienteManual({ sociedad: "", clienteId: "" });
+      await fetchClientes();
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "Error asociando cliente", text: error.message, confirmButtonColor: "#DA291C" });
+    }
+  };
+
+  const sincronizarCalificacion = async () => {
+    if (!requireImport()) return;
 
     const confirm = await Swal.fire({
       icon: "question",
       title: "Sincronizar calificación",
-      html: `
-        <div style="text-align:left;line-height:1.5">
-          <p>Se cruzará la calificación con la base principal, SM e ITOP.</p>
-          <p><b>Modo seleccionado:</b> ${syncMode}</p>
-        </div>
-      `,
+      html: "Se sincronizará desde la base principal y luego se aplicarán clientes, estados y subestados controlados.<br><b>No se usarán cargues SM ni ITOP.</b>",
       showCancelButton: true,
       confirmButtonText: "Sí, sincronizar",
       cancelButtonText: "Cancelar",
@@ -303,55 +401,64 @@ export default function CargarBasesAuxiliaresCoeSap() {
     setSyncing(true);
 
     try {
-      const res = await jfetch("/coe-sap-funcional/calificacion/sincronizar", {
+      const syncBase = await requestJson("/coe-sap-funcional/calificacion/sincronizar", {
         method: "POST",
-        headers: {
-          ...commonHeaders,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           modo: syncMode,
           crear_desde_base: true,
-          crear_desde_fuentes: true,
+          crear_desde_fuentes: false,
         }),
       });
 
-      const data = await res.json().catch(() => ({}));
+      const syncCatalogos = await requestJson("/coe-sap-funcional/config/sincronizar-catalogos", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
 
-      if (!res.ok) {
-        throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
-      }
+      pushResult("sync", "Sincronización finalizada", { syncBase, syncCatalogos }, true);
+      await fetchClientes();
 
-      pushResult("sync", "Sincronización", data, true);
-      fetchImportaciones();
-
-      await Swal.fire({
+      Swal.fire({
         icon: "success",
-        title: "Sincronización finalizada",
-        html: renderSummaryHtml(data),
+        title: "Sincronización realizada",
+        html: `
+          <div style="text-align:left">
+            <p><b>Creados:</b> ${syncBase?.creados ?? "—"}</p>
+            <p><b>Actualizados:</b> ${syncBase?.actualizados ?? "—"}</p>
+            <p><b>Clientes OK:</b> ${syncCatalogos?.clientesOk ?? "—"}</p>
+            <p><b>Clientes por validar:</b> ${syncCatalogos?.clientesValidar ?? "—"}</p>
+            <p><b>Estados OK:</b> ${syncCatalogos?.estadosOk ?? "—"}</p>
+            <p><b>Estados por validar:</b> ${syncCatalogos?.estadosValidar ?? "—"}</p>
+          </div>
+        `,
         confirmButtonColor: "#008C67",
       });
     } catch (error) {
-      pushResult("sync", "Sincronización", { error: error?.message }, false);
-
-      Swal.fire({
-        icon: "error",
-        title: "No se pudo sincronizar",
-        text: error?.message || "Revisa el backend.",
-        confirmButtonColor: "#DA291C",
-      });
+      Swal.fire({ icon: "error", title: "Error sincronizando", text: error.message, confirmButtonColor: "#DA291C" });
     } finally {
       setSyncing(false);
     }
   };
 
-  if (!canImport) {
+  const descargarImportacionesExcel = async () => {
+    try {
+      await downloadExcelFile(
+        "/coe-sap-funcional/calificacion/importaciones/export-excel",
+        downloadHeaders,
+        "importaciones_coe_sap_funcional.xlsx"
+      );
+    } catch (error) {
+      Swal.fire({ icon: "error", title: "No se pudo descargar el Excel", text: error.message, confirmButtonColor: "#DA291C" });
+    }
+  };
+
+  if (!canView) {
     return (
       <div className="coeload-page">
         <div className="coeload-access-card">
           <div className="coeload-access-icon">🔒</div>
           <h2>Acceso restringido</h2>
-          <p>Necesitas el permiso BASE_REGISTRO_IMPORTAR para cargar bases auxiliares.</p>
+          <p>Necesitas permiso BASE_REGISTRO_VER para consultar esta configuración.</p>
         </div>
       </div>
     );
@@ -360,186 +467,414 @@ export default function CargarBasesAuxiliaresCoeSap() {
   return (
     <div className="coeload-page">
       <section className="coeload-hero">
-        <div>
-          <span className="coeload-eyebrow">COE SAP Funcional</span>
-          <h1>Cargar bases auxiliares</h1>
-          <p>
-            Importa catálogos, Base Datos SM, Base Datos ITOP y ejecuta la sincronización
-            para completar automáticamente la calificación sin perder campos manuales.
-          </p>
-        </div>
+        <span className="coeload-eyebrow">Configuración controlada</span>
+        <h1>Configuración COE SAP Funcional</h1>
+        <p>
+          Administra estados principales, subestados y asociación de clientes directamente
+          desde el aplicativo. Se eliminan los cargues auxiliares de Base Datos SM e ITOP.
+        </p>
       </section>
 
-      <section className="coeload-flow-card">
-        <h2>Flujo recomendado</h2>
-        <div className="coeload-steps">
-          <div><b>1</b><span>Catálogos / Listas</span></div>
-          <div><b>2</b><span>Base principal COE</span></div>
-          <div><b>3</b><span>Base Datos SM</span></div>
-          <div><b>4</b><span>Base Datos ITOP</span></div>
-          <div><b>5</b><span>Sincronizar</span></div>
-        </div>
+      <section className="coeload-tabs">
+        {[
+          ["estados", "Estados y subestados"],
+          ["clientes", "Clientes"],
+          ["sync", "Sincronización"],
+          ["historial", "Histórico"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={activeTab === key ? "active" : ""}
+            onClick={() => setActiveTab(key)}
+          >
+            {label}
+          </button>
+        ))}
       </section>
 
-      <section className="coeload-grid">
-        {UPLOAD_ACTIONS.map((action) => (
-          <article key={action.key} className="coeload-card">
-            <div className="coeload-card-icon">{action.icon}</div>
-            <h2>{action.title}</h2>
-            <p>{action.subtitle}</p>
+      {loading ? (
+        <section className="coeload-card-panel">
+          <div className="coeload-loader" />
+          <p>Cargando configuración...</p>
+        </section>
+      ) : null}
 
-            <input
-              ref={refs[action.key]}
-              type="file"
-              accept={action.accept}
-              className="coeload-hidden"
-              onChange={(e) => uploadFile(action, e.target.files?.[0])}
-            />
+      {activeTab === "estados" && (
+        <section className="coeload-two-col">
+          <article className="coeload-card-panel">
+            <div className="coeload-panel-head">
+              <div>
+                <h2>{estadoForm.id ? "Editar estado principal" : "Crear estado principal"}</h2>
+                <p>Ejemplo: EN CURSO, CERRADO, SUSPENDIDO.</p>
+              </div>
+              {estadoForm.id && (
+                <button className="coeload-btn ghost" type="button" onClick={() => setEstadoForm(EMPTY_ESTADO)}>
+                  Nuevo
+                </button>
+              )}
+            </div>
 
-            <button
-              type="button"
-              className="coeload-btn danger"
-              onClick={() => triggerFile(action.key)}
-              disabled={Boolean(loadingKey) || syncing}
-            >
-              {loadingKey === action.key ? "Cargando..." : action.fileLabel}
+            <div className="coeload-form-grid">
+              <label className="coeload-field wide">
+                <span>Nombre del estado</span>
+                <input
+                  value={estadoForm.nombre}
+                  placeholder="EN CURSO"
+                  onChange={(e) => setEstadoForm((p) => ({ ...p, nombre: e.target.value }))}
+                />
+              </label>
+
+              <label className="coeload-field wide">
+                <span>Descripción</span>
+                <input
+                  value={estadoForm.descripcion || ""}
+                  placeholder="Casos activos o en gestión"
+                  onChange={(e) => setEstadoForm((p) => ({ ...p, descripcion: e.target.value }))}
+                />
+              </label>
+
+              <label className="coeload-field">
+                <span>Orden</span>
+                <input
+                  type="number"
+                  value={estadoForm.orden}
+                  onChange={(e) => setEstadoForm((p) => ({ ...p, orden: e.target.value }))}
+                />
+              </label>
+
+              <label className="coeload-check">
+                <input
+                  type="checkbox"
+                  checked={Boolean(estadoForm.activo)}
+                  onChange={(e) => setEstadoForm((p) => ({ ...p, activo: e.target.checked }))}
+                />
+                <span>Activo</span>
+              </label>
+            </div>
+
+            <button className="coeload-btn danger" type="button" onClick={saveEstado} disabled={!canImport}>
+              {estadoForm.id ? "Guardar estado" : "Crear estado"}
             </button>
           </article>
-        ))}
 
-        <article className="coeload-card sync">
-          <div className="coeload-card-icon">🔄</div>
-          <h2>Sincronizar calificación</h2>
-          <p>
-            Cruza base principal, SM e ITOP. Crea casos faltantes y completa información automática.
-          </p>
+          <article className="coeload-card-panel">
+            <div className="coeload-panel-head">
+              <div>
+                <h2>{subestadoForm.id ? "Editar subestado" : "Crear subestado"}</h2>
+                <p>Ejemplo: EN PROCESO, EN ESTIMACIÓN, EN ESPERA DE USUARIO.</p>
+              </div>
+              {subestadoForm.id && (
+                <button className="coeload-btn ghost" type="button" onClick={() => setSubestadoForm(EMPTY_SUBESTADO)}>
+                  Nuevo
+                </button>
+              )}
+            </div>
 
-          <label className="coeload-field">
-            <span>Modo de sincronización</span>
-            <select value={syncMode} onChange={(e) => setSyncMode(e.target.value)}>
-              <option value="preservar_manual">Preservar campos manuales</option>
-              <option value="solo_vacios">Solo completar campos vacíos</option>
-              <option value="forzar">Forzar actualización desde bases</option>
-            </select>
-          </label>
+            <div className="coeload-form-grid">
+              <label className="coeload-field wide">
+                <span>Estado principal</span>
+                <select
+                  value={subestadoForm.estadoId}
+                  onChange={(e) => setSubestadoForm((p) => ({ ...p, estadoId: e.target.value }))}
+                >
+                  <option value="">Selecciona...</option>
+                  {estados.filter((x) => x.activo).map((estado) => (
+                    <option key={estado.id} value={estado.id}>{estado.valor}</option>
+                  ))}
+                </select>
+              </label>
 
-          <button
-            type="button"
-            className="coeload-btn dark"
-            onClick={syncCalificacion}
-            disabled={Boolean(loadingKey) || syncing}
-          >
-            {syncing ? "Sincronizando..." : "Sincronizar ahora"}
-          </button>
-        </article>
-      </section>
+              <label className="coeload-field wide">
+                <span>Nombre del subestado</span>
+                <input
+                  value={subestadoForm.nombre}
+                  placeholder="EN PROCESO"
+                  onChange={(e) => setSubestadoForm((p) => ({ ...p, nombre: e.target.value }))}
+                />
+              </label>
 
+              <label className="coeload-field wide">
+                <span>Descripción</span>
+                <input
+                  value={subestadoForm.descripcion || ""}
+                  placeholder="Caso activo en ejecución"
+                  onChange={(e) => setSubestadoForm((p) => ({ ...p, descripcion: e.target.value }))}
+                />
+              </label>
 
+              <label className="coeload-field">
+                <span>Orden</span>
+                <input
+                  type="number"
+                  value={subestadoForm.orden}
+                  onChange={(e) => setSubestadoForm((p) => ({ ...p, orden: e.target.value }))}
+                />
+              </label>
 
-      <section className="coeload-results-card">
-        <div className="coeload-results-head">
-          <div>
-            <h2>Histórico de importaciones</h2>
-            <p>Últimas cargas registradas en base de datos.</p>
+              <label className="coeload-check">
+                <input
+                  type="checkbox"
+                  checked={Boolean(subestadoForm.activo)}
+                  onChange={(e) => setSubestadoForm((p) => ({ ...p, activo: e.target.checked }))}
+                />
+                <span>Activo</span>
+              </label>
+            </div>
+
+            <button className="coeload-btn danger" type="button" onClick={saveSubestado} disabled={!canImport}>
+              {subestadoForm.id ? "Guardar subestado" : "Crear subestado"}
+            </button>
+          </article>
+
+          <article className="coeload-card-panel wide-panel">
+            <div className="coeload-panel-head">
+              <div>
+                <h2>Estados principales</h2>
+                <p>{numberText(estados.length)} registros configurados.</p>
+              </div>
+            </div>
+
+            <div className="coeload-table-wrap">
+              <table className="coeload-table">
+                <thead>
+                  <tr>
+                    <th>Estado</th>
+                    <th>Descripción</th>
+                    <th>Subestados</th>
+                    <th>Activo</th>
+                    <th>Orden</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {estados.length === 0 ? (
+                    <tr><td colSpan="6" className="coeload-empty">No hay estados configurados.</td></tr>
+                  ) : estados.map((row) => (
+                    <tr key={row.id}>
+                      <td><b>{text(row.valor)}</b></td>
+                      <td>{text(row.descripcion)}</td>
+                      <td>{numberText(row.totalSubestados)}</td>
+                      <td><span className={`coeload-pill ${row.activo ? "ok" : "danger"}`}>{row.activo ? "Activo" : "Inactivo"}</span></td>
+                      <td>{numberText(row.orden)}</td>
+                      <td className="coeload-actions-cell">
+                        <button className="coeload-btn small" type="button" onClick={() => setEstadoForm({ id: row.id, nombre: row.valor, descripcion: row.descripcion || "", orden: row.orden || 0, activo: row.activo })}>Editar</button>
+                        <button className="coeload-btn small ghost" type="button" onClick={() => deleteEstado(row)} disabled={!row.activo}>Inactivar</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article className="coeload-card-panel wide-panel">
+            <div className="coeload-panel-head">
+              <div>
+                <h2>Subestados</h2>
+                <p>{numberText(subestados.length)} registros configurados.</p>
+              </div>
+            </div>
+
+            <div className="coeload-table-wrap">
+              <table className="coeload-table">
+                <thead>
+                  <tr>
+                    <th>Subestado</th>
+                    <th>Estado principal</th>
+                    <th>Descripción</th>
+                    <th>Activo</th>
+                    <th>Orden</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subestados.length === 0 ? (
+                    <tr><td colSpan="6" className="coeload-empty">No hay subestados configurados.</td></tr>
+                  ) : subestados.map((row) => (
+                    <tr key={row.id}>
+                      <td><b>{text(row.valor)}</b></td>
+                      <td>{text(row.estadoNombre)}</td>
+                      <td>{text(row.descripcion)}</td>
+                      <td><span className={`coeload-pill ${row.activo ? "ok" : "danger"}`}>{row.activo ? "Activo" : "Inactivo"}</span></td>
+                      <td>{numberText(row.orden)}</td>
+                      <td className="coeload-actions-cell">
+                        <button className="coeload-btn small" type="button" onClick={() => setSubestadoForm({ id: row.id, estadoId: row.estadoId || "", nombre: row.valor, descripcion: row.descripcion || "", orden: row.orden || 0, activo: row.activo })}>Editar</button>
+                        <button className="coeload-btn small ghost" type="button" onClick={() => deleteSubestado(row)} disabled={!row.activo}>Inactivar</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+      )}
+
+      {activeTab === "clientes" && (
+        <section className="coeload-two-col">
+          <article className="coeload-card-panel">
+            <h2>Asociación automática</h2>
+            <p className="coeload-muted">
+              Se comparan las sociedades de la calificación contra la tabla Clientes.
+              Pendientes por validar: <b>{numberText(clientePendientes)}</b>
+            </p>
+            <button className="coeload-btn danger" type="button" onClick={asociarClientesAuto} disabled={!canImport}>
+              Asociar clientes automáticamente
+            </button>
+          </article>
+
+          <article className="coeload-card-panel">
+            <h2>Asociación manual</h2>
+            <p className="coeload-muted">Usa esta opción cuando el nombre de sociedad no coincide exactamente con el cliente.</p>
+            <div className="coeload-form-grid">
+              <label className="coeload-field wide">
+                <span>Sociedad en calificación</span>
+                <input
+                  value={clienteManual.sociedad}
+                  placeholder="Nombre como viene en la base"
+                  onChange={(e) => setClienteManual((p) => ({ ...p, sociedad: e.target.value }))}
+                />
+              </label>
+
+              <label className="coeload-field wide">
+                <span>Cliente destino</span>
+                <select
+                  value={clienteManual.clienteId}
+                  onChange={(e) => setClienteManual((p) => ({ ...p, clienteId: e.target.value }))}
+                >
+                  <option value="">Selecciona...</option>
+                  {clientes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombreCliente}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <button className="coeload-btn danger" type="button" onClick={asociarClienteManual} disabled={!canImport}>
+              Asociar manualmente
+            </button>
+          </article>
+
+          <article className="coeload-card-panel wide-panel">
+            <div className="coeload-panel-head">
+              <div>
+                <h2>Clientes registrados</h2>
+                <p>La lista viene de la tabla Clientes del aplicativo.</p>
+              </div>
+            </div>
+
+            <div className="coeload-table-wrap">
+              <table className="coeload-table">
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Casos asociados</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clientes.length === 0 ? (
+                    <tr><td colSpan="2" className="coeload-empty">No hay clientes registrados.</td></tr>
+                  ) : clientes.map((row) => (
+                    <tr key={row.id}>
+                      <td><b>{text(row.nombreCliente)}</b></td>
+                      <td>{numberText(row.totalCasosAsociados)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+      )}
+
+      {activeTab === "sync" && (
+        <section className="coeload-two-col">
+          <article className="coeload-card-panel">
+            <h2>Sincronizar calificación</h2>
+            <p className="coeload-muted">
+              Crea o actualiza casos desde la base principal, preservando campos manuales según el modo seleccionado.
+              Las fuentes SM e ITOP ya no se cargan desde esta vista.
+            </p>
+
+            <label className="coeload-field wide">
+              <span>Modo de sincronización</span>
+              <select value={syncMode} onChange={(e) => setSyncMode(e.target.value)}>
+                <option value="preservar_manual">Preservar campos manuales</option>
+                <option value="solo_vacios">Completar solo vacíos</option>
+                <option value="forzar">Forzar actualización automática</option>
+              </select>
+            </label>
+
+            <button className="coeload-btn danger" type="button" onClick={sincronizarCalificacion} disabled={syncing || !canImport}>
+              {syncing ? "Sincronizando..." : "Sincronizar calificación"}
+            </button>
+          </article>
+
+          <article className="coeload-card-panel">
+            <h2>Resultado reciente</h2>
+            {lastResults.length === 0 ? (
+              <p className="coeload-muted">Aún no hay acciones recientes.</p>
+            ) : (
+              <div className="coeload-results-list">
+                {lastResults.map((result) => (
+                  <div key={result.id} className={`coeload-result ${result.ok ? "ok" : "danger"}`}>
+                    <b>{result.title}</b>
+                    <span>{result.at}</span>
+                    <pre>{JSON.stringify(result.payload, null, 2)}</pre>
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+        </section>
+      )}
+
+      {activeTab === "historial" && (
+        <section className="coeload-card-panel">
+          <div className="coeload-panel-head">
+            <div>
+              <h2>Histórico de importaciones</h2>
+              <p>Se conserva para auditoría de cargas históricas y procesos ejecutados.</p>
+            </div>
+            <button className="coeload-btn dark" type="button" onClick={descargarImportacionesExcel}>
+              Descargar Excel
+            </button>
           </div>
 
-          <div className="coeload-history-actions">
-            <button type="button" className="coeload-btn light" onClick={fetchImportaciones} disabled={loadingImportaciones}>
-              {loadingImportaciones ? "Actualizando..." : "Actualizar"}
-            </button>
-            <button type="button" className="coeload-btn danger" onClick={descargarImportacionesExcel} disabled={downloadingImportaciones}>
-              {downloadingImportaciones ? "Descargando..." : "Descargar Excel"}
-            </button>
-          </div>
-        </div>
-
-        <div className="coeload-history-table-wrap">
-          <table className="coeload-history-table">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Tipo</th>
-                <th>Archivo</th>
-                <th>Filas</th>
-                <th>Insertados</th>
-                <th>Actualizados</th>
-                <th>Errores</th>
-                <th>Usuario</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loadingImportaciones ? (
+          <div className="coeload-table-wrap">
+            <table className="coeload-table">
+              <thead>
                 <tr>
-                  <td colSpan="8" className="coeload-empty">Consultando histórico...</td>
+                  <th>Fecha</th>
+                  <th>Tipo</th>
+                  <th>Archivo</th>
+                  <th>Filas</th>
+                  <th>Insertados</th>
+                  <th>Actualizados</th>
+                  <th>Errores</th>
+                  <th>Usuario</th>
                 </tr>
-              ) : importaciones.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="coeload-empty">Todavía no hay importaciones registradas.</td>
-                </tr>
-              ) : (
-                importaciones.map((row) => (
+              </thead>
+              <tbody>
+                {importaciones.length === 0 ? (
+                  <tr><td colSpan="8" className="coeload-empty">No hay importaciones registradas.</td></tr>
+                ) : importaciones.map((row) => (
                   <tr key={row.id}>
-                    <td>{cleanText(row.createdAt)}</td>
-                    <td><span className="coeload-mini-pill">{cleanText(row.tipo)}</span></td>
-                    <td>{cleanText(row.archivoNombre)}</td>
+                    <td>{text(row.createdAt)}</td>
+                    <td><span className="coeload-pill source">{text(row.tipo)}</span></td>
+                    <td>{text(row.archivoNombre)}</td>
                     <td>{numberText(row.filas)}</td>
                     <td>{numberText(row.insertados)}</td>
                     <td>{numberText(row.actualizados)}</td>
                     <td>{numberText(row.errores)}</td>
-                    <td>{cleanText(row.usuario)}</td>
+                    <td>{text(row.usuario)}</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="coeload-results-card">
-        <div className="coeload-results-head">
-          <div>
-            <h2>Últimos resultados</h2>
-            <p>Resumen local de las cargas ejecutadas en esta sesión.</p>
+                ))}
+              </tbody>
+            </table>
           </div>
-
-          <button type="button" className="coeload-btn ghost" onClick={() => setLastResults([])}>
-            Limpiar
-          </button>
-        </div>
-
-        {lastResults.length === 0 ? (
-          <div className="coeload-empty">Todavía no se han ejecutado cargas en esta sesión.</div>
-        ) : (
-          <div className="coeload-results-list">
-            {lastResults.map((item) => (
-              <article key={item.id} className={`coeload-result ${item.ok ? "ok" : "error"}`}>
-                <div>
-                  <strong>{item.title}</strong>
-                  <span>{item.at}</span>
-                </div>
-
-                <pre>{JSON.stringify(item.payload, null, 2)}</pre>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
-}
-
-function renderSummaryHtml(data) {
-  const pairs = Object.entries(data || {}).filter(([, value]) => {
-    return ["string", "number", "boolean"].includes(typeof value) || value === null;
-  });
-
-  if (!pairs.length) {
-    return "<p>Proceso finalizado correctamente.</p>";
-  }
-
-  return `
-    <div style="text-align:left">
-      ${pairs.map(([key, value]) => `<p><b>${key}:</b> ${cleanText(value)}</p>`).join("")}
-    </div>
-  `;
 }

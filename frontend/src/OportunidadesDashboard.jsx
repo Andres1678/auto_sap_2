@@ -94,9 +94,7 @@ const EXCLUDE_SET = new Set(
     "0TP",
     "0TE",
     "0TL",
-    "OT",
     "EJECUCION CONTRACTUAL",
-    "CONSUMO DE BOLSA DE HORAS",
     "N/A",
   ].map(normKeyForMatch)
 );
@@ -208,6 +206,144 @@ function readMoney(row, keys) {
   return 0;
 }
 
+
+/* ===================== Principales / asociadas ===================== */
+const TIPO_PRINCIPAL = "PRINCIPAL";
+const TIPO_SUBOPORTUNIDAD = "SUBOPORTUNIDAD";
+const ESTADOS_SUMAN_PRINCIPAL = new Set(["OT", "GANADA"].map(normKeyForMatch));
+
+function normalizeTipoOportunidad(value) {
+  const normalized = normKeyForMatch(value);
+
+  if (["PRINCIPAL", "PADRE", "MASTER"].includes(normalized)) {
+    return TIPO_PRINCIPAL;
+  }
+
+  return TIPO_SUBOPORTUNIDAD;
+}
+
+function estadoSumaEnPrincipal(row) {
+  const estadoOferta = normKeyForMatch(row?.estado_oferta);
+  const resultadoOferta = normKeyForMatch(row?.resultado_oferta);
+
+  return (
+    ESTADOS_SUMAN_PRINCIPAL.has(estadoOferta) ||
+    ESTADOS_SUMAN_PRINCIPAL.has(resultadoOferta)
+  );
+}
+
+function rowHasMoney(row) {
+  return (
+    readMoney(row, ["otc", "otr", "OTC", "OTR"]) !== 0 ||
+    readMoney(row, ["mrc", "MRC"]) !== 0 ||
+    readMoney(row, ["valor_oferta_claro", "valorOfertaClaro", "VALOR OFERTA CLARO"]) !== 0
+  );
+}
+
+function sumMoney(rows, keys) {
+  return (rows || []).reduce((acc, row) => acc + readMoney(row, keys), 0);
+}
+
+function getAssociatedRowsForTotals(rows) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const rowsPorEstado = safeRows.filter(estadoSumaEnPrincipal);
+
+  // Regla principal: suma OT/GANADA.
+  if (rowsPorEstado.length > 0) return rowsPorEstado;
+
+  // Respaldo: si ninguna asociada tiene OT/GANADA pero sí tiene valores,
+  // también suma para que la principal no quede en blanco en dashboard.
+  return safeRows.filter(rowHasMoney);
+}
+
+function sortAssociatedRows(a, b) {
+  const fechaA = String(a?.fecha_creacion || a?.fecha_asignacion || "");
+  const fechaB = String(b?.fecha_creacion || b?.fecha_asignacion || "");
+
+  if (fechaA !== fechaB) return fechaB.localeCompare(fechaA);
+
+  return String(a?.id ?? "").localeCompare(String(b?.id ?? ""), "es", {
+    numeric: true,
+  });
+}
+
+function firstTextFromAssociated(rows, keys) {
+  const ordered = [...(rows || [])].sort(sortAssociatedRows);
+
+  for (const row of ordered) {
+    for (const key of keys) {
+      const value = String(row?.[key] ?? "").trim();
+      if (value) return value;
+    }
+  }
+
+  return "";
+}
+
+function buildPrincipalDashboardRows(rows) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+
+  const principales = safeRows.filter(
+    (row) => normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL && row?.id
+  );
+
+  const principalesPorId = new Map(
+    principales.map((principal) => [String(principal.id), principal])
+  );
+
+  const hijosPorPrincipal = new Map();
+
+  safeRows.forEach((row) => {
+    if (normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL) return;
+
+    const padreId = row?.oportunidad_padre_id;
+    if (!padreId || !principalesPorId.has(String(padreId))) return;
+
+    const key = String(padreId);
+    if (!hijosPorPrincipal.has(key)) hijosPorPrincipal.set(key, []);
+    hijosPorPrincipal.get(key).push(row);
+  });
+
+  return principales.map((principal) => {
+    const hijos = [...(hijosPorPrincipal.get(String(principal.id)) || [])].sort(sortAssociatedRows);
+    const hijosParaSumar = getAssociatedRowsForTotals(hijos);
+    const usarHijos = hijosParaSumar.length > 0;
+
+    const otc = usarHijos
+      ? sumMoney(hijosParaSumar, ["otc", "otr", "OTC", "OTR"])
+      : readMoney(principal, ["otc", "otr", "OTC", "OTR"]);
+
+    const mrc = usarHijos
+      ? sumMoney(hijosParaSumar, ["mrc", "MRC"])
+      : readMoney(principal, ["mrc", "MRC"]);
+
+    const valorOfertaClaro = usarHijos
+      ? sumMoney(hijosParaSumar, ["valor_oferta_claro", "valorOfertaClaro", "VALOR OFERTA CLARO"])
+      : readMoney(principal, ["valor_oferta_claro", "valorOfertaClaro", "VALOR OFERTA CLARO"]);
+
+    const mrcNormalizadoDirecto = readMoney(principal, ["mrc_normalizado", "mrcNormalizado", "MRC NORMALIZADO"]);
+    const mrcNormalizado = usarHijos
+      ? Number((mrc + otc / 12).toFixed(2))
+      : mrcNormalizadoDirecto || Number((mrc + otc / 12).toFixed(2));
+
+    const observacionAsociada = firstTextFromAssociated(hijos, ["observaciones", "OBSERVACIONES"]);
+    const seguimientoAsociado = firstTextFromAssociated(hijos, ["seguimiento_ot", "SEGUIMIENTO OT"]);
+
+    return {
+      ...principal,
+      __dashboard_principal_only: true,
+      __dashboard_total_asociadas: hijos.length,
+      __dashboard_asociadas_suman: hijosParaSumar.length,
+      otc,
+      mrc,
+      mrc_normalizado: mrcNormalizado,
+      valor_oferta_claro: valorOfertaClaro,
+      observaciones: observacionAsociada || principal?.observaciones || "",
+      seguimiento_ot: seguimientoAsociado || principal?.seguimiento_ot || "",
+    };
+  });
+}
+
 /* ===================== Pivot helpers ===================== */
 function sumPivotRows(rows) {
   return (rows || []).reduce(
@@ -309,6 +445,7 @@ const ESTADOS_ACTIVOS_N = new Set(
     "DIAGNOSTICO - LEVANTAMIENTO DE INFORMACION",
     "EN ELABORACION",
     "ENTREGA COMERCIAL",
+    "EJECUCION OPERACION",
     "EN ESPERA DEL RFI / RFP",
     "RFI PRESENTADO",
     "SUSPENDIDA",
@@ -318,6 +455,7 @@ const ESTADOS_ACTIVOS_N = new Set(
 const ESTADOS_CERRADOS_N = new Set(
   [
     "GANADA",
+    "OT",
     "PERDIDA",
     "DECLINADA",
     "PERDIDA - SIN FEEDBACK",
@@ -481,7 +619,7 @@ export default function DashboardOportunidades() {
   const dataBase = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
   const dataDashboard = useMemo(() => {
-    return dataBase.filter(mostrarEnDashboard);
+    return buildPrincipalDashboardRows(dataBase).filter(mostrarEnDashboard);
   }, [dataBase]);
 
   const dataFiltrada = useMemo(() => {
@@ -989,7 +1127,8 @@ export default function DashboardOportunidades() {
                     <th>MRC</th>
                     <th>GERENCIA</th>
                     <th>COMERCIAL</th>
-                    <th>OBSERVACIONES</th>
+                    <th>ASOCIADAS</th>
+                    <th>OBSERVACIONES 1RA OT</th>
                   </tr>
                 </thead>
 
@@ -1006,6 +1145,7 @@ export default function DashboardOportunidades() {
                       <td>{fmtMoney(readMoney(row, ["mrc", "MRC"]))}</td>
                       <td>{row.gerencia_comercial ?? "-"}</td>
                       <td>{row.comercial_asignado ?? "-"}</td>
+                      <td>{row.__dashboard_total_asociadas ?? 0}</td>
                       <td className="td-wrap">{renderObservacionesCell(row.observaciones)}</td>
                     </tr>
                   ))}

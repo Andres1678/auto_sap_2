@@ -700,26 +700,58 @@ function sumRowsByColumn(rows, col) {
   return hasValue ? Number(total.toFixed(2)) : "";
 }
 
-function getPrincipalTotals(rows) {
-  const validRows = (rows || []).filter(estadoSumaEnPrincipal);
+function rowHasMoneyValue(row) {
+  return (
+    parseNumberSmart(row?.otc) !== "" ||
+    parseNumberSmart(row?.mrc) !== "" ||
+    parseNumberSmart(row?.mrc_normalizado) !== "" ||
+    parseNumberSmart(row?.valor_oferta_claro) !== ""
+  );
+}
 
-  const totalOtc = sumRowsByColumn(validRows, "otc");
-  const totalMrc = sumRowsByColumn(validRows, "mrc");
+function getPrincipalRowsForTotals(rows) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const validRows = safeRows.filter(estadoSumaEnPrincipal);
+
+  if (validRows.length > 0) {
+    return {
+      rows: validRows,
+      modo: "ESTADO_OT_GANADA",
+      cantidadValidas: validRows.length,
+    };
+  }
+
+  const rowsConValores = safeRows.filter(rowHasMoneyValue);
+
+  return {
+    rows: rowsConValores,
+    modo: rowsConValores.length > 0 ? "VALORES_ASOCIADOS" : "SIN_VALORES",
+    cantidadValidas: rowsConValores.length,
+  };
+}
+
+function getPrincipalTotals(rows) {
+  const seleccion = getPrincipalRowsForTotals(rows);
+  const rowsParaSumar = seleccion.rows;
+
+  const totalOtc = sumRowsByColumn(rowsParaSumar, "otc");
+  const totalMrc = sumRowsByColumn(rowsParaSumar, "mrc");
 
   const otcNumber = totalOtc === "" ? 0 : Number(totalOtc);
   const mrcNumber = totalMrc === "" ? 0 : Number(totalMrc);
 
   const mrcNormalizado =
-    validRows.length > 0 ? Number((mrcNumber + otcNumber / 12).toFixed(2)) : "";
+    rowsParaSumar.length > 0 ? Number((mrcNumber + otcNumber / 12).toFixed(2)) : "";
 
-  const valorComercial = sumRowsByColumn(validRows, "valor_oferta_claro");
+  const valorComercial = sumRowsByColumn(rowsParaSumar, "valor_oferta_claro");
 
   return {
     totalOtc,
     totalMrc,
     mrcNormalizado,
     valorComercial,
-    cantidadValidas: validRows.length,
+    cantidadValidas: seleccion.cantidadValidas,
+    modoSuma: seleccion.modo,
   };
 }
 
@@ -788,10 +820,14 @@ function isClosedResumenRow(row) {
 }
 
 function getTotalsForPrincipalGroup(grupo) {
-  const rowsQueSuman = (grupo?.rows || []).filter(estadoSumaEnPrincipal);
+  const rows = grupo?.rows || [];
 
-  if (rowsQueSuman.length > 0) {
-    return getPrincipalTotals(rowsQueSuman);
+  if (rows.length > 0) {
+    const totals = getPrincipalTotals(rows);
+
+    if (totals.modoSuma !== "SIN_VALORES") {
+      return totals;
+    }
   }
 
   return getPrincipalOwnTotals(grupo?.principalRow);
@@ -1266,7 +1302,7 @@ export default function Oportunidades() {
 
       const hijosQueSuman = hijosOrdenados.filter(estadoSumaEnPrincipal);
       const totals =
-        hijosQueSuman.length > 0
+        hijosOrdenados.length > 0
           ? getPrincipalTotals(hijosOrdenados)
           : getPrincipalOwnTotals(principal);
 
@@ -3525,8 +3561,8 @@ export default function Oportunidades() {
         const hijos = [...(hijosPorPrincipal.get(String(principal.id)) || [])].sort(compareOtsAsignadas);
         const rowsQueSuman = hijos.filter(estadoSumaEnPrincipal);
         const totals =
-          rowsQueSuman.length > 0
-            ? getPrincipalTotals(rowsQueSuman)
+          hijos.length > 0
+            ? getPrincipalTotals(hijos)
             : getPrincipalOwnTotals(principal);
 
         const fechaCierreAutomatica =
@@ -3769,8 +3805,9 @@ export default function Oportunidades() {
     const isOpen = !!expandedClientes[grupo.key];
     const rowsQueSuman = grupo.rows.filter(estadoSumaEnPrincipal);
     const fechaCierreAutomaticaPrincipal = getFechaCierrePrincipalAutomatica(grupo);
+    const tieneHijosAsignados = (grupo.rows || []).length > 0;
     const tieneHijosQueSuman = rowsQueSuman.length > 0;
-    const totals = tieneHijosQueSuman
+    const totals = tieneHijosAsignados
       ? grupo.totals
       : getPrincipalOwnTotals(grupo.principalRow);
 
@@ -3821,6 +3858,8 @@ export default function Oportunidades() {
                     ? "Pendientes por asignar a una oportunidad principal"
                     : tieneHijosQueSuman
                     ? `${totals.cantidadValidas} suma${totals.cantidadValidas === 1 ? "" : "n"} por estado OT/GANADA`
+                    : tieneHijosAsignados && totals.modoSuma === "VALORES_ASOCIADOS"
+                    ? `${totals.cantidadValidas} asociada${totals.cantidadValidas === 1 ? "" : "s"} con valores`
                     : "Valor propio de la principal"}
                 </small>
               </div>

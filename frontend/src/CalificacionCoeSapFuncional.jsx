@@ -54,6 +54,11 @@ const TABLE_COLUMNS = [
   { key: "manejo", label: "Manejo", w: 16, group: "manual" },
   { key: "tiqueteProveedorExterno", label: "Tiquete proveedor externo", w: 26, group: "manual" },
   { key: "sociedad", label: "Sociedad", w: 30, group: "auto" },
+  { key: "clienteAsociadoNombre", label: "Cliente asociado", w: 30, group: "calc" },
+  { key: "validarCliente", label: "Validar cliente", w: 17, cls: "validation", group: "validation" },
+  { key: "estadoPrincipal", label: "Estado principal", w: 20, cls: "status", group: "calc" },
+  { key: "subestado", label: "Subestado", w: 22, cls: "status", group: "calc" },
+  { key: "validarEstadoControl", label: "Validar estado control", w: 22, cls: "validation", group: "validation" },
   { key: "asunto", label: "Asunto", w: 44, cls: "text-long", group: "auto" },
   { key: "observaciones", label: "Observaciones / Seguimiento semanal", w: 64, cls: "obs-col", group: "manual" },
   { key: "nombreSolicitante", label: "Solicitante", w: 26, group: "auto" },
@@ -192,6 +197,9 @@ const EDIT_FIELDS = [
   { key: "articulo", label: "Artículo", type: "select", dependent: "articulo" },
 
   { key: "estadoHerramientaGestion", label: "Estado herramienta gestión", type: "text" },
+  { key: "estadoPrincipal", label: "Estado principal", type: "text" },
+  { key: "subestado", label: "Subestado", type: "text" },
+  { key: "clienteAsociadoNombre", label: "Cliente asociado", type: "text" },
   { key: "responsableEstado", label: "Responsable estado", type: "text" },
   { key: "estadoConsolidado", label: "Estado consolidado", type: "text" },
 
@@ -230,6 +238,11 @@ const EDIT_FIELDS = [
 const DEFAULT_FILTER_COLUMNS = [
   "numero",
   "sociedad",
+  "clienteAsociadoNombre",
+  "validarCliente",
+  "estadoPrincipal",
+  "subestado",
+  "validarEstadoControl",
   "estado",
   "estadoConsolidado",
   "responsableEstado",
