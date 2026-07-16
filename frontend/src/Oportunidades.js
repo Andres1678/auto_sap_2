@@ -634,6 +634,13 @@ const PRINCIPAL_EDITABLE_COLS = new Set([
   "mostrar_dashboard",
 ]);
 
+const PRINCIPAL_ESTADO_FROM_FIRST_OT_COLS = new Set([
+  "estado_oferta",
+  "resultado_oferta",
+  "estado_ot",
+  "estado_proyecto",
+]);
+
 const ESTADOS_CERRADOS_RESUMEN = new Set([
   "GANADA",
   "OT",
@@ -986,6 +993,29 @@ function getPrincipalDateValue(grupo, col) {
   return principalValue;
 }
 
+function getPrimeraOtAsignada(grupo) {
+  const rows = Array.isArray(grupo?.rows) ? grupo.rows : [];
+
+  return rows.length > 0 ? rows[0] : null;
+}
+
+function getPrincipalEstadoValue(grupo, col) {
+  if (!grupo || grupo.sinPrincipal) return "";
+
+  if (!PRINCIPAL_ESTADO_FROM_FIRST_OT_COLS.has(col)) {
+    return grupo?.principalRow?.[col] ?? "";
+  }
+
+  const primeraOt = getPrimeraOtAsignada(grupo);
+  const valorPrimeraOt = normalizeText(primeraOt?.[col]);
+
+  if (valorPrimeraOt) {
+    return valorPrimeraOt;
+  }
+
+  return grupo?.principalRow?.[col] ?? "";
+}
+
 function isAsiCloudRow(row) {
   const texto = [
     row?.servicio,
@@ -1324,9 +1354,17 @@ export default function Oportunidades() {
         ])
       );
 
+      const estadosPrincipalExport = Object.fromEntries(
+        [...PRINCIPAL_ESTADO_FROM_FIRST_OT_COLS].map((estadoCol) => [
+          estadoCol,
+          getPrincipalEstadoValue(grupoPrincipalExport, estadoCol),
+        ])
+      );
+
       const principalExport = {
         ...principal,
         ...fechasPrincipalExport,
+        ...estadosPrincipalExport,
         nivel_export: "PRINCIPAL",
         codigo_principal_export: codigoPrincipal,
         id_principal_export: principal.id,
@@ -3875,15 +3913,19 @@ export default function Oportunidades() {
           if (col === "estado_oferta") {
             content = grupo.sinPrincipal
               ? "SIN PRINCIPAL"
-              : formatCell(col, grupo.principalRow?.[col]);
+              : formatCell(col, getPrincipalEstadoValue(grupo, col));
           }
 
           if (col === "resultado_oferta") {
-            content = tieneHijosQueSuman
-              ? getUniqueText(rowsQueSuman, "resultado_oferta")
-              : grupo.principalRow && !grupo.sinPrincipal
-              ? formatCell(col, grupo.principalRow?.[col])
-              : "-";
+            content = grupo.sinPrincipal
+              ? "-"
+              : formatCell(col, getPrincipalEstadoValue(grupo, col));
+          }
+
+          if (col === "estado_ot" || col === "estado_proyecto") {
+            content = grupo.sinPrincipal
+              ? "-"
+              : formatCell(col, getPrincipalEstadoValue(grupo, col));
           }
 
           if (col === "otc") {
