@@ -128,6 +128,14 @@ function isObservationsCol(col) {
   return col === "observaciones" || col === "seguimiento_ot";
 }
 
+function sameId(a, b) {
+  if (a === null || a === undefined || b === null || b === undefined) {
+    return false;
+  }
+
+  return String(a) === String(b);
+}
+
 function normalizeText(value) {
   return String(value ?? "").replace(/\u00A0/g, " ").trim();
 }
