@@ -88,9 +88,6 @@ const EXCLUDE_SET = new Set(
     "OTP",
     "OTE",
     "OTL",
-    "PROSPECCION",
-    "REGISTRO",
-    "PENDIENTE APROBACION SAP",
     "0TP",
     "0TE",
     "0TL",
@@ -385,6 +382,10 @@ function buildPrincipalDashboardRows(rows) {
       __dashboard_asociadas_visibles: hijosVisibles.length,
       __dashboard_sin_principal_incluidas: hijosSinPrincipal.length,
       __dashboard_asociadas_suman: hijosParaSumar.length,
+      __dashboard_principal_otc_original: readMoney(principal, ["otc", "otr", "OTC", "OTR"]),
+      __dashboard_principal_mrc_original: readMoney(principal, ["mrc", "MRC"]),
+      __dashboard_principal_valor_oferta_original: readMoney(principal, ["valor_oferta_claro", "valorOfertaClaro", "VALOR OFERTA CLARO"]),
+      __dashboard_principal_mrc_normalizado_original: mrcNormalizadoDirecto,
       otc,
       mrc,
       mrc_normalizado: mrcNormalizado,
@@ -570,6 +571,141 @@ function matchesDashboardFilters(row, filtros) {
   if (!groupHasDateValue(row, "fecha_cierre_oportunidad", filtros.fechaCierreOportunidad)) return false;
 
   return true;
+}
+
+function rowHasTextValue(row, field, selected) {
+  const selectedSet = selectedNormSet(selected);
+  if (selectedSet.size === 0) return true;
+
+  const value = normKeyForMatch(row?.[field]);
+  return value && selectedSet.has(value);
+}
+
+function rowHasDateValue(row, field, selected) {
+  const selectedSet = selectedRawSet(selected);
+  if (selectedSet.size === 0) return true;
+
+  const value = String(row?.[field] ?? "").slice(0, 10);
+  return value && selectedSet.has(value);
+}
+
+function rowMatchesYearMonth(row, anios, meses) {
+  const years = new Set(valuesOf(anios).map((v) => String(v)));
+  const months = new Set(valuesOf(meses).map((v) => String(Number(v))));
+
+  if (years.size === 0 && months.size === 0) return true;
+
+  const iso = String(row?.fecha_creacion ?? "").slice(0, 10);
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+
+  const yearOk = years.size === 0 || years.has(String(Number(m[1])));
+  const monthOk = months.size === 0 || months.has(String(Number(m[2])));
+
+  return yearOk && monthOk;
+}
+
+function rowMatchesTipo(row, tipos) {
+  const selected = selectedNormSet(tipos);
+  if (selected.size === 0) return true;
+
+  const estado = normKeyForMatch(row?.estado_oferta);
+  const resultado = normKeyForMatch(row?.resultado_oferta);
+
+  if (selected.has("GANADA") && (estado === "GANADA" || resultado === "GANADA")) return true;
+  if (selected.has("ACTIVA") && ESTADOS_ACTIVOS_N.has(estado)) return true;
+  if ((selected.has("CERRADA") || selected.has("CERRADO")) && ESTADOS_CERRADOS_N.has(estado)) return true;
+
+  return false;
+}
+
+function rowMatchesDashboardFilters(row, filtros) {
+  if (!rowMatchesYearMonth(row, filtros.anios, filtros.meses)) return false;
+  if (!rowMatchesTipo(row, filtros.tipos)) return false;
+
+  if (!rowHasTextValue(row, "direccion_comercial", filtros.direccionComercial)) return false;
+  if (!rowHasTextValue(row, "gerencia_comercial", filtros.gerenciaComercial)) return false;
+  if (!rowHasTextValue(row, "nombre_cliente", filtros.cliente)) return false;
+
+  if (!rowHasTextValue(row, "estado_oferta", filtros.estadoOferta)) return false;
+  if (!rowHasTextValue(row, "resultado_oferta", filtros.resultadoOferta)) return false;
+  if (!rowHasTextValue(row, "estado_ot", filtros.estadoOT)) return false;
+  if (!rowHasTextValue(row, "ultimo_mes", filtros.ultimoMes)) return false;
+  if (!rowHasTextValue(row, "calificacion_oportunidad", filtros.calificacion)) return false;
+
+  if (!rowHasDateValue(row, "fecha_acta_cierre_ot", filtros.fechaActaCierreOT)) return false;
+  if (!rowHasDateValue(row, "fecha_cierre_oportunidad", filtros.fechaCierreOportunidad)) return false;
+
+  return true;
+}
+
+function sameDashboardRowId(a, b) {
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  return String(a) === String(b);
+}
+
+function getFilteredDashboardGroupRows(row, filtros) {
+  const rows = dashboardGroupRows(row).filter(Boolean);
+
+  return rows.filter((item) => mostrarEnDashboard(item) && rowMatchesDashboardFilters(item, filtros));
+}
+
+function rebuildDashboardRowForFilters(row, filtros) {
+  if (!matchesDashboardFilters(row, filtros)) return null;
+
+  const matchingRows = getFilteredDashboardGroupRows(row, filtros);
+
+  if (!matchingRows.length) return null;
+
+  const hijosFiltrados = matchingRows
+    .filter((item) => !sameDashboardRowId(item?.id, row?.id))
+    .sort(sortAssociatedRows);
+
+  const hijosParaSumar = getAssociatedRowsForTotals(hijosFiltrados);
+  const usarHijos = hijosParaSumar.length > 0;
+
+  const otc = usarHijos
+    ? sumMoney(hijosParaSumar, ["otc", "otr", "OTC", "OTR"])
+    : row.__dashboard_principal_otc_original ?? readMoney(row, ["otc", "otr", "OTC", "OTR"]);
+
+  const mrc = usarHijos
+    ? sumMoney(hijosParaSumar, ["mrc", "MRC"])
+    : row.__dashboard_principal_mrc_original ?? readMoney(row, ["mrc", "MRC"]);
+
+  const valorOfertaClaro = usarHijos
+    ? sumMoney(hijosParaSumar, ["valor_oferta_claro", "valorOfertaClaro", "VALOR OFERTA CLARO"])
+    : row.__dashboard_principal_valor_oferta_original ??
+      readMoney(row, ["valor_oferta_claro", "valorOfertaClaro", "VALOR OFERTA CLARO"]);
+
+  const mrcNormalizadoDirecto =
+    row.__dashboard_principal_mrc_normalizado_original ??
+    readMoney(row, ["mrc_normalizado", "mrcNormalizado", "MRC NORMALIZADO"]);
+
+  const mrcNormalizado = usarHijos
+    ? Number((mrc + otc / 12).toFixed(2))
+    : mrcNormalizadoDirecto || Number((mrc + otc / 12).toFixed(2));
+
+  const primeraOtFiltrada = hijosFiltrados[0] || null;
+  const observacionFiltrada = firstTextFromAssociated(hijosFiltrados, ["observaciones", "OBSERVACIONES"]);
+  const seguimientoFiltrado = firstTextFromAssociated(hijosFiltrados, ["seguimiento_ot", "SEGUIMIENTO OT"]);
+
+  return {
+    ...row,
+    __dashboard_hijos_filtrados: hijosFiltrados,
+    __dashboard_total_asociadas_filtradas: hijosFiltrados.length,
+    __dashboard_asociadas_suman_filtradas: hijosParaSumar.length,
+    __dashboard_suma_filtrada: true,
+    otc,
+    mrc,
+    mrc_normalizado: mrcNormalizado,
+    valor_oferta_claro: valorOfertaClaro,
+    estado_oferta: primeraOtFiltrada?.estado_oferta || row?.estado_oferta || "",
+    resultado_oferta: primeraOtFiltrada?.resultado_oferta || row?.resultado_oferta || "",
+    estado_ot: primeraOtFiltrada?.estado_ot || row?.estado_ot || "",
+    estado_proyecto: primeraOtFiltrada?.estado_proyecto || row?.estado_proyecto || "",
+    observaciones: observacionFiltrada || row?.observaciones || "",
+    seguimiento_ot: seguimientoFiltrado || row?.seguimiento_ot || "",
+  };
 }
 
 function useDebouncedValue(value, delay = 350) {
@@ -768,12 +904,14 @@ export default function DashboardOportunidades() {
   }, [dataBase]);
 
   const dataFiltrada = useMemo(() => {
-    return dataDashboard.filter(
-      (op) =>
-        matchesDashboardFilters(op, filtrosDebounced) &&
-        !isExcludedLabel(op?.estado_oferta ?? "") &&
-        !isExcludedLabel(op?.resultado_oferta ?? "")
-    );
+    return dataDashboard
+      .map((op) => rebuildDashboardRowForFilters(op, filtrosDebounced))
+      .filter(Boolean)
+      .filter(
+        (op) =>
+          !isExcludedLabel(op?.estado_oferta ?? "") &&
+          !isExcludedLabel(op?.resultado_oferta ?? "")
+      );
   }, [dataDashboard, filtrosDebounced]);
 
   function normalizeOportunidadRow(row) {
@@ -874,14 +1012,9 @@ export default function DashboardOportunidades() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        await fetchData(filtrosDebounced);
-      } catch (e) {}
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtrosDebounced]);
+  // Los filtros se aplican localmente sobre la data ya consolidada.
+  // No se vuelve a consultar /oportunidades al cambiar filtros para no romper la relación principal/OT.
+
 
   const tablaEstadoOferta = useMemo(() => {
     return buildPivot(dataFiltrada, "estado_oferta", {
@@ -1294,7 +1427,7 @@ export default function DashboardOportunidades() {
                       <td>{fmtMoney(readMoney(row, ["mrc", "MRC"]))}</td>
                       <td>{row.gerencia_comercial ?? "-"}</td>
                       <td>{row.comercial_asignado ?? "-"}</td>
-                      <td>{row.__dashboard_total_asociadas ?? 0}</td>
+                      <td>{row.__dashboard_total_asociadas_filtradas ?? row.__dashboard_total_asociadas ?? 0}</td>
                       <td className="td-wrap">{renderObservacionesCell(row.observaciones)}</td>
                     </tr>
                   ))}
