@@ -280,6 +280,10 @@ function firstTextFromAssociated(rows, keys) {
   return "";
 }
 
+function getClienteGrupoKey(row) {
+  return normKeyForMatch(row?.cliente_grupo_key || row?.nombre_cliente);
+}
+
 function buildPrincipalDashboardRows(rows) {
   const safeRows = Array.isArray(rows) ? rows : [];
 
@@ -291,22 +295,58 @@ function buildPrincipalDashboardRows(rows) {
     principales.map((principal) => [String(principal.id), principal])
   );
 
+  const principalesPorCliente = new Map();
+
+  principales.forEach((principal) => {
+    const clienteKey = getClienteGrupoKey(principal);
+    if (!clienteKey) return;
+    if (!principalesPorCliente.has(clienteKey)) principalesPorCliente.set(clienteKey, []);
+    principalesPorCliente.get(clienteKey).push(principal);
+  });
+
   const hijosPorPrincipal = new Map();
+  const hijosSinPrincipalPorCliente = new Map();
 
   safeRows.forEach((row) => {
     if (normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL) return;
 
     const padreId = row?.oportunidad_padre_id;
-    if (!padreId || !principalesPorId.has(String(padreId))) return;
 
-    const key = String(padreId);
-    if (!hijosPorPrincipal.has(key)) hijosPorPrincipal.set(key, []);
-    hijosPorPrincipal.get(key).push(row);
+    if (padreId && principalesPorId.has(String(padreId))) {
+      const key = String(padreId);
+      if (!hijosPorPrincipal.has(key)) hijosPorPrincipal.set(key, []);
+      hijosPorPrincipal.get(key).push(row);
+      return;
+    }
+
+    const clienteKey = getClienteGrupoKey(row);
+    if (!clienteKey) return;
+
+    if (!hijosSinPrincipalPorCliente.has(clienteKey)) hijosSinPrincipalPorCliente.set(clienteKey, []);
+    hijosSinPrincipalPorCliente.get(clienteKey).push(row);
   });
 
   return principales.map((principal) => {
-    const hijos = [...(hijosPorPrincipal.get(String(principal.id)) || [])].sort(sortAssociatedRows);
-    const hijosParaSumar = getAssociatedRowsForTotals(hijos);
+    const clienteKey = getClienteGrupoKey(principal);
+    const principalesDelCliente = clienteKey ? principalesPorCliente.get(clienteKey) || [] : [];
+
+    // Si el cliente tiene una sola principal, las OTs sin principal se consolidan ahí
+    // para que no desaparezcan del dashboard. Si tiene varias principales, no se asignan
+    // automáticamente para evitar mezclar servicios distintos.
+    const hijosSinPrincipal = principalesDelCliente.length === 1
+      ? hijosSinPrincipalPorCliente.get(clienteKey) || []
+      : [];
+
+    const hijos = [
+      ...(hijosPorPrincipal.get(String(principal.id)) || []),
+      ...hijosSinPrincipal,
+    ].sort(sortAssociatedRows);
+
+    const hijosVisibles = hijos.filter(mostrarEnDashboard);
+    const hijosBase = hijosVisibles.length > 0 ? hijosVisibles : hijos;
+    const primeraOt = hijosBase[0] || null;
+
+    const hijosParaSumar = getAssociatedRowsForTotals(hijosBase);
     const usarHijos = hijosParaSumar.length > 0;
 
     const otc = usarHijos
@@ -326,18 +366,34 @@ function buildPrincipalDashboardRows(rows) {
       ? Number((mrc + otc / 12).toFixed(2))
       : mrcNormalizadoDirecto || Number((mrc + otc / 12).toFixed(2));
 
-    const observacionAsociada = firstTextFromAssociated(hijos, ["observaciones", "OBSERVACIONES"]);
-    const seguimientoAsociado = firstTextFromAssociated(hijos, ["seguimiento_ot", "SEGUIMIENTO OT"]);
+    const observacionAsociada = firstTextFromAssociated(hijosBase, ["observaciones", "OBSERVACIONES"]);
+    const seguimientoAsociado = firstTextFromAssociated(hijosBase, ["seguimiento_ot", "SEGUIMIENTO OT"]);
+
+    const estadoOfertaAsociado = primeraOt?.estado_oferta || "";
+    const resultadoOfertaAsociado = primeraOt?.resultado_oferta || "";
+    const estadoOtAsociado = primeraOt?.estado_ot || "";
+    const estadoProyectoAsociado = primeraOt?.estado_proyecto || "";
+
+    const visiblePorPrincipalOHijo = mostrarEnDashboard(principal) || hijosVisibles.length > 0;
 
     return {
       ...principal,
       __dashboard_principal_only: true,
+      __dashboard_hijos: hijos,
+      __dashboard_hijos_visibles: hijosVisibles,
       __dashboard_total_asociadas: hijos.length,
+      __dashboard_asociadas_visibles: hijosVisibles.length,
+      __dashboard_sin_principal_incluidas: hijosSinPrincipal.length,
       __dashboard_asociadas_suman: hijosParaSumar.length,
       otc,
       mrc,
       mrc_normalizado: mrcNormalizado,
       valor_oferta_claro: valorOfertaClaro,
+      estado_oferta: estadoOfertaAsociado || principal?.estado_oferta || "",
+      resultado_oferta: resultadoOfertaAsociado || principal?.resultado_oferta || "",
+      estado_ot: estadoOtAsociado || principal?.estado_ot || "",
+      estado_proyecto: estadoProyectoAsociado || principal?.estado_proyecto || "",
+      mostrar_dashboard: visiblePorPrincipalOHijo ? "SI" : "NO",
       observaciones: observacionAsociada || principal?.observaciones || "",
       seguimiento_ot: seguimientoAsociado || principal?.seguimiento_ot || "",
     };
@@ -425,6 +481,95 @@ function toQuery(f) {
   const qs = p.toString();
 
   return qs ? `?${qs}` : "";
+}
+
+function selectedNormSet(sel) {
+  return new Set(valuesOf(sel).map(normKeyForMatch).filter(Boolean));
+}
+
+function selectedRawSet(sel) {
+  return new Set(valuesOf(sel).map((v) => String(v ?? "").slice(0, 10)).filter(Boolean));
+}
+
+function dashboardGroupRows(row) {
+  return [
+    row,
+    ...((row?.__dashboard_hijos || []).filter(Boolean)),
+  ];
+}
+
+function groupHasTextValue(row, field, selected) {
+  const selectedSet = selectedNormSet(selected);
+  if (selectedSet.size === 0) return true;
+
+  return dashboardGroupRows(row).some((item) => {
+    const value = normKeyForMatch(item?.[field]);
+    return value && selectedSet.has(value);
+  });
+}
+
+function groupHasDateValue(row, field, selected) {
+  const selectedSet = selectedRawSet(selected);
+  if (selectedSet.size === 0) return true;
+
+  return dashboardGroupRows(row).some((item) => {
+    const value = String(item?.[field] ?? "").slice(0, 10);
+    return value && selectedSet.has(value);
+  });
+}
+
+function groupMatchesYearMonth(row, anios, meses) {
+  const years = new Set(valuesOf(anios).map((v) => String(v)));
+  const months = new Set(valuesOf(meses).map((v) => String(Number(v))));
+
+  if (years.size === 0 && months.size === 0) return true;
+
+  return dashboardGroupRows(row).some((item) => {
+    const iso = String(item?.fecha_creacion ?? "").slice(0, 10);
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return false;
+
+    const yearOk = years.size === 0 || years.has(String(Number(m[1])));
+    const monthOk = months.size === 0 || months.has(String(Number(m[2])));
+
+    return yearOk && monthOk;
+  });
+}
+
+function groupMatchesTipo(row, tipos) {
+  const selected = selectedNormSet(tipos);
+  if (selected.size === 0) return true;
+
+  return dashboardGroupRows(row).some((item) => {
+    const estado = normKeyForMatch(item?.estado_oferta);
+    const resultado = normKeyForMatch(item?.resultado_oferta);
+
+    if (selected.has("GANADA") && (estado === "GANADA" || resultado === "GANADA")) return true;
+    if (selected.has("ACTIVA") && ESTADOS_ACTIVOS_N.has(estado)) return true;
+    if ((selected.has("CERRADA") || selected.has("CERRADO")) && ESTADOS_CERRADOS_N.has(estado)) return true;
+
+    return false;
+  });
+}
+
+function matchesDashboardFilters(row, filtros) {
+  if (!groupMatchesYearMonth(row, filtros.anios, filtros.meses)) return false;
+  if (!groupMatchesTipo(row, filtros.tipos)) return false;
+
+  if (!groupHasTextValue(row, "direccion_comercial", filtros.direccionComercial)) return false;
+  if (!groupHasTextValue(row, "gerencia_comercial", filtros.gerenciaComercial)) return false;
+  if (!groupHasTextValue(row, "nombre_cliente", filtros.cliente)) return false;
+
+  if (!groupHasTextValue(row, "estado_oferta", filtros.estadoOferta)) return false;
+  if (!groupHasTextValue(row, "resultado_oferta", filtros.resultadoOferta)) return false;
+  if (!groupHasTextValue(row, "estado_ot", filtros.estadoOT)) return false;
+  if (!groupHasTextValue(row, "ultimo_mes", filtros.ultimoMes)) return false;
+  if (!groupHasTextValue(row, "calificacion_oportunidad", filtros.calificacion)) return false;
+
+  if (!groupHasDateValue(row, "fecha_acta_cierre_ot", filtros.fechaActaCierreOT)) return false;
+  if (!groupHasDateValue(row, "fecha_cierre_oportunidad", filtros.fechaCierreOportunidad)) return false;
+
+  return true;
 }
 
 function useDebouncedValue(value, delay = 350) {
@@ -625,10 +770,11 @@ export default function DashboardOportunidades() {
   const dataFiltrada = useMemo(() => {
     return dataDashboard.filter(
       (op) =>
+        matchesDashboardFilters(op, filtrosDebounced) &&
         !isExcludedLabel(op?.estado_oferta ?? "") &&
         !isExcludedLabel(op?.resultado_oferta ?? "")
     );
-  }, [dataDashboard]);
+  }, [dataDashboard, filtrosDebounced]);
 
   function normalizeOportunidadRow(row) {
     const estado = displayLabel(row?.estado_oferta ?? "");
@@ -696,7 +842,10 @@ export default function DashboardOportunidades() {
     setLoading(true);
 
     try {
-      const res = await jfetch(`/oportunidades${toQuery(current)}`);
+      // Importante: el dashboard necesita principales + OTs completas.
+      // No se mandan filtros al backend porque rompería la relación padre/hijo.
+      // Los filtros se aplican después de consolidar las principales en frontend.
+      const res = await jfetch(`/oportunidades`);
 
       if (!res.ok) throw new Error("data");
 
