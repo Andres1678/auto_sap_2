@@ -340,7 +340,10 @@ function buildPrincipalDashboardRows(rows) {
     ].sort(sortAssociatedRows);
 
     const hijosVisibles = hijos.filter(mostrarEnDashboard);
-    const hijosBase = hijosVisibles.length > 0 ? hijosVisibles : hijos;
+
+    // Para valores consolidados se usan todas las asociadas del grupo.
+    // mostrar_dashboard solo controla si la fila/OT se muestra, no si aporta al total.
+    const hijosBase = hijos;
     const primeraOt = hijosBase[0] || null;
 
     const hijosParaSumar = getAssociatedRowsForTotals(hijosBase);
@@ -647,7 +650,10 @@ function sameDashboardRowId(a, b) {
 function getFilteredDashboardGroupRows(row, filtros) {
   const rows = dashboardGroupRows(row).filter(Boolean);
 
-  return rows.filter((item) => mostrarEnDashboard(item) && rowMatchesDashboardFilters(item, filtros));
+  // Importante:
+  // no se filtra por mostrar_dashboard en las asociadas al recalcular valores.
+  // Si la principal es visible, sus OTs asociadas deben aportar al total cuando cumplen los filtros.
+  return rows.filter((item) => rowMatchesDashboardFilters(item, filtros));
 }
 
 function rebuildDashboardRowForFilters(row, filtros) {
@@ -666,19 +672,17 @@ function rebuildDashboardRowForFilters(row, filtros) {
 
   const otc = usarHijos
     ? sumMoney(hijosParaSumar, ["otc", "otr", "OTC", "OTR"])
-    : row.__dashboard_principal_otc_original ?? readMoney(row, ["otc", "otr", "OTC", "OTR"]);
+    : readMoney(row, ["otc", "otr", "OTC", "OTR"]);
 
   const mrc = usarHijos
     ? sumMoney(hijosParaSumar, ["mrc", "MRC"])
-    : row.__dashboard_principal_mrc_original ?? readMoney(row, ["mrc", "MRC"]);
+    : readMoney(row, ["mrc", "MRC"]);
 
   const valorOfertaClaro = usarHijos
     ? sumMoney(hijosParaSumar, ["valor_oferta_claro", "valorOfertaClaro", "VALOR OFERTA CLARO"])
-    : row.__dashboard_principal_valor_oferta_original ??
-      readMoney(row, ["valor_oferta_claro", "valorOfertaClaro", "VALOR OFERTA CLARO"]);
+    : readMoney(row, ["valor_oferta_claro", "valorOfertaClaro", "VALOR OFERTA CLARO"]);
 
   const mrcNormalizadoDirecto =
-    row.__dashboard_principal_mrc_normalizado_original ??
     readMoney(row, ["mrc_normalizado", "mrcNormalizado", "MRC NORMALIZADO"]);
 
   const mrcNormalizado = usarHijos
@@ -1427,7 +1431,12 @@ export default function DashboardOportunidades() {
                       <td>{fmtMoney(readMoney(row, ["mrc", "MRC"]))}</td>
                       <td>{row.gerencia_comercial ?? "-"}</td>
                       <td>{row.comercial_asignado ?? "-"}</td>
-                      <td>{row.__dashboard_total_asociadas_filtradas ?? row.__dashboard_total_asociadas ?? 0}</td>
+                      <td>
+                        {row.__dashboard_total_asociadas_filtradas ?? row.__dashboard_total_asociadas ?? 0}
+                        {row.__dashboard_total_asociadas
+                          ? ` / ${row.__dashboard_total_asociadas}`
+                          : ""}
+                      </td>
                       <td className="td-wrap">{renderObservacionesCell(row.observaciones)}</td>
                     </tr>
                   ))}
