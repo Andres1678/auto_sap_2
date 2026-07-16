@@ -292,17 +292,8 @@ function buildPrincipalDashboardRows(rows) {
     principales.map((principal) => [String(principal.id), principal])
   );
 
-  const principalesPorCliente = new Map();
-
-  principales.forEach((principal) => {
-    const clienteKey = getClienteGrupoKey(principal);
-    if (!clienteKey) return;
-    if (!principalesPorCliente.has(clienteKey)) principalesPorCliente.set(clienteKey, []);
-    principalesPorCliente.get(clienteKey).push(principal);
-  });
-
   const hijosPorPrincipal = new Map();
-  const hijosSinPrincipalPorCliente = new Map();
+  const filasSinPrincipal = [];
 
   safeRows.forEach((row) => {
     if (normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_PRINCIPAL) return;
@@ -316,33 +307,24 @@ function buildPrincipalDashboardRows(rows) {
       return;
     }
 
-    const clienteKey = getClienteGrupoKey(row);
-    if (!clienteKey) return;
-
-    if (!hijosSinPrincipalPorCliente.has(clienteKey)) hijosSinPrincipalPorCliente.set(clienteKey, []);
-    hijosSinPrincipalPorCliente.get(clienteKey).push(row);
+    /*
+      Importante:
+      Las OTs sin principal NO se deben sumar dentro de una principal solo por ser
+      del mismo cliente. Si no están asociadas en BD, se muestran aparte como
+      "SIN PRINCIPAL".
+    */
+    filasSinPrincipal.push(row);
   });
 
-  return principales.map((principal) => {
-    const clienteKey = getClienteGrupoKey(principal);
-    const principalesDelCliente = clienteKey ? principalesPorCliente.get(clienteKey) || [] : [];
-
-    // Si el cliente tiene una sola principal, las OTs sin principal se consolidan ahí
-    // para que no desaparezcan del dashboard. Si tiene varias principales, no se asignan
-    // automáticamente para evitar mezclar servicios distintos.
-    const hijosSinPrincipal = principalesDelCliente.length === 1
-      ? hijosSinPrincipalPorCliente.get(clienteKey) || []
-      : [];
-
+  const filasPrincipales = principales.map((principal) => {
     const hijos = [
       ...(hijosPorPrincipal.get(String(principal.id)) || []),
-      ...hijosSinPrincipal,
     ].sort(sortAssociatedRows);
 
     const hijosVisibles = hijos.filter(mostrarEnDashboard);
 
-    // Para valores consolidados se usan todas las asociadas del grupo.
-    // mostrar_dashboard solo controla si la fila/OT se muestra, no si aporta al total.
+    // Para valores consolidados se usan todas las asociadas reales de la principal.
+    // mostrar_dashboard controla visibilidad, no si la OT aporta al total.
     const hijosBase = hijos;
     const primeraOt = hijosBase[0] || null;
 
@@ -378,12 +360,14 @@ function buildPrincipalDashboardRows(rows) {
 
     return {
       ...principal,
+      __dashboard_tipo_relacion: "PRINCIPAL",
       __dashboard_principal_only: true,
+      __dashboard_sin_principal: false,
       __dashboard_hijos: hijos,
       __dashboard_hijos_visibles: hijosVisibles,
       __dashboard_total_asociadas: hijos.length,
       __dashboard_asociadas_visibles: hijosVisibles.length,
-      __dashboard_sin_principal_incluidas: hijosSinPrincipal.length,
+      __dashboard_sin_principal_incluidas: 0,
       __dashboard_asociadas_suman: hijosParaSumar.length,
       __dashboard_principal_otc_original: readMoney(principal, ["otc", "otr", "OTC", "OTR"]),
       __dashboard_principal_mrc_original: readMoney(principal, ["mrc", "MRC"]),
@@ -402,6 +386,46 @@ function buildPrincipalDashboardRows(rows) {
       seguimiento_ot: seguimientoAsociado || principal?.seguimiento_ot || "",
     };
   });
+
+  const filasSinPrincipalDashboard = filasSinPrincipal
+    .sort(sortAssociatedRows)
+    .map((row) => {
+      const otc = readMoney(row, ["otc", "otr", "OTC", "OTR"]);
+      const mrc = readMoney(row, ["mrc", "MRC"]);
+      const valorOfertaClaro = readMoney(row, ["valor_oferta_claro", "valorOfertaClaro", "VALOR OFERTA CLARO"]);
+      const mrcNormalizadoDirecto = readMoney(row, ["mrc_normalizado", "mrcNormalizado", "MRC NORMALIZADO"]);
+      const mrcNormalizado = mrcNormalizadoDirecto || Number((mrc + otc / 12).toFixed(2));
+
+      return {
+        ...row,
+        __dashboard_tipo_relacion: "SIN PRINCIPAL",
+        __dashboard_principal_only: false,
+        __dashboard_sin_principal: true,
+        __dashboard_hijos: [],
+        __dashboard_hijos_visibles: [],
+        __dashboard_total_asociadas: 0,
+        __dashboard_asociadas_visibles: 0,
+        __dashboard_sin_principal_incluidas: 0,
+        __dashboard_asociadas_suman: 0,
+        __dashboard_principal_otc_original: otc,
+        __dashboard_principal_mrc_original: mrc,
+        __dashboard_principal_valor_oferta_original: valorOfertaClaro,
+        __dashboard_principal_mrc_normalizado_original: mrcNormalizado,
+        servicio: row?.servicio || row?.descripcion_ot || "SIN PRINCIPAL / PENDIENTE DE ASIGNAR",
+        otc,
+        mrc,
+        mrc_normalizado: mrcNormalizado,
+        valor_oferta_claro: valorOfertaClaro,
+        estado_oferta: row?.estado_oferta || "",
+        resultado_oferta: row?.resultado_oferta || "",
+        mostrar_dashboard: mostrarEnDashboard(row) ? "SI" : "NO",
+      };
+    });
+
+  return [
+    ...filasPrincipales,
+    ...filasSinPrincipalDashboard,
+  ];
 }
 
 /* ===================== Pivot helpers ===================== */
@@ -661,18 +685,22 @@ function rebuildDashboardRowForFilters(row, filtros) {
 
   const hijosTotales = [...(row?.__dashboard_hijos || [])].filter(Boolean);
   const principalMatch = rowMatchesDashboardFilters(row, filtros);
+  const hijosQueCumplenFiltro = hijosTotales.filter((item) => rowMatchesDashboardFilters(item, filtros));
+  const grupoTieneMatch = principalMatch || hijosQueCumplenFiltro.length > 0;
 
   /*
-    Regla para que el dashboard cuadre con el Excel de Oportunidades:
-    - Si la fila principal consolidada cumple los filtros, se suman TODAS sus OTs asociadas.
-      Ejemplo: si la principal aparece por el filtro del periodo, no se debe sacar una OT antigua
-      porque hace parte de esa principal.
-    - Si la principal no cumple, pero una OT sí cumple el filtro, se suman solo esas OTs filtradas.
+    Regla para cuadrar con Oportunidades:
+    - Las principales se muestran consolidadas.
+    - Si la principal o alguna de sus OTs directas cumple los filtros,
+      se suma el grupo directo completo de esa principal.
+    - Las OTs sin principal no se mezclan en esta suma; aparecen aparte.
   */
   const hijosFiltrados = (
-    principalMatch
+    row?.__dashboard_sin_principal
+      ? []
+      : grupoTieneMatch
       ? hijosTotales
-      : hijosTotales.filter((item) => rowMatchesDashboardFilters(item, filtros))
+      : []
   ).sort(sortAssociatedRows);
 
   const matchingRows = [
