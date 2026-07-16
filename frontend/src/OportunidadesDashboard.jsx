@@ -659,13 +659,28 @@ function getFilteredDashboardGroupRows(row, filtros) {
 function rebuildDashboardRowForFilters(row, filtros) {
   if (!matchesDashboardFilters(row, filtros)) return null;
 
-  const matchingRows = getFilteredDashboardGroupRows(row, filtros);
+  const hijosTotales = [...(row?.__dashboard_hijos || [])].filter(Boolean);
+  const principalMatch = rowMatchesDashboardFilters(row, filtros);
+
+  /*
+    Regla para que el dashboard cuadre con el Excel de Oportunidades:
+    - Si la fila principal consolidada cumple los filtros, se suman TODAS sus OTs asociadas.
+      Ejemplo: si la principal aparece por el filtro del periodo, no se debe sacar una OT antigua
+      porque hace parte de esa principal.
+    - Si la principal no cumple, pero una OT sí cumple el filtro, se suman solo esas OTs filtradas.
+  */
+  const hijosFiltrados = (
+    principalMatch
+      ? hijosTotales
+      : hijosTotales.filter((item) => rowMatchesDashboardFilters(item, filtros))
+  ).sort(sortAssociatedRows);
+
+  const matchingRows = [
+    row,
+    ...hijosFiltrados,
+  ];
 
   if (!matchingRows.length) return null;
-
-  const hijosFiltrados = matchingRows
-    .filter((item) => !sameDashboardRowId(item?.id, row?.id))
-    .sort(sortAssociatedRows);
 
   const hijosParaSumar = getAssociatedRowsForTotals(hijosFiltrados);
   const usarHijos = hijosParaSumar.length > 0;
