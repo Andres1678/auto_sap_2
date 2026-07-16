@@ -191,6 +191,32 @@ function fmtMoney(n) {
   return nfMoney.format(n || 0);
 }
 
+function sortDetalleOportunidades(a, b) {
+  const clienteA = displayLabel(a?.nombre_cliente || "");
+  const clienteB = displayLabel(b?.nombre_cliente || "");
+
+  const byCliente = clienteA.localeCompare(clienteB, "es", {
+    sensitivity: "base",
+    numeric: true,
+  });
+
+  if (byCliente !== 0) return byCliente;
+
+  const servicioA = displayLabel(a?.servicio || "");
+  const servicioB = displayLabel(b?.servicio || "");
+
+  const byServicio = servicioA.localeCompare(servicioB, "es", {
+    sensitivity: "base",
+    numeric: true,
+  });
+
+  if (byServicio !== 0) return byServicio;
+
+  return String(a?.id ?? "").localeCompare(String(b?.id ?? ""), "es", {
+    numeric: true,
+  });
+}
+
 function readMoney(row, keys) {
   for (const k of keys) {
     const v = row?.[k];
@@ -1138,6 +1164,10 @@ export default function DashboardOportunidades() {
     };
   }, [dataFiltrada]);
 
+  const dataDetalleOrdenada = useMemo(() => {
+    return [...(Array.isArray(dataFiltrada) ? dataFiltrada : [])].sort(sortDetalleOportunidades);
+  }, [dataFiltrada]);
+
   const limpiar = () => {
     setFiltros({
       anios: [],
@@ -1449,7 +1479,7 @@ export default function DashboardOportunidades() {
           </section>
 
           <section className="card">
-            <div className="card-title">Detalle de Oportunidades</div>
+            <div className="card-title">Detalle de Oportunidades ordenado alfabéticamente</div>
 
             <div className="detalle-scroll">
               <table className="table table-detalle">
@@ -1471,7 +1501,7 @@ export default function DashboardOportunidades() {
                 </thead>
 
                 <tbody>
-                  {dataFiltrada.map((row, i) => (
+                  {dataDetalleOrdenada.map((row, i) => (
                     <tr key={row.id ?? i}>
                       <td>{row.nombre_cliente ?? "-"}</td>
                       <td>{row.servicio ?? "-"}</td>
