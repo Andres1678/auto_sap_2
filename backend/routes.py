@@ -18333,3 +18333,516 @@ def promedio_atencion_coe_sap_funcional():
             "error": str(e),
             "trace": traceback.format_exc(),
         }), 500
+
+# ============================================================
+# COE SAP FUNCIONAL - EXPORTACIONES EXCEL
+# ============================================================
+
+def _coe_xls_cell(value):
+    if value is None:
+        return ""
+
+    try:
+        if isinstance(value, Decimal):
+            return float(value)
+    except Exception:
+        pass
+
+    try:
+        if isinstance(value, (datetime, date)):
+            return value.strftime("%Y-%m-%d %H:%M:%S") if isinstance(value, datetime) else value.strftime("%Y-%m-%d")
+    except Exception:
+        pass
+
+    if isinstance(value, bool):
+        return "Sí" if value else "No"
+
+    return value
+
+
+def _coe_xls_filename(name):
+    safe = re.sub(r"[^A-Za-z0-9_\-]+", "_", str(name or "reporte")).strip("_")
+    return f"{safe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+
+def _coe_xls_response(filename, sheets):
+    from flask import send_file
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws_default = wb.active
+    wb.remove(ws_default)
+
+    header_fill = PatternFill("solid", fgColor="DA291C")
+    header_font = Font(color="FFFFFF", bold=True)
+    thin = Side(style="thin", color="E5E7EB")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for sheet in sheets:
+        title = str(sheet.get("title") or "Hoja")[:31]
+        headers = sheet.get("headers") or []
+        rows = sheet.get("rows") or []
+
+        ws = wb.create_sheet(title=title)
+        ws.freeze_panes = "A2"
+
+        for col_idx, header in enumerate(headers, start=1):
+            label = header[0] if isinstance(header, (list, tuple)) else header
+            cell = ws.cell(row=1, column=col_idx, value=str(label))
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = border
+
+        for row_idx, row in enumerate(rows, start=2):
+            for col_idx, header in enumerate(headers, start=1):
+                if isinstance(header, (list, tuple)):
+                    key = header[1]
+                    value = row.get(key) if isinstance(row, dict) else None
+                else:
+                    value = row.get(header) if isinstance(row, dict) else None
+
+                cell = ws.cell(row=row_idx, column=col_idx, value=_coe_xls_cell(value))
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+                cell.border = border
+
+        if headers:
+            ws.auto_filter.ref = ws.dimensions
+
+        for col_idx, header in enumerate(headers, start=1):
+            label = header[0] if isinstance(header, (list, tuple)) else header
+            max_len = len(str(label))
+            for row_idx in range(2, min(ws.max_row, 250) + 1):
+                val = ws.cell(row=row_idx, column=col_idx).value
+                if val is not None:
+                    max_len = max(max_len, min(len(str(val)), 70))
+            ws.column_dimensions[get_column_letter(col_idx)].width = min(max(max_len + 2, 12), 55)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+def _coe_xls_bool_text(value):
+    return "Sí" if bool(value) else "No"
+
+
+def _coe_xls_calificacion_query():
+    query = CoeSapFuncionalCalificacion.query
+    query = _coe_rep_apply_filters(query)
+
+    sistema = _coe_rep_list_arg("sistema")
+    categoria = _coe_rep_list_arg("categoria")
+    subcategoria = _coe_rep_list_arg("subcategoria")
+    articulo = _coe_rep_list_arg("articulo")
+
+    if sistema:
+        query = query.filter(CoeSapFuncionalCalificacion.sistema.in_(sistema))
+    if categoria:
+        query = query.filter(CoeSapFuncionalCalificacion.categoria.in_(categoria))
+    if subcategoria:
+        query = query.filter(CoeSapFuncionalCalificacion.subcategoria.in_(subcategoria))
+    if articulo:
+        query = query.filter(CoeSapFuncionalCalificacion.articulo.in_(articulo))
+
+    return query
+
+
+def _coe_xls_calificacion_rows(query):
+    rows = query.order_by(CoeSapFuncionalCalificacion.id.desc()).all()
+    out = []
+
+    for r in rows:
+        out.append({
+            "id_bd": r.id,
+            "numero": r.numero,
+            "sistema": r.sistema,
+            "caso_sm": r.caso_sm,
+            "doc_1": getattr(r, "doc_1", None),
+            "documentacion": r.documentacion,
+            "caso_transporte": r.caso_transporte,
+            "control_horas": r.control_horas,
+            "manejo": getattr(r, "manejo", None),
+            "error_sap": r.error_sap,
+            "nota_oss_sap": r.nota_oss_sap,
+            "tiquete_proveedor_externo": getattr(r, "tiquete_proveedor_externo", None),
+            "tipo_contrato": r.tipo_contrato,
+            "sociedad": r.sociedad,
+            "asunto": r.asunto,
+            "observaciones": r.observaciones,
+            "nombre_solicitante": r.nombre_solicitante,
+            "impacto": r.impacto,
+            "urgencia": r.urgencia,
+            "prioridad": r.prioridad,
+            "tipo_solicitud": r.tipo_solicitud,
+            "modulo": r.modulo,
+            "categoria": r.categoria,
+            "subcategoria": r.subcategoria,
+            "articulo": r.articulo,
+            "estado": r.estado,
+            "estado_herramienta_gestion": r.estado_herramienta_gestion,
+            "responsable_estado": r.responsable_estado,
+            "estado_consolidado": r.estado_consolidado,
+            "asignado_a": r.asignado_a,
+            "apoyo_1": r.apoyo_1,
+            "apoyo_2": r.apoyo_2,
+            "apoyo_3": r.apoyo_3,
+            "requiere_abap": r.requiere_abap,
+            "asignacion_abap": r.asignacion_abap,
+            "fecha_asignacion": _coe_rep_date(r.fecha_asignacion),
+            "fecha_asignacion_sistema_gestion": _coe_rep_date(getattr(r, "fecha_asignacion_sistema_gestion", None)),
+            "dif_fecha_asignacion": getattr(r, "dif_fecha_asignacion", None),
+            "validar_fecha_asignacion": getattr(r, "validar_fecha_asignacion", None),
+            "dia_creacion": r.dia_creacion,
+            "mes_creacion": r.mes_creacion,
+            "anio_creacion": r.anio_creacion,
+            "hora_ultima_actualizacion": _coe_rep_date(r.hora_ultima_actualizacion),
+            "hora_ultima_actualizacion_sistema_gestion": _coe_rep_date(getattr(r, "hora_ultima_actualizacion_sistema_gestion", None)),
+            "validar_fecha_actualizacion": getattr(r, "validar_fecha_actualizacion", None),
+            "fecha_respuesta": _coe_rep_date(r.fecha_respuesta),
+            "fecha_resolucion": _coe_rep_date(r.fecha_resolucion),
+            "fecha_resolucion_sistema_gestion": _coe_rep_date(getattr(r, "fecha_resolucion_sistema_gestion", None)),
+            "dif_fecha_resolucion": getattr(r, "dif_fecha_resolucion", None),
+            "validar_fecha_resolucion": getattr(r, "validar_fecha_resolucion", None),
+            "fecha_finalizacion_cierre": _coe_rep_date(r.fecha_finalizacion_cierre),
+            "fecha_finalizacion_cierre_sistema_gestion": _coe_rep_date(getattr(r, "fecha_finalizacion_cierre_sistema_gestion", None)),
+            "dif_fecha_cierre": getattr(r, "dif_fecha_cierre", None),
+            "validar_fecha_cierre": getattr(r, "validar_fecha_cierre", None),
+            "dia_cierre": r.dia_cierre,
+            "mes_cierre": r.mes_cierre,
+            "anio_cierre": r.anio_cierre,
+            "tiempo_respuesta": r.tiempo_respuesta,
+            "tiempo_resolucion": r.tiempo_resolucion,
+            "tiempo_finalizacion_cierre": r.tiempo_finalizacion_cierre,
+            "fecha_compromiso": _coe_rep_date(r.fecha_compromiso),
+            "lider_claro": r.lider_claro,
+            "tipo_ingreso": r.tipo_ingreso,
+            "estado_facturacion_ot": getattr(r, "estado_facturacion_ot", None),
+            "nro_ot": getattr(r, "nro_ot", None),
+            "valor_ot": getattr(r, "valor_ot", None),
+            "horas_oferta": getattr(r, "horas_oferta", None),
+            "fecha_estimacion": _coe_rep_date(r.fecha_estimacion),
+            "dias_entrega_estimacion": r.dias_entrega_estimacion,
+            "mes_estimacion": r.mes_estimacion,
+            "anio_estimacion": r.anio_estimacion,
+            "fecha_aprobacion_estimacion": _coe_rep_date(r.fecha_aprobacion_estimacion),
+            "mes_aprobado_estimacion": r.mes_aprobado_estimacion,
+            "anio_aprobado_estimacion": r.anio_aprobado_estimacion,
+            "estado_estimacion": r.estado_estimacion,
+            "total_horas_funcionales": r.total_horas_funcionales,
+            "total_horas_estimadas": r.total_horas_estimadas,
+            "total_horas_estimadas2": r.total_horas_estimadas2,
+            "horas_garantia": r.horas_garantia,
+            "horas_proyecto_abap": r.horas_proyecto_abap,
+            "validar_subcategoria": getattr(r, "validar_subcategoria", None),
+            "validar_articulo": getattr(r, "validar_articulo", None),
+            "cruce_sm": _coe_xls_bool_text(getattr(r, "cruce_sm", False)),
+            "cruce_itop": _coe_xls_bool_text(getattr(r, "cruce_itop", False)),
+            "solo_excel": _coe_xls_bool_text(getattr(r, "solo_excel", False)),
+            "origen_datos_json": getattr(r, "origen_datos_json", None),
+            "campos_editados_manual_json": getattr(r, "campos_editados_manual_json", None),
+        })
+
+    return out
+
+
+def _coe_xls_calificacion_headers():
+    return [
+        ("ID BD", "id_bd"), ("ID", "numero"), ("SISTEMA", "sistema"), ("N° CASO SM", "caso_sm"),
+        ("DOC 1", "doc_1"), ("DOCUMENTACION", "documentacion"), ("CASO TRANSPORTE", "caso_transporte"),
+        ("CONTROL HORAS", "control_horas"), ("MANEJO", "manejo"), ("N° ERROR SAP", "error_sap"),
+        ("N° NOTA OSS SAP", "nota_oss_sap"), ("TIQUETE PROVEEDOR EXTERNO", "tiquete_proveedor_externo"),
+        ("TIPO CONTRATO", "tipo_contrato"), ("SOCIEDAD", "sociedad"), ("ASUNTO", "asunto"),
+        ("OBSERVACIONES", "observaciones"), ("NOMBRE DEL SOLICITANTE", "nombre_solicitante"),
+        ("IMPACTO", "impacto"), ("URGENCIA", "urgencia"), ("PRIORIDAD", "prioridad"),
+        ("TIPO DE SOLICITUD", "tipo_solicitud"), ("MODULO", "modulo"), ("CATEGORÍA", "categoria"),
+        ("SUBCATEGORÍA", "subcategoria"), ("ARTÍCULO", "articulo"), ("ESTADO", "estado"),
+        ("ESTADO HERRAMIENTA GESTIÓN", "estado_herramienta_gestion"), ("RESPONSABLE ESTADO", "responsable_estado"),
+        ("ESTADO CONSOLIDADO", "estado_consolidado"), ("ASIGNADO A", "asignado_a"),
+        ("APOYO 1", "apoyo_1"), ("APOYO 2", "apoyo_2"), ("APOYO 3", "apoyo_3"),
+        ("REQUIERE ABAP", "requiere_abap"), ("ASIGNACIÓN ABAP", "asignacion_abap"),
+        ("FECHA ASIGNACIÓN", "fecha_asignacion"), ("FECHA ASIGNACIÓN SISTEMA GESTIÓN", "fecha_asignacion_sistema_gestion"),
+        ("DIF FECHA ASIGNACIÓN", "dif_fecha_asignacion"), ("VALIDAR FECHA ASIGNACIÓN", "validar_fecha_asignacion"),
+        ("DÍA CREACIÓN", "dia_creacion"), ("MES CREACIÓN", "mes_creacion"), ("AÑO CREACIÓN", "anio_creacion"),
+        ("HORA ÚLTIMA ACTUALIZACIÓN", "hora_ultima_actualizacion"),
+        ("HORA ÚLTIMA ACTUALIZACIÓN SISTEMA GESTIÓN", "hora_ultima_actualizacion_sistema_gestion"),
+        ("VALIDAR FECHA ACTUALIZACIÓN", "validar_fecha_actualizacion"),
+        ("FECHA RESPUESTA", "fecha_respuesta"), ("FECHA RESOLUCIÓN", "fecha_resolucion"),
+        ("FECHA RESOLUCIÓN SISTEMA GESTIÓN", "fecha_resolucion_sistema_gestion"),
+        ("DIF FECHA RESOLUCIÓN", "dif_fecha_resolucion"), ("VALIDAR FECHA RESOLUCIÓN", "validar_fecha_resolucion"),
+        ("FECHA FINALIZACIÓN / CIERRE", "fecha_finalizacion_cierre"),
+        ("FECHA FINALIZACIÓN / CIERRE SISTEMA GESTIÓN", "fecha_finalizacion_cierre_sistema_gestion"),
+        ("DIF FECHA CIERRE", "dif_fecha_cierre"), ("VALIDAR FECHA CIERRE", "validar_fecha_cierre"),
+        ("DÍA CIERRE", "dia_cierre"), ("MES CIERRE", "mes_cierre"), ("AÑO CIERRE", "anio_cierre"),
+        ("TIEMPO RESPUESTA", "tiempo_respuesta"), ("TIEMPO RESOLUCIÓN", "tiempo_resolucion"),
+        ("TIEMPO FINALIZACIÓN / CIERRE", "tiempo_finalizacion_cierre"), ("FECHA COMPROMISO", "fecha_compromiso"),
+        ("LÍDER CLARO", "lider_claro"), ("TIPO INGRESO", "tipo_ingreso"),
+        ("ESTADO FACTURACIÓN OT", "estado_facturacion_ot"), ("N° OT", "nro_ot"), ("VALOR OT", "valor_ot"),
+        ("HORAS OFERTA", "horas_oferta"), ("FECHA ESTIMACIÓN", "fecha_estimacion"),
+        ("DÍAS ENTREGA ESTIMACIÓN", "dias_entrega_estimacion"), ("MES ESTIMACIÓN", "mes_estimacion"),
+        ("AÑO ESTIMACIÓN", "anio_estimacion"), ("FECHA APROBACIÓN ESTIMACIÓN", "fecha_aprobacion_estimacion"),
+        ("MES APROBADO ESTIMACIÓN", "mes_aprobado_estimacion"), ("AÑO APROBADO ESTIMACIÓN", "anio_aprobado_estimacion"),
+        ("ESTADO ESTIMACIÓN", "estado_estimacion"), ("TOTAL HORAS FUNCIONALES", "total_horas_funcionales"),
+        ("TOTAL HORAS ESTIMADAS", "total_horas_estimadas"), ("TOTAL HORAS ESTIMADAS 2", "total_horas_estimadas2"),
+        ("HORAS GARANTÍA", "horas_garantia"), ("HORAS PROYECTO ABAP", "horas_proyecto_abap"),
+        ("VALIDAR SUBCATEGORÍA", "validar_subcategoria"), ("VALIDAR ARTÍCULO", "validar_articulo"),
+        ("CRUCE SM", "cruce_sm"), ("CRUCE ITOP", "cruce_itop"), ("SOLO EXCEL", "solo_excel"),
+        ("ORIGEN DATOS JSON", "origen_datos_json"), ("CAMPOS EDITADOS MANUAL JSON", "campos_editados_manual_json"),
+    ]
+
+
+@bp.route("/coe-sap-funcional/calificacion/export-excel", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def exportar_calificacion_coe_sap_funcional_excel():
+    try:
+        query = _coe_xls_calificacion_query()
+        rows = _coe_xls_calificacion_rows(query)
+
+        return _coe_xls_response(
+            _coe_xls_filename("calificacion_coe_sap_funcional"),
+            [{"title": "Calificacion", "headers": _coe_xls_calificacion_headers(), "rows": rows}],
+        )
+
+    except Exception as e:
+        app.logger.exception("Error exportando calificación COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error exportando calificación",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/dashboard-clientes/export-excel", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def exportar_dashboard_clientes_coe_sap_funcional_excel():
+    try:
+        query = _coe_rep_apply_filters(CoeSapFuncionalCalificacion.query)
+
+        total_casos = query.count()
+        abiertos = query.filter(or_(
+            CoeSapFuncionalCalificacion.estado_consolidado.ilike("%SIN CERRAR%"),
+            CoeSapFuncionalCalificacion.estado.ilike("%ABIERTO%"),
+            CoeSapFuncionalCalificacion.estado.ilike("%PROCESO%"),
+        )).count()
+        cerrados = query.filter(or_(
+            CoeSapFuncionalCalificacion.estado_consolidado.ilike("%CERRADO%"),
+            CoeSapFuncionalCalificacion.estado.ilike("%CERRADO%"),
+            CoeSapFuncionalCalificacion.estado.ilike("%SOLUCIONADO%"),
+        )).count()
+        con_sm = query.filter(CoeSapFuncionalCalificacion.cruce_sm == True).count()
+        con_itop = query.filter(CoeSapFuncionalCalificacion.cruce_itop == True).count()
+        solo_excel = query.filter(CoeSapFuncionalCalificacion.solo_excel == True).count()
+
+        horas = query.with_entities(
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales), 0).label("total_funcionales"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas), 0).label("total_estimadas"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_garantia), 0).label("garantia"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_proyecto_abap), 0).label("proyecto_abap"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor_ot"),
+        ).first()
+
+        resumen_rows = [
+            {"indicador": "Total casos", "valor": int(total_casos or 0)},
+            {"indicador": "Abiertos", "valor": int(abiertos or 0)},
+            {"indicador": "Cerrados", "valor": int(cerrados or 0)},
+            {"indicador": "Con cruce SM", "valor": int(con_sm or 0)},
+            {"indicador": "Con cruce ITOP", "valor": int(con_itop or 0)},
+            {"indicador": "Solo Excel", "valor": int(solo_excel or 0)},
+            {"indicador": "Total horas funcionales", "valor": _coe_rep_float(horas.total_funcionales if horas else 0)},
+            {"indicador": "Total horas estimadas", "valor": _coe_rep_float(horas.total_estimadas if horas else 0)},
+            {"indicador": "Horas garantía", "valor": _coe_rep_float(horas.garantia if horas else 0)},
+            {"indicador": "Horas proyecto ABAP", "valor": _coe_rep_float(horas.proyecto_abap if horas else 0)},
+            {"indicador": "Valor OT", "valor": _coe_rep_float(horas.valor_ot if horas else 0)},
+        ]
+
+        cerrados_por_mes_rows = (
+            query.with_entities(
+                CoeSapFuncionalCalificacion.anio_cierre.label("anio"),
+                CoeSapFuncionalCalificacion.mes_cierre.label("mes"),
+                func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+            )
+            .filter(CoeSapFuncionalCalificacion.anio_cierre.isnot(None))
+            .filter(CoeSapFuncionalCalificacion.mes_cierre.isnot(None))
+            .group_by(CoeSapFuncionalCalificacion.anio_cierre, CoeSapFuncionalCalificacion.mes_cierre)
+            .order_by(CoeSapFuncionalCalificacion.anio_cierre.asc(), CoeSapFuncionalCalificacion.mes_cierre.asc())
+            .all()
+        )
+
+        ot_facturacion_rows = (
+            query.with_entities(
+                CoeSapFuncionalCalificacion.estado_facturacion_ot.label("estado"),
+                func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+                func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor"),
+                func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_oferta), 0).label("horas"),
+            )
+            .group_by(CoeSapFuncionalCalificacion.estado_facturacion_ot)
+            .order_by(func.count(CoeSapFuncionalCalificacion.id).desc())
+            .all()
+        )
+
+        return _coe_xls_response(
+            _coe_xls_filename("dashboard_clientes_coe_sap_funcional"),
+            [
+                {"title": "Resumen", "headers": [("Indicador", "indicador"), ("Valor", "valor")], "rows": resumen_rows},
+                {"title": "Por estado", "headers": [("Estado", "estado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado")},
+                {"title": "Por consolidado", "headers": [("Estado consolidado", "estadoConsolidado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_consolidado, "estadoConsolidado")},
+                {"title": "Por modulo", "headers": [("Módulo", "modulo"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.modulo, "modulo")},
+                {"title": "Por tipo solicitud", "headers": [("Tipo solicitud", "tipoSolicitud"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.tipo_solicitud, "tipoSolicitud")},
+                {"title": "Cerrados por mes", "headers": [("Año", "anio"), ("Mes", "mes"), ("Mes nombre", "mesNombre"), ("Cantidad", "cantidad")], "rows": [{"anio": int(r.anio or 0), "mes": int(r.mes or 0), "mesNombre": _coe_rep_month_name(r.mes), "cantidad": int(r.cantidad or 0)} for r in cerrados_por_mes_rows]},
+                {"title": "OT facturacion", "headers": [("Estado facturación OT", "estadoFacturacionOt"), ("Cantidad", "cantidad"), ("Valor", "valor"), ("Horas", "horas")], "rows": [{"estadoFacturacionOt": _coe_rep_str(r.estado) or "Sin dato", "cantidad": int(r.cantidad or 0), "valor": _coe_rep_float(r.valor), "horas": _coe_rep_float(r.horas)} for r in ot_facturacion_rows]},
+            ],
+        )
+
+    except Exception as e:
+        app.logger.exception("Error exportando dashboard clientes COE SAP Funcional")
+        return jsonify({"mensaje": "Error exportando dashboard clientes", "error": str(e), "trace": traceback.format_exc()}), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/detalle-cliente/export-excel", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def exportar_detalle_cliente_coe_sap_funcional_excel():
+    try:
+        query = _coe_rep_apply_filters(CoeSapFuncionalCalificacion.query)
+
+        rows = (
+            query.order_by(
+                CoeSapFuncionalCalificacion.responsable_estado.asc(),
+                CoeSapFuncionalCalificacion.estado.asc(),
+                CoeSapFuncionalCalificacion.numero.asc(),
+            )
+            .all()
+        )
+
+        data_rows = [{
+            "responsableEstado": r.responsable_estado,
+            "estado": r.estado,
+            "estadoConsolidado": r.estado_consolidado,
+            "numero": r.numero,
+            "sistema": r.sistema,
+            "sociedad": r.sociedad,
+            "asunto": r.asunto,
+            "observaciones": r.observaciones,
+            "modulo": r.modulo,
+            "tipoSolicitud": r.tipo_solicitud,
+            "categoria": r.categoria,
+            "subcategoria": r.subcategoria,
+            "articulo": r.articulo,
+            "asignadoA": r.asignado_a,
+            "fechaAsignacion": _coe_rep_date(r.fecha_asignacion),
+            "fechaRespuesta": _coe_rep_date(r.fecha_respuesta),
+            "fechaResolucion": _coe_rep_date(r.fecha_resolucion),
+            "fechaFinalizacionCierre": _coe_rep_date(r.fecha_finalizacion_cierre),
+            "cruceSm": _coe_xls_bool_text(getattr(r, "cruce_sm", False)),
+            "cruceItop": _coe_xls_bool_text(getattr(r, "cruce_itop", False)),
+            "soloExcel": _coe_xls_bool_text(getattr(r, "solo_excel", False)),
+        } for r in rows]
+
+        resumen_rows = (
+            query.with_entities(
+                CoeSapFuncionalCalificacion.responsable_estado.label("responsable"),
+                CoeSapFuncionalCalificacion.estado.label("estado"),
+                func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+            )
+            .group_by(CoeSapFuncionalCalificacion.responsable_estado, CoeSapFuncionalCalificacion.estado)
+            .order_by(CoeSapFuncionalCalificacion.responsable_estado.asc(), func.count(CoeSapFuncionalCalificacion.id).desc())
+            .all()
+        )
+
+        return _coe_xls_response(
+            _coe_xls_filename("detalle_seguimiento_cliente_coe_sap_funcional"),
+            [
+                {"title": "Detalle", "headers": [("Responsable Estado", "responsableEstado"), ("Estado", "estado"), ("Estado Consolidado", "estadoConsolidado"), ("ID", "numero"), ("Sistema", "sistema"), ("Sociedad", "sociedad"), ("Asunto", "asunto"), ("Observaciones", "observaciones"), ("Módulo", "modulo"), ("Tipo solicitud", "tipoSolicitud"), ("Categoría", "categoria"), ("Subcategoría", "subcategoria"), ("Artículo", "articulo"), ("Asignado a", "asignadoA"), ("Fecha asignación", "fechaAsignacion"), ("Fecha respuesta", "fechaRespuesta"), ("Fecha resolución", "fechaResolucion"), ("Fecha cierre", "fechaFinalizacionCierre"), ("Cruce SM", "cruceSm"), ("Cruce ITOP", "cruceItop"), ("Solo Excel", "soloExcel")], "rows": data_rows},
+                {"title": "Resumen", "headers": [("Responsable Estado", "responsableEstado"), ("Estado", "estado"), ("Cantidad", "cantidad")], "rows": [{"responsableEstado": _coe_rep_str(r.responsable) or "Sin dato", "estado": _coe_rep_str(r.estado) or "Sin dato", "cantidad": int(r.cantidad or 0)} for r in resumen_rows]},
+            ],
+        )
+
+    except Exception as e:
+        app.logger.exception("Error exportando detalle cliente COE SAP Funcional")
+        return jsonify({"mensaje": "Error exportando detalle cliente", "error": str(e), "trace": traceback.format_exc()}), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/promedio-atencion/export-excel", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def exportar_promedio_atencion_coe_sap_funcional_excel():
+    try:
+        query = _coe_rep_apply_filters(CoeSapFuncionalCalificacion.query)
+
+        rows = (
+            query.with_entities(
+                CoeSapFuncionalCalificacion.anio_creacion.label("anio"),
+                CoeSapFuncionalCalificacion.mes_creacion.label("mes"),
+                func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+                func.avg(CoeSapFuncionalCalificacion.tiempo_respuesta).label("promedio_respuesta"),
+                func.avg(CoeSapFuncionalCalificacion.tiempo_resolucion).label("promedio_resolucion"),
+                func.avg(CoeSapFuncionalCalificacion.tiempo_finalizacion_cierre).label("promedio_cierre"),
+            )
+            .filter(CoeSapFuncionalCalificacion.anio_creacion.isnot(None))
+            .filter(CoeSapFuncionalCalificacion.mes_creacion.isnot(None))
+            .group_by(CoeSapFuncionalCalificacion.anio_creacion, CoeSapFuncionalCalificacion.mes_creacion)
+            .order_by(CoeSapFuncionalCalificacion.anio_creacion.asc(), CoeSapFuncionalCalificacion.mes_creacion.asc())
+            .all()
+        )
+
+        data_rows = [{
+            "anio": int(r.anio or 0),
+            "mes": int(r.mes or 0),
+            "mesNombre": _coe_rep_month_name(r.mes),
+            "periodo": f"{int(r.anio or 0)}-{int(r.mes or 0):02d}",
+            "cantidad": int(r.cantidad or 0),
+            "promedioTiempoRespuesta": round(_coe_rep_float(r.promedio_respuesta), 2),
+            "promedioTiempoResolucion": round(_coe_rep_float(r.promedio_resolucion), 2),
+            "promedioTiempoCierre": round(_coe_rep_float(r.promedio_cierre), 2),
+        } for r in rows]
+
+        return _coe_xls_response(
+            _coe_xls_filename("promedio_atencion_coe_sap_funcional"),
+            [{"title": "Promedio atencion", "headers": [("Año", "anio"), ("Mes", "mes"), ("Mes nombre", "mesNombre"), ("Periodo", "periodo"), ("Cantidad", "cantidad"), ("Prom. respuesta", "promedioTiempoRespuesta"), ("Prom. resolución", "promedioTiempoResolucion"), ("Prom. cierre", "promedioTiempoCierre")], "rows": data_rows}],
+        )
+
+    except Exception as e:
+        app.logger.exception("Error exportando promedio atención COE SAP Funcional")
+        return jsonify({"mensaje": "Error exportando promedio atención", "error": str(e), "trace": traceback.format_exc()}), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/importaciones/export-excel", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def exportar_importaciones_coe_sap_funcional_excel():
+    try:
+        tipo = (request.args.get("tipo") or "").strip().upper()
+        query = CoeSapFuncionalImportacion.query
+        if tipo:
+            query = query.filter(CoeSapFuncionalImportacion.tipo == tipo)
+
+        rows = query.order_by(CoeSapFuncionalImportacion.created_at.desc(), CoeSapFuncionalImportacion.id.desc()).all()
+
+        data_rows = [{
+            "id": r.id,
+            "tipo": r.tipo,
+            "archivoNombre": r.archivo_nombre,
+            "filas": int(r.filas or 0),
+            "insertados": int(r.insertados or 0),
+            "actualizados": int(r.actualizados or 0),
+            "errores": int(r.errores or 0),
+            "usuario": r.usuario,
+            "detalleJson": r.detalle_json,
+            "createdAt": _coe_rep_date(r.created_at),
+        } for r in rows]
+
+        return _coe_xls_response(
+            _coe_xls_filename("importaciones_coe_sap_funcional"),
+            [{"title": "Importaciones", "headers": [("ID", "id"), ("Tipo", "tipo"), ("Archivo", "archivoNombre"), ("Filas", "filas"), ("Insertados", "insertados"), ("Actualizados", "actualizados"), ("Errores", "errores"), ("Usuario", "usuario"), ("Detalle JSON", "detalleJson"), ("Fecha", "createdAt")], "rows": data_rows}],
+        )
+
+    except Exception as e:
+        app.logger.exception("Error exportando importaciones COE SAP Funcional")
+        return jsonify({"mensaje": "Error exportando importaciones", "error": str(e), "trace": traceback.format_exc()}), 500
+

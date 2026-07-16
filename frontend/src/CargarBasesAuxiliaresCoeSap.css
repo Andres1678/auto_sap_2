@@ -355,3 +355,66 @@
     flex-direction: column;
   }
 }
+
+
+/* ===== Histórico de importaciones ===== */
+.coeload-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.coeload-history-table-wrap {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid var(--coeload-border);
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.coeload-history-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.coeload-history-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 12px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 900;
+  color: #3f3f46;
+  background: var(--coeload-header);
+  border-bottom: 1px solid var(--coeload-border);
+  white-space: nowrap;
+}
+
+.coeload-history-table tbody td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 13px;
+  color: #2f2f35;
+  vertical-align: top;
+}
+
+.coeload-history-table tbody tr:hover td {
+  background: #fff7f6;
+}
+
+.coeload-mini-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #b91f15;
+  background: #fff0ef;
+  border: 1px solid rgba(218, 41, 28, 0.18);
+}

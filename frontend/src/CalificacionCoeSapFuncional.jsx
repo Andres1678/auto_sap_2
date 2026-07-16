@@ -279,6 +279,49 @@ function normalizeText(value) {
   return String(value ?? "").replace(/\u00A0/g, " ").trim();
 }
 
+
+function getFilenameFromDisposition(disposition, fallback) {
+  const header = disposition || "";
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
+
+  const normalMatch = header.match(/filename="?([^";]+)"?/i);
+  if (normalMatch?.[1]) return normalMatch[1];
+
+  return fallback;
+}
+
+async function downloadExcelFile(url, headers, fallbackName) {
+  const res = await jfetch(url, {
+    method: "GET",
+    headers,
+  });
+
+  if (!res.ok) {
+    let data = {};
+    try {
+      data = await res.json();
+    } catch {}
+
+    throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  const filename = getFilenameFromDisposition(
+    res.headers.get("Content-Disposition"),
+    fallbackName
+  );
+
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(objectUrl);
+}
+
 function normalizeForCompare(value) {
   return normalizeText(value).toUpperCase();
 }
@@ -661,6 +704,7 @@ export default function CalificacionCoeSapFuncional() {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [uploadingExcel, setUploadingExcel] = useState(false);
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editRow, setEditRow] = useState(null);
@@ -1009,6 +1053,61 @@ export default function CalificacionCoeSapFuncional() {
       });
     } finally {
       setGenerating(false);
+    }
+  };
+
+
+
+  const descargarExcel = async () => {
+    setDownloadingExcel(true);
+
+    try {
+      const qs = new URLSearchParams();
+
+      if (quickSearch.trim()) {
+        qs.set("q", quickSearch.trim());
+      }
+
+      const filterMap = {
+        sociedad: "sociedad",
+        estado: "estado",
+        estadoConsolidado: "estadoConsolidado",
+        responsableEstado: "responsableEstado",
+        modulo: "modulo",
+        tipoSolicitud: "tipoSolicitud",
+        controlHoras: "controlHoras",
+        asignadoA: "asignadoA",
+        sistema: "sistema",
+        categoria: "categoria",
+        subcategoria: "subcategoria",
+        articulo: "articulo",
+      };
+
+      Object.entries(filterMap).forEach(([columnKey, queryKey]) => {
+        const values = columnFilters[columnKey] || [];
+        values.forEach((value) => {
+          if (value === EMPTY_FILTER_VALUE) return;
+          const clean = String(value ?? "").trim();
+          if (clean) qs.append(queryKey, clean);
+        });
+      });
+
+      const url = `/coe-sap-funcional/calificacion/export-excel${qs.toString() ? `?${qs.toString()}` : ""}`;
+
+      await downloadExcelFile(
+        url,
+        commonHeaders,
+        "calificacion_coe_sap_funcional.xlsx"
+      );
+    } catch (error) {
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo descargar el Excel",
+        text: error?.message || "Revisa el backend.",
+        confirmButtonColor: "#DA291C",
+      });
+    } finally {
+      setDownloadingExcel(false);
     }
   };
 
@@ -1569,6 +1668,15 @@ export default function CalificacionCoeSapFuncional() {
             disabled={generating || uploadingExcel}
           >
             {uploadingExcel ? "Importando..." : "Importar Excel histórico"}
+          </button>
+
+          <button
+            type="button"
+            className="calcoe-btn light"
+            onClick={descargarExcel}
+            disabled={generating || uploadingExcel || downloadingExcel}
+          >
+            {downloadingExcel ? "Descargando..." : "Descargar Excel"}
           </button>
         </div>
       </section>

@@ -1,7 +1,50 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { jfetch } from "./lib/api";
 import "./CargarBasesAuxiliaresCoeSap.css";
+
+
+function getFilenameFromDisposition(disposition, fallback) {
+  const header = disposition || "";
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
+
+  const normalMatch = header.match(/filename="?([^";]+)"?/i);
+  if (normalMatch?.[1]) return normalMatch[1];
+
+  return fallback;
+}
+
+async function downloadExcelFile(url, headers, fallbackName) {
+  const res = await jfetch(url, {
+    method: "GET",
+    headers,
+  });
+
+  if (!res.ok) {
+    let data = {};
+    try {
+      data = await res.json();
+    } catch {}
+
+    throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  const filename = getFilenameFromDisposition(
+    res.headers.get("Content-Disposition"),
+    fallbackName
+  );
+
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(objectUrl);
+}
 
 function readStoredUser() {
   try {
@@ -94,6 +137,9 @@ export default function CargarBasesAuxiliaresCoeSap() {
   const [syncing, setSyncing] = useState(false);
   const [syncMode, setSyncMode] = useState("preservar_manual");
   const [lastResults, setLastResults] = useState([]);
+  const [importaciones, setImportaciones] = useState([]);
+  const [loadingImportaciones, setLoadingImportaciones] = useState(false);
+  const [downloadingImportaciones, setDownloadingImportaciones] = useState(false);
 
   const pushResult = (type, title, payload, ok = true) => {
     setLastResults((prev) => [
@@ -107,6 +153,57 @@ export default function CargarBasesAuxiliaresCoeSap() {
       },
       ...prev,
     ].slice(0, 8));
+  };
+
+
+
+  const fetchImportaciones = useCallback(async () => {
+    setLoadingImportaciones(true);
+
+    try {
+      const res = await jfetch("/coe-sap-funcional/calificacion/importaciones?page=1&page_size=20", {
+        method: "GET",
+        headers: commonHeaders,
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+      }
+
+      setImportaciones(Array.isArray(data?.data) ? data.data : []);
+    } catch (error) {
+      console.error("Error consultando importaciones COE SAP:", error);
+      setImportaciones([]);
+    } finally {
+      setLoadingImportaciones(false);
+    }
+  }, [commonHeaders]);
+
+  useEffect(() => {
+    fetchImportaciones();
+  }, [fetchImportaciones]);
+
+  const descargarImportacionesExcel = async () => {
+    setDownloadingImportaciones(true);
+
+    try {
+      await downloadExcelFile(
+        "/coe-sap-funcional/calificacion/importaciones/export-excel",
+        commonHeaders,
+        "importaciones_coe_sap_funcional.xlsx"
+      );
+    } catch (error) {
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo descargar el Excel",
+        text: error?.message || "Revisa el backend.",
+        confirmButtonColor: "#DA291C",
+      });
+    } finally {
+      setDownloadingImportaciones(false);
+    }
   };
 
   const triggerFile = (key) => {
@@ -160,6 +257,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
       }
 
       pushResult(action.key, action.title, data, true);
+      fetchImportaciones();
 
       await Swal.fire({
         icon: "success",
@@ -225,6 +323,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
       }
 
       pushResult("sync", "Sincronización", data, true);
+      fetchImportaciones();
 
       await Swal.fire({
         icon: "success",
@@ -333,6 +432,67 @@ export default function CargarBasesAuxiliaresCoeSap() {
             {syncing ? "Sincronizando..." : "Sincronizar ahora"}
           </button>
         </article>
+      </section>
+
+
+
+      <section className="coeload-results-card">
+        <div className="coeload-results-head">
+          <div>
+            <h2>Histórico de importaciones</h2>
+            <p>Últimas cargas registradas en base de datos.</p>
+          </div>
+
+          <div className="coeload-history-actions">
+            <button type="button" className="coeload-btn light" onClick={fetchImportaciones} disabled={loadingImportaciones}>
+              {loadingImportaciones ? "Actualizando..." : "Actualizar"}
+            </button>
+            <button type="button" className="coeload-btn danger" onClick={descargarImportacionesExcel} disabled={downloadingImportaciones}>
+              {downloadingImportaciones ? "Descargando..." : "Descargar Excel"}
+            </button>
+          </div>
+        </div>
+
+        <div className="coeload-history-table-wrap">
+          <table className="coeload-history-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Archivo</th>
+                <th>Filas</th>
+                <th>Insertados</th>
+                <th>Actualizados</th>
+                <th>Errores</th>
+                <th>Usuario</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loadingImportaciones ? (
+                <tr>
+                  <td colSpan="8" className="coeload-empty">Consultando histórico...</td>
+                </tr>
+              ) : importaciones.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="coeload-empty">Todavía no hay importaciones registradas.</td>
+                </tr>
+              ) : (
+                importaciones.map((row) => (
+                  <tr key={row.id}>
+                    <td>{cleanText(row.createdAt)}</td>
+                    <td><span className="coeload-mini-pill">{cleanText(row.tipo)}</span></td>
+                    <td>{cleanText(row.archivoNombre)}</td>
+                    <td>{numberText(row.filas)}</td>
+                    <td>{numberText(row.insertados)}</td>
+                    <td>{numberText(row.actualizados)}</td>
+                    <td>{numberText(row.errores)}</td>
+                    <td>{cleanText(row.usuario)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="coeload-results-card">

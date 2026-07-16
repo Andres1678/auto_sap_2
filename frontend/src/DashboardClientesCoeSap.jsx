@@ -69,6 +69,49 @@ function moneyText(value) {
   });
 }
 
+
+function getFilenameFromDisposition(disposition, fallback) {
+  const header = disposition || "";
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
+
+  const normalMatch = header.match(/filename="?([^";]+)"?/i);
+  if (normalMatch?.[1]) return normalMatch[1];
+
+  return fallback;
+}
+
+async function downloadExcelFile(url, headers, fallbackName) {
+  const res = await jfetch(url, {
+    method: "GET",
+    headers,
+  });
+
+  if (!res.ok) {
+    let data = {};
+    try {
+      data = await res.json();
+    } catch {}
+
+    throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  const filename = getFilenameFromDisposition(
+    res.headers.get("Content-Disposition"),
+    fallbackName
+  );
+
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(objectUrl);
+}
+
 function buildQuery(filters) {
   const qs = new URLSearchParams();
 
@@ -270,6 +313,7 @@ export default function DashboardClientesCoeSap() {
   const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
 
   const resumen = payload?.resumen || {};
   const opciones = payload?.opciones || {};
@@ -314,6 +358,32 @@ export default function DashboardClientesCoeSap() {
     }
   }, [canView, commonHeaders, appliedFilters]);
 
+
+
+  const descargarExcel = useCallback(async () => {
+    setDownloadingExcel(true);
+
+    try {
+      const qs = buildQuery(appliedFilters);
+      const url = `/coe-sap-funcional/calificacion/dashboard-clientes/export-excel${qs ? `?${qs}` : ""}`;
+
+      await downloadExcelFile(
+        url,
+        commonHeaders,
+        "dashboard_clientes_coe_sap_funcional.xlsx"
+      );
+    } catch (error) {
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo descargar el Excel",
+        text: error?.message || "Revisa el backend.",
+        confirmButtonColor: "#DA291C",
+      });
+    } finally {
+      setDownloadingExcel(false);
+    }
+  }, [appliedFilters, commonHeaders]);
+
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
@@ -354,6 +424,10 @@ export default function DashboardClientesCoeSap() {
         <div className="coedash-hero-actions">
           <button type="button" className="coedash-btn light" onClick={fetchDashboard} disabled={loading}>
             {loading ? "Actualizando..." : "Actualizar"}
+          </button>
+
+          <button type="button" className="coedash-btn danger" onClick={descargarExcel} disabled={loading || downloadingExcel}>
+            {downloadingExcel ? "Descargando..." : "Descargar Excel"}
           </button>
         </div>
       </section>

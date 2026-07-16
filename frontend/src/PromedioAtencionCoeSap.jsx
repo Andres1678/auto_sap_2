@@ -62,6 +62,49 @@ function cleanText(value) {
   return String(value);
 }
 
+
+function getFilenameFromDisposition(disposition, fallback) {
+  const header = disposition || "";
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
+
+  const normalMatch = header.match(/filename="?([^";]+)"?/i);
+  if (normalMatch?.[1]) return normalMatch[1];
+
+  return fallback;
+}
+
+async function downloadExcelFile(url, headers, fallbackName) {
+  const res = await jfetch(url, {
+    method: "GET",
+    headers,
+  });
+
+  if (!res.ok) {
+    let data = {};
+    try {
+      data = await res.json();
+    } catch {}
+
+    throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  const filename = getFilenameFromDisposition(
+    res.headers.get("Content-Disposition"),
+    fallbackName
+  );
+
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(objectUrl);
+}
+
 function buildQuery(filters) {
   const qs = new URLSearchParams();
 
@@ -206,6 +249,7 @@ export default function PromedioAtencionCoeSap() {
   const [resumen, setResumen] = useState({});
   const [opciones, setOpciones] = useState({});
   const [loading, setLoading] = useState(false);
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
 
   const updateFilter = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -250,6 +294,32 @@ export default function PromedioAtencionCoeSap() {
     }
   }, [canView, commonHeaders, appliedFilters]);
 
+
+
+  const descargarExcel = useCallback(async () => {
+    setDownloadingExcel(true);
+
+    try {
+      const qs = buildQuery(appliedFilters);
+      const url = `/coe-sap-funcional/calificacion/promedio-atencion/export-excel${qs ? `?${qs}` : ""}`;
+
+      await downloadExcelFile(
+        url,
+        commonHeaders,
+        "promedio_atencion_coe_sap_funcional.xlsx"
+      );
+    } catch (error) {
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo descargar el Excel",
+        text: error?.message || "Revisa el backend.",
+        confirmButtonColor: "#DA291C",
+      });
+    } finally {
+      setDownloadingExcel(false);
+    }
+  }, [appliedFilters, commonHeaders]);
+
   useEffect(() => {
     fetchPromedios();
   }, [fetchPromedios]);
@@ -289,6 +359,10 @@ export default function PromedioAtencionCoeSap() {
         <div className="coeavg-hero-actions">
           <button type="button" className="coeavg-btn light" onClick={fetchPromedios} disabled={loading}>
             {loading ? "Actualizando..." : "Actualizar"}
+          </button>
+
+          <button type="button" className="coeavg-btn danger" onClick={descargarExcel} disabled={loading || downloadingExcel}>
+            {downloadingExcel ? "Descargando..." : "Descargar Excel"}
           </button>
         </div>
       </section>
