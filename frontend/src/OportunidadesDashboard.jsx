@@ -681,34 +681,42 @@ function getFilteredDashboardGroupRows(row, filtros) {
 }
 
 function rebuildDashboardRowForFilters(row, filtros) {
-  if (!matchesDashboardFilters(row, filtros)) return null;
-
   const hijosTotales = [...(row?.__dashboard_hijos || [])].filter(Boolean);
-  const principalMatch = rowMatchesDashboardFilters(row, filtros);
-  const hijosQueCumplenFiltro = hijosTotales.filter((item) => rowMatchesDashboardFilters(item, filtros));
-  const grupoTieneMatch = principalMatch || hijosQueCumplenFiltro.length > 0;
 
   /*
-    Regla para cuadrar con Oportunidades:
-    - Las principales se muestran consolidadas.
-    - Si la principal o alguna de sus OTs directas cumple los filtros,
-      se suma el grupo directo completo de esa principal.
-    - Las OTs sin principal no se mezclan en esta suma; aparecen aparte.
+    Regla correcta para valores y conteo:
+    - Las principales solo usan sus OTs directas.
+    - Los filtros se aplican sobre cada OT directa.
+    - Si una OT no cumple el filtro, no suma.
+    - Las OTs sin principal se muestran aparte y no se mezclan.
   */
-  const hijosFiltrados = (
-    row?.__dashboard_sin_principal
-      ? []
-      : grupoTieneMatch
-      ? hijosTotales
-      : []
-  ).sort(sortAssociatedRows);
 
-  const matchingRows = [
-    row,
-    ...hijosFiltrados,
-  ];
+  if (row?.__dashboard_sin_principal) {
+    if (!rowMatchesDashboardFilters(row, filtros)) return null;
 
-  if (!matchingRows.length) return null;
+    return {
+      ...row,
+      __dashboard_hijos_filtrados: [],
+      __dashboard_total_asociadas_filtradas: 0,
+      __dashboard_asociadas_suman_filtradas: 0,
+      __dashboard_suma_filtrada: true,
+    };
+  }
+
+  const hijosFiltrados = hijosTotales
+    .filter((item) => mostrarEnDashboard(item) && rowMatchesDashboardFilters(item, filtros))
+    .sort(sortAssociatedRows);
+
+  // Si la principal tiene OTs directas, la fila se muestra únicamente
+  // cuando alguna OT directa cumple los filtros.
+  if (hijosTotales.length > 0 && hijosFiltrados.length === 0) {
+    return null;
+  }
+
+  // Principal sin OTs: se evalúa directamente la principal.
+  if (hijosTotales.length === 0 && !rowMatchesDashboardFilters(row, filtros)) {
+    return null;
+  }
 
   const hijosParaSumar = getAssociatedRowsForTotals(hijosFiltrados);
   const usarHijos = hijosParaSumar.length > 0;
@@ -754,6 +762,7 @@ function rebuildDashboardRowForFilters(row, filtros) {
     seguimiento_ot: seguimientoFiltrado || row?.seguimiento_ot || "",
   };
 }
+
 
 function useDebouncedValue(value, delay = 350) {
   const [debounced, setDebounced] = useState(value);
@@ -1475,10 +1484,9 @@ export default function DashboardOportunidades() {
                       <td>{row.gerencia_comercial ?? "-"}</td>
                       <td>{row.comercial_asignado ?? "-"}</td>
                       <td>
-                        {row.__dashboard_total_asociadas_filtradas ?? row.__dashboard_total_asociadas ?? 0}
-                        {row.__dashboard_total_asociadas
-                          ? ` / ${row.__dashboard_total_asociadas}`
-                          : ""}
+                        {row.__dashboard_sin_principal
+                          ? "SIN PRINCIPAL"
+                          : `${row.__dashboard_total_asociadas_filtradas ?? row.__dashboard_total_asociadas ?? 0} / ${row.__dashboard_total_asociadas ?? 0}`}
                       </td>
                       <td className="td-wrap">{renderObservacionesCell(row.observaciones)}</td>
                     </tr>
