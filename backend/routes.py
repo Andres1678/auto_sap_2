@@ -4125,13 +4125,197 @@ def crear_oportunidad():
 @permission_required("OPORTUNIDADES_EDITAR")
 def editar_oportunidad(id):
     try:
+        import re
+        from decimal import Decimal, ROUND_HALF_UP
+
         data = clean_payload(request.get_json() or {})
         o = Oportunidad.query.get_or_404(id)
+
+        def norm_key(value):
+            return re.sub(r"\s+", " ", str(value or "").strip().upper())
+
+        def es_principal(row):
+            return norm_key(getattr(row, "tipo_oportunidad", "")) == "PRINCIPAL"
+
+        def parse_money(value):
+            if value is None:
+                return None
+
+            if isinstance(value, Decimal):
+                return value
+
+            s = str(value).strip()
+
+            if s == "" or s.lower() in ("none", "null", "nan") or s == "-":
+                return None
+
+            s = re.sub(r"[^\d,.\-]", "", s)
+
+            if s == "":
+                return None
+
+            if "," in s and "." in s:
+                s = s.replace(".", "").replace(",", ".")
+            elif "," in s:
+                s = s.replace(",", ".")
+
+            try:
+                return Decimal(s)
+            except Exception:
+                return None
+
+        def money_has_value(row):
+            campos = [
+                "otc",
+                "mrc",
+                "mrc_normalizado",
+                "valor_oferta_claro",
+            ]
+
+            for campo in campos:
+                if hasattr(row, campo) and parse_money(getattr(row, campo, None)) is not None:
+                    return True
+
+            return False
+
+        def row_suma_en_principal(row):
+            estado = norm_key(getattr(row, "estado_oferta", ""))
+            resultado = norm_key(getattr(row, "resultado_oferta", ""))
+
+            return estado in ("OT", "GANADA") or resultado in ("OT", "GANADA")
+
+        def sum_money(rows, campo):
+            total = Decimal("0")
+            tiene_valor = False
+
+            for row in rows or []:
+                if not hasattr(row, campo):
+                    continue
+
+                valor = parse_money(getattr(row, campo, None))
+
+                if valor is None:
+                    continue
+
+                total += valor
+                tiene_valor = True
+
+            if not tiene_valor:
+                return None
+
+            return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        def get_hijos_principal(principal_id):
+            return (
+                Oportunidad.query
+                .filter(Oportunidad.oportunidad_padre_id == principal_id)
+                .order_by(
+                    Oportunidad.consecutivo_sub.asc(),
+                    Oportunidad.id.asc(),
+                )
+                .all()
+            )
+
+        def sync_principal_desde_primera_ot(ot_editada):
+            if not ot_editada or not getattr(ot_editada, "oportunidad_padre_id", None):
+                return None
+
+            if es_principal(ot_editada):
+                return None
+
+            principal = Oportunidad.query.get(ot_editada.oportunidad_padre_id)
+
+            if not principal or not es_principal(principal):
+                return None
+
+            hijos = get_hijos_principal(principal.id)
+
+            if not hijos:
+                return None
+
+            primera_ot = hijos[0]
+
+            if int(primera_ot.id) != int(ot_editada.id):
+                return None
+
+            campos_sincronizar = [
+                "tipo_cliente",
+                "tipo_solicitud",
+                "caso_sm",
+                "fecha_cierre_sm",
+                "salesforce",
+                "ultimos_6_meses",
+                "ultimo_mes",
+                "retraso",
+                "estado_oferta",
+                "resultado_oferta",
+                "calificacion_oportunidad",
+                "origen_oportunidad",
+                "direccion_comercial",
+                "gerencia_comercial",
+                "comercial_asignado",
+                "consultor_comercial",
+                "comercial_asignado_hitss",
+                "observaciones",
+                "categoria_perdida",
+                "subcategoria_perdida",
+                "fecha_entrega_oferta_final",
+                "tipo_moneda",
+                "duracion",
+                "pais",
+                "fecha_cierre_oportunidad",
+                "fecha_firma_aos",
+                "pm_asignado_claro",
+                "pm_asignado_hitss",
+                "estado_ot",
+                "proyeccion_ingreso",
+                "fecha_compromiso",
+                "fecha_cierre",
+                "estado_proyecto",
+                "anio_creacion_ot",
+                "seguimiento_ot",
+                "mostrar_dashboard",
+            ]
+
+            for campo in campos_sincronizar:
+                if hasattr(principal, campo) and hasattr(primera_ot, campo):
+                    setattr(principal, campo, getattr(primera_ot, campo))
+
+            hijos_para_sumar = [h for h in hijos if row_suma_en_principal(h)]
+
+            if not hijos_para_sumar:
+                hijos_para_sumar = [h for h in hijos if money_has_value(h)]
+
+            if hijos_para_sumar:
+                total_otc = sum_money(hijos_para_sumar, "otc")
+                total_mrc = sum_money(hijos_para_sumar, "mrc")
+                total_valor_oferta = sum_money(hijos_para_sumar, "valor_oferta_claro")
+
+                if hasattr(principal, "otc"):
+                    principal.otc = total_otc
+
+                if hasattr(principal, "mrc"):
+                    principal.mrc = total_mrc
+
+                if hasattr(principal, "valor_oferta_claro"):
+                    principal.valor_oferta_claro = total_valor_oferta
+
+                if hasattr(principal, "mrc_normalizado"):
+                    otc_decimal = total_otc or Decimal("0")
+                    mrc_decimal = total_mrc or Decimal("0")
+                    principal.mrc_normalizado = (
+                        mrc_decimal + (otc_decimal / Decimal("12"))
+                    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+            return principal
+
         for k, v in data.items():
             if hasattr(o, k):
                 setattr(o, k, v)
 
-        if _norm_key_for_match(o.tipo_oportunidad) == "PRINCIPAL":
+        principal_sincronizada = None
+
+        if es_principal(o):
             duplicada = _buscar_principal_mismo_cliente_servicio(
                 o.nombre_cliente,
                 o.servicio,
@@ -4142,11 +4326,26 @@ def editar_oportunidad(id):
                 db.session.rollback()
                 return _response_principal_duplicada(duplicada)
 
+        else:
+            principal_sincronizada = sync_principal_desde_primera_ot(o)
+
         db.session.commit()
-        return jsonify({"mensaje": "Actualizado correctamente"}), 200
+
+        return jsonify({
+            "mensaje": "Actualizado correctamente",
+            "oportunidad": normalize_oportunidad_dict(o.to_dict()),
+            "principal_sincronizada": (
+                normalize_oportunidad_dict(principal_sincronizada.to_dict())
+                if principal_sincronizada else None
+            ),
+        }), 200
+
     except Exception:
         db.session.rollback()
-        return jsonify({"mensaje": "Error editando oportunidad", "trace": traceback.format_exc()}), 500
+        return jsonify({
+            "mensaje": "Error editando oportunidad",
+            "trace": traceback.format_exc(),
+        }), 500
 
 
 @bp.route("/oportunidades/<int:id>", methods=["DELETE"])

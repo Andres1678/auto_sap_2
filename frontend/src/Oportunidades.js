@@ -641,6 +641,45 @@ const PRINCIPAL_ESTADO_FROM_FIRST_OT_COLS = new Set([
   "estado_proyecto",
 ]);
 
+const FIRST_OT_TO_PRINCIPAL_SYNC_FIELDS = new Set([
+  "tipo_cliente",
+  "tipo_solicitud",
+  "caso_sm",
+  "fecha_cierre_sm",
+  "salesforce",
+  "ultimos_6_meses",
+  "ultimo_mes",
+  "retraso",
+  "estado_oferta",
+  "resultado_oferta",
+  "calificacion_oportunidad",
+  "origen_oportunidad",
+  "direccion_comercial",
+  "gerencia_comercial",
+  "comercial_asignado",
+  "consultor_comercial",
+  "comercial_asignado_hitss",
+  "observaciones",
+  "categoria_perdida",
+  "subcategoria_perdida",
+  "fecha_entrega_oferta_final",
+  "tipo_moneda",
+  "duracion",
+  "pais",
+  "fecha_cierre_oportunidad",
+  "fecha_firma_aos",
+  "pm_asignado_claro",
+  "pm_asignado_hitss",
+  "estado_ot",
+  "proyeccion_ingreso",
+  "fecha_compromiso",
+  "fecha_cierre",
+  "estado_proyecto",
+  "anio_creacion_ot",
+  "seguimiento_ot",
+  "mostrar_dashboard",
+]);
+
 const ESTADOS_CERRADOS_RESUMEN = new Set([
   "GANADA",
   "OT",
@@ -1014,6 +1053,16 @@ function getPrincipalEstadoValue(grupo, col) {
   }
 
   return grupo?.principalRow?.[col] ?? "";
+}
+
+function isFirstAssignedOt(row, allRows = []) {
+  if (!row?.id || !row?.oportunidad_padre_id) return false;
+
+  const hermanas = (allRows || [])
+    .filter((item) => String(item?.oportunidad_padre_id || "") === String(row.oportunidad_padre_id))
+    .sort(compareOtsAsignadas);
+
+  return hermanas.length > 0 && sameId(hermanas[0]?.id, row.id);
 }
 
 function isAsiCloudRow(row) {
@@ -2546,15 +2595,43 @@ export default function Oportunidades() {
         return;
       }
 
+      const updatedRow = normalizeRowFromApi({ ...row, ...nextRow, ...payload, ...(j?.oportunidad || {}) });
+      const principalSincronizada = j?.principal_sincronizada
+        ? normalizeRowFromApi(j.principal_sincronizada)
+        : null;
+
       setData((prev) =>
-        prev.map((r) =>
-          sameId(r.id, row.id)
-            ? normalizeRowFromApi({ ...r, ...nextRow, ...payload })
-            : r
-        )
+        prev.map((r) => {
+          if (sameId(r.id, row.id)) {
+            return updatedRow;
+          }
+
+          if (principalSincronizada && sameId(r.id, principalSincronizada.id)) {
+            return normalizeRowFromApi({ ...r, ...principalSincronizada });
+          }
+
+          return r;
+        })
       );
 
       highlightRow(row.id);
+
+      if (principalSincronizada) {
+        highlightRow(principalSincronizada.id);
+
+        if (isFirstAssignedOt(row, data)) {
+          Swal.fire({
+            toast: true,
+            position: "top-end",
+            icon: "success",
+            title: "Principal sincronizada con la primera OT",
+            showConfirmButton: false,
+            timer: 1800,
+            timerProgressBar: true,
+          });
+        }
+      }
+
       closeEditing();
     } catch (e) {
       Swal.fire("Error", e?.message || "Error inesperado", "error");
