@@ -1817,9 +1817,64 @@ def _apply_project_filter_shared(q, proyecto_id: int):
 
     return q.filter(or_(*clauses))
 
+def _graficos_list_arg(key: str):
+    """Lee parámetros repetidos: ?cliente=A&cliente=B o cliente[]."""
+    values = request.args.getlist(key)
+    if not values:
+        values = request.args.getlist(f"{key}[]")
+
+    clean = []
+    seen = set()
+
+    for value in values:
+        text_value = str(value or "").strip()
+        if not text_value or text_value in seen:
+            continue
+        seen.add(text_value)
+        clean.append(text_value)
+
+    return clean
+
+
+def _graficos_parse_iso_date(value: str, field_name: str):
+    value = str(value or "").strip()
+    if not value:
+        return None
+
+    try:
+        return datetime.strptime(value[:10], "%Y-%m-%d").date()
+    except Exception:
+        raise ValueError(f"{field_name} inválido, usa YYYY-MM-DD")
+
+
+def _graficos_month_bounds(value: str):
+    value = str(value or "").strip()
+    try:
+        year_text, month_text = value.split("-", 1)
+        year = int(year_text)
+        month = int(month_text)
+        if month < 1 or month > 12:
+            raise ValueError
+    except Exception:
+        raise ValueError("mes inválido, usa YYYY-MM")
+
+    start = date(year, month, 1)
+    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return start, end
+
+
 @bp.route('/registros/graficos', methods=['GET'])
 @permission_required("GRAFICOS_VER")
 def obtener_registros_graficos():
+    """
+    Endpoint liviano para el dashboard.
+
+    Mejoras principales:
+    - aplica todos los filtros en SQL;
+    - usa rangos sobre Registro.fecha en lugar de CAST/SUBSTR;
+    - evita joinedload y la carga de modelos completos;
+    - retorna únicamente las columnas utilizadas por las gráficas y el modal.
+    """
     try:
         usuario = _get_usuario_from_request()
         rol_req = _get_rol_from_request()
@@ -1827,7 +1882,7 @@ def obtener_registros_graficos():
         if not usuario:
             return jsonify({'error': 'Usuario no enviado'}), 400
 
-        usuario_norm = (usuario or "").strip().lower()
+        usuario_norm = str(usuario).strip().lower()
 
         consultor_login = (
             Consultor.query.options(
@@ -1841,229 +1896,245 @@ def obtener_registros_graficos():
         if not consultor_login:
             return jsonify({'error': 'Consultor no encontrado'}), 404
 
-        scope, val = _scope_for_graficos(consultor_login, rol_req)
+        scope, scope_value = _scope_for_graficos(consultor_login, rol_req)
 
         C = aliased(Consultor)
         E = aliased(Equipo)
+        T = aliased(Tarea)
+        O = aliased(Ocupacion)
+        P = aliased(Proyecto)
 
+        # Consulta de proyección: no construye objetos Registro ni relaciones ORM.
         q = (
-            Registro.query
-            .options(
-                joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
-                joinedload(Registro.tarea),
-                joinedload(Registro.ocupacion),
-                joinedload(Registro.proyecto),
-                joinedload(Registro.fase_proyecto),
+            db.session.query(
+                Registro.id.label("id"),
+                Registro.fecha.label("fecha"),
+                Registro.modulo.label("modulo"),
+                Registro.cliente.label("cliente"),
+                Registro.nro_caso_cliente.label("nro_caso_cliente"),
+                Registro.nro_caso_interno.label("nro_caso_interno"),
+                Registro.nro_caso_escalado.label("nro_caso_escalado"),
+                Registro.ocupacion_id.label("ocupacion_id"),
+                O.codigo.label("ocupacion_codigo"),
+                O.nombre.label("ocupacion_nombre"),
+                Registro.tarea_id.label("tarea_id"),
+                T.codigo.label("tarea_codigo"),
+                T.nombre.label("tarea_nombre"),
+                Registro.tipo_tarea.label("tipo_tarea_legacy"),
+                C.nombre.label("consultor_nombre"),
+                Registro.usuario_consultor.label("usuario_consultor"),
+                E.nombre.label("equipo_relacion"),
+                Registro.equipo.label("equipo_registro"),
+                Registro.hora_inicio.label("hora_inicio"),
+                Registro.hora_fin.label("hora_fin"),
+                Registro.tiempo_invertido.label("tiempo_invertido"),
+                Registro.horas_adicionales.label("horas_adicionales"),
+                Registro.horario_trabajo.label("horario_trabajo"),
+                Registro.descripcion.label("descripcion"),
+                Registro.proyecto_id.label("proyecto_id"),
+                P.codigo.label("proyecto_codigo"),
+                P.nombre.label("proyecto_nombre"),
             )
-            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .select_from(Registro)
+            # En MySQL la collation usual es case-insensitive. Al quitar LOWER()
+            # el motor puede utilizar los índices de usuario_consultor/usuario.
+            .outerjoin(C, Registro.usuario_consultor == C.usuario)
             .outerjoin(E, C.equipo_id == E.id)
+            .outerjoin(T, Registro.tarea_id == T.id)
+            .outerjoin(O, Registro.ocupacion_id == O.id)
+            .outerjoin(P, Registro.proyecto_id == P.id)
         )
 
         # ----------------------------------------------------------
-        # Scope
+        # Scope de seguridad
         # ----------------------------------------------------------
         if scope == "SELF":
-            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+            q = q.filter(Registro.usuario_consultor == consultor_login.usuario)
 
         elif scope == "TEAM":
-            if not int(val or 0):
+            equipo_id = int(scope_value or 0)
+            if not equipo_id:
                 return jsonify({'error': 'Consultor sin equipo asignado'}), 403
-            q = q.filter(C.equipo_id == int(val))
+            q = q.filter(C.equipo_id == equipo_id)
 
-        elif scope == "ALL":
-            pass
-
-        # ----------------------------------------------------------
-        # Filtro opcional por equipo
-        # ----------------------------------------------------------
-        equipo_filter = (request.args.get("equipo") or "").strip().upper()
-
-        if equipo_filter:
-            if scope in ("TEAM", "SELF"):
-                eq_login = ""
-                if consultor_login.equipo_obj:
-                    eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper()
-
-                if equipo_filter != eq_login:
-                    return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
-
-            q = q.filter(func.upper(E.nombre) == equipo_filter)
+        # ALL no agrega condición.
 
         # ----------------------------------------------------------
-        # Filtros opcionales backend
+        # Filtro temporal indexable
         # ----------------------------------------------------------
-        filtro_mes = (request.args.get("mes") or "").strip()
-        filtro_desde = (request.args.get("desde") or "").strip()
-        filtro_hasta = (request.args.get("hasta") or "").strip()
-        filtro_modulo = (request.args.get("modulo") or "").strip()
-        filtro_cliente = (request.args.get("cliente") or "").strip()
-        filtro_consultor = (request.args.get("consultor") or "").strip()
-        filtro_proyecto_id = (request.args.get("proyecto_id") or "").strip()
+        filtro_mes = str(request.args.get("mes") or "").strip()
+        filtro_desde = str(request.args.get("desde") or "").strip()
+        filtro_hasta = str(request.args.get("hasta") or "").strip()
 
-        # ----------------------------------------------------------
-        # Filtro por mes o rango
-        # ----------------------------------------------------------
         if filtro_mes:
-            partes = filtro_mes.split("-")
-            if len(partes) != 2:
-                return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
-
-            try:
-                y = int(partes[0])
-                m = int(partes[1])
-            except ValueError:
-                return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
-
-            if m < 1 or m > 12:
-                return jsonify({"error": "mes inválido, usa YYYY-MM"}), 400
-
-            prefijo_mes = f"{y:04d}-{m:02d}"
-
+            start_date, end_date = _graficos_month_bounds(filtro_mes)
             q = q.filter(
-                func.substr(func.cast(Registro.fecha, db.String), 1, 7) == prefijo_mes
+                Registro.fecha >= start_date.isoformat(),
+                Registro.fecha < end_date.isoformat(),
             )
         else:
-            if filtro_desde:
-                q = q.filter(func.cast(Registro.fecha, db.String) >= filtro_desde)
-            if filtro_hasta:
-                q = q.filter(func.cast(Registro.fecha, db.String) <= filtro_hasta)
+            if not filtro_desde and not filtro_hasta:
+                return jsonify({
+                    'error': 'Selecciona un mes o un rango completo de fechas'
+                }), 400
 
-        if filtro_modulo:
-            q = q.filter(func.upper(Registro.modulo) == filtro_modulo.upper())
+            if not filtro_desde or not filtro_hasta:
+                return jsonify({
+                    'error': 'El rango requiere fecha desde y fecha hasta'
+                }), 400
 
-        if filtro_cliente:
-            q = q.filter(Registro.cliente.ilike(f"%{filtro_cliente}%"))
+            desde_date = _graficos_parse_iso_date(filtro_desde, "desde")
+            hasta_date = _graficos_parse_iso_date(filtro_hasta, "hasta")
 
-        if filtro_consultor:
-            q = q.filter(C.nombre.ilike(f"%{filtro_consultor}%"))
+            if desde_date > hasta_date:
+                return jsonify({'error': 'La fecha desde no puede ser mayor que hasta'}), 400
 
+            if (hasta_date - desde_date).days > 365:
+                return jsonify({
+                    'error': 'El rango máximo permitido para el dashboard es de 366 días'
+                }), 400
+
+            q = q.filter(
+                Registro.fecha >= desde_date.isoformat(),
+                # Menor que el día siguiente evita CAST/DATE y conserva uso de índice.
+                Registro.fecha < (hasta_date + timedelta(days=1)).isoformat(),
+            )
+
+        # ----------------------------------------------------------
+        # Filtros múltiples enviados por el botón Aplicar
+        # ----------------------------------------------------------
+        filtro_consultores = _graficos_list_arg("consultor")
+        filtro_tareas = _graficos_list_arg("tarea")
+        filtro_clientes = _graficos_list_arg("cliente")
+        filtro_modulos = _graficos_list_arg("modulo")
+        filtro_equipos = _graficos_list_arg("equipo")
+        filtro_nro_cliente = _graficos_list_arg("nro_cliente")
+        filtro_nro_escalado = _graficos_list_arg("nro_escalado")
+
+        filtro_ocupacion_ids = []
+        for value in _graficos_list_arg("ocupacion_id"):
+            try:
+                ocupacion_id = int(value)
+                if ocupacion_id > 0:
+                    filtro_ocupacion_ids.append(ocupacion_id)
+            except Exception:
+                continue
+
+        if filtro_consultores:
+            q = q.filter(C.nombre.in_(filtro_consultores))
+
+        if filtro_clientes:
+            q = q.filter(Registro.cliente.in_(filtro_clientes))
+
+        if filtro_modulos:
+            q = q.filter(Registro.modulo.in_(filtro_modulos))
+
+        if filtro_equipos:
+            equipos_upper = [value.upper() for value in filtro_equipos]
+
+            if scope in ("TEAM", "SELF"):
+                equipo_login = (
+                    str(consultor_login.equipo_obj.nombre or "").strip().upper()
+                    if consultor_login.equipo_obj else ""
+                )
+                if any(value != equipo_login for value in equipos_upper):
+                    return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
+
+            q = q.filter(or_(
+                func.upper(E.nombre).in_(equipos_upper),
+                func.upper(Registro.equipo).in_(equipos_upper),
+            ))
+
+        if filtro_nro_cliente:
+            q = q.filter(Registro.nro_caso_cliente.in_(filtro_nro_cliente))
+
+        if filtro_nro_escalado:
+            q = q.filter(Registro.nro_caso_escalado.in_(filtro_nro_escalado))
+
+        if filtro_ocupacion_ids:
+            q = q.filter(Registro.ocupacion_id.in_(list(set(filtro_ocupacion_ids))))
+
+        if filtro_tareas:
+            codigos_tarea = []
+            for label in filtro_tareas:
+                codigo = label.split(" - ", 1)[0].strip()
+                if codigo:
+                    codigos_tarea.append(codigo)
+
+            condiciones_tarea = [Registro.tipo_tarea.in_(filtro_tareas)]
+            if codigos_tarea:
+                condiciones_tarea.append(T.codigo.in_(list(set(codigos_tarea))))
+
+            q = q.filter(or_(*condiciones_tarea))
+
+        filtro_proyecto_id = str(request.args.get("proyecto_id") or "").strip()
         if filtro_proyecto_id:
             try:
                 q = _apply_project_filter_graficos(q, int(filtro_proyecto_id))
             except Exception:
-                return jsonify({"error": "proyecto_id inválido"}), 400
+                return jsonify({'error': 'proyecto_id inválido'}), 400
 
-        # ----------------------------------------------------------
-        # Orden
-        # ----------------------------------------------------------
-        q = q.order_by(Registro.fecha.desc(), Registro.id.desc())
+        # No se ordena: las gráficas agregan los datos y el modal los ordena en JS.
+        # Eliminar ORDER BY reduce el uso de archivos temporales para rangos grandes.
+        rows = q.yield_per(2000)
 
-        # ----------------------------------------------------------
-        # IMPORTANTE:
-        # No limitar cuando se consulta un mes o rango, porque
-        # las gráficas deben sumar TODO el periodo visible.
-        # El limit solo se usa como protección cuando NO hay
-        # filtro temporal.
-        # ----------------------------------------------------------
-        tiene_filtro_temporal = bool(filtro_mes or filtro_desde or filtro_hasta)
-
-        if tiene_filtro_temporal:
-            registros = q.all()
-        else:
-            max_rows = request.args.get("max_rows", type=int) or 5000
-            max_rows = min(max(max_rows, 1), 10000)
-            registros = q.limit(max_rows).all()
-
-        # ----------------------------------------------------------
-        # Serialización
-        # ----------------------------------------------------------
         data = []
 
-        for r in registros:
-            tarea = getattr(r, "tarea", None)
-            ocup = getattr(r, "ocupacion", None)
-
-            if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
-                tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
+        for row in rows:
+            if row.tarea_codigo and row.tarea_nombre:
+                tipo_tarea = f"{row.tarea_codigo} - {row.tarea_nombre}"
             else:
-                tipo_tarea_str = (getattr(r, "tipo_tarea", "") or "").strip() or None
+                tipo_tarea = str(row.tipo_tarea_legacy or "").strip() or None
 
-            equipo_nombre = None
-            if r.consultor and getattr(r.consultor, "equipo_obj", None):
-                equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
-
-            equipo_raw = getattr(r, "equipo", None)
-
-            proyecto = getattr(r, "proyecto", None)
-            fase_proyecto = getattr(r, "fase_proyecto", None)
+            equipo_nombre = str(row.equipo_relacion or row.equipo_registro or "SIN EQUIPO").strip().upper()
 
             data.append({
-                "id": r.id,
-                "fecha": _safe_fecha_iso(r.fecha),
-                "modulo": r.modulo,
-                "cliente": r.cliente,
-                "equipo": equipo_nombre or (str(equipo_raw).strip().upper() if equipo_raw else "SIN EQUIPO"),
-                "nroCasoCliente": r.nro_caso_cliente,
-                "nroCasoInterno": r.nro_caso_interno,
-                "nroCasoEscaladoSap": r.nro_caso_escalado,
-
-                "ocupacion_id": r.ocupacion_id,
-                "ocupacion_codigo": ocup.codigo if ocup else None,
-                "ocupacion_nombre": ocup.nombre if ocup else None,
-
-                "tarea_id": r.tarea_id,
-                "tipoTarea": tipo_tarea_str,
-                "tarea": {
-                    "id": tarea.id,
-                    "codigo": getattr(tarea, "codigo", None),
-                    "nombre": getattr(tarea, "nombre", None),
-                } if tarea else None,
-
-                "consultor": r.consultor.nombre if r.consultor else None,
-                "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
-                "horaInicio": r.hora_inicio,
-                "horaFin": r.hora_fin,
-                "tiempoInvertido": r.tiempo_invertido,
-                "tiempoFacturable": r.tiempo_facturable,
+                "id": row.id,
+                "fecha": _safe_fecha_iso(row.fecha),
+                "modulo": row.modulo,
+                "cliente": row.cliente,
+                "equipo": equipo_nombre,
+                "nroCasoCliente": row.nro_caso_cliente,
+                "nroCasoInterno": row.nro_caso_interno,
+                "nroCasoEscaladoSap": row.nro_caso_escalado,
+                "ocupacion_id": row.ocupacion_id,
+                "ocupacion_codigo": row.ocupacion_codigo,
+                "ocupacion_nombre": row.ocupacion_nombre,
+                "tarea_id": row.tarea_id,
+                "tipoTarea": tipo_tarea,
+                "consultor": row.consultor_nombre,
+                "usuario_consultor": str(row.usuario_consultor or "").strip().lower(),
+                "horaInicio": row.hora_inicio,
+                "horaFin": row.hora_fin,
+                "tiempoInvertido": row.tiempo_invertido,
                 "horasAdicionales": _calcular_horas_adicionales_por_horario(
-                    r.hora_inicio,
-                    r.hora_fin,
-                    getattr(r, "horario_trabajo", None),
-                    equipo_nombre or getattr(r, "equipo", None),
-                    r.horas_adicionales,
+                    row.hora_inicio,
+                    row.hora_fin,
+                    row.horario_trabajo,
+                    equipo_nombre,
+                    row.horas_adicionales,
                 ),
-                "horarioTrabajo": _normalizar_horario_trabajo_por_equipo(
-                    getattr(r, "horario_trabajo", None),
-                    equipo_nombre or getattr(r, "equipo", None),
-                ),
-                "horario_trabajo": _normalizar_horario_trabajo_por_equipo(
-                    getattr(r, "horario_trabajo", None),
-                    equipo_nombre or getattr(r, "equipo", None),
-                ),
-                "descripcion": r.descripcion,
-                "totalHoras": r.total_horas,
-                "bloqueado": bool(r.bloqueado),
-                "oncall": r.oncall,
-                "desborde": r.desborde,
-                "actividadMalla": r.actividad_malla,
-
-                "proyecto_id": r.proyecto_id,
-                "fase_proyecto_id": r.fase_proyecto_id,
-                "proyecto": {
-                    "id": proyecto.id,
-                    "codigo": proyecto.codigo,
-                    "nombre": proyecto.nombre,
-                    "activo": bool(getattr(proyecto, "activo", True)),
-                } if proyecto else None,
-                "fase_proyecto": {
-                    "id": fase_proyecto.id,
-                    "nombre": fase_proyecto.nombre,
-                } if fase_proyecto else None,
-                "proyecto_codigo": proyecto.codigo if proyecto else None,
-                "proyecto_nombre": proyecto.nombre if proyecto else None,
-                "proyecto_fase": fase_proyecto.nombre if fase_proyecto else None,
+                "descripcion": row.descripcion,
+                "proyecto_id": row.proyecto_id,
+                "proyecto_codigo": row.proyecto_codigo,
+                "proyecto_nombre": row.proyecto_nombre,
             })
 
-        return jsonify(data), 200
+        response = jsonify(data)
+        response.headers["Cache-Control"] = "private, max-age=30"
+        response.headers["X-Total-Registros"] = str(len(data))
+        return response, 200
 
-    except Exception as e:
-        err = traceback.format_exc()
-        app.logger.error(f"❌ Error en /registros/graficos: {e}\n{err}")
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    except Exception as exc:
+        app.logger.exception("Error en /registros/graficos optimizado")
         return jsonify({
             "error": "Error interno del servidor",
-            "detalle": str(e)
+            "detalle": str(exc),
         }), 500
-    
+
 USUARIOS_PUEDE_SEMANAS_ANTERIORES = {
 }
 

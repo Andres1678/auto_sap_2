@@ -254,6 +254,13 @@ export default function Graficos() {
 
   const navigate = useNavigate();
   const fetchAbortRef = useRef(null);
+  const ocupacionesCatalogoRawRef = useRef([]);
+
+  useEffect(() => {
+    ocupacionesCatalogoRawRef.current = Array.isArray(ocupacionesCatalogoRaw)
+      ? ocupacionesCatalogoRaw
+      : [];
+  }, [ocupacionesCatalogoRaw]);
 
   const user = useMemo(() => {
     try {
@@ -331,8 +338,67 @@ export default function Graficos() {
   }, []);
 
   const handleApplyFilters = useCallback(() => {
-    setAppliedFilters({ ...draftFilters });
-  }, [draftFilters]);
+    if (loading) return;
+
+    const tieneDesde = Boolean(draftFilters.desde);
+    const tieneHasta = Boolean(draftFilters.hasta);
+
+    if (!draftFilters.mes && !tieneDesde && !tieneHasta) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Período requerido',
+        text: 'Selecciona un mes o un rango completo de fechas.',
+      });
+      return;
+    }
+
+    if (!draftFilters.mes && tieneDesde !== tieneHasta) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Rango incompleto',
+        text: 'Debes seleccionar la fecha inicial y la fecha final.',
+      });
+      return;
+    }
+
+    if (draftFilters.desde && draftFilters.hasta && draftFilters.desde > draftFilters.hasta) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Rango inválido',
+        text: 'La fecha inicial no puede ser mayor que la fecha final.',
+      });
+      return;
+    }
+
+    if (draftFilters.desde && draftFilters.hasta) {
+      const desde = new Date(`${draftFilters.desde}T00:00:00`);
+      const hasta = new Date(`${draftFilters.hasta}T00:00:00`);
+      const dias = Math.floor((hasta - desde) / 86400000) + 1;
+
+      if (dias > 366) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Rango demasiado amplio',
+          text: 'Para proteger el dashboard, consulta máximo 366 días por vez.',
+        });
+        return;
+      }
+    }
+
+    // Copia defensiva: la consulta solo se ejecutará con esta fotografía
+    // de los filtros cuando el usuario pulse "Aplicar filtros".
+    setAppliedFilters({
+      ...draftFilters,
+      consultor: [...draftFilters.consultor],
+      tarea: [...draftFilters.tarea],
+      cliente: [...draftFilters.cliente],
+      modulo: [...draftFilters.modulo],
+      nroCliente: [...draftFilters.nroCliente],
+      nroEscalado: [...draftFilters.nroEscalado],
+      equipo: [...draftFilters.equipo],
+      ocupacion: [...draftFilters.ocupacion],
+    });
+  }, [draftFilters, loading]);
 
   const handleClearDraftFilters = useCallback(() => {
     setDraftFilters(buildScopedFilters());
@@ -351,7 +417,7 @@ export default function Graficos() {
     return JSON.stringify(draftFilters) !== JSON.stringify(appliedFilters);
   }, [draftFilters, appliedFilters]);
 
-  const fetchRegistros = useCallback(async () => {
+  const fetchRegistros = useCallback(async (filters) => {
     if (fetchAbortRef.current) {
       try { fetchAbortRef.current.abort(); } catch {}
     }
@@ -362,16 +428,51 @@ export default function Graficos() {
     setLoading(true);
     setError('');
 
+    const appendMany = (params, key, values) => {
+      (Array.isArray(values) ? values : [])
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean)
+        .forEach((value) => params.append(key, value));
+    };
+
     try {
       const params = new URLSearchParams();
-      params.set('max_rows', '2000');
 
-      if (appliedFilters.mes) {
-        params.set('mes', appliedFilters.mes);
+      if (filters.mes) {
+        params.set('mes', filters.mes);
       } else {
-        if (appliedFilters.desde) params.set('desde', appliedFilters.desde);
-        if (appliedFilters.hasta) params.set('hasta', appliedFilters.hasta);
+        if (filters.desde) params.set('desde', filters.desde);
+        if (filters.hasta) params.set('hasta', filters.hasta);
       }
+
+      // Todos los filtros se envían al backend. De esta manera la base de datos
+      // reduce el conjunto antes de construir el JSON y no el navegador después.
+      appendMany(params, 'consultor', filters.consultor);
+      appendMany(params, 'tarea', filters.tarea);
+      appendMany(params, 'cliente', filters.cliente);
+      appendMany(params, 'modulo', filters.modulo);
+      appendMany(params, 'equipo', filters.equipo);
+      appendMany(params, 'nro_cliente', filters.nroCliente);
+      appendMany(params, 'nro_escalado', filters.nroEscalado);
+
+      // La ocupación se envía por ID para que el filtro use la FK/index y no
+      // tenga que comparar textos concatenados.
+      const ocupacionIds = new Map();
+      (ocupacionesCatalogoRawRef.current || []).forEach((ocupacion) => {
+        const codigo = String(ocupacion?.codigo ?? '').trim();
+        const nombre = String(ocupacion?.nombre ?? '').trim();
+        const label = [codigo, nombre].filter(Boolean).join(' - ');
+        const id = Number(ocupacion?.id);
+
+        if (label && Number.isFinite(id) && id > 0) {
+          ocupacionIds.set(label, id);
+        }
+      });
+
+      (filters.ocupacion || []).forEach((label) => {
+        const id = ocupacionIds.get(label);
+        if (id) params.append('ocupacion_id', String(id));
+      });
 
       const res = await jfetch(`/registros/graficos?${params.toString()}`, {
         method: 'GET',
@@ -386,7 +487,7 @@ export default function Graficos() {
       const json = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        console.error("Respuesta error /registros/graficos:", json);
+        console.error('Respuesta error /registros/graficos:', json);
         throw new Error(
           json?.detalle ||
           json?.error ||
@@ -403,27 +504,29 @@ export default function Graficos() {
       setError(String(err?.message || err));
       console.error('Error al cargar registros:', err);
     } finally {
-      setLoading(false);
+      // Una petición cancelada no debe apagar el loader de la petición nueva.
+      if (fetchAbortRef.current === controller) {
+        fetchAbortRef.current = null;
+        setLoading(false);
+      }
     }
   }, [
     rolUpper,
     usuario,
     equipoUser,
-    appliedFilters.mes,
-    appliedFilters.desde,
-    appliedFilters.hasta,
   ]);
 
   useEffect(() => {
-    if (!usuario) return;
-    fetchRegistros();
+    if (!usuario) return undefined;
+
+    fetchRegistros(appliedFilters);
 
     return () => {
       if (fetchAbortRef.current) {
         try { fetchAbortRef.current.abort(); } catch {}
       }
     };
-  }, [fetchRegistros, usuario]);
+  }, [fetchRegistros, usuario, appliedFilters]);
 
   useEffect(() => {
     const cachedLabels = sessionStorage.getItem("pgx_ocupaciones_catalogo");
@@ -1115,9 +1218,9 @@ export default function Graficos() {
             type="button"
             className="pgx-btn"
             onClick={handleApplyFilters}
-            disabled={!hasPendingChanges}
+            disabled={!hasPendingChanges || loading}
           >
-            Aplicar filtros
+            {loading ? 'Aplicando...' : 'Aplicar filtros'}
           </button>
 
           <button
