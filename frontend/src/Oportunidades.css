@@ -2225,3 +2225,134 @@
 .tabla-oportunidades tbody tr.sub-oportunidad-row.unassigned-sub-row td:first-child {
   border-left: 5px solid #f97316 !important;
 }
+
+/* =========================================================
+   FIX DEFINITIVO COLORES POR FILA COMPLETA
+   - Grupo cliente: rojo suave
+   - Principal: azul más marcado en TODA la fila
+   - Asignaciones: azul claro en TODA la fila
+   Este bloque debe quedar al FINAL del CSS para pisar sticky,
+   post-prc, obs, editable, hover y background-image previos.
+========================================================= */
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.sticky-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.sticky-col-2,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.sticky-col-3,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.post-prc-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.obs-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.descripcion-ot-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.servicio-wrap-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.principal-editable-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.principal-total-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.acciones {
+  background: #dbeafe !important;
+  background-color: #dbeafe !important;
+  background-image: none !important;
+  color: #0f172a !important;
+  border-top: 2px solid #60a5fa !important;
+  border-bottom: 2px solid #bfdbfe !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.sticky-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.sticky-col-2,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.sticky-col-3,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.post-prc-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.obs-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.descripcion-ot-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.servicio-wrap-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.principal-editable-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.principal-total-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row:hover td.acciones {
+  background: #bfdbfe !important;
+  background-color: #bfdbfe !important;
+  background-image: none !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td:first-child {
+  box-shadow: inset 5px 0 0 #2563eb, 2px 0 0 #e2e8f0 !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.sticky-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.sticky-col-2,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.sticky-col-3,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.post-prc-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.obs-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.descripcion-ot-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.servicio-wrap-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.acciones {
+  background: #eff6ff !important;
+  background-color: #eff6ff !important;
+  background-image: none !important;
+  color: #1e293b !important;
+  border-top: 1px solid #dbeafe !important;
+  border-bottom: 1px solid #bfdbfe !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td.sticky-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td.sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td.sticky-col-2,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td.sticky-col-3,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td.post-prc-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td.obs-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td.descripcion-ot-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td.servicio-wrap-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row:hover td.acciones {
+  background: #dbeafe !important;
+  background-color: #dbeafe !important;
+  background-image: none !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td:first-child {
+  box-shadow: inset 5px 0 0 #93c5fd, 2px 0 0 #e2e8f0 !important;
+}
+
+/* Mantiene las observaciones legibles dentro de filas azules */
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.obs-col .obs-list,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.obs-col .obs-list {
+  background: transparent !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.principal-highlight-row td.obs-col .obs-item,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.sub-oportunidad-row.assigned-sub-row td.obs-col .obs-item {
+  background: rgba(255, 255, 255, 0.72) !important;
+  border-color: #bfdbfe !important;
+}
+
+/* Las filas sin principal se mantienen naranja y no se mezclan con principal/asignaciones */
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td.sticky-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td.sticky-col-1,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td.sticky-col-2,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td.sticky-col-3,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td.post-prc-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td.obs-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td.descripcion-ot-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td.descripcion-ot-wrap-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td.servicio-col,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td.servicio-wrap-cell,
+.oportunidades-wrapper .tabla-oportunidades tbody tr.cliente-principal-row.sin-principal-row td.acciones {
+  background: #fff7ed !important;
+  background-color: #fff7ed !important;
+  background-image: none !important;
+  border-top: 2px solid #fdba74 !important;
+  border-bottom: 2px solid #fed7aa !important;
+  color: #7c2d12 !important;
+}
+
