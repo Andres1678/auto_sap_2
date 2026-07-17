@@ -11,91 +11,261 @@ import {
   LabelList,
   ReferenceLine,
 } from "recharts";
-import { BrandDefs, WrapTickPx, yWidthFromPx } from "./chartUtils";
+import {
+  BrandDefs,
+  WrapTickPx,
+  yWidthFromPx,
+} from "./chartUtils";
+
+const toNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+};
 
 export default function BaseHorizontalBarChart({
   title,
-  data,
+  data = [],
   dataKeyLabel,
   gradId,
   emptyText = "Sin datos para los filtros seleccionados.",
-  heightMin = 320,
-  rowHeight = 30,
-  yMin = 140,
-  yMax = 380,
-  yPad = 32,
+
+  // Altura mínima de la gráfica.
+  heightMin = 340,
+
+  // Espacio vertical reservado por cada registro.
+  rowHeight = 42,
+
+  // Ancho mínimo y máximo del eje de nombres.
+  yMin = 210,
+  yMax = 420,
+  yPad = 40,
+
+  // Alto máximo visible antes de mostrar desplazamiento vertical.
+  maxVisibleHeight = 650,
+
   onBarClick,
   metaMensual = null,
 }) {
-  const height = Math.max(heightMin, (data?.length || 0) * rowHeight);
+  const chartData = useMemo(() => {
+    return (Array.isArray(data) ? data : [])
+      .map((entry) => ({
+        ...entry,
+        [dataKeyLabel]:
+          String(entry?.[dataKeyLabel] || "SIN INFORMACIÓN").trim(),
+        horas: toNumber(entry?.horas),
+      }))
+      .sort((a, b) => {
+        if (b.horas !== a.horas) {
+          return b.horas - a.horas;
+        }
 
+        return String(a[dataKeyLabel]).localeCompare(
+          String(b[dataKeyLabel]),
+          "es"
+        );
+      });
+  }, [data, dataKeyLabel]);
+
+  /*
+   * Se suma espacio adicional para las márgenes superiores
+   * e inferiores del gráfico.
+   */
+  const chartHeight = Math.max(
+    heightMin,
+    chartData.length * rowHeight + 45
+  );
+
+  /*
+   * Calcula el espacio del eje Y según la longitud real
+   * de los nombres.
+   */
   const yWidth = useMemo(() => {
     return yWidthFromPx(
-      (data || []).map((d) => d[dataKeyLabel]),
-      { min: yMin, max: yMax, pad: yPad }
+      chartData.map((entry) => entry[dataKeyLabel]),
+      {
+        min: yMin,
+        max: yMax,
+        pad: yPad,
+      }
     );
-  }, [data, dataKeyLabel, yMin, yMax, yPad]);
+  }, [
+    chartData,
+    dataKeyLabel,
+    yMin,
+    yMax,
+    yPad,
+  ]);
+
+  const chartMinWidth = Math.max(
+    760,
+    yWidth + 520
+  );
 
   return (
     <div className="pgx-card">
       <h3>{title}</h3>
 
-      {!data?.length ? (
-        <div className="pgx-empty">{emptyText}</div>
+      {!chartData.length ? (
+        <div className="pgx-empty">
+          {emptyText}
+        </div>
       ) : (
-        <div className="pgx-chart-scroll">
-          <ResponsiveContainer width="100%" height={height}>
-            <BarChart
-              data={data}
-              layout="vertical"
-              margin={{ top: 8, right: 80, left: 8, bottom: 8 }}
-              barCategoryGap={12}
-              barSize={20}
+        <div
+          className="pgx-chart-scroll"
+          style={{
+            width: "100%",
+            maxHeight: `${maxVisibleHeight}px`,
+            overflowX: "auto",
+            overflowY:
+              chartHeight > maxVisibleHeight
+                ? "auto"
+                : "hidden",
+            paddingBottom: 8,
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              minWidth: `${chartMinWidth}px`,
+              height: `${chartHeight}px`,
+            }}
+          >
+            <ResponsiveContainer
+              width="100%"
+              height="100%"
             >
-              <BrandDefs id={gradId} />
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" tickLine={false} axisLine={false} />
-              <YAxis
-                type="category"
-                dataKey={dataKeyLabel}
-                width={yWidth}
-                tick={<WrapTickPx maxWidth={yWidth - 18} fontSize={12} />}
-              />
-              <Tooltip formatter={(v) => [`${Number(v).toFixed(2)} h`, "Horas"]} />
+              <BarChart
+                data={chartData}
+                layout="vertical"
+                margin={{
+                  top: 14,
+                  right: 90,
+                  left: 8,
+                  bottom: 14,
+                }}
+                barCategoryGap={10}
+                barSize={22}
+              >
+                <BrandDefs id={gradId} />
 
-              {metaMensual && (
-                <ReferenceLine
-                  x={metaMensual.limite}
-                  stroke="#ef4444"
-                  strokeDasharray="6 6"
-                  label={{
-                    value: `Meta: ${metaMensual.limite.toFixed(0)} h (${metaMensual.diasHabiles} días)`,
-                    position: "top",
-                    fill: "#ef4444",
-                    fontSize: 12,
-                    fontWeight: 700
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  horizontal
+                  vertical
+                />
+
+                <XAxis
+                  type="number"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{
+                    fontSize: 11,
+                    fill: "#475569",
                   }}
                 />
-              )}
 
-              <Bar dataKey="horas" name="Horas">
-                <LabelList
-                  dataKey="horas"
-                  position="right"
-                  formatter={(value) => Number(value).toFixed(1)}
-                  style={{ fill: "#6b7280", fontSize: 12, fontWeight: 600 }}
+                <YAxis
+                  type="category"
+                  dataKey={dataKeyLabel}
+                  width={yWidth}
+
+                  /*
+                   * Esta propiedad obliga a Recharts a mostrar
+                   * todos los nombres, sin saltarse ninguno.
+                   */
+                  interval={0}
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tick={
+                    <WrapTickPx
+                      maxWidth={Math.max(
+                        100,
+                        yWidth - 22
+                      )}
+                      fontSize={12}
+                    />
+                  }
                 />
-                {(data || []).map((entry, idx) => (
-                  <Cell
-                    key={`${gradId}-${idx}`}
-                    fill={`url(#${gradId})`}
-                    onClick={() => onBarClick?.(entry)}
-                    style={{ cursor: onBarClick ? "pointer" : "default" }}
+
+                <Tooltip
+                  formatter={(value) => [
+                    `${toNumber(value).toFixed(2)} h`,
+                    "Horas",
+                  ]}
+                  labelFormatter={(_, payload) => {
+                    const label =
+                      payload?.[0]?.payload?.[
+                        dataKeyLabel
+                      ];
+
+                    return label || "";
+                  }}
+                />
+
+                {metaMensual && (
+                  <ReferenceLine
+                    x={toNumber(metaMensual.limite)}
+                    stroke="#ef4444"
+                    strokeDasharray="6 6"
+                    label={{
+                      value:
+                        `Meta: ${toNumber(
+                          metaMensual.limite
+                        ).toFixed(0)} h ` +
+                        `(${metaMensual.diasHabiles} días)`,
+                      position: "top",
+                      fill: "#ef4444",
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
                   />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+                )}
+
+                <Bar
+                  dataKey="horas"
+                  name="Horas"
+                  radius={[0, 5, 5, 0]}
+                  maxBarSize={24}
+                  isAnimationActive={false}
+                >
+                  <LabelList
+                    dataKey="horas"
+                    position="right"
+                    formatter={(value) => {
+                      const number = toNumber(value);
+
+                      return number > 0
+                        ? number.toFixed(1)
+                        : "";
+                    }}
+                    style={{
+                      fill: "#6b7280",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  />
+
+                  {chartData.map((entry, idx) => (
+                    <Cell
+                      key={`${gradId}-${
+                        entry?.[dataKeyLabel] || idx
+                      }-${idx}`}
+                      fill={`url(#${gradId})`}
+                      onClick={() =>
+                        onBarClick?.(entry)
+                      }
+                      style={{
+                        cursor: onBarClick
+                          ? "pointer"
+                          : "default",
+                      }}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
     </div>
