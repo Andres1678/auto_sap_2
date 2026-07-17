@@ -11,6 +11,7 @@ import HorasPorClienteChart from './GraficosOperacion/HorasPorClienteChart';
 import HorasPorModuloChart from './GraficosOperacion/HorasPorModuloChart';
 import HorasPorProyectoChart from './GraficosOperacion/HorasPorProyectoChart';
 import HorasPorDiaChart from './GraficosOperacion/HorasPorDiaChart';
+import GraficoDeMes from './GraficosOperacion/GraficoDeMes';
 import PieTareasChart from './GraficosOperacion/PieTareasChart';
 import PieOcupacionChart from './GraficosOperacion/PieOcupacionChart';
 import HorasPorOcupacionChart from './GraficosOperacion/HorasPorOcupacionChart';
@@ -942,7 +943,7 @@ export default function Graficos() {
     [pieOcupacion]
   );
 
-  const openDetail = (kind, value, pretty) => {
+  const openDetail = (kind, value, pretty, displayValueOverride = null) => {
     let rows = [];
 
     if (kind === 'consultor') {
@@ -965,6 +966,12 @@ export default function Graficos() {
       rows = datosFiltrados.filter(r => r.fecha === value);
     }
 
+    if (kind === 'mes') {
+      rows = datosFiltrados.filter(
+        r => String(r.fecha || '').slice(0, 7) === String(value || '')
+      );
+    }
+
     if (kind === 'ocupacion') {
       rows = datosFiltrados.filter(r => {
         const ocupacionLabel =
@@ -982,8 +989,10 @@ export default function Graficos() {
 
     const total = rows.reduce((sum, r) => sum + toNum(r.tiempoInvertido), 0);
 
+    const displayValue = displayValueOverride || value;
+
     setModalRows(rows);
-    setModalTitle(`${pretty}: ${value} — Total: ${total.toFixed(2)} h`);
+    setModalTitle(`${pretty}: ${displayValue} — Total: ${total.toFixed(2)} h`);
     setModalOpen(true);
   };
 
@@ -1260,6 +1269,15 @@ export default function Graficos() {
             totalHoras={totalHorasPieTareas}
             filtroMes={appliedFilters.mes}
             filtroEquipo={appliedFilters.equipo}
+          />
+
+          <GraficoDeMes
+            data={datosFiltrados}
+            filtroMes={appliedFilters.mes}
+            desde={appliedFilters.desde}
+            hasta={appliedFilters.hasta}
+            filtroEquipo={appliedFilters.equipo}
+            onOpenDetail={openDetail}
           />
 
           <div className="pgx-chart-mono">
