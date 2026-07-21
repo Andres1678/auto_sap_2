@@ -6,9 +6,14 @@ import "./PromedioAtencionCoeSap.css";
 const EMPTY_FILTERS = {
   q: "",
   sociedad: "",
+  clienteAsociadoNombre: "",
+  validarCliente: "",
   anio: "",
   mes: "",
   estadoConsolidado: "",
+  estadoPrincipal: "",
+  subestado: "",
+  validarEstadoControl: "",
   modulo: "",
   tipoSolicitud: "",
   responsableEstado: "",
@@ -394,9 +399,14 @@ export default function PromedioAtencionCoeSap() {
           </label>
 
           <SimpleSelect label="Sociedad" value={filters.sociedad} options={opciones.sociedad} onChange={(v) => updateFilter("sociedad", v)} />
+          <SimpleSelect label="Cliente asociado" value={filters.clienteAsociadoNombre} options={opciones.clienteAsociadoNombre} onChange={(v) => updateFilter("clienteAsociadoNombre", v)} />
+          <SimpleSelect label="Validar cliente" value={filters.validarCliente} options={opciones.validarCliente} onChange={(v) => updateFilter("validarCliente", v)} />
           <SimpleSelect label="Año" value={filters.anio} options={opciones.anio} onChange={(v) => updateFilter("anio", v)} />
           <SimpleSelect label="Mes" value={filters.mes} options={opciones.mes} onChange={(v) => updateFilter("mes", v)} />
           <SimpleSelect label="Estado consolidado" value={filters.estadoConsolidado} options={opciones.estadoConsolidado} onChange={(v) => updateFilter("estadoConsolidado", v)} />
+          <SimpleSelect label="Estado principal" value={filters.estadoPrincipal} options={opciones.estadoPrincipal} onChange={(v) => updateFilter("estadoPrincipal", v)} />
+          <SimpleSelect label="Subestado" value={filters.subestado} options={opciones.subestado} onChange={(v) => updateFilter("subestado", v)} />
+          <SimpleSelect label="Validar estado" value={filters.validarEstadoControl} options={opciones.validarEstadoControl} onChange={(v) => updateFilter("validarEstadoControl", v)} />
           <SimpleSelect label="Módulo" value={filters.modulo} options={opciones.modulo} onChange={(v) => updateFilter("modulo", v)} />
           <SimpleSelect label="Tipo solicitud" value={filters.tipoSolicitud} options={opciones.tipoSolicitud} onChange={(v) => updateFilter("tipoSolicitud", v)} />
           <SimpleSelect label="Responsable" value={filters.responsableEstado} options={opciones.responsableEstado} onChange={(v) => updateFilter("responsableEstado", v)} />

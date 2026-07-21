@@ -16740,6 +16740,8 @@ def generar_calificacion_coe_sap_funcional():
                     if campo in campos and hasattr(existente, campo):
                         setattr(existente, campo, campos[campo])
 
+                _coe_ext_recalcular_row(existente)
+
                 existente.actualizado_por = usuario
                 existente.updated_at = datetime.utcnow()
                 actualizados += 1
@@ -16748,6 +16750,7 @@ def generar_calificacion_coe_sap_funcional():
                 campos["creado_por"] = usuario
                 campos["actualizado_por"] = usuario
                 nuevo = CoeSapFuncionalCalificacion(**campos)
+                _coe_ext_recalcular_row(nuevo)
                 db.session.add(nuevo)
                 creados += 1
 
@@ -16779,11 +16782,16 @@ def listar_calificacion_coe_sap_funcional():
 
         q = (request.args.get("q") or "").strip()
         estado = (request.args.get("estado") or "").strip()
-        sociedad = (request.args.get("sociedad") or "").strip()
-        asignado_a = (request.args.get("asignado_a") or "").strip()
+        sociedad = (request.args.get("sociedad") or request.args.get("cliente") or "").strip()
+        cliente_asociado = (request.args.get("cliente_asociado_nombre") or request.args.get("clienteAsociadoNombre") or request.args.get("clienteAsociado") or "").strip()
+        validar_cliente = (request.args.get("validar_cliente") or request.args.get("validarCliente") or "").strip()
+        estado_principal = (request.args.get("estado_principal") or request.args.get("estadoPrincipal") or "").strip()
+        subestado = (request.args.get("subestado") or "").strip()
+        validar_estado_control = (request.args.get("validar_estado_control") or request.args.get("validarEstadoControl") or "").strip()
+        asignado_a = (request.args.get("asignado_a") or request.args.get("asignadoA") or "").strip()
         sistema = (request.args.get("sistema") or "").strip()
         modulo = (request.args.get("modulo") or "").strip()
-        estado_consolidado = (request.args.get("estado_consolidado") or "").strip()
+        estado_consolidado = (request.args.get("estado_consolidado") or request.args.get("estadoConsolidado") or "").strip()
 
         qry = CoeSapFuncionalCalificacion.query
 
@@ -16794,11 +16802,14 @@ def listar_calificacion_coe_sap_funcional():
                 CoeSapFuncionalCalificacion.sistema.ilike(like),
                 CoeSapFuncionalCalificacion.caso_sm.ilike(like),
                 CoeSapFuncionalCalificacion.sociedad.ilike(like),
+                CoeSapFuncionalCalificacion.cliente_asociado_nombre.ilike(like),
                 CoeSapFuncionalCalificacion.asunto.ilike(like),
                 CoeSapFuncionalCalificacion.observaciones.ilike(like),
                 CoeSapFuncionalCalificacion.nombre_solicitante.ilike(like),
                 CoeSapFuncionalCalificacion.asignado_a.ilike(like),
                 CoeSapFuncionalCalificacion.estado.ilike(like),
+                CoeSapFuncionalCalificacion.estado_principal.ilike(like),
+                CoeSapFuncionalCalificacion.subestado.ilike(like),
                 CoeSapFuncionalCalificacion.estado_consolidado.ilike(like),
                 CoeSapFuncionalCalificacion.modulo.ilike(like),
                 CoeSapFuncionalCalificacion.categoria.ilike(like),
@@ -16810,7 +16821,25 @@ def listar_calificacion_coe_sap_funcional():
             qry = qry.filter(CoeSapFuncionalCalificacion.estado.ilike(f"%{estado}%"))
 
         if sociedad:
-            qry = qry.filter(CoeSapFuncionalCalificacion.sociedad.ilike(f"%{sociedad}%"))
+            qry = qry.filter(or_(
+                CoeSapFuncionalCalificacion.sociedad.ilike(f"%{sociedad}%"),
+                CoeSapFuncionalCalificacion.cliente_asociado_nombre.ilike(f"%{sociedad}%"),
+            ))
+
+        if cliente_asociado:
+            qry = qry.filter(CoeSapFuncionalCalificacion.cliente_asociado_nombre.ilike(f"%{cliente_asociado}%"))
+
+        if validar_cliente:
+            qry = qry.filter(CoeSapFuncionalCalificacion.validar_cliente.ilike(f"%{validar_cliente}%"))
+
+        if estado_principal:
+            qry = qry.filter(CoeSapFuncionalCalificacion.estado_principal.ilike(f"%{estado_principal}%"))
+
+        if subestado:
+            qry = qry.filter(CoeSapFuncionalCalificacion.subestado.ilike(f"%{subestado}%"))
+
+        if validar_estado_control:
+            qry = qry.filter(CoeSapFuncionalCalificacion.validar_estado_control.ilike(f"%{validar_estado_control}%"))
 
         if asignado_a:
             qry = qry.filter(CoeSapFuncionalCalificacion.asignado_a.ilike(f"%{asignado_a}%"))
@@ -17001,16 +17030,6 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             row.origen_datos_json = _coe_ext_json_dumps(origen)
 
         _coe_ext_recalcular_row(row)
-
-        row.actualizado_por = usuario
-        row.updated_at = datetime.utcnow()
-
-        db.session.commit()
-
-        return jsonify({
-            "mensaje": "Calificación actualizada correctamente",
-            "data": _calificacion_to_dict(row),
-        }), 200
 
         row.actualizado_por = usuario
         row.updated_at = datetime.utcnow()
@@ -17521,13 +17540,19 @@ def _importar_fuente_gestion(fuente):
 @bp.route("/coe-sap-funcional/calificacion/fuentes/import-sm", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def importar_fuente_sm_coe_sap_funcional():
-    return _importar_fuente_gestion("SM")
+    return jsonify({
+        "mensaje": "El cargue de Base Datos SM fue deshabilitado. La clasificación ahora se administra desde Configuración COE SAP Funcional.",
+        "codigo": "CARGUE_SM_DESHABILITADO",
+    }), 410
 
 
 @bp.route("/coe-sap-funcional/calificacion/fuentes/import-itop", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def importar_fuente_itop_coe_sap_funcional():
-    return _importar_fuente_gestion("ITOP")
+    return jsonify({
+        "mensaje": "El cargue de Base Datos ITOP fue deshabilitado. La clasificación ahora se administra desde Configuración COE SAP Funcional.",
+        "codigo": "CARGUE_ITOP_DESHABILITADO",
+    }), 410
 
 
 # ============================================================
@@ -17868,7 +17893,7 @@ def sincronizar_calificacion_coe_sap_funcional():
             modo = "preservar_manual"
 
         crear_desde_base = data.get("crear_desde_base", True)
-        crear_desde_fuentes = data.get("crear_desde_fuentes", True)
+        crear_desde_fuentes = data.get("crear_desde_fuentes", False)
 
         usuario = _coe_ext_usuario()
 
@@ -18115,7 +18140,12 @@ def _coe_rep_list_arg(key):
 
 def _coe_rep_apply_filters(query):
     sociedad = _coe_rep_list_arg("sociedad") or _coe_rep_list_arg("cliente")
+    cliente_asociado = _coe_rep_list_arg("cliente_asociado_nombre") or _coe_rep_list_arg("clienteAsociadoNombre") or _coe_rep_list_arg("clienteAsociado")
+    validar_cliente = _coe_rep_list_arg("validar_cliente") or _coe_rep_list_arg("validarCliente")
     estado = _coe_rep_list_arg("estado")
+    estado_principal = _coe_rep_list_arg("estado_principal") or _coe_rep_list_arg("estadoPrincipal")
+    subestado = _coe_rep_list_arg("subestado")
+    validar_estado_control = _coe_rep_list_arg("validar_estado_control") or _coe_rep_list_arg("validarEstadoControl")
     estado_consolidado = _coe_rep_list_arg("estado_consolidado") or _coe_rep_list_arg("estadoConsolidado")
     responsable_estado = _coe_rep_list_arg("responsable_estado") or _coe_rep_list_arg("responsableEstado")
     modulo = _coe_rep_list_arg("modulo")
@@ -18129,10 +18159,28 @@ def _coe_rep_apply_filters(query):
     q = (request.args.get("q") or "").strip()
 
     if sociedad:
-        query = query.filter(CoeSapFuncionalCalificacion.sociedad.in_(sociedad))
+        query = query.filter(or_(
+            CoeSapFuncionalCalificacion.sociedad.in_(sociedad),
+            CoeSapFuncionalCalificacion.cliente_asociado_nombre.in_(sociedad),
+        ))
+
+    if cliente_asociado:
+        query = query.filter(CoeSapFuncionalCalificacion.cliente_asociado_nombre.in_(cliente_asociado))
+
+    if validar_cliente:
+        query = query.filter(CoeSapFuncionalCalificacion.validar_cliente.in_(validar_cliente))
 
     if estado:
         query = query.filter(CoeSapFuncionalCalificacion.estado.in_(estado))
+
+    if estado_principal:
+        query = query.filter(CoeSapFuncionalCalificacion.estado_principal.in_(estado_principal))
+
+    if subestado:
+        query = query.filter(CoeSapFuncionalCalificacion.subestado.in_(subestado))
+
+    if validar_estado_control:
+        query = query.filter(CoeSapFuncionalCalificacion.validar_estado_control.in_(validar_estado_control))
 
     if estado_consolidado:
         query = query.filter(CoeSapFuncionalCalificacion.estado_consolidado.in_(estado_consolidado))
@@ -18172,10 +18220,13 @@ def _coe_rep_apply_filters(query):
         query = query.filter(or_(
             CoeSapFuncionalCalificacion.numero.ilike(like),
             CoeSapFuncionalCalificacion.sociedad.ilike(like),
+            CoeSapFuncionalCalificacion.cliente_asociado_nombre.ilike(like),
             CoeSapFuncionalCalificacion.asunto.ilike(like),
             CoeSapFuncionalCalificacion.observaciones.ilike(like),
             CoeSapFuncionalCalificacion.nombre_solicitante.ilike(like),
             CoeSapFuncionalCalificacion.estado.ilike(like),
+            CoeSapFuncionalCalificacion.estado_principal.ilike(like),
+            CoeSapFuncionalCalificacion.subestado.ilike(like),
             CoeSapFuncionalCalificacion.estado_consolidado.ilike(like),
             CoeSapFuncionalCalificacion.asignado_a.ilike(like),
         ))
@@ -18214,7 +18265,12 @@ def _coe_rep_distinct_options(base_query):
 
     return {
         "sociedad": distinct_column(CoeSapFuncionalCalificacion.sociedad),
+        "clienteAsociadoNombre": distinct_column(CoeSapFuncionalCalificacion.cliente_asociado_nombre),
+        "validarCliente": distinct_column(CoeSapFuncionalCalificacion.validar_cliente),
         "estado": distinct_column(CoeSapFuncionalCalificacion.estado),
+        "estadoPrincipal": distinct_column(CoeSapFuncionalCalificacion.estado_principal),
+        "subestado": distinct_column(CoeSapFuncionalCalificacion.subestado),
+        "validarEstadoControl": distinct_column(CoeSapFuncionalCalificacion.validar_estado_control),
         "estadoConsolidado": distinct_column(CoeSapFuncionalCalificacion.estado_consolidado),
         "responsableEstado": distinct_column(CoeSapFuncionalCalificacion.responsable_estado),
         "modulo": distinct_column(CoeSapFuncionalCalificacion.modulo),
@@ -18448,6 +18504,8 @@ def dashboard_clientes_coe_sap_funcional():
                 "valorOt": _coe_rep_float(horas.valor_ot if horas else 0),
             },
             "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),
+            "casosPorEstadoPrincipal": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_principal, "estadoPrincipal"),
+            "casosPorSubestado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.subestado, "subestado"),
             "casosPorEstadoConsolidado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_consolidado, "estadoConsolidado"),
             "casosPorModulo": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.modulo, "modulo"),
             "casosPorTipoSolicitud": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.tipo_solicitud, "tipoSolicitud"),
@@ -18516,10 +18574,15 @@ def detalle_cliente_coe_sap_funcional():
                     "id": r.id,
                     "responsableEstado": r.responsable_estado,
                     "estado": r.estado,
+                    "estadoPrincipal": getattr(r, "estado_principal", None),
+                    "subestado": getattr(r, "subestado", None),
+                    "validarEstadoControl": getattr(r, "validar_estado_control", None),
                     "estadoConsolidado": r.estado_consolidado,
                     "numero": r.numero,
                     "sistema": r.sistema,
                     "sociedad": r.sociedad,
+                    "clienteAsociadoNombre": getattr(r, "cliente_asociado_nombre", None),
+                    "validarCliente": getattr(r, "validar_cliente", None),
                     "asunto": r.asunto,
                     "observaciones": r.observaciones,
                     "modulo": r.modulo,
@@ -18728,6 +18791,11 @@ def _coe_xls_calificacion_query():
     categoria = _coe_rep_list_arg("categoria")
     subcategoria = _coe_rep_list_arg("subcategoria")
     articulo = _coe_rep_list_arg("articulo")
+    cliente_asociado = _coe_rep_list_arg("clienteAsociadoNombre") or _coe_rep_list_arg("cliente_asociado_nombre")
+    estado_principal = _coe_rep_list_arg("estadoPrincipal") or _coe_rep_list_arg("estado_principal")
+    subestado = _coe_rep_list_arg("subestado")
+    validar_cliente = _coe_rep_list_arg("validarCliente") or _coe_rep_list_arg("validar_cliente")
+    validar_estado_control = _coe_rep_list_arg("validarEstadoControl") or _coe_rep_list_arg("validar_estado_control")
 
     if sistema:
         query = query.filter(CoeSapFuncionalCalificacion.sistema.in_(sistema))
@@ -18737,6 +18805,16 @@ def _coe_xls_calificacion_query():
         query = query.filter(CoeSapFuncionalCalificacion.subcategoria.in_(subcategoria))
     if articulo:
         query = query.filter(CoeSapFuncionalCalificacion.articulo.in_(articulo))
+    if cliente_asociado:
+        query = query.filter(CoeSapFuncionalCalificacion.cliente_asociado_nombre.in_(cliente_asociado))
+    if estado_principal:
+        query = query.filter(CoeSapFuncionalCalificacion.estado_principal.in_(estado_principal))
+    if subestado:
+        query = query.filter(CoeSapFuncionalCalificacion.subestado.in_(subestado))
+    if validar_cliente:
+        query = query.filter(CoeSapFuncionalCalificacion.validar_cliente.in_(validar_cliente))
+    if validar_estado_control:
+        query = query.filter(CoeSapFuncionalCalificacion.validar_estado_control.in_(validar_estado_control))
 
     return query
 
@@ -18761,6 +18839,8 @@ def _coe_xls_calificacion_rows(query):
             "tiquete_proveedor_externo": getattr(r, "tiquete_proveedor_externo", None),
             "tipo_contrato": r.tipo_contrato,
             "sociedad": r.sociedad,
+            "cliente_asociado_nombre": getattr(r, "cliente_asociado_nombre", None),
+            "validar_cliente": getattr(r, "validar_cliente", None),
             "asunto": r.asunto,
             "observaciones": r.observaciones,
             "nombre_solicitante": r.nombre_solicitante,
@@ -18773,6 +18853,9 @@ def _coe_xls_calificacion_rows(query):
             "subcategoria": r.subcategoria,
             "articulo": r.articulo,
             "estado": r.estado,
+            "estado_principal": getattr(r, "estado_principal", None),
+            "subestado": getattr(r, "subestado", None),
+            "validar_estado_control": getattr(r, "validar_estado_control", None),
             "estado_herramienta_gestion": r.estado_herramienta_gestion,
             "responsable_estado": r.responsable_estado,
             "estado_consolidado": r.estado_consolidado,
@@ -18845,11 +18928,15 @@ def _coe_xls_calificacion_headers():
         ("DOC 1", "doc_1"), ("DOCUMENTACION", "documentacion"), ("CASO TRANSPORTE", "caso_transporte"),
         ("CONTROL HORAS", "control_horas"), ("MANEJO", "manejo"), ("N° ERROR SAP", "error_sap"),
         ("N° NOTA OSS SAP", "nota_oss_sap"), ("TIQUETE PROVEEDOR EXTERNO", "tiquete_proveedor_externo"),
-        ("TIPO CONTRATO", "tipo_contrato"), ("SOCIEDAD", "sociedad"), ("ASUNTO", "asunto"),
+        ("TIPO CONTRATO", "tipo_contrato"), ("SOCIEDAD", "sociedad"),
+        ("CLIENTE ASOCIADO", "cliente_asociado_nombre"), ("VALIDAR CLIENTE", "validar_cliente"),
+        ("ASUNTO", "asunto"),
         ("OBSERVACIONES", "observaciones"), ("NOMBRE DEL SOLICITANTE", "nombre_solicitante"),
         ("IMPACTO", "impacto"), ("URGENCIA", "urgencia"), ("PRIORIDAD", "prioridad"),
         ("TIPO DE SOLICITUD", "tipo_solicitud"), ("MODULO", "modulo"), ("CATEGORÍA", "categoria"),
-        ("SUBCATEGORÍA", "subcategoria"), ("ARTÍCULO", "articulo"), ("ESTADO", "estado"),
+        ("SUBCATEGORÍA", "subcategoria"), ("ARTÍCULO", "articulo"), ("ESTADO ORIGINAL", "estado"),
+        ("ESTADO PRINCIPAL", "estado_principal"), ("SUBESTADO", "subestado"),
+        ("VALIDAR ESTADO CONTROL", "validar_estado_control"),
         ("ESTADO HERRAMIENTA GESTIÓN", "estado_herramienta_gestion"), ("RESPONSABLE ESTADO", "responsable_estado"),
         ("ESTADO CONSOLIDADO", "estado_consolidado"), ("ASIGNADO A", "asignado_a"),
         ("APOYO 1", "apoyo_1"), ("APOYO 2", "apoyo_2"), ("APOYO 3", "apoyo_3"),
@@ -18977,7 +19064,9 @@ def exportar_dashboard_clientes_coe_sap_funcional_excel():
             _coe_xls_filename("dashboard_clientes_coe_sap_funcional"),
             [
                 {"title": "Resumen", "headers": [("Indicador", "indicador"), ("Valor", "valor")], "rows": resumen_rows},
-                {"title": "Por estado", "headers": [("Estado", "estado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado")},
+                {"title": "Por estado", "headers": [("Estado original", "estado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado")},
+                {"title": "Por estado principal", "headers": [("Estado principal", "estadoPrincipal"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_principal, "estadoPrincipal")},
+                {"title": "Por subestado", "headers": [("Subestado", "subestado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.subestado, "subestado")},
                 {"title": "Por consolidado", "headers": [("Estado consolidado", "estadoConsolidado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_consolidado, "estadoConsolidado")},
                 {"title": "Por modulo", "headers": [("Módulo", "modulo"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.modulo, "modulo")},
                 {"title": "Por tipo solicitud", "headers": [("Tipo solicitud", "tipoSolicitud"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.tipo_solicitud, "tipoSolicitud")},
@@ -19009,10 +19098,15 @@ def exportar_detalle_cliente_coe_sap_funcional_excel():
         data_rows = [{
             "responsableEstado": r.responsable_estado,
             "estado": r.estado,
+            "estadoPrincipal": getattr(r, "estado_principal", None),
+            "subestado": getattr(r, "subestado", None),
+            "validarEstadoControl": getattr(r, "validar_estado_control", None),
             "estadoConsolidado": r.estado_consolidado,
             "numero": r.numero,
             "sistema": r.sistema,
             "sociedad": r.sociedad,
+            "clienteAsociadoNombre": getattr(r, "cliente_asociado_nombre", None),
+            "validarCliente": getattr(r, "validar_cliente", None),
             "asunto": r.asunto,
             "observaciones": r.observaciones,
             "modulo": r.modulo,
@@ -19044,7 +19138,7 @@ def exportar_detalle_cliente_coe_sap_funcional_excel():
         return _coe_xls_response(
             _coe_xls_filename("detalle_seguimiento_cliente_coe_sap_funcional"),
             [
-                {"title": "Detalle", "headers": [("Responsable Estado", "responsableEstado"), ("Estado", "estado"), ("Estado Consolidado", "estadoConsolidado"), ("ID", "numero"), ("Sistema", "sistema"), ("Sociedad", "sociedad"), ("Asunto", "asunto"), ("Observaciones", "observaciones"), ("Módulo", "modulo"), ("Tipo solicitud", "tipoSolicitud"), ("Categoría", "categoria"), ("Subcategoría", "subcategoria"), ("Artículo", "articulo"), ("Asignado a", "asignadoA"), ("Fecha asignación", "fechaAsignacion"), ("Fecha respuesta", "fechaRespuesta"), ("Fecha resolución", "fechaResolucion"), ("Fecha cierre", "fechaFinalizacionCierre"), ("Cruce SM", "cruceSm"), ("Cruce ITOP", "cruceItop"), ("Solo Excel", "soloExcel")], "rows": data_rows},
+                {"title": "Detalle", "headers": [("Responsable Estado", "responsableEstado"), ("Estado original", "estado"), ("Estado principal", "estadoPrincipal"), ("Subestado", "subestado"), ("Validar estado control", "validarEstadoControl"), ("Estado Consolidado", "estadoConsolidado"), ("ID", "numero"), ("Sistema", "sistema"), ("Sociedad", "sociedad"), ("Cliente asociado", "clienteAsociadoNombre"), ("Validar cliente", "validarCliente"), ("Asunto", "asunto"), ("Observaciones", "observaciones"), ("Módulo", "modulo"), ("Tipo solicitud", "tipoSolicitud"), ("Categoría", "categoria"), ("Subcategoría", "subcategoria"), ("Artículo", "articulo"), ("Asignado a", "asignadoA"), ("Fecha asignación", "fechaAsignacion"), ("Fecha respuesta", "fechaRespuesta"), ("Fecha resolución", "fechaResolucion"), ("Fecha cierre", "fechaFinalizacionCierre"), ("Cruce SM", "cruceSm"), ("Cruce ITOP", "cruceItop"), ("Solo Excel", "soloExcel")], "rows": data_rows},
                 {"title": "Resumen", "headers": [("Responsable Estado", "responsableEstado"), ("Estado", "estado"), ("Cantidad", "cantidad")], "rows": [{"responsableEstado": _coe_rep_str(r.responsable) or "Sin dato", "estado": _coe_rep_str(r.estado) or "Sin dato", "cantidad": int(r.cantidad or 0)} for r in resumen_rows]},
             ],
         )
@@ -19837,9 +19931,11 @@ def coe_config_asociar_clientes():
             if not cliente:
                 return jsonify({"mensaje": "Cliente no encontrado"}), 404
 
-            rows = CoeSapFuncionalCalificacion.query.filter(
-                func.upper(CoeSapFuncionalCalificacion.sociedad) == _coe_cfg_norm(sociedad)
-            ).all()
+            sociedad_norm = _coe_cfg_norm(sociedad)
+            rows = [
+                row for row in CoeSapFuncionalCalificacion.query.all()
+                if _coe_cfg_norm(getattr(row, "sociedad", None)) == sociedad_norm
+            ]
 
             for row in rows:
                 _coe_cfg_set_if_exists(row, "cliente_id", cliente.id)

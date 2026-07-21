@@ -6,10 +6,15 @@ import "./DetalleSeguimientoClienteCoeSap.css";
 const EMPTY_FILTERS = {
   q: "",
   sociedad: "",
+  clienteAsociadoNombre: "",
+  validarCliente: "",
   anio: "",
   mes: "",
   estadoConsolidado: "",
   estado: "",
+  estadoPrincipal: "",
+  subestado: "",
+  validarEstadoControl: "",
   responsableEstado: "",
   modulo: "",
   tipoSolicitud: "",
@@ -397,6 +402,7 @@ export default function DetalleSeguimientoClienteCoeSap() {
         <div class="coedetail-swal-info">
           <b>ID:</b> ${escapeHtml(row?.numero || "-")}<br/>
           <b>Sociedad:</b> ${escapeHtml(row?.sociedad || "-")}<br/>
+          <b>Cliente asociado:</b> ${escapeHtml(row?.clienteAsociadoNombre || "-")}<br/>
           <b>Asunto:</b> ${escapeHtml(row?.asunto || "-")}<br/>
           <b>Estado:</b> ${escapeHtml(row?.estado || "-")}
         </div>
@@ -533,10 +539,15 @@ export default function DetalleSeguimientoClienteCoeSap() {
           </label>
 
           <SimpleSelect label="Sociedad" value={filters.sociedad} options={opciones.sociedad} onChange={(v) => updateFilter("sociedad", v)} />
+          <SimpleSelect label="Cliente asociado" value={filters.clienteAsociadoNombre} options={opciones.clienteAsociadoNombre} onChange={(v) => updateFilter("clienteAsociadoNombre", v)} />
+          <SimpleSelect label="Validar cliente" value={filters.validarCliente} options={opciones.validarCliente} onChange={(v) => updateFilter("validarCliente", v)} />
           <SimpleSelect label="Año" value={filters.anio} options={opciones.anio} onChange={(v) => updateFilter("anio", v)} />
           <SimpleSelect label="Mes" value={filters.mes} options={opciones.mes} onChange={(v) => updateFilter("mes", v)} />
           <SimpleSelect label="Estado consolidado" value={filters.estadoConsolidado} options={opciones.estadoConsolidado} onChange={(v) => updateFilter("estadoConsolidado", v)} />
-          <SimpleSelect label="Estado" value={filters.estado} options={opciones.estado} onChange={(v) => updateFilter("estado", v)} />
+          <SimpleSelect label="Estado original" value={filters.estado} options={opciones.estado} onChange={(v) => updateFilter("estado", v)} />
+          <SimpleSelect label="Estado principal" value={filters.estadoPrincipal} options={opciones.estadoPrincipal} onChange={(v) => updateFilter("estadoPrincipal", v)} />
+          <SimpleSelect label="Subestado" value={filters.subestado} options={opciones.subestado} onChange={(v) => updateFilter("subestado", v)} />
+          <SimpleSelect label="Validar estado" value={filters.validarEstadoControl} options={opciones.validarEstadoControl} onChange={(v) => updateFilter("validarEstadoControl", v)} />
           <SimpleSelect label="Responsable" value={filters.responsableEstado} options={opciones.responsableEstado} onChange={(v) => updateFilter("responsableEstado", v)} />
           <SimpleSelect label="Módulo" value={filters.modulo} options={opciones.modulo} onChange={(v) => updateFilter("modulo", v)} />
           <SimpleSelect label="Tipo solicitud" value={filters.tipoSolicitud} options={opciones.tipoSolicitud} onChange={(v) => updateFilter("tipoSolicitud", v)} />
@@ -614,10 +625,13 @@ export default function DetalleSeguimientoClienteCoeSap() {
             <thead>
               <tr>
                 <th>Responsable</th>
-                <th>Estado</th>
+                <th>Estado original</th>
+                <th>Estado principal</th>
+                <th>Subestado</th>
                 <th>Consolidado</th>
                 <th>ID</th>
                 <th>Sociedad</th>
+                <th>Cliente asociado</th>
                 <th>Asunto</th>
                 <th>Observaciones / seguimiento</th>
                 <th>Módulo</th>
@@ -632,14 +646,14 @@ export default function DetalleSeguimientoClienteCoeSap() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="13" className="coedetail-empty">
+                  <td colSpan="16" className="coedetail-empty">
                     <div className="coedetail-loader" />
                     Cargando detalle...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan="13" className="coedetail-empty">No hay registros para mostrar.</td>
+                  <td colSpan="16" className="coedetail-empty">No hay registros para mostrar.</td>
                 </tr>
               ) : (
                 rows.map((row, index) => (
@@ -649,10 +663,17 @@ export default function DetalleSeguimientoClienteCoeSap() {
                       <span className={`coedetail-pill ${statusClass(row.estado)}`}>{cleanText(row.estado)}</span>
                     </td>
                     <td>
+                      <span className={`coedetail-pill ${statusClass(row.estadoPrincipal)}`}>{cleanText(row.estadoPrincipal)}</span>
+                    </td>
+                    <td>
+                      <span className={`coedetail-pill ${statusClass(row.subestado)}`}>{cleanText(row.subestado)}</span>
+                    </td>
+                    <td>
                       <span className={`coedetail-pill ${statusClass(row.estadoConsolidado)}`}>{cleanText(row.estadoConsolidado)}</span>
                     </td>
                     <td className="mono strong">{cleanText(row.numero)}</td>
                     <td>{cleanText(row.sociedad)}</td>
+                    <td>{cleanText(row.clienteAsociadoNombre)}</td>
                     <td className="coedetail-asunto" title={cleanText(row.asunto)}>{cleanText(row.asunto)}</td>
                     <td
                       className="coedetail-observaciones editable"

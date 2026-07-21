@@ -439,3 +439,24 @@
     flex-direction: column;
   }
 }
+
+.coeload-select-compact {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--coeload-border);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--coeload-text);
+  font-weight: 850;
+  outline: none;
+}
+
+.coeload-select-compact:focus {
+  border-color: rgba(218, 41, 28, 0.5);
+  box-shadow: 0 0 0 4px rgba(218, 41, 28, 0.1);
+}
+
+.coeload-table td.mono,
+.coeload-table .mono {
+  font-family: Consolas, "Liberation Mono", monospace;
+}

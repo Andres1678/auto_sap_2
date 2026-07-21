@@ -126,6 +126,9 @@ export default function CargarBasesAuxiliaresCoeSap() {
   const [clientes, setClientes] = useState([]);
   const [clientePendientes, setClientePendientes] = useState(0);
   const [importaciones, setImportaciones] = useState([]);
+  const [tipoPendiente, setTipoPendiente] = useState("estado");
+  const [casosSinClasificar, setCasosSinClasificar] = useState([]);
+  const [totalCasosSinClasificar, setTotalCasosSinClasificar] = useState(0);
 
   const [estadoForm, setEstadoForm] = useState(EMPTY_ESTADO);
   const [subestadoForm, setSubestadoForm] = useState(EMPTY_SUBESTADO);
@@ -194,6 +197,14 @@ export default function CargarBasesAuxiliaresCoeSap() {
     setImportaciones(Array.isArray(data?.data) ? data.data : []);
   }, [requestJson]);
 
+  const fetchCasosSinClasificar = useCallback(async (tipo = tipoPendiente) => {
+    const data = await requestJson(`/coe-sap-funcional/config/casos-sin-clasificar?tipo=${tipo}&page=1&page_size=100`, {
+      method: "GET",
+    });
+    setCasosSinClasificar(Array.isArray(data?.data) ? data.data : []);
+    setTotalCasosSinClasificar(Number(data?.total || 0));
+  }, [requestJson, tipoPendiente]);
+
   const fetchAll = useCallback(async () => {
     if (!canView) return;
 
@@ -204,6 +215,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
         fetchSubestados(),
         fetchClientes(),
         fetchImportaciones(),
+        fetchCasosSinClasificar(tipoPendiente),
       ]);
     } catch (error) {
       console.error("Error cargando configuración COE SAP:", error);
@@ -216,7 +228,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
     } finally {
       setLoading(false);
     }
-  }, [canView, fetchEstados, fetchSubestados, fetchClientes, fetchImportaciones]);
+  }, [canView, fetchEstados, fetchSubestados, fetchClientes, fetchImportaciones, fetchCasosSinClasificar, tipoPendiente]);
 
   useEffect(() => {
     fetchAll();
@@ -417,6 +429,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
 
       pushResult("sync", "Sincronización finalizada", { syncBase, syncCatalogos }, true);
       await fetchClientes();
+      await fetchCasosSinClasificar(tipoPendiente);
 
       Swal.fire({
         icon: "success",
@@ -479,6 +492,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
         {[
           ["estados", "Estados y subestados"],
           ["clientes", "Clientes"],
+          ["pendientes", "Casos sin clasificar"],
           ["sync", "Sincronización"],
           ["historial", "Histórico"],
         ].map(([key, label]) => (
@@ -784,6 +798,73 @@ export default function CargarBasesAuxiliaresCoeSap() {
               </table>
             </div>
           </article>
+        </section>
+      )}
+
+      {activeTab === "pendientes" && (
+        <section className="coeload-card-panel">
+          <div className="coeload-panel-head">
+            <div>
+              <h2>Casos sin clasificar</h2>
+              <p>Estos registros requieren crear o asociar clientes, estados principales o subestados.</p>
+            </div>
+            <div className="coeload-actions-cell">
+              <select
+                className="coeload-select-compact"
+                value={tipoPendiente}
+                onChange={async (e) => {
+                  const value = e.target.value;
+                  setTipoPendiente(value);
+                  await fetchCasosSinClasificar(value);
+                }}
+              >
+                <option value="estado">Pendientes por estado</option>
+                <option value="cliente">Pendientes por cliente</option>
+              </select>
+              <button className="coeload-btn dark" type="button" onClick={() => fetchCasosSinClasificar(tipoPendiente)}>
+                Actualizar
+              </button>
+            </div>
+          </div>
+
+          <p className="coeload-muted">
+            Total pendientes: <b>{numberText(totalCasosSinClasificar)}</b>. El estado original y la sociedad original no se modifican; solo se llena la asociación controlada.
+          </p>
+
+          <div className="coeload-table-wrap">
+            <table className="coeload-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Sociedad</th>
+                  <th>Cliente asociado</th>
+                  <th>Validar cliente</th>
+                  <th>Estado original</th>
+                  <th>Estado principal</th>
+                  <th>Subestado</th>
+                  <th>Validar estado</th>
+                  <th>Asunto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {casosSinClasificar.length === 0 ? (
+                  <tr><td colSpan="9" className="coeload-empty">No hay casos pendientes para este filtro.</td></tr>
+                ) : casosSinClasificar.map((row) => (
+                  <tr key={row.id}>
+                    <td className="mono"><b>{text(row.numero)}</b></td>
+                    <td>{text(row.sociedad)}</td>
+                    <td>{text(row.clienteAsociadoNombre)}</td>
+                    <td><span className={`coeload-pill ${row.validarCliente === "OK" ? "ok" : "danger"}`}>{text(row.validarCliente)}</span></td>
+                    <td>{text(row.estado)}</td>
+                    <td>{text(row.estadoPrincipal)}</td>
+                    <td>{text(row.subestado)}</td>
+                    <td><span className={`coeload-pill ${row.validarEstadoControl === "OK" ? "ok" : "danger"}`}>{text(row.validarEstadoControl)}</span></td>
+                    <td>{text(row.asunto)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 

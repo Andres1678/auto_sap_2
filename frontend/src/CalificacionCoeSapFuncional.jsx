@@ -1083,7 +1083,12 @@ export default function CalificacionCoeSapFuncional() {
 
       const filterMap = {
         sociedad: "sociedad",
+        clienteAsociadoNombre: "clienteAsociadoNombre",
+        validarCliente: "validarCliente",
         estado: "estado",
+        estadoPrincipal: "estadoPrincipal",
+        subestado: "subestado",
+        validarEstadoControl: "validarEstadoControl",
         estadoConsolidado: "estadoConsolidado",
         responsableEstado: "responsableEstado",
         modulo: "modulo",
