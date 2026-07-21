@@ -144,14 +144,6 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
           Panel Gráfico
         </Link>
 
-        {/*{can("BASE_REGISTROS_VER") && (
-          <Link to="/BaseRegistros" onClick={closeMenu}>Base Registros</Link>
-        )}
-
-        {can("GRAFICO_BASE_VER") && (
-          <Link to="/GraficoBase" onClick={closeMenu}>Gráfico Base</Link>
-        )}*/}
-
         {can("OPORTUNIDADES_VER") && (
           <Link to="/Oportunidades" onClick={closeMenu}>
             Oportunidades
@@ -169,12 +161,6 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
             Reporte Horas
           </Link>
         )}
-
-        {/*{can("PRESUPUESTO_CONSULTOR_IMPORTAR") && (
-          <Link to="/configuracion/importar-presupuesto" onClick={closeMenu}>
-            Importar presupuesto
-          </Link>
-        )}*/}
 
         {can("BASE_REGISTRO_VER") && (
           <div
@@ -212,10 +198,10 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
 
               {can("BASE_REGISTRO_IMPORTAR") && (
                 <Link to="/coe-sap-funcional/cargas" onClick={closeMenu}>
-                  <span className="navc-sub-icon">📤</span>
+                  <span className="navc-sub-icon">⚙️</span>
                   <span>
-                    <strong>Cargar bases auxiliares</strong>
-                    <small>Listas, SM, ITOP y sincronización</small>
+                    <strong>Configuración COE SAP</strong>
+                    <small>Estados, subestados, clientes y clasificación</small>
                   </span>
                 </Link>
               )}
@@ -224,7 +210,15 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
                 <span className="navc-sub-icon">📊</span>
                 <span>
                   <strong>Dashboard clientes</strong>
-                  <small>Indicadores, estados, módulos y OT</small>
+                  <small>Gráficas globales afectadas por filtros</small>
+                </span>
+              </Link>
+
+              <Link to="/coe-sap-funcional/control-bolsa" onClick={closeMenu}>
+                <span className="navc-sub-icon">🧮</span>
+                <span>
+                  <strong>Control bolsa cliente</strong>
+                  <small>Tabla manual independiente por cliente</small>
                 </span>
               </Link>
 

@@ -238,7 +238,7 @@
 .navc-dropdown.open .navc-dropdown-menu,
 .navc-dropdown:hover .navc-dropdown-menu,
 .navc-dropdown:focus-within .navc-dropdown-menu{
-  max-height:360px;
+  max-height:520px;
   opacity:1;
   transform:translateY(0);
   pointer-events:auto;

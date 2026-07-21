@@ -10,10 +10,11 @@ from backend.models import (
     Perfil, ModuloPerfil, ConsultorPerfil, ProyectoModulo, ProyectoPerfil,
     ProyectoPerfilPlan, ProyectoCostoAdicional, ProyectoMapeo, ProyectoPerfilConsultor, CoeSapFuncionalCalificacion,
     CoeSapFuncionalCalificacionHora, CoeSapFuncionalImportacion, CoeSapFuncionalFuenteGestion, CoeSapFuncionalCatalogo, CoeSapFuncionalCategoriaCatalogo,
+    CoeSapControlBolsaCliente, CoeSapControlBolsaClienteDetalle,
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
-from sqlalchemy import or_, text, func, extract, and_, cast, Integer, literal
+from sqlalchemy import or_, text, func, extract, and_, cast, Integer, literal, case
 from sqlalchemy.orm import relationship, backref, joinedload, aliased, selectinload
 import unicodedata, re
 from collections import defaultdict
@@ -18165,6 +18166,10 @@ def _coe_rep_bool(value):
     return bool(value) if value is not None else False
 
 
+_COE_EMPTY_FILTER_VALUE = "__EMPTY__"
+_COE_EMPTY_FILTER_LABELS = {"__EMPTY__", "(EN BLANCO)", "EN BLANCO", "(BLANCO)", "BLANCO"}
+
+
 def _coe_rep_list_arg(key):
     values = request.args.getlist(key)
 
@@ -18174,7 +18179,59 @@ def _coe_rep_list_arg(key):
     if len(values) == 1 and "," in str(values[0]):
         values = str(values[0]).split(",")
 
-    return [str(v).strip() for v in values if str(v or "").strip()]
+    out = []
+    for value in values:
+        if value is None:
+            continue
+        text_value = str(value).strip()
+        if not text_value:
+            continue
+        out.append(text_value)
+
+    return out
+
+
+def _coe_rep_is_empty_filter(value):
+    return str(value or "").strip().upper() in _COE_EMPTY_FILTER_LABELS
+
+
+def _coe_rep_empty_condition(column):
+    return or_(column.is_(None), func.trim(func.coalesce(column, "")) == "")
+
+
+def _coe_rep_apply_values(query, column, values):
+    values = values or []
+    if not values:
+        return query
+
+    include_empty = any(_coe_rep_is_empty_filter(v) for v in values)
+    normal_values = [v for v in values if not _coe_rep_is_empty_filter(v)]
+
+    conds = []
+    if normal_values:
+        conds.append(column.in_(normal_values))
+    if include_empty:
+        conds.append(_coe_rep_empty_condition(column))
+
+    return query.filter(or_(*conds)) if conds else query
+
+
+def _coe_rep_apply_values_any(query, columns, values):
+    values = values or []
+    if not values:
+        return query
+
+    include_empty = any(_coe_rep_is_empty_filter(v) for v in values)
+    normal_values = [v for v in values if not _coe_rep_is_empty_filter(v)]
+
+    conds = []
+    for column in columns:
+        if normal_values:
+            conds.append(column.in_(normal_values))
+        if include_empty:
+            conds.append(_coe_rep_empty_condition(column))
+
+    return query.filter(or_(*conds)) if conds else query
 
 
 def _coe_rep_apply_filters(query):
@@ -18198,57 +18255,32 @@ def _coe_rep_apply_filters(query):
     q = (request.args.get("q") or "").strip()
 
     if sociedad:
-        query = query.filter(or_(
-            CoeSapFuncionalCalificacion.sociedad.in_(sociedad),
-            CoeSapFuncionalCalificacion.cliente_asociado_nombre.in_(sociedad),
-        ))
+        query = _coe_rep_apply_values_any(query, [
+            CoeSapFuncionalCalificacion.sociedad,
+            CoeSapFuncionalCalificacion.cliente_asociado_nombre,
+        ], sociedad)
 
-    if cliente_asociado:
-        query = query.filter(CoeSapFuncionalCalificacion.cliente_asociado_nombre.in_(cliente_asociado))
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.cliente_asociado_nombre, cliente_asociado)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.validar_cliente, validar_cliente)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.estado, estado)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.estado_principal, estado_principal)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.subestado, subestado)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.validar_estado_control, validar_estado_control)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.estado_consolidado, estado_consolidado)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.responsable_estado, responsable_estado)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.modulo, modulo)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.tipo_solicitud, tipo_solicitud)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.control_horas, control_horas)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.lider_claro, lider_claro)
+    query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.asignado_a, asignado_a)
 
-    if validar_cliente:
-        query = query.filter(CoeSapFuncionalCalificacion.validar_cliente.in_(validar_cliente))
-
-    if estado:
-        query = query.filter(CoeSapFuncionalCalificacion.estado.in_(estado))
-
-    if estado_principal:
-        query = query.filter(CoeSapFuncionalCalificacion.estado_principal.in_(estado_principal))
-
-    if subestado:
-        query = query.filter(CoeSapFuncionalCalificacion.subestado.in_(subestado))
-
-    if validar_estado_control:
-        query = query.filter(CoeSapFuncionalCalificacion.validar_estado_control.in_(validar_estado_control))
-
-    if estado_consolidado:
-        query = query.filter(CoeSapFuncionalCalificacion.estado_consolidado.in_(estado_consolidado))
-
-    if responsable_estado:
-        query = query.filter(CoeSapFuncionalCalificacion.responsable_estado.in_(responsable_estado))
-
-    if modulo:
-        query = query.filter(CoeSapFuncionalCalificacion.modulo.in_(modulo))
-
-    if tipo_solicitud:
-        query = query.filter(CoeSapFuncionalCalificacion.tipo_solicitud.in_(tipo_solicitud))
-
-    if control_horas:
-        query = query.filter(CoeSapFuncionalCalificacion.control_horas.in_(control_horas))
-
-    if lider_claro:
-        query = query.filter(CoeSapFuncionalCalificacion.lider_claro.in_(lider_claro))
-
-    if asignado_a:
-        query = query.filter(CoeSapFuncionalCalificacion.asignado_a.in_(asignado_a))
-
-    if anio:
+    if anio and not _coe_rep_is_empty_filter(anio):
         try:
             query = query.filter(CoeSapFuncionalCalificacion.anio_creacion == int(anio))
         except Exception:
             pass
 
-    if mes:
+    if mes and not _coe_rep_is_empty_filter(mes):
         try:
             query = query.filter(CoeSapFuncionalCalificacion.mes_creacion == int(mes))
         except Exception:
@@ -18272,7 +18304,6 @@ def _coe_rep_apply_filters(query):
 
     return query
 
-
 def _coe_rep_distinct_options(base_query):
     def distinct_column(column):
         rows = (
@@ -18284,7 +18315,20 @@ def _coe_rep_distinct_options(base_query):
             .all()
         )
 
-        return [r[0] for r in rows if r and r[0] not in (None, "")]
+        values = [r[0] for r in rows if r and r[0] not in (None, "")]
+
+        has_blank = (
+            base_query.with_entities(column)
+            .filter(_coe_rep_empty_condition(column))
+            .limit(1)
+            .first()
+            is not None
+        )
+
+        if has_blank:
+            return [{"value": _COE_EMPTY_FILTER_VALUE, "label": "(en blanco)"}] + values
+
+        return values
 
     anios = (
         base_query.with_entities(CoeSapFuncionalCalificacion.anio_creacion)
@@ -18328,7 +18372,6 @@ def _coe_rep_distinct_options(base_query):
         ],
     }
 
-
 def _coe_rep_group_count(query, column, label_key="label"):
     rows = (
         query.with_entities(
@@ -18366,6 +18409,227 @@ def _coe_rep_group_sum(query, group_column, sum_column, label_key="label", value
             value_key: _coe_rep_float(r.total),
         }
         for r in rows
+    ]
+
+
+
+def _coe_rep_closed_condition():
+    estado_consolidado = func.upper(func.coalesce(CoeSapFuncionalCalificacion.estado_consolidado, ""))
+    estado_original = func.upper(func.coalesce(CoeSapFuncionalCalificacion.estado, ""))
+
+    return or_(
+        estado_consolidado.like("%CERR%"),
+        estado_original.like("%CERR%"),
+        estado_original.like("%SOLUC%"),
+    )
+
+
+def _coe_rep_estado_general(query):
+    total = int(query.count() or 0)
+
+    principales_rows = (
+        query.with_entities(
+            CoeSapFuncionalCalificacion.estado_principal.label("estado_principal"),
+            func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+        )
+        .group_by(CoeSapFuncionalCalificacion.estado_principal)
+        .order_by(func.count(CoeSapFuncionalCalificacion.id).desc())
+        .all()
+    )
+
+    subestados_rows = (
+        query.with_entities(
+            CoeSapFuncionalCalificacion.subestado.label("subestado"),
+            CoeSapFuncionalCalificacion.estado.label("estado"),
+            func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+        )
+        .group_by(CoeSapFuncionalCalificacion.subestado, CoeSapFuncionalCalificacion.estado)
+        .order_by(func.count(CoeSapFuncionalCalificacion.id).desc())
+        .all()
+    )
+
+    def pct(cantidad):
+        return round((float(cantidad or 0) / total) * 100, 2) if total else 0
+
+    return {
+        "total": total,
+        "principales": [
+            {
+                "estadoPrincipal": _coe_rep_str(r.estado_principal) or "OTROS",
+                "cantidad": int(r.cantidad or 0),
+                "porcentaje": pct(r.cantidad),
+            }
+            for r in principales_rows
+        ],
+        "subestados": [
+            {
+                "subestado": _coe_rep_str(r.subestado) or _coe_rep_str(r.estado) or "Sin dato",
+                "estadoOriginal": _coe_rep_str(r.estado) or "Sin dato",
+                "cantidad": int(r.cantidad or 0),
+                "porcentaje": pct(r.cantidad),
+            }
+            for r in subestados_rows
+        ],
+    }
+
+
+def _coe_rep_recibidos_vs_cerrados(query):
+    closed_cond = _coe_rep_closed_condition()
+
+    rows = (
+        query.with_entities(
+            CoeSapFuncionalCalificacion.modulo.label("modulo"),
+            func.count(CoeSapFuncionalCalificacion.id).label("total"),
+            func.coalesce(func.sum(case((closed_cond, 1), else_=0)), 0).label("cerrado"),
+            func.coalesce(func.sum(case((closed_cond, 0), else_=1)), 0).label("abierto"),
+        )
+        .group_by(CoeSapFuncionalCalificacion.modulo)
+        .order_by(CoeSapFuncionalCalificacion.modulo.asc())
+        .all()
+    )
+
+    return [
+        {
+            "modulo": _coe_rep_str(r.modulo) or "Sin módulo",
+            "abierto": int(r.abierto or 0),
+            "cerrado": int(r.cerrado or 0),
+            "total": int(r.total or 0),
+        }
+        for r in rows
+    ]
+
+
+def _coe_rep_estado_estimacion_horas(query):
+    rows = (
+        query.with_entities(
+            CoeSapFuncionalCalificacion.estado_estimacion.label("estado_estimacion"),
+            CoeSapFuncionalCalificacion.anio_aprobado_estimacion.label("anio"),
+            CoeSapFuncionalCalificacion.mes_aprobado_estimacion.label("mes"),
+            CoeSapFuncionalCalificacion.numero.label("numero"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales), 0).label("total_funcionales"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_estimadas_abap), 0).label("horas_abap"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas), 0).label("total_estimadas"),
+        )
+        .filter(CoeSapFuncionalCalificacion.estado_estimacion.isnot(None))
+        .filter(func.trim(CoeSapFuncionalCalificacion.estado_estimacion) != "")
+        .group_by(
+            CoeSapFuncionalCalificacion.estado_estimacion,
+            CoeSapFuncionalCalificacion.anio_aprobado_estimacion,
+            CoeSapFuncionalCalificacion.mes_aprobado_estimacion,
+            CoeSapFuncionalCalificacion.numero,
+        )
+        .order_by(
+            CoeSapFuncionalCalificacion.estado_estimacion.asc(),
+            CoeSapFuncionalCalificacion.anio_aprobado_estimacion.asc(),
+            CoeSapFuncionalCalificacion.mes_aprobado_estimacion.asc(),
+            CoeSapFuncionalCalificacion.numero.asc(),
+        )
+        .all()
+    )
+
+    return [
+        {
+            "estadoEstimacion": _coe_rep_str(r.estado_estimacion) or "Sin dato",
+            "anioAprobadoEstimacion": int(r.anio) if r.anio is not None else None,
+            "mesAprobadoEstimacion": int(r.mes) if r.mes is not None else None,
+            "mesNombre": _coe_rep_month_name(r.mes) if r.mes is not None else "Sin mes",
+            "numero": _coe_rep_str(r.numero) or "Sin ID",
+            "totalHorasFuncionales": _coe_rep_float(r.total_funcionales),
+            "horasEstimadasAbap": _coe_rep_float(r.horas_abap),
+            "totalHorasEstimadas": _coe_rep_float(r.total_estimadas),
+        }
+        for r in rows
+    ]
+
+
+def _coe_bolsa_month_name(month):
+    return _coe_rep_month_name(month)
+
+
+def _coe_decimal_value(value, default="0"):
+    try:
+        if value is None or value == "":
+            return Decimal(default)
+        if isinstance(value, Decimal):
+            return value
+        return Decimal(str(value).replace(",", "."))
+    except Exception:
+        return Decimal(default)
+
+
+def _coe_bolsa_to_float(value):
+    try:
+        return float(value or 0)
+    except Exception:
+        return 0.0
+
+
+def _coe_bolsa_default_months():
+    return [
+        {
+            "mesNumero": i,
+            "mesNombre": _coe_bolsa_month_name(i),
+            "valorMesContrato": 0,
+            "valorConsumido": 0,
+            "horasNoFacturadasBolsa": 0,
+            "saldo": 0,
+            "observacion": "",
+        }
+        for i in range(1, 13)
+    ]
+
+
+def _coe_bolsa_payload(control):
+    if not control:
+        return None
+
+    detalles_map = {int(d.mes_numero or 0): d for d in (control.detalles or [])}
+    saldo = _coe_decimal_value(control.saldo_inicial)
+    meses = []
+
+    for mes_numero in range(1, 13):
+        detalle = detalles_map.get(mes_numero)
+        valor_mes = _coe_decimal_value(getattr(detalle, "valor_mes_contrato", 0))
+        valor_consumido = _coe_decimal_value(getattr(detalle, "valor_consumido", 0))
+        horas_bolsa = _coe_decimal_value(getattr(detalle, "horas_no_facturadas_bolsa", 0))
+
+        saldo = saldo + valor_mes - valor_consumido - horas_bolsa
+
+        meses.append({
+            "id": getattr(detalle, "id", None),
+            "mesNumero": mes_numero,
+            "mesNombre": _coe_bolsa_month_name(mes_numero),
+            "valorMesContrato": _coe_bolsa_to_float(valor_mes),
+            "valorConsumido": _coe_bolsa_to_float(valor_consumido),
+            "horasNoFacturadasBolsa": _coe_bolsa_to_float(horas_bolsa),
+            "saldo": _coe_bolsa_to_float(saldo),
+            "observacion": getattr(detalle, "observacion", "") if detalle else "",
+        })
+
+    return {
+        "id": control.id,
+        "clienteId": control.cliente_id,
+        "clienteNombre": control.cliente.nombre_cliente if control.cliente else None,
+        "anio": int(control.anio),
+        "saldoInicial": _coe_bolsa_to_float(control.saldo_inicial),
+        "saldoFinal": meses[-1]["saldo"] if meses else _coe_bolsa_to_float(control.saldo_inicial),
+        "activo": bool(control.activo),
+        "meses": meses,
+    }
+
+
+def _coe_bolsa_clientes_payload():
+    clientes = (
+        Cliente.query
+        .filter(Cliente.nombre_cliente.isnot(None))
+        .filter(func.trim(Cliente.nombre_cliente) != "")
+        .order_by(Cliente.nombre_cliente.asc())
+        .all()
+    )
+
+    return [
+        {"id": c.id, "nombreCliente": c.nombre_cliente}
+        for c in clientes
     ]
 
 
@@ -18439,13 +18703,7 @@ def dashboard_clientes_coe_sap_funcional():
             )
         ).count()
 
-        cerrados = query.filter(
-            or_(
-                CoeSapFuncionalCalificacion.estado_consolidado.ilike("%CERR%"),
-                CoeSapFuncionalCalificacion.estado.ilike("%CERR%"),
-                CoeSapFuncionalCalificacion.estado.ilike("%SOLUC%"),
-            )
-        ).count()
+        cerrados = query.filter(_coe_rep_closed_condition()).count()
 
         con_sm = query.filter(CoeSapFuncionalCalificacion.cruce_sm == True).count()
         con_itop = query.filter(CoeSapFuncionalCalificacion.cruce_itop == True).count()
@@ -18542,6 +18800,9 @@ def dashboard_clientes_coe_sap_funcional():
                 "horasProyectoAbap": _coe_rep_float(horas.proyecto_abap if horas else 0),
                 "valorOt": _coe_rep_float(horas.valor_ot if horas else 0),
             },
+            "estadoGeneralRequerimientos": _coe_rep_estado_general(query),
+            "casosRecibidosVsCerrados": _coe_rep_recibidos_vs_cerrados(query),
+            "estadoEstimacionHoras": _coe_rep_estado_estimacion_horas(query),
             "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),
             "casosPorEstadoPrincipal": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_principal, "estadoPrincipal"),
             "casosPorSubestado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.subestado, "subestado"),
@@ -20084,3 +20345,187 @@ def coe_config_casos_sin_clasificar():
         app.logger.exception("Error listando casos sin clasificar COE SAP")
         return jsonify({"mensaje": "Error listando casos sin clasificar", "error": str(e), "trace": traceback.format_exc()}), 500
 
+
+
+# ============================================================
+# COE SAP FUNCIONAL - CONTROL MANUAL DE BOLSA POR CLIENTE
+# ============================================================
+
+@bp.route("/coe-sap-funcional/calificacion/control-bolsa", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def coe_sap_control_bolsa_cliente_get():
+    try:
+        clientes = _coe_bolsa_clientes_payload()
+
+        cliente_id_raw = request.args.get("cliente_id") or request.args.get("clienteId")
+        anio_raw = request.args.get("anio") or datetime.utcnow().year
+
+        try:
+            cliente_id = int(cliente_id_raw) if cliente_id_raw not in (None, "", "null", "None") else None
+        except Exception:
+            return jsonify({"mensaje": "cliente_id inválido"}), 400
+
+        if not cliente_id and clientes:
+            cliente_id = int(clientes[0]["id"])
+
+        try:
+            anio = int(anio_raw)
+        except Exception:
+            return jsonify({"mensaje": "anio inválido"}), 400
+
+        control = None
+        if cliente_id:
+            control = (
+                CoeSapControlBolsaCliente.query
+                .filter(CoeSapControlBolsaCliente.cliente_id == cliente_id)
+                .filter(CoeSapControlBolsaCliente.anio == anio)
+                .first()
+            )
+
+        payload = _coe_bolsa_payload(control)
+
+        if not payload and cliente_id:
+            cliente = Cliente.query.get(cliente_id)
+            payload = {
+                "id": None,
+                "clienteId": cliente_id,
+                "clienteNombre": cliente.nombre_cliente if cliente else None,
+                "anio": anio,
+                "saldoInicial": 0,
+                "saldoFinal": 0,
+                "activo": True,
+                "meses": _coe_bolsa_default_months(),
+            }
+
+        return jsonify({
+            "clientes": clientes,
+            "data": payload,
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error consultando control bolsa COE SAP")
+        return jsonify({
+            "mensaje": "Error consultando control bolsa",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/control-bolsa", methods=["POST"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def coe_sap_control_bolsa_cliente_save():
+    try:
+        data = request.get_json(silent=True) or {}
+
+        cliente_id = data.get("clienteId") or data.get("cliente_id")
+        anio = data.get("anio")
+
+        try:
+            cliente_id = int(cliente_id)
+        except Exception:
+            return jsonify({"mensaje": "Cliente requerido"}), 400
+
+        try:
+            anio = int(anio)
+        except Exception:
+            return jsonify({"mensaje": "Año requerido"}), 400
+
+        cliente = Cliente.query.get(cliente_id)
+        if not cliente:
+            return jsonify({"mensaje": "Cliente no encontrado"}), 404
+
+        usuario = getattr(g.current_user, "usuario", None)
+        saldo_inicial = _coe_decimal_value(data.get("saldoInicial") or data.get("saldo_inicial"))
+        meses = data.get("meses") or data.get("detalles") or []
+
+        control = (
+            CoeSapControlBolsaCliente.query
+            .filter(CoeSapControlBolsaCliente.cliente_id == cliente_id)
+            .filter(CoeSapControlBolsaCliente.anio == anio)
+            .first()
+        )
+
+        if not control:
+            control = CoeSapControlBolsaCliente(
+                cliente_id=cliente_id,
+                anio=anio,
+                creado_por=usuario,
+            )
+            db.session.add(control)
+            db.session.flush()
+
+        control.saldo_inicial = saldo_inicial
+        control.activo = True
+        control.actualizado_por = usuario
+        control.updated_at = datetime.utcnow()
+
+        existentes = {int(d.mes_numero or 0): d for d in (control.detalles or [])}
+
+        meses_por_numero = {}
+        for row in meses:
+            try:
+                mes_numero = int(row.get("mesNumero") or row.get("mes_numero"))
+            except Exception:
+                continue
+
+            if 1 <= mes_numero <= 12:
+                meses_por_numero[mes_numero] = row
+
+        for mes_numero in range(1, 13):
+            row = meses_por_numero.get(mes_numero, {})
+            detalle = existentes.get(mes_numero)
+
+            if not detalle:
+                detalle = CoeSapControlBolsaClienteDetalle(
+                    control_id=control.id,
+                    mes_numero=mes_numero,
+                    mes_nombre=_coe_bolsa_month_name(mes_numero),
+                )
+                db.session.add(detalle)
+
+            detalle.mes_nombre = _coe_bolsa_month_name(mes_numero)
+            detalle.valor_mes_contrato = _coe_decimal_value(row.get("valorMesContrato") or row.get("valor_mes_contrato"))
+            detalle.valor_consumido = _coe_decimal_value(row.get("valorConsumido") or row.get("valor_consumido"))
+            detalle.horas_no_facturadas_bolsa = _coe_decimal_value(row.get("horasNoFacturadasBolsa") or row.get("horas_no_facturadas_bolsa"))
+            detalle.observacion = row.get("observacion") or row.get("observaciones") or ""
+            detalle.updated_at = datetime.utcnow()
+
+        db.session.commit()
+        db.session.refresh(control)
+
+        return jsonify({
+            "mensaje": "Control de bolsa guardado correctamente",
+            "data": _coe_bolsa_payload(control),
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error guardando control bolsa COE SAP")
+        return jsonify({
+            "mensaje": "Error guardando control bolsa",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/control-bolsa/<int:control_id>", methods=["DELETE"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def coe_sap_control_bolsa_cliente_delete(control_id):
+    try:
+        control = CoeSapControlBolsaCliente.query.get(control_id)
+        if not control:
+            return jsonify({"mensaje": "Control no encontrado"}), 404
+
+        db.session.delete(control)
+        db.session.commit()
+
+        return jsonify({"mensaje": "Control de bolsa eliminado correctamente"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error eliminando control bolsa COE SAP")
+        return jsonify({
+            "mensaje": "Error eliminando control bolsa",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500

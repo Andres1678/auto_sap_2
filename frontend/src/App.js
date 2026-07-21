@@ -36,6 +36,7 @@ import CargarBasesAuxiliaresCoeSap from './CargarBasesAuxiliaresCoeSap';
 import DashboardClientesCoeSap from './DashboardClientesCoeSap';
 import DetalleSeguimientoClienteCoeSap from './DetalleSeguimientoClienteCoeSap';
 import PromedioAtencionCoeSap from './PromedioAtencionCoeSap';
+import ControlBolsaClienteCoeSap from './ControlBolsaClienteCoeSap';
 
 const AUTO_LOGOUT_HOURS = [6, 7, 8, 10, 18, 22];
 
@@ -368,6 +369,15 @@ function App() {
                 </AdminRoute>
               }
             />    
+
+            <Route
+              path="/coe-sap-funcional/control-bolsa"
+              element={
+                <AdminRoute requirePermiso="BASE_REGISTRO_VER">
+                  <ControlBolsaClienteCoeSap />
+                </AdminRoute>
+              }
+            />
 
             <Route
               path="/configuracion"

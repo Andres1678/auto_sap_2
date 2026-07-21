@@ -1555,3 +1555,73 @@ class CoeSapFuncionalCategoriaCatalogo(db.Model):
         ),
     )
 
+
+
+
+# ============================================================
+# COE SAP FUNCIONAL - CONTROL MANUAL DE BOLSA POR CLIENTE
+# ============================================================
+
+class CoeSapControlBolsaCliente(db.Model):
+    __tablename__ = "coe_sap_control_bolsa_cliente"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    cliente_id = db.Column(
+        db.Integer,
+        db.ForeignKey("clientes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    anio = db.Column(db.Integer, nullable=False, index=True)
+    saldo_inicial = db.Column(db.Numeric(14, 2), nullable=False, server_default=text("0"))
+    activo = db.Column(db.Boolean, nullable=False, server_default=text("1"))
+
+    creado_por = db.Column(db.String(100))
+    actualizado_por = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    cliente = relationship("Cliente", lazy="joined")
+    detalles = relationship(
+        "CoeSapControlBolsaClienteDetalle",
+        back_populates="control",
+        cascade="all, delete-orphan",
+        lazy="select",
+        order_by="CoeSapControlBolsaClienteDetalle.mes_numero.asc()",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("cliente_id", "anio", name="uq_coe_bolsa_cliente_anio"),
+    )
+
+
+class CoeSapControlBolsaClienteDetalle(db.Model):
+    __tablename__ = "coe_sap_control_bolsa_cliente_detalle"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    control_id = db.Column(
+        db.Integer,
+        db.ForeignKey("coe_sap_control_bolsa_cliente.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    mes_numero = db.Column(db.Integer, nullable=False)
+    mes_nombre = db.Column(db.String(30), nullable=False)
+
+    valor_mes_contrato = db.Column(db.Numeric(14, 2), nullable=False, server_default=text("0"))
+    valor_consumido = db.Column(db.Numeric(14, 2), nullable=False, server_default=text("0"))
+    horas_no_facturadas_bolsa = db.Column(db.Numeric(14, 2), nullable=False, server_default=text("0"))
+    observacion = db.Column(db.Text)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    control = relationship("CoeSapControlBolsaCliente", back_populates="detalles")
+
+    __table_args__ = (
+        UniqueConstraint("control_id", "mes_numero", name="uq_coe_bolsa_detalle_mes"),
+    )
