@@ -743,3 +743,104 @@
     justify-items: center;
   }
 }
+
+/* ============================================================
+   Select múltiple filtros dashboard COE SAP
+   ============================================================ */
+.coedash-filter-select {
+  min-width: 0;
+}
+
+.coedash-rselect {
+  width: 100%;
+  min-height: 42px;
+  font-size: 13px;
+}
+
+.coedash-rselect__control {
+  min-height: 42px !important;
+  border-color: var(--coedash-border) !important;
+  border-radius: 12px !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+  cursor: pointer !important;
+}
+
+.coedash-rselect__control:hover,
+.coedash-rselect__control--is-focused {
+  border-color: rgba(218, 41, 28, 0.5) !important;
+  box-shadow: 0 0 0 4px rgba(218, 41, 28, 0.1) !important;
+}
+
+.coedash-rselect__value-container {
+  padding: 4px 8px !important;
+  gap: 4px !important;
+}
+
+.coedash-rselect__placeholder {
+  color: var(--coedash-muted) !important;
+  font-weight: 700 !important;
+}
+
+.coedash-rselect__multi-value {
+  border-radius: 999px !important;
+  background: var(--coedash-soft-red) !important;
+  border: 1px solid #ffd7d3 !important;
+  overflow: hidden !important;
+}
+
+.coedash-rselect__multi-value__label {
+  color: var(--coedash-red) !important;
+  font-weight: 850 !important;
+  font-size: 12px !important;
+  padding: 3px 7px !important;
+}
+
+.coedash-rselect__multi-value__remove {
+  color: var(--coedash-red) !important;
+  cursor: pointer !important;
+}
+
+.coedash-rselect__multi-value__remove:hover {
+  background: var(--coedash-red) !important;
+  color: #ffffff !important;
+}
+
+.coedash-rselect__indicator-separator {
+  display: none !important;
+}
+
+.coedash-rselect__dropdown-indicator,
+.coedash-rselect__clear-indicator {
+  color: var(--coedash-muted) !important;
+}
+
+.coedash-rselect__menu {
+  z-index: 40 !important;
+  border: 1px solid var(--coedash-border) !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  box-shadow: 0 18px 40px rgba(17, 24, 39, 0.14) !important;
+}
+
+.coedash-rselect__menu-list {
+  max-height: 260px !important;
+  padding: 6px !important;
+}
+
+.coedash-rselect__option {
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  font-weight: 750 !important;
+  cursor: pointer !important;
+}
+
+.coedash-rselect__option--is-focused {
+  background: #fff7f6 !important;
+  color: var(--coedash-red) !important;
+}
+
+.coedash-rselect__option--is-selected {
+  background: var(--coedash-red) !important;
+  color: #ffffff !important;
+}

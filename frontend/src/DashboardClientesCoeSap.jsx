@@ -1,25 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
+import Select from "react-select";
 import { jfetch } from "./lib/api";
 import "./DashboardClientesCoeSap.css";
 
 const EMPTY_FILTERS = {
   q: "",
-  sociedad: "",
-  clienteAsociadoNombre: "",
-  validarCliente: "",
-  anio: "",
-  mes: "",
-  estadoConsolidado: "",
-  estadoPrincipal: "",
-  subestado: "",
-  validarEstadoControl: "",
-  modulo: "",
-  tipoSolicitud: "",
-  responsableEstado: "",
-  controlHoras: "",
-  liderClaro: "",
-  asignadoA: "",
+  sociedad: [],
+  clienteAsociadoNombre: [],
+  validarCliente: [],
+  anio: [],
+  mes: [],
+  estadoConsolidado: [],
+  estadoPrincipal: [],
+  subestado: [],
+  validarEstadoControl: [],
+  modulo: [],
+  tipoSolicitud: [],
+  responsableEstado: [],
+  controlHoras: [],
+  liderClaro: [],
+  asignadoA: [],
 };
 
 const PIE_COLORS = [
@@ -132,6 +133,14 @@ function buildQuery(filters) {
   const qs = new URLSearchParams();
 
   Object.entries(filters || {}).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        const s = String(item ?? "").trim();
+        if (s) qs.append(key, s);
+      });
+      return;
+    }
+
     const s = String(value ?? "").trim();
     if (!s) return;
 
@@ -161,18 +170,31 @@ function optionItems(values) {
     .filter((item) => String(item.value ?? "").trim() !== "");
 }
 
-function SimpleSelect({ label, value, options, onChange }) {
+function MultiSelect({ label, value, options, onChange }) {
+  const items = optionItems(options);
+  const selectedValues = Array.isArray(value) ? value : value ? [value] : [];
+  const selectedMap = new Set(selectedValues.map((item) => String(item)));
+  const selectedOptions = items.filter((item) => selectedMap.has(String(item.value)));
+
   return (
-    <label className="coedash-filter">
+    <label className="coedash-filter coedash-filter-select">
       <span>{label}</span>
-      <select value={value || ""} onChange={(e) => onChange(e.target.value)}>
-        <option value="">Todos</option>
-        {optionItems(options).map((item) => (
-          <option key={`${label}-${item.value}`} value={item.value}>
-            {item.label}
-          </option>
-        ))}
-      </select>
+      <Select
+        className="coedash-rselect"
+        classNamePrefix="coedash-rselect"
+        isMulti
+        isClearable
+        closeMenuOnSelect={false}
+        hideSelectedOptions={false}
+        options={items}
+        value={selectedOptions}
+        placeholder="Todos"
+        noOptionsMessage={() => "Sin opciones"}
+        onChange={(selected) => {
+          const values = Array.isArray(selected) ? selected.map((item) => item.value) : [];
+          onChange(values);
+        }}
+      />
     </label>
   );
 }
@@ -721,19 +743,21 @@ export default function DashboardClientesCoeSap() {
             />
           </label>
 
-          <SimpleSelect label="Sociedad" value={filters.sociedad} options={opciones.sociedad} onChange={(v) => updateFilter("sociedad", v)} />
-          <SimpleSelect label="Cliente asociado" value={filters.clienteAsociadoNombre} options={opciones.clienteAsociadoNombre} onChange={(v) => updateFilter("clienteAsociadoNombre", v)} />
-          <SimpleSelect label="Año creación" value={filters.anio} options={opciones.anio} onChange={(v) => updateFilter("anio", v)} />
-          <SimpleSelect label="Mes creación" value={filters.mes} options={opciones.mes} onChange={(v) => updateFilter("mes", v)} />
-          <SimpleSelect label="Tipo solicitud" value={filters.tipoSolicitud} options={opciones.tipoSolicitud} onChange={(v) => updateFilter("tipoSolicitud", v)} />
-          <SimpleSelect label="Líder Claro" value={filters.liderClaro} options={opciones.liderClaro} onChange={(v) => updateFilter("liderClaro", v)} />
-          <SimpleSelect label="Control horas" value={filters.controlHoras} options={opciones.controlHoras} onChange={(v) => updateFilter("controlHoras", v)} />
-          <SimpleSelect label="Estado consolidado" value={filters.estadoConsolidado} options={opciones.estadoConsolidado} onChange={(v) => updateFilter("estadoConsolidado", v)} />
-          <SimpleSelect label="Estado principal" value={filters.estadoPrincipal} options={opciones.estadoPrincipal} onChange={(v) => updateFilter("estadoPrincipal", v)} />
-          <SimpleSelect label="Subestado" value={filters.subestado} options={opciones.subestado} onChange={(v) => updateFilter("subestado", v)} />
-          <SimpleSelect label="Módulo" value={filters.modulo} options={opciones.modulo} onChange={(v) => updateFilter("modulo", v)} />
-          <SimpleSelect label="Responsable estado" value={filters.responsableEstado} options={opciones.responsableEstado} onChange={(v) => updateFilter("responsableEstado", v)} />
-          <SimpleSelect label="Asignado a" value={filters.asignadoA} options={opciones.asignadoA} onChange={(v) => updateFilter("asignadoA", v)} />
+          <MultiSelect label="Sociedad" value={filters.sociedad} options={opciones.sociedad} onChange={(v) => updateFilter("sociedad", v)} />
+          <MultiSelect label="Cliente asociado" value={filters.clienteAsociadoNombre} options={opciones.clienteAsociadoNombre} onChange={(v) => updateFilter("clienteAsociadoNombre", v)} />
+          <MultiSelect label="Validar cliente" value={filters.validarCliente} options={opciones.validarCliente} onChange={(v) => updateFilter("validarCliente", v)} />
+          <MultiSelect label="Año creación" value={filters.anio} options={opciones.anio} onChange={(v) => updateFilter("anio", v)} />
+          <MultiSelect label="Mes creación" value={filters.mes} options={opciones.mes} onChange={(v) => updateFilter("mes", v)} />
+          <MultiSelect label="Tipo solicitud" value={filters.tipoSolicitud} options={opciones.tipoSolicitud} onChange={(v) => updateFilter("tipoSolicitud", v)} />
+          <MultiSelect label="Líder Claro" value={filters.liderClaro} options={opciones.liderClaro} onChange={(v) => updateFilter("liderClaro", v)} />
+          <MultiSelect label="Control horas" value={filters.controlHoras} options={opciones.controlHoras} onChange={(v) => updateFilter("controlHoras", v)} />
+          <MultiSelect label="Estado consolidado" value={filters.estadoConsolidado} options={opciones.estadoConsolidado} onChange={(v) => updateFilter("estadoConsolidado", v)} />
+          <MultiSelect label="Estado principal" value={filters.estadoPrincipal} options={opciones.estadoPrincipal} onChange={(v) => updateFilter("estadoPrincipal", v)} />
+          <MultiSelect label="Subestado" value={filters.subestado} options={opciones.subestado} onChange={(v) => updateFilter("subestado", v)} />
+          <MultiSelect label="Validar estado" value={filters.validarEstadoControl} options={opciones.validarEstadoControl} onChange={(v) => updateFilter("validarEstadoControl", v)} />
+          <MultiSelect label="Módulo" value={filters.modulo} options={opciones.modulo} onChange={(v) => updateFilter("modulo", v)} />
+          <MultiSelect label="Responsable estado" value={filters.responsableEstado} options={opciones.responsableEstado} onChange={(v) => updateFilter("responsableEstado", v)} />
+          <MultiSelect label="Asignado a" value={filters.asignadoA} options={opciones.asignadoA} onChange={(v) => updateFilter("asignadoA", v)} />
         </div>
 
         <div className="coedash-actions">

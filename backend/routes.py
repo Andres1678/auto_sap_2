@@ -18250,8 +18250,8 @@ def _coe_rep_apply_filters(query):
     lider_claro = _coe_rep_list_arg("lider_claro") or _coe_rep_list_arg("liderClaro")
     asignado_a = _coe_rep_list_arg("asignado_a") or _coe_rep_list_arg("asignadoA")
 
-    anio = (request.args.get("anio") or "").strip()
-    mes = (request.args.get("mes") or "").strip()
+    anio = _coe_rep_list_arg("anio")
+    mes = _coe_rep_list_arg("mes")
     q = (request.args.get("q") or "").strip()
 
     if sociedad:
@@ -18274,17 +18274,31 @@ def _coe_rep_apply_filters(query):
     query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.lider_claro, lider_claro)
     query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.asignado_a, asignado_a)
 
-    if anio and not _coe_rep_is_empty_filter(anio):
-        try:
-            query = query.filter(CoeSapFuncionalCalificacion.anio_creacion == int(anio))
-        except Exception:
-            pass
+    if anio:
+        anios_int = []
+        for value in anio:
+            if _coe_rep_is_empty_filter(value):
+                continue
+            try:
+                anios_int.append(int(value))
+            except Exception:
+                continue
 
-    if mes and not _coe_rep_is_empty_filter(mes):
-        try:
-            query = query.filter(CoeSapFuncionalCalificacion.mes_creacion == int(mes))
-        except Exception:
-            pass
+        if anios_int:
+            query = query.filter(CoeSapFuncionalCalificacion.anio_creacion.in_(list(set(anios_int))))
+
+    if mes:
+        meses_int = []
+        for value in mes:
+            if _coe_rep_is_empty_filter(value):
+                continue
+            try:
+                meses_int.append(int(value))
+            except Exception:
+                continue
+
+        if meses_int:
+            query = query.filter(CoeSapFuncionalCalificacion.mes_creacion.in_(list(set(meses_int))))
 
     if q:
         like = f"%{q}%"
