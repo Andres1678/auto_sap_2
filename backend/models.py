@@ -1396,6 +1396,16 @@ class CoeSapFuncionalCalificacion(db.Model):
     campos_editados_manual_json = db.Column(LONGTEXT)
     origen_datos_json = db.Column(LONGTEXT)
 
+    cliente_id = db.Column(db.Integer, db.ForeignKey("clientes.id", ondelete="SET NULL"), nullable=True, index=True)
+    cliente_asociado_nombre = db.Column(db.String(255))
+    validar_cliente = db.Column(db.String(50), index=True)
+
+    estado_catalogo_id = db.Column(db.Integer, nullable=True, index=True)
+    estado_principal = db.Column(db.String(150), index=True)
+    subestado_catalogo_id = db.Column(db.Integer, nullable=True, index=True)
+    subestado = db.Column(db.String(150), index=True)
+    validar_estado_control = db.Column(db.String(50), index=True)
+
 
 class CoeSapFuncionalCalificacionHora(db.Model):
     __tablename__ = "coe_sap_funcional_calificacion_horas"

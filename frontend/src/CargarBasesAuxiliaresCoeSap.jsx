@@ -389,7 +389,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
     const confirm = await Swal.fire({
       icon: "question",
       title: "Sincronizar calificación",
-      html: "Se sincronizará desde la base principal y luego se aplicarán clientes, estados y subestados controlados.<br><b>No se usarán cargues SM ni ITOP.</b>",
+      html: "Se sincronizará desde la base principal y luego se asociarán clientes, estados principales y subestados sin modificar el estado original.<br><b>No se usarán cargues SM ni ITOP.</b>",
       showCancelButton: true,
       confirmButtonText: "Sí, sincronizar",
       cancelButtonText: "Cancelar",
@@ -410,7 +410,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
         }),
       });
 
-      const syncCatalogos = await requestJson("/coe-sap-funcional/config/sincronizar-catalogos", {
+      const syncCatalogos = await requestJson("/coe-sap-funcional/config/sincronizar-clasificacion", {
         method: "POST",
         body: JSON.stringify({}),
       });

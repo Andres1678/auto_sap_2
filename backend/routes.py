@@ -15127,6 +15127,9 @@ def _calificacion_to_dict(r):
 
         "tipoContrato": r.tipo_contrato,
         "sociedad": r.sociedad,
+        "clienteId": getattr(r, "cliente_id", None),
+        "clienteAsociadoNombre": getattr(r, "cliente_asociado_nombre", None),
+        "validarCliente": getattr(r, "validar_cliente", None),
         "asunto": r.asunto,
         "observaciones": r.observaciones,
         "nombreSolicitante": r.nombre_solicitante,
@@ -15142,7 +15145,13 @@ def _calificacion_to_dict(r):
         "articulo": r.articulo,
 
         "estado": r.estado,
+        "estadoOriginal": r.estado,
         "estadoHerramientaGestion": r.estado_herramienta_gestion,
+        "estadoCatalogoId": getattr(r, "estado_catalogo_id", None),
+        "estadoPrincipal": getattr(r, "estado_principal", None),
+        "subestadoCatalogoId": getattr(r, "subestado_catalogo_id", None),
+        "subestado": getattr(r, "subestado", None),
+        "validarEstadoControl": getattr(r, "validar_estado_control", None),
         "responsableEstado": r.responsable_estado,
         "estadoConsolidado": r.estado_consolidado,
 
@@ -15276,16 +15285,6 @@ def _calificacion_to_dict(r):
         "cruceItop": bool(r.cruce_itop),
         "camposEditadosManual": _coe_ext_json_load(r.campos_editados_manual_json),
         "origenDatos": _coe_ext_json_load(r.origen_datos_json),
-
-        # Campos de configuración controlada desde el front
-        "clienteId": getattr(r, "cliente_id", None),
-        "clienteAsociadoNombre": getattr(r, "cliente_asociado_nombre", None),
-        "validarCliente": getattr(r, "validar_cliente", None),
-        "estadoCatalogoId": getattr(r, "estado_catalogo_id", None),
-        "estadoPrincipal": getattr(r, "estado_principal", None),
-        "subestadoCatalogoId": getattr(r, "subestado_catalogo_id", None),
-        "subestado": getattr(r, "subestado", None),
-        "validarEstadoControl": getattr(r, "validar_estado_control", None),
     }
 
 
@@ -16666,11 +16665,10 @@ def _coe_ext_recalcular_row(row):
 
     _coe_ext_validar_categoria(row)
 
-    # Vinculación controlada de cliente, estado principal y subestado.
-    # La función se define más abajo en el bloque de configuración COE SAP.
-    # Se valida con globals() para no romper ambientes donde aún no se haya pegado el bloque.
-    if "_coe_cfg_enlazar_calificacion" in globals():
-        _coe_cfg_enlazar_calificacion(row)
+    # Clasificación controlada: NO modifica el estado original.
+    # Solo enlaza cliente, estado principal y subestado usando listas configuradas.
+    if "_coe_cfg_clasificar_calificacion" in globals():
+        _coe_cfg_clasificar_calificacion(row)
 
     return row
 
@@ -16920,16 +16918,6 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "responsableEstado": "responsable_estado",
             "estadoConsolidado": "estado_consolidado",
 
-            # Campos de configuración controlada
-            "clienteId": "cliente_id",
-            "clienteAsociadoNombre": "cliente_asociado_nombre",
-            "validarCliente": "validar_cliente",
-            "estadoCatalogoId": "estado_catalogo_id",
-            "estadoPrincipal": "estado_principal",
-            "subestadoCatalogoId": "subestado_catalogo_id",
-            "subestado": "subestado",
-            "validarEstadoControl": "validar_estado_control",
-
             "estadoFacturacionOt": "estado_facturacion_ot",
             "nroOt": "nro_ot",
             "valorOt": "valor_ot",
@@ -16990,12 +16978,6 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "horasOferta",
         }
 
-        campos_enteros = {
-            "clienteId",
-            "estadoCatalogoId",
-            "subestadoCatalogoId",
-        }
-
         for json_key, model_key in campos_editables.items():
             if json_key not in data:
                 continue
@@ -17007,15 +16989,6 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
 
             if json_key in campos_decimal:
                 value = _calificacion_decimal(value)
-
-            if json_key in campos_enteros:
-                try:
-                    value = int(value) if value not in (None, "", "null", "None") else None
-                except Exception:
-                    value = None
-
-            if not hasattr(row, model_key):
-                continue
 
             setattr(row, model_key, value)
 
@@ -17548,17 +17521,13 @@ def _importar_fuente_gestion(fuente):
 @bp.route("/coe-sap-funcional/calificacion/fuentes/import-sm", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def importar_fuente_sm_coe_sap_funcional():
-    return jsonify({
-        "mensaje": "El cargue de Base Datos SM fue deshabilitado. Usa la configuración controlada desde el front."
-    }), 410
+    return _importar_fuente_gestion("SM")
 
 
 @bp.route("/coe-sap-funcional/calificacion/fuentes/import-itop", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def importar_fuente_itop_coe_sap_funcional():
-    return jsonify({
-        "mensaje": "El cargue de Base Datos ITOP fue deshabilitado. Usa la configuración controlada desde el front."
-    }), 410
+    return _importar_fuente_gestion("ITOP")
 
 
 # ============================================================
@@ -17899,7 +17868,7 @@ def sincronizar_calificacion_coe_sap_funcional():
             modo = "preservar_manual"
 
         crear_desde_base = data.get("crear_desde_base", True)
-        crear_desde_fuentes = data.get("crear_desde_fuentes", False)
+        crear_desde_fuentes = data.get("crear_desde_fuentes", True)
 
         usuario = _coe_ext_usuario()
 
@@ -19161,10 +19130,15 @@ def exportar_importaciones_coe_sap_funcional_excel():
         app.logger.exception("Error exportando importaciones COE SAP Funcional")
         return jsonify({"mensaje": "Error exportando importaciones", "error": str(e), "trace": traceback.format_exc()}), 500
 
+
 # ============================================================
-# COE SAP FUNCIONAL - CONFIGURACION CONTROLADA DESDE FRONT
-# Estados principales, subestados y asociación de clientes
+# COE SAP FUNCIONAL - CLASIFICACION CONTROLADA POR LISTAS
+# Estados principales, subestados y clientes desde el front
 # ============================================================
+
+COE_TIPO_ESTADO_PRINCIPAL = "ESTADO_PRINCIPAL"
+COE_TIPO_SUBESTADO = "SUBESTADO"
+
 
 def _coe_cfg_norm(value):
     s = str(value or "").replace("\u00A0", " ").strip().upper()
@@ -19198,7 +19172,7 @@ def _coe_cfg_bool(value, default=True):
     return default
 
 
-def _coe_cfg_safe_int(value, default=0):
+def _coe_cfg_safe_int(value, default=None):
     try:
         if value in (None, "", "null", "None"):
             return default
@@ -19207,21 +19181,40 @@ def _coe_cfg_safe_int(value, default=0):
         return default
 
 
+def _coe_cfg_set_if_exists(row, field, value):
+    if hasattr(row, field):
+        setattr(row, field, value)
+
+
 def _coe_cfg_catalogo_to_dict(row):
     return {
         "id": row.id,
         "tipo": row.tipo,
         "valor": row.valor,
+        "nombre": row.valor,
         "valorNormalizado": row.valor_normalizado,
-        "descripcion": row.extra_1,
+        "descripcion": row.extra_1 if row.tipo == COE_TIPO_ESTADO_PRINCIPAL else row.extra_3,
         "extra1": row.extra_1,
         "extra2": row.extra_2,
         "extra3": row.extra_3,
         "activo": bool(row.activo),
         "orden": int(row.orden or 0),
-        "createdAt": _calificacion_fecha_str(row.created_at),
-        "updatedAt": _calificacion_fecha_str(row.updated_at),
+        "createdAt": _calificacion_fecha_str(row.created_at) if "_calificacion_fecha_str" in globals() else None,
+        "updatedAt": _calificacion_fecha_str(row.updated_at) if "_calificacion_fecha_str" in globals() else None,
     }
+
+
+def _coe_cfg_estado_texto_original(row):
+    """
+    Devuelve el texto que se va a clasificar.
+    Importante: NO se modifica row.estado. Si ese valor es un subestado,
+    se conserva como llegó y solo se llenan estado_principal/subestado.
+    """
+    return (
+        _coe_cfg_str(getattr(row, "estado", None))
+        or _coe_cfg_str(getattr(row, "estado_herramienta_gestion", None))
+        or ""
+    )
 
 
 def _coe_cfg_find_cliente_by_nombre(nombre):
@@ -19231,69 +19224,58 @@ def _coe_cfg_find_cliente_by_nombre(nombre):
 
     clientes = Cliente.query.order_by(Cliente.nombre_cliente.asc()).all()
 
-    # 1. Coincidencia exacta normalizada
-    for c in clientes:
-        if _coe_cfg_norm(getattr(c, "nombre_cliente", None)) == nombre_norm:
-            return c
+    # Coincidencia exacta normalizada.
+    for cliente in clientes:
+        if _coe_cfg_norm(getattr(cliente, "nombre_cliente", None)) == nombre_norm:
+            return cliente
 
-    # 2. Coincidencia flexible: uno contiene al otro
-    for c in clientes:
-        cn = _coe_cfg_norm(getattr(c, "nombre_cliente", None))
-        if cn and (cn in nombre_norm or nombre_norm in cn):
-            return c
+    # Coincidencia flexible.
+    # Ejemplo: sociedad viene "AIRE S.A.S" y cliente está "AIR-E".
+    for cliente in clientes:
+        cliente_norm = _coe_cfg_norm(getattr(cliente, "nombre_cliente", None))
+        if cliente_norm and (cliente_norm in nombre_norm or nombre_norm in cliente_norm):
+            return cliente
 
     return None
 
 
 def _coe_cfg_find_estado_principal_by_id(estado_id):
-    try:
-        estado_id = int(estado_id)
-    except Exception:
+    estado_id = _coe_cfg_safe_int(estado_id)
+    if not estado_id:
         return None
-    return CoeSapFuncionalCatalogo.query.filter_by(
-        id=estado_id,
-        tipo="ESTADO_PRINCIPAL",
+    return CoeSapFuncionalCatalogo.query.filter(
+        CoeSapFuncionalCatalogo.id == estado_id,
+        CoeSapFuncionalCatalogo.tipo == COE_TIPO_ESTADO_PRINCIPAL,
     ).first()
 
 
-def _coe_cfg_find_estado_principal_by_nombre(nombre):
+def _coe_cfg_find_estado_principal_by_nombre(nombre, solo_activos=True):
     nombre_norm = _coe_cfg_norm(nombre)
     if not nombre_norm:
         return None
-    return CoeSapFuncionalCatalogo.query.filter_by(
-        tipo="ESTADO_PRINCIPAL",
-        valor_normalizado=nombre_norm,
-    ).first()
+    q = CoeSapFuncionalCatalogo.query.filter(
+        CoeSapFuncionalCatalogo.tipo == COE_TIPO_ESTADO_PRINCIPAL,
+        CoeSapFuncionalCatalogo.valor_normalizado == nombre_norm,
+    )
+    if solo_activos:
+        q = q.filter(CoeSapFuncionalCatalogo.activo == True)
+    return q.first()
 
 
-def _coe_cfg_find_subestado_by_nombre(nombre):
+def _coe_cfg_find_subestado_by_nombre(nombre, solo_activos=True):
     nombre_norm = _coe_cfg_norm(nombre)
     if not nombre_norm:
         return None
-    return CoeSapFuncionalCatalogo.query.filter_by(
-        tipo="SUBESTADO",
-        valor_normalizado=nombre_norm,
-    ).first()
+    q = CoeSapFuncionalCatalogo.query.filter(
+        CoeSapFuncionalCatalogo.tipo == COE_TIPO_SUBESTADO,
+        CoeSapFuncionalCatalogo.valor_normalizado == nombre_norm,
+    )
+    if solo_activos:
+        q = q.filter(CoeSapFuncionalCatalogo.activo == True)
+    return q.first()
 
 
-def _coe_cfg_set_if_exists(row, field, value):
-    if hasattr(row, field):
-        setattr(row, field, value)
-
-
-def _coe_cfg_enlazar_calificacion(row):
-    """
-    Enlaza una fila de calificación con:
-    - Cliente de tabla clientes, usando sociedad/compañía.
-    - Estado principal y subestado, usando catálogo controlado.
-    No falla si aún no se han agregado las columnas nuevas al modelo.
-    """
-    if not row:
-        return row
-
-    # -----------------------------
-    # Cliente asociado
-    # -----------------------------
+def _coe_cfg_clasificar_cliente(row):
     sociedad = _coe_cfg_str(getattr(row, "sociedad", None))
     cliente = _coe_cfg_find_cliente_by_nombre(sociedad)
 
@@ -19301,21 +19283,28 @@ def _coe_cfg_enlazar_calificacion(row):
         _coe_cfg_set_if_exists(row, "cliente_id", cliente.id)
         _coe_cfg_set_if_exists(row, "cliente_asociado_nombre", cliente.nombre_cliente)
         _coe_cfg_set_if_exists(row, "validar_cliente", "OK")
-    else:
-        _coe_cfg_set_if_exists(row, "cliente_id", None)
-        _coe_cfg_set_if_exists(row, "cliente_asociado_nombre", None)
-        _coe_cfg_set_if_exists(row, "validar_cliente", "VALIDAR" if sociedad else "SIN SOCIEDAD")
+        return "OK"
 
-    # -----------------------------
-    # Estado principal / subestado
-    # -----------------------------
-    estado_base = (
-        _coe_cfg_str(getattr(row, "estado_herramienta_gestion", None))
-        or _coe_cfg_str(getattr(row, "estado", None))
-    )
+    _coe_cfg_set_if_exists(row, "cliente_id", None)
+    _coe_cfg_set_if_exists(row, "cliente_asociado_nombre", None)
+    _coe_cfg_set_if_exists(row, "validar_cliente", "VALIDAR" if sociedad else "SIN SOCIEDAD")
+    return "VALIDAR" if sociedad else "SIN SOCIEDAD"
 
-    subestado = _coe_cfg_find_subestado_by_nombre(estado_base)
 
+def _coe_cfg_clasificar_estado(row):
+    estado_original = _coe_cfg_estado_texto_original(row)
+
+    if not estado_original:
+        _coe_cfg_set_if_exists(row, "estado_catalogo_id", None)
+        _coe_cfg_set_if_exists(row, "estado_principal", None)
+        _coe_cfg_set_if_exists(row, "subestado_catalogo_id", None)
+        _coe_cfg_set_if_exists(row, "subestado", None)
+        _coe_cfg_set_if_exists(row, "validar_estado_control", "SIN ESTADO")
+        return "SIN ESTADO"
+
+    # 1) Si el texto de la columna estado es un SUBESTADO,
+    #    se asocia al estado principal padre SIN cambiar row.estado.
+    subestado = _coe_cfg_find_subestado_by_nombre(estado_original, solo_activos=True)
     if subestado:
         estado_padre = _coe_cfg_find_estado_principal_by_id(subestado.extra_1)
 
@@ -19330,24 +19319,110 @@ def _coe_cfg_enlazar_calificacion(row):
             _coe_cfg_set_if_exists(row, "estado_principal", subestado.extra_2)
 
         _coe_cfg_set_if_exists(row, "validar_estado_control", "OK")
-        return row
+        return "OK"
 
-    estado_principal = _coe_cfg_find_estado_principal_by_nombre(estado_base)
-
+    # 2) Si el texto ya es un estado principal, también queda OK.
+    estado_principal = _coe_cfg_find_estado_principal_by_nombre(estado_original, solo_activos=True)
     if estado_principal:
         _coe_cfg_set_if_exists(row, "estado_catalogo_id", estado_principal.id)
         _coe_cfg_set_if_exists(row, "estado_principal", estado_principal.valor)
         _coe_cfg_set_if_exists(row, "subestado_catalogo_id", None)
-        _coe_cfg_set_if_exists(row, "subestado", None)
+        # Se conserva el texto original como subestado visual para no perder detalle,
+        # pero no se marca como subestado catalogado.
+        _coe_cfg_set_if_exists(row, "subestado", estado_original)
         _coe_cfg_set_if_exists(row, "validar_estado_control", "OK")
+        return "OK"
+
+    # 3) No existe en listas: queda pendiente para crear/asociar desde configuración.
+    _coe_cfg_set_if_exists(row, "estado_catalogo_id", None)
+    _coe_cfg_set_if_exists(row, "estado_principal", None)
+    _coe_cfg_set_if_exists(row, "subestado_catalogo_id", None)
+    _coe_cfg_set_if_exists(row, "subestado", estado_original)
+    _coe_cfg_set_if_exists(row, "validar_estado_control", "VALIDAR")
+    return "VALIDAR"
+
+
+def _coe_cfg_clasificar_calificacion(row):
+    """
+    Clasifica una fila sin cambiar el dato original:
+    - row.estado queda igual.
+    - row.sociedad queda igual.
+    - se llenan cliente_id, cliente_asociado_nombre, validar_cliente.
+    - se llenan estado_principal, subestado, validar_estado_control.
+    """
+    if not row:
         return row
 
-    _coe_cfg_set_if_exists(row, "estado_catalogo_id", None)
-    _coe_cfg_set_if_exists(row, "subestado_catalogo_id", None)
-    _coe_cfg_set_if_exists(row, "estado_principal", None)
-    _coe_cfg_set_if_exists(row, "subestado", None)
-    _coe_cfg_set_if_exists(row, "validar_estado_control", "VALIDAR" if estado_base else "SIN ESTADO")
+    _coe_cfg_clasificar_cliente(row)
+    _coe_cfg_clasificar_estado(row)
     return row
+
+
+def _coe_cfg_reclasificar_calificaciones(limit=None):
+    q = CoeSapFuncionalCalificacion.query
+    if limit:
+        q = q.limit(int(limit))
+
+    total = 0
+    clientes_ok = 0
+    clientes_validar = 0
+    estados_ok = 0
+    estados_validar = 0
+    estados_sin_estado = 0
+
+    usuario = _coe_ext_usuario() if "_coe_ext_usuario" in globals() else (_calificacion_usuario_actual() if "_calificacion_usuario_actual" in globals() else None)
+
+    for row in q.yield_per(1000):
+        _coe_cfg_clasificar_calificacion(row)
+
+        if getattr(row, "validar_cliente", None) == "OK":
+            clientes_ok += 1
+        else:
+            clientes_validar += 1
+
+        estado_validacion = getattr(row, "validar_estado_control", None)
+        if estado_validacion == "OK":
+            estados_ok += 1
+        elif estado_validacion == "SIN ESTADO":
+            estados_sin_estado += 1
+        else:
+            estados_validar += 1
+
+        if hasattr(row, "actualizado_por"):
+            row.actualizado_por = usuario
+        if hasattr(row, "updated_at"):
+            row.updated_at = datetime.utcnow()
+
+        total += 1
+
+        if total % 1000 == 0:
+            db.session.flush()
+
+    return {
+        "total": total,
+        "clientesOk": clientes_ok,
+        "clientesValidar": clientes_validar,
+        "estadosOk": estados_ok,
+        "estadosValidar": estados_validar,
+        "estadosSinEstado": estados_sin_estado,
+    }
+
+
+def _coe_cfg_estado_uso(estado_id):
+    estado_id = _coe_cfg_safe_int(estado_id, 0)
+    if not estado_id:
+        return {"subestados": 0, "casos": 0}
+
+    subestados = CoeSapFuncionalCatalogo.query.filter(
+        CoeSapFuncionalCatalogo.tipo == COE_TIPO_SUBESTADO,
+        CoeSapFuncionalCatalogo.extra_1 == str(estado_id),
+    ).count()
+
+    casos = 0
+    if hasattr(CoeSapFuncionalCalificacion, "estado_catalogo_id"):
+        casos = CoeSapFuncionalCalificacion.query.filter_by(estado_catalogo_id=estado_id).count()
+
+    return {"subestados": int(subestados or 0), "casos": int(casos or 0)}
 
 
 @bp.route("/coe-sap-funcional/config/estados", methods=["GET"])
@@ -19355,22 +19430,19 @@ def _coe_cfg_enlazar_calificacion(row):
 def coe_config_listar_estados():
     try:
         include_inactive = (request.args.get("include_inactive") or "0").strip() == "1"
+        query = CoeSapFuncionalCatalogo.query.filter_by(tipo=COE_TIPO_ESTADO_PRINCIPAL)
 
-        query = CoeSapFuncionalCatalogo.query.filter_by(tipo="ESTADO_PRINCIPAL")
         if not include_inactive:
             query = query.filter(CoeSapFuncionalCatalogo.activo == True)
 
-        estados = query.order_by(CoeSapFuncionalCatalogo.orden.asc(), CoeSapFuncionalCatalogo.valor.asc()).all()
-
+        rows = query.order_by(CoeSapFuncionalCatalogo.orden.asc(), CoeSapFuncionalCatalogo.valor.asc()).all()
         data = []
-        for estado in estados:
-            sub_count = CoeSapFuncionalCatalogo.query.filter_by(
-                tipo="SUBESTADO",
-                extra_1=str(estado.id),
-            ).count()
 
-            item = _coe_cfg_catalogo_to_dict(estado)
-            item["totalSubestados"] = int(sub_count or 0)
+        for row in rows:
+            item = _coe_cfg_catalogo_to_dict(row)
+            uso = _coe_cfg_estado_uso(row.id)
+            item["totalSubestados"] = uso["subestados"]
+            item["totalCasos"] = uso["casos"]
             data.append(item)
 
         return jsonify({"data": data, "total": len(data)}), 200
@@ -19387,7 +19459,7 @@ def coe_config_crear_estado():
         data = request.get_json(silent=True) or {}
         nombre = _coe_cfg_str(data.get("nombre") or data.get("valor"))
         descripcion = _coe_cfg_str(data.get("descripcion"))
-        orden = _coe_cfg_safe_int(data.get("orden"), 0)
+        orden = _coe_cfg_safe_int(data.get("orden"), 0) or 0
         activo = _coe_cfg_bool(data.get("activo"), True)
 
         if not nombre:
@@ -19395,13 +19467,13 @@ def coe_config_crear_estado():
 
         valor_normalizado = _coe_cfg_norm(nombre)
         row = CoeSapFuncionalCatalogo.query.filter_by(
-            tipo="ESTADO_PRINCIPAL",
+            tipo=COE_TIPO_ESTADO_PRINCIPAL,
             valor_normalizado=valor_normalizado,
         ).first()
 
         if not row:
             row = CoeSapFuncionalCatalogo(
-                tipo="ESTADO_PRINCIPAL",
+                tipo=COE_TIPO_ESTADO_PRINCIPAL,
                 valor=nombre,
                 valor_normalizado=valor_normalizado,
                 extra_1=descripcion,
@@ -19421,7 +19493,11 @@ def coe_config_crear_estado():
             mensaje = "Estado actualizado correctamente"
 
         db.session.commit()
-        return jsonify({"mensaje": mensaje, "data": _coe_cfg_catalogo_to_dict(row)}), 200
+        resultado = _coe_cfg_reclasificar_calificaciones()
+        db.session.commit()
+
+        item = _coe_cfg_catalogo_to_dict(row)
+        return jsonify({"mensaje": mensaje, "data": item, "clasificacion": resultado}), 200
 
     except Exception as e:
         db.session.rollback()
@@ -19433,24 +19509,23 @@ def coe_config_crear_estado():
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def coe_config_actualizar_estado(estado_id):
     try:
-        row = CoeSapFuncionalCatalogo.query.filter_by(
-            id=estado_id,
-            tipo="ESTADO_PRINCIPAL",
-        ).first()
-
+        row = CoeSapFuncionalCatalogo.query.filter_by(id=estado_id, tipo=COE_TIPO_ESTADO_PRINCIPAL).first()
         if not row:
             return jsonify({"mensaje": "Estado no encontrado"}), 404
 
         data = request.get_json(silent=True) or {}
         nombre = _coe_cfg_str(data.get("nombre") or data.get("valor") or row.valor)
         descripcion = _coe_cfg_str(data.get("descripcion"))
-        orden = _coe_cfg_safe_int(data.get("orden"), row.orden or 0)
+        orden = _coe_cfg_safe_int(data.get("orden"), row.orden or 0) or 0
         activo = _coe_cfg_bool(data.get("activo"), bool(row.activo))
+
+        if not nombre:
+            return jsonify({"mensaje": "El nombre del estado es obligatorio"}), 400
 
         nuevo_norm = _coe_cfg_norm(nombre)
         duplicado = CoeSapFuncionalCatalogo.query.filter(
             CoeSapFuncionalCatalogo.id != row.id,
-            CoeSapFuncionalCatalogo.tipo == "ESTADO_PRINCIPAL",
+            CoeSapFuncionalCatalogo.tipo == COE_TIPO_ESTADO_PRINCIPAL,
             CoeSapFuncionalCatalogo.valor_normalizado == nuevo_norm,
         ).first()
 
@@ -19464,14 +19539,17 @@ def coe_config_actualizar_estado(estado_id):
         row.activo = activo
         row.updated_at = datetime.utcnow()
 
-        # Mantener nombre padre actualizado en subestados.
-        subs = CoeSapFuncionalCatalogo.query.filter_by(tipo="SUBESTADO", extra_1=str(row.id)).all()
+        # Mantener el nombre padre en los subestados.
+        subs = CoeSapFuncionalCatalogo.query.filter_by(tipo=COE_TIPO_SUBESTADO, extra_1=str(row.id)).all()
         for sub in subs:
             sub.extra_2 = row.valor
             sub.updated_at = datetime.utcnow()
 
         db.session.commit()
-        return jsonify({"mensaje": "Estado actualizado correctamente", "data": _coe_cfg_catalogo_to_dict(row)}), 200
+        resultado = _coe_cfg_reclasificar_calificaciones()
+        db.session.commit()
+
+        return jsonify({"mensaje": "Estado actualizado correctamente", "data": _coe_cfg_catalogo_to_dict(row), "clasificacion": resultado}), 200
 
     except Exception as e:
         db.session.rollback()
@@ -19483,17 +19561,12 @@ def coe_config_actualizar_estado(estado_id):
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def coe_config_eliminar_estado(estado_id):
     try:
-        row = CoeSapFuncionalCatalogo.query.filter_by(
-            id=estado_id,
-            tipo="ESTADO_PRINCIPAL",
-        ).first()
-
+        row = CoeSapFuncionalCatalogo.query.filter_by(id=estado_id, tipo=COE_TIPO_ESTADO_PRINCIPAL).first()
         if not row:
             return jsonify({"mensaje": "Estado no encontrado"}), 404
 
         hard = (request.args.get("hard") or "0").strip() == "1"
-
-        subs = CoeSapFuncionalCatalogo.query.filter_by(tipo="SUBESTADO", extra_1=str(row.id)).all()
+        subs = CoeSapFuncionalCatalogo.query.filter_by(tipo=COE_TIPO_SUBESTADO, extra_1=str(row.id)).all()
 
         if hard:
             for sub in subs:
@@ -19507,7 +19580,10 @@ def coe_config_eliminar_estado(estado_id):
                 sub.updated_at = datetime.utcnow()
 
         db.session.commit()
-        return jsonify({"mensaje": "Estado eliminado correctamente"}), 200
+        resultado = _coe_cfg_reclasificar_calificaciones()
+        db.session.commit()
+
+        return jsonify({"mensaje": "Estado eliminado correctamente", "clasificacion": resultado}), 200
 
     except Exception as e:
         db.session.rollback()
@@ -19522,7 +19598,7 @@ def coe_config_listar_subestados():
         estado_id = request.args.get("estado_id", type=int)
         include_inactive = (request.args.get("include_inactive") or "0").strip() == "1"
 
-        query = CoeSapFuncionalCatalogo.query.filter_by(tipo="SUBESTADO")
+        query = CoeSapFuncionalCatalogo.query.filter_by(tipo=COE_TIPO_SUBESTADO)
 
         if estado_id:
             query = query.filter(CoeSapFuncionalCatalogo.extra_1 == str(estado_id))
@@ -19531,13 +19607,17 @@ def coe_config_listar_subestados():
             query = query.filter(CoeSapFuncionalCatalogo.activo == True)
 
         rows = query.order_by(CoeSapFuncionalCatalogo.orden.asc(), CoeSapFuncionalCatalogo.valor.asc()).all()
-
         data = []
+
         for row in rows:
             item = _coe_cfg_catalogo_to_dict(row)
             item["estadoId"] = _coe_cfg_safe_int(row.extra_1, None)
             item["estadoNombre"] = row.extra_2
             item["descripcion"] = row.extra_3
+            casos = 0
+            if hasattr(CoeSapFuncionalCalificacion, "subestado_catalogo_id"):
+                casos = CoeSapFuncionalCalificacion.query.filter_by(subestado_catalogo_id=row.id).count()
+            item["totalCasos"] = int(casos or 0)
             data.append(item)
 
         return jsonify({"data": data, "total": len(data)}), 200
@@ -19555,26 +19635,24 @@ def coe_config_crear_subestado():
         estado_id = _coe_cfg_safe_int(data.get("estadoId") or data.get("estado_id"), 0)
         nombre = _coe_cfg_str(data.get("nombre") or data.get("valor"))
         descripcion = _coe_cfg_str(data.get("descripcion"))
-        orden = _coe_cfg_safe_int(data.get("orden"), 0)
+        orden = _coe_cfg_safe_int(data.get("orden"), 0) or 0
         activo = _coe_cfg_bool(data.get("activo"), True)
 
         estado = _coe_cfg_find_estado_principal_by_id(estado_id)
-
         if not estado:
             return jsonify({"mensaje": "Debes seleccionar un estado principal válido"}), 400
-
         if not nombre:
             return jsonify({"mensaje": "El nombre del subestado es obligatorio"}), 400
 
         valor_normalizado = _coe_cfg_norm(nombre)
         row = CoeSapFuncionalCatalogo.query.filter_by(
-            tipo="SUBESTADO",
+            tipo=COE_TIPO_SUBESTADO,
             valor_normalizado=valor_normalizado,
         ).first()
 
         if not row:
             row = CoeSapFuncionalCatalogo(
-                tipo="SUBESTADO",
+                tipo=COE_TIPO_SUBESTADO,
                 valor=nombre,
                 valor_normalizado=valor_normalizado,
                 extra_1=str(estado.id),
@@ -19589,6 +19667,7 @@ def coe_config_crear_subestado():
             mensaje = "Subestado creado correctamente"
         else:
             row.valor = nombre
+            row.valor_normalizado = valor_normalizado
             row.extra_1 = str(estado.id)
             row.extra_2 = estado.valor
             row.extra_3 = descripcion
@@ -19598,13 +19677,15 @@ def coe_config_crear_subestado():
             mensaje = "Subestado actualizado correctamente"
 
         db.session.commit()
+        resultado = _coe_cfg_reclasificar_calificaciones()
+        db.session.commit()
 
         item = _coe_cfg_catalogo_to_dict(row)
         item["estadoId"] = estado.id
         item["estadoNombre"] = estado.valor
         item["descripcion"] = row.extra_3
 
-        return jsonify({"mensaje": mensaje, "data": item}), 200
+        return jsonify({"mensaje": mensaje, "data": item, "clasificacion": resultado}), 200
 
     except Exception as e:
         db.session.rollback()
@@ -19616,30 +19697,30 @@ def coe_config_crear_subestado():
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def coe_config_actualizar_subestado(subestado_id):
     try:
-        row = CoeSapFuncionalCatalogo.query.filter_by(id=subestado_id, tipo="SUBESTADO").first()
-
+        row = CoeSapFuncionalCatalogo.query.filter_by(id=subestado_id, tipo=COE_TIPO_SUBESTADO).first()
         if not row:
             return jsonify({"mensaje": "Subestado no encontrado"}), 404
 
         data = request.get_json(silent=True) or {}
         estado_id = _coe_cfg_safe_int(data.get("estadoId") or data.get("estado_id") or row.extra_1, 0)
         estado = _coe_cfg_find_estado_principal_by_id(estado_id)
-
         if not estado:
             return jsonify({"mensaje": "Debes seleccionar un estado principal válido"}), 400
 
         nombre = _coe_cfg_str(data.get("nombre") or data.get("valor") or row.valor)
         descripcion = _coe_cfg_str(data.get("descripcion"))
-        orden = _coe_cfg_safe_int(data.get("orden"), row.orden or 0)
+        orden = _coe_cfg_safe_int(data.get("orden"), row.orden or 0) or 0
         activo = _coe_cfg_bool(data.get("activo"), bool(row.activo))
+
+        if not nombre:
+            return jsonify({"mensaje": "El nombre del subestado es obligatorio"}), 400
 
         nuevo_norm = _coe_cfg_norm(nombre)
         duplicado = CoeSapFuncionalCatalogo.query.filter(
             CoeSapFuncionalCatalogo.id != row.id,
-            CoeSapFuncionalCatalogo.tipo == "SUBESTADO",
+            CoeSapFuncionalCatalogo.tipo == COE_TIPO_SUBESTADO,
             CoeSapFuncionalCatalogo.valor_normalizado == nuevo_norm,
         ).first()
-
         if duplicado:
             return jsonify({"mensaje": "Ya existe otro subestado con ese nombre"}), 409
 
@@ -19653,13 +19734,15 @@ def coe_config_actualizar_subestado(subestado_id):
         row.updated_at = datetime.utcnow()
 
         db.session.commit()
+        resultado = _coe_cfg_reclasificar_calificaciones()
+        db.session.commit()
 
         item = _coe_cfg_catalogo_to_dict(row)
         item["estadoId"] = estado.id
         item["estadoNombre"] = estado.valor
         item["descripcion"] = row.extra_3
 
-        return jsonify({"mensaje": "Subestado actualizado correctamente", "data": item}), 200
+        return jsonify({"mensaje": "Subestado actualizado correctamente", "data": item, "clasificacion": resultado}), 200
 
     except Exception as e:
         db.session.rollback()
@@ -19671,13 +19754,11 @@ def coe_config_actualizar_subestado(subestado_id):
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def coe_config_eliminar_subestado(subestado_id):
     try:
-        row = CoeSapFuncionalCatalogo.query.filter_by(id=subestado_id, tipo="SUBESTADO").first()
-
+        row = CoeSapFuncionalCatalogo.query.filter_by(id=subestado_id, tipo=COE_TIPO_SUBESTADO).first()
         if not row:
             return jsonify({"mensaje": "Subestado no encontrado"}), 404
 
         hard = (request.args.get("hard") or "0").strip() == "1"
-
         if hard:
             db.session.delete(row)
         else:
@@ -19685,7 +19766,10 @@ def coe_config_eliminar_subestado(subestado_id):
             row.updated_at = datetime.utcnow()
 
         db.session.commit()
-        return jsonify({"mensaje": "Subestado eliminado correctamente"}), 200
+        resultado = _coe_cfg_reclasificar_calificaciones()
+        db.session.commit()
+
+        return jsonify({"mensaje": "Subestado eliminado correctamente", "clasificacion": resultado}), 200
 
     except Exception as e:
         db.session.rollback()
@@ -19697,24 +19781,22 @@ def coe_config_eliminar_subestado(subestado_id):
 @permission_required("BASE_REGISTRO_VER")
 def coe_config_listar_clientes():
     try:
-        q = (request.args.get("q") or "").strip()
+        q = _coe_cfg_str(request.args.get("q"))
         query = Cliente.query
-
         if q:
             query = query.filter(Cliente.nombre_cliente.ilike(f"%{q}%"))
 
         clientes = query.order_by(Cliente.nombre_cliente.asc()).all()
-
         data = []
-        for c in clientes:
+
+        for cliente in clientes:
             asociados = 0
             if hasattr(CoeSapFuncionalCalificacion, "cliente_id"):
-                asociados = CoeSapFuncionalCalificacion.query.filter_by(cliente_id=c.id).count()
-
+                asociados = CoeSapFuncionalCalificacion.query.filter_by(cliente_id=cliente.id).count()
             data.append({
-                "id": c.id,
-                "nombreCliente": c.nombre_cliente,
-                "nombre_cliente": c.nombre_cliente,
+                "id": cliente.id,
+                "nombreCliente": cliente.nombre_cliente,
+                "nombre_cliente": cliente.nombre_cliente,
                 "totalCasosAsociados": int(asociados or 0),
             })
 
@@ -19730,7 +19812,7 @@ def coe_config_listar_clientes():
         return jsonify({"data": data, "total": len(data), "pendientes": int(pendientes or 0)}), 200
 
     except Exception as e:
-        app.logger.exception("Error listando clientes config COE SAP")
+        app.logger.exception("Error listando clientes COE SAP config")
         return jsonify({"mensaje": "Error listando clientes", "error": str(e), "trace": traceback.format_exc()}), 500
 
 
@@ -19740,6 +19822,7 @@ def coe_config_asociar_clientes():
     try:
         data = request.get_json(silent=True) or {}
         modo = str(data.get("modo") or "auto").strip().lower()
+        usuario = _coe_ext_usuario() if "_coe_ext_usuario" in globals() else (_calificacion_usuario_actual() if "_calificacion_usuario_actual" in globals() else None)
 
         actualizados = 0
         pendientes = 0
@@ -19751,41 +19834,40 @@ def coe_config_asociar_clientes():
 
             if not sociedad:
                 return jsonify({"mensaje": "Debes enviar la sociedad a asociar"}), 400
-
             if not cliente:
                 return jsonify({"mensaje": "Cliente no encontrado"}), 404
 
             rows = CoeSapFuncionalCalificacion.query.filter(
-                CoeSapFuncionalCalificacion.sociedad.ilike(sociedad)
+                func.upper(CoeSapFuncionalCalificacion.sociedad) == _coe_cfg_norm(sociedad)
             ).all()
 
             for row in rows:
                 _coe_cfg_set_if_exists(row, "cliente_id", cliente.id)
                 _coe_cfg_set_if_exists(row, "cliente_asociado_nombre", cliente.nombre_cliente)
                 _coe_cfg_set_if_exists(row, "validar_cliente", "OK")
-                row.actualizado_por = _coe_ext_usuario() if "_coe_ext_usuario" in globals() else None
-                row.updated_at = datetime.utcnow()
+                if hasattr(row, "actualizado_por"):
+                    row.actualizado_por = usuario
+                if hasattr(row, "updated_at"):
+                    row.updated_at = datetime.utcnow()
                 actualizados += 1
 
             db.session.commit()
             return jsonify({"mensaje": "Asociación manual realizada", "actualizados": actualizados}), 200
 
-        # Asociación automática
         rows = CoeSapFuncionalCalificacion.query.all()
         for row in rows:
-            _coe_cfg_enlazar_calificacion(row)
-            if getattr(row, "validar_cliente", None) == "OK":
+            resultado = _coe_cfg_clasificar_cliente(row)
+            if resultado == "OK":
                 actualizados += 1
             else:
                 pendientes += 1
-            row.updated_at = datetime.utcnow()
+            if hasattr(row, "actualizado_por"):
+                row.actualizado_por = usuario
+            if hasattr(row, "updated_at"):
+                row.updated_at = datetime.utcnow()
 
         db.session.commit()
-        return jsonify({
-            "mensaje": "Asociación automática de clientes realizada",
-            "actualizados": actualizados,
-            "pendientes": pendientes,
-        }), 200
+        return jsonify({"mensaje": "Asociación automática de clientes realizada", "actualizados": actualizados, "pendientes": pendientes}), 200
 
     except Exception as e:
         db.session.rollback()
@@ -19793,49 +19875,77 @@ def coe_config_asociar_clientes():
         return jsonify({"mensaje": "Error asociando clientes", "error": str(e), "trace": traceback.format_exc()}), 500
 
 
+@bp.route("/coe-sap-funcional/config/sincronizar-clasificacion", methods=["POST"])
 @bp.route("/coe-sap-funcional/config/sincronizar-catalogos", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
-def coe_config_sincronizar_catalogos():
+def coe_config_sincronizar_clasificacion():
     try:
-        rows = CoeSapFuncionalCalificacion.query.all()
+        data = request.get_json(silent=True) or {}
+        limit = _coe_cfg_safe_int(data.get("limit"), None)
 
-        total = 0
-        clientes_ok = 0
-        clientes_validar = 0
-        estados_ok = 0
-        estados_validar = 0
-
-        usuario = _coe_ext_usuario() if "_coe_ext_usuario" in globals() else None
-
-        for row in rows:
-            _coe_cfg_enlazar_calificacion(row)
-
-            if getattr(row, "validar_cliente", None) == "OK":
-                clientes_ok += 1
-            else:
-                clientes_validar += 1
-
-            if getattr(row, "validar_estado_control", None) == "OK":
-                estados_ok += 1
-            else:
-                estados_validar += 1
-
-            row.actualizado_por = usuario
-            row.updated_at = datetime.utcnow()
-            total += 1
-
+        resultado = _coe_cfg_reclasificar_calificaciones(limit=limit)
         db.session.commit()
 
         return jsonify({
-            "mensaje": "Sincronización de catálogos controlados realizada correctamente",
-            "total": total,
-            "clientesOk": clientes_ok,
-            "clientesValidar": clientes_validar,
-            "estadosOk": estados_ok,
-            "estadosValidar": estados_validar,
+            "mensaje": "Clasificación controlada sincronizada correctamente",
+            **resultado,
         }), 200
 
     except Exception as e:
         db.session.rollback()
-        app.logger.exception("Error sincronizando catálogos controlados COE SAP")
-        return jsonify({"mensaje": "Error sincronizando catálogos", "error": str(e), "trace": traceback.format_exc()}), 500
+        app.logger.exception("Error sincronizando clasificación controlada COE SAP")
+        return jsonify({"mensaje": "Error sincronizando clasificación", "error": str(e), "trace": traceback.format_exc()}), 500
+
+
+@bp.route("/coe-sap-funcional/config/casos-sin-clasificar", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def coe_config_casos_sin_clasificar():
+    try:
+        tipo = str(request.args.get("tipo") or "estado").strip().lower()
+        page = max(int(request.args.get("page", 1)), 1)
+        page_size = min(max(int(request.args.get("page_size", 50)), 1), 200)
+
+        query = CoeSapFuncionalCalificacion.query
+
+        if tipo == "cliente" and hasattr(CoeSapFuncionalCalificacion, "validar_cliente"):
+            query = query.filter(or_(
+                CoeSapFuncionalCalificacion.validar_cliente.is_(None),
+                CoeSapFuncionalCalificacion.validar_cliente != "OK",
+            ))
+        elif hasattr(CoeSapFuncionalCalificacion, "validar_estado_control"):
+            query = query.filter(or_(
+                CoeSapFuncionalCalificacion.validar_estado_control.is_(None),
+                CoeSapFuncionalCalificacion.validar_estado_control != "OK",
+            ))
+
+        total = query.count()
+        rows = query.order_by(CoeSapFuncionalCalificacion.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+        data = []
+        for row in rows:
+            data.append({
+                "id": row.id,
+                "numero": getattr(row, "numero", None),
+                "sociedad": getattr(row, "sociedad", None),
+                "clienteAsociadoNombre": getattr(row, "cliente_asociado_nombre", None),
+                "validarCliente": getattr(row, "validar_cliente", None),
+                "estado": getattr(row, "estado", None),
+                "estadoHerramientaGestion": getattr(row, "estado_herramienta_gestion", None),
+                "estadoPrincipal": getattr(row, "estado_principal", None),
+                "subestado": getattr(row, "subestado", None),
+                "validarEstadoControl": getattr(row, "validar_estado_control", None),
+                "asunto": getattr(row, "asunto", None),
+            })
+
+        return jsonify({
+            "data": data,
+            "total": int(total or 0),
+            "page": page,
+            "page_size": page_size,
+            "total_pages": math.ceil(total / page_size) if page_size else 1,
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error listando casos sin clasificar COE SAP")
+        return jsonify({"mensaje": "Error listando casos sin clasificar", "error": str(e), "trace": traceback.format_exc()}), 500
+
