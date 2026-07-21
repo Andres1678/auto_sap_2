@@ -3377,6 +3377,39 @@ def _apply_excluded_states(query):
     return query
 
 
+def _request_bool_arg(*keys):
+    for key in keys:
+        value = request.args.get(key)
+        if value is None:
+            continue
+
+        value_norm = _norm_key_for_match(value)
+        return value_norm in {"1", "TRUE", "SI", "SÍ", "YES", "Y"}
+
+    return False
+
+
+def _apply_detalle_ots_scope(query):
+    """
+    Detalle OTS solo debe devolver OTs/suboportunidades reales con número de OT válido.
+    No debe devolver principales porque la principal puede heredar estado/fechas de la primera OT.
+    """
+    tipo_norm = _sql_norm_estado(func.coalesce(Oportunidad.tipo_oportunidad, ""))
+    no_ot_norm = _sql_norm_estado(func.coalesce(Oportunidad.num_ot, ""))
+
+    no_ot_no_aplica = [
+        _norm_key_for_match(x)
+        for x in ["NO APLICA", "NO APLICABLE", "N/A", "NA", "N.A", "N.A."]
+    ]
+
+    return (
+        query
+        .filter(tipo_norm != "PRINCIPAL")
+        .filter(no_ot_norm != "")
+        .filter(~no_ot_norm.in_(no_ot_no_aplica))
+    )
+
+
 def _apply_oportunidades_filters(query, apply_exclusion: bool = True):
     if apply_exclusion:
         query = _apply_excluded_states(query)
@@ -4064,6 +4097,9 @@ def oportunidades_filters():
         # TABLA PRINCIPAL: sin exclusión
         base = Oportunidad.query
 
+        if _request_bool_arg("detalle_ots", "solo_ots"):
+            base = _apply_detalle_ots_scope(base)
+
         anios = (
             base.with_entities(extract("year", Oportunidad.fecha_creacion).label("y"))
             .filter(Oportunidad.fecha_creacion.isnot(None))
@@ -4160,6 +4196,9 @@ def listar_oportunidades():
     try:
         query = Oportunidad.query
         query = _apply_oportunidades_filters(query, apply_exclusion=False)
+
+        if _request_bool_arg("detalle_ots", "solo_ots"):
+            query = _apply_detalle_ots_scope(query)
 
         query = query.order_by(Oportunidad.id.desc())
         data = [normalize_oportunidad_dict(o.to_dict()) for o in query.limit(5000).all()]

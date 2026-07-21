@@ -427,21 +427,24 @@ function getOtBucket(row) {
   return "otros";
 }
 
-function isOTDetailRow(row) {
-  if (isEstadoOTNoAplica(row)) return false;
-  if (isNoOTNoAplica(row)) return false;
+function isPrincipalOpportunityRow(row) {
+  const tipo = normKeyForMatch(row?.tipo_oportunidad);
+  return ["PRINCIPAL", "PADRE", "MASTER"].includes(tipo);
+}
 
+function hasValidNoOT(row) {
   const noOT = normalizeText(getNoOT(row));
-  const estadoOT = normKeyForMatch(getEstadoOT(row));
-  const resultado = normKeyForMatch(row?.resultado_oferta);
+  return Boolean(noOT) && !isNoAplicaValue(noOT);
+}
 
-  return Boolean(
-    noOT ||
-      estadoOT ||
-      resultado === "OT" ||
-      toIsoDate(row?.fecha_acta_cierre_ot) ||
-      toIsoDate(row?.fecha_compromiso)
-  );
+function isOTDetailRow(row) {
+  // Detalle OTS debe trabajar solo con OTs/suboportunidades reales.
+  // Las principales heredan estados/fechas de la primera OT, por eso antes se colaban aquí.
+  if (isPrincipalOpportunityRow(row)) return false;
+  if (isEstadoOTNoAplica(row)) return false;
+
+  // Regla solicitada: mostrar únicamente registros que sí tengan número de OT válido.
+  return hasValidNoOT(row);
 }
 function normalizeMonthValue(value) {
   const raw = normalizeText(value);
@@ -531,6 +534,9 @@ function valuesOf(selected = []) {
 function buildBackendQuery(filters) {
   const params = new URLSearchParams();
   const add = (key, values) => valuesOf(values).forEach((v) => params.append(`${key}[]`, v));
+
+  // Este módulo NO debe consultar principales; solo OTs/suboportunidades con No OT válido.
+  params.set("detalle_ots", "1");
 
   // No enviamos anio/mes al backend porque el endpoint los aplica sobre fecha_creacion.
   // En Detalle OTS el mes debe salir de la fecha de cierre o compromiso según el estado de la OT.
@@ -749,7 +755,7 @@ export default function DetalleOTS({ onNavigate }) {
 
     async function loadFilters() {
       try {
-        const res = await jfetch("/oportunidades/filters");
+        const res = await jfetch("/oportunidades/filters?detalle_ots=1");
         const json = await res.json();
 
         if (!active) return;
