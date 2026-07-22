@@ -437,15 +437,25 @@ function hasValidNoOT(row) {
   return Boolean(noOT) && !isNoAplicaValue(noOT);
 }
 
+function isTramiteRow(row) {
+  const estado = normKeyForMatch(getEstadoOT(row));
+  const estadoOferta = normKeyForMatch(row?.estado_oferta);
+  const resultadoOferta = normKeyForMatch(row?.resultado_oferta);
+
+  return (
+    EN_TRAMITE_OT.has(estado) ||
+    EN_TRAMITE_OT.has(estadoOferta) ||
+    EN_TRAMITE_OT.has(resultadoOferta)
+  );
+}
+
 function isOTDetailRow(row) {
-  // Detalle OTS debe trabajar solo con OTs/suboportunidades reales.
-  // Las principales heredan estados/fechas de la primera OT, por eso antes se colaban aquí.
   if (isPrincipalOpportunityRow(row)) return false;
   if (isEstadoOTNoAplica(row)) return false;
 
-  // Regla solicitada: mostrar únicamente registros que sí tengan número de OT válido.
-  return hasValidNoOT(row);
+  return hasValidNoOT(row) || isTramiteRow(row);
 }
+
 function normalizeMonthValue(value) {
   const raw = normalizeText(value);
   if (!raw) return "";
