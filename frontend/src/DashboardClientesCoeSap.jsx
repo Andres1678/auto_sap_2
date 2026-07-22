@@ -4,23 +4,49 @@ import Select from "react-select";
 import { jfetch } from "./lib/api";
 import "./DashboardClientesCoeSap.css";
 
-const EMPTY_FILTERS = {
-  q: "",
-  sociedad: [],
-  clienteAsociadoNombre: [],
-  validarCliente: [],
-  anio: [],
-  mes: [],
-  estadoConsolidado: [],
-  estadoPrincipal: [],
-  subestado: [],
-  validarEstadoControl: [],
-  modulo: [],
-  tipoSolicitud: [],
-  responsableEstado: [],
-  controlHoras: [],
-  liderClaro: [],
-  asignadoA: [],
+function getDefaultFilters() {
+  const hoy = new Date();
+  const anioActual = String(hoy.getFullYear());
+  const mesActual = String(hoy.getMonth() + 1);
+
+  return {
+    q: "",
+
+    // El dashboard carga por defecto el mes actual para no consultar toda la base.
+    modoPeriodo: "mes",
+    anio: anioActual,
+    mes: mesActual,
+    anioDesde: anioActual,
+    mesDesde: mesActual,
+    anioHasta: anioActual,
+    mesHasta: mesActual,
+    fechaDesde: "",
+    fechaHasta: "",
+
+    sociedad: [],
+    clienteAsociadoNombre: [],
+    validarCliente: [],
+    estadoConsolidado: [],
+    estadoPrincipal: [],
+    subestado: [],
+    validarEstadoControl: [],
+    modulo: [],
+    tipoSolicitud: [],
+    responsableEstado: [],
+    controlHoras: [],
+    liderClaro: [],
+    asignadoA: [],
+  };
+}
+
+const FILTER_PARAM_MAP = {
+  modoPeriodo: "modo_periodo",
+  anioDesde: "anio_desde",
+  mesDesde: "mes_desde",
+  anioHasta: "anio_hasta",
+  mesHasta: "mes_hasta",
+  fechaDesde: "fecha_desde",
+  fechaHasta: "fecha_hasta",
 };
 
 const PIE_COLORS = [
@@ -133,10 +159,12 @@ function buildQuery(filters) {
   const qs = new URLSearchParams();
 
   Object.entries(filters || {}).forEach(([key, value]) => {
+    const paramKey = FILTER_PARAM_MAP[key] || key;
+
     if (Array.isArray(value)) {
       value.forEach((item) => {
         const s = String(item ?? "").trim();
-        if (s) qs.append(key, s);
+        if (s) qs.append(paramKey, s);
       });
       return;
     }
@@ -144,10 +172,62 @@ function buildQuery(filters) {
     const s = String(value ?? "").trim();
     if (!s) return;
 
-    qs.set(key, s);
+    qs.set(paramKey, s);
   });
 
   return qs.toString();
+}
+
+function cloneFilters(filters) {
+  const source = filters || getDefaultFilters();
+  return Object.fromEntries(
+    Object.entries(source).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? [...value] : value,
+    ])
+  );
+}
+
+function uniqueValues(values) {
+  const list = Array.isArray(values) ? values : [];
+  return [...new Set(list.map((item) => {
+    if (item && typeof item === "object") return String(item.value ?? item.label ?? "").trim();
+    return String(item ?? "").trim();
+  }).filter(Boolean))];
+}
+
+function buildYearOptions(opciones) {
+  const currentYear = String(new Date().getFullYear());
+  const years = uniqueValues(opciones?.anio);
+  if (!years.includes(currentYear)) years.unshift(currentYear);
+
+  return years
+    .map((value) => Number(value))
+    .filter((value) => !Number.isNaN(value))
+    .sort((a, b) => b - a)
+    .map((value) => ({ value: String(value), label: String(value) }));
+}
+
+function buildMonthOptions(opciones) {
+  const base = optionItems(opciones?.mes);
+  const months = base.length ? base : [
+    { value: 1, label: "Enero" },
+    { value: 2, label: "Febrero" },
+    { value: 3, label: "Marzo" },
+    { value: 4, label: "Abril" },
+    { value: 5, label: "Mayo" },
+    { value: 6, label: "Junio" },
+    { value: 7, label: "Julio" },
+    { value: 8, label: "Agosto" },
+    { value: 9, label: "Septiembre" },
+    { value: 10, label: "Octubre" },
+    { value: 11, label: "Noviembre" },
+    { value: 12, label: "Diciembre" },
+  ];
+
+  return base.length
+    ? base.map((item) => ({ value: String(item.value), label: item.label }))
+    : months.map((item) => ({ value: String(item.value), label: item.label }));
 }
 
 function optionItems(values) {
@@ -196,6 +276,123 @@ function MultiSelect({ label, value, options, onChange }) {
         }}
       />
     </label>
+  );
+}
+
+function PeriodFilters({ filters, opciones, updateFilter, disabled }) {
+  const yearOptions = buildYearOptions(opciones);
+  const monthOptions = buildMonthOptions(opciones);
+  const modo = filters.modoPeriodo || "mes";
+
+  return (
+    <div className="coedash-period-box">
+      <label className="coedash-filter">
+        <span>Periodo de consulta</span>
+        <select
+          value={modo}
+          disabled={disabled}
+          onChange={(e) => updateFilter("modoPeriodo", e.target.value)}
+        >
+          <option value="mes">Mes específico</option>
+          <option value="rango_meses">Rango de meses</option>
+          <option value="rango_dias">Rango de días</option>
+        </select>
+      </label>
+
+      {modo === "mes" && (
+        <>
+          <label className="coedash-filter">
+            <span>Año</span>
+            <select
+              value={filters.anio}
+              disabled={disabled}
+              onChange={(e) => updateFilter("anio", e.target.value)}
+            >
+              {yearOptions.map((item) => (
+                <option key={`anio-${item.value}`} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="coedash-filter">
+            <span>Mes</span>
+            <select
+              value={filters.mes}
+              disabled={disabled}
+              onChange={(e) => updateFilter("mes", e.target.value)}
+            >
+              {monthOptions.map((item) => (
+                <option key={`mes-${item.value}`} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+        </>
+      )}
+
+      {modo === "rango_meses" && (
+        <>
+          <label className="coedash-filter">
+            <span>Año desde</span>
+            <select value={filters.anioDesde} disabled={disabled} onChange={(e) => updateFilter("anioDesde", e.target.value)}>
+              {yearOptions.map((item) => (
+                <option key={`anio-desde-${item.value}`} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="coedash-filter">
+            <span>Mes desde</span>
+            <select value={filters.mesDesde} disabled={disabled} onChange={(e) => updateFilter("mesDesde", e.target.value)}>
+              {monthOptions.map((item) => (
+                <option key={`mes-desde-${item.value}`} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="coedash-filter">
+            <span>Año hasta</span>
+            <select value={filters.anioHasta} disabled={disabled} onChange={(e) => updateFilter("anioHasta", e.target.value)}>
+              {yearOptions.map((item) => (
+                <option key={`anio-hasta-${item.value}`} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="coedash-filter">
+            <span>Mes hasta</span>
+            <select value={filters.mesHasta} disabled={disabled} onChange={(e) => updateFilter("mesHasta", e.target.value)}>
+              {monthOptions.map((item) => (
+                <option key={`mes-hasta-${item.value}`} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+        </>
+      )}
+
+      {modo === "rango_dias" && (
+        <>
+          <label className="coedash-filter">
+            <span>Fecha desde</span>
+            <input
+              type="date"
+              value={filters.fechaDesde}
+              disabled={disabled}
+              onChange={(e) => updateFilter("fechaDesde", e.target.value)}
+            />
+          </label>
+
+          <label className="coedash-filter">
+            <span>Fecha hasta</span>
+            <input
+              type="date"
+              value={filters.fechaHasta}
+              disabled={disabled}
+              onChange={(e) => updateFilter("fechaHasta", e.target.value)}
+            />
+          </label>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -596,8 +793,8 @@ export default function DashboardClientesCoeSap() {
     };
   }, [rol, user]);
 
-  const [filters, setFilters] = useState(EMPTY_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
+  const [filters, setFilters] = useState(() => getDefaultFilters());
+  const [appliedFilters, setAppliedFilters] = useState(() => getDefaultFilters());
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(false);
   const [downloadingExcel, setDownloadingExcel] = useState(false);
@@ -674,12 +871,13 @@ export default function DashboardClientesCoeSap() {
   }, [fetchDashboard]);
 
   const applyFilters = () => {
-    setAppliedFilters({ ...filters });
+    setAppliedFilters(cloneFilters(filters));
   };
 
   const clearFilters = () => {
-    setFilters(EMPTY_FILTERS);
-    setAppliedFilters(EMPTY_FILTERS);
+    const defaults = getDefaultFilters();
+    setFilters(defaults);
+    setAppliedFilters(cloneFilters(defaults));
   };
 
   if (!canView) {
@@ -730,6 +928,13 @@ export default function DashboardClientesCoeSap() {
         </div>
 
         <div className="coedash-filters-grid">
+          <PeriodFilters
+            filters={filters}
+            opciones={opciones}
+            updateFilter={updateFilter}
+            disabled={loading}
+          />
+
           <label className="coedash-filter search">
             <span>Búsqueda general</span>
             <input
@@ -746,8 +951,6 @@ export default function DashboardClientesCoeSap() {
           <MultiSelect label="Sociedad" value={filters.sociedad} options={opciones.sociedad} onChange={(v) => updateFilter("sociedad", v)} />
           <MultiSelect label="Cliente asociado" value={filters.clienteAsociadoNombre} options={opciones.clienteAsociadoNombre} onChange={(v) => updateFilter("clienteAsociadoNombre", v)} />
           <MultiSelect label="Validar cliente" value={filters.validarCliente} options={opciones.validarCliente} onChange={(v) => updateFilter("validarCliente", v)} />
-          <MultiSelect label="Año creación" value={filters.anio} options={opciones.anio} onChange={(v) => updateFilter("anio", v)} />
-          <MultiSelect label="Mes creación" value={filters.mes} options={opciones.mes} onChange={(v) => updateFilter("mes", v)} />
           <MultiSelect label="Tipo solicitud" value={filters.tipoSolicitud} options={opciones.tipoSolicitud} onChange={(v) => updateFilter("tipoSolicitud", v)} />
           <MultiSelect label="Líder Claro" value={filters.liderClaro} options={opciones.liderClaro} onChange={(v) => updateFilter("liderClaro", v)} />
           <MultiSelect label="Control horas" value={filters.controlHoras} options={opciones.controlHoras} onChange={(v) => updateFilter("controlHoras", v)} />

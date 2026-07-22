@@ -844,3 +844,31 @@
   background: var(--coedash-red) !important;
   color: #ffffff !important;
 }
+
+/* Periodo inicial del dashboard: por defecto mes actual */
+.coedash-period-box {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(218, 41, 28, 0.16);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fff7f6 0%, #ffffff 100%);
+}
+
+.coedash-period-box .coedash-filter {
+  min-width: 0;
+}
+
+@media (max-width: 1180px) {
+  .coedash-period-box {
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .coedash-period-box {
+    grid-template-columns: 1fr;
+  }
+}

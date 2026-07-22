@@ -18234,7 +18234,148 @@ def _coe_rep_apply_values_any(query, columns, values):
     return query.filter(or_(*conds)) if conds else query
 
 
+def _coe_dashboard_periodo_actual():
+    hoy = date.today()
+    return int(hoy.year), int(hoy.month)
+
+
+def _coe_dashboard_parse_int(value):
+    try:
+        if value in (None, "", "null", "None"):
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def _coe_dashboard_parse_date(value):
+    value = str(value or "").strip()
+    if not value:
+        return None
+
+    try:
+        return datetime.strptime(value[:10], "%Y-%m-%d")
+    except Exception:
+        return None
+
+
+def _coe_dashboard_apply_periodo(query):
+    """
+    Aplica el periodo del dashboard antes de los demás filtros.
+
+    Si el front no envía periodo, se consulta únicamente el mes actual para
+    evitar que la vista cargue toda la tabla de calificación al abrir.
+
+    Modos soportados:
+    - modo_periodo=mes&anio=2026&mes=5
+    - modo_periodo=rango_meses&anio_desde=2026&mes_desde=1&anio_hasta=2026&mes_hasta=5
+    - modo_periodo=rango_dias&fecha_desde=2026-05-01&fecha_hasta=2026-05-31
+    """
+    modo = (
+        request.args.get("modo_periodo")
+        or request.args.get("modoPeriodo")
+        or "mes"
+    )
+    modo = str(modo or "mes").strip().lower()
+
+    if modo in {"sin_filtro", "todos", "todo", "all"}:
+        return query
+
+    # ----------------------------------------------------------
+    # Mes específico. Soporta un valor simple o valores repetidos
+    # anio=2026&anio=2025 / mes=4&mes=5 por compatibilidad.
+    # ----------------------------------------------------------
+    if modo == "mes":
+        anios = []
+        meses = []
+
+        for value in _coe_rep_list_arg("anio"):
+            parsed = _coe_dashboard_parse_int(value)
+            if parsed:
+                anios.append(parsed)
+
+        for value in _coe_rep_list_arg("mes"):
+            parsed = _coe_dashboard_parse_int(value)
+            if parsed and 1 <= parsed <= 12:
+                meses.append(parsed)
+
+        if not anios or not meses:
+            anio_actual, mes_actual = _coe_dashboard_periodo_actual()
+            anios = [anio_actual]
+            meses = [mes_actual]
+
+        return query.filter(
+            CoeSapFuncionalCalificacion.anio_creacion.in_(list(set(anios))),
+            CoeSapFuncionalCalificacion.mes_creacion.in_(list(set(meses))),
+        )
+
+    # ----------------------------------------------------------
+    # Rango de meses
+    # ----------------------------------------------------------
+    if modo == "rango_meses":
+        anio_desde = _coe_dashboard_parse_int(request.args.get("anio_desde") or request.args.get("anioDesde"))
+        mes_desde = _coe_dashboard_parse_int(request.args.get("mes_desde") or request.args.get("mesDesde"))
+        anio_hasta = _coe_dashboard_parse_int(request.args.get("anio_hasta") or request.args.get("anioHasta"))
+        mes_hasta = _coe_dashboard_parse_int(request.args.get("mes_hasta") or request.args.get("mesHasta"))
+
+        if not all([anio_desde, mes_desde, anio_hasta, mes_hasta]):
+            anio_actual, mes_actual = _coe_dashboard_periodo_actual()
+            return query.filter(
+                CoeSapFuncionalCalificacion.anio_creacion == anio_actual,
+                CoeSapFuncionalCalificacion.mes_creacion == mes_actual,
+            )
+
+        periodo_desde = (int(anio_desde) * 100) + int(mes_desde)
+        periodo_hasta = (int(anio_hasta) * 100) + int(mes_hasta)
+
+        if periodo_hasta < periodo_desde:
+            periodo_desde, periodo_hasta = periodo_hasta, periodo_desde
+
+        periodo_col = (
+            (CoeSapFuncionalCalificacion.anio_creacion * 100)
+            + CoeSapFuncionalCalificacion.mes_creacion
+        )
+
+        return query.filter(
+            CoeSapFuncionalCalificacion.anio_creacion.isnot(None),
+            CoeSapFuncionalCalificacion.mes_creacion.isnot(None),
+            periodo_col >= periodo_desde,
+            periodo_col <= periodo_hasta,
+        )
+
+    # ----------------------------------------------------------
+    # Rango de días
+    # ----------------------------------------------------------
+    if modo == "rango_dias":
+        fecha_desde = _coe_dashboard_parse_date(request.args.get("fecha_desde") or request.args.get("fechaDesde"))
+        fecha_hasta = _coe_dashboard_parse_date(request.args.get("fecha_hasta") or request.args.get("fechaHasta"))
+
+        if not fecha_desde or not fecha_hasta:
+            anio_actual, mes_actual = _coe_dashboard_periodo_actual()
+            return query.filter(
+                CoeSapFuncionalCalificacion.anio_creacion == anio_actual,
+                CoeSapFuncionalCalificacion.mes_creacion == mes_actual,
+            )
+
+        if fecha_hasta < fecha_desde:
+            fecha_desde, fecha_hasta = fecha_hasta, fecha_desde
+
+        return query.filter(
+            CoeSapFuncionalCalificacion.fecha_asignacion >= fecha_desde,
+            CoeSapFuncionalCalificacion.fecha_asignacion < (fecha_hasta + timedelta(days=1)),
+        )
+
+    # Fallback seguro: mes actual
+    anio_actual, mes_actual = _coe_dashboard_periodo_actual()
+    return query.filter(
+        CoeSapFuncionalCalificacion.anio_creacion == anio_actual,
+        CoeSapFuncionalCalificacion.mes_creacion == mes_actual,
+    )
+
+
 def _coe_rep_apply_filters(query):
+    query = _coe_dashboard_apply_periodo(query)
+
     sociedad = _coe_rep_list_arg("sociedad") or _coe_rep_list_arg("cliente")
     cliente_asociado = _coe_rep_list_arg("cliente_asociado_nombre") or _coe_rep_list_arg("clienteAsociadoNombre") or _coe_rep_list_arg("clienteAsociado")
     validar_cliente = _coe_rep_list_arg("validar_cliente") or _coe_rep_list_arg("validarCliente")
@@ -18274,31 +18415,41 @@ def _coe_rep_apply_filters(query):
     query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.lider_claro, lider_claro)
     query = _coe_rep_apply_values(query, CoeSapFuncionalCalificacion.asignado_a, asignado_a)
 
-    if anio:
-        anios_int = []
-        for value in anio:
-            if _coe_rep_is_empty_filter(value):
-                continue
-            try:
-                anios_int.append(int(value))
-            except Exception:
-                continue
+    modo_periodo_actual = (
+        request.args.get("modo_periodo")
+        or request.args.get("modoPeriodo")
+        or "mes"
+    ).strip().lower()
 
-        if anios_int:
-            query = query.filter(CoeSapFuncionalCalificacion.anio_creacion.in_(list(set(anios_int))))
+    # anio/mes ya se aplican en _coe_dashboard_apply_periodo para el dashboard.
+    # Se conserva esta compatibilidad únicamente si el consumidor envía
+    # modo_periodo=sin_filtro y quiere filtrar manualmente por año/mes.
+    if modo_periodo_actual in {"sin_filtro", "todos", "todo", "all"}:
+        if anio:
+            anios_int = []
+            for value in anio:
+                if _coe_rep_is_empty_filter(value):
+                    continue
+                try:
+                    anios_int.append(int(value))
+                except Exception:
+                    continue
 
-    if mes:
-        meses_int = []
-        for value in mes:
-            if _coe_rep_is_empty_filter(value):
-                continue
-            try:
-                meses_int.append(int(value))
-            except Exception:
-                continue
+            if anios_int:
+                query = query.filter(CoeSapFuncionalCalificacion.anio_creacion.in_(list(set(anios_int))))
 
-        if meses_int:
-            query = query.filter(CoeSapFuncionalCalificacion.mes_creacion.in_(list(set(meses_int))))
+        if mes:
+            meses_int = []
+            for value in mes:
+                if _coe_rep_is_empty_filter(value):
+                    continue
+                try:
+                    meses_int.append(int(value))
+                except Exception:
+                    continue
+
+            if meses_int:
+                query = query.filter(CoeSapFuncionalCalificacion.mes_creacion.in_(list(set(meses_int))))
 
     if q:
         like = f"%{q}%"
