@@ -1386,3 +1386,26 @@ th.col-ot {
 .calcoe-edit-grid .calcoe-filter select {
   cursor: pointer;
 }
+
+
+/* ====== Filtros en todas las columnas ====== */
+.calcoe-table thead tr.calcoe-filter-row th {
+  min-width: 150px;
+}
+
+.calcoe-filter-row .calcoe-react-select__control {
+  min-height: 42px !important;
+}
+
+.calcoe-filter-row .calcoe-react-select__value-container {
+  max-height: 76px !important;
+  overflow-y: auto !important;
+}
+
+.calcoe-filter-row .calcoe-react-select__input-container {
+  min-width: 48px !important;
+}
+
+.calcoe-filter-row .calcoe-react-select__menu-list {
+  max-height: 260px !important;
+}

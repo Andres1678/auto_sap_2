@@ -8,7 +8,7 @@ const EMPTY_FILTER_VALUE = "__EMPTY__";
 const EMPTY_FILTER_LABEL = "(Blanco)";
 
 const STORAGE_VISIBLE_COLUMNS = "calcoe_visible_columns_v2";
-const STORAGE_FILTER_COLUMNS = "calcoe_filter_columns_v2";
+const STORAGE_FILTER_COLUMNS = "calcoe_filter_columns_v3_all";
 
 const INITIAL_HOUR_FORM = {
   tipo: "ESTIMADA",
@@ -235,32 +235,7 @@ const EDIT_FIELDS = [
   { key: "fecha10ReasignacionClaro", label: "Fecha 10 reasignación Claro", type: "date" },
 ];
 
-const DEFAULT_FILTER_COLUMNS = [
-  "numero",
-  "sociedad",
-  "clienteAsociadoNombre",
-  "validarCliente",
-  "estadoPrincipal",
-  "subestado",
-  "validarEstadoControl",
-  "estado",
-  "estadoConsolidado",
-  "responsableEstado",
-  "asignadoA",
-  "modulo",
-  "categoria",
-  "estadoEstimacion",
-  "estadoFacturacionOt",
-  "validarFechaAsignacion",
-  "validarFechaResolucion",
-  "validarFechaCierre",
-  "validarSubcategoria",
-  "validarArticulo",
-  "cruceSm",
-  "cruceItop",
-  "soloExcel",
-  "observaciones",
-];
+const DEFAULT_FILTER_COLUMNS = TABLE_COLUMNS.map((col) => col.key);
 
 function readStoredUser() {
   try {
@@ -702,9 +677,15 @@ export default function CalificacionCoeSapFuncional() {
     getStorageArray(STORAGE_VISIBLE_COLUMNS, allColumnKeys)
   );
 
-  const [filterColumnKeys, setFilterColumnKeys] = useState(() =>
-    getStorageArray(STORAGE_FILTER_COLUMNS, DEFAULT_FILTER_COLUMNS)
-  );
+  const [filterColumnKeys, setFilterColumnKeys] = useState(() => {
+    const stored = getStorageArray(STORAGE_FILTER_COLUMNS, DEFAULT_FILTER_COLUMNS);
+    const merged = new Set([
+      ...allColumnKeys,
+      ...(Array.isArray(stored) ? stored : []),
+    ]);
+
+    return allColumnKeys.filter((key) => merged.has(key));
+  });
 
   const [showFilters, setShowFilters] = useState(true);
   const [columnPanelOpen, setColumnPanelOpen] = useState(false);
@@ -1756,11 +1737,13 @@ export default function CalificacionCoeSapFuncional() {
             type="button"
             className="calcoe-btn light"
             onClick={() => {
-              setFilterPanelOpen(true);
+              setFilterColumnKeys(allColumnKeys);
+              setFilterPanelOpen(false);
               setColumnPanelOpen(false);
+              setShowFilters(true);
             }}
           >
-            Filtros visibles
+            Filtros en todas
           </button>
 
           <button
@@ -1787,9 +1770,9 @@ export default function CalificacionCoeSapFuncional() {
         <section className="calcoe-config-panel">
           <div className="calcoe-config-head">
             <div>
-              <h2>{columnPanelOpen ? "Seleccionar columnas visibles" : "Seleccionar filtros visibles"}</h2>
+              <h2>{columnPanelOpen ? "Seleccionar columnas visibles" : "Filtros activos por columna"}</h2>
               <p>
-                Puedes buscar columnas, activar todas o dejar solo las necesarias para seguimiento.
+                Puedes buscar columnas y ajustar la vista. Los filtros de la tabla quedan activos en todas las columnas visibles.
               </p>
             </div>
 
@@ -1918,27 +1901,24 @@ export default function CalificacionCoeSapFuncional() {
                       key={`filter-${col.key}`}
                       className={`${col.cls || ""} ${getColumnGroupClass(col.group)}`}
                     >
-                      {filterColumnKeys.includes(col.key) ? (
-                        <Select
-                          options={uniqueValues[col.key] || []}
-                          value={(columnFilters[col.key] || []).map(toFilterOption)}
-                          onChange={(opts) => handleFilterChange(col.key, opts)}
-                          placeholder="Filtrar..."
-                          className="calcoe-select-filter"
-                          classNamePrefix="calcoe-react-select"
-                          isMulti
-                          isClearable
-                          closeMenuOnSelect={false}
-                          hideSelectedOptions={false}
-                          noOptionsMessage={() => "Sin opciones"}
-                          menuPortalTarget={portalTarget}
-                          styles={{
-                            menuPortal: (base) => ({ ...base, zIndex: 99999 }),
-                          }}
-                        />
-                      ) : (
-                        <span className="calcoe-filter-off">Sin filtro</span>
-                      )}
+                      <Select
+                        options={uniqueValues[col.key] || []}
+                        value={(columnFilters[col.key] || []).map(toFilterOption)}
+                        onChange={(opts) => handleFilterChange(col.key, opts)}
+                        placeholder="Filtrar..."
+                        className="calcoe-select-filter"
+                        classNamePrefix="calcoe-react-select"
+                        isMulti
+                        isClearable
+                        isSearchable
+                        closeMenuOnSelect={false}
+                        hideSelectedOptions={false}
+                        noOptionsMessage={() => "Sin opciones"}
+                        menuPortalTarget={portalTarget}
+                        styles={{
+                          menuPortal: (base) => ({ ...base, zIndex: 99999 }),
+                        }}
+                      />
                     </th>
                   ))}
                   <th className="sticky-actions" />
