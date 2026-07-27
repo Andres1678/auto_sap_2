@@ -18373,8 +18373,136 @@ def _coe_dashboard_apply_periodo(query):
     )
 
 
-def _coe_rep_apply_filters(query):
-    query = _coe_dashboard_apply_periodo(query)
+def _coe_dashboard_period_condition_for_columns(*columns):
+    """
+    Construye una condición SQL reutilizable para aplicar el periodo actual
+    del dashboard sobre una o varias columnas de fecha.
+
+    Se usa especialmente en la gráfica "Casos recibidos vs cerrados",
+    donde los recibidos (abiertos en el Excel) se cuentan por
+    fecha_asignacion y los cerrados por fecha_finalizacion_cierre o
+    fecha_finalizacion_cierre_sistema_gestion.
+    """
+    valid_columns = [col for col in columns if col is not None]
+
+    if not valid_columns:
+        return literal(True)
+
+    modo = (
+        request.args.get("modo_periodo")
+        or request.args.get("modoPeriodo")
+        or "mes"
+    )
+    modo = str(modo or "mes").strip().lower()
+
+    if modo in {"sin_filtro", "todos", "todo", "all"}:
+        return literal(True)
+
+    def _or_all(conditions):
+        filtered = [cond for cond in conditions if cond is not None]
+        if not filtered:
+            return literal(False)
+        if len(filtered) == 1:
+            return filtered[0]
+        return or_(*filtered)
+
+    if modo == "mes":
+        anios = []
+        meses = []
+
+        for value in _coe_rep_list_arg("anio"):
+            parsed = _coe_dashboard_parse_int(value)
+            if parsed:
+                anios.append(parsed)
+
+        for value in _coe_rep_list_arg("mes"):
+            parsed = _coe_dashboard_parse_int(value)
+            if parsed and 1 <= parsed <= 12:
+                meses.append(parsed)
+
+        if not anios or not meses:
+            anio_actual, mes_actual = _coe_dashboard_periodo_actual()
+            anios = [anio_actual]
+            meses = [mes_actual]
+
+        conditions = []
+        for col in valid_columns:
+            conditions.append(and_(
+                col.isnot(None),
+                extract('year', col).in_(list(set(anios))),
+                extract('month', col).in_(list(set(meses))),
+            ))
+
+        return _or_all(conditions)
+
+    if modo == "rango_meses":
+        anio_desde = _coe_dashboard_parse_int(request.args.get("anio_desde") or request.args.get("anioDesde"))
+        mes_desde = _coe_dashboard_parse_int(request.args.get("mes_desde") or request.args.get("mesDesde"))
+        anio_hasta = _coe_dashboard_parse_int(request.args.get("anio_hasta") or request.args.get("anioHasta"))
+        mes_hasta = _coe_dashboard_parse_int(request.args.get("mes_hasta") or request.args.get("mesHasta"))
+
+        if not all([anio_desde, mes_desde, anio_hasta, mes_hasta]):
+            anio_actual, mes_actual = _coe_dashboard_periodo_actual()
+            anio_desde = anio_hasta = anio_actual
+            mes_desde = mes_hasta = mes_actual
+
+        periodo_desde = (int(anio_desde) * 100) + int(mes_desde)
+        periodo_hasta = (int(anio_hasta) * 100) + int(mes_hasta)
+
+        if periodo_hasta < periodo_desde:
+            periodo_desde, periodo_hasta = periodo_hasta, periodo_desde
+
+        conditions = []
+        for col in valid_columns:
+            periodo_col = (extract('year', col) * 100) + extract('month', col)
+            conditions.append(and_(
+                col.isnot(None),
+                periodo_col >= periodo_desde,
+                periodo_col <= periodo_hasta,
+            ))
+
+        return _or_all(conditions)
+
+    if modo == "rango_dias":
+        fecha_desde = _coe_dashboard_parse_date(request.args.get("fecha_desde") or request.args.get("fechaDesde"))
+        fecha_hasta = _coe_dashboard_parse_date(request.args.get("fecha_hasta") or request.args.get("fechaHasta"))
+
+        if not fecha_desde or not fecha_hasta:
+            anio_actual, mes_actual = _coe_dashboard_periodo_actual()
+            fecha_desde = date(anio_actual, mes_actual, 1)
+            if mes_actual == 12:
+                fecha_hasta = date(anio_actual + 1, 1, 1) - timedelta(days=1)
+            else:
+                fecha_hasta = date(anio_actual, mes_actual + 1, 1) - timedelta(days=1)
+
+        if fecha_hasta < fecha_desde:
+            fecha_desde, fecha_hasta = fecha_hasta, fecha_desde
+
+        conditions = []
+        for col in valid_columns:
+            conditions.append(and_(
+                col.isnot(None),
+                col >= fecha_desde,
+                col < (fecha_hasta + timedelta(days=1)),
+            ))
+
+        return _or_all(conditions)
+
+    anio_actual, mes_actual = _coe_dashboard_periodo_actual()
+    conditions = []
+    for col in valid_columns:
+        conditions.append(and_(
+            col.isnot(None),
+            extract('year', col) == anio_actual,
+            extract('month', col) == mes_actual,
+        ))
+
+    return _or_all(conditions)
+
+
+def _coe_rep_apply_filters(query, include_period=True):
+    if include_period:
+        query = _coe_dashboard_apply_periodo(query)
 
     sociedad = _coe_rep_list_arg("sociedad") or _coe_rep_list_arg("cliente")
     cliente_asociado = _coe_rep_list_arg("cliente_asociado_nombre") or _coe_rep_list_arg("clienteAsociadoNombre") or _coe_rep_list_arg("clienteAsociado")
@@ -18638,16 +18766,34 @@ def _coe_rep_estado_general(query):
     }
 
 
-def _coe_rep_recibidos_vs_cerrados(query):
-    closed_cond = _coe_rep_closed_condition()
+def _coe_rep_recibidos_vs_cerrados(base_query):
+    """
+    Esta gráfica no clasifica por estado.
+
+    - Abierto/Recibido: se cuenta por FECHA ASIGNACIÓN dentro del periodo.
+    - Cerrado: se cuenta por FECHA FINALIZACIÓN / CIERRE o
+      FECHA FINALIZACIÓN / CIERRE SISTEMA GESTIÓN dentro del periodo.
+
+    Los demás filtros globales (sociedad, cliente, módulo, responsable, etc.)
+    sí se respetan.
+    """
+    query = _coe_rep_apply_filters(base_query, include_period=False)
+
+    abierto_cond = _coe_dashboard_period_condition_for_columns(
+        CoeSapFuncionalCalificacion.fecha_asignacion
+    )
+    cerrado_cond = _coe_dashboard_period_condition_for_columns(
+        CoeSapFuncionalCalificacion.fecha_finalizacion_cierre,
+        CoeSapFuncionalCalificacion.fecha_finalizacion_cierre_sistema_gestion,
+    )
 
     rows = (
         query.with_entities(
             CoeSapFuncionalCalificacion.modulo.label("modulo"),
-            func.count(CoeSapFuncionalCalificacion.id).label("total"),
-            func.coalesce(func.sum(case((closed_cond, 1), else_=0)), 0).label("cerrado"),
-            func.coalesce(func.sum(case((closed_cond, 0), else_=1)), 0).label("abierto"),
+            func.coalesce(func.sum(case((abierto_cond, 1), else_=0)), 0).label("abierto"),
+            func.coalesce(func.sum(case((cerrado_cond, 1), else_=0)), 0).label("cerrado"),
         )
+        .filter(or_(abierto_cond, cerrado_cond))
         .group_by(CoeSapFuncionalCalificacion.modulo)
         .order_by(CoeSapFuncionalCalificacion.modulo.asc())
         .all()
@@ -18658,7 +18804,7 @@ def _coe_rep_recibidos_vs_cerrados(query):
             "modulo": _coe_rep_str(r.modulo) or "Sin módulo",
             "abierto": int(r.abierto or 0),
             "cerrado": int(r.cerrado or 0),
-            "total": int(r.total or 0),
+            "total": int((r.abierto or 0) + (r.cerrado or 0)),
         }
         for r in rows
     ]
@@ -18966,7 +19112,7 @@ def dashboard_clientes_coe_sap_funcional():
                 "valorOt": _coe_rep_float(horas.valor_ot if horas else 0),
             },
             "estadoGeneralRequerimientos": _coe_rep_estado_general(query),
-            "casosRecibidosVsCerrados": _coe_rep_recibidos_vs_cerrados(query),
+            "casosRecibidosVsCerrados": _coe_rep_recibidos_vs_cerrados(base_query),
             "estadoEstimacionHoras": _coe_rep_estado_estimacion_horas(query),
             "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),
             "casosPorEstadoPrincipal": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_principal, "estadoPrincipal"),

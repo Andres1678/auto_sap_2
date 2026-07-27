@@ -872,3 +872,53 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================
+   Regla visual para Casos recibidos vs cerrados
+   ============================================================ */
+.coedash-chart-rule {
+  display: flex;
+  justify-content: center;
+  margin: -4px 0 14px;
+}
+
+.coedash-chart-rule span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 980px;
+  padding: 9px 14px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 999px;
+  background: var(--coedash-blue-soft);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.coedash-chart-mini-summary {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -4px 0 10px;
+}
+
+.coedash-chart-mini-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--coedash-border);
+  background: #ffffff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.coedash-chart-mini-summary b {
+  color: #111827;
+  font-weight: 950;
+}
