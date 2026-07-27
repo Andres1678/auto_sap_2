@@ -36,6 +36,7 @@ function getDefaultFilters() {
     controlHoras: [],
     liderClaro: [],
     asignadoA: [],
+    estadoEstimacion: [],
   };
 }
 
@@ -559,14 +560,6 @@ function EstadoGeneralRequerimientos({ data }) {
 }
 
 function RecibidosVsCerrados({ rows }) {
-  const totalAbiertos = useMemo(() => {
-    return (rows || []).reduce((acc, row) => acc + Number(row.abierto || 0), 0);
-  }, [rows]);
-
-  const totalCerrados = useMemo(() => {
-    return (rows || []).reduce((acc, row) => acc + Number(row.cerrado || 0), 0);
-  }, [rows]);
-
   const max = useMemo(() => {
     const nums = [];
     (rows || []).forEach((row) => {
@@ -580,16 +573,7 @@ function RecibidosVsCerrados({ rows }) {
     <section className="coedash-panel coedash-wide-panel coedash-excel-card">
       <div className="coedash-panel-head center">
         <h2>Casos recibidos vs cerrados</h2>
-        <p>
-          Abierto se calcula por <b>fecha de asignación</b>. Cerrado se calcula por
-          <b> fecha finalización/cierre</b> o <b>fecha cierre sistema gestión</b>.
-        </p>
-      </div>
-
-      <div className="coedash-chart-rule">
-        <span>
-          Este gráfico no depende del estado del caso para contar abiertos. La comparación se hace contra el periodo seleccionado.
-        </span>
+        <p>Resumen por módulo. Abierto/recibido se calcula por fecha de asignación y cerrado/finalizado por fecha de cierre o cierre del sistema de gestión.</p>
       </div>
 
       <div className="coedash-excel-grid two">
@@ -598,8 +582,8 @@ function RecibidosVsCerrados({ rows }) {
             <thead>
               <tr>
                 <th>Etiquetas de fila</th>
-                <th>Abierto / recibido</th>
-                <th>Cerrado / finalizado</th>
+                <th>Abierto</th>
+                <th>Cerrado</th>
               </tr>
             </thead>
             <tbody>
@@ -614,8 +598,8 @@ function RecibidosVsCerrados({ rows }) {
               ))}
               <tr className="coedash-total-row">
                 <td>Total general</td>
-                <td className="right">{numberText(totalAbiertos)}</td>
-                <td className="right">{numberText(totalCerrados)}</td>
+                <td className="right">{numberText((rows || []).reduce((a, r) => a + Number(r.abierto || 0), 0))}</td>
+                <td className="right">{numberText((rows || []).reduce((a, r) => a + Number(r.cerrado || 0), 0))}</td>
               </tr>
             </tbody>
           </table>
@@ -623,11 +607,6 @@ function RecibidosVsCerrados({ rows }) {
 
         <div className="coedash-chart-panel">
           <h3>Casos recibidos vs cerrados</h3>
-          <div className="coedash-chart-mini-summary">
-            <span><b>{numberText(totalAbiertos)}</b> recibidos</span>
-            <span><b>{numberText(totalCerrados)}</b> cerrados</span>
-          </div>
-
           <div className="coedash-column-chart">
             {!rows?.length ? (
               <div className="coedash-empty small">Sin datos para graficar.</div>
@@ -640,26 +619,17 @@ function RecibidosVsCerrados({ rows }) {
               return (
                 <div className="coedash-column-group" key={`chart-${row.modulo}`}>
                   <div className="coedash-columns">
-                    <span
-                      className="open"
-                      style={{ height: `${abiertoPct}%` }}
-                      title={`Recibidos por fecha asignación: ${abierto}`}
-                    />
-                    <span
-                      className="closed"
-                      style={{ height: `${cerradoPct}%` }}
-                      title={`Cerrados por fecha finalización/cierre: ${cerrado}`}
-                    />
+                    <span className="open" style={{ height: `${abiertoPct}%` }} title={`Abierto: ${abierto}`} />
+                    <span className="closed" style={{ height: `${cerradoPct}%` }} title={`Cerrado: ${cerrado}`} />
                   </div>
                   <small>{cleanText(row.modulo)}</small>
                 </div>
               );
             })}
           </div>
-
           <div className="coedash-chart-legend-inline">
-            <span><i className="open" />Abierto / fecha asignación</span>
-            <span><i className="closed" />Cerrado / fecha cierre</span>
+            <span><i className="open" />Abierto</span>
+            <span><i className="closed" />Cerrado</span>
           </div>
         </div>
       </div>
@@ -681,7 +651,7 @@ function EstadoEstimacionHoras({ rows }) {
     <section className="coedash-panel coedash-wide-panel coedash-estimacion-card">
       <div className="coedash-panel-head center">
         <h2>Estado estimación y horas</h2>
-        <p>Tabla tipo Excel por estado, año, mes e ID.</p>
+        <p>Tabla tipo Excel por estado de estimación, fecha de aprobación de estimación, año, mes e ID.</p>
       </div>
 
       <div className="coedash-table-wrap">
@@ -693,7 +663,7 @@ function EstadoEstimacionHoras({ rows }) {
               <th>Mes aprobado estimación</th>
               <th>ID</th>
               <th>Suma total horas funcionales</th>
-              <th>Suma horas estimadas ABAP</th>
+              <th>Suma total horas ABAP</th>
               <th>Suma total horas estimadas</th>
             </tr>
           </thead>
@@ -992,6 +962,7 @@ export default function DashboardClientesCoeSap() {
           <MultiSelect label="Módulo" value={filters.modulo} options={opciones.modulo} onChange={(v) => updateFilter("modulo", v)} />
           <MultiSelect label="Responsable estado" value={filters.responsableEstado} options={opciones.responsableEstado} onChange={(v) => updateFilter("responsableEstado", v)} />
           <MultiSelect label="Asignado a" value={filters.asignadoA} options={opciones.asignadoA} onChange={(v) => updateFilter("asignadoA", v)} />
+          <MultiSelect label="Estado estimación" value={filters.estadoEstimacion} options={opciones.estadoEstimacion} onChange={(v) => updateFilter("estadoEstimacion", v)} />
         </div>
 
         <div className="coedash-actions">
