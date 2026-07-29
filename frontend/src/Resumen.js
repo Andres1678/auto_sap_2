@@ -336,7 +336,7 @@ export default function Resumen({
 
       const horas = Number(registro.total_horas || 0);
       const loginParaMeta = String(consultor.usuario_consultor || usuarioActual || "").toLowerCase();
-      const metaBase = EXCEPCION_8H_USERS?.has?.(loginParaMeta) ? 8 : 9;
+      const metaBase = EXCEPCION_8H_USERS?.has?.(loginParaMeta) ? 8 : 8.5;
       const estado = horas >= metaBase ? "ok" : horas > 0 ? "warn" : "none";
 
       return (
