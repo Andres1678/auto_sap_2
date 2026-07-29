@@ -872,3 +872,90 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ============================================================
+   Filtros propios por gráfica
+   ============================================================ */
+.coedash-graph-filter-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px dashed #d1d5db;
+}
+
+.coedash-graph-filter-title {
+  margin-bottom: 14px;
+}
+
+.coedash-graph-filter-title h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 950;
+  letter-spacing: -0.02em;
+}
+
+.coedash-graph-filter-title p {
+  margin: 5px 0 0;
+  color: var(--coedash-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.coedash-graph-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.coedash-graph-filter-card {
+  padding: 14px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.coedash-graph-filter-head {
+  margin-bottom: 12px;
+}
+
+.coedash-graph-filter-head h3 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.coedash-graph-filter-head p {
+  margin: 4px 0 0;
+  color: var(--coedash-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.coedash-graph-filter-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.coedash-graph-filter-fields .coedash-filter-select {
+  grid-column: 1 / -1;
+}
+
+.coedash-panel-head.center p b {
+  color: var(--coedash-red);
+  font-weight: 950;
+}
+
+@media (max-width: 1100px) {
+  .coedash-graph-filter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .coedash-graph-filter-fields {
+    grid-template-columns: 1fr;
+  }
+}

@@ -23,6 +23,13 @@ function getDefaultFilters() {
     fechaDesde: "",
     fechaHasta: "",
 
+    // Filtros propios por gráfica. Estos NO dependen del rango global.
+    recibidosAnio: anioActual,
+    recibidosMes: mesActual,
+    estimacionAnio: anioActual,
+    estimacionMes: mesActual,
+    estimacionEstado: [],
+
     sociedad: [],
     clienteAsociadoNombre: [],
     validarCliente: [],
@@ -36,7 +43,6 @@ function getDefaultFilters() {
     controlHoras: [],
     liderClaro: [],
     asignadoA: [],
-    estadoEstimacion: [],
   };
 }
 
@@ -48,6 +54,11 @@ const FILTER_PARAM_MAP = {
   mesHasta: "mes_hasta",
   fechaDesde: "fecha_desde",
   fechaHasta: "fecha_hasta",
+  recibidosAnio: "recibidos_anio",
+  recibidosMes: "recibidos_mes",
+  estimacionAnio: "estimacion_anio",
+  estimacionMes: "estimacion_mes",
+  estimacionEstado: "estimacion_estado",
 };
 
 const PIE_COLORS = [
@@ -251,7 +262,7 @@ function optionItems(values) {
     .filter((item) => String(item.value ?? "").trim() !== "");
 }
 
-function MultiSelect({ label, value, options, onChange }) {
+function MultiSelect({ label, value, options, onChange, disabled = false }) {
   const items = optionItems(options);
   const selectedValues = Array.isArray(value) ? value : value ? [value] : [];
   const selectedMap = new Set(selectedValues.map((item) => String(item)));
@@ -265,6 +276,7 @@ function MultiSelect({ label, value, options, onChange }) {
         classNamePrefix="coedash-rselect"
         isMulti
         isClearable
+        isDisabled={disabled}
         closeMenuOnSelect={false}
         hideSelectedOptions={false}
         options={items}
@@ -396,6 +408,61 @@ function PeriodFilters({ filters, opciones, updateFilter, disabled }) {
     </div>
   );
 }
+
+function periodoMensualText(periodo) {
+  if (!periodo) return "Mes propio";
+
+  const mes = cleanText(periodo.mesNombre);
+  const anio = cleanText(periodo.anio);
+
+  if (mes === "—" || anio === "—") return "Mes propio";
+  return `${mes} ${anio}`;
+}
+
+function GraphMonthFilter({ title, description, anioKey, mesKey, filters, opciones, updateFilter, disabled, children }) {
+  const yearOptions = buildYearOptions(opciones);
+  const monthOptions = buildMonthOptions(opciones);
+
+  return (
+    <div className="coedash-graph-filter-card">
+      <div className="coedash-graph-filter-head">
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+
+      <div className="coedash-graph-filter-fields">
+        <label className="coedash-filter">
+          <span>Año</span>
+          <select
+            value={filters[anioKey]}
+            disabled={disabled}
+            onChange={(e) => updateFilter(anioKey, e.target.value)}
+          >
+            {yearOptions.map((item) => (
+              <option key={`${anioKey}-${item.value}`} value={item.value}>{item.label}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="coedash-filter">
+          <span>Mes</span>
+          <select
+            value={filters[mesKey]}
+            disabled={disabled}
+            onChange={(e) => updateFilter(mesKey, e.target.value)}
+          >
+            {monthOptions.map((item) => (
+              <option key={`${mesKey}-${item.value}`} value={item.value}>{item.label}</option>
+            ))}
+          </select>
+        </label>
+
+        {children}
+      </div>
+    </div>
+  );
+}
+
 
 function MetricCard({ title, value, sub, tone = "default" }) {
   return (
@@ -559,7 +626,7 @@ function EstadoGeneralRequerimientos({ data }) {
   );
 }
 
-function RecibidosVsCerrados({ rows }) {
+function RecibidosVsCerrados({ rows, periodo }) {
   const max = useMemo(() => {
     const nums = [];
     (rows || []).forEach((row) => {
@@ -573,7 +640,9 @@ function RecibidosVsCerrados({ rows }) {
     <section className="coedash-panel coedash-wide-panel coedash-excel-card">
       <div className="coedash-panel-head center">
         <h2>Casos recibidos vs cerrados</h2>
-        <p>Resumen por módulo. Abierto/recibido se calcula por fecha de asignación y cerrado/finalizado por fecha de cierre o cierre del sistema de gestión.</p>
+        <p>
+          Mes propio: <b>{periodoMensualText(periodo)}</b>. Abierto/recibido se cuenta por fecha de asignación y cerrado/finalizado por fecha de finalización/cierre o cierre del sistema de gestión.
+        </p>
       </div>
 
       <div className="coedash-excel-grid two">
@@ -637,7 +706,7 @@ function RecibidosVsCerrados({ rows }) {
   );
 }
 
-function EstadoEstimacionHoras({ rows }) {
+function EstadoEstimacionHoras({ rows, periodo }) {
   const totals = useMemo(() => {
     return (rows || []).reduce((acc, row) => {
       acc.totalHorasFuncionales += Number(row.totalHorasFuncionales || 0);
@@ -651,7 +720,9 @@ function EstadoEstimacionHoras({ rows }) {
     <section className="coedash-panel coedash-wide-panel coedash-estimacion-card">
       <div className="coedash-panel-head center">
         <h2>Estado estimación y horas</h2>
-        <p>Tabla tipo Excel por estado de estimación, fecha de aprobación de estimación, año, mes e ID.</p>
+        <p>
+          Mes propio: <b>{periodoMensualText(periodo)}</b>. Se filtra por fecha de aprobación de estimación y estado de estimación.
+        </p>
       </div>
 
       <div className="coedash-table-wrap">
@@ -900,8 +971,7 @@ export default function DashboardClientesCoeSap() {
           <span className="coedash-eyebrow">Dashboard clientes</span>
           <h1>Dashboard COE SAP Funcional</h1>
           <p>
-            Gráficas tipo Excel afectadas por filtros globales: estado general,
-            recibidos vs cerrados, estimaciones, horas y facturación.
+            Gráficas tipo Excel con filtros globales y periodos propios para recibidos/cerrados y estimaciones.
           </p>
         </div>
 
@@ -920,7 +990,7 @@ export default function DashboardClientesCoeSap() {
         <div className="coedash-card-head">
           <div>
             <h2>Filtros globales</h2>
-            <p>Estos filtros afectan todas las gráficas y tablas del dashboard.</p>
+            <p>Estos filtros aplican a toda la información, excepto el periodo propio de Recibidos vs cerrados y Estado estimación y horas.</p>
           </div>
 
           <button type="button" className="coedash-btn ghost" onClick={clearFilters} disabled={loading}>
@@ -962,7 +1032,47 @@ export default function DashboardClientesCoeSap() {
           <MultiSelect label="Módulo" value={filters.modulo} options={opciones.modulo} onChange={(v) => updateFilter("modulo", v)} />
           <MultiSelect label="Responsable estado" value={filters.responsableEstado} options={opciones.responsableEstado} onChange={(v) => updateFilter("responsableEstado", v)} />
           <MultiSelect label="Asignado a" value={filters.asignadoA} options={opciones.asignadoA} onChange={(v) => updateFilter("asignadoA", v)} />
-          <MultiSelect label="Estado estimación" value={filters.estadoEstimacion} options={opciones.estadoEstimacion} onChange={(v) => updateFilter("estadoEstimacion", v)} />
+        </div>
+
+        <div className="coedash-graph-filter-section">
+          <div className="coedash-graph-filter-title">
+            <h2>Filtros propios por gráfica</h2>
+            <p>
+              Estos periodos son independientes del rango global. Así puedes revisar otras gráficas por rango sin cambiar los bloques que se trabajan por mes.
+            </p>
+          </div>
+
+          <div className="coedash-graph-filter-grid">
+            <GraphMonthFilter
+              title="Casos recibidos vs cerrados"
+              description="Abierto por fecha de asignación; cerrado por fecha de finalización/cierre."
+              anioKey="recibidosAnio"
+              mesKey="recibidosMes"
+              filters={filters}
+              opciones={opciones}
+              updateFilter={updateFilter}
+              disabled={loading}
+            />
+
+            <GraphMonthFilter
+              title="Estado estimación y horas"
+              description="Periodo por fecha de aprobación de estimación."
+              anioKey="estimacionAnio"
+              mesKey="estimacionMes"
+              filters={filters}
+              opciones={opciones}
+              updateFilter={updateFilter}
+              disabled={loading}
+            >
+              <MultiSelect
+                label="Estado estimación"
+                value={filters.estimacionEstado}
+                options={opciones.estadoEstimacion}
+                onChange={(v) => updateFilter("estimacionEstado", v)}
+                disabled={loading}
+              />
+            </GraphMonthFilter>
+          </div>
         </div>
 
         <div className="coedash-actions">
@@ -995,8 +1105,8 @@ export default function DashboardClientesCoeSap() {
           </section>
 
           <EstadoGeneralRequerimientos data={payload?.estadoGeneralRequerimientos} />
-          <RecibidosVsCerrados rows={payload?.casosRecibidosVsCerrados || []} />
-          <EstadoEstimacionHoras rows={payload?.estadoEstimacionHoras || []} />
+          <RecibidosVsCerrados rows={payload?.casosRecibidosVsCerrados || []} periodo={payload?.periodosGraficas?.recibidosVsCerrados} />
+          <EstadoEstimacionHoras rows={payload?.estadoEstimacionHoras || []} periodo={payload?.periodosGraficas?.estadoEstimacionHoras} />
 
           <section className="coedash-grid-panels">
             <BarList title="Estado principal" rows={payload?.casosPorEstadoPrincipal || []} labelKey="estadoPrincipal" />
