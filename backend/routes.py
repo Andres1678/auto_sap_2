@@ -18851,32 +18851,29 @@ def _coe_rep_estado_general(query):
     }
 
 
-def _coe_rep_apply_graficas_mensuales_cliente(query):
+def _coe_rep_apply_graficas_mensuales_sociedad(query):
     """
     Filtro independiente para las dos secciones mensuales:
     - Casos recibidos vs cerrados.
     - Estado estimación y horas.
 
     Intencionalmente NO aplica los filtros globales del dashboard.
-    Solo permite filtrar por cliente asociado/sociedad y el periodo queda
-    fijo por defecto al mes actual mediante _coe_dashboard_month_filter_values.
+    Solo permite filtrar por SOCIEDAD y el periodo queda fijo por defecto
+    al mes actual mediante _coe_dashboard_month_filter_values.
     """
-    clientes = _coe_rep_list_arg_any(
-        "graficas_cliente_asociado_nombre",
-        "graficasClienteAsociadoNombre",
-        "grafica_cliente_asociado_nombre",
-        "graficaClienteAsociadoNombre",
-        "graficas_cliente",
-        "graficasCliente",
-        "grafica_cliente",
-        "graficaCliente",
+    sociedades = _coe_rep_list_arg_any(
+        "graficas_sociedad",
+        "graficasSociedad",
+        "grafica_sociedad",
+        "graficaSociedad",
     )
 
-    if clientes:
-        query = _coe_rep_apply_values_any(query, [
-            CoeSapFuncionalCalificacion.cliente_asociado_nombre,
+    if sociedades:
+        query = _coe_rep_apply_values(
+            query,
             CoeSapFuncionalCalificacion.sociedad,
-        ], clientes)
+            sociedades,
+        )
 
     return query
 
@@ -18890,9 +18887,9 @@ def _coe_rep_recibidos_vs_cerrados(base_query):
     - Cerrado/finalizado: fecha_finalizacion_cierre o
       fecha_finalizacion_cierre_sistema_gestion dentro del mes propio.
 
-    No aplica filtros globales. Solo responde al filtro propio de cliente.
+    No aplica filtros globales. Solo responde al filtro propio de sociedad.
     """
-    query = _coe_rep_apply_graficas_mensuales_cliente(base_query)
+    query = _coe_rep_apply_graficas_mensuales_sociedad(base_query)
 
     abierto_cond = _coe_dashboard_month_condition_for_columns(
         "recibidos",
@@ -18934,11 +18931,11 @@ def _coe_rep_estado_estimacion_horas(base_query):
 
     Esta tabla NO usa el periodo global del dashboard.
     - Periodo: fecha_aprobacion_estimacion dentro del mes actual por defecto.
-    - Cliente: filtro propio compartido con Recibidos vs cerrados.
+    - Sociedad: filtro propio compartido con Recibidos vs cerrados.
     - Sumas: total_horas_funcionales, horas_estimadas_abap y
       total_horas_estimadas.
     """
-    query = _coe_rep_apply_graficas_mensuales_cliente(base_query)
+    query = _coe_rep_apply_graficas_mensuales_sociedad(base_query)
 
     periodo_estimacion_cond = _coe_dashboard_month_condition_for_columns(
         "estimacion",

@@ -32,7 +32,7 @@ function getDefaultFilters() {
 
     // Filtro propio compartido para las gráficas mensuales.
     // No depende de los filtros globales.
-    graficasClienteAsociadoNombre: [],
+    graficasSociedad: [],
 
     sociedad: [],
     clienteAsociadoNombre: [],
@@ -63,7 +63,7 @@ const FILTER_PARAM_MAP = {
   estimacionAnio: "estimacion_anio",
   estimacionMes: "estimacion_mes",
   estimacionEstado: "estimacion_estado",
-  graficasClienteAsociadoNombre: "graficas_cliente_asociado_nombre",
+  graficasSociedad: "graficas_sociedad",
 };
 
 const PIE_COLORS = [
@@ -726,7 +726,7 @@ function EstadoEstimacionHoras({ rows, periodo }) {
       <div className="coedash-panel-head center">
         <h2>Estado estimación y horas</h2>
         <p>
-          Mes actual: <b>{periodoMensualText(periodo)}</b>. Solo responde al filtro propio de cliente y se calcula por fecha de aprobación de estimación.
+          Mes actual: <b>{periodoMensualText(periodo)}</b>. Solo responde al filtro propio de sociedad y se calcula por fecha de aprobación de estimación.
         </p>
       </div>
 
@@ -976,7 +976,7 @@ export default function DashboardClientesCoeSap() {
           <span className="coedash-eyebrow">Dashboard clientes</span>
           <h1>Dashboard COE SAP Funcional</h1>
           <p>
-            Gráficas tipo Excel con filtros globales y un filtro propio de cliente para las gráficas mensuales.
+            Gráficas tipo Excel con filtros globales y un filtro propio de sociedad para las gráficas mensuales.
           </p>
         </div>
 
@@ -1051,7 +1051,7 @@ export default function DashboardClientesCoeSap() {
           <div className="coedash-graph-filter-grid single">
             <div className="coedash-graph-filter-card coedash-graph-shared-card">
               <div className="coedash-graph-filter-head">
-                <h3>Cliente para gráficas mensuales</h3>
+                <h3>Sociedad para gráficas mensuales</h3>
                 <p>
                   Aplica a Recibidos vs cerrados y Estado estimación y horas.
                   El periodo se mantiene en el mes actual.
@@ -1060,10 +1060,10 @@ export default function DashboardClientesCoeSap() {
 
               <div className="coedash-graph-filter-fields">
                 <MultiSelect
-                  label="Cliente"
-                  value={filters.graficasClienteAsociadoNombre}
-                  options={opciones.clienteAsociadoNombre || opciones.sociedad}
-                  onChange={(v) => updateFilter("graficasClienteAsociadoNombre", v)}
+                  label="Sociedad"
+                  value={filters.graficasSociedad}
+                  options={opciones.sociedad || []}
+                  onChange={(v) => updateFilter("graficasSociedad", v)}
                   disabled={loading}
                 />
               </div>
