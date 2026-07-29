@@ -30,9 +30,6 @@ function getDefaultFilters() {
     estimacionMes: mesActual,
     estimacionEstado: [],
 
-    // Filtro propio compartido para las gráficas mensuales.
-    // No depende de los filtros globales.
-    graficasSociedad: [],
 
     sociedad: [],
     clienteAsociadoNombre: [],
@@ -47,6 +44,12 @@ function getDefaultFilters() {
     controlHoras: [],
     liderClaro: [],
     asignadoA: [],
+  };
+}
+
+function getDefaultGraphFilters() {
+  return {
+    graficasSociedad: [],
   };
 }
 
@@ -872,6 +875,12 @@ export default function DashboardClientesCoeSap() {
 
   const [filters, setFilters] = useState(() => getDefaultFilters());
   const [appliedFilters, setAppliedFilters] = useState(() => getDefaultFilters());
+
+  // Filtro independiente para las dos secciones mensuales.
+  // No se actualiza cuando se aplican los filtros globales.
+  const [graphFilters, setGraphFilters] = useState(() => getDefaultGraphFilters());
+  const [appliedGraphFilters, setAppliedGraphFilters] = useState(() => getDefaultGraphFilters());
+
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(false);
   const [downloadingExcel, setDownloadingExcel] = useState(false);
@@ -883,13 +892,20 @@ export default function DashboardClientesCoeSap() {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
+  const updateGraphFilter = (key, value) => {
+    setGraphFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
   const fetchDashboard = useCallback(async () => {
     if (!canView) return;
 
     setLoading(true);
 
     try {
-      const qs = buildQuery(appliedFilters);
+      const qs = buildQuery({
+        ...appliedFilters,
+        ...appliedGraphFilters,
+      });
       const url = `/coe-sap-funcional/calificacion/dashboard-clientes${qs ? `?${qs}` : ""}`;
 
       const res = await jfetch(url, {
@@ -917,13 +933,16 @@ export default function DashboardClientesCoeSap() {
     } finally {
       setLoading(false);
     }
-  }, [canView, commonHeaders, appliedFilters]);
+  }, [canView, commonHeaders, appliedFilters, appliedGraphFilters]);
 
   const descargarExcel = useCallback(async () => {
     setDownloadingExcel(true);
 
     try {
-      const qs = buildQuery(appliedFilters);
+      const qs = buildQuery({
+        ...appliedFilters,
+        ...appliedGraphFilters,
+      });
       const url = `/coe-sap-funcional/calificacion/dashboard-clientes/export-excel${qs ? `?${qs}` : ""}`;
 
       await downloadExcelFile(
@@ -941,7 +960,7 @@ export default function DashboardClientesCoeSap() {
     } finally {
       setDownloadingExcel(false);
     }
-  }, [appliedFilters, commonHeaders]);
+  }, [appliedFilters, appliedGraphFilters, commonHeaders]);
 
   useEffect(() => {
     fetchDashboard();
@@ -955,6 +974,16 @@ export default function DashboardClientesCoeSap() {
     const defaults = getDefaultFilters();
     setFilters(defaults);
     setAppliedFilters(cloneFilters(defaults));
+  };
+
+  const applyGraphFilters = () => {
+    setAppliedGraphFilters(cloneFilters(graphFilters));
+  };
+
+  const clearGraphFilters = () => {
+    const defaults = getDefaultGraphFilters();
+    setGraphFilters(defaults);
+    setAppliedGraphFilters(cloneFilters(defaults));
   };
 
   if (!canView) {
@@ -1039,38 +1068,6 @@ export default function DashboardClientesCoeSap() {
           <MultiSelect label="Asignado a" value={filters.asignadoA} options={opciones.asignadoA} onChange={(v) => updateFilter("asignadoA", v)} />
         </div>
 
-        <div className="coedash-graph-filter-section">
-          <div className="coedash-graph-filter-title">
-            <h2>Filtro propio de gráficas mensuales</h2>
-            <p>
-              Este filtro solo afecta Casos recibidos vs cerrados y Estado estimación y horas.
-              Ambas se consultan por defecto con el mes actual y no cambian cuando aplicas los filtros globales.
-            </p>
-          </div>
-
-          <div className="coedash-graph-filter-grid single">
-            <div className="coedash-graph-filter-card coedash-graph-shared-card">
-              <div className="coedash-graph-filter-head">
-                <h3>Sociedad para gráficas mensuales</h3>
-                <p>
-                  Aplica a Recibidos vs cerrados y Estado estimación y horas.
-                  El periodo se mantiene en el mes actual.
-                </p>
-              </div>
-
-              <div className="coedash-graph-filter-fields">
-                <MultiSelect
-                  label="Sociedad"
-                  value={filters.graficasSociedad}
-                  options={opciones.sociedad || []}
-                  onChange={(v) => updateFilter("graficasSociedad", v)}
-                  disabled={loading}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div className="coedash-actions">
           <button type="button" className="coedash-btn danger" onClick={applyFilters} disabled={loading}>
             {loading ? "Consultando..." : "Aplicar filtros"}
@@ -1101,6 +1098,48 @@ export default function DashboardClientesCoeSap() {
           </section>
 
           <EstadoGeneralRequerimientos data={payload?.estadoGeneralRequerimientos} />
+
+          <section className="coedash-card coedash-graph-filter-section coedash-graph-filter-attached">
+            <div className="coedash-graph-filter-title">
+              <h2>Filtro propio de gráficas mensuales</h2>
+              <p>
+                Este filtro solo afecta los dos bloques siguientes: Casos recibidos vs cerrados
+                y Estado estimación y horas. No cambia las métricas ni las gráficas generales.
+              </p>
+            </div>
+
+            <div className="coedash-graph-filter-grid single">
+              <div className="coedash-graph-filter-card coedash-graph-shared-card">
+                <div className="coedash-graph-filter-head">
+                  <h3>Sociedad para gráficas mensuales</h3>
+                  <p>
+                    El periodo se mantiene por defecto en el mes actual.
+                    Aplica únicamente a las dos secciones que están debajo de este filtro.
+                  </p>
+                </div>
+
+                <div className="coedash-graph-filter-fields">
+                  <MultiSelect
+                    label="Sociedad"
+                    value={graphFilters.graficasSociedad}
+                    options={opciones.sociedad || []}
+                    onChange={(v) => updateGraphFilter("graficasSociedad", v)}
+                    disabled={loading}
+                  />
+                </div>
+
+                <div className="coedash-actions coedash-graph-actions">
+                  <button type="button" className="coedash-btn danger" onClick={applyGraphFilters} disabled={loading}>
+                    {loading ? "Consultando..." : "Aplicar a estas gráficas"}
+                  </button>
+                  <button type="button" className="coedash-btn light" onClick={clearGraphFilters} disabled={loading}>
+                    Restablecer sociedad
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <RecibidosVsCerrados rows={payload?.casosRecibidosVsCerrados || []} periodo={payload?.periodosGraficas?.recibidosVsCerrados} />
           <EstadoEstimacionHoras rows={payload?.estadoEstimacionHoras || []} periodo={payload?.periodosGraficas?.estadoEstimacionHoras} />
 
