@@ -1108,16 +1108,6 @@ export default function DashboardClientesCoeSap() {
           <RecibidosVsCerrados rows={payload?.casosRecibidosVsCerrados || []} periodo={payload?.periodosGraficas?.recibidosVsCerrados} />
           <EstadoEstimacionHoras rows={payload?.estadoEstimacionHoras || []} periodo={payload?.periodosGraficas?.estadoEstimacionHoras} />
 
-          <section className="coedash-grid-panels">
-            <BarList title="Estado principal" rows={payload?.casosPorEstadoPrincipal || []} labelKey="estadoPrincipal" />
-            <BarList title="Subestado" rows={payload?.casosPorSubestado || []} labelKey="subestado" />
-            <BarList title="Estado original" rows={payload?.casosPorEstado || []} labelKey="estado" />
-            <BarList title="Estado consolidado" rows={payload?.casosPorEstadoConsolidado || []} labelKey="estadoConsolidado" />
-            <BarList title="Casos por módulo" rows={payload?.casosPorModulo || []} labelKey="modulo" />
-            <BarList title="Tipo de solicitud" rows={payload?.casosPorTipoSolicitud || []} labelKey="tipoSolicitud" />
-            <BarList title="Responsable estado" rows={payload?.casosPorResponsable || []} labelKey="responsableEstado" />
-            <BarList title="Estado estimación" rows={payload?.estimacionesPorEstado || []} labelKey="estadoEstimacion" />
-          </section>
 
           <section className="coedash-grid-panels two">
             <BarList title="Cerrados por mes" rows={payload?.cerradosPorMes || []} labelKey="periodo" />
