@@ -30,6 +30,10 @@ function getDefaultFilters() {
     estimacionMes: mesActual,
     estimacionEstado: [],
 
+    // Filtro propio compartido para las gráficas mensuales.
+    // No depende de los filtros globales.
+    graficasClienteAsociadoNombre: [],
+
     sociedad: [],
     clienteAsociadoNombre: [],
     validarCliente: [],
@@ -59,6 +63,7 @@ const FILTER_PARAM_MAP = {
   estimacionAnio: "estimacion_anio",
   estimacionMes: "estimacion_mes",
   estimacionEstado: "estimacion_estado",
+  graficasClienteAsociadoNombre: "graficas_cliente_asociado_nombre",
 };
 
 const PIE_COLORS = [
@@ -721,7 +726,7 @@ function EstadoEstimacionHoras({ rows, periodo }) {
       <div className="coedash-panel-head center">
         <h2>Estado estimación y horas</h2>
         <p>
-          Mes propio: <b>{periodoMensualText(periodo)}</b>. Se filtra por fecha de aprobación de estimación y estado de estimación.
+          Mes actual: <b>{periodoMensualText(periodo)}</b>. Solo responde al filtro propio de cliente y se calcula por fecha de aprobación de estimación.
         </p>
       </div>
 
@@ -971,7 +976,7 @@ export default function DashboardClientesCoeSap() {
           <span className="coedash-eyebrow">Dashboard clientes</span>
           <h1>Dashboard COE SAP Funcional</h1>
           <p>
-            Gráficas tipo Excel con filtros globales y periodos propios para recibidos/cerrados y estimaciones.
+            Gráficas tipo Excel con filtros globales y un filtro propio de cliente para las gráficas mensuales.
           </p>
         </div>
 
@@ -990,7 +995,7 @@ export default function DashboardClientesCoeSap() {
         <div className="coedash-card-head">
           <div>
             <h2>Filtros globales</h2>
-            <p>Estos filtros aplican a toda la información, excepto el periodo propio de Recibidos vs cerrados y Estado estimación y horas.</p>
+            <p>Estos filtros aplican a las métricas y gráficas generales. No afectan Casos recibidos vs cerrados ni Estado estimación y horas.</p>
           </div>
 
           <button type="button" className="coedash-btn ghost" onClick={clearFilters} disabled={loading}>
@@ -1036,42 +1041,33 @@ export default function DashboardClientesCoeSap() {
 
         <div className="coedash-graph-filter-section">
           <div className="coedash-graph-filter-title">
-            <h2>Filtros propios por gráfica</h2>
+            <h2>Filtro propio de gráficas mensuales</h2>
             <p>
-              Estos periodos son independientes del rango global. Así puedes revisar otras gráficas por rango sin cambiar los bloques que se trabajan por mes.
+              Este filtro solo afecta Casos recibidos vs cerrados y Estado estimación y horas.
+              Ambas se consultan por defecto con el mes actual y no cambian cuando aplicas los filtros globales.
             </p>
           </div>
 
-          <div className="coedash-graph-filter-grid">
-            <GraphMonthFilter
-              title="Casos recibidos vs cerrados"
-              description="Abierto por fecha de asignación; cerrado por fecha de finalización/cierre."
-              anioKey="recibidosAnio"
-              mesKey="recibidosMes"
-              filters={filters}
-              opciones={opciones}
-              updateFilter={updateFilter}
-              disabled={loading}
-            />
+          <div className="coedash-graph-filter-grid single">
+            <div className="coedash-graph-filter-card coedash-graph-shared-card">
+              <div className="coedash-graph-filter-head">
+                <h3>Cliente para gráficas mensuales</h3>
+                <p>
+                  Aplica a Recibidos vs cerrados y Estado estimación y horas.
+                  El periodo se mantiene en el mes actual.
+                </p>
+              </div>
 
-            <GraphMonthFilter
-              title="Estado estimación y horas"
-              description="Periodo por fecha de aprobación de estimación."
-              anioKey="estimacionAnio"
-              mesKey="estimacionMes"
-              filters={filters}
-              opciones={opciones}
-              updateFilter={updateFilter}
-              disabled={loading}
-            >
-              <MultiSelect
-                label="Estado estimación"
-                value={filters.estimacionEstado}
-                options={opciones.estadoEstimacion}
-                onChange={(v) => updateFilter("estimacionEstado", v)}
-                disabled={loading}
-              />
-            </GraphMonthFilter>
+              <div className="coedash-graph-filter-fields">
+                <MultiSelect
+                  label="Cliente"
+                  value={filters.graficasClienteAsociadoNombre}
+                  options={opciones.clienteAsociadoNombre || opciones.sociedad}
+                  onChange={(v) => updateFilter("graficasClienteAsociadoNombre", v)}
+                  disabled={loading}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
