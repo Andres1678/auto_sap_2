@@ -20162,8 +20162,13 @@ def _coe_rep_estado_estimacion_horas(base_query):
     Esta tabla NO usa el periodo global del dashboard.
     - Periodo: fecha_aprobacion_estimacion dentro del mes actual por defecto.
     - Sociedad: filtro propio compartido con Recibidos vs cerrados.
-    - Sumas: total_horas_funcionales, horas_estimadas_abap y
-      total_horas_estimadas.
+    - Sumas: total_horas_funcionales, horas_estimadas_abap,
+      total_horas_estimadas y valor_ot.
+
+    Importante:
+    Los cuadros superiores de H. funcionales, H. estimadas y Valor OT
+    se calculan sobre la lista devuelta por esta misma función. De esa
+    manera siempre coinciden con el Total general visible en la tabla.
     """
     query = _coe_rep_apply_graficas_mensuales_sociedad(base_query)
 
@@ -20172,8 +20177,14 @@ def _coe_rep_estado_estimacion_horas(base_query):
         CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion,
     )
 
-    anio_aprobado_expr = extract("year", CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion)
-    mes_aprobado_expr = extract("month", CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion)
+    anio_aprobado_expr = extract(
+        "year",
+        CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion,
+    )
+    mes_aprobado_expr = extract(
+        "month",
+        CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion,
+    )
 
     rows = (
         query.with_entities(
@@ -20181,9 +20192,22 @@ def _coe_rep_estado_estimacion_horas(base_query):
             anio_aprobado_expr.label("anio"),
             mes_aprobado_expr.label("mes"),
             CoeSapFuncionalCalificacion.numero.label("numero"),
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales), 0).label("total_funcionales"),
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_estimadas_abap), 0).label("horas_abap"),
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas), 0).label("total_estimadas"),
+            func.coalesce(
+                func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales),
+                0,
+            ).label("total_funcionales"),
+            func.coalesce(
+                func.sum(CoeSapFuncionalCalificacion.horas_estimadas_abap),
+                0,
+            ).label("horas_abap"),
+            func.coalesce(
+                func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas),
+                0,
+            ).label("total_estimadas"),
+            func.coalesce(
+                func.sum(CoeSapFuncionalCalificacion.valor_ot),
+                0,
+            ).label("valor_ot"),
         )
         .filter(periodo_estimacion_cond)
         .filter(CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion.isnot(None))
@@ -20214,9 +20238,41 @@ def _coe_rep_estado_estimacion_horas(base_query):
             "totalHorasFuncionales": _coe_rep_float(r.total_funcionales),
             "horasEstimadasAbap": _coe_rep_float(r.horas_abap),
             "totalHorasEstimadas": _coe_rep_float(r.total_estimadas),
+            "valorOt": _coe_rep_float(r.valor_ot),
         }
         for r in rows
     ]
+
+
+def _coe_rep_resumen_estado_estimacion_horas(rows):
+    """
+    Resume exactamente las filas que se envían a Estado estimación y horas.
+    No lanza una segunda consulta ni usa el backlog; por eso los cuadros y
+    el Total general de la tabla siempre trabajan con el mismo universo.
+    """
+    resumen = {
+        "totalHorasFuncionales": 0.0,
+        "horasEstimadasAbap": 0.0,
+        "totalHorasEstimadas": 0.0,
+        "valorOt": 0.0,
+    }
+
+    for row in rows or []:
+        resumen["totalHorasFuncionales"] += _coe_rep_float(
+            row.get("totalHorasFuncionales")
+        )
+        resumen["horasEstimadasAbap"] += _coe_rep_float(
+            row.get("horasEstimadasAbap")
+        )
+        resumen["totalHorasEstimadas"] += _coe_rep_float(
+            row.get("totalHorasEstimadas")
+        )
+        resumen["valorOt"] += _coe_rep_float(row.get("valorOt"))
+
+    return {
+        key: round(float(value or 0), 2)
+        for key, value in resumen.items()
+    }
 
 
 def _coe_rep_estado_estimacion_query(base_query):
@@ -20472,8 +20528,11 @@ def _coe_dash_apply_backlog_controlado(query):
 
 def _coe_dash_resumen_estado_general(query_backlog, estado_general_data):
     """
-    Construye los cuadros superiores usando la misma data del gráfico
-    Estado general de requerimientos.
+    Construye únicamente los tres cuadros del backlog usando la misma data
+    del gráfico Estado general de requerimientos.
+
+    Las horas y el Valor OT se calculan por separado sobre la tabla mensual
+    Estado estimación y horas.
     """
     principales = estado_general_data.get("principales") or []
 
@@ -20490,22 +20549,10 @@ def _coe_dash_resumen_estado_general(query_backlog, estado_general_data):
         if nombre in {"PENDIENTE DE CLIENTE", "PENDIENTE CLIENTE"}:
             pendiente_cliente += cantidad
 
-    horas = query_backlog.with_entities(
-        func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales), 0).label("total_funcionales"),
-        func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas), 0).label("total_estimadas"),
-        func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor_ot"),
-    ).first()
-
     return {
         "totalCasos": int(estado_general_data.get("total") or 0),
         "enCurso": int(en_curso),
         "pendienteCliente": int(pendiente_cliente),
-        "conSm": int(query_backlog.filter(CoeSapFuncionalCalificacion.cruce_sm == True).count()),
-        "conItop": int(query_backlog.filter(CoeSapFuncionalCalificacion.cruce_itop == True).count()),
-        "soloExcel": int(query_backlog.filter(CoeSapFuncionalCalificacion.solo_excel == True).count()),
-        "totalHorasFuncionales": float(horas.total_funcionales or 0) if horas else 0,
-        "totalHorasEstimadas": float(horas.total_estimadas or 0) if horas else 0,
-        "valorOt": float(horas.valor_ot or 0) if horas else 0,
     }
 
 
@@ -20523,6 +20570,13 @@ def dashboard_clientes_coe_sap_funcional():
         resumen_estado_general = _coe_dash_resumen_estado_general(
             query_backlog_estado,
             estado_general_data
+        )
+
+        # Se calcula una sola vez y se reutiliza tanto para la tabla como para
+        # los tres cuadros superiores relacionados con estimación.
+        estado_estimacion_horas = _coe_rep_estado_estimacion_horas(base_query)
+        resumen_estimacion_horas = _coe_rep_resumen_estado_estimacion_horas(
+            estado_estimacion_horas
         )
 
         total_casos = query.count()
@@ -20633,10 +20687,11 @@ def dashboard_clientes_coe_sap_funcional():
                 "valorOt": _coe_rep_float(horas.valor_ot if horas else 0),
             },
             "resumenEstadoGeneral": resumen_estado_general,
+            "resumenEstimacionHoras": resumen_estimacion_horas,
             "estadoGeneralRequerimientos": estado_general_data,
             "distribucionModulosConsultores": _coe_rep_distribucion_modulos_consultores(query_backlog_estado),
             "casosRecibidosVsCerrados": _coe_rep_recibidos_vs_cerrados(base_query),
-            "estadoEstimacionHoras": _coe_rep_estado_estimacion_horas(base_query),
+            "estadoEstimacionHoras": estado_estimacion_horas,
             "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),
             "casosPorEstadoPrincipal": _coe_rep_group_count_estado_principal(query),
             "casosPorSubestado": _coe_rep_group_count_subestado(query),
@@ -21138,43 +21193,57 @@ def exportar_calificacion_coe_sap_funcional_excel():
 @permission_required("BASE_REGISTRO_VER")
 def exportar_dashboard_clientes_coe_sap_funcional_excel():
     try:
-        query = _coe_rep_apply_filters(CoeSapFuncionalCalificacion.query)
+        base_query = CoeSapFuncionalCalificacion.query
+        query = _coe_rep_apply_filters(base_query)
 
-        total_casos = query.count()
-        abiertos = query.filter(or_(
-            CoeSapFuncionalCalificacion.estado_consolidado.ilike("%SIN CERRAR%"),
-            CoeSapFuncionalCalificacion.estado.ilike("%ABIERTO%"),
-            CoeSapFuncionalCalificacion.estado.ilike("%PROCESO%"),
-        )).count()
-        cerrados = query.filter(or_(
-            CoeSapFuncionalCalificacion.estado_consolidado.ilike("%CERRADO%"),
-            CoeSapFuncionalCalificacion.estado.ilike("%CERRADO%"),
-            CoeSapFuncionalCalificacion.estado.ilike("%SOLUCIONADO%"),
-        )).count()
-        con_sm = query.filter(CoeSapFuncionalCalificacion.cruce_sm == True).count()
-        con_itop = query.filter(CoeSapFuncionalCalificacion.cruce_itop == True).count()
-        solo_excel = query.filter(CoeSapFuncionalCalificacion.solo_excel == True).count()
+        query_backlog_estado = _coe_rep_apply_filters(
+            base_query,
+            include_period=False,
+        )
+        query_backlog_estado = _coe_dash_apply_backlog_controlado(
+            query_backlog_estado
+        )
 
-        horas = query.with_entities(
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales), 0).label("total_funcionales"),
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas), 0).label("total_estimadas"),
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_garantia), 0).label("garantia"),
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_proyecto_abap), 0).label("proyecto_abap"),
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor_ot"),
-        ).first()
+        estado_general_data = _coe_rep_estado_general(query_backlog_estado)
+        resumen_backlog = _coe_dash_resumen_estado_general(
+            query_backlog_estado,
+            estado_general_data,
+        )
+
+        estado_estimacion_horas = _coe_rep_estado_estimacion_horas(base_query)
+        resumen_estimacion = _coe_rep_resumen_estado_estimacion_horas(
+            estado_estimacion_horas
+        )
 
         resumen_rows = [
-            {"indicador": "Total casos", "valor": int(total_casos or 0)},
-            {"indicador": "Abiertos", "valor": int(abiertos or 0)},
-            {"indicador": "Cerrados", "valor": int(cerrados or 0)},
-            {"indicador": "Con cruce SM", "valor": int(con_sm or 0)},
-            {"indicador": "Con cruce ITOP", "valor": int(con_itop or 0)},
-            {"indicador": "Solo Excel", "valor": int(solo_excel or 0)},
-            {"indicador": "Total horas funcionales", "valor": _coe_rep_float(horas.total_funcionales if horas else 0)},
-            {"indicador": "Total horas estimadas", "valor": _coe_rep_float(horas.total_estimadas if horas else 0)},
-            {"indicador": "Horas garantía", "valor": _coe_rep_float(horas.garantia if horas else 0)},
-            {"indicador": "Horas proyecto ABAP", "valor": _coe_rep_float(horas.proyecto_abap if horas else 0)},
-            {"indicador": "Valor OT", "valor": _coe_rep_float(horas.valor_ot if horas else 0)},
+            {
+                "indicador": "Backlog total",
+                "valor": int(resumen_backlog.get("totalCasos") or 0),
+            },
+            {
+                "indicador": "En curso",
+                "valor": int(resumen_backlog.get("enCurso") or 0),
+            },
+            {
+                "indicador": "Pendiente de cliente",
+                "valor": int(resumen_backlog.get("pendienteCliente") or 0),
+            },
+            {
+                "indicador": "Total horas funcionales",
+                "valor": _coe_rep_float(
+                    resumen_estimacion.get("totalHorasFuncionales")
+                ),
+            },
+            {
+                "indicador": "Total horas estimadas",
+                "valor": _coe_rep_float(
+                    resumen_estimacion.get("totalHorasEstimadas")
+                ),
+            },
+            {
+                "indicador": "Valor OT",
+                "valor": _coe_rep_float(resumen_estimacion.get("valorOt")),
+            },
         ]
 
         cerrados_por_mes_rows = (
@@ -21185,8 +21254,14 @@ def exportar_dashboard_clientes_coe_sap_funcional_excel():
             )
             .filter(CoeSapFuncionalCalificacion.anio_cierre.isnot(None))
             .filter(CoeSapFuncionalCalificacion.mes_cierre.isnot(None))
-            .group_by(CoeSapFuncionalCalificacion.anio_cierre, CoeSapFuncionalCalificacion.mes_cierre)
-            .order_by(CoeSapFuncionalCalificacion.anio_cierre.asc(), CoeSapFuncionalCalificacion.mes_cierre.asc())
+            .group_by(
+                CoeSapFuncionalCalificacion.anio_cierre,
+                CoeSapFuncionalCalificacion.mes_cierre,
+            )
+            .order_by(
+                CoeSapFuncionalCalificacion.anio_cierre.asc(),
+                CoeSapFuncionalCalificacion.mes_cierre.asc(),
+            )
             .all()
         )
 
@@ -21194,8 +21269,14 @@ def exportar_dashboard_clientes_coe_sap_funcional_excel():
             query.with_entities(
                 CoeSapFuncionalCalificacion.estado_facturacion_ot.label("estado"),
                 func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
-                func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor"),
-                func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_oferta), 0).label("horas"),
+                func.coalesce(
+                    func.sum(CoeSapFuncionalCalificacion.valor_ot),
+                    0,
+                ).label("valor"),
+                func.coalesce(
+                    func.sum(CoeSapFuncionalCalificacion.horas_oferta),
+                    0,
+                ).label("horas"),
             )
             .group_by(CoeSapFuncionalCalificacion.estado_facturacion_ot)
             .order_by(func.count(CoeSapFuncionalCalificacion.id).desc())
@@ -21205,21 +21286,112 @@ def exportar_dashboard_clientes_coe_sap_funcional_excel():
         return _coe_xls_response(
             _coe_xls_filename("dashboard_clientes_coe_sap_funcional"),
             [
-                {"title": "Resumen", "headers": [("Indicador", "indicador"), ("Valor", "valor")], "rows": resumen_rows},
-                {"title": "Por estado", "headers": [("Estado original", "estado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado")},
-                {"title": "Por estado principal", "headers": [("Estado principal", "estadoPrincipal"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_principal, "estadoPrincipal")},
-                {"title": "Por subestado", "headers": [("Subestado", "subestado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.subestado, "subestado")},
-                {"title": "Por consolidado", "headers": [("Estado consolidado", "estadoConsolidado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_consolidado, "estadoConsolidado")},
-                {"title": "Por modulo", "headers": [("Módulo", "modulo"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.modulo, "modulo")},
-                {"title": "Por tipo solicitud", "headers": [("Tipo solicitud", "tipoSolicitud"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.tipo_solicitud, "tipoSolicitud")},
-                {"title": "Cerrados por mes", "headers": [("Año", "anio"), ("Mes", "mes"), ("Mes nombre", "mesNombre"), ("Cantidad", "cantidad")], "rows": [{"anio": int(r.anio or 0), "mes": int(r.mes or 0), "mesNombre": _coe_rep_month_name(r.mes), "cantidad": int(r.cantidad or 0)} for r in cerrados_por_mes_rows]},
-                {"title": "OT facturacion", "headers": [("Estado facturación OT", "estadoFacturacionOt"), ("Cantidad", "cantidad"), ("Valor", "valor"), ("Horas", "horas")], "rows": [{"estadoFacturacionOt": _coe_rep_str(r.estado) or "Sin dato", "cantidad": int(r.cantidad or 0), "valor": _coe_rep_float(r.valor), "horas": _coe_rep_float(r.horas)} for r in ot_facturacion_rows]},
+                {
+                    "title": "Resumen",
+                    "headers": [
+                        ("Indicador", "indicador"),
+                        ("Valor", "valor"),
+                    ],
+                    "rows": resumen_rows,
+                },
+                {
+                    "title": "Estado general",
+                    "headers": [
+                        ("Subestado", "subestado"),
+                        ("Cantidad", "cantidad"),
+                    ],
+                    "rows": estado_general_data.get("subestados") or [],
+                },
+                {
+                    "title": "Estimacion y horas",
+                    "headers": [
+                        ("Estado estimación", "estadoEstimacion"),
+                        ("Año aprobado", "anioAprobadoEstimacion"),
+                        ("Mes aprobado", "mesAprobadoEstimacion"),
+                        ("ID", "numero"),
+                        ("Horas funcionales", "totalHorasFuncionales"),
+                        ("Horas ABAP", "horasEstimadasAbap"),
+                        ("Horas estimadas", "totalHorasEstimadas"),
+                        ("Valor OT", "valorOt"),
+                    ],
+                    "rows": estado_estimacion_horas,
+                },
+                {
+                    "title": "Por estado",
+                    "headers": [
+                        ("Estado original", "estado"),
+                        ("Cantidad", "cantidad"),
+                    ],
+                    "rows": _coe_rep_group_count(
+                        query,
+                        CoeSapFuncionalCalificacion.estado,
+                        "estado",
+                    ),
+                },
+                {
+                    "title": "Por estado principal",
+                    "headers": [
+                        ("Estado principal", "estadoPrincipal"),
+                        ("Cantidad", "cantidad"),
+                    ],
+                    "rows": _coe_rep_group_count_estado_principal(query),
+                },
+                {
+                    "title": "Por subestado",
+                    "headers": [
+                        ("Subestado", "subestado"),
+                        ("Cantidad", "cantidad"),
+                    ],
+                    "rows": _coe_rep_group_count_subestado(query),
+                },
+                {
+                    "title": "Cerrados por mes",
+                    "headers": [
+                        ("Año", "anio"),
+                        ("Mes", "mes"),
+                        ("Mes nombre", "mesNombre"),
+                        ("Cantidad", "cantidad"),
+                    ],
+                    "rows": [
+                        {
+                            "anio": int(r.anio or 0),
+                            "mes": int(r.mes or 0),
+                            "mesNombre": _coe_rep_month_name(r.mes),
+                            "cantidad": int(r.cantidad or 0),
+                        }
+                        for r in cerrados_por_mes_rows
+                    ],
+                },
+                {
+                    "title": "OT facturacion",
+                    "headers": [
+                        ("Estado facturación OT", "estadoFacturacionOt"),
+                        ("Cantidad", "cantidad"),
+                        ("Valor", "valor"),
+                        ("Horas", "horas"),
+                    ],
+                    "rows": [
+                        {
+                            "estadoFacturacionOt": _coe_rep_str(r.estado) or "Sin dato",
+                            "cantidad": int(r.cantidad or 0),
+                            "valor": _coe_rep_float(r.valor),
+                            "horas": _coe_rep_float(r.horas),
+                        }
+                        for r in ot_facturacion_rows
+                    ],
+                },
             ],
         )
 
     except Exception as e:
-        app.logger.exception("Error exportando dashboard clientes COE SAP Funcional")
-        return jsonify({"mensaje": "Error exportando dashboard clientes", "error": str(e), "trace": traceback.format_exc()}), 500
+        app.logger.exception(
+            "Error exportando dashboard clientes COE SAP Funcional"
+        )
+        return jsonify({
+            "mensaje": "Error exportando dashboard clientes",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
 
 
 @bp.route("/coe-sap-funcional/calificacion/detalle-cliente/export-excel", methods=["GET"])

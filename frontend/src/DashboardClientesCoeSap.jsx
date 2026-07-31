@@ -915,22 +915,34 @@ function RecibidosVsCerrados({ rows, periodo }) {
   );
 }
 
-function EstadoEstimacionHoras({ rows, periodo }) {
-  const totals = useMemo(() => {
-    return (rows || []).reduce((acc, row) => {
-      acc.totalHorasFuncionales += Number(row.totalHorasFuncionales || 0);
-      acc.horasEstimadasAbap += Number(row.horasEstimadasAbap || 0);
-      acc.totalHorasEstimadas += Number(row.totalHorasEstimadas || 0);
+function calculateEstadoEstimacionTotals(rows) {
+  return (rows || []).reduce(
+    (acc, row) => {
+      acc.totalHorasFuncionales += Number(row?.totalHorasFuncionales || 0);
+      acc.horasEstimadasAbap += Number(row?.horasEstimadasAbap || 0);
+      acc.totalHorasEstimadas += Number(row?.totalHorasEstimadas || 0);
+      acc.valorOt += Number(row?.valorOt || 0);
       return acc;
-    }, { totalHorasFuncionales: 0, horasEstimadasAbap: 0, totalHorasEstimadas: 0 });
-  }, [rows]);
+    },
+    {
+      totalHorasFuncionales: 0,
+      horasEstimadasAbap: 0,
+      totalHorasEstimadas: 0,
+      valorOt: 0,
+    }
+  );
+}
+
+function EstadoEstimacionHoras({ rows, periodo }) {
+  const totals = useMemo(() => calculateEstadoEstimacionTotals(rows), [rows]);
 
   return (
     <section className="coedash-panel coedash-wide-panel coedash-estimacion-card">
       <div className="coedash-panel-head center">
         <h2>Estado estimación y horas</h2>
         <p>
-          Mes actual: <b>{periodoMensualText(periodo)}</b>. Solo responde al filtro propio de sociedad y se calcula por fecha de aprobación de estimación.
+          Mes actual: <b>{periodoMensualText(periodo)}</b>. Las tarjetas de horas y valor OT
+          usan exactamente los mismos registros y totales de esta tabla.
         </p>
       </div>
 
@@ -945,11 +957,12 @@ function EstadoEstimacionHoras({ rows, periodo }) {
               <th>Suma total horas funcionales</th>
               <th>Suma total horas ABAP</th>
               <th>Suma total horas estimadas</th>
+              <th>Valor OT</th>
             </tr>
           </thead>
           <tbody>
             {!rows?.length ? (
-              <tr><td colSpan="7" className="coedash-empty small">Sin información de estimación.</td></tr>
+              <tr><td colSpan="8" className="coedash-empty small">Sin información de estimación.</td></tr>
             ) : rows.map((row, index) => (
               <tr key={`estimacion-${index}-${row.numero}`}>
                 <td className="strong">{cleanText(row.estadoEstimacion)}</td>
@@ -959,6 +972,7 @@ function EstadoEstimacionHoras({ rows, periodo }) {
                 <td className="right strong">{numberText(row.totalHorasFuncionales, 2)}</td>
                 <td className="right strong">{numberText(row.horasEstimadasAbap, 2)}</td>
                 <td className="right strong">{numberText(row.totalHorasEstimadas, 2)}</td>
+                <td className="right strong">{moneyText(row.valorOt)}</td>
               </tr>
             ))}
             <tr className="coedash-total-row">
@@ -966,6 +980,7 @@ function EstadoEstimacionHoras({ rows, periodo }) {
               <td className="right">{numberText(totals.totalHorasFuncionales, 2)}</td>
               <td className="right">{numberText(totals.horasEstimadasAbap, 2)}</td>
               <td className="right">{numberText(totals.totalHorasEstimadas, 2)}</td>
+              <td className="right">{moneyText(totals.valorOt)}</td>
             </tr>
           </tbody>
         </table>
@@ -1109,6 +1124,12 @@ export default function DashboardClientesCoeSap() {
 
   const resumen = payload?.resumen || {};
   const resumenEstadoGeneral = payload?.resumenEstadoGeneral || resumen;
+  const estadoEstimacionHoras = payload?.estadoEstimacionHoras || [];
+  const resumenEstimacionHoras = useMemo(
+    () => calculateEstadoEstimacionTotals(estadoEstimacionHoras),
+    [estadoEstimacionHoras]
+  );
+  const periodoEstadoEstimacion = payload?.periodosGraficas?.estadoEstimacionHoras;
   const opciones = payload?.opciones || {};
 
   const updateFilter = (key, value) => {
@@ -1350,7 +1371,7 @@ export default function DashboardClientesCoeSap() {
         </section>
       ) : (
         <>
-          <section className="coedash-metrics-grid">
+          <section className="coedash-metrics-grid coedash-metrics-grid-six">
             <MetricCard
               title="Backlog total"
               icon="▦"
@@ -1363,7 +1384,7 @@ export default function DashboardClientesCoeSap() {
               title="En curso"
               icon="◔"
               value={numberText(resumenEstadoGeneral.enCurso)}
-              sub="Casos activos"
+              sub="Casos activos del backlog"
               tone="warn"
             />
 
@@ -1371,55 +1392,31 @@ export default function DashboardClientesCoeSap() {
               title="Pend. cliente"
               icon="◷"
               value={numberText(resumenEstadoGeneral.pendienteCliente)}
-              sub="Pendientes por cliente"
+              sub="Casos pendientes por cliente"
               tone="info"
-            />
-
-            <MetricCard
-              title="Cruce SM"
-              icon="SM"
-              value={numberText(resumenEstadoGeneral.conSm)}
-              sub="Backlog cruzado SM"
-              tone="info"
-            />
-
-            <MetricCard
-              title="Cruce ITOP"
-              icon="IT"
-              value={numberText(resumenEstadoGeneral.conItop)}
-              sub="Backlog cruzado ITOP"
-              tone="info"
-            />
-
-            <MetricCard
-              title="Solo Excel"
-              icon="XLS"
-              value={numberText(resumenEstadoGeneral.soloExcel)}
-              sub="Backlog sin cruce completo"
-              tone="neutral"
             />
 
             <MetricCard
               title="H. funcionales"
               icon="HF"
-              value={numberText(resumenEstadoGeneral.totalHorasFuncionales, 2)}
-              sub="Total funcional backlog"
+              value={numberText(resumenEstimacionHoras.totalHorasFuncionales, 2)}
+              sub={`Tabla de estimación · ${periodoMensualText(periodoEstadoEstimacion)}`}
               tone="ok"
             />
 
             <MetricCard
               title="H. estimadas"
               icon="HE"
-              value={numberText(resumenEstadoGeneral.totalHorasEstimadas, 2)}
-              sub="Total estimado backlog"
+              value={numberText(resumenEstimacionHoras.totalHorasEstimadas, 2)}
+              sub={`Funcionales + ABAP · ${periodoMensualText(periodoEstadoEstimacion)}`}
               tone="dark"
             />
 
             <MetricCard
               title="Valor OT"
               icon="$"
-              value={moneyText(resumenEstadoGeneral.valorOt)}
-              sub="Suma valor OT backlog"
+              value={moneyText(resumenEstimacionHoras.valorOt)}
+              sub={`Tabla de estimación · ${periodoMensualText(periodoEstadoEstimacion)}`}
               tone="money"
             />
           </section>
@@ -1437,8 +1434,8 @@ export default function DashboardClientesCoeSap() {
                 {activeGraphFilterCount ? "Sociedad personalizada" : "Todas las sociedades"}
               </span>
               <p>
-                Este filtro solo afecta los dos bloques siguientes: Casos recibidos vs cerrados
-                y Estado estimación y horas. No cambia las métricas ni las gráficas generales.
+                Este filtro afecta Casos recibidos vs cerrados, Estado estimación y horas,
+                y las tarjetas H. funcionales, H. estimadas y Valor OT. No modifica el backlog.
               </p>
             </div>
 
@@ -1448,7 +1445,7 @@ export default function DashboardClientesCoeSap() {
                   <h3>Sociedad para gráficas mensuales</h3>
                   <p>
                     El periodo se mantiene por defecto en el mes actual.
-                    Aplica únicamente a las dos secciones que están debajo de este filtro.
+                    También actualiza las tres tarjetas superiores relacionadas con estimación.
                   </p>
                 </div>
 
@@ -1465,7 +1462,7 @@ export default function DashboardClientesCoeSap() {
                 <div className="coedash-actions coedash-graph-actions">
                   <div className="coedash-action-hint">
                     <span className={graphFiltersDirty ? "pending" : "saved"} aria-hidden="true" />
-                    {graphFiltersDirty ? "Cambio pendiente para estas dos gráficas." : "La sociedad seleccionada ya está aplicada."}
+                    {graphFiltersDirty ? "Cambio pendiente para las gráficas y tarjetas de estimación." : "La sociedad seleccionada ya está aplicada."}
                   </div>
                   <div className="coedash-action-buttons">
                     <button type="button" className="coedash-btn light" onClick={clearGraphFilters} disabled={loading || (!graphFiltersDirty && activeGraphFilterCount === 0)}>
@@ -1482,7 +1479,7 @@ export default function DashboardClientesCoeSap() {
           </section>
 
           <RecibidosVsCerrados rows={payload?.casosRecibidosVsCerrados || []} periodo={payload?.periodosGraficas?.recibidosVsCerrados} />
-          <EstadoEstimacionHoras rows={payload?.estadoEstimacionHoras || []} periodo={payload?.periodosGraficas?.estadoEstimacionHoras} />
+          <EstadoEstimacionHoras rows={estadoEstimacionHoras} periodo={periodoEstadoEstimacion} />
 
 
           <section className="coedash-grid-panels two">
