@@ -1480,3 +1480,25 @@
     min-width: 520px;
   }
 }
+
+
+/* ============================================================
+   Corrección visual módulo-consultor
+   ============================================================ */
+.coedash-module-detail-meta b,
+.coedash-module-legend-row strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.coedash-module-legend-row span,
+.coedash-module-detail-row span {
+  overflow-wrap: anywhere;
+}
+
+.coedash-module-pie-panel .coedash-module-note span {
+  max-width: 360px;
+}
+
+.coedash-module-grid .coedash-chart-panel {
+  justify-content: center;
+}

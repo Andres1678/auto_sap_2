@@ -19485,25 +19485,76 @@ def _coe_rep_norm_key(value):
 
 def _coe_rep_distribucion_modulos_consultores(query):
     """
-    Consolida el backlog filtrado por módulo y cruza la asignación de consultores
-    definida en el catálogo consultor <-> módulo.
+    Consolida el backlog filtrado por módulo y cruza la asignación de consultores.
 
-    - El tamaño del segmento principal corresponde a la cantidad de casos del módulo.
-    - En el detalle de cada módulo se listan los consultores asociados y la cantidad
-      de casos que tienen asignados dentro del mismo módulo.
-    - Si un consultor pertenece al módulo pero no tiene casos en el filtro actual,
-      igualmente se muestra con cantidad 0 para control operativo.
+    Corrección aplicada:
+    - El total se calcula sobre la misma consulta del gráfico Estado general.
+    - Si la calificación NO tiene módulo, se intenta inferir desde el consultor asignado.
+    - El texto "Sin módulo" solo aparece cuando el caso no tiene módulo y tampoco se
+      pudo encontrar un consultor asignado con módulos relacionados.
+    - La lista de consultores por módulo se arma desde Consultor.modulos y se completa
+      con los casos asignados a cada consultor.
     """
-    total = int(query.count() or 0)
+    def _is_empty_module(value):
+        value_norm = _coe_rep_norm_key(value)
+        return value_norm in {
+            "",
+            "SIN MODULO",
+            "SIN MODULOS",
+            "SIN MODULO ASIGNADO",
+            "SIN ASIGNAR",
+            "N/A",
+            "NA",
+            "NO APLICA",
+            "-",
+            "--",
+        }
 
+    def _consultor_display(consultor):
+        return (
+            _coe_rep_str(getattr(consultor, "nombre", None))
+            or _coe_rep_str(getattr(consultor, "usuario", None))
+            or f"Consultor {getattr(consultor, 'id', '')}".strip()
+        )
+
+    def _modulo_nombre_catalogado(value, modulo_nombre_por_norm):
+        if _is_empty_module(value):
+            return None, None
+
+        raw = _coe_rep_str(value)
+        key = _coe_rep_norm_key(raw)
+        nombre = modulo_nombre_por_norm.get(key) or raw
+        return key, nombre
+
+    def _pick_modulo_from_consultor(consultor_meta):
+        modulos = list((consultor_meta or {}).get("modulos") or [])
+        if not modulos:
+            return None
+
+        modulos = sorted(
+            modulos,
+            key=lambda item: str(item.get("nombre") or "").upper()
+        )
+        return modulos[0]
+
+    # ------------------------------------------------------------
+    # 1) Catálogo de módulos
+    # ------------------------------------------------------------
     modulos_catalogo = Modulo.query.order_by(Modulo.nombre.asc()).all()
-    modulo_nombre_por_id = {m.id: (_coe_rep_str(m.nombre) or f"Módulo {m.id}") for m in modulos_catalogo}
+    modulo_nombre_por_id = {
+        int(m.id): (_coe_rep_str(m.nombre) or f"Módulo {m.id}")
+        for m in modulos_catalogo
+        if getattr(m, "id", None)
+    }
     modulo_nombre_por_norm = {
         _coe_rep_norm_key(m.nombre): (_coe_rep_str(m.nombre) or f"Módulo {m.id}")
         for m in modulos_catalogo
         if _coe_rep_norm_key(m.nombre)
     }
 
+    # ------------------------------------------------------------
+    # 2) Consultores y módulos asociados
+    # ------------------------------------------------------------
     consultores = (
         Consultor.query
         .options(selectinload(Consultor.modulos))
@@ -19511,103 +19562,215 @@ def _coe_rep_distribucion_modulos_consultores(query):
         .all()
     )
 
-    consultor_display_por_norm = {}
+    consultor_por_alias = {}
     consultores_por_modulo = {}
 
     for consultor in consultores:
-        display = _coe_rep_str(consultor.nombre) or _coe_rep_str(consultor.usuario) or f"Consultor {consultor.id}"
-        aliases = {
-            _coe_rep_norm_key(consultor.nombre),
-            _coe_rep_norm_key(consultor.usuario),
-            _coe_rep_norm_key(consultor.cedula),
+        display = _consultor_display(consultor)
+        modulos_consultor = []
+
+        # Relación muchos a muchos consultor.modulos
+        for modulo in getattr(consultor, "modulos", None) or []:
+            modulo_key, modulo_nombre = _modulo_nombre_catalogado(
+                getattr(modulo, "nombre", None),
+                modulo_nombre_por_norm,
+            )
+
+            if modulo_key and modulo_nombre:
+                modulos_consultor.append({
+                    "key": modulo_key,
+                    "nombre": modulo_nombre,
+                })
+
+        # Fallback por consultor.modulo_id
+        modulo_id = getattr(consultor, "modulo_id", None)
+        try:
+            modulo_id = int(modulo_id) if modulo_id not in (None, "") else None
+        except Exception:
+            modulo_id = None
+
+        if modulo_id and modulo_id in modulo_nombre_por_id:
+            modulo_nombre = modulo_nombre_por_id[modulo_id]
+            modulo_key = _coe_rep_norm_key(modulo_nombre)
+
+            if modulo_key and not any(m["key"] == modulo_key for m in modulos_consultor):
+                modulos_consultor.append({
+                    "key": modulo_key,
+                    "nombre": modulo_nombre,
+                })
+
+        # Quitar duplicados por módulo
+        modulos_unicos = {}
+        for item in modulos_consultor:
+            modulos_unicos[item["key"]] = item
+        modulos_consultor = list(modulos_unicos.values())
+
+        meta = {
+            "display": display,
+            "modulos": modulos_consultor,
         }
+
+        aliases = {
+            _coe_rep_norm_key(getattr(consultor, "nombre", None)),
+            _coe_rep_norm_key(getattr(consultor, "usuario", None)),
+            _coe_rep_norm_key(getattr(consultor, "cedula", None)),
+        }
+
         for alias in aliases:
             if alias:
-                consultor_display_por_norm.setdefault(alias, display)
+                consultor_por_alias.setdefault(alias, meta)
 
-        modulos_consultor = list(getattr(consultor, 'modulos', None) or [])
-        if not modulos_consultor and getattr(consultor, 'modulo_id', None):
-            nombre_modulo = modulo_nombre_por_id.get(consultor.modulo_id)
-            if nombre_modulo:
-                modulos_consultor = [type('ModuloLite', (), {'nombre': nombre_modulo})()]
-
-        for modulo in modulos_consultor:
-            modulo_nombre = _coe_rep_str(getattr(modulo, 'nombre', None))
-            modulo_key = _coe_rep_norm_key(modulo_nombre)
-            if not modulo_key:
-                continue
+        for modulo_item in modulos_consultor:
+            modulo_key = modulo_item["key"]
             consultores_por_modulo.setdefault(modulo_key, {})
             consultores_por_modulo[modulo_key].setdefault(
                 display,
                 {"consultor": display, "cantidad": 0}
             )
 
-    rows = (
-        query.with_entities(
-            CoeSapFuncionalCalificacion.modulo.label('modulo'),
-            CoeSapFuncionalCalificacion.asignado_a.label('asignado_a'),
-            func.count(CoeSapFuncionalCalificacion.id).label('cantidad'),
-        )
-        .group_by(
-            CoeSapFuncionalCalificacion.modulo,
-            CoeSapFuncionalCalificacion.asignado_a,
-        )
-        .all()
-    )
+    def _find_consultor_meta(asignado_a):
+        asignado_key = _coe_rep_norm_key(asignado_a)
+
+        if not asignado_key:
+            return None
+
+        exact = consultor_por_alias.get(asignado_key)
+        if exact:
+            return exact
+
+        # Fallback tolerante para textos que vienen con usuario, correo o nombre compuesto.
+        # Evita dejar "Sin módulo" cuando la columna Asignado a no llega exactamente igual
+        # al nombre del consultor.
+        best = None
+        best_len = 0
+
+        for alias, meta in consultor_por_alias.items():
+            if len(alias) < 5:
+                continue
+
+            if alias in asignado_key or asignado_key in alias:
+                if len(alias) > best_len:
+                    best = meta
+                    best_len = len(alias)
+
+        return best
+
+    # ------------------------------------------------------------
+    # 3) Recorrer casos del backlog filtrado
+    # ------------------------------------------------------------
+    total = int(query.count() or 0)
 
     resultado_map = {}
 
-    def ensure_modulo(modulo_label):
-        modulo_key = _coe_rep_norm_key(modulo_label) or 'SIN MODULO'
-        modulo_final = modulo_nombre_por_norm.get(modulo_key, _coe_rep_str(modulo_label) or 'Sin módulo')
+    def ensure_modulo(modulo_key, modulo_nombre):
+        if not modulo_key:
+            modulo_key = "SIN MODULO"
+            modulo_nombre = "Sin módulo"
+
         if modulo_key not in resultado_map:
             base_consultores = consultores_por_modulo.get(modulo_key, {})
             resultado_map[modulo_key] = {
-                'modulo': modulo_final,
-                'cantidad': 0,
-                '_consultores': {
-                    nombre: {'consultor': data['consultor'], 'cantidad': int(data.get('cantidad') or 0)}
+                "modulo": modulo_nombre or "Sin módulo",
+                "cantidad": 0,
+                "_consultores": {
+                    nombre: {
+                        "consultor": data["consultor"],
+                        "cantidad": int(data.get("cantidad") or 0),
+                    }
                     for nombre, data in base_consultores.items()
                 },
             }
-        return modulo_key, resultado_map[modulo_key]
+
+        return resultado_map[modulo_key]
+
+    rows = (
+        query.with_entities(
+            CoeSapFuncionalCalificacion.id.label("id"),
+            CoeSapFuncionalCalificacion.modulo.label("modulo"),
+            CoeSapFuncionalCalificacion.asignado_a.label("asignado_a"),
+        )
+        .yield_per(2000)
+    )
 
     for row in rows:
-        modulo_label = _coe_rep_str(row.modulo) or 'Sin módulo'
-        modulo_key, modulo_item = ensure_modulo(modulo_label)
+        consultor_meta = _find_consultor_meta(row.asignado_a)
 
-        cantidad = int(row.cantidad or 0)
-        modulo_item['cantidad'] += cantidad
-
-        asignado_raw = _coe_rep_str(row.asignado_a)
-        consultor_label = 'Sin asignar'
-        if asignado_raw:
-            consultor_label = consultor_display_por_norm.get(_coe_rep_norm_key(asignado_raw), asignado_raw)
-
-        consultor_item = modulo_item['_consultores'].setdefault(
-            consultor_label,
-            {'consultor': consultor_label, 'cantidad': 0}
+        modulo_key, modulo_nombre = _modulo_nombre_catalogado(
+            row.modulo,
+            modulo_nombre_por_norm,
         )
-        consultor_item['cantidad'] += cantidad
 
+        origen_modulo = "calificacion"
+
+        if not modulo_key:
+            modulo_desde_consultor = _pick_modulo_from_consultor(consultor_meta)
+
+            if modulo_desde_consultor:
+                modulo_key = modulo_desde_consultor["key"]
+                modulo_nombre = modulo_desde_consultor["nombre"]
+                origen_modulo = "consultor"
+            else:
+                modulo_key = "SIN MODULO"
+                modulo_nombre = "Sin módulo"
+                origen_modulo = "sin_modulo"
+
+        modulo_item = ensure_modulo(modulo_key, modulo_nombre)
+        modulo_item["cantidad"] += 1
+
+        if consultor_meta:
+            consultor_label = consultor_meta.get("display") or "Sin asignar"
+        else:
+            consultor_label = _coe_rep_str(row.asignado_a) or "Sin asignar"
+
+        consultor_item = modulo_item["_consultores"].setdefault(
+            consultor_label,
+            {"consultor": consultor_label, "cantidad": 0}
+        )
+        consultor_item["cantidad"] += 1
+
+        # Campo interno útil para depuración si luego se necesita exponer.
+        modulo_item.setdefault("_origenes", defaultdict(int))
+        modulo_item["_origenes"][origen_modulo] += 1
+
+    # ------------------------------------------------------------
+    # 4) Formato final
+    # ------------------------------------------------------------
     resultado = []
+
     for item in resultado_map.values():
         consultores_detalle = sorted(
-            item['_consultores'].values(),
-            key=lambda elem: (-int(elem.get('cantidad') or 0), str(elem.get('consultor') or '').upper())
+            item["_consultores"].values(),
+            key=lambda elem: (
+                -int(elem.get("cantidad") or 0),
+                str(elem.get("consultor") or "").upper(),
+            )
         )
+
+        origenes = item.get("_origenes") or {}
+
         resultado.append({
-            'modulo': item['modulo'],
-            'cantidad': int(item['cantidad'] or 0),
-            'porcentaje': round((float(item['cantidad'] or 0) / total) * 100, 2) if total else 0,
-            'consultores': consultores_detalle,
+            "modulo": item["modulo"],
+            "cantidad": int(item["cantidad"] or 0),
+            "porcentaje": round((float(item["cantidad"] or 0) / total) * 100, 2) if total else 0,
+            "consultores": consultores_detalle,
+            "origenModulo": {
+                "calificacion": int(origenes.get("calificacion", 0) or 0),
+                "consultor": int(origenes.get("consultor", 0) or 0),
+                "sinModulo": int(origenes.get("sin_modulo", 0) or 0),
+            },
         })
 
-    resultado.sort(key=lambda elem: (-int(elem.get('cantidad') or 0), str(elem.get('modulo') or '').upper()))
+    resultado.sort(
+        key=lambda elem: (
+            str(elem.get("modulo") or "").upper() == "SIN MÓDULO",
+            -int(elem.get("cantidad") or 0),
+            str(elem.get("modulo") or "").upper(),
+        )
+    )
 
     return {
-        'total': total,
-        'modulos': resultado,
+        "total": total,
+        "modulos": resultado,
     }
 
 
@@ -20164,7 +20327,7 @@ def dashboard_clientes_coe_sap_funcional():
             },
             "resumenEstadoGeneral": resumen_estado_general,
             "estadoGeneralRequerimientos": estado_general_data,
-            "distribucionModulosConsultores": _coe_rep_distribucion_modulos_consultores(query),
+            "distribucionModulosConsultores": _coe_rep_distribucion_modulos_consultores(query_backlog_estado),
             "casosRecibidosVsCerrados": _coe_rep_recibidos_vs_cerrados(base_query),
             "estadoEstimacionHoras": _coe_rep_estado_estimacion_horas(base_query),
             "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),

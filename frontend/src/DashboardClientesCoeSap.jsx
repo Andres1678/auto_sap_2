@@ -589,7 +589,10 @@ function EstadoGeneralRequerimientos({ data }) {
     <section className="coedash-panel coedash-wide-panel coedash-excel-card">
       <div className="coedash-panel-head center">
         <h2>Estado general de requerimientos</h2>
-        <p>Backlog completo según estados filtrados. No se limita por mes ni por rango de fechas.</p>
+        <p>
+          Backlog completo solo para estados principales En curso y Pendiente de cliente.
+          Si el caso no tiene subestado, se muestra el estado principal.
+        </p>
       </div>
 
       <div className="coedash-excel-grid">
@@ -670,10 +673,10 @@ function DistribucionModulosConsultores({ data }) {
   return (
     <section className="coedash-panel coedash-wide-panel coedash-excel-card">
       <div className="coedash-panel-head center">
-        <h2>Estado general de requerimientos</h2>
+        <h2>Distribución por módulos y consultores asignados</h2>
         <p>
-          Backlog completo solo para estados principales En curso y Pendiente de cliente.
-          Si el caso no tiene subestado, se muestra el estado principal.
+          Distribución del mismo backlog controlado por módulo. Si el caso no trae módulo,
+          se infiere desde el consultor asignado y sus módulos configurados.
         </p>
       </div>
 
@@ -750,7 +753,7 @@ function DistribucionModulosConsultores({ data }) {
             <p className="coedash-module-detail-meta">
               Total del módulo: <b>{numberText(activeRow?.cantidad)}</b> caso(s)
               {" · "}
-              <b>{numberText(activeRow?.porcentaje, 2)}%</b> del backlog filtrado.
+              <b>{numberText(activeRow?.porcentaje, 2)}%</b> del backlog controlado.
             </p>
 
             <div className="coedash-module-detail-list">
