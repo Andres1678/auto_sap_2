@@ -1122,3 +1122,361 @@
     min-height: auto;
   }
 }
+
+/* ============================================================
+   Ajuste visual final - métricas + backlog COE SAP
+   Objetivo:
+   - Que los cuadros superiores se alineen mejor con el dashboard.
+   - Que el bloque Estado general no genere scroll innecesario.
+   - Que tablas, dona y leyendas queden balanceadas visualmente.
+   ============================================================ */
+.coedash-page {
+  padding: clamp(16px, 1.4vw, 26px);
+}
+
+.coedash-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: 16px;
+  align-items: stretch;
+  margin-bottom: 20px;
+}
+
+.coedash-metric {
+  min-height: 122px;
+  padding: 17px 18px;
+  border-radius: 20px;
+  border-left-width: 5px;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.coedash-metric::after {
+  content: "";
+  position: absolute;
+  width: 74px;
+  height: 74px;
+  right: -28px;
+  top: -34px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.045;
+  z-index: -1;
+}
+
+.coedash-metric span {
+  min-height: 30px;
+  display: flex;
+  align-items: flex-start;
+  color: #5b6472;
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.coedash-metric strong {
+  margin-top: 6px;
+  font-size: clamp(24px, 1.7vw, 31px);
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+
+.coedash-metric small {
+  margin-top: 8px;
+  min-height: 26px;
+  color: #536073;
+  line-height: 1.25;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.coedash-metric.dark {
+  color: #111827;
+}
+
+.coedash-metric.warn {
+  color: #b45309;
+}
+
+.coedash-metric.ok {
+  color: var(--coedash-green);
+}
+
+.coedash-metric.info {
+  color: var(--coedash-blue);
+}
+
+.coedash-metric.money {
+  color: var(--coedash-red);
+}
+
+.coedash-metric.neutral {
+  color: #64748b;
+}
+
+.coedash-panel,
+.coedash-card {
+  border-color: #e2e8f0;
+}
+
+.coedash-excel-card.coedash-wide-panel {
+  padding: 20px;
+}
+
+.coedash-panel-head.center {
+  margin-bottom: 18px;
+}
+
+.coedash-panel-head.center h2 {
+  font-size: clamp(21px, 1.55vw, 26px);
+  line-height: 1.15;
+}
+
+.coedash-panel-head.center p {
+  max-width: 920px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.45;
+}
+
+.coedash-excel-grid {
+  grid-template-columns: minmax(300px, 0.72fr) minmax(360px, 1fr) minmax(360px, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.coedash-excel-grid.two {
+  grid-template-columns: minmax(360px, 0.9fr) minmax(520px, 1.1fr);
+}
+
+.coedash-excel-grid > .coedash-table-wrap.small {
+  min-height: 310px;
+  max-height: 395px;
+  background: #ffffff;
+}
+
+.coedash-table.pivot {
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+.coedash-table.pivot th,
+.coedash-table.pivot td {
+  height: 47px;
+  padding: 12px 14px;
+  vertical-align: middle;
+}
+
+.coedash-table.pivot th:first-child,
+.coedash-table.pivot td:first-child {
+  width: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.coedash-table.pivot th:nth-child(2),
+.coedash-table.pivot td:nth-child(2) {
+  width: 120px;
+  text-align: right !important;
+  font-weight: 950;
+}
+
+.coedash-table.pivot tbody tr:not(.coedash-total-row) td:first-child {
+  font-weight: 750;
+  color: #111827;
+}
+
+.coedash-total-row td {
+  height: 50px !important;
+  background: #e5e7eb !important;
+  border-top: 2px solid #9ca3af !important;
+  font-size: 14px !important;
+}
+
+.coedash-chart-panel {
+  min-height: 310px;
+  padding: 18px;
+  border-color: #dde5ef;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.coedash-chart-panel h3 {
+  margin-bottom: 16px;
+  font-size: clamp(17px, 1.25vw, 21px);
+  color: #4b5563;
+}
+
+.coedash-pie-layout {
+  grid-template-columns: minmax(155px, 210px) minmax(0, 1fr);
+  gap: 22px;
+  width: 100%;
+}
+
+.coedash-pie-svg {
+  width: clamp(165px, 14vw, 215px);
+  height: clamp(165px, 14vw, 215px);
+  justify-self: center;
+}
+
+.coedash-pie-total {
+  font-size: 22px;
+}
+
+.coedash-pie-label {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.coedash-pie-legend {
+  gap: 9px;
+  max-height: 255px;
+  padding-right: 4px;
+}
+
+.coedash-pie-legend div {
+  grid-template-columns: 13px minmax(0, 1fr) auto;
+  gap: 9px;
+  min-height: 30px;
+  padding: 6px 7px;
+  border-radius: 10px;
+}
+
+.coedash-pie-legend div:hover {
+  background: #f8fafc;
+}
+
+.coedash-pie-legend i {
+  width: 13px;
+  height: 13px;
+}
+
+.coedash-pie-legend span {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.coedash-pie-legend strong {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.coedash-table-wrap::-webkit-scrollbar,
+.coedash-pie-legend::-webkit-scrollbar,
+.coedash-module-legend::-webkit-scrollbar,
+.coedash-module-detail-list::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.coedash-table-wrap::-webkit-scrollbar-track,
+.coedash-pie-legend::-webkit-scrollbar-track,
+.coedash-module-legend::-webkit-scrollbar-track,
+.coedash-module-detail-list::-webkit-scrollbar-track {
+  background: #eef2f7;
+  border-radius: 999px;
+}
+
+.coedash-table-wrap::-webkit-scrollbar-thumb,
+.coedash-pie-legend::-webkit-scrollbar-thumb,
+.coedash-module-legend::-webkit-scrollbar-thumb,
+.coedash-module-detail-list::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 999px;
+}
+
+.coedash-table-wrap::-webkit-scrollbar-thumb:hover,
+.coedash-pie-legend::-webkit-scrollbar-thumb:hover,
+.coedash-module-legend::-webkit-scrollbar-thumb:hover,
+.coedash-module-detail-list::-webkit-scrollbar-thumb:hover {
+  background: var(--coedash-red);
+}
+
+.coedash-module-grid {
+  grid-template-columns: minmax(300px, 0.9fr) minmax(330px, 1fr) minmax(330px, 1fr);
+  gap: 18px;
+}
+
+.coedash-module-pie-svg {
+  width: clamp(205px, 16vw, 260px);
+  height: clamp(205px, 16vw, 260px);
+}
+
+.coedash-module-legend-row,
+.coedash-module-detail-row {
+  min-height: 46px;
+}
+
+.coedash-graph-filter-attached {
+  margin-top: 8px;
+}
+
+.coedash-graph-filter-grid.single {
+  grid-template-columns: minmax(280px, 760px);
+}
+
+.coedash-graph-shared-card {
+  border-color: rgba(37, 99, 235, 0.20);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+@media (min-width: 1680px) {
+  .coedash-metrics-grid {
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1500px) {
+  .coedash-metrics-grid {
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 1280px) {
+  .coedash-excel-grid,
+  .coedash-excel-grid.two,
+  .coedash-module-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .coedash-excel-grid > .coedash-table-wrap.small {
+    min-height: 0;
+  }
+
+  .coedash-pie-layout {
+    grid-template-columns: minmax(170px, 220px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .coedash-metrics-grid {
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+
+  .coedash-metric {
+    min-height: 110px;
+  }
+
+  .coedash-pie-layout {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .coedash-pie-legend {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .coedash-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .coedash-excel-card.coedash-wide-panel {
+    padding: 14px;
+  }
+
+  .coedash-table.pivot {
+    min-width: 520px;
+  }
+}

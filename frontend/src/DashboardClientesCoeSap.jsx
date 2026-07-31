@@ -1024,6 +1024,7 @@ export default function DashboardClientesCoeSap() {
   const [downloadingExcel, setDownloadingExcel] = useState(false);
 
   const resumen = payload?.resumen || {};
+  const resumenEstadoGeneral = payload?.resumenEstadoGeneral || resumen;
   const opciones = payload?.opciones || {};
 
   const updateFilter = (key, value) => {
@@ -1224,15 +1225,68 @@ export default function DashboardClientesCoeSap() {
       ) : (
         <>
           <section className="coedash-metrics-grid">
-            <MetricCard title="Total casos" value={numberText(resumen.totalCasos)} sub="Casos filtrados" tone="dark" />
-            <MetricCard title="Abiertos" value={numberText(resumen.abiertos)} sub="Sin cerrar / abiertos" tone="warn" />
-            <MetricCard title="Cerrados" value={numberText(resumen.cerrados)} sub="Cerrados o solucionados" tone="ok" />
-            <MetricCard title="Cruce SM" value={numberText(resumen.conSm)} sub="Casos cruzados SM" tone="info" />
-            <MetricCard title="Cruce ITOP" value={numberText(resumen.conItop)} sub="Casos cruzados ITOP" tone="info" />
-            <MetricCard title="Solo Excel" value={numberText(resumen.soloExcel)} sub="Sin cruce completo" tone="neutral" />
-            <MetricCard title="H. funcionales" value={numberText(resumen.totalHorasFuncionales, 2)} sub="Total funcional" tone="ok" />
-            <MetricCard title="H. estimadas" value={numberText(resumen.totalHorasEstimadas, 2)} sub="Total estimado" tone="dark" />
-            <MetricCard title="Valor OT" value={moneyText(resumen.valorOt)} sub="Suma valor OT" tone="money" />
+            <MetricCard
+              title="Backlog total"
+              value={numberText(resumenEstadoGeneral.totalCasos)}
+              sub="En curso + pendiente cliente"
+              tone="dark"
+            />
+
+            <MetricCard
+              title="En curso"
+              value={numberText(resumenEstadoGeneral.enCurso)}
+              sub="Casos activos"
+              tone="warn"
+            />
+
+            <MetricCard
+              title="Pend. cliente"
+              value={numberText(resumenEstadoGeneral.pendienteCliente)}
+              sub="Pendientes por cliente"
+              tone="info"
+            />
+
+            <MetricCard
+              title="Cruce SM"
+              value={numberText(resumenEstadoGeneral.conSm)}
+              sub="Backlog cruzado SM"
+              tone="info"
+            />
+
+            <MetricCard
+              title="Cruce ITOP"
+              value={numberText(resumenEstadoGeneral.conItop)}
+              sub="Backlog cruzado ITOP"
+              tone="info"
+            />
+
+            <MetricCard
+              title="Solo Excel"
+              value={numberText(resumenEstadoGeneral.soloExcel)}
+              sub="Backlog sin cruce completo"
+              tone="neutral"
+            />
+
+            <MetricCard
+              title="H. funcionales"
+              value={numberText(resumenEstadoGeneral.totalHorasFuncionales, 2)}
+              sub="Total funcional backlog"
+              tone="ok"
+            />
+
+            <MetricCard
+              title="H. estimadas"
+              value={numberText(resumenEstadoGeneral.totalHorasEstimadas, 2)}
+              sub="Total estimado backlog"
+              tone="dark"
+            />
+
+            <MetricCard
+              title="Valor OT"
+              value={moneyText(resumenEstadoGeneral.valorOt)}
+              sub="Suma valor OT backlog"
+              tone="money"
+            />
           </section>
 
           <EstadoGeneralRequerimientos data={payload?.estadoGeneralRequerimientos} />
