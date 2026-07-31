@@ -589,7 +589,7 @@ function EstadoGeneralRequerimientos({ data }) {
     <section className="coedash-panel coedash-wide-panel coedash-excel-card">
       <div className="coedash-panel-head center">
         <h2>Estado general de requerimientos</h2>
-        <p>Tabla y gráfico afectados por los filtros globales.</p>
+        <p>Backlog completo según estados filtrados. No se limita por mes ni por rango de fechas.</p>
       </div>
 
       <div className="coedash-excel-grid">
@@ -1005,7 +1005,7 @@ export default function DashboardClientesCoeSap() {
           <span className="coedash-eyebrow">Dashboard clientes</span>
           <h1>Dashboard COE SAP Funcional</h1>
           <p>
-            Gráficas tipo Excel con filtros globales y un filtro propio de sociedad para las gráficas mensuales.
+            Gráficas tipo Excel: el estado general muestra backlog completo, y las gráficas mensuales tienen filtro propio de sociedad.
           </p>
         </div>
 
@@ -1024,7 +1024,7 @@ export default function DashboardClientesCoeSap() {
         <div className="coedash-card-head">
           <div>
             <h2>Filtros globales</h2>
-            <p>Estos filtros aplican a las métricas y gráficas generales. No afectan Casos recibidos vs cerrados ni Estado estimación y horas.</p>
+            <p>Estos filtros aplican a las métricas y al backlog por estados. El periodo global no limita el Estado general de requerimientos. No afectan Casos recibidos vs cerrados ni Estado estimación y horas.</p>
           </div>
 
           <button type="button" className="coedash-btn ghost" onClick={clearFilters} disabled={loading}>

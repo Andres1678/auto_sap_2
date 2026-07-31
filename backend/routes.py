@@ -19165,7 +19165,16 @@ def listar_importaciones_coe_sap_funcional():
 def dashboard_clientes_coe_sap_funcional():
     try:
         base_query = CoeSapFuncionalCalificacion.query
+
+        # Consulta general del dashboard: conserva el periodo global para métricas,
+        # cerrados por mes, horas y demás bloques generales.
         query = _coe_rep_apply_filters(base_query)
+
+        # Backlog de estado general: NO aplica periodo/mes/rango de fechas.
+        # Sí conserva los demás filtros globales como sociedad, estado,
+        # estado principal, subestado, estado consolidado, módulo, líder,
+        # responsable, asignado, tipo de solicitud, control horas y búsqueda.
+        query_backlog_estado = _coe_rep_apply_filters(base_query, include_period=False)
 
         total_casos = query.count()
 
@@ -19274,7 +19283,7 @@ def dashboard_clientes_coe_sap_funcional():
                 "horasProyectoAbap": _coe_rep_float(horas.proyecto_abap if horas else 0),
                 "valorOt": _coe_rep_float(horas.valor_ot if horas else 0),
             },
-            "estadoGeneralRequerimientos": _coe_rep_estado_general(query),
+            "estadoGeneralRequerimientos": _coe_rep_estado_general(query_backlog_estado),
             "casosRecibidosVsCerrados": _coe_rep_recibidos_vs_cerrados(base_query),
             "estadoEstimacionHoras": _coe_rep_estado_estimacion_horas(base_query),
             "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),
