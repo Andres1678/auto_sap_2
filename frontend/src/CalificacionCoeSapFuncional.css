@@ -1409,3 +1409,22 @@ th.col-ot {
 .calcoe-filter-row .calcoe-react-select__menu-list {
   max-height: 260px !important;
 }
+
+
+/* ====== Estado controlado desde catálogo ====== */
+.calcoe-readonly-box {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 850;
+  box-sizing: border-box;
+}
+
+.calcoe-filter select option[disabled] {
+  color: #94a3b8;
+}

@@ -16933,6 +16933,35 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
         data = request.get_json(silent=True) or {}
         usuario = _calificacion_usuario_actual()
 
+        # Estado controlado: se maneja por ID de subestado de catálogo, no por texto libre.
+        subestado_catalogo_payload = (
+            data.get("subestadoCatalogoId")
+            if "subestadoCatalogoId" in data
+            else data.get("subestado_catalogo_id")
+        )
+        observacion_cambio_estado = (
+            data.get("observacionCambioEstado")
+            or data.get("observacion_cambio_estado")
+            or ""
+        )
+
+        # Estos campos ya no se aceptan como texto libre desde el front.
+        # Se calculan desde subestado_catalogo_id para evitar estados duplicados.
+        for key in (
+            "estadoPrincipal",
+            "estado_principal",
+            "subestado",
+            "validarEstadoControl",
+            "validar_estado_control",
+            "responsableEstado",
+            "responsable_estado",
+            "estadoConsolidado",
+            "estado_consolidado",
+            "clienteAsociadoNombre",
+            "cliente_asociado_nombre",
+        ):
+            data.pop(key, None)
+
         campos_editables = {
             "documentacion": "documentacion",
             "casoTransporte": "caso_transporte",
@@ -16977,15 +17006,39 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "horasEstimadasAbap": "horas_estimadas_abap",
             "horasEstimadasBasis": "horas_estimadas_basis",
             "horasEstimadasPmo": "horas_estimadas_pmo",
+
+            "horasEjecutadasFi": "horas_ejecutadas_fi",
+            "horasEjecutadasMm": "horas_ejecutadas_mm",
+            "horasEjecutadasSd": "horas_ejecutadas_sd",
+            "horasEjecutadasCo": "horas_ejecutadas_co",
+            "horasEjecutadasPs": "horas_ejecutadas_ps",
+            "horasEjecutadasPca": "horas_ejecutadas_pca",
+            "horasEjecutadasFm": "horas_ejecutadas_fm",
+            "horasEjecutadasHcm": "horas_ejecutadas_hcm",
+            "horasEjecutadasSsff": "horas_ejecutadas_ssff",
+            "horasEjecutadasFiori": "horas_ejecutadas_fiori",
+            "horasEjecutadasWf": "horas_ejecutadas_wf",
+            "horasEjecutadasAbap": "horas_ejecutadas_abap",
+            "horasEjecutadasBasis": "horas_ejecutadas_basis",
+            "horasGarantia": "horas_garantia",
+            "horasProyectoAbap": "horas_proyecto_abap",
+
             "observaciones": "observaciones",
 
             "doc1": "doc_1",
             "manejo": "manejo",
             "tiqueteProveedorExterno": "tiquete_proveedor_externo",
 
+            # Estado controlado se actualiza por subestadoCatalogoId.
+            # No aceptar responsable/estado consolidado como texto libre.
             "estadoHerramientaGestion": "estado_herramienta_gestion",
-            "responsableEstado": "responsable_estado",
-            "estadoConsolidado": "estado_consolidado",
+
+            # Campos de sistema de gestión que no llegan de la base principal
+            # y pueden ajustarse manualmente desde clasificación.
+            "fechaAsignacionSistemaGestion": "fecha_asignacion_sistema_gestion",
+            "horaUltimaActualizacionSistemaGestion": "hora_ultima_actualizacion_sistema_gestion",
+            "fechaResolucionSistemaGestion": "fecha_resolucion_sistema_gestion",
+            "fechaFinalizacionCierreSistemaGestion": "fecha_finalizacion_cierre_sistema_gestion",
 
             "estadoFacturacionOt": "estado_facturacion_ot",
             "nroOt": "nro_ot",
@@ -17010,6 +17063,10 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "fechaCompromiso",
             "fechaEstimacion",
             "fechaAprobacionEstimacion",
+            "fechaAsignacionSistemaGestion",
+            "horaUltimaActualizacionSistemaGestion",
+            "fechaResolucionSistemaGestion",
+            "fechaFinalizacionCierreSistemaGestion",
             "fechaReasignacionClaro",
             "fecha1ReasignacionClaro",
             "fecha2ReasignacionClaro",
@@ -17043,6 +17100,21 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "horasEstimadasAbap",
             "horasEstimadasBasis",
             "horasEstimadasPmo",
+            "horasEjecutadasFi",
+            "horasEjecutadasMm",
+            "horasEjecutadasSd",
+            "horasEjecutadasCo",
+            "horasEjecutadasPs",
+            "horasEjecutadasPca",
+            "horasEjecutadasFm",
+            "horasEjecutadasHcm",
+            "horasEjecutadasSsff",
+            "horasEjecutadasFiori",
+            "horasEjecutadasWf",
+            "horasEjecutadasAbap",
+            "horasEjecutadasBasis",
+            "horasGarantia",
+            "horasProyectoAbap",
             "valorOt",
             "horasOferta",
         }
@@ -17069,7 +17141,24 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             origen[model_key] = "MANUAL"
             row.origen_datos_json = _coe_ext_json_dumps(origen)
 
-        _coe_ext_recalcular_row(row)
+        if subestado_catalogo_payload not in (None, "", "null", "None"):
+            subestado_controlado = _coe_cfg_find_subestado_by_id(subestado_catalogo_payload, solo_activos=False)
+
+            if not subestado_controlado:
+                return jsonify({
+                    "mensaje": "Subestado controlado inválido. Selecciona un subestado de la lista configurada."
+                }), 400
+
+            _coe_cfg_aplicar_subestado_catalogo(
+                row,
+                subestado_controlado,
+                usuario=usuario,
+                observacion=observacion_cambio_estado,
+                append_observation=True,
+            )
+
+        with db.session.no_autoflush:
+            _coe_ext_recalcular_row(row)
 
         row.actualizado_por = usuario
         row.updated_at = datetime.utcnow()
@@ -17966,9 +18055,13 @@ def sincronizar_calificacion_coe_sap_funcional():
                 row.actualizado_por = usuario
                 row.updated_at = datetime.utcnow()
 
-                _coe_ext_recalcular_row(row)
+                with db.session.no_autoflush:
+                    _coe_ext_recalcular_row(row)
 
                 cruzados_base += 1
+
+                if cruzados_base % 500 == 0:
+                    db.session.flush()
 
         # 2. Crear/actualizar desde fuentes SM / ITOP
         if crear_desde_fuentes:
@@ -17994,7 +18087,11 @@ def sincronizar_calificacion_coe_sap_funcional():
                 row.actualizado_por = usuario
                 row.updated_at = datetime.utcnow()
 
-                _coe_ext_recalcular_row(row)
+                with db.session.no_autoflush:
+                    _coe_ext_recalcular_row(row)
+
+                if (cruzados_sm + cruzados_itop + 1) % 500 == 0:
+                    db.session.flush()
 
                 if fuente_row.fuente == "SM":
                     cruzados_sm += 1
@@ -18692,7 +18789,17 @@ def _coe_rep_distinct_options(base_query):
             .all()
         )
 
-        values = [r[0] for r in rows if r and r[0] not in (None, "")]
+        values = []
+        seen_values = set()
+        for r in rows:
+            if not r or r[0] in (None, ""):
+                continue
+            label = _coe_rep_str(r[0])
+            key_norm = _coe_cfg_norm(label) if "_coe_cfg_norm" in globals() else str(label).strip().upper()
+            if not key_norm or key_norm in seen_values:
+                continue
+            seen_values.add(key_norm)
+            values.append(label)
 
         has_blank = (
             base_query.with_entities(column)
@@ -18803,52 +18910,132 @@ def _coe_rep_closed_condition():
 
 
 def _coe_rep_estado_general(query):
+    """
+    Backlog completo por estado principal/subestado controlados.
+    Se consolida por ID de catálogo cuando existe y, como respaldo,
+    por texto normalizado para evitar duplicados visuales.
+    """
     total = int(query.count() or 0)
 
     principales_rows = (
         query.with_entities(
+            CoeSapFuncionalCalificacion.estado_catalogo_id.label("estado_catalogo_id"),
             CoeSapFuncionalCalificacion.estado_principal.label("estado_principal"),
             func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
         )
-        .group_by(CoeSapFuncionalCalificacion.estado_principal)
-        .order_by(func.count(CoeSapFuncionalCalificacion.id).desc())
+        .group_by(
+            CoeSapFuncionalCalificacion.estado_catalogo_id,
+            CoeSapFuncionalCalificacion.estado_principal,
+        )
         .all()
     )
 
     subestados_rows = (
         query.with_entities(
+            CoeSapFuncionalCalificacion.subestado_catalogo_id.label("subestado_catalogo_id"),
             CoeSapFuncionalCalificacion.subestado.label("subestado"),
             CoeSapFuncionalCalificacion.estado.label("estado"),
             func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
         )
-        .group_by(CoeSapFuncionalCalificacion.subestado, CoeSapFuncionalCalificacion.estado)
-        .order_by(func.count(CoeSapFuncionalCalificacion.id).desc())
+        .group_by(
+            CoeSapFuncionalCalificacion.subestado_catalogo_id,
+            CoeSapFuncionalCalificacion.subestado,
+            CoeSapFuncionalCalificacion.estado,
+        )
         .all()
     )
 
     def pct(cantidad):
         return round((float(cantidad or 0) / total) * 100, 2) if total else 0
 
+    principales_map = {}
+    for r in principales_rows:
+        label = _coe_rep_str(r.estado_principal) or "OTROS"
+        key = f"ID:{r.estado_catalogo_id}" if r.estado_catalogo_id else f"TXT:{_coe_cfg_norm(label)}"
+        if key not in principales_map:
+            principales_map[key] = {
+                "estadoPrincipal": label,
+                "cantidad": 0,
+            }
+        principales_map[key]["cantidad"] += int(r.cantidad or 0)
+
+    subestados_map = {}
+    for r in subestados_rows:
+        label = _coe_rep_str(r.subestado) or _coe_rep_str(r.estado) or "Sin dato"
+        estado_original = _coe_rep_str(r.estado) or "Sin dato"
+        key = f"ID:{r.subestado_catalogo_id}" if r.subestado_catalogo_id else f"TXT:{_coe_cfg_norm(label)}"
+        if key not in subestados_map:
+            subestados_map[key] = {
+                "subestado": label,
+                "estadoOriginal": estado_original,
+                "cantidad": 0,
+            }
+        subestados_map[key]["cantidad"] += int(r.cantidad or 0)
+
+    principales = sorted(principales_map.values(), key=lambda item: item["cantidad"], reverse=True)
+    subestados = sorted(subestados_map.values(), key=lambda item: item["cantidad"], reverse=True)
+
+    for item in principales:
+        item["porcentaje"] = pct(item["cantidad"])
+
+    for item in subestados:
+        item["porcentaje"] = pct(item["cantidad"])
+
     return {
         "total": total,
-        "principales": [
-            {
-                "estadoPrincipal": _coe_rep_str(r.estado_principal) or "OTROS",
-                "cantidad": int(r.cantidad or 0),
-                "porcentaje": pct(r.cantidad),
-            }
-            for r in principales_rows
-        ],
-        "subestados": [
-            {
-                "subestado": _coe_rep_str(r.subestado) or _coe_rep_str(r.estado) or "Sin dato",
-                "estadoOriginal": _coe_rep_str(r.estado) or "Sin dato",
-                "cantidad": int(r.cantidad or 0),
-                "porcentaje": pct(r.cantidad),
-            }
-            for r in subestados_rows
-        ],
+        "principales": principales,
+        "subestados": subestados,
     }
+
+
+def _coe_rep_group_count_estado_principal(query):
+    rows = (
+        query.with_entities(
+            CoeSapFuncionalCalificacion.estado_catalogo_id.label("estado_catalogo_id"),
+            CoeSapFuncionalCalificacion.estado_principal.label("estado_principal"),
+            func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+        )
+        .group_by(
+            CoeSapFuncionalCalificacion.estado_catalogo_id,
+            CoeSapFuncionalCalificacion.estado_principal,
+        )
+        .all()
+    )
+
+    out = {}
+    for r in rows:
+        label = _coe_rep_str(r.estado_principal) or "Sin dato"
+        key = f"ID:{r.estado_catalogo_id}" if r.estado_catalogo_id else f"TXT:{_coe_cfg_norm(label)}"
+        if key not in out:
+            out[key] = {"estadoPrincipal": label, "cantidad": 0}
+        out[key]["cantidad"] += int(r.cantidad or 0)
+
+    return sorted(out.values(), key=lambda item: item["cantidad"], reverse=True)
+
+
+def _coe_rep_group_count_subestado(query):
+    rows = (
+        query.with_entities(
+            CoeSapFuncionalCalificacion.subestado_catalogo_id.label("subestado_catalogo_id"),
+            CoeSapFuncionalCalificacion.subestado.label("subestado"),
+            func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+        )
+        .group_by(
+            CoeSapFuncionalCalificacion.subestado_catalogo_id,
+            CoeSapFuncionalCalificacion.subestado,
+        )
+        .all()
+    )
+
+    out = {}
+    for r in rows:
+        label = _coe_rep_str(r.subestado) or "Sin dato"
+        key = f"ID:{r.subestado_catalogo_id}" if r.subestado_catalogo_id else f"TXT:{_coe_cfg_norm(label)}"
+        if key not in out:
+            out[key] = {"subestado": label, "cantidad": 0}
+        out[key]["cantidad"] += int(r.cantidad or 0)
+
+    return sorted(out.values(), key=lambda item: item["cantidad"], reverse=True)
 
 
 def _coe_rep_apply_graficas_mensuales_sociedad(query):
@@ -19287,8 +19474,8 @@ def dashboard_clientes_coe_sap_funcional():
             "casosRecibidosVsCerrados": _coe_rep_recibidos_vs_cerrados(base_query),
             "estadoEstimacionHoras": _coe_rep_estado_estimacion_horas(base_query),
             "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),
-            "casosPorEstadoPrincipal": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_principal, "estadoPrincipal"),
-            "casosPorSubestado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.subestado, "subestado"),
+            "casosPorEstadoPrincipal": _coe_rep_group_count_estado_principal(query),
+            "casosPorSubestado": _coe_rep_group_count_subestado(query),
             "casosPorEstadoConsolidado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_consolidado, "estadoConsolidado"),
             "casosPorModulo": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.modulo, "modulo"),
             "casosPorTipoSolicitud": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.tipo_solicitud, "tipoSolicitud"),
@@ -20160,6 +20347,162 @@ def _coe_cfg_find_subestado_by_nombre(nombre, solo_activos=True):
     return q.first()
 
 
+def _coe_cfg_find_subestado_by_id(subestado_id, solo_activos=False):
+    subestado_id = _coe_cfg_safe_int(subestado_id)
+    if not subestado_id:
+        return None
+
+    q = CoeSapFuncionalCatalogo.query.filter(
+        CoeSapFuncionalCatalogo.id == subestado_id,
+        CoeSapFuncionalCatalogo.tipo == COE_TIPO_SUBESTADO,
+    )
+
+    if solo_activos:
+        q = q.filter(CoeSapFuncionalCatalogo.activo == True)
+
+    return q.first()
+
+
+def _coe_cfg_estado_responsable_consolidado(estado_principal):
+    """
+    Regla única para que los reportes no dependan de textos libres.
+    Se deriva del estado principal configurado en la lista controlada.
+    """
+    estado_norm = _coe_cfg_norm(estado_principal)
+
+    if not estado_norm:
+        return None, None
+
+    if "CERR" in estado_norm or "SOLUCION" in estado_norm:
+        return "CLARO", "CERRADO"
+
+    if "CLIENTE" in estado_norm or "USUARIO" in estado_norm:
+        return "CLIENTE", "SIN CERRAR"
+
+    return "CLARO", "SIN CERRAR"
+
+
+def _coe_cfg_append_observacion_estado(row, estado_anterior, subestado_anterior, estado_nuevo, subestado_nuevo, usuario=None, observacion=None):
+    """
+    Agrega trazabilidad automática cuando se cambia el estado controlado.
+    No borra observaciones existentes.
+    """
+    if not hasattr(row, "observaciones"):
+        return
+
+    estado_anterior = _coe_cfg_str(estado_anterior) or "Sin dato"
+    subestado_anterior = _coe_cfg_str(subestado_anterior) or "Sin dato"
+    estado_nuevo = _coe_cfg_str(estado_nuevo) or "Sin dato"
+    subestado_nuevo = _coe_cfg_str(subestado_nuevo) or "Sin dato"
+    observacion = _coe_cfg_str(observacion)
+
+    # Si no cambió realmente, no duplica observaciones.
+    if _coe_cfg_norm(estado_anterior) == _coe_cfg_norm(estado_nuevo) and _coe_cfg_norm(subestado_anterior) == _coe_cfg_norm(subestado_nuevo):
+        return
+
+    try:
+        stamp = datetime.now(ZoneInfo("America/Bogota")).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        stamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+
+    usuario_txt = _coe_cfg_str(usuario) or "sistema"
+    linea = (
+        f"{stamp} - Cambio de estado controlado por {usuario_txt}: "
+        f"{estado_anterior} / {subestado_anterior} → {estado_nuevo} / {subestado_nuevo}."
+    )
+
+    if observacion:
+        linea = f"{linea} Observación: {observacion}"
+
+    actual = str(getattr(row, "observaciones", None) or "").rstrip()
+    if linea in actual:
+        return
+
+    row.observaciones = f"{actual}\n{linea}".strip() if actual else linea
+
+
+def _coe_cfg_marcar_estado_origen(row, origen="CATALOGO_ESTADOS"):
+    """Marca campos controlados como derivados del catálogo oficial."""
+    manual_fields = _coe_ext_manual_fields(row) if "_coe_ext_manual_fields" in globals() else {}
+    origen_fields = _coe_ext_origen_fields(row) if "_coe_ext_origen_fields" in globals() else {}
+
+    for field in (
+        "estado_catalogo_id",
+        "estado_principal",
+        "subestado_catalogo_id",
+        "subestado",
+        "validar_estado_control",
+        "responsable_estado",
+        "estado_consolidado",
+    ):
+        if hasattr(row, field):
+            origen_fields[field] = origen
+
+    if hasattr(row, "campos_editados_manual_json"):
+        row.campos_editados_manual_json = _coe_ext_json_dumps(manual_fields)
+
+    if hasattr(row, "origen_datos_json"):
+        row.origen_datos_json = _coe_ext_json_dumps(origen_fields)
+
+
+def _coe_cfg_aplicar_subestado_catalogo(row, subestado, usuario=None, observacion=None, append_observation=False):
+    """
+    Aplica el subestado controlado como fuente oficial:
+    - llena subestado_catalogo_id y subestado;
+    - llena estado_catalogo_id y estado_principal desde el padre;
+    - recalcula responsable_estado y estado_consolidado;
+    - NO modifica row.estado, porque ese es el estado original de la base.
+    """
+    if not row or not subestado:
+        return row
+
+    estado_anterior = getattr(row, "estado_principal", None)
+    subestado_anterior = getattr(row, "subestado", None)
+
+    estado_padre = _coe_cfg_find_estado_principal_by_id(getattr(subestado, "extra_1", None))
+
+    estado_principal_valor = (
+        getattr(estado_padre, "valor", None)
+        or getattr(subestado, "extra_2", None)
+        or None
+    )
+
+    _coe_cfg_set_if_exists(row, "subestado_catalogo_id", subestado.id)
+    _coe_cfg_set_if_exists(row, "subestado", subestado.valor)
+
+    if estado_padre:
+        _coe_cfg_set_if_exists(row, "estado_catalogo_id", estado_padre.id)
+        _coe_cfg_set_if_exists(row, "estado_principal", estado_padre.valor)
+    else:
+        _coe_cfg_set_if_exists(row, "estado_catalogo_id", None)
+        _coe_cfg_set_if_exists(row, "estado_principal", estado_principal_valor)
+
+    responsable, consolidado = _coe_cfg_estado_responsable_consolidado(estado_principal_valor)
+
+    if responsable:
+        _coe_cfg_set_if_exists(row, "responsable_estado", responsable)
+
+    if consolidado:
+        _coe_cfg_set_if_exists(row, "estado_consolidado", consolidado)
+
+    _coe_cfg_set_if_exists(row, "validar_estado_control", "OK" if bool(getattr(subestado, "activo", True)) else "INACTIVO")
+
+    _coe_cfg_marcar_estado_origen(row)
+
+    if append_observation:
+        _coe_cfg_append_observacion_estado(
+            row,
+            estado_anterior,
+            subestado_anterior,
+            getattr(row, "estado_principal", None),
+            getattr(row, "subestado", None),
+            usuario=usuario,
+            observacion=observacion,
+        )
+
+    return row
+
+
 def _coe_cfg_clasificar_cliente(row):
     sociedad = _coe_cfg_str(getattr(row, "sociedad", None))
     cliente = _coe_cfg_find_cliente_by_nombre(sociedad)
@@ -20177,6 +20520,15 @@ def _coe_cfg_clasificar_cliente(row):
 
 
 def _coe_cfg_clasificar_estado(row):
+    # Si la fila ya tiene un subestado_catalogo_id, ese ID manda.
+    # Esto evita que una edición manual controlada se pierda al recalcular.
+    subestado_id_actual = getattr(row, "subestado_catalogo_id", None)
+    if subestado_id_actual:
+        subestado_controlado = _coe_cfg_find_subestado_by_id(subestado_id_actual, solo_activos=False)
+        if subestado_controlado:
+            _coe_cfg_aplicar_subestado_catalogo(row, subestado_controlado)
+            return getattr(row, "validar_estado_control", None) or "OK"
+
     estado_original = _coe_cfg_estado_texto_original(row)
 
     if not estado_original:
@@ -20187,35 +20539,28 @@ def _coe_cfg_clasificar_estado(row):
         _coe_cfg_set_if_exists(row, "validar_estado_control", "SIN ESTADO")
         return "SIN ESTADO"
 
-    # 1) Si el texto de la columna estado es un SUBESTADO,
-    #    se asocia al estado principal padre SIN cambiar row.estado.
+    # 1) Si el texto original coincide con un SUBESTADO,
+    # se enlaza a la lista controlada sin modificar row.estado.
     subestado = _coe_cfg_find_subestado_by_nombre(estado_original, solo_activos=True)
     if subestado:
-        estado_padre = _coe_cfg_find_estado_principal_by_id(subestado.extra_1)
-
-        _coe_cfg_set_if_exists(row, "subestado_catalogo_id", subestado.id)
-        _coe_cfg_set_if_exists(row, "subestado", subestado.valor)
-
-        if estado_padre:
-            _coe_cfg_set_if_exists(row, "estado_catalogo_id", estado_padre.id)
-            _coe_cfg_set_if_exists(row, "estado_principal", estado_padre.valor)
-        else:
-            _coe_cfg_set_if_exists(row, "estado_catalogo_id", None)
-            _coe_cfg_set_if_exists(row, "estado_principal", subestado.extra_2)
-
-        _coe_cfg_set_if_exists(row, "validar_estado_control", "OK")
+        _coe_cfg_aplicar_subestado_catalogo(row, subestado)
         return "OK"
 
-    # 2) Si el texto ya es un estado principal, también queda OK.
+    # 2) Si el texto original coincide con un estado principal,
+    # queda validado pero sin subestado catalogado.
     estado_principal = _coe_cfg_find_estado_principal_by_nombre(estado_original, solo_activos=True)
     if estado_principal:
         _coe_cfg_set_if_exists(row, "estado_catalogo_id", estado_principal.id)
         _coe_cfg_set_if_exists(row, "estado_principal", estado_principal.valor)
         _coe_cfg_set_if_exists(row, "subestado_catalogo_id", None)
-        # Se conserva el texto original como subestado visual para no perder detalle,
-        # pero no se marca como subestado catalogado.
         _coe_cfg_set_if_exists(row, "subestado", estado_original)
+        responsable, consolidado = _coe_cfg_estado_responsable_consolidado(estado_principal.valor)
+        if responsable:
+            _coe_cfg_set_if_exists(row, "responsable_estado", responsable)
+        if consolidado:
+            _coe_cfg_set_if_exists(row, "estado_consolidado", consolidado)
         _coe_cfg_set_if_exists(row, "validar_estado_control", "OK")
+        _coe_cfg_marcar_estado_origen(row)
         return "OK"
 
     # 3) No existe en listas: queda pendiente para crear/asociar desde configuración.

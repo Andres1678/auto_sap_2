@@ -197,11 +197,21 @@ const EDIT_FIELDS = [
   { key: "articulo", label: "Artículo", type: "select", dependent: "articulo" },
 
   { key: "estadoHerramientaGestion", label: "Estado herramienta gestión", type: "text" },
-  { key: "estadoPrincipal", label: "Estado principal", type: "text" },
-  { key: "subestado", label: "Subestado", type: "text" },
-  { key: "clienteAsociadoNombre", label: "Cliente asociado", type: "text" },
-  { key: "responsableEstado", label: "Responsable estado", type: "text" },
-  { key: "estadoConsolidado", label: "Estado consolidado", type: "text" },
+
+  // Campos que no se completan desde la base principal y pueden ajustarse manualmente.
+  { key: "fechaAsignacionSistemaGestion", label: "Fecha asignación sistema gestión", type: "datetime" },
+  { key: "horaUltimaActualizacionSistemaGestion", label: "Hora última act. sistema gestión", type: "datetime" },
+  { key: "fechaResolucionSistemaGestion", label: "Fecha resolución sistema gestión", type: "datetime" },
+  { key: "fechaFinalizacionCierreSistemaGestion", label: "Fecha cierre sistema gestión", type: "datetime" },
+
+  { key: "subestadoCatalogoId", label: "Subestado controlado", type: "select", source: "subestadoControl", wide: true },
+  { key: "estadoPrincipal", label: "Estado principal", type: "readonly" },
+  { key: "subestado", label: "Subestado aplicado", type: "readonly" },
+  { key: "validarEstadoControl", label: "Validación estado", type: "readonly" },
+  { key: "responsableEstado", label: "Responsable estado", type: "readonly" },
+  { key: "estadoConsolidado", label: "Estado consolidado", type: "readonly" },
+  { key: "observacionCambioEstado", label: "Observación cambio de estado", type: "textarea", wide: true, transient: true },
+  { key: "clienteAsociadoNombre", label: "Cliente asociado", type: "readonly" },
 
   { key: "apoyo1", label: "Apoyo 1", type: "text" },
   { key: "apoyo2", label: "Apoyo 2", type: "text" },
@@ -216,6 +226,43 @@ const EDIT_FIELDS = [
   { key: "fechaEstimacion", label: "Fecha estimación", type: "date" },
   { key: "fechaAprobacionEstimacion", label: "Fecha aprobación estimación", type: "date" },
   { key: "estadoEstimacion", label: "Estado estimación", type: "select", catalog: "ESTADO_ESTIMACION" },
+
+  // Horas manuales: no vienen de la base principal y se conservan como ajuste del usuario.
+  { key: "horasEstimadasFi", label: "H. estimadas FI", type: "number" },
+  { key: "horasEstimadasMm", label: "H. estimadas MM", type: "number" },
+  { key: "horasEstimadasSd", label: "H. estimadas SD", type: "number" },
+  { key: "horasEstimadasCo", label: "H. estimadas CO", type: "number" },
+  { key: "horasEstimadasPs", label: "H. estimadas PS", type: "number" },
+  { key: "horasEstimadasSlcm", label: "H. estimadas SLCM", type: "number" },
+  { key: "horasEstimadasCrm", label: "H. estimadas CRM", type: "number" },
+  { key: "horasEstimadasCrm2", label: "H. estimadas CRM2", type: "number" },
+  { key: "horasEstimadasPca", label: "H. estimadas PCA", type: "number" },
+  { key: "horasEstimadasFm", label: "H. estimadas FM", type: "number" },
+  { key: "horasEstimadasPp", label: "H. estimadas PP", type: "number" },
+  { key: "horasEstimadasPm", label: "H. estimadas PM", type: "number" },
+  { key: "horasEstimadasHcm", label: "H. estimadas HCM", type: "number" },
+  { key: "horasEstimadasSsff", label: "H. estimadas SSFF", type: "number" },
+  { key: "horasEstimadasFiori", label: "H. estimadas FIORI", type: "number" },
+  { key: "horasEstimadasWf", label: "H. estimadas WF", type: "number" },
+  { key: "horasEstimadasAbap", label: "H. estimadas ABAP", type: "number" },
+  { key: "horasEstimadasBasis", label: "H. estimadas BASIS", type: "number" },
+  { key: "horasEstimadasPmo", label: "H. estimadas PMO", type: "number" },
+
+  { key: "horasEjecutadasFi", label: "H. ejecutadas FI", type: "number" },
+  { key: "horasEjecutadasMm", label: "H. ejecutadas MM", type: "number" },
+  { key: "horasEjecutadasSd", label: "H. ejecutadas SD", type: "number" },
+  { key: "horasEjecutadasCo", label: "H. ejecutadas CO", type: "number" },
+  { key: "horasEjecutadasPs", label: "H. ejecutadas PS", type: "number" },
+  { key: "horasEjecutadasPca", label: "H. ejecutadas PCA", type: "number" },
+  { key: "horasEjecutadasFm", label: "H. ejecutadas FM", type: "number" },
+  { key: "horasEjecutadasHcm", label: "H. ejecutadas HCM", type: "number" },
+  { key: "horasEjecutadasSsff", label: "H. ejecutadas SSFF", type: "number" },
+  { key: "horasEjecutadasFiori", label: "H. ejecutadas FIORI", type: "number" },
+  { key: "horasEjecutadasWf", label: "H. ejecutadas WF", type: "number" },
+  { key: "horasEjecutadasAbap", label: "H. ejecutadas ABAP", type: "number" },
+  { key: "horasEjecutadasBasis", label: "H. ejecutadas BASIS", type: "number" },
+  { key: "horasGarantia", label: "H. garantía", type: "number" },
+  { key: "horasProyectoAbap", label: "H. proyecto ABAP", type: "number" },
 
   { key: "estadoFacturacionOt", label: "Estado facturación OT", type: "select", catalog: "ESTADO_FACTURACION_OT" },
   { key: "nroOt", label: "N° OT", type: "text" },
@@ -346,6 +393,20 @@ function toDateInput(value) {
   return "";
 }
 
+function toDatetimeLocalInput(value) {
+  if (!value) return "";
+  const s = String(value).trim();
+
+  // Backend normalmente devuelve YYYY-MM-DD HH:mm:ss.
+  // datetime-local necesita YYYY-MM-DDTHH:mm.
+  const match = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+  if (match) return `${match[1]}T${match[2]}`;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T00:00`;
+
+  return "";
+}
+
 function todayStamp() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -413,6 +474,8 @@ function createEditForm(row) {
 
     if (field.type === "date") {
       form[field.key] = toDateInput(value);
+    } else if (field.type === "datetime") {
+      form[field.key] = toDatetimeLocalInput(value);
     } else {
       form[field.key] = value || "";
     }
@@ -600,6 +663,24 @@ function uniqueOptions(values) {
     .map((value) => ({ value, label: value }));
 }
 
+
+function subestadoOptionLabel(item) {
+  const subestado = item?.valor || item?.nombre || item?.subestado || "Sin subestado";
+  const principal = item?.estadoPrincipal || item?.estado_principal || item?.estadoPrincipalNombre || item?.estadoNombre || item?.estado || "Sin estado principal";
+  const estadoActivo = item?.activo === false ? " · Inactivo" : "";
+  return `${subestado} — ${principal}${estadoActivo}`;
+}
+
+function buildSubestadoOptions(items) {
+  return (items || [])
+    .map((item) => ({
+      value: String(item.id),
+      label: subestadoOptionLabel(item),
+      raw: item,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
+}
+
 const CATALOG_TYPES_TO_LOAD = [
   "IMPACTO",
   "URGENCIA",
@@ -623,6 +704,7 @@ export default function CalificacionCoeSapFuncional() {
 
   const [catalogos, setCatalogos] = useState({});
   const [categoriasCatalogo, setCategoriasCatalogo] = useState([]);
+  const [subestadosControl, setSubestadosControl] = useState([]);
 
   const commonHeaders = useMemo(() => {
     return {
@@ -658,8 +740,16 @@ export default function CalificacionCoeSapFuncional() {
 
       const catData = await catRes.json().catch(() => ({}));
 
+      const subestadosRes = await jfetch("/coe-sap-funcional/config/subestados?include_inactive=1", {
+        method: "GET",
+        headers: commonHeaders,
+      });
+
+      const subestadosData = await subestadosRes.json().catch(() => ({}));
+
       setCatalogos(nextCatalogos);
       setCategoriasCatalogo(Array.isArray(catData?.categorias) ? catData.categorias : []);
+      setSubestadosControl(Array.isArray(subestadosData?.data) ? subestadosData.data : []);
     } catch (error) {
       console.warn("No se pudieron cargar catálogos COE SAP Funcional", error);
     }
@@ -1324,13 +1414,25 @@ export default function CalificacionCoeSapFuncional() {
     setSavingEdit(true);
 
     try {
+      const payload = { ...editForm };
+
+      // Estos campos son derivados del catálogo oficial y no se envían como texto libre.
+      [
+        "estadoPrincipal",
+        "subestado",
+        "validarEstadoControl",
+        "responsableEstado",
+        "estadoConsolidado",
+        "clienteAsociadoNombre",
+      ].forEach((key) => delete payload[key]);
+
       const res = await jfetch(`/coe-sap-funcional/calificacion/${editRow.id}`, {
         method: "PATCH",
         headers: {
           ...commonHeaders,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -1455,6 +1557,10 @@ export default function CalificacionCoeSapFuncional() {
 
 
   const getEditOptions = useCallback((field) => {
+    if (field.source === "subestadoControl") {
+      return buildSubestadoOptions(subestadosControl);
+    }
+
     if (field.catalog) {
       const baseOptions = catalogos[field.catalog] || [];
       if (field.catalog === "MODULO" && baseOptions.length === 0) {
@@ -1497,9 +1603,17 @@ export default function CalificacionCoeSapFuncional() {
     }
 
     return [];
-  }, [catalogos, categoriasCatalogo, editForm]);
+  }, [catalogos, categoriasCatalogo, editForm, subestadosControl]);
 
   const renderEditField = (field) => {
+    if (field.type === "readonly") {
+      return (
+        <div className="calcoe-readonly-box">
+          {cleanText(editForm[field.key])}
+        </div>
+      );
+    }
+
     if (field.type === "textarea") {
       return (
         <textarea
@@ -1527,6 +1641,17 @@ export default function CalificacionCoeSapFuncional() {
                 ...prev,
                 [field.key]: e.target.value,
               };
+
+              if (field.key === "subestadoCatalogoId") {
+                const selected = subestadosControl.find((item) => String(item.id) === String(e.target.value));
+                next.subestado = selected?.valor || selected?.nombre || "";
+                next.estadoPrincipal = selected?.estadoPrincipal || selected?.estado_principal || selected?.estadoPrincipalNombre || selected?.estadoNombre || "";
+                next.validarEstadoControl = selected ? (selected.activo === false ? "INACTIVO" : "OK") : "";
+
+                if (!next.observacionCambioEstado) {
+                  next.observacionCambioEstado = `${todayStamp()} - `;
+                }
+              }
 
               if (field.key === "modulo") {
                 next.categoria = "";
@@ -1557,9 +1682,12 @@ export default function CalificacionCoeSapFuncional() {
       );
     }
 
+    const inputType = field.type === "datetime" ? "datetime-local" : field.type;
+
     return (
       <input
-        type={field.type}
+        type={inputType}
+        step={field.type === "number" ? "0.25" : undefined}
         value={editForm[field.key] || ""}
         onChange={(e) =>
           setEditForm((prev) => ({
@@ -2039,9 +2167,9 @@ export default function CalificacionCoeSapFuncional() {
           <div className="calcoe-modal large">
             <div className="calcoe-modal-head">
               <div>
-                <h3>Editar campos manuales</h3>
+                <h3>Editar campos manuales / no automáticos</h3>
                 <p>
-                  Caso <b>{editRow?.numero}</b> • Los campos automáticos se conservan desde la base principal.
+                  Caso <b>{editRow?.numero}</b> • El estado se controla desde la lista oficial de subestados.
                 </p>
               </div>
 
