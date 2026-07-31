@@ -19099,68 +19099,315 @@ def _coe_rep_closed_condition():
 def _coe_rep_estado_general(query):
     """
     Backlog completo por estado principal/subestado controlados.
-    Se consolida por ID de catálogo cuando existe y, como respaldo,
-    por texto normalizado para evitar duplicados visuales.
-    """
-    total = int(query.count() or 0)
 
-    principales_rows = (
+    Reglas:
+    - Solo muestra estados principales abiertos/controlables:
+        EN CURSO
+        PENDIENTE DE CLIENTE
+    - Si el registro tiene subestado, agrupa por subestado.
+    - Si NO tiene subestado, muestra el estado principal.
+    - Si el estado original coincide con un subestado del catálogo,
+      lo vincula automáticamente a su estado principal.
+    """
+    estados_backlog_permitidos = {
+        "EN CURSO",
+        "PENDIENTE DE CLIENTE",
+        "PENDIENTE CLIENTE",
+    }
+
+    def norm_estado(value):
+        if "_coe_cfg_norm" in globals():
+            return _coe_cfg_norm(value)
+        return str(value or "").strip().upper()
+
+    def str_estado(value):
+        return _coe_rep_str(value)
+
+    Catalogo = globals().get("CoeSapFuncionalCatalogo")
+    tipo_estado_principal = globals().get("COE_TIPO_ESTADO_PRINCIPAL", "ESTADO_PRINCIPAL")
+    tipo_subestado = globals().get("COE_TIPO_SUBESTADO", "SUBESTADO")
+
+    estados_por_id = {}
+    estados_por_norm = {}
+    subestados_por_id = {}
+    subestados_por_norm = {}
+
+    if Catalogo is not None:
+        try:
+            estados_catalogo = (
+                Catalogo.query
+                .filter(Catalogo.tipo == tipo_estado_principal)
+                .all()
+            )
+
+            for estado_cat in estados_catalogo:
+                estado_label = str_estado(estado_cat.valor)
+                estado_norm = norm_estado(estado_label)
+
+                estados_por_id[int(estado_cat.id)] = estado_label
+
+                if estado_norm:
+                    estados_por_norm[estado_norm] = {
+                        "id": int(estado_cat.id),
+                        "valor": estado_label,
+                    }
+
+            subestados_catalogo = (
+                Catalogo.query
+                .filter(Catalogo.tipo == tipo_subestado)
+                .all()
+            )
+
+            for sub_cat in subestados_catalogo:
+                sub_label = str_estado(sub_cat.valor)
+                sub_norm = norm_estado(sub_label)
+
+                estado_padre_id = None
+                try:
+                    estado_padre_id = int(sub_cat.extra_1) if sub_cat.extra_1 not in (None, "") else None
+                except Exception:
+                    estado_padre_id = None
+
+                estado_padre_label = estados_por_id.get(estado_padre_id)
+
+                meta = {
+                    "id": int(sub_cat.id),
+                    "valor": sub_label,
+                    "estado_catalogo_id": estado_padre_id,
+                    "estado_principal": estado_padre_label,
+                }
+
+                subestados_por_id[int(sub_cat.id)] = meta
+
+                if sub_norm:
+                    subestados_por_norm[sub_norm] = meta
+
+        except Exception:
+            estados_por_id = {}
+            estados_por_norm = {}
+            subestados_por_id = {}
+            subestados_por_norm = {}
+
+    rows = (
         query.with_entities(
             CoeSapFuncionalCalificacion.estado_catalogo_id.label("estado_catalogo_id"),
             CoeSapFuncionalCalificacion.estado_principal.label("estado_principal"),
+            CoeSapFuncionalCalificacion.subestado_catalogo_id.label("subestado_catalogo_id"),
+            CoeSapFuncionalCalificacion.subestado.label("subestado"),
+            CoeSapFuncionalCalificacion.estado.label("estado"),
+            CoeSapFuncionalCalificacion.estado_consolidado.label("estado_consolidado"),
             func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
         )
         .group_by(
             CoeSapFuncionalCalificacion.estado_catalogo_id,
             CoeSapFuncionalCalificacion.estado_principal,
+            CoeSapFuncionalCalificacion.subestado_catalogo_id,
+            CoeSapFuncionalCalificacion.subestado,
+            CoeSapFuncionalCalificacion.estado,
+            CoeSapFuncionalCalificacion.estado_consolidado,
         )
         .all()
     )
 
-    subestados_rows = (
-        query.with_entities(
-            CoeSapFuncionalCalificacion.subestado_catalogo_id.label("subestado_catalogo_id"),
-            CoeSapFuncionalCalificacion.subestado.label("subestado"),
-            CoeSapFuncionalCalificacion.estado.label("estado"),
-            func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
+    principales_map = {}
+    subestados_map = {}
+    total = 0
+
+    def resolver_estado_principal(row):
+        """
+        Devuelve:
+        {
+            estado_catalogo_id,
+            estado_principal
+        }
+        o None si el registro no pertenece al backlog permitido.
+        """
+        estado_catalogo_id = None
+
+        try:
+            estado_catalogo_id = int(row.estado_catalogo_id) if row.estado_catalogo_id not in (None, "") else None
+        except Exception:
+            estado_catalogo_id = None
+
+        principal = str_estado(row.estado_principal)
+
+        if not principal and estado_catalogo_id:
+            principal = estados_por_id.get(estado_catalogo_id)
+
+        subestado_id = None
+        try:
+            subestado_id = int(row.subestado_catalogo_id) if row.subestado_catalogo_id not in (None, "") else None
+        except Exception:
+            subestado_id = None
+
+        if subestado_id and subestado_id in subestados_por_id:
+            meta_sub = subestados_por_id[subestado_id]
+
+            if not principal:
+                principal = meta_sub.get("estado_principal")
+
+            if not estado_catalogo_id:
+                estado_catalogo_id = meta_sub.get("estado_catalogo_id")
+
+        raw_candidates = [
+            row.subestado,
+            row.estado,
+            row.estado_consolidado,
+        ]
+
+        if not principal:
+            for candidate in raw_candidates:
+                candidate_norm = norm_estado(candidate)
+
+                if not candidate_norm:
+                    continue
+
+                if candidate_norm in subestados_por_norm:
+                    meta_sub = subestados_por_norm[candidate_norm]
+                    principal = meta_sub.get("estado_principal")
+                    estado_catalogo_id = meta_sub.get("estado_catalogo_id")
+                    break
+
+                if candidate_norm in estados_por_norm:
+                    meta_estado = estados_por_norm[candidate_norm]
+                    principal = meta_estado.get("valor")
+                    estado_catalogo_id = meta_estado.get("id")
+                    break
+
+        principal_norm = norm_estado(principal)
+
+        if principal_norm not in estados_backlog_permitidos:
+            return None
+
+        principal_final = (
+            estados_por_norm.get(principal_norm, {}).get("valor")
+            or principal
+            or "Sin dato"
         )
-        .group_by(
-            CoeSapFuncionalCalificacion.subestado_catalogo_id,
-            CoeSapFuncionalCalificacion.subestado,
-            CoeSapFuncionalCalificacion.estado,
-        )
-        .all()
-    )
+
+        return {
+            "estado_catalogo_id": estado_catalogo_id,
+            "estado_principal": principal_final,
+        }
+
+    def resolver_subestado(row, principal_info):
+        """
+        Si hay subestado controlado, devuelve el subestado.
+        Si no hay subestado, devuelve el estado principal.
+        """
+        subestado_id = None
+        try:
+            subestado_id = int(row.subestado_catalogo_id) if row.subestado_catalogo_id not in (None, "") else None
+        except Exception:
+            subestado_id = None
+
+        if subestado_id and subestado_id in subestados_por_id:
+            sub_label = subestados_por_id[subestado_id].get("valor")
+            if sub_label:
+                return {
+                    "subestado_catalogo_id": subestado_id,
+                    "subestado": sub_label,
+                    "estado_original": str_estado(row.estado) or "Sin dato",
+                }
+
+        subestado_texto = str_estado(row.subestado)
+
+        if subestado_texto:
+            subestado_norm = norm_estado(subestado_texto)
+
+            if subestado_norm in subestados_por_norm:
+                meta_sub = subestados_por_norm[subestado_norm]
+                return {
+                    "subestado_catalogo_id": meta_sub.get("id"),
+                    "subestado": meta_sub.get("valor") or subestado_texto,
+                    "estado_original": str_estado(row.estado) or "Sin dato",
+                }
+
+            if subestado_norm not in estados_backlog_permitidos:
+                return {
+                    "subestado_catalogo_id": None,
+                    "subestado": subestado_texto,
+                    "estado_original": str_estado(row.estado) or "Sin dato",
+                }
+
+        estado_original = str_estado(row.estado)
+
+        if estado_original:
+            estado_original_norm = norm_estado(estado_original)
+
+            if estado_original_norm in subestados_por_norm:
+                meta_sub = subestados_por_norm[estado_original_norm]
+                return {
+                    "subestado_catalogo_id": meta_sub.get("id"),
+                    "subestado": meta_sub.get("valor") or estado_original,
+                    "estado_original": estado_original,
+                }
+
+        return {
+            "subestado_catalogo_id": None,
+            "subestado": principal_info.get("estado_principal") or "Sin dato",
+            "estado_original": estado_original or "Sin dato",
+        }
+
+    for r in rows:
+        cantidad = int(r.cantidad or 0)
+
+        if cantidad <= 0:
+            continue
+
+        principal_info = resolver_estado_principal(r)
+
+        if not principal_info:
+            continue
+
+        subestado_info = resolver_subestado(r, principal_info)
+
+        total += cantidad
+
+        principal_label = principal_info.get("estado_principal") or "Sin dato"
+        principal_id = principal_info.get("estado_catalogo_id")
+        principal_key = f"ID:{principal_id}" if principal_id else f"TXT:{norm_estado(principal_label)}"
+
+        if principal_key not in principales_map:
+            principales_map[principal_key] = {
+                "estadoPrincipal": principal_label,
+                "cantidad": 0,
+            }
+
+        principales_map[principal_key]["cantidad"] += cantidad
+
+        subestado_label = subestado_info.get("subestado") or principal_label
+        subestado_id = subestado_info.get("subestado_catalogo_id")
+
+        if subestado_id:
+            subestado_key = f"ID:{subestado_id}"
+        else:
+            subestado_key = f"PRINCIPAL:{principal_key}:TXT:{norm_estado(subestado_label)}"
+
+        if subestado_key not in subestados_map:
+            subestados_map[subestado_key] = {
+                "subestado": subestado_label,
+                "estadoOriginal": subestado_info.get("estado_original") or "Sin dato",
+                "estadoPrincipal": principal_label,
+                "cantidad": 0,
+            }
+
+        subestados_map[subestado_key]["cantidad"] += cantidad
 
     def pct(cantidad):
         return round((float(cantidad or 0) / total) * 100, 2) if total else 0
 
-    principales_map = {}
-    for r in principales_rows:
-        label = _coe_rep_str(r.estado_principal) or "OTROS"
-        key = f"ID:{r.estado_catalogo_id}" if r.estado_catalogo_id else f"TXT:{_coe_cfg_norm(label)}"
-        if key not in principales_map:
-            principales_map[key] = {
-                "estadoPrincipal": label,
-                "cantidad": 0,
-            }
-        principales_map[key]["cantidad"] += int(r.cantidad or 0)
+    principales = sorted(
+        principales_map.values(),
+        key=lambda item: item["cantidad"],
+        reverse=True,
+    )
 
-    subestados_map = {}
-    for r in subestados_rows:
-        label = _coe_rep_str(r.subestado) or _coe_rep_str(r.estado) or "Sin dato"
-        estado_original = _coe_rep_str(r.estado) or "Sin dato"
-        key = f"ID:{r.subestado_catalogo_id}" if r.subestado_catalogo_id else f"TXT:{_coe_cfg_norm(label)}"
-        if key not in subestados_map:
-            subestados_map[key] = {
-                "subestado": label,
-                "estadoOriginal": estado_original,
-                "cantidad": 0,
-            }
-        subestados_map[key]["cantidad"] += int(r.cantidad or 0)
-
-    principales = sorted(principales_map.values(), key=lambda item: item["cantidad"], reverse=True)
-    subestados = sorted(subestados_map.values(), key=lambda item: item["cantidad"], reverse=True)
+    subestados = sorted(
+        subestados_map.values(),
+        key=lambda item: item["cantidad"],
+        reverse=True,
+    )
 
     for item in principales:
         item["porcentaje"] = pct(item["cantidad"])

@@ -670,11 +670,10 @@ function DistribucionModulosConsultores({ data }) {
   return (
     <section className="coedash-panel coedash-wide-panel coedash-excel-card">
       <div className="coedash-panel-head center">
-        <h2>Distribución por módulos y consultores asignados</h2>
+        <h2>Estado general de requerimientos</h2>
         <p>
-          El tamaño del gráfico representa la cantidad de casos por módulo.
-          Al pasar el mouse sobre cada segmento o leyenda verás los consultores
-          asociados y cuántos casos tienen asignados en ese módulo.
+          Backlog completo solo para estados principales En curso y Pendiente de cliente.
+          Si el caso no tiene subestado, se muestra el estado principal.
         </p>
       </div>
 
