@@ -19563,6 +19563,7 @@ def _coe_rep_distribucion_modulos_consultores(query):
     )
 
     consultor_por_alias = {}
+    consultor_alias_items = []
     consultores_por_modulo = {}
 
     for consultor in consultores:
@@ -19619,6 +19620,7 @@ def _coe_rep_distribucion_modulos_consultores(query):
         for alias in aliases:
             if alias:
                 consultor_por_alias.setdefault(alias, meta)
+                consultor_alias_items.append((alias, meta))
 
         for modulo_item in modulos_consultor:
             modulo_key = modulo_item["key"]
@@ -19627,6 +19629,22 @@ def _coe_rep_distribucion_modulos_consultores(query):
                 display,
                 {"consultor": display, "cantidad": 0}
             )
+
+    def _tokens_for_consultor_match(value):
+        key = _coe_rep_norm_key(value)
+        if not key:
+            return []
+
+        tokens = []
+        for token in re.split(r"[^A-Z0-9]+", key):
+            token = token.strip()
+            if not token:
+                continue
+            if token in {"DE", "DEL", "LA", "LAS", "LOS", "Y", "EL"}:
+                continue
+            tokens.append(token)
+
+        return tokens
 
     def _find_consultor_meta(asignado_a):
         asignado_key = _coe_rep_norm_key(asignado_a)
@@ -19638,22 +19656,81 @@ def _coe_rep_distribucion_modulos_consultores(query):
         if exact:
             return exact
 
-        # Fallback tolerante para textos que vienen con usuario, correo o nombre compuesto.
-        # Evita dejar "Sin módulo" cuando la columna Asignado a no llega exactamente igual
-        # al nombre del consultor.
+        # 1) Contención directa: usuario/correo/nombre pegado dentro de Asignado a.
         best = None
-        best_len = 0
+        best_score = 0
 
-        for alias, meta in consultor_por_alias.items():
+        for alias, meta in consultor_alias_items:
             if len(alias) < 5:
                 continue
 
             if alias in asignado_key or asignado_key in alias:
-                if len(alias) > best_len:
+                score = len(alias) + 1000
+                if score > best_score:
                     best = meta
-                    best_len = len(alias)
+                    best_score = score
+
+        if best:
+            return best
+
+        # 2) Coincidencia por tokens del nombre.
+        #    Esto corrige casos como:
+        #    - "Anibardo Javier Gonzalez Ortega"  -> "Anibardo Gonzalez"
+        #    - "Claudio Nicolás López Amaya"      -> "Claudio Lopez"
+        #    - "FREDDY LEONARDO CELY PUIN"        -> "Fredy Leonardo Cely Puin"
+        #
+        #    No exige que el texto sea idéntico; exige que el alias del consultor
+        #    quede suficientemente contenido en los tokens del asignado o viceversa.
+        asignado_tokens = _tokens_for_consultor_match(asignado_key)
+        asignado_set = set(asignado_tokens)
+
+        if not asignado_set:
+            return None
+
+        for alias, meta in consultor_alias_items:
+            alias_tokens = _tokens_for_consultor_match(alias)
+            alias_set = set(alias_tokens)
+
+            if not alias_set:
+                continue
+
+            comunes = alias_set.intersection(asignado_set)
+            comunes_count = len(comunes)
+
+            if comunes_count < 2:
+                continue
+
+            alias_ratio = comunes_count / max(len(alias_set), 1)
+            asignado_ratio = comunes_count / max(len(asignado_set), 1)
+
+            first_match = bool(alias_tokens and asignado_tokens and alias_tokens[0] == asignado_tokens[0])
+            last_match = bool(alias_tokens and asignado_tokens and alias_tokens[-1] == asignado_tokens[-1])
+
+            is_match = (
+                # Alias casi completamente contenido en el Asignado a.
+                (alias_ratio >= 0.80 and (last_match or comunes_count >= 3))
+                # Nombres con una diferencia pequeña, por ejemplo FREDY/FREDDY.
+                or (alias_ratio >= 0.70 and asignado_ratio >= 0.60 and comunes_count >= 3)
+                # Dos tokens exactos con mismo primer nombre y apellido final.
+                or (comunes_count >= 2 and first_match and last_match)
+            )
+
+            if not is_match:
+                continue
+
+            score = (alias_ratio * 70) + (asignado_ratio * 20)
+            if first_match:
+                score += 5
+            if last_match:
+                score += 5
+            score += min(comunes_count, 5)
+
+            if score > best_score:
+                best = meta
+                best_score = score
 
         return best
+
 
     # ------------------------------------------------------------
     # 3) Recorrer casos del backlog filtrado
