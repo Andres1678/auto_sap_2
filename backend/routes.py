@@ -19038,6 +19038,145 @@ def _coe_rep_group_count_subestado(query):
     return sorted(out.values(), key=lambda item: item["cantidad"], reverse=True)
 
 
+def _coe_rep_norm_key(value):
+    value = _coe_rep_str(value)
+    if not value:
+        return ""
+
+    value = unicodedata.normalize("NFD", value)
+    value = "".join(ch for ch in value if unicodedata.category(ch) != "Mn")
+    value = re.sub(r"\s+", " ", value.upper()).strip()
+    return value
+
+
+def _coe_rep_distribucion_modulos_consultores(query):
+    """
+    Consolida el backlog filtrado por módulo y cruza la asignación de consultores
+    definida en el catálogo consultor <-> módulo.
+
+    - El tamaño del segmento principal corresponde a la cantidad de casos del módulo.
+    - En el detalle de cada módulo se listan los consultores asociados y la cantidad
+      de casos que tienen asignados dentro del mismo módulo.
+    - Si un consultor pertenece al módulo pero no tiene casos en el filtro actual,
+      igualmente se muestra con cantidad 0 para control operativo.
+    """
+    total = int(query.count() or 0)
+
+    modulos_catalogo = Modulo.query.order_by(Modulo.nombre.asc()).all()
+    modulo_nombre_por_id = {m.id: (_coe_rep_str(m.nombre) or f"Módulo {m.id}") for m in modulos_catalogo}
+    modulo_nombre_por_norm = {
+        _coe_rep_norm_key(m.nombre): (_coe_rep_str(m.nombre) or f"Módulo {m.id}")
+        for m in modulos_catalogo
+        if _coe_rep_norm_key(m.nombre)
+    }
+
+    consultores = (
+        Consultor.query
+        .options(selectinload(Consultor.modulos))
+        .order_by(Consultor.nombre.asc(), Consultor.usuario.asc())
+        .all()
+    )
+
+    consultor_display_por_norm = {}
+    consultores_por_modulo = {}
+
+    for consultor in consultores:
+        display = _coe_rep_str(consultor.nombre) or _coe_rep_str(consultor.usuario) or f"Consultor {consultor.id}"
+        aliases = {
+            _coe_rep_norm_key(consultor.nombre),
+            _coe_rep_norm_key(consultor.usuario),
+            _coe_rep_norm_key(consultor.cedula),
+        }
+        for alias in aliases:
+            if alias:
+                consultor_display_por_norm.setdefault(alias, display)
+
+        modulos_consultor = list(getattr(consultor, 'modulos', None) or [])
+        if not modulos_consultor and getattr(consultor, 'modulo_id', None):
+            nombre_modulo = modulo_nombre_por_id.get(consultor.modulo_id)
+            if nombre_modulo:
+                modulos_consultor = [type('ModuloLite', (), {'nombre': nombre_modulo})()]
+
+        for modulo in modulos_consultor:
+            modulo_nombre = _coe_rep_str(getattr(modulo, 'nombre', None))
+            modulo_key = _coe_rep_norm_key(modulo_nombre)
+            if not modulo_key:
+                continue
+            consultores_por_modulo.setdefault(modulo_key, {})
+            consultores_por_modulo[modulo_key].setdefault(
+                display,
+                {"consultor": display, "cantidad": 0}
+            )
+
+    rows = (
+        query.with_entities(
+            CoeSapFuncionalCalificacion.modulo.label('modulo'),
+            CoeSapFuncionalCalificacion.asignado_a.label('asignado_a'),
+            func.count(CoeSapFuncionalCalificacion.id).label('cantidad'),
+        )
+        .group_by(
+            CoeSapFuncionalCalificacion.modulo,
+            CoeSapFuncionalCalificacion.asignado_a,
+        )
+        .all()
+    )
+
+    resultado_map = {}
+
+    def ensure_modulo(modulo_label):
+        modulo_key = _coe_rep_norm_key(modulo_label) or 'SIN MODULO'
+        modulo_final = modulo_nombre_por_norm.get(modulo_key, _coe_rep_str(modulo_label) or 'Sin módulo')
+        if modulo_key not in resultado_map:
+            base_consultores = consultores_por_modulo.get(modulo_key, {})
+            resultado_map[modulo_key] = {
+                'modulo': modulo_final,
+                'cantidad': 0,
+                '_consultores': {
+                    nombre: {'consultor': data['consultor'], 'cantidad': int(data.get('cantidad') or 0)}
+                    for nombre, data in base_consultores.items()
+                },
+            }
+        return modulo_key, resultado_map[modulo_key]
+
+    for row in rows:
+        modulo_label = _coe_rep_str(row.modulo) or 'Sin módulo'
+        modulo_key, modulo_item = ensure_modulo(modulo_label)
+
+        cantidad = int(row.cantidad or 0)
+        modulo_item['cantidad'] += cantidad
+
+        asignado_raw = _coe_rep_str(row.asignado_a)
+        consultor_label = 'Sin asignar'
+        if asignado_raw:
+            consultor_label = consultor_display_por_norm.get(_coe_rep_norm_key(asignado_raw), asignado_raw)
+
+        consultor_item = modulo_item['_consultores'].setdefault(
+            consultor_label,
+            {'consultor': consultor_label, 'cantidad': 0}
+        )
+        consultor_item['cantidad'] += cantidad
+
+    resultado = []
+    for item in resultado_map.values():
+        consultores_detalle = sorted(
+            item['_consultores'].values(),
+            key=lambda elem: (-int(elem.get('cantidad') or 0), str(elem.get('consultor') or '').upper())
+        )
+        resultado.append({
+            'modulo': item['modulo'],
+            'cantidad': int(item['cantidad'] or 0),
+            'porcentaje': round((float(item['cantidad'] or 0) / total) * 100, 2) if total else 0,
+            'consultores': consultores_detalle,
+        })
+
+    resultado.sort(key=lambda elem: (-int(elem.get('cantidad') or 0), str(elem.get('modulo') or '').upper()))
+
+    return {
+        'total': total,
+        'modulos': resultado,
+    }
+
+
 def _coe_rep_apply_graficas_mensuales_sociedad(query):
     """
     Filtro independiente para las dos secciones mensuales:
@@ -19471,6 +19610,7 @@ def dashboard_clientes_coe_sap_funcional():
                 "valorOt": _coe_rep_float(horas.valor_ot if horas else 0),
             },
             "estadoGeneralRequerimientos": _coe_rep_estado_general(query_backlog_estado),
+            "distribucionModulosConsultores": _coe_rep_distribucion_modulos_consultores(query),
             "casosRecibidosVsCerrados": _coe_rep_recibidos_vs_cerrados(base_query),
             "estadoEstimacionHoras": _coe_rep_estado_estimacion_horas(base_query),
             "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),

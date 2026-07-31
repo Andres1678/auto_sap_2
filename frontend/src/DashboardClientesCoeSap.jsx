@@ -634,6 +634,145 @@ function EstadoGeneralRequerimientos({ data }) {
   );
 }
 
+function moduloConsultorTooltipText(row) {
+  const consultores = Array.isArray(row?.consultores) ? row.consultores : [];
+  const detalle = consultores.length
+    ? consultores.map((item) => `${cleanText(item?.consultor)}: ${numberText(item?.cantidad)} caso(s)`).join("\n")
+    : "Sin consultores asociados";
+
+  return `${cleanText(row?.modulo)}
+Total: ${numberText(row?.cantidad)} caso(s)
+
+${detalle}`;
+}
+
+function DistribucionModulosConsultores({ data }) {
+  const rows = data?.modulos || [];
+  const total = Number(data?.total || 0);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    if (!rows.length) {
+      setActiveIndex(0);
+      return;
+    }
+
+    if (activeIndex > rows.length - 1) {
+      setActiveIndex(0);
+    }
+  }, [rows, activeIndex]);
+
+  const activeRow = rows[activeIndex] || rows[0] || null;
+  const radius = 62;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+
+  return (
+    <section className="coedash-panel coedash-wide-panel coedash-excel-card">
+      <div className="coedash-panel-head center">
+        <h2>Distribución por módulos y consultores asignados</h2>
+        <p>
+          El tamaño del gráfico representa la cantidad de casos por módulo.
+          Al pasar el mouse sobre cada segmento o leyenda verás los consultores
+          asociados y cuántos casos tienen asignados en ese módulo.
+        </p>
+      </div>
+
+      {!rows.length ? (
+        <div className="coedash-empty">Sin datos para la distribución por módulos.</div>
+      ) : (
+        <div className="coedash-module-grid">
+          <div className="coedash-chart-panel coedash-module-pie-panel">
+            <div className="coedash-module-pie-layout">
+              <svg viewBox="0 0 180 180" className="coedash-module-pie-svg" aria-label="Distribución por módulos">
+                <circle cx="90" cy="90" r={radius} fill="none" stroke="#eef2f7" strokeWidth="30" />
+                {rows.map((row, index) => {
+                  const value = Number(row?.cantidad || 0);
+                  const dash = total ? (value / total) * circumference : 0;
+                  const color = PIE_COLORS[index % PIE_COLORS.length];
+                  const segment = (
+                    <circle
+                      key={`modulo-slice-${index}-${row?.modulo}`}
+                      cx="90"
+                      cy="90"
+                      r={radius}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth="30"
+                      strokeDasharray={`${dash} ${circumference - dash}`}
+                      strokeDashoffset={-offset}
+                      transform="rotate(-90 90 90)"
+                      strokeLinecap="butt"
+                      className={index === activeIndex ? "active" : ""}
+                      onMouseEnter={() => setActiveIndex(index)}
+                      title={moduloConsultorTooltipText(row)}
+                    />
+                  );
+                  offset += dash;
+                  return segment;
+                })}
+                <text x="90" y="84" textAnchor="middle" className="coedash-pie-total">{numberText(total)}</text>
+                <text x="90" y="104" textAnchor="middle" className="coedash-pie-label">casos</text>
+              </svg>
+
+              <div className="coedash-module-note">
+                <strong>Backlog por módulo</strong>
+                <span>Pasa el mouse por cada color para revisar el detalle.</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="coedash-chart-panel coedash-module-legend-panel">
+            <h3>Módulos</h3>
+            <div className="coedash-module-legend">
+              {rows.map((row, index) => {
+                const color = PIE_COLORS[index % PIE_COLORS.length];
+                const isActive = index === activeIndex;
+                return (
+                  <button
+                    type="button"
+                    key={`modulo-legend-${index}-${row?.modulo}`}
+                    className={`coedash-module-legend-row${isActive ? " active" : ""}`}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onFocus={() => setActiveIndex(index)}
+                    title={moduloConsultorTooltipText(row)}
+                  >
+                    <i style={{ background: color }} />
+                    <span>{cleanText(row?.modulo)}</span>
+                    <strong>{numberText(row?.cantidad)} · {numberText(row?.porcentaje, 2)}%</strong>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="coedash-chart-panel coedash-module-detail-panel">
+            <h3>{cleanText(activeRow?.modulo)}</h3>
+            <p className="coedash-module-detail-meta">
+              Total del módulo: <b>{numberText(activeRow?.cantidad)}</b> caso(s)
+              {" · "}
+              <b>{numberText(activeRow?.porcentaje, 2)}%</b> del backlog filtrado.
+            </p>
+
+            <div className="coedash-module-detail-list">
+              {!(activeRow?.consultores || []).length ? (
+                <div className="coedash-empty small">No hay consultores relacionados.</div>
+              ) : (
+                (activeRow?.consultores || []).map((item, index) => (
+                  <div className="coedash-module-detail-row" key={`consultor-${index}-${item?.consultor}`}>
+                    <span>{cleanText(item?.consultor)}</span>
+                    <strong>{numberText(item?.cantidad)} caso(s)</strong>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function RecibidosVsCerrados({ rows, periodo }) {
   const max = useMemo(() => {
     const nums = [];
@@ -1098,6 +1237,7 @@ export default function DashboardClientesCoeSap() {
           </section>
 
           <EstadoGeneralRequerimientos data={payload?.estadoGeneralRequerimientos} />
+          <DistribucionModulosConsultores data={payload?.distribucionModulosConsultores} />
 
           <section className="coedash-card coedash-graph-filter-section coedash-graph-filter-attached">
             <div className="coedash-graph-filter-title">
