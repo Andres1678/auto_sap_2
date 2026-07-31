@@ -401,7 +401,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
     const confirm = await Swal.fire({
       icon: "question",
       title: "Sincronizar calificación",
-      html: "Se sincronizará desde la base principal y luego se asociarán clientes, estados principales y subestados sin modificar el estado original.<br><b>No se usarán cargues SM ni ITOP.</b>",
+      html: "Se sincronizará por lotes para evitar tiempos de espera del servidor. Se tomará la base principal y luego se asociarán clientes, estados principales y subestados sin modificar el estado original.<br><b>No se usarán cargues SM ni ITOP.</b>",
       showCancelButton: true,
       confirmButtonText: "Sí, sincronizar",
       cancelButtonText: "Cancelar",
@@ -412,22 +412,87 @@ export default function CargarBasesAuxiliaresCoeSap() {
 
     setSyncing(true);
 
+    const acumulado = {
+      creados: 0,
+      actualizados: 0,
+      cruzadosBase: 0,
+      cruzadosSm: 0,
+      cruzadosItop: 0,
+      totalBase: 0,
+      totalFuentes: 0,
+    };
+
+    let offsetBase = 0;
+    let offsetFuentes = 0;
+    let terminado = false;
+    let iteraciones = 0;
+    const limit = 300;
+
     try {
-      const syncBase = await requestJson("/coe-sap-funcional/calificacion/sincronizar", {
-        method: "POST",
-        body: JSON.stringify({
-          modo: syncMode,
-          crear_desde_base: true,
-          crear_desde_fuentes: false,
-        }),
+      Swal.fire({
+        title: "Sincronizando calificación",
+        html: "Preparando sincronización por lotes...",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: () => Swal.showLoading(),
       });
+
+      while (!terminado) {
+        iteraciones += 1;
+
+        if (iteraciones > 10000) {
+          throw new Error("La sincronización superó el límite de iteraciones permitido.");
+        }
+
+        const syncLote = await requestJson("/coe-sap-funcional/calificacion/sincronizar-lote", {
+          method: "POST",
+          body: JSON.stringify({
+            modo: syncMode,
+            crear_desde_base: true,
+            crear_desde_fuentes: false,
+            limit,
+            offset_base: offsetBase,
+            offset_fuentes: offsetFuentes,
+          }),
+        });
+
+        offsetBase = Number(syncLote?.offsetBase ?? offsetBase);
+        offsetFuentes = Number(syncLote?.offsetFuentes ?? offsetFuentes);
+        terminado = Boolean(syncLote?.terminado);
+
+        acumulado.creados += Number(syncLote?.creados || 0);
+        acumulado.actualizados += Number(syncLote?.actualizados || 0);
+        acumulado.cruzadosBase += Number(syncLote?.cruzadosBase || 0);
+        acumulado.cruzadosSm += Number(syncLote?.cruzadosSm || 0);
+        acumulado.cruzadosItop += Number(syncLote?.cruzadosItop || 0);
+        acumulado.totalBase = Number(syncLote?.totalBase || acumulado.totalBase || 0);
+        acumulado.totalFuentes = Number(syncLote?.totalFuentes || acumulado.totalFuentes || 0);
+
+        const totalProcesar = acumulado.totalBase + acumulado.totalFuentes;
+        const procesado = offsetBase + offsetFuentes;
+        const porcentaje = totalProcesar ? Math.min(100, Math.round((procesado / totalProcesar) * 100)) : 100;
+
+        Swal.update({
+          html: `
+            <div style="text-align:left;line-height:1.6">
+              <p><b>Fase:</b> ${syncLote?.fase || "—"}</p>
+              <p><b>Avance:</b> ${procesado.toLocaleString("es-CO")} / ${totalProcesar.toLocaleString("es-CO")} (${porcentaje}%)</p>
+              <p><b>Creados:</b> ${acumulado.creados.toLocaleString("es-CO")}</p>
+              <p><b>Actualizados:</b> ${acumulado.actualizados.toLocaleString("es-CO")}</p>
+            </div>
+          `,
+        });
+      }
+
+      Swal.update({ html: "Aplicando clasificación controlada y asociación de clientes..." });
 
       const syncCatalogos = await requestJson("/coe-sap-funcional/config/sincronizar-clasificacion", {
         method: "POST",
         body: JSON.stringify({}),
       });
 
-      pushResult("sync", "Sincronización finalizada", { syncBase, syncCatalogos }, true);
+      pushResult("sync", "Sincronización por lotes finalizada", { syncBase: acumulado, syncCatalogos }, true);
       await fetchClientes();
       await fetchCasosSinClasificar(tipoPendiente);
 
@@ -436,8 +501,9 @@ export default function CargarBasesAuxiliaresCoeSap() {
         title: "Sincronización realizada",
         html: `
           <div style="text-align:left">
-            <p><b>Creados:</b> ${syncBase?.creados ?? "—"}</p>
-            <p><b>Actualizados:</b> ${syncBase?.actualizados ?? "—"}</p>
+            <p><b>Creados:</b> ${acumulado.creados.toLocaleString("es-CO")}</p>
+            <p><b>Actualizados:</b> ${acumulado.actualizados.toLocaleString("es-CO")}</p>
+            <p><b>Cruces base:</b> ${acumulado.cruzadosBase.toLocaleString("es-CO")}</p>
             <p><b>Clientes OK:</b> ${syncCatalogos?.clientesOk ?? "—"}</p>
             <p><b>Clientes por validar:</b> ${syncCatalogos?.clientesValidar ?? "—"}</p>
             <p><b>Estados OK:</b> ${syncCatalogos?.estadosOk ?? "—"}</p>
