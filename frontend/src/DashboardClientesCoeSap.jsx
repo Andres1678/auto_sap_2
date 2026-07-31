@@ -208,6 +208,55 @@ function cloneFilters(filters) {
   );
 }
 
+function valuesAreEqual(left, right) {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    const a = Array.isArray(left) ? left.map(String).sort() : [];
+    const b = Array.isArray(right) ? right.map(String).sort() : [];
+    return a.length === b.length && a.every((item, index) => item === b[index]);
+  }
+
+  return String(left ?? "") === String(right ?? "");
+}
+
+function countChangedFilterGroups(filters, defaults) {
+  const source = filters || {};
+  const base = defaults || {};
+  const periodKeys = new Set([
+    "modoPeriodo",
+    "anio",
+    "mes",
+    "anioDesde",
+    "mesDesde",
+    "anioHasta",
+    "mesHasta",
+    "fechaDesde",
+    "fechaHasta",
+  ]);
+
+  let count = 0;
+  let periodChanged = false;
+
+  Object.keys(base).forEach((key) => {
+    if (valuesAreEqual(source[key], base[key])) return;
+    if (periodKeys.has(key)) {
+      periodChanged = true;
+      return;
+    }
+    count += 1;
+  });
+
+  return count + (periodChanged ? 1 : 0);
+}
+
+function formatUpdateTime(date) {
+  if (!(date instanceof Date)) return "";
+
+  return date.toLocaleTimeString("es-CO", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function uniqueValues(values) {
   const list = Array.isArray(values) ? values : [];
   return [...new Set(list.map((item) => {
@@ -307,6 +356,14 @@ function PeriodFilters({ filters, opciones, updateFilter, disabled }) {
 
   return (
     <div className="coedash-period-box">
+      <div className="coedash-period-heading">
+        <span className="coedash-period-icon" aria-hidden="true">◷</span>
+        <div>
+          <strong>Periodo global</strong>
+          <small>Selecciona el rango que deseas analizar.</small>
+        </div>
+      </div>
+
       <label className="coedash-filter">
         <span>Periodo de consulta</span>
         <select
@@ -472,10 +529,13 @@ function GraphMonthFilter({ title, description, anioKey, mesKey, filters, opcion
 }
 
 
-function MetricCard({ title, value, sub, tone = "default" }) {
+function MetricCard({ title, value, sub, tone = "default", icon = "•" }) {
   return (
     <article className={`coedash-metric ${tone}`}>
-      <span>{title}</span>
+      <div className="coedash-metric-top">
+        <span>{title}</span>
+        <i aria-hidden="true">{icon}</i>
+      </div>
       <strong>{value}</strong>
       {sub && <small>{sub}</small>}
     </article>
@@ -1025,6 +1085,27 @@ export default function DashboardClientesCoeSap() {
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(false);
   const [downloadingExcel, setDownloadingExcel] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
+
+  const defaultFilters = useMemo(() => getDefaultFilters(), []);
+  const defaultGraphFilters = useMemo(() => getDefaultGraphFilters(), []);
+
+  const activeGlobalFilterCount = useMemo(
+    () => countChangedFilterGroups(filters, defaultFilters),
+    [filters, defaultFilters]
+  );
+  const activeGraphFilterCount = useMemo(
+    () => countChangedFilterGroups(graphFilters, defaultGraphFilters),
+    [graphFilters, defaultGraphFilters]
+  );
+  const filtersDirty = useMemo(
+    () => buildQuery(filters) !== buildQuery(appliedFilters),
+    [filters, appliedFilters]
+  );
+  const graphFiltersDirty = useMemo(
+    () => buildQuery(graphFilters) !== buildQuery(appliedGraphFilters),
+    [graphFilters, appliedGraphFilters]
+  );
 
   const resumen = payload?.resumen || {};
   const resumenEstadoGeneral = payload?.resumenEstadoGeneral || resumen;
@@ -1062,6 +1143,7 @@ export default function DashboardClientesCoeSap() {
       }
 
       setPayload(data);
+      setLastUpdatedAt(new Date());
     } catch (error) {
       console.error("Error dashboard clientes COE SAP:", error);
       setPayload(null);
@@ -1141,37 +1223,70 @@ export default function DashboardClientesCoeSap() {
   }
 
   return (
-    <div className="coedash-page">
+    <div className="coedash-page" aria-busy={loading}>
       <section className="coedash-hero">
-        <div>
+        <div className="coedash-hero-copy">
           <span className="coedash-eyebrow">Dashboard clientes</span>
           <h1>Dashboard COE SAP Funcional</h1>
           <p>
-            Gráficas tipo Excel: el estado general muestra backlog completo, y las gráficas mensuales tienen filtro propio de sociedad.
+            Consulta el backlog, revisa su distribución y analiza el comportamiento mensual desde una sola vista.
           </p>
+
+          <div className="coedash-hero-meta">
+            <span>
+              <b>{numberText(resumenEstadoGeneral.totalCasos)}</b>
+              casos en el backlog
+            </span>
+            {lastUpdatedAt && (
+              <span>
+                <b>{formatUpdateTime(lastUpdatedAt)}</b>
+                última actualización
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="coedash-hero-actions">
           <button type="button" className="coedash-btn light" onClick={fetchDashboard} disabled={loading}>
+            <span className={`coedash-btn-icon${loading ? " spinning" : ""}`} aria-hidden="true">↻</span>
             {loading ? "Actualizando..." : "Actualizar"}
           </button>
 
           <button type="button" className="coedash-btn danger" onClick={descargarExcel} disabled={loading || downloadingExcel}>
+            <span className="coedash-btn-icon" aria-hidden="true">⇩</span>
             {downloadingExcel ? "Descargando..." : "Descargar Excel"}
           </button>
         </div>
       </section>
 
+      {loading && payload && (
+        <div className="coedash-refresh-banner" role="status" aria-live="polite">
+          <span className="coedash-loader mini" aria-hidden="true" />
+          Actualizando la información sin ocultar los resultados actuales…
+        </div>
+      )}
+
       <section className="coedash-card coedash-filters-card">
         <div className="coedash-card-head">
           <div>
+            <span className="coedash-section-kicker">Consulta principal</span>
             <h2>Filtros globales</h2>
-            <p>Estos filtros aplican a las métricas y al backlog por estados. El periodo global no limita el Estado general de requerimientos. No afectan Casos recibidos vs cerrados ni Estado estimación y horas.</p>
+            <p>
+              Ajustan las métricas y el backlog general. Las dos gráficas mensuales conservan su filtro independiente.
+            </p>
           </div>
 
-          <button type="button" className="coedash-btn ghost" onClick={clearFilters} disabled={loading}>
-            Limpiar
-          </button>
+          <div className="coedash-card-tools">
+            <span className={`coedash-filter-counter${activeGlobalFilterCount ? " active" : ""}`}>
+              {activeGlobalFilterCount
+                ? `${activeGlobalFilterCount} filtro${activeGlobalFilterCount === 1 ? "" : "s"} personalizado${activeGlobalFilterCount === 1 ? "" : "s"}`
+                : "Periodo actual"}
+            </span>
+            <button type="button" className="coedash-btn ghost compact" onClick={clearFilters} disabled={loading || (!filtersDirty && activeGlobalFilterCount === 0)}>
+              <span className="coedash-btn-icon" aria-hidden="true">×</span>
+              Limpiar
+            </button>
+          </div>
         </div>
 
         <div className="coedash-filters-grid">
@@ -1210,13 +1325,21 @@ export default function DashboardClientesCoeSap() {
           <MultiSelect label="Asignado a" value={filters.asignadoA} options={opciones.asignadoA} onChange={(v) => updateFilter("asignadoA", v)} />
         </div>
 
-        <div className="coedash-actions">
-          <button type="button" className="coedash-btn danger" onClick={applyFilters} disabled={loading}>
-            {loading ? "Consultando..." : "Aplicar filtros"}
-          </button>
-          <button type="button" className="coedash-btn light" onClick={clearFilters} disabled={loading}>
-            Restablecer
-          </button>
+        <div className="coedash-actions coedash-filter-actions">
+          <div className="coedash-action-hint">
+            <span className={filtersDirty ? "pending" : "saved"} aria-hidden="true" />
+            {filtersDirty ? "Tienes cambios pendientes por aplicar." : "Los filtros visibles ya están aplicados."}
+          </div>
+
+          <div className="coedash-action-buttons">
+            <button type="button" className="coedash-btn light" onClick={clearFilters} disabled={loading || (!filtersDirty && activeGlobalFilterCount === 0)}>
+              Restablecer
+            </button>
+            <button type="button" className="coedash-btn danger" onClick={applyFilters} disabled={loading || !filtersDirty}>
+              <span className="coedash-btn-icon" aria-hidden="true">✓</span>
+              {loading ? "Consultando..." : "Aplicar filtros"}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -1230,6 +1353,7 @@ export default function DashboardClientesCoeSap() {
           <section className="coedash-metrics-grid">
             <MetricCard
               title="Backlog total"
+              icon="▦"
               value={numberText(resumenEstadoGeneral.totalCasos)}
               sub="En curso + pendiente cliente"
               tone="dark"
@@ -1237,6 +1361,7 @@ export default function DashboardClientesCoeSap() {
 
             <MetricCard
               title="En curso"
+              icon="◔"
               value={numberText(resumenEstadoGeneral.enCurso)}
               sub="Casos activos"
               tone="warn"
@@ -1244,6 +1369,7 @@ export default function DashboardClientesCoeSap() {
 
             <MetricCard
               title="Pend. cliente"
+              icon="◷"
               value={numberText(resumenEstadoGeneral.pendienteCliente)}
               sub="Pendientes por cliente"
               tone="info"
@@ -1251,6 +1377,7 @@ export default function DashboardClientesCoeSap() {
 
             <MetricCard
               title="Cruce SM"
+              icon="SM"
               value={numberText(resumenEstadoGeneral.conSm)}
               sub="Backlog cruzado SM"
               tone="info"
@@ -1258,6 +1385,7 @@ export default function DashboardClientesCoeSap() {
 
             <MetricCard
               title="Cruce ITOP"
+              icon="IT"
               value={numberText(resumenEstadoGeneral.conItop)}
               sub="Backlog cruzado ITOP"
               tone="info"
@@ -1265,6 +1393,7 @@ export default function DashboardClientesCoeSap() {
 
             <MetricCard
               title="Solo Excel"
+              icon="XLS"
               value={numberText(resumenEstadoGeneral.soloExcel)}
               sub="Backlog sin cruce completo"
               tone="neutral"
@@ -1272,6 +1401,7 @@ export default function DashboardClientesCoeSap() {
 
             <MetricCard
               title="H. funcionales"
+              icon="HF"
               value={numberText(resumenEstadoGeneral.totalHorasFuncionales, 2)}
               sub="Total funcional backlog"
               tone="ok"
@@ -1279,6 +1409,7 @@ export default function DashboardClientesCoeSap() {
 
             <MetricCard
               title="H. estimadas"
+              icon="HE"
               value={numberText(resumenEstadoGeneral.totalHorasEstimadas, 2)}
               sub="Total estimado backlog"
               tone="dark"
@@ -1286,6 +1417,7 @@ export default function DashboardClientesCoeSap() {
 
             <MetricCard
               title="Valor OT"
+              icon="$"
               value={moneyText(resumenEstadoGeneral.valorOt)}
               sub="Suma valor OT backlog"
               tone="money"
@@ -1297,7 +1429,13 @@ export default function DashboardClientesCoeSap() {
 
           <section className="coedash-card coedash-graph-filter-section coedash-graph-filter-attached">
             <div className="coedash-graph-filter-title">
-              <h2>Filtro propio de gráficas mensuales</h2>
+              <div>
+                <span className="coedash-section-kicker blue">Análisis mensual</span>
+                <h2>Filtro propio de gráficas mensuales</h2>
+              </div>
+              <span className={`coedash-filter-counter blue${activeGraphFilterCount ? " active" : ""}`}>
+                {activeGraphFilterCount ? "Sociedad personalizada" : "Todas las sociedades"}
+              </span>
               <p>
                 Este filtro solo afecta los dos bloques siguientes: Casos recibidos vs cerrados
                 y Estado estimación y horas. No cambia las métricas ni las gráficas generales.
@@ -1325,12 +1463,19 @@ export default function DashboardClientesCoeSap() {
                 </div>
 
                 <div className="coedash-actions coedash-graph-actions">
-                  <button type="button" className="coedash-btn danger" onClick={applyGraphFilters} disabled={loading}>
-                    {loading ? "Consultando..." : "Aplicar a estas gráficas"}
-                  </button>
-                  <button type="button" className="coedash-btn light" onClick={clearGraphFilters} disabled={loading}>
-                    Restablecer sociedad
-                  </button>
+                  <div className="coedash-action-hint">
+                    <span className={graphFiltersDirty ? "pending" : "saved"} aria-hidden="true" />
+                    {graphFiltersDirty ? "Cambio pendiente para estas dos gráficas." : "La sociedad seleccionada ya está aplicada."}
+                  </div>
+                  <div className="coedash-action-buttons">
+                    <button type="button" className="coedash-btn light" onClick={clearGraphFilters} disabled={loading || (!graphFiltersDirty && activeGraphFilterCount === 0)}>
+                      Restablecer sociedad
+                    </button>
+                    <button type="button" className="coedash-btn danger" onClick={applyGraphFilters} disabled={loading || !graphFiltersDirty}>
+                      <span className="coedash-btn-icon" aria-hidden="true">✓</span>
+                      {loading ? "Consultando..." : "Aplicar a estas gráficas"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
