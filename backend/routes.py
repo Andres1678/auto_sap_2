@@ -19886,9 +19886,217 @@ def _coe_rep_recibidos_vs_cerrados(base_query):
     - Abierto/recibido: fecha_asignacion dentro del mes propio.
     - Cerrado/finalizado: fecha_finalizacion_cierre o
       fecha_finalizacion_cierre_sistema_gestion dentro del mes propio.
+    - No aplica filtros globales. Solo responde al filtro propio de sociedad.
 
-    No aplica filtros globales. Solo responde al filtro propio de sociedad.
+    Corrección aplicada:
+    - Si calificación.modulo viene vacío, se infiere el módulo desde el consultor
+      asignado usando consultor.nombre / consultor.usuario / consultor.cedula y
+      la relación consultor_modulo.
+    - Esto evita que aparezca "Sin módulo" cuando el consultor sí tiene módulos
+      configurados pero el caso no trae módulo en la calificación.
     """
+    def _is_empty_module(value):
+        value_norm = _coe_rep_norm_key(value)
+        return value_norm in {
+            "",
+            "SIN MODULO",
+            "SIN MODULOS",
+            "SIN MODULO ASIGNADO",
+            "SIN ASIGNAR",
+            "N/A",
+            "NA",
+            "NO APLICA",
+            "-",
+            "--",
+        }
+
+    def _modulo_nombre_catalogado(value, modulo_nombre_por_norm):
+        if _is_empty_module(value):
+            return None, None
+
+        raw = _coe_rep_str(value)
+        key = _coe_rep_norm_key(raw)
+        nombre = modulo_nombre_por_norm.get(key) or raw
+        return key, nombre
+
+    def _consultor_display(consultor):
+        return (
+            _coe_rep_str(getattr(consultor, "nombre", None))
+            or _coe_rep_str(getattr(consultor, "usuario", None))
+            or f"Consultor {getattr(consultor, 'id', '')}".strip()
+        )
+
+    def _tokens_for_consultor_match(value):
+        key = _coe_rep_norm_key(value)
+        if not key:
+            return []
+
+        tokens = []
+        for token in re.split(r"[^A-Z0-9]+", key):
+            token = token.strip()
+            if not token:
+                continue
+            if token in {"DE", "DEL", "LA", "LAS", "LOS", "Y", "EL"}:
+                continue
+            tokens.append(token)
+
+        return tokens
+
+    # ------------------------------------------------------------
+    # 1) Catálogo de módulos
+    # ------------------------------------------------------------
+    modulos_catalogo = Modulo.query.order_by(Modulo.nombre.asc()).all()
+    modulo_nombre_por_id = {
+        int(m.id): (_coe_rep_str(m.nombre) or f"Módulo {m.id}")
+        for m in modulos_catalogo
+        if getattr(m, "id", None)
+    }
+    modulo_nombre_por_norm = {
+        _coe_rep_norm_key(m.nombre): (_coe_rep_str(m.nombre) or f"Módulo {m.id}")
+        for m in modulos_catalogo
+        if _coe_rep_norm_key(m.nombre)
+    }
+
+    # ------------------------------------------------------------
+    # 2) Índice de consultores -> módulos
+    # ------------------------------------------------------------
+    consultores = (
+        Consultor.query
+        .options(selectinload(Consultor.modulos))
+        .order_by(Consultor.nombre.asc(), Consultor.usuario.asc())
+        .all()
+    )
+
+    consultor_por_alias = {}
+    consultor_alias_items = []
+
+    for consultor in consultores:
+        display = _consultor_display(consultor)
+        modulos_consultor = []
+
+        for modulo in getattr(consultor, "modulos", None) or []:
+            modulo_key, modulo_nombre = _modulo_nombre_catalogado(
+                getattr(modulo, "nombre", None),
+                modulo_nombre_por_norm,
+            )
+            if modulo_key and modulo_nombre:
+                modulos_consultor.append({
+                    "key": modulo_key,
+                    "nombre": modulo_nombre,
+                })
+
+        modulo_id = getattr(consultor, "modulo_id", None)
+        try:
+            modulo_id = int(modulo_id) if modulo_id not in (None, "") else None
+        except Exception:
+            modulo_id = None
+
+        if modulo_id and modulo_id in modulo_nombre_por_id:
+            modulo_nombre = modulo_nombre_por_id[modulo_id]
+            modulo_key = _coe_rep_norm_key(modulo_nombre)
+            if modulo_key and not any(m["key"] == modulo_key for m in modulos_consultor):
+                modulos_consultor.append({
+                    "key": modulo_key,
+                    "nombre": modulo_nombre,
+                })
+
+        modulos_unicos = {}
+        for item in modulos_consultor:
+            modulos_unicos[item["key"]] = item
+
+        meta = {
+            "display": display,
+            "modulos": list(modulos_unicos.values()),
+        }
+
+        aliases = {
+            _coe_rep_norm_key(getattr(consultor, "nombre", None)),
+            _coe_rep_norm_key(getattr(consultor, "usuario", None)),
+            _coe_rep_norm_key(getattr(consultor, "cedula", None)),
+        }
+
+        for alias in aliases:
+            if alias:
+                consultor_por_alias.setdefault(alias, meta)
+                consultor_alias_items.append((alias, meta))
+
+    def _find_consultor_meta(asignado_a):
+        asignado_key = _coe_rep_norm_key(asignado_a)
+        if not asignado_key:
+            return None
+
+        exact = consultor_por_alias.get(asignado_key)
+        if exact:
+            return exact
+
+        best = None
+        best_score = 0
+
+        # Contención directa.
+        for alias, meta in consultor_alias_items:
+            if len(alias) < 5:
+                continue
+            if alias in asignado_key or asignado_key in alias:
+                score = len(alias) + 1000
+                if score > best_score:
+                    best = meta
+                    best_score = score
+
+        if best:
+            return best
+
+        # Coincidencia por tokens para nombres incompletos o con nombres adicionales.
+        asignado_tokens = set(_tokens_for_consultor_match(asignado_key))
+        if not asignado_tokens:
+            return None
+
+        for alias, meta in consultor_alias_items:
+            alias_tokens = set(_tokens_for_consultor_match(alias))
+            if not alias_tokens:
+                continue
+
+            common = asignado_tokens.intersection(alias_tokens)
+
+            # Si el nombre del consultor es corto, exige que todos sus tokens estén en asignado_a.
+            if len(alias_tokens) <= 3 and alias_tokens.issubset(asignado_tokens):
+                score = len(common) * 100 + len(alias)
+            else:
+                score = len(common) * 100 - abs(len(asignado_tokens) - len(alias_tokens))
+
+            if len(common) >= 2 and score > best_score:
+                best = meta
+                best_score = score
+
+        return best
+
+    def _pick_modulo_from_consultor(consultor_meta):
+        modulos = list((consultor_meta or {}).get("modulos") or [])
+        if not modulos:
+            return None
+
+        # Si tiene varios módulos, se toma el primero ordenado para evitar duplicar un mismo caso.
+        # El detalle de consultores/módulos conserva la lista completa en su propio gráfico.
+        return sorted(modulos, key=lambda item: str(item.get("nombre") or "").upper())[0]
+
+    def _resolver_modulo(modulo_calificacion, asignado_a):
+        modulo_key, modulo_nombre = _modulo_nombre_catalogado(
+            modulo_calificacion,
+            modulo_nombre_por_norm,
+        )
+
+        if modulo_key and modulo_nombre:
+            return modulo_key, modulo_nombre
+
+        consultor_meta = _find_consultor_meta(asignado_a)
+        modulo_consultor = _pick_modulo_from_consultor(consultor_meta)
+        if modulo_consultor:
+            return modulo_consultor.get("key"), modulo_consultor.get("nombre")
+
+        return "SIN MODULO", "Sin módulo"
+
+    # ------------------------------------------------------------
+    # 3) Consulta mensual y agrupación en Python para poder inferir módulo
+    # ------------------------------------------------------------
     query = _coe_rep_apply_graficas_mensuales_sociedad(base_query)
 
     abierto_cond = _coe_dashboard_month_condition_for_columns(
@@ -19905,24 +20113,46 @@ def _coe_rep_recibidos_vs_cerrados(base_query):
     rows = (
         query.with_entities(
             CoeSapFuncionalCalificacion.modulo.label("modulo"),
-            func.coalesce(func.sum(case((abierto_cond, 1), else_=0)), 0).label("abierto"),
-            func.coalesce(func.sum(case((cerrado_cond, 1), else_=0)), 0).label("cerrado"),
+            CoeSapFuncionalCalificacion.asignado_a.label("asignado_a"),
+            case((abierto_cond, 1), else_=0).label("abierto"),
+            case((cerrado_cond, 1), else_=0).label("cerrado"),
         )
         .filter(or_(abierto_cond, cerrado_cond))
-        .group_by(CoeSapFuncionalCalificacion.modulo)
-        .order_by(CoeSapFuncionalCalificacion.modulo.asc())
         .all()
     )
 
-    return [
-        {
-            "modulo": _coe_rep_str(r.modulo) or "Sin módulo",
-            "abierto": int(r.abierto or 0),
-            "cerrado": int(r.cerrado or 0),
-            "total": int((r.abierto or 0) + (r.cerrado or 0)),
-        }
-        for r in rows
-    ]
+    out = {}
+
+    for row in rows:
+        modulo_key, modulo_nombre = _resolver_modulo(row.modulo, row.asignado_a)
+        modulo_key = modulo_key or "SIN MODULO"
+        modulo_nombre = modulo_nombre or "Sin módulo"
+
+        if modulo_key not in out:
+            out[modulo_key] = {
+                "modulo": modulo_nombre,
+                "abierto": 0,
+                "cerrado": 0,
+                "total": 0,
+            }
+
+        abierto = int(row.abierto or 0)
+        cerrado = int(row.cerrado or 0)
+
+        out[modulo_key]["abierto"] += abierto
+        out[modulo_key]["cerrado"] += cerrado
+        out[modulo_key]["total"] += abierto + cerrado
+
+    result = list(out.values())
+    result.sort(
+        key=lambda item: (
+            str(item.get("modulo") or "").upper() == "SIN MÓDULO",
+            -int(item.get("total") or 0),
+            str(item.get("modulo") or "").upper(),
+        )
+    )
+
+    return result
 
 
 def _coe_rep_estado_estimacion_horas(base_query):
