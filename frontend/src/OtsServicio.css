@@ -1,0 +1,503 @@
+.ots-page {
+  --ot-blue: #2563eb;
+  --ot-blue-dark: #1d4ed8;
+  --ot-green: #059669;
+  --ot-red: #dc2626;
+  --ot-ink: #0f172a;
+  --ot-muted: #64748b;
+  --ot-line: #dbe3ef;
+  --ot-bg: #f5f7fb;
+
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--ot-bg);
+  color: var(--ot-ink);
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+.ots-page__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 620px);
+  gap: 24px;
+  align-items: end;
+  padding: 26px;
+  border-radius: 20px;
+  color: #fff;
+  background: linear-gradient(135deg, #0f172a, #1e3a8a 65%, #2563eb);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+}
+
+.ots-page__eyebrow {
+  display: block;
+  margin-bottom: 8px;
+  color: #bfdbfe;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.ots-page__hero h1 {
+  margin: 0;
+  font-size: clamp(1.7rem, 3vw, 2.4rem);
+}
+
+.ots-page__hero p {
+  margin: 10px 0 0;
+  color: #dbeafe;
+  line-height: 1.5;
+}
+
+.ots-page__selector label {
+  display: block;
+  margin-bottom: 8px;
+  color: #dbeafe;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.ots-page .principal-select__control,
+.ots-page .ot-select__control {
+  min-height: 44px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.ots-page .principal-select__menu,
+.ots-page .ot-select__menu {
+  z-index: 9999;
+  color: var(--ot-ink);
+}
+
+.ots-empty {
+  display: flex;
+  min-height: 220px;
+  margin-top: 20px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #94a3b8;
+  border-radius: 18px;
+  background: #fff;
+  color: var(--ot-muted);
+  gap: 8px;
+}
+
+.ots-empty strong {
+  color: var(--ot-ink);
+  font-size: 1.1rem;
+}
+
+.ots-principal-card {
+  display: grid;
+  grid-template-columns: 150px minmax(220px, 1fr) minmax(300px, 2fr) 120px;
+  gap: 1px;
+  margin-top: 20px;
+  overflow: hidden;
+  border: 1px solid var(--ot-line);
+  border-radius: 16px;
+  background: var(--ot-line);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.ots-principal-card > div {
+  min-width: 0;
+  padding: 16px 18px;
+  background: #fff;
+}
+
+.ots-principal-card span,
+.ots-cards span,
+.ot-modal__totals span {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--ot-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ots-principal-card strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ots-principal-card__service strong {
+  white-space: normal;
+}
+
+.ots-cards {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(170px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.ots-cards article {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--ot-line);
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.ots-cards strong {
+  display: block;
+  overflow: hidden;
+  color: #1e3a8a;
+  font-size: 1.08rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ots-cards small {
+  display: block;
+  margin-top: 6px;
+  color: var(--ot-muted);
+}
+
+.ots-cards__total {
+  color: #fff;
+  border-color: #047857 !important;
+  background: linear-gradient(135deg, #047857, #10b981) !important;
+}
+
+.ots-cards__total span,
+.ots-cards__total strong {
+  color: #fff;
+}
+
+.ots-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 20px 0 12px;
+}
+
+.ots-toolbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.ot-btn {
+  min-height: 40px;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ot-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ot-btn--primary {
+  color: #fff;
+  background: var(--ot-blue);
+}
+
+.ot-btn--primary:hover {
+  background: var(--ot-blue-dark);
+}
+
+.ot-btn--secondary {
+  color: #fff;
+  background: #475569;
+}
+
+.ot-btn--ghost {
+  color: var(--ot-ink);
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+
+.ots-toolbar__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-weight: 700;
+}
+
+.ots-table-wrap {
+  max-height: 62vh;
+  overflow: auto;
+  border: 1px solid var(--ot-line);
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+}
+
+.ots-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.82rem;
+}
+
+.ots-table th,
+.ots-table td {
+  min-width: 125px;
+  padding: 11px 12px;
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ots-table th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  color: #fff;
+  background: #1e293b;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.ots-table tbody tr:hover td {
+  background: #f8fafc;
+}
+
+.ots-table tr.is-inactive td {
+  color: #94a3b8;
+  background: #f8fafc;
+  text-decoration: line-through;
+}
+
+.ots-table__service {
+  min-width: 320px !important;
+  max-width: 420px;
+  white-space: normal;
+}
+
+.ots-table__total {
+  color: #047857;
+  font-weight: 900;
+}
+
+.ots-table__empty {
+  padding: 40px !important;
+  color: var(--ot-muted);
+  text-align: center !important;
+}
+
+.ots-table__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ots-table__actions button {
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 7px;
+  color: #fff;
+  background: #2563eb;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ots-table__actions button.danger {
+  background: var(--ot-red);
+}
+
+.ot-status {
+  display: inline-block;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #1e3a8a;
+  background: #dbeafe;
+  font-size: 0.69rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.ot-status--cerrada,
+.ot-status--aprobada {
+  color: #065f46;
+  background: #d1fae5;
+}
+
+.ot-status--cancelada,
+.ot-status--anulada,
+.ot-status--cerrada-sin-pago {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.ot-status--suspendida,
+.ot-status--en-tramite {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.ot-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(3px);
+}
+
+.ot-modal {
+  width: min(940px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.3);
+}
+
+.ot-modal__header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  color: #fff;
+  background: #1e293b;
+}
+
+.ot-modal__header h3,
+.ot-modal__header p {
+  margin: 0;
+}
+
+.ot-modal__header p {
+  margin-top: 5px;
+  color: #cbd5e1;
+}
+
+.ot-modal__close {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 1.7rem;
+  cursor: pointer;
+}
+
+.ot-modal__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+  padding: 22px 24px;
+}
+
+.ot-modal__grid label {
+  display: block;
+  min-width: 0;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.ot-modal__grid label > span {
+  color: var(--ot-red);
+}
+
+.ot-modal__grid input,
+.ot-modal__grid textarea {
+  width: 100%;
+  margin-top: 7px;
+  padding: 10px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  box-sizing: border-box;
+  color: var(--ot-ink);
+  background: #fff;
+  font: inherit;
+  font-weight: 500;
+}
+
+.ot-modal__grid input:focus,
+.ot-modal__grid textarea:focus {
+  border-color: var(--ot-blue);
+  outline: 3px solid rgba(37, 99, 235, 0.13);
+}
+
+.ot-modal__full {
+  grid-column: 1 / -1;
+}
+
+.ot-modal__totals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 0 24px;
+  padding: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 13px;
+  background: #eff6ff;
+}
+
+.ot-modal__totals strong {
+  color: #1e3a8a;
+  font-size: 1.02rem;
+}
+
+.ot-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 20px 24px 24px;
+}
+
+@media (max-width: 1100px) {
+  .ots-cards {
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+  }
+
+  .ots-principal-card {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .ots-page {
+    padding: 12px;
+  }
+
+  .ots-page__hero {
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+
+  .ots-page__selector {
+    min-width: 0;
+  }
+
+  .ots-cards,
+  .ots-principal-card,
+  .ot-modal__grid,
+  .ot-modal__totals {
+    grid-template-columns: 1fr;
+  }
+
+  .ot-modal__full {
+    grid-column: auto;
+  }
+
+  .ots-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
