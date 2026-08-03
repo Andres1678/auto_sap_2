@@ -5695,8 +5695,18 @@ def export_registros():
     """
     temp_path = None
 
+    # Excel/OpenXML no permite algunos caracteres de control. Por ejemplo,
+    # el salto de página \x0c (form feed) provoca IllegalCharacterError con
+    # el mensaje "... cannot be used in worksheets".
+    excel_illegal_chars_re = re.compile(
+        r"[\x00-\x08\x0B\x0C\x0E-\x1F\uD800-\uDFFF\uFFFE\uFFFF]"
+    )
+
     def excel_safe(value):
-        """Convierte valores a tipos seguros y evita fórmulas inyectadas."""
+        """
+        Convierte valores a tipos seguros para Excel, elimina caracteres no
+        permitidos por XML y evita fórmulas inyectadas.
+        """
         if value is None:
             return ""
 
@@ -5715,8 +5725,18 @@ def export_registros():
             return value
 
         text_value = str(value)
+
+        # Sustituye caracteres ilegales por espacio para no unir palabras.
+        text_value = excel_illegal_chars_re.sub(" ", text_value)
+
+        # Una celda de Excel admite máximo 32.767 caracteres.
+        if len(text_value) > 32767:
+            text_value = text_value[:32767]
+
+        # Evita que contenido proveniente de BD sea interpretado como fórmula.
         if text_value.startswith(("=", "+", "-", "@")):
-            return "'" + text_value
+            text_value = "'" + text_value
+
         return text_value
 
     try:
