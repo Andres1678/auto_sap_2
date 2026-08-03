@@ -251,6 +251,9 @@ export default function Graficos() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRows, setModalRows] = useState([]);
   const [modalTitle, setModalTitle] = useState('');
+  const [modalMode, setModalMode] = useState('registros');
+  const [modalPersonasEquipo, setModalPersonasEquipo] = useState([]);
+  const [modalResumenEquipo, setModalResumenEquipo] = useState(null);
   const [mapeosProyecto, setMapeosProyecto] = useState([]);
   const [proyectos, setProyectos] = useState([]);
   const [personasPorEquipo, setPersonasPorEquipo] = useState([]);
@@ -917,23 +920,85 @@ export default function Graficos() {
 
     (Array.isArray(personasPorEquipo) ? personasPorEquipo : []).forEach((row) => {
       const equipo = equipoOf(row);
+      const personas = (Array.isArray(row?.personas) ? row.personas : [])
+        .map((persona) => ({
+          id: Number(persona?.id || 0),
+          usuario: String(persona?.usuario || "").trim().toLowerCase(),
+          nombre: String(persona?.nombre || persona?.usuario || "SIN NOMBRE").trim(),
+          equipo: equipoOf(persona, equipo),
+          activo: persona?.activo !== false,
+          registro: Boolean(persona?.registro),
+          estado: String(persona?.estado || (persona?.registro ? "REGISTRÓ" : "NO REGISTRÓ")),
+          totalRegistros: Math.max(0, Number(persona?.totalRegistros) || 0),
+          horasRegistradas: Math.max(0, Number(persona?.horasRegistradas) || 0),
+        }))
+        // Protección adicional: el gráfico y el modal nunca deben incluir inactivos.
+        .filter((persona) => persona.activo);
+
+      const totalPersonas = personas.length || Math.max(0, Number(row?.totalPersonas) || 0);
+      const registraronCalculado = personas.filter((persona) => persona.registro).length;
+      const registraron = personas.length
+        ? registraronCalculado
+        : Math.max(0, Number(row?.registraron) || 0);
+      const noRegistraron = Math.max(0, totalPersonas - registraron);
+
       map.set(equipo, {
         equipo,
-        totalPersonas: Math.max(0, Number(row?.totalPersonas) || 0),
-        registraron: Math.max(0, Number(row?.registraron) || 0),
-        noRegistraron: Math.max(0, Number(row?.noRegistraron) || 0),
-        porcentajeRegistro: Math.max(0, Number(row?.porcentajeRegistro) || 0),
+        totalPersonas,
+        registraron,
+        noRegistraron,
+        porcentajeRegistro: totalPersonas > 0
+          ? +((registraron * 100) / totalPersonas).toFixed(2)
+          : 0,
+        personas,
       });
     });
 
     return map;
   }, [personasPorEquipo]);
 
+  const personasActivasPorUsuario = useMemo(() => {
+    const map = new Map();
+
+    personasPorEquipoMap.forEach((equipoData) => {
+      (equipoData?.personas || []).forEach((persona) => {
+        const usuarioPersona = String(persona?.usuario || "").trim().toLowerCase();
+        if (usuarioPersona) map.set(usuarioPersona, persona);
+      });
+    });
+
+    return map;
+  }, [personasPorEquipoMap]);
+
+  const personasActivasPorNombre = useMemo(() => {
+    const map = new Map();
+
+    personasPorEquipoMap.forEach((equipoData) => {
+      (equipoData?.personas || []).forEach((persona) => {
+        const nombrePersona = normTxt(persona?.nombre);
+        if (nombrePersona) map.set(nombrePersona, persona);
+      });
+    });
+
+    return map;
+  }, [personasPorEquipoMap]);
+
   const horasPorEquipo = useMemo(() => {
     const horasMap = new Map();
 
     (datosFiltrados ?? []).forEach((r) => {
-      const equipo = equipoOf(r);
+      const usuarioRegistro = String(r?.usuario_consultor || "").trim().toLowerCase();
+      const nombreRegistro = normTxt(r?.consultor);
+
+      const personaActiva =
+        (usuarioRegistro ? personasActivasPorUsuario.get(usuarioRegistro) : null) ||
+        (nombreRegistro ? personasActivasPorNombre.get(nombreRegistro) : null);
+
+      // Si no aparece en la lista actual de consultores activos, no participa
+      // en la gráfica de equipos, aunque tenga registros históricos.
+      if (!personaActiva) return;
+
+      const equipo = equipoOf(personaActiva, equipoOf(r));
       horasMap.set(
         equipo,
         (horasMap.get(equipo) || 0) + toNum(r.tiempoInvertido)
@@ -941,8 +1006,8 @@ export default function Graficos() {
     });
 
     const equipos = new Set([
-      ...horasMap.keys(),
       ...personasPorEquipoMap.keys(),
+      ...horasMap.keys(),
     ]);
 
     return Array.from(equipos, (equipo) => {
@@ -956,13 +1021,19 @@ export default function Graficos() {
         registraron: Number(validacion.registraron || 0),
         noRegistraron: Number(validacion.noRegistraron || 0),
         porcentajeRegistro: Number(validacion.porcentajeRegistro || 0),
+        personas: Array.isArray(validacion.personas) ? validacion.personas : [],
       };
     }).sort((a, b) => {
       const diffHoras = b.horas - a.horas;
       if (diffHoras !== 0) return diffHoras;
       return a.equipo.localeCompare(b.equipo);
     });
-  }, [datosFiltrados, personasPorEquipoMap]);
+  }, [
+    datosFiltrados,
+    personasPorEquipoMap,
+    personasActivasPorUsuario,
+    personasActivasPorNombre,
+  ]);
 
   const horasPorProyecto = useMemo(() => {
     const acc = new Map();
@@ -1072,6 +1143,45 @@ export default function Graficos() {
   );
 
   const openDetail = (kind, value, pretty, displayValueOverride = null) => {
+    if (kind === 'equipo') {
+      const equipoKey = equipoOf({ equipo: value });
+      const resumen = personasPorEquipoMap.get(equipoKey) || {
+        equipo: equipoKey,
+        totalPersonas: 0,
+        registraron: 0,
+        noRegistraron: 0,
+        porcentajeRegistro: 0,
+        personas: [],
+      };
+
+      const horasEquipo = horasPorEquipo.find(
+        (row) => equipoOf(row) === equipoKey
+      );
+
+      const personas = (Array.isArray(resumen.personas) ? resumen.personas : [])
+        .filter((persona) => persona?.activo !== false)
+        .slice()
+        .sort((a, b) => {
+          if (Boolean(a?.registro) !== Boolean(b?.registro)) {
+            return a?.registro ? 1 : -1;
+          }
+          return String(a?.nombre || '').localeCompare(String(b?.nombre || ''));
+        });
+
+      setModalMode('personasEquipo');
+      setModalRows([]);
+      setModalPersonasEquipo(personas);
+      setModalResumenEquipo({
+        ...resumen,
+        equipo: equipoKey,
+        horas: Number(horasEquipo?.horas || 0),
+        personas,
+      });
+      setModalTitle(`Equipo: ${equipoKey} — Cumplimiento de registro`);
+      setModalOpen(true);
+      return;
+    }
+
     let rows = [];
 
     if (kind === 'consultor') {
@@ -1088,10 +1198,6 @@ export default function Graficos() {
 
     if (kind === 'modulo') {
       rows = datosFiltrados.filter(r => r.modulo === value);
-    }
-
-    if (kind === 'equipo') {
-      rows = datosFiltrados.filter(r => equipoOf(r) === value);
     }
 
     if (kind === 'fecha') {
@@ -1120,15 +1226,29 @@ export default function Graficos() {
       .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
 
     const total = rows.reduce((sum, r) => sum + toNum(r.tiempoInvertido), 0);
-
     const displayValue = displayValueOverride || value;
 
+    setModalMode('registros');
+    setModalPersonasEquipo([]);
+    setModalResumenEquipo(null);
     setModalRows(rows);
     setModalTitle(`${pretty}: ${displayValue} — Total: ${total.toFixed(2)} h`);
     setModalOpen(true);
   };
 
   const closeModal = () => setModalOpen(false);
+
+  const personasEquipoRegistraron = useMemo(() => {
+    return (modalPersonasEquipo || [])
+      .filter((persona) => Boolean(persona?.registro))
+      .sort((a, b) => String(a?.nombre || '').localeCompare(String(b?.nombre || '')));
+  }, [modalPersonasEquipo]);
+
+  const personasEquipoNoRegistraron = useMemo(() => {
+    return (modalPersonasEquipo || [])
+      .filter((persona) => !persona?.registro)
+      .sort((a, b) => String(a?.nombre || '').localeCompare(String(b?.nombre || '')));
+  }, [modalPersonasEquipo]);
 
   const modalSubtotales = useMemo(() => {
     const byDay = new Map();
@@ -1506,7 +1626,113 @@ export default function Graficos() {
           </div>
 
           <div className="pgx-modal-body pgx-modal-body-scroll">
-            {modalSubtotales.length === 0 ? (
+            {modalMode === 'personasEquipo' ? (
+              <div className="pgx-team-people-detail">
+                <div className="pgx-team-people-summary">
+                  <div className="pgx-team-people-metric">
+                    <span>Personas activas</span>
+                    <strong>{Number(modalResumenEquipo?.totalPersonas || modalPersonasEquipo.length || 0)}</strong>
+                  </div>
+
+                  <div className="pgx-team-people-metric is-success">
+                    <span>Registraron</span>
+                    <strong>{personasEquipoRegistraron.length}</strong>
+                  </div>
+
+                  <div className="pgx-team-people-metric is-danger">
+                    <span>No registraron</span>
+                    <strong>{personasEquipoNoRegistraron.length}</strong>
+                  </div>
+
+                  <div className="pgx-team-people-metric is-hours">
+                    <span>Horas mostradas en gráfica</span>
+                    <strong>{toNum(modalResumenEquipo?.horas).toFixed(2)} h</strong>
+                  </div>
+                </div>
+
+                <section className="pgx-team-people-section is-danger">
+                  <div className="pgx-team-people-section__head">
+                    <div>
+                      <h4>No registraron</h4>
+                      <p>Consultores activos sin registros durante el período aplicado.</p>
+                    </div>
+                    <span>{personasEquipoNoRegistraron.length}</span>
+                  </div>
+
+                  {personasEquipoNoRegistraron.length === 0 ? (
+                    <div className="pgx-team-people-empty is-success">
+                      Todas las personas activas del equipo registraron información.
+                    </div>
+                  ) : (
+                    <div className="pgx-table-responsive">
+                      <table className="pgx-detail-table pgx-team-people-table">
+                        <thead>
+                          <tr>
+                            <th>Consultor</th>
+                            <th>Usuario</th>
+                            <th>Estado</th>
+                            <th className="pgx-num">Registros</th>
+                            <th className="pgx-num">Horas período</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {personasEquipoNoRegistraron.map((persona) => (
+                            <tr key={`no-${persona.id || persona.usuario}`}>
+                              <td className="pgx-truncate" title={persona.nombre}>{persona.nombre}</td>
+                              <td className="pgx-truncate" title={persona.usuario}>{persona.usuario || '—'}</td>
+                              <td><span className="pgx-team-status is-danger">No registró</span></td>
+                              <td className="pgx-num">{Number(persona.totalRegistros || 0)}</td>
+                              <td className="pgx-num">{toNum(persona.horasRegistradas).toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+
+                <section className="pgx-team-people-section is-success">
+                  <div className="pgx-team-people-section__head">
+                    <div>
+                      <h4>Registraron</h4>
+                      <p>Consultores activos con al menos un registro en el período.</p>
+                    </div>
+                    <span>{personasEquipoRegistraron.length}</span>
+                  </div>
+
+                  {personasEquipoRegistraron.length === 0 ? (
+                    <div className="pgx-team-people-empty">
+                      Ninguna persona activa del equipo registró información.
+                    </div>
+                  ) : (
+                    <div className="pgx-table-responsive">
+                      <table className="pgx-detail-table pgx-team-people-table">
+                        <thead>
+                          <tr>
+                            <th>Consultor</th>
+                            <th>Usuario</th>
+                            <th>Estado</th>
+                            <th className="pgx-num">Registros</th>
+                            <th className="pgx-num">Horas período</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {personasEquipoRegistraron.map((persona) => (
+                            <tr key={`si-${persona.id || persona.usuario}`}>
+                              <td className="pgx-truncate" title={persona.nombre}>{persona.nombre}</td>
+                              <td className="pgx-truncate" title={persona.usuario}>{persona.usuario || '—'}</td>
+                              <td><span className="pgx-team-status is-success">Registró</span></td>
+                              <td className="pgx-num">{Number(persona.totalRegistros || 0)}</td>
+                              <td className="pgx-num">{toNum(persona.horasRegistradas).toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              </div>
+            ) : modalSubtotales.length === 0 ? (
               <div className="pgx-empty">Sin registros para mostrar.</div>
             ) : (
               modalSubtotales.map((bucket) => (
@@ -1566,14 +1792,27 @@ export default function Graficos() {
             )}
           </div>
 
-          <div className="pgx-modal-footer-total">
-            <span className="pgx-chip pgx-chip-ghost">Filas: {modalRows.length}</span>
-            <span className="pgx-spacer" />
-            <strong>
-              Total general:&nbsp;
-              {modalRows.reduce((s,r)=>s+toNum(r.tiempoInvertido),0).toFixed(2)} h
-            </strong>
-          </div>
+          {modalMode === 'personasEquipo' ? (
+            <div className="pgx-modal-footer-total">
+              <span className="pgx-chip pgx-chip-ghost">
+                Solo consultores activos
+              </span>
+              <span className="pgx-spacer" />
+              <strong>
+                Cobertura:&nbsp;
+                {Number(modalResumenEquipo?.porcentajeRegistro || 0).toFixed(2)}%
+              </strong>
+            </div>
+          ) : (
+            <div className="pgx-modal-footer-total">
+              <span className="pgx-chip pgx-chip-ghost">Filas: {modalRows.length}</span>
+              <span className="pgx-spacer" />
+              <strong>
+                Total general:&nbsp;
+                {modalRows.reduce((s,r)=>s+toNum(r.tiempoInvertido),0).toFixed(2)} h
+              </strong>
+            </div>
+          )}
         </Modal>
       </div>
     </div>

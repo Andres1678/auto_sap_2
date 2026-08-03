@@ -59,7 +59,7 @@ function TeamValidationTooltip({ active, payload }) {
       <div className="pgx-team-tooltip__divider" />
 
       <div className="pgx-team-tooltip__row">
-        <span>Personas en el equipo</span>
+        <span>Personas activas en el equipo</span>
         <strong>{integerFormat.format(totalPersonas)}</strong>
       </div>
 
@@ -162,7 +162,7 @@ export default function HorasPorEquipoChart({
             {periodoTexto} · Equipo: {equiposTexto}
           </p>
           <span className="pgx-team-chart__hint">
-            Pasa el mouse por una barra para ver cuántas personas registraron y cuántas no.
+            Pasa el mouse para ver el cumplimiento y haz clic para consultar las personas activas que registraron y las que no.
           </span>
         </div>
 

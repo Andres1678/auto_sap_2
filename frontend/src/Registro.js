@@ -210,6 +210,51 @@ const getModulosFromConsultorData = (data, userData) => {
 const pad2 = (n) => String(n).padStart(2, "0");
 const toISODate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
+const getCurrentMonthValue = (now = new Date()) =>
+  `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+
+const validateMonthRange = (desde, hasta, maxMonths = 12) => {
+  const monthPattern = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+  if (!desde || !hasta) {
+    return {
+      valid: false,
+      message: "Selecciona el mes inicial y el mes final.",
+      months: 0,
+    };
+  }
+
+  if (!monthPattern.test(desde) || !monthPattern.test(hasta)) {
+    return {
+      valid: false,
+      message: "El rango de meses no tiene un formato válido.",
+      months: 0,
+    };
+  }
+
+  if (desde > hasta) {
+    return {
+      valid: false,
+      message: "El mes inicial no puede ser mayor que el mes final.",
+      months: 0,
+    };
+  }
+
+  const [yearFrom, monthFrom] = desde.split("-").map(Number);
+  const [yearTo, monthTo] = hasta.split("-").map(Number);
+  const months = ((yearTo - yearFrom) * 12) + (monthTo - monthFrom) + 1;
+
+  if (months > maxMonths) {
+    return {
+      valid: false,
+      message: `Selecciona un rango máximo de ${maxMonths} meses para evitar sobrecargar la consulta.`,
+      months,
+    };
+  }
+
+  return { valid: true, message: "", months };
+};
+
 const getWeekBoundsISO = (now = new Date()) => {
   const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const day = d.getDay();
@@ -617,8 +662,8 @@ const Registro = ({ userData }) => {
   const [filtroConsultor, setFiltroConsultor] = useState([]);
   const [filtroNroCasoCli, setFiltroNroCasoCli] = useState('');
   const [filtroHorasAdic, setFiltroHorasAdic] = useState([]);
-  const [filtroMes, setFiltroMes] = useState("");
-  const [filtroAnio, setFiltroAnio] = useState("");
+  const [filtroMesDesde, setFiltroMesDesde] = useState(() => getCurrentMonthValue());
+  const [filtroMesHasta, setFiltroMesHasta] = useState(() => getCurrentMonthValue());
 
   const [consultorActivo, setConsultorActivo] = useState(
     isActiveValue(userData?.activo ?? userData?.user?.activo ?? localStorage.getItem("consultorActivo"))
@@ -937,8 +982,8 @@ const Registro = ({ userData }) => {
     filtroConsultor,
     filtroNroCasoCliDeb,
     filtroHorasAdic,
-    filtroMes,
-    filtroAnio
+    filtroMesDesde,
+    filtroMesHasta
   ]);
 
   useEffect(() => {
@@ -1065,8 +1110,22 @@ const Registro = ({ userData }) => {
       const params = new URLSearchParams();
 
       if (equipoLocked) params.set("equipo", equipoLocked);
-      if (filtroMes) params.set("mes", filtroMes);
-      if (filtroAnio) params.set("anio", filtroAnio);
+
+      if (isAdmin) {
+        const monthRange = validateMonthRange(filtroMesDesde, filtroMesHasta);
+
+        if (!monthRange.valid) {
+          setRegistros([]);
+          setTotalRegistros(0);
+          setTotalPages(1);
+          setError(monthRange.message);
+          return;
+        }
+
+        params.set("mes_desde", filtroMesDesde);
+        params.set("mes_hasta", filtroMesHasta);
+      }
+
       if (filtroFecha) params.set("fecha", filtroFecha);
       if (filtroIdDeb) params.set("id", filtroIdDeb);
       if (filtroNroCasoCliDeb) params.set("nroCasoCliente", filtroNroCasoCliDeb);
@@ -1135,8 +1194,9 @@ const Registro = ({ userData }) => {
     }
   }, [
     equipoLocked,
-    filtroMes,
-    filtroAnio,
+    isAdmin,
+    filtroMesDesde,
+    filtroMesHasta,
     filtroFecha,
     filtroIdDeb,
     filtroNroCasoCliDeb,
@@ -1873,27 +1933,16 @@ const Registro = ({ userData }) => {
   const oncall = ['SI', 'NO', 'N/A'];
   const desborde = ['SI', 'NO', 'N/A'];
 
-  const MESES = [
-    { value: "01", label: "Enero" },
-    { value: "02", label: "Febrero" },
-    { value: "03", label: "Marzo" },
-    { value: "04", label: "Abril" },
-    { value: "05", label: "Mayo" },
-    { value: "06", label: "Junio" },
-    { value: "07", label: "Julio" },
-    { value: "08", label: "Agosto" },
-    { value: "09", label: "Septiembre" },
-    { value: "10", label: "Octubre" },
-    { value: "11", label: "Noviembre" },
-    { value: "12", label: "Diciembre" },
-  ];
-
   const buildCurrentFilterParams = useCallback(() => {
     const params = new URLSearchParams();
 
     if (equipoLocked) params.set("equipo", equipoLocked);
-    if (filtroMes) params.set("mes", filtroMes);
-    if (filtroAnio) params.set("anio", filtroAnio);
+
+    if (isAdmin) {
+      params.set("mes_desde", filtroMesDesde);
+      params.set("mes_hasta", filtroMesHasta);
+    }
+
     if (filtroFecha) params.set("fecha", filtroFecha);
     if (filtroIdDeb) params.set("id", filtroIdDeb);
     if (filtroNroCasoCliDeb) params.set("nroCasoCliente", filtroNroCasoCliDeb);
@@ -1933,8 +1982,9 @@ const Registro = ({ userData }) => {
     return params;
   }, [
     equipoLocked,
-    filtroMes,
-    filtroAnio,
+    isAdmin,
+    filtroMesDesde,
+    filtroMesHasta,
     filtroFecha,
     filtroIdDeb,
     filtroNroCasoCliDeb,
@@ -1949,6 +1999,19 @@ const Registro = ({ userData }) => {
 
   const handleExport = async () => {
     if (exportingExcel) return;
+
+    if (isAdmin) {
+      const monthRange = validateMonthRange(filtroMesDesde, filtroMesHasta);
+
+      if (!monthRange.valid) {
+        Swal.fire({
+          icon: "warning",
+          title: "Rango de meses inválido",
+          text: monthRange.message,
+        });
+        return;
+      }
+    }
 
     setExportingExcel(true);
 
@@ -2387,21 +2450,36 @@ const Registro = ({ userData }) => {
               placeholder="Horas Adicionales"
             />
 
-            <select value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}>
-              <option value="">Todos los meses</option>
-              {MESES.map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
+            {isAdmin && (
+              <>
+                <label
+                  title="Primer mes incluido en la consulta"
+                  style={{ display: "grid", gap: 4 }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>Mes desde</span>
+                  <input
+                    type="month"
+                    value={filtroMesDesde}
+                    onChange={(e) => setFiltroMesDesde(e.target.value)}
+                    aria-label="Mes desde"
+                  />
+                </label>
 
-            <input
-              type="number"
-              placeholder="Año (ej: 2026)"
-              value={filtroAnio}
-              onChange={(e) => setFiltroAnio(e.target.value)}
-              min="2000"
-              max="2100"
-            />
+                <label
+                  title="Último mes incluido en la consulta"
+                  style={{ display: "grid", gap: 4 }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>Mes hasta</span>
+                  <input
+                    type="month"
+                    value={filtroMesHasta}
+                    min={filtroMesDesde || undefined}
+                    onChange={(e) => setFiltroMesHasta(e.target.value)}
+                    aria-label="Mes hasta"
+                  />
+                </label>
+              </>
+            )}
           </div>
 
           <div className="filter-actions">
@@ -2416,8 +2494,13 @@ const Registro = ({ userData }) => {
                 setFiltroOcupacion([]);
                 setFiltroNroCasoCli('');
                 setFiltroHorasAdic([]);
-                setFiltroMes('');
-                setFiltroAnio('');
+
+                if (isAdmin) {
+                  const currentMonth = getCurrentMonthValue();
+                  setFiltroMesDesde(currentMonth);
+                  setFiltroMesHasta(currentMonth);
+                }
+
                 setPage(1);
 
                 if (!isAdmin) {
@@ -2935,8 +3018,12 @@ const Registro = ({ userData }) => {
             onClose={() => setCapacidadModalOpen(false)}
             filtroEquipo={equipoLocked}
             filtroConsultor={filtroConsultor}
-            filtroMes={filtroMes}
-            filtroAnio={filtroAnio}
+            filtroMes={
+              filtroMesDesde === filtroMesHasta ? filtroMesDesde.slice(5, 7) : ""
+            }
+            filtroAnio={
+              filtroMesDesde === filtroMesHasta ? filtroMesDesde.slice(0, 4) : ""
+            }
             equipoBloqueado={isAdminEquipo}
           />
         )}
@@ -2945,8 +3032,12 @@ const Registro = ({ userData }) => {
           userData={userData}
           filtroEquipo={filtroEquipo}
           filtroConsultor={filtroConsultor}
-          filtroMes={filtroMes}
-          filtroAnio={filtroAnio} 
+          filtroMes={
+            filtroMesDesde === filtroMesHasta ? filtroMesDesde.slice(5, 7) : ""
+          }
+          filtroAnio={
+            filtroMesDesde === filtroMesHasta ? filtroMesDesde.slice(0, 4) : ""
+          }
         />
       </div>
     </div>

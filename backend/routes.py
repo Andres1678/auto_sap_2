@@ -2147,17 +2147,11 @@ def obtener_registros_graficos():
 @permission_required("GRAFICOS_VER")
 def obtener_resumen_personas_por_equipo():
     """
-    Devuelve la validación de registro de personas por equipo para el período
-    seleccionado en el dashboard.
+    Devuelve el cumplimiento de registro por equipo para el período aplicado.
 
-    Definiciones:
-      - total_personas: consultores activos asignados actualmente al equipo;
-      - registraron: consultores activos con al menos un Registro en el período;
-      - no_registraron: total_personas - registraron.
-
-    Esta validación usa únicamente período, alcance de seguridad y filtro de
-    equipo. Los filtros de cliente, tarea, módulo u ocupación no alteran el
-    cumplimiento del equipo.
+    Solo considera consultores activos en la lista de consultores. Además de los
+    totales, retorna el detalle de cada persona para que el modal del gráfico
+    muestre quién registró y quién no registró, sin cargar todos los registros.
     """
     try:
         usuario = _get_usuario_from_request()
@@ -2214,6 +2208,7 @@ def obtener_resumen_personas_por_equipo():
 
         C = aliased(Consultor)
         E = aliased(Equipo)
+        R = aliased(Registro)
 
         equipos_filtrados = [
             str(value or "").strip().upper()
@@ -2222,8 +2217,9 @@ def obtener_resumen_personas_por_equipo():
         ]
 
         def aplicar_scope_y_equipo(query):
+            # La fuente oficial de personas es la lista de consultores activos.
             query = query.filter(
-                C.activo == True,
+                C.activo.is_(True),
                 C.usuario.isnot(None),
                 func.trim(C.usuario) != "",
             )
@@ -2249,68 +2245,101 @@ def obtener_resumen_personas_por_equipo():
 
             return query
 
-        # Total de personas activas por equipo.
-        total_query = (
+        # Se agrupan los registros una sola vez por usuario. El outer join permite
+        # conservar también a los consultores activos que no registraron horas.
+        registros_periodo = (
             db.session.query(
-                E.nombre.label("equipo"),
-                func.count(C.id).label("total_personas"),
+                func.lower(func.trim(R.usuario_consultor)).label("usuario_norm"),
+                func.count(R.id).label("total_registros"),
+                func.coalesce(func.sum(R.tiempo_invertido), 0).label("horas_registradas"),
             )
-            .select_from(C)
-            .outerjoin(E, C.equipo_id == E.id)
-        )
-        total_query = aplicar_scope_y_equipo(total_query)
-
-        if total_query is None:
-            return jsonify({'error': 'Alcance de usuario sin configuración'}), 403
-
-        total_rows = total_query.group_by(E.nombre).all()
-
-        # Personas activas que registraron al menos una vez en el período.
-        registrados_query = (
-            db.session.query(
-                E.nombre.label("equipo"),
-                func.count(func.distinct(C.id)).label("registraron"),
-            )
-            .select_from(C)
-            .join(
-                Registro,
-                func.lower(Registro.usuario_consultor) == func.lower(C.usuario),
-            )
-            .outerjoin(E, C.equipo_id == E.id)
             .filter(
-                Registro.fecha >= start_date.isoformat(),
-                Registro.fecha < end_date.isoformat(),
+                R.fecha >= start_date.isoformat(),
+                R.fecha < end_date.isoformat(),
+                R.usuario_consultor.isnot(None),
+                func.trim(R.usuario_consultor) != "",
+            )
+            .group_by(func.lower(func.trim(R.usuario_consultor)))
+            .subquery()
+        )
+
+        personas_query = (
+            db.session.query(
+                C.id.label("consultor_id"),
+                C.usuario.label("usuario"),
+                C.nombre.label("nombre"),
+                E.nombre.label("equipo"),
+                func.coalesce(registros_periodo.c.total_registros, 0).label("total_registros"),
+                func.coalesce(registros_periodo.c.horas_registradas, 0).label("horas_registradas"),
+            )
+            .select_from(C)
+            .outerjoin(E, C.equipo_id == E.id)
+            .outerjoin(
+                registros_periodo,
+                func.lower(func.trim(C.usuario)) == registros_periodo.c.usuario_norm,
             )
         )
-        registrados_query = aplicar_scope_y_equipo(registrados_query)
 
-        if registrados_query is None:
+        personas_query = aplicar_scope_y_equipo(personas_query)
+        if personas_query is None:
             return jsonify({'error': 'Alcance de usuario sin configuración'}), 403
 
-        registrados_rows = registrados_query.group_by(E.nombre).all()
+        rows = personas_query.order_by(E.nombre.asc(), C.nombre.asc()).all()
 
-        registrados_map = {
-            str(row.equipo or "SIN EQUIPO").strip().upper(): int(row.registraron or 0)
-            for row in registrados_rows
-        }
+        equipos_map = {}
+
+        for row in rows:
+            equipo_nombre = str(row.equipo or "SIN EQUIPO").strip().upper()
+            total_registros = int(row.total_registros or 0)
+
+            try:
+                horas_registradas = round(float(row.horas_registradas or 0), 2)
+            except Exception:
+                horas_registradas = 0.0
+
+            registro = total_registros > 0
+
+            persona = {
+                "id": int(row.consultor_id),
+                "usuario": str(row.usuario or "").strip().lower(),
+                "nombre": str(row.nombre or row.usuario or "SIN NOMBRE").strip(),
+                "equipo": equipo_nombre,
+                "activo": True,
+                "registro": registro,
+                "estado": "REGISTRÓ" if registro else "NO REGISTRÓ",
+                "totalRegistros": total_registros,
+                "horasRegistradas": horas_registradas,
+            }
+
+            bucket = equipos_map.setdefault(equipo_nombre, {
+                "equipo": equipo_nombre,
+                "personas": [],
+            })
+            bucket["personas"].append(persona)
 
         equipos = []
-        for row in total_rows:
-            nombre_equipo = str(row.equipo or "SIN EQUIPO").strip().upper()
-            total_personas = int(row.total_personas or 0)
-            registraron = min(
-                int(registrados_map.get(nombre_equipo, 0)),
-                total_personas,
-            )
-            no_registraron = max(total_personas - registraron, 0)
-            porcentaje = round((registraron * 100.0 / total_personas), 2) if total_personas else 0.0
+
+        for equipo_nombre, bucket in equipos_map.items():
+            personas = bucket["personas"]
+            personas.sort(key=lambda item: (
+                0 if not item["registro"] else 1,
+                item["nombre"].upper(),
+            ))
+
+            total_personas = len(personas)
+            registraron = sum(1 for persona in personas if persona["registro"])
+            no_registraron = total_personas - registraron
+            porcentaje = round(
+                (registraron * 100.0 / total_personas), 2
+            ) if total_personas else 0.0
 
             equipos.append({
-                "equipo": nombre_equipo,
+                "equipo": equipo_nombre,
                 "totalPersonas": total_personas,
                 "registraron": registraron,
                 "noRegistraron": no_registraron,
                 "porcentajeRegistro": porcentaje,
+                "personas": personas,
             })
 
         equipos.sort(key=lambda item: item["equipo"])
@@ -2337,6 +2366,101 @@ def obtener_resumen_personas_por_equipo():
 
 USUARIOS_PUEDE_SEMANAS_ANTERIORES = {
 }
+
+REGISTRO_ADMIN_MAX_MESES = 12
+
+def _registro_rol_real(consultor):
+    if consultor and getattr(consultor, "rol_obj", None) and getattr(consultor.rol_obj, "nombre", None):
+        return str(consultor.rol_obj.nombre or "").strip().upper()
+    return str(getattr(consultor, "rol", "") or "").strip().upper()
+
+def _registro_parse_month_value(value, field_name):
+    raw = str(value or "").strip()
+    match = re.fullmatch(r"(\d{4})-(0[1-9]|1[0-2])", raw)
+
+    if not match:
+        raise ValueError(f"{field_name} inválido. Usa el formato YYYY-MM")
+
+    return int(match.group(1)), int(match.group(2)), raw
+
+def _registro_next_month(year, month):
+    if month == 12:
+        return date(year + 1, 1, 1)
+    return date(year, month + 1, 1)
+
+def _registro_admin_month_range(consultor_login):
+    """
+    Retorna el rango de meses exclusivo para roles ADMIN/ADMIN_*.
+
+    - Si el administrador no envía rango, usa el mes actual para evitar
+      consultas y exportaciones completas por accidente.
+    - Mantiene compatibilidad temporal con los parámetros antiguos mes/anio.
+    - Limita la consulta a máximo 12 meses.
+    """
+    if not _is_admin_role(_registro_rol_real(consultor_login)):
+        return None
+
+    mes_desde_raw = str(request.args.get("mes_desde") or "").strip()
+    mes_hasta_raw = str(request.args.get("mes_hasta") or "").strip()
+
+    # Compatibilidad con el filtro anterior de mes + año.
+    if not mes_desde_raw and not mes_hasta_raw:
+        old_month = str(request.args.get("mes") or "").strip()
+        old_year = str(request.args.get("anio") or "").strip()
+
+        if old_month and old_year:
+            try:
+                old_month_int = int(old_month)
+                old_year_int = int(old_year)
+                if 1 <= old_month_int <= 12 and 1900 <= old_year_int <= 2200:
+                    legacy_value = f"{old_year_int:04d}-{old_month_int:02d}"
+                    mes_desde_raw = legacy_value
+                    mes_hasta_raw = legacy_value
+            except Exception:
+                pass
+
+    # Rango seguro por defecto: mes actual en Bogotá.
+    if not mes_desde_raw and not mes_hasta_raw:
+        now_bogota = datetime.now(ZoneInfo("America/Bogota"))
+        current_month = f"{now_bogota.year:04d}-{now_bogota.month:02d}"
+        mes_desde_raw = current_month
+        mes_hasta_raw = current_month
+
+    if not mes_desde_raw or not mes_hasta_raw:
+        raise ValueError("Debes seleccionar el mes inicial y el mes final")
+
+    year_from, month_from, mes_desde = _registro_parse_month_value(
+        mes_desde_raw,
+        "mes_desde",
+    )
+    year_to, month_to, mes_hasta = _registro_parse_month_value(
+        mes_hasta_raw,
+        "mes_hasta",
+    )
+
+    start_index = (year_from * 12) + month_from
+    end_index = (year_to * 12) + month_to
+
+    if start_index > end_index:
+        raise ValueError("El mes inicial no puede ser mayor que el mes final")
+
+    month_count = end_index - start_index + 1
+    if month_count > REGISTRO_ADMIN_MAX_MESES:
+        raise ValueError(
+            f"El rango máximo permitido es de {REGISTRO_ADMIN_MAX_MESES} meses"
+        )
+
+    start_date = date(year_from, month_from, 1)
+    end_exclusive = _registro_next_month(year_to, month_to)
+
+    return {
+        "mes_desde": mes_desde,
+        "mes_hasta": mes_hasta,
+        "start_date": start_date,
+        "end_exclusive": end_exclusive,
+        "month_count": month_count,
+    }
+
 
 @bp.route('/registros', methods=['GET'])
 def obtener_registros():
@@ -2403,6 +2527,7 @@ def obtener_registros():
         filtro_mes = (request.args.get("mes") or "").strip()
         filtro_anio = (request.args.get("anio") or "").strip()
         filtro_nro_caso = (request.args.get("nroCasoCliente") or "").strip()
+        rango_meses_admin = _registro_admin_month_range(consultor_login)
 
         filtro_clientes = [v.strip() for v in _get_list_arg("cliente") if str(v).strip()]
         filtro_consultores = [v.strip() for v in _get_list_arg("consultor") if str(v).strip()]
@@ -2447,17 +2572,25 @@ def obtener_registros():
                     return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
             q = q.filter(func.upper(E.nombre) == filtro_equipo)
 
-        if filtro_mes:
-            try:
-                q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
-            except Exception:
-                pass
+        if rango_meses_admin:
+            q = q.filter(
+                Registro.fecha >= rango_meses_admin["start_date"].isoformat(),
+                Registro.fecha < rango_meses_admin["end_exclusive"].isoformat(),
+            )
+        else:
+            # Compatibilidad para usuarios no administradores que todavía
+            # consuman los parámetros anteriores.
+            if filtro_mes:
+                try:
+                    q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
+                except Exception:
+                    pass
 
-        if filtro_anio:
-            try:
-                q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == int(filtro_anio))
-            except Exception:
-                pass
+            if filtro_anio:
+                try:
+                    q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == int(filtro_anio))
+                except Exception:
+                    pass
 
         if filtro_nro_caso:
             q = q.filter(Registro.nro_caso_cliente.ilike(f"%{filtro_nro_caso}%"))
@@ -2580,8 +2713,16 @@ def obtener_registros():
             "total": total,
             "page": page,
             "per_page": per_page,
-            "total_pages": math.ceil(total / per_page) if per_page else 1
+            "total_pages": math.ceil(total / per_page) if per_page else 1,
+            "rango_meses": {
+                "desde": rango_meses_admin["mes_desde"],
+                "hasta": rango_meses_admin["mes_hasta"],
+                "cantidad_meses": rango_meses_admin["month_count"],
+            } if rango_meses_admin else None,
         }), 200
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
 
     except Exception as e:
         app.logger.exception("❌ Error en obtener_registros (/registros)")
@@ -6038,6 +6179,7 @@ def export_registros():
         filtro_mes = str(request.args.get('mes') or '').strip()
         filtro_anio = str(request.args.get('anio') or '').strip()
         filtro_nro_caso = str(request.args.get('nroCasoCliente') or '').strip()
+        rango_meses_admin = _registro_admin_month_range(consultor_login)
 
         filtro_clientes = list(dict.fromkeys(
             str(v).strip() for v in _get_list_arg('cliente') if str(v).strip()
@@ -6091,39 +6233,44 @@ def export_registros():
                 func.upper(Registro.equipo) == filtro_equipo,
             ))
 
-        # Cuando llegan año y mes, se usa rango para aprovechar el índice de fecha.
-        month_int = None
-        year_int = None
-
-        try:
-            month_int = int(filtro_mes) if filtro_mes else None
-            if month_int is not None and not 1 <= month_int <= 12:
-                month_int = None
-        except Exception:
+        if rango_meses_admin:
+            q = q.filter(
+                Registro.fecha >= rango_meses_admin["start_date"].isoformat(),
+                Registro.fecha < rango_meses_admin["end_exclusive"].isoformat(),
+            )
+        else:
+            # Compatibilidad para usuarios no administradores.
             month_int = None
-
-        try:
-            year_int = int(filtro_anio) if filtro_anio else None
-            if year_int is not None and not 1900 <= year_int <= 2200:
-                year_int = None
-        except Exception:
             year_int = None
 
-        if year_int and month_int:
-            start_date = date(year_int, month_int, 1)
-            end_date = date(year_int + 1, 1, 1) if month_int == 12 else date(year_int, month_int + 1, 1)
-            q = q.filter(
-                Registro.fecha >= start_date.isoformat(),
-                Registro.fecha < end_date.isoformat(),
-            )
-        elif year_int:
-            q = q.filter(
-                Registro.fecha >= date(year_int, 1, 1).isoformat(),
-                Registro.fecha < date(year_int + 1, 1, 1).isoformat(),
-            )
-        elif month_int:
-            # Fallback cuando no se seleccionó año.
-            q = q.filter(func.substring(Registro.fecha, 6, 2) == f'{month_int:02d}')
+            try:
+                month_int = int(filtro_mes) if filtro_mes else None
+                if month_int is not None and not 1 <= month_int <= 12:
+                    month_int = None
+            except Exception:
+                month_int = None
+
+            try:
+                year_int = int(filtro_anio) if filtro_anio else None
+                if year_int is not None and not 1900 <= year_int <= 2200:
+                    year_int = None
+            except Exception:
+                year_int = None
+
+            if year_int and month_int:
+                start_date = date(year_int, month_int, 1)
+                end_date = _registro_next_month(year_int, month_int)
+                q = q.filter(
+                    Registro.fecha >= start_date.isoformat(),
+                    Registro.fecha < end_date.isoformat(),
+                )
+            elif year_int:
+                q = q.filter(
+                    Registro.fecha >= date(year_int, 1, 1).isoformat(),
+                    Registro.fecha < date(year_int + 1, 1, 1).isoformat(),
+                )
+            elif month_int:
+                q = q.filter(func.substring(Registro.fecha, 6, 2) == f'{month_int:02d}')
 
         if filtro_nro_caso:
             q = q.filter(Registro.nro_caso_cliente.ilike(f'%{filtro_nro_caso}%'))
@@ -6202,8 +6349,9 @@ def export_registros():
             ('Rol', rol_req),
             ('ID', filtro_id or 'Todos'),
             ('Fecha', filtro_fecha or 'Todas'),
-            ('Mes', filtro_mes or 'Todos'),
-            ('Año', filtro_anio or 'Todos'),
+            ('Mes desde', rango_meses_admin['mes_desde'] if rango_meses_admin else (filtro_mes or 'Todos')),
+            ('Mes hasta', rango_meses_admin['mes_hasta'] if rango_meses_admin else (filtro_mes or 'Todos')),
+            ('Año anterior', filtro_anio or 'No aplica'),
             ('Equipo', filtro_equipo or 'Todos'),
             ('Consultores', ', '.join(filtro_consultores) or 'Todos'),
             ('Clientes', ', '.join(filtro_clientes) or 'Todos'),
@@ -6306,9 +6454,17 @@ def export_registros():
 
         workbook.save(temp_path)
 
-        filename = datetime.now(ZoneInfo('America/Bogota')).strftime(
-            'registros_%Y%m%d_%H%M%S.xlsx'
-        )
+        generated_at = datetime.now(ZoneInfo('America/Bogota'))
+        timestamp = generated_at.strftime('%Y%m%d_%H%M%S')
+
+        if rango_meses_admin:
+            periodo_archivo = (
+                f"{rango_meses_admin['mes_desde']}_a_"
+                f"{rango_meses_admin['mes_hasta']}"
+            )
+            filename = f'registros_{periodo_archivo}_{timestamp}.xlsx'
+        else:
+            filename = f'registros_{timestamp}.xlsx'
 
         response = send_file(
             temp_path,
@@ -6320,6 +6476,9 @@ def export_registros():
         )
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         response.headers['X-Total-Registros'] = str(total_exported)
+        if rango_meses_admin:
+            response.headers['X-Mes-Desde'] = rango_meses_admin['mes_desde']
+            response.headers['X-Mes-Hasta'] = rango_meses_admin['mes_hasta']
 
         @response.call_on_close
         def cleanup_export_file():
@@ -6330,6 +6489,16 @@ def export_registros():
                 app.logger.warning('No se pudo eliminar el temporal de exportación: %s', temp_path)
 
         return response
+
+    except ValueError as exc:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        return jsonify({
+            'error': str(exc),
+        }), 400
 
     except Exception as exc:
         if temp_path and os.path.exists(temp_path):
