@@ -1,4 +1,4 @@
-from flask import request, jsonify, Blueprint, current_app as app, g
+from flask import request, jsonify, Blueprint, current_app as app, g, send_file
 from backend.models import (
     db, Modulo, Consultor, Registro, BaseRegistro, BaseRegistroInfoCoeSapFuncional, Login,
     Rol, Equipo, Horario, Oportunidad, Cliente,
@@ -25,12 +25,17 @@ import logging
 import traceback
 import math
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
+from openpyxl.cell import WriteOnlyCell
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
 from zoneinfo import ZoneInfo
 import bcrypt
 import holidays
 import secrets
 import json
+import os
+import tempfile
 
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
@@ -5678,6 +5683,42 @@ def commit_import_excel():
 
 @bp.route('/registros/export', methods=['GET'])
 def export_registros():
+    """
+    Genera el XLSX directamente en el servidor usando openpyxl en modo
+    write_only y una consulta SQL por proyección/streaming.
+
+    Así se evita:
+    - construir miles de modelos ORM con relaciones;
+    - crear un JSON gigante;
+    - duplicar todos los registros en la memoria del navegador;
+    - volver a construir el libro completo con SheetJS en el frontend.
+    """
+    temp_path = None
+
+    def excel_safe(value):
+        """Convierte valores a tipos seguros y evita fórmulas inyectadas."""
+        if value is None:
+            return ""
+
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+
+        if isinstance(value, Decimal):
+            return float(value)
+
+        if isinstance(value, bool):
+            return "Sí" if value else "No"
+
+        if isinstance(value, (int, float)):
+            if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+                return 0
+            return value
+
+        text_value = str(value)
+        if text_value.startswith(("=", "+", "-", "@")):
+            return "'" + text_value
+        return text_value
+
     try:
         usuario = _get_usuario_from_request()
         rol_req = _get_rol_from_request()
@@ -5685,7 +5726,7 @@ def export_registros():
         if not usuario:
             return jsonify({'error': 'Usuario no enviado'}), 400
 
-        usuario_norm = (usuario or "").strip().lower()
+        usuario_norm = str(usuario or '').strip().lower()
 
         consultor_login = (
             Consultor.query.options(
@@ -5695,71 +5736,119 @@ def export_registros():
             .filter(func.lower(Consultor.usuario) == usuario_norm)
             .first()
         )
+
         if not consultor_login:
             return jsonify({'error': 'Consultor no encontrado'}), 404
 
-        scope, val = scope_for(consultor_login, rol_req)
+        scope, scope_value = scope_for(consultor_login, rol_req)
 
         C = aliased(Consultor)
         E = aliased(Equipo)
+        T = aliased(Tarea)
+        O = aliased(Ocupacion)
+        P = aliased(Proyecto)
+        PF = aliased(ProyectoFase)
 
+        # Proyección liviana: no crea modelos Registro ni carga relaciones ORM.
         q = (
-            Registro.query
-            .options(
-                joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
-                joinedload(Registro.tarea),
-                joinedload(Registro.ocupacion),
-                joinedload(Registro.proyecto),
-                joinedload(Registro.fase_proyecto),
+            db.session.query(
+                Registro.id.label('id'),
+                Registro.fecha.label('fecha'),
+                Registro.modulo.label('modulo'),
+                Registro.cliente.label('cliente'),
+                Registro.nro_caso_cliente.label('nro_caso_cliente'),
+                Registro.nro_caso_interno.label('nro_caso_interno'),
+                Registro.nro_caso_escalado.label('nro_caso_escalado'),
+                Registro.ocupacion_id.label('ocupacion_id'),
+                O.codigo.label('ocupacion_codigo'),
+                O.nombre.label('ocupacion_nombre'),
+                Registro.tarea_id.label('tarea_id'),
+                T.codigo.label('tarea_codigo'),
+                T.nombre.label('tarea_nombre'),
+                Registro.tipo_tarea.label('tipo_tarea_legacy'),
+                C.nombre.label('consultor_nombre'),
+                Registro.usuario_consultor.label('usuario_consultor'),
+                E.nombre.label('equipo_relacion'),
+                Registro.equipo.label('equipo_registro'),
+                Registro.hora_inicio.label('hora_inicio'),
+                Registro.hora_fin.label('hora_fin'),
+                Registro.tiempo_invertido.label('tiempo_invertido'),
+                Registro.tiempo_facturable.label('tiempo_facturable'),
+                Registro.horas_adicionales.label('horas_adicionales'),
+                Registro.horario_trabajo.label('horario_trabajo'),
+                Registro.descripcion.label('descripcion'),
+                Registro.total_horas.label('total_horas'),
+                Registro.bloqueado.label('bloqueado'),
+                Registro.oncall.label('oncall'),
+                Registro.desborde.label('desborde'),
+                Registro.actividad_malla.label('actividad_malla'),
+                Registro.proyecto_id.label('proyecto_id'),
+                Registro.fase_proyecto_id.label('fase_proyecto_id'),
+                P.codigo.label('proyecto_codigo'),
+                P.nombre.label('proyecto_nombre'),
+                PF.nombre.label('fase_proyecto_nombre'),
             )
-            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
+            .select_from(Registro)
+            .outerjoin(C, Registro.usuario_consultor == C.usuario)
             .outerjoin(E, C.equipo_id == E.id)
+            .outerjoin(T, Registro.tarea_id == T.id)
+            .outerjoin(O, Registro.ocupacion_id == O.id)
+            .outerjoin(P, Registro.proyecto_id == P.id)
+            .outerjoin(PF, Registro.fase_proyecto_id == PF.id)
         )
 
-        # Scope
-        if scope == "SELF":
-            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+        # ----------------------------------------------------------
+        # Scope de seguridad
+        # ----------------------------------------------------------
+        if scope == 'SELF':
+            q = q.filter(Registro.usuario_consultor == consultor_login.usuario)
 
-        elif scope == "TEAM":
-            if not int(val or 0):
+        elif scope == 'TEAM':
+            equipo_id = int(scope_value or 0)
+            if not equipo_id:
                 return jsonify({'error': 'Consultor sin equipo asignado'}), 403
-            q = q.filter(C.equipo_id == int(val))
+            q = q.filter(C.equipo_id == equipo_id)
 
-        elif scope == "ROLE_POOL":
-            if not int(val or 0):
+        elif scope == 'ROLE_POOL':
+            rol_id = int(scope_value or 0)
+            if not rol_id:
                 return jsonify({'error': 'Consultor sin rol asignado'}), 403
-            q = q.filter(C.rol_id == int(val))
+            q = q.filter(C.rol_id == rol_id)
 
-        # Filtros
-        filtro_id = (request.args.get("id") or "").strip()
-        filtro_fecha = (request.args.get("fecha") or "").strip()
-        filtro_equipo = (request.args.get("equipo") or "").strip().upper()
-        filtro_mes = (request.args.get("mes") or "").strip()
-        filtro_anio = (request.args.get("anio") or "").strip()
-        filtro_nro_caso = (request.args.get("nroCasoCliente") or "").strip()
+        # ----------------------------------------------------------
+        # Filtros actuales de la vista Registro
+        # ----------------------------------------------------------
+        filtro_id = str(request.args.get('id') or '').strip()
+        filtro_fecha = str(request.args.get('fecha') or '').strip()
+        filtro_equipo = str(request.args.get('equipo') or '').strip().upper()
+        filtro_mes = str(request.args.get('mes') or '').strip()
+        filtro_anio = str(request.args.get('anio') or '').strip()
+        filtro_nro_caso = str(request.args.get('nroCasoCliente') or '').strip()
 
-        filtro_clientes = [v.strip() for v in _get_list_arg("cliente") if str(v).strip()]
-        filtro_consultores = [v.strip() for v in _get_list_arg("consultor") if str(v).strip()]
-        filtro_horas_adic = [str(v).strip().upper() for v in _get_list_arg("horasAdicionales") if str(v).strip()]
+        filtro_clientes = list(dict.fromkeys(
+            str(v).strip() for v in _get_list_arg('cliente') if str(v).strip()
+        ))
+        filtro_consultores = list(dict.fromkeys(
+            str(v).strip() for v in _get_list_arg('consultor') if str(v).strip()
+        ))
+        filtro_horas_adic = list(dict.fromkeys(
+            str(v).strip().upper() for v in _get_list_arg('horasAdicionales') if str(v).strip()
+        ))
+
         filtro_tarea_ids = []
-        filtro_ocupacion_ids = []
-
-        for v in _get_list_arg("tarea_id"):
+        for value in _get_list_arg('tarea_id'):
             try:
-                filtro_tarea_ids.append(int(v))
+                filtro_tarea_ids.append(int(value))
             except Exception:
-                pass
-
-        for v in _get_list_arg("ocupacion_id"):
-            try:
-                filtro_ocupacion_ids.append(int(v))
-            except Exception:
-                pass
-
-        filtro_clientes = list(dict.fromkeys(filtro_clientes))
-        filtro_consultores = list(dict.fromkeys(filtro_consultores))
-        filtro_horas_adic = list(dict.fromkeys(filtro_horas_adic))
+                continue
         filtro_tarea_ids = list(dict.fromkeys(filtro_tarea_ids))
+
+        filtro_ocupacion_ids = []
+        for value in _get_list_arg('ocupacion_id'):
+            try:
+                filtro_ocupacion_ids.append(int(value))
+            except Exception:
+                continue
         filtro_ocupacion_ids = list(dict.fromkeys(filtro_ocupacion_ids))
 
         if filtro_id and filtro_id.isdigit():
@@ -5775,26 +5864,55 @@ def export_registros():
             q = q.filter(C.nombre.in_(filtro_consultores))
 
         if filtro_equipo:
-            if scope == "TEAM":
-                eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper() if consultor_login.equipo_obj else ""
-                if filtro_equipo != eq_login:
+            if scope == 'TEAM':
+                equipo_login = (
+                    str(consultor_login.equipo_obj.nombre or '').strip().upper()
+                    if consultor_login.equipo_obj else ''
+                )
+                if filtro_equipo != equipo_login:
                     return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
-            q = q.filter(func.upper(E.nombre) == filtro_equipo)
 
-        if filtro_mes:
-            try:
-                q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
-            except Exception:
-                pass
+            q = q.filter(or_(
+                func.upper(E.nombre) == filtro_equipo,
+                func.upper(Registro.equipo) == filtro_equipo,
+            ))
 
-        if filtro_anio:
-            try:
-                q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == int(filtro_anio))
-            except Exception:
-                pass
+        # Cuando llegan año y mes, se usa rango para aprovechar el índice de fecha.
+        month_int = None
+        year_int = None
+
+        try:
+            month_int = int(filtro_mes) if filtro_mes else None
+            if month_int is not None and not 1 <= month_int <= 12:
+                month_int = None
+        except Exception:
+            month_int = None
+
+        try:
+            year_int = int(filtro_anio) if filtro_anio else None
+            if year_int is not None and not 1900 <= year_int <= 2200:
+                year_int = None
+        except Exception:
+            year_int = None
+
+        if year_int and month_int:
+            start_date = date(year_int, month_int, 1)
+            end_date = date(year_int + 1, 1, 1) if month_int == 12 else date(year_int, month_int + 1, 1)
+            q = q.filter(
+                Registro.fecha >= start_date.isoformat(),
+                Registro.fecha < end_date.isoformat(),
+            )
+        elif year_int:
+            q = q.filter(
+                Registro.fecha >= date(year_int, 1, 1).isoformat(),
+                Registro.fecha < date(year_int + 1, 1, 1).isoformat(),
+            )
+        elif month_int:
+            # Fallback cuando no se seleccionó año.
+            q = q.filter(func.substring(Registro.fecha, 6, 2) == f'{month_int:02d}')
 
         if filtro_nro_caso:
-            q = q.filter(Registro.nro_caso_cliente.ilike(f"%{filtro_nro_caso}%"))
+            q = q.filter(Registro.nro_caso_cliente.ilike(f'%{filtro_nro_caso}%'))
 
         if filtro_horas_adic:
             q = q.filter(func.upper(Registro.horas_adicionales).in_(filtro_horas_adic))
@@ -5805,93 +5923,212 @@ def export_registros():
         if filtro_ocupacion_ids:
             q = q.filter(Registro.ocupacion_id.in_(filtro_ocupacion_ids))
 
-        registros = q.order_by(Registro.fecha.desc(), Registro.id.desc()).all()
+        q = q.order_by(Registro.fecha.desc(), Registro.id.desc())
 
-        data = []
-        for r in registros:
-            tarea = getattr(r, "tarea", None)
-            ocup = getattr(r, "ocupacion", None)
+        # ----------------------------------------------------------
+        # Libro XLSX de bajo consumo de memoria
+        # ----------------------------------------------------------
+        workbook = Workbook(write_only=True)
 
-            if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
-                tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
+        header_font = Font(color='FFFFFF', bold=True)
+        header_fill = PatternFill('solid', fgColor='DA291C')
+        header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+        headers = [
+            'ID', 'Fecha', 'Módulo', 'Equipo', 'Cliente',
+            'Nro. Caso Cliente', 'Nro. Caso Interno', 'Nro. Caso Escalado SAP',
+            'Ocupación', 'Tipo Tarea Azure', 'Consultor', 'Usuario',
+            'Hora Inicio', 'Hora Fin', 'Tiempo Invertido', 'Tiempo Facturable',
+            'Horas Adicionales', 'Horario Trabajo', 'Descripción', 'Total Horas',
+            'ONCALL', 'Desborde', 'Actividad Malla', 'Proyecto',
+            'Fase Proyecto', 'Bloqueado'
+        ]
+
+        column_widths = [
+            10, 13, 20, 24, 28,
+            20, 20, 24,
+            28, 38, 28, 20,
+            13, 13, 17, 18,
+            18, 20, 55, 15,
+            14, 14, 20, 36,
+            28, 13,
+        ]
+
+        def create_data_sheet(index):
+            ws = workbook.create_sheet(title=f'Registros_{index}')
+            ws.freeze_panes = 'A2'
+            for col_idx, width in enumerate(column_widths, start=1):
+                ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+            header_cells = []
+            for title in headers:
+                cell = WriteOnlyCell(ws, value=title)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+                header_cells.append(cell)
+            ws.append(header_cells)
+            return ws
+
+        metadata_ws = workbook.create_sheet(title='Filtros')
+        metadata_ws.column_dimensions['A'].width = 28
+        metadata_ws.column_dimensions['B'].width = 90
+
+        metadata_headers = []
+        for title in ('Filtro', 'Valor'):
+            cell = WriteOnlyCell(metadata_ws, value=title)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+            metadata_headers.append(cell)
+        metadata_ws.append(metadata_headers)
+
+        filtros_metadata = [
+            ('Usuario que genera', usuario_norm),
+            ('Rol', rol_req),
+            ('ID', filtro_id or 'Todos'),
+            ('Fecha', filtro_fecha or 'Todas'),
+            ('Mes', filtro_mes or 'Todos'),
+            ('Año', filtro_anio or 'Todos'),
+            ('Equipo', filtro_equipo or 'Todos'),
+            ('Consultores', ', '.join(filtro_consultores) or 'Todos'),
+            ('Clientes', ', '.join(filtro_clientes) or 'Todos'),
+            ('Nro. Caso Cliente', filtro_nro_caso or 'Todos'),
+            ('Horas adicionales', ', '.join(filtro_horas_adic) or 'Todas'),
+            ('Tareas ID', ', '.join(map(str, filtro_tarea_ids)) or 'Todas'),
+            ('Ocupaciones ID', ', '.join(map(str, filtro_ocupacion_ids)) or 'Todas'),
+            ('Generado', datetime.now(ZoneInfo('America/Bogota')).strftime('%Y-%m-%d %H:%M:%S')),
+        ]
+
+        for key, value in filtros_metadata:
+            metadata_ws.append([excel_safe(key), excel_safe(value)])
+
+        MAX_DATA_ROWS_PER_SHEET = 500000
+        sheet_index = 1
+        sheet_row_count = 0
+        total_exported = 0
+        data_ws = create_data_sheet(sheet_index)
+
+        rows = q.execution_options(stream_results=True).yield_per(2000)
+
+        for row in rows:
+            if sheet_row_count >= MAX_DATA_ROWS_PER_SHEET:
+                sheet_index += 1
+                sheet_row_count = 0
+                data_ws = create_data_sheet(sheet_index)
+
+            if row.tarea_codigo and row.tarea_nombre:
+                tipo_tarea = f'{row.tarea_codigo} - {row.tarea_nombre}'
             else:
-                tipo_tarea_str = (r.tipo_tarea or "").strip() or None
+                tipo_tarea = str(row.tipo_tarea_legacy or '').strip()
 
-            equipo_nombre = None
-            if r.consultor and getattr(r.consultor, "equipo_obj", None):
-                equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
+            if row.ocupacion_codigo and row.ocupacion_nombre:
+                ocupacion = f'{row.ocupacion_codigo} - {row.ocupacion_nombre}'
+            else:
+                ocupacion = row.ocupacion_nombre or ''
 
-            proyecto = getattr(r, "proyecto", None)
-            fase_proyecto = getattr(r, "fase_proyecto", None)
+            equipo_nombre = str(
+                row.equipo_relacion or row.equipo_registro or 'SIN EQUIPO'
+            ).strip().upper()
 
-            data.append({
-                "id": r.id,
-                "fecha": r.fecha,
-                "modulo": r.modulo,
-                "cliente": r.cliente,
-                "equipo": equipo_nombre or (r.equipo or "").strip().upper() or "SIN EQUIPO",
-                "nroCasoCliente": r.nro_caso_cliente,
-                "nroCasoInterno": r.nro_caso_interno,
-                "nroCasoEscaladoSap": r.nro_caso_escalado,
+            horario_trabajo = _normalizar_horario_trabajo_por_equipo(
+                row.horario_trabajo,
+                equipo_nombre,
+            )
 
-                "ocupacion_id": r.ocupacion_id,
-                "ocupacion_codigo": ocup.codigo if ocup else None,
-                "ocupacion_nombre": ocup.nombre if ocup else None,
+            horas_adicionales = _calcular_horas_adicionales_por_horario(
+                row.hora_inicio,
+                row.hora_fin,
+                horario_trabajo,
+                equipo_nombre,
+                row.horas_adicionales,
+            )
 
-                "tarea_id": r.tarea_id,
-                "tipoTarea": tipo_tarea_str,
-                "tarea": {
-                    "id": tarea.id,
-                    "codigo": getattr(tarea, "codigo", None),
-                    "nombre": getattr(tarea, "nombre", None),
-                } if tarea else None,
+            proyecto = ' - '.join(
+                value for value in [
+                    str(row.proyecto_codigo or '').strip(),
+                    str(row.proyecto_nombre or '').strip(),
+                ] if value
+            )
 
-                "consultor": r.consultor.nombre if r.consultor else None,
-                "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
+            data_ws.append([
+                excel_safe(row.id),
+                excel_safe(row.fecha),
+                excel_safe(row.modulo),
+                excel_safe(equipo_nombre),
+                excel_safe(row.cliente),
+                excel_safe(row.nro_caso_cliente),
+                excel_safe(row.nro_caso_interno),
+                excel_safe(row.nro_caso_escalado),
+                excel_safe(ocupacion),
+                excel_safe(tipo_tarea),
+                excel_safe(row.consultor_nombre),
+                excel_safe(str(row.usuario_consultor or '').strip().lower()),
+                excel_safe(row.hora_inicio),
+                excel_safe(row.hora_fin),
+                excel_safe(row.tiempo_invertido),
+                excel_safe(row.tiempo_facturable),
+                excel_safe(horas_adicionales),
+                excel_safe(horario_trabajo),
+                excel_safe(row.descripcion),
+                excel_safe(row.total_horas),
+                excel_safe(row.oncall),
+                excel_safe(row.desborde),
+                excel_safe(row.actividad_malla),
+                excel_safe(proyecto),
+                excel_safe(row.fase_proyecto_nombre),
+                excel_safe(bool(row.bloqueado)),
+            ])
 
-                "horaInicio": r.hora_inicio,
-                "horaFin": r.hora_fin,
-                "tiempoInvertido": r.tiempo_invertido,
-                "tiempoFacturable": r.tiempo_facturable,
-                "horasAdicionales": _calcular_horas_adicionales_por_horario(
-                    r.hora_inicio,
-                    r.hora_fin,
-                    getattr(r, "horario_trabajo", None),
-                    equipo_nombre or getattr(r, "equipo", None),
-                    r.horas_adicionales,
-                ),
-                "horarioTrabajo": _normalizar_horario_trabajo_por_equipo(
-                    getattr(r, "horario_trabajo", None),
-                    equipo_nombre or getattr(r, "equipo", None),
-                ),
-                "horario_trabajo": _normalizar_horario_trabajo_por_equipo(
-                    getattr(r, "horario_trabajo", None),
-                    equipo_nombre or getattr(r, "equipo", None),
-                ),
-                "descripcion": r.descripcion,
-                "totalHoras": r.total_horas,
+            sheet_row_count += 1
+            total_exported += 1
 
-                "bloqueado": bool(r.bloqueado),
-                "oncall": r.oncall,
-                "desborde": r.desborde,
-                "actividadMalla": r.actividad_malla,
+        metadata_ws.append(['Total exportado', total_exported])
+        metadata_ws.append(['Hojas de registros', sheet_index])
 
-                "proyecto_id": r.proyecto_id,
-                "fase_proyecto_id": r.fase_proyecto_id,
+        tmp = tempfile.NamedTemporaryFile(prefix='registros_', suffix='.xlsx', delete=False)
+        temp_path = tmp.name
+        tmp.close()
 
-                "proyecto_codigo": proyecto.codigo if proyecto else None,
-                "proyecto_nombre": proyecto.nombre if proyecto else None,
-                "proyecto_fase": fase_proyecto.nombre if fase_proyecto else None,
-            })
+        workbook.save(temp_path)
 
+        filename = datetime.now(ZoneInfo('America/Bogota')).strftime(
+            'registros_%Y%m%d_%H%M%S.xlsx'
+        )
+
+        response = send_file(
+            temp_path,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename,
+            conditional=True,
+            max_age=0,
+        )
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['X-Total-Registros'] = str(total_exported)
+
+        @response.call_on_close
+        def cleanup_export_file():
+            try:
+                if temp_path and os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                app.logger.warning('No se pudo eliminar el temporal de exportación: %s', temp_path)
+
+        return response
+
+    except Exception as exc:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+        app.logger.exception('Error generando XLSX en /registros/export')
         return jsonify({
-            "data": data,
-            "total": len(data)
-        }), 200
-
-    except Exception as e:
-        app.logger.exception("❌ Error en /registros/export")
-        return jsonify({'error': str(e)}), 500
+            'error': 'No se pudo generar el archivo Excel',
+            'detalle': str(exc),
+        }), 500
 
 @bp.route("/horarios-permitidos", methods=["GET"])
 def horarios_permitidos():

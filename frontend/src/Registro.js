@@ -4,7 +4,6 @@ import Swal from 'sweetalert2';
 import './Registro.css';
 import { jfetch } from './lib/api';
 import Resumen from './Resumen';
-import { exportRegistrosExcelXLSX_ALL } from "./lib/exportExcel";
 import CapacidadSemanalModal from "./CapacidadSemanalModal";
 import { Navigate, useNavigate } from "react-router-dom";
 import CostoConsultorPage from './CostoConsultorPage';
@@ -691,6 +690,7 @@ const Registro = ({ userData }) => {
 
   const canDownload = ['rodriguezso', 'valdezjl', 'gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
   const [importingExcel, setImportingExcel] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
   const canImportExcel = ['gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
 
   const [proyectos, setProyectos] = useState([]);
@@ -1948,44 +1948,78 @@ const Registro = ({ userData }) => {
   ]);
 
   const handleExport = async () => {
+    if (exportingExcel) return;
+
+    setExportingExcel(true);
+
     try {
       const params = buildCurrentFilterParams();
       const res = await jfetch(`/registros/export?${params.toString()}`, {
+        method: "GET",
         headers: {
           "X-User-Usuario": usuarioLogin,
           "X-User-Rol": rol,
           "X-User-Equipo": String(equipoUser || ""),
+          "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         },
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
+      if (!res.ok) {
+        const contentType = String(res.headers.get("content-type") || "").toLowerCase();
+        let message = `HTTP ${res.status}`;
 
-      const rows = Array.isArray(data?.data) ? data.data : [];
-
-      exportRegistrosExcelXLSX_ALL(
-        rows,
-        `registros_${new Date().toISOString().slice(0, 10)}.xlsx`,
-        {
-          'Consultor filtro': filtroConsultor.length ? filtroConsultor.join(', ') : 'Todos',
-          'Tarea filtro': filtroTarea.length ? filtroTarea.join(', ') : 'Todas',
-          'Cliente filtro': filtroCliente.length ? filtroCliente.join(', ') : 'Todos',
-          'Equipo filtro': filtroEquipo || 'Todos',
-          'Nro Caso Cliente filtro': filtroNroCasoCli || 'Todos',
-          'Horas Adicionales filtro': filtroHorasAdic.length ? filtroHorasAdic.join(', ') : 'Todas',
-          'Fecha filtro': filtroFecha || 'Todas',
-          'Mes filtro': filtroMes || 'Todos',
-          'Año filtro': filtroAnio || 'Todos',
-          'Total exportado': rows.length,
-          'Generado': new Date().toLocaleString()
+        if (contentType.includes("application/json")) {
+          const data = await res.json().catch(() => ({}));
+          message = data?.detalle || data?.mensaje || data?.error || message;
+        } else {
+          const text = await res.text().catch(() => "");
+          if (text) message = text;
         }
-      );
+
+        throw new Error(message);
+      }
+
+      const blob = await res.blob();
+      if (!blob?.size) {
+        throw new Error("El servidor devolvió un archivo vacío.");
+      }
+
+      const disposition = res.headers.get("content-disposition") || "";
+      const utf8Name = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      const normalName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+
+      let filename = `registros_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      try {
+        filename = decodeURIComponent(utf8Name || normalName || filename);
+      } catch {
+        filename = normalName || filename;
+      }
+
+      filename = filename.replace(/[\/:*?"<>|]/g, "_");
+
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+
+      const total = res.headers.get("X-Total-Registros");
+      if (total !== null) {
+        console.info(`Excel generado con ${total} registros.`);
+      }
     } catch (e) {
       Swal.fire({
         icon: "error",
         title: "Error exportando",
         text: String(e.message || e),
       });
+    } finally {
+      setExportingExcel(false);
     }
   };
 
@@ -2184,9 +2218,10 @@ const Registro = ({ userData }) => {
               <button
                 className="btn btn-outline"
                 onClick={handleExport}
-                title="Descargar Excel"
+                disabled={exportingExcel}
+                title={exportingExcel ? "Generando Excel en el servidor" : "Descargar Excel"}
               >
-                Descargar Excel
+                {exportingExcel ? "Generando Excel…" : "Descargar Excel"}
               </button>
             )}
 

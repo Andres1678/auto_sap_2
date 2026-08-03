@@ -9,6 +9,7 @@ import HorasPorConsultorChart from './GraficosOperacion/HorasPorConsultorChart';
 import HorasPorTareaChart from './GraficosOperacion/HorasPorTareaChart';
 import HorasPorClienteChart from './GraficosOperacion/HorasPorClienteChart';
 import HorasPorModuloChart from './GraficosOperacion/HorasPorModuloChart';
+import HorasPorEquipoChart from './GraficosOperacion/HorasPorEquipoChart';
 import HorasPorProyectoChart from './GraficosOperacion/HorasPorProyectoChart';
 import HorasPorDiaChart from './GraficosOperacion/HorasPorDiaChart';
 import GraficoDeMes from './GraficosOperacion/GraficoDeMes';
@@ -836,6 +837,20 @@ export default function Graficos() {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
+  const horasPorEquipo = useMemo(() => {
+    const acc = new Map();
+
+    (datosFiltrados ?? []).forEach((r) => {
+      const equipo = equipoOf(r);
+      acc.set(equipo, (acc.get(equipo) || 0) + toNum(r.tiempoInvertido));
+    });
+
+    return Array.from(acc, ([equipo, horas]) => ({
+      equipo,
+      horas: +horas.toFixed(2),
+    })).sort((a, b) => b.horas - a.horas);
+  }, [datosFiltrados]);
+
   const horasPorProyecto = useMemo(() => {
     const acc = new Map();
     (datosFiltrados ?? []).forEach((r) => {
@@ -960,6 +975,10 @@ export default function Graficos() {
 
     if (kind === 'modulo') {
       rows = datosFiltrados.filter(r => r.modulo === value);
+    }
+
+    if (kind === 'equipo') {
+      rows = datosFiltrados.filter(r => equipoOf(r) === value);
     }
 
     if (kind === 'fecha') {
@@ -1311,6 +1330,17 @@ export default function Graficos() {
               data={horasPorModulo}
               isAdmin={isAdmin}
               filtroMes={appliedFilters.mes}
+              filtroEquipo={appliedFilters.equipo}
+              onOpenDetail={openDetail}
+            />
+          </div>
+
+          <div className="pgx-chart-mono">
+            <HorasPorEquipoChart
+              data={horasPorEquipo}
+              filtroMes={appliedFilters.mes}
+              desde={appliedFilters.desde}
+              hasta={appliedFilters.hasta}
               filtroEquipo={appliedFilters.equipo}
               onOpenDetail={openDetail}
             />
