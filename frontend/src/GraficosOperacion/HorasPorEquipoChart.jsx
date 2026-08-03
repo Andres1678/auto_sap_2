@@ -16,12 +16,73 @@ const numberFormat = new Intl.NumberFormat("es-CO", {
   maximumFractionDigits: 2,
 });
 
-const safeHours = (value) => {
+const integerFormat = new Intl.NumberFormat("es-CO", {
+  maximumFractionDigits: 0,
+});
+
+const safeNumber = (value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const safeHours = (value) => Math.max(0, safeNumber(value));
+const safeInteger = (value) => Math.max(0, Math.trunc(safeNumber(value)));
 const formatHours = (value) => `${numberFormat.format(safeHours(value))} h`;
+
+function TeamValidationTooltip({ active, payload }) {
+  if (!active || !Array.isArray(payload) || payload.length === 0) {
+    return null;
+  }
+
+  const row = payload[0]?.payload || {};
+  const totalPersonas = safeInteger(row.totalPersonas);
+  const registraron = Math.min(safeInteger(row.registraron), totalPersonas);
+  const noRegistraron = Math.max(
+    safeInteger(row.noRegistraron),
+    totalPersonas - registraron
+  );
+  const porcentaje = totalPersonas > 0
+    ? (registraron * 100) / totalPersonas
+    : 0;
+
+  return (
+    <div className="pgx-team-tooltip">
+      <div className="pgx-team-tooltip__title">
+        {String(row.equipo || "SIN EQUIPO")}
+      </div>
+
+      <div className="pgx-team-tooltip__hours">
+        <span>Horas registradas</span>
+        <strong>{formatHours(row.horas)}</strong>
+      </div>
+
+      <div className="pgx-team-tooltip__divider" />
+
+      <div className="pgx-team-tooltip__row">
+        <span>Personas en el equipo</span>
+        <strong>{integerFormat.format(totalPersonas)}</strong>
+      </div>
+
+      <div className="pgx-team-tooltip__row is-success">
+        <span>Registraron en el período</span>
+        <strong>{integerFormat.format(registraron)}</strong>
+      </div>
+
+      <div className="pgx-team-tooltip__row is-danger">
+        <span>No registraron en el período</span>
+        <strong>{integerFormat.format(noRegistraron)}</strong>
+      </div>
+
+      <div className="pgx-team-tooltip__progress" aria-hidden="true">
+        <span style={{ width: `${Math.min(100, Math.max(0, porcentaje))}%` }} />
+      </div>
+
+      <div className="pgx-team-tooltip__percent">
+        Cobertura de registro: {numberFormat.format(porcentaje)}%
+      </div>
+    </div>
+  );
+}
 
 export default function HorasPorEquipoChart({
   data = [],
@@ -33,12 +94,33 @@ export default function HorasPorEquipoChart({
 }) {
   const rows = useMemo(() => {
     return (Array.isArray(data) ? data : [])
-      .map((row) => ({
-        equipo: String(row?.equipo || "SIN EQUIPO").trim().toUpperCase(),
-        horas: safeHours(row?.horas),
-      }))
-      .filter((row) => row.horas > 0)
-      .sort((a, b) => b.horas - a.horas);
+      .map((row) => {
+        const totalPersonas = safeInteger(row?.totalPersonas);
+        const registraron = Math.min(
+          safeInteger(row?.registraron),
+          totalPersonas
+        );
+
+        return {
+          equipo: String(row?.equipo || "SIN EQUIPO").trim().toUpperCase(),
+          horas: safeHours(row?.horas),
+          totalPersonas,
+          registraron,
+          noRegistraron: Math.max(
+            safeInteger(row?.noRegistraron),
+            totalPersonas - registraron
+          ),
+          porcentajeRegistro: totalPersonas > 0
+            ? +((registraron * 100) / totalPersonas).toFixed(2)
+            : 0,
+        };
+      })
+      .filter((row) => row.horas > 0 || row.totalPersonas > 0)
+      .sort((a, b) => {
+        const diffHoras = b.horas - a.horas;
+        if (diffHoras !== 0) return diffHoras;
+        return a.equipo.localeCompare(b.equipo);
+      });
   }, [data]);
 
   const totalHoras = useMemo(
@@ -60,7 +142,7 @@ export default function HorasPorEquipoChart({
     return String(filtroEquipo || "").trim() || "Todos";
   }, [filtroEquipo]);
 
-  const chartHeight = Math.max(300, rows.length * 58 + 110);
+  const chartHeight = Math.max(320, rows.length * 62 + 115);
 
   const openDetail = (entry) => {
     const equipo = String(
@@ -79,6 +161,9 @@ export default function HorasPorEquipoChart({
           <p>
             {periodoTexto} · Equipo: {equiposTexto}
           </p>
+          <span className="pgx-team-chart__hint">
+            Pasa el mouse por una barra para ver cuántas personas registraron y cuántas no.
+          </span>
         </div>
 
         <span className="pgx-team-chart__total">
@@ -105,6 +190,7 @@ export default function HorasPorEquipoChart({
                 type="number"
                 tickFormatter={formatHours}
                 tick={{ fontSize: 12, fill: "#64748b" }}
+                allowDecimals
               />
 
               <YAxis
@@ -116,8 +202,8 @@ export default function HorasPorEquipoChart({
               />
 
               <Tooltip
-                formatter={(value) => [formatHours(value), "Horas"]}
-                labelFormatter={(label) => `Equipo: ${label}`}
+                content={<TeamValidationTooltip />}
+                cursor={{ fill: "rgba(148, 163, 184, 0.10)" }}
               />
 
               <Bar
@@ -125,6 +211,7 @@ export default function HorasPorEquipoChart({
                 name="Horas"
                 fill="#DA291C"
                 radius={[0, 9, 9, 0]}
+                minPointSize={4}
                 onClick={openDetail}
                 style={{ cursor: "pointer" }}
               >

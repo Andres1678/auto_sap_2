@@ -105,6 +105,7 @@ GRAFICOS_ALL_ROLES = {
     "ADMIN",
     "ADMIN_GERENTES",
     "ADMIN_GESTION_PREVENTA",
+    "ADMIN_OPORTUNIDADES",
 }
 
 def _consultor_role_id(consultor_login):
@@ -2136,6 +2137,199 @@ def obtener_registros_graficos():
 
     except Exception as exc:
         app.logger.exception("Error en /registros/graficos optimizado")
+        return jsonify({
+            "error": "Error interno del servidor",
+            "detalle": str(exc),
+        }), 500
+
+
+@bp.route('/registros/graficos/equipos-personas', methods=['GET'])
+@permission_required("GRAFICOS_VER")
+def obtener_resumen_personas_por_equipo():
+    """
+    Devuelve la validación de registro de personas por equipo para el período
+    seleccionado en el dashboard.
+
+    Definiciones:
+      - total_personas: consultores activos asignados actualmente al equipo;
+      - registraron: consultores activos con al menos un Registro en el período;
+      - no_registraron: total_personas - registraron.
+
+    Esta validación usa únicamente período, alcance de seguridad y filtro de
+    equipo. Los filtros de cliente, tarea, módulo u ocupación no alteran el
+    cumplimiento del equipo.
+    """
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({'error': 'Usuario no enviado'}), 400
+
+        usuario_norm = str(usuario).strip().lower()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == usuario_norm)
+            .first()
+        )
+
+        if not consultor_login:
+            return jsonify({'error': 'Consultor no encontrado'}), 404
+
+        scope, scope_value = _scope_for_graficos(consultor_login, rol_req)
+
+        # ----------------------------------------------------------
+        # Período: mismas reglas usadas por /registros/graficos
+        # ----------------------------------------------------------
+        filtro_mes = str(request.args.get("mes") or "").strip()
+        filtro_desde = str(request.args.get("desde") or "").strip()
+        filtro_hasta = str(request.args.get("hasta") or "").strip()
+
+        if filtro_mes:
+            start_date, end_date = _graficos_month_bounds(filtro_mes)
+        else:
+            if not filtro_desde or not filtro_hasta:
+                return jsonify({
+                    'error': 'Selecciona un mes o un rango completo de fechas'
+                }), 400
+
+            start_date = _graficos_parse_iso_date(filtro_desde, "desde")
+            hasta_date = _graficos_parse_iso_date(filtro_hasta, "hasta")
+
+            if start_date > hasta_date:
+                return jsonify({
+                    'error': 'La fecha desde no puede ser mayor que hasta'
+                }), 400
+
+            if (hasta_date - start_date).days > 365:
+                return jsonify({
+                    'error': 'El rango máximo permitido para el dashboard es de 366 días'
+                }), 400
+
+            end_date = hasta_date + timedelta(days=1)
+
+        C = aliased(Consultor)
+        E = aliased(Equipo)
+
+        equipos_filtrados = [
+            str(value or "").strip().upper()
+            for value in _graficos_list_arg("equipo")
+            if str(value or "").strip()
+        ]
+
+        def aplicar_scope_y_equipo(query):
+            query = query.filter(
+                C.activo == True,
+                C.usuario.isnot(None),
+                func.trim(C.usuario) != "",
+            )
+
+            if scope == "SELF":
+                query = query.filter(C.id == consultor_login.id)
+
+            elif scope == "TEAM":
+                equipo_id = int(scope_value or 0)
+                if not equipo_id:
+                    return None
+                query = query.filter(C.equipo_id == equipo_id)
+
+            elif scope == "ROLE_POOL":
+                rol_id = int(scope_value or 0)
+                if not rol_id:
+                    return None
+                query = query.filter(C.rol_id == rol_id)
+
+            if equipos_filtrados:
+                equipo_sql = func.upper(func.coalesce(E.nombre, "SIN EQUIPO"))
+                query = query.filter(equipo_sql.in_(equipos_filtrados))
+
+            return query
+
+        # Total de personas activas por equipo.
+        total_query = (
+            db.session.query(
+                E.nombre.label("equipo"),
+                func.count(C.id).label("total_personas"),
+            )
+            .select_from(C)
+            .outerjoin(E, C.equipo_id == E.id)
+        )
+        total_query = aplicar_scope_y_equipo(total_query)
+
+        if total_query is None:
+            return jsonify({'error': 'Alcance de usuario sin configuración'}), 403
+
+        total_rows = total_query.group_by(E.nombre).all()
+
+        # Personas activas que registraron al menos una vez en el período.
+        registrados_query = (
+            db.session.query(
+                E.nombre.label("equipo"),
+                func.count(func.distinct(C.id)).label("registraron"),
+            )
+            .select_from(C)
+            .join(
+                Registro,
+                func.lower(Registro.usuario_consultor) == func.lower(C.usuario),
+            )
+            .outerjoin(E, C.equipo_id == E.id)
+            .filter(
+                Registro.fecha >= start_date.isoformat(),
+                Registro.fecha < end_date.isoformat(),
+            )
+        )
+        registrados_query = aplicar_scope_y_equipo(registrados_query)
+
+        if registrados_query is None:
+            return jsonify({'error': 'Alcance de usuario sin configuración'}), 403
+
+        registrados_rows = registrados_query.group_by(E.nombre).all()
+
+        registrados_map = {
+            str(row.equipo or "SIN EQUIPO").strip().upper(): int(row.registraron or 0)
+            for row in registrados_rows
+        }
+
+        equipos = []
+        for row in total_rows:
+            nombre_equipo = str(row.equipo or "SIN EQUIPO").strip().upper()
+            total_personas = int(row.total_personas or 0)
+            registraron = min(
+                int(registrados_map.get(nombre_equipo, 0)),
+                total_personas,
+            )
+            no_registraron = max(total_personas - registraron, 0)
+            porcentaje = round((registraron * 100.0 / total_personas), 2) if total_personas else 0.0
+
+            equipos.append({
+                "equipo": nombre_equipo,
+                "totalPersonas": total_personas,
+                "registraron": registraron,
+                "noRegistraron": no_registraron,
+                "porcentajeRegistro": porcentaje,
+            })
+
+        equipos.sort(key=lambda item: item["equipo"])
+
+        response = jsonify({
+            "periodo": {
+                "desde": start_date.isoformat(),
+                "hasta": (end_date - timedelta(days=1)).isoformat(),
+            },
+            "equipos": equipos,
+        })
+        response.headers["Cache-Control"] = "private, max-age=30"
+        return response, 200
+
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    except Exception as exc:
+        app.logger.exception("Error en /registros/graficos/equipos-personas")
         return jsonify({
             "error": "Error interno del servidor",
             "detalle": str(exc),

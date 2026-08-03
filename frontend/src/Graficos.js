@@ -253,9 +253,11 @@ export default function Graficos() {
   const [modalTitle, setModalTitle] = useState('');
   const [mapeosProyecto, setMapeosProyecto] = useState([]);
   const [proyectos, setProyectos] = useState([]);
+  const [personasPorEquipo, setPersonasPorEquipo] = useState([]);
 
   const navigate = useNavigate();
   const fetchAbortRef = useRef(null);
+  const personasEquipoAbortRef = useRef(null);
   const ocupacionesCatalogoRawRef = useRef([]);
 
   useEffect(() => {
@@ -518,6 +520,67 @@ export default function Graficos() {
     equipoUser,
   ]);
 
+  const fetchPersonasPorEquipo = useCallback(async (filters) => {
+    if (personasEquipoAbortRef.current) {
+      try { personasEquipoAbortRef.current.abort(); } catch {}
+    }
+
+    const controller = new AbortController();
+    personasEquipoAbortRef.current = controller;
+
+    try {
+      const params = new URLSearchParams();
+
+      if (filters.mes) {
+        params.set('mes', filters.mes);
+      } else {
+        if (filters.desde) params.set('desde', filters.desde);
+        if (filters.hasta) params.set('hasta', filters.hasta);
+      }
+
+      (Array.isArray(filters.equipo) ? filters.equipo : [])
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean)
+        .forEach((value) => params.append('equipo', value));
+
+      const res = await jfetch(
+        `/registros/graficos/equipos-personas?${params.toString()}`,
+        {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            'X-User-Rol': rolUpper,
+            'X-User-Usuario': usuario,
+            'X-User-Equipo': equipoUser,
+          },
+        }
+      );
+
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(
+          json?.detalle ||
+          json?.error ||
+          json?.mensaje ||
+          `HTTP ${res.status}`
+        );
+      }
+
+      setPersonasPorEquipo(
+        Array.isArray(json?.equipos) ? json.equipos : []
+      );
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      console.error('Error cargando validación de personas por equipo:', err);
+      setPersonasPorEquipo([]);
+    } finally {
+      if (personasEquipoAbortRef.current === controller) {
+        personasEquipoAbortRef.current = null;
+      }
+    }
+  }, [rolUpper, usuario, equipoUser]);
+
   useEffect(() => {
     if (!usuario) return undefined;
 
@@ -529,6 +592,18 @@ export default function Graficos() {
       }
     };
   }, [fetchRegistros, usuario, appliedFilters]);
+
+  useEffect(() => {
+    if (!usuario) return undefined;
+
+    fetchPersonasPorEquipo(appliedFilters);
+
+    return () => {
+      if (personasEquipoAbortRef.current) {
+        try { personasEquipoAbortRef.current.abort(); } catch {}
+      }
+    };
+  }, [fetchPersonasPorEquipo, usuario, appliedFilters]);
 
   useEffect(() => {
     const cachedLabels = sessionStorage.getItem("pgx_ocupaciones_catalogo");
@@ -837,19 +912,57 @@ export default function Graficos() {
     })).sort((a, b) => b.horas - a.horas);
   }, [datosFiltrados]);
 
+  const personasPorEquipoMap = useMemo(() => {
+    const map = new Map();
+
+    (Array.isArray(personasPorEquipo) ? personasPorEquipo : []).forEach((row) => {
+      const equipo = equipoOf(row);
+      map.set(equipo, {
+        equipo,
+        totalPersonas: Math.max(0, Number(row?.totalPersonas) || 0),
+        registraron: Math.max(0, Number(row?.registraron) || 0),
+        noRegistraron: Math.max(0, Number(row?.noRegistraron) || 0),
+        porcentajeRegistro: Math.max(0, Number(row?.porcentajeRegistro) || 0),
+      });
+    });
+
+    return map;
+  }, [personasPorEquipo]);
+
   const horasPorEquipo = useMemo(() => {
-    const acc = new Map();
+    const horasMap = new Map();
 
     (datosFiltrados ?? []).forEach((r) => {
       const equipo = equipoOf(r);
-      acc.set(equipo, (acc.get(equipo) || 0) + toNum(r.tiempoInvertido));
+      horasMap.set(
+        equipo,
+        (horasMap.get(equipo) || 0) + toNum(r.tiempoInvertido)
+      );
     });
 
-    return Array.from(acc, ([equipo, horas]) => ({
-      equipo,
-      horas: +horas.toFixed(2),
-    })).sort((a, b) => b.horas - a.horas);
-  }, [datosFiltrados]);
+    const equipos = new Set([
+      ...horasMap.keys(),
+      ...personasPorEquipoMap.keys(),
+    ]);
+
+    return Array.from(equipos, (equipo) => {
+      const validacion = personasPorEquipoMap.get(equipo) || {};
+      const horas = horasMap.get(equipo) || 0;
+
+      return {
+        equipo,
+        horas: +horas.toFixed(2),
+        totalPersonas: Number(validacion.totalPersonas || 0),
+        registraron: Number(validacion.registraron || 0),
+        noRegistraron: Number(validacion.noRegistraron || 0),
+        porcentajeRegistro: Number(validacion.porcentajeRegistro || 0),
+      };
+    }).sort((a, b) => {
+      const diffHoras = b.horas - a.horas;
+      if (diffHoras !== 0) return diffHoras;
+      return a.equipo.localeCompare(b.equipo);
+    });
+  }, [datosFiltrados, personasPorEquipoMap]);
 
   const horasPorProyecto = useMemo(() => {
     const acc = new Map();
