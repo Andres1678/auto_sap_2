@@ -2392,10 +2392,10 @@ def _registro_admin_month_range(consultor_login):
     """
     Retorna el rango de meses exclusivo para roles ADMIN/ADMIN_*.
 
-    - Si el administrador no envía rango, usa el mes actual para evitar
-      consultas y exportaciones completas por accidente.
-    - Mantiene compatibilidad temporal con los parámetros antiguos mes/anio.
-    - Limita la consulta a máximo 12 meses.
+    El rango es opcional y adicional al filtro tradicional mes/año:
+    - si no se envía mes_desde ni mes_hasta, retorna None;
+    - si se envía solo uno, rechaza el rango incompleto;
+    - si ambos llegan, valida el orden y limita a máximo 12 meses.
     """
     if not _is_admin_role(_registro_rol_real(consultor_login)):
         return None
@@ -2403,28 +2403,9 @@ def _registro_admin_month_range(consultor_login):
     mes_desde_raw = str(request.args.get("mes_desde") or "").strip()
     mes_hasta_raw = str(request.args.get("mes_hasta") or "").strip()
 
-    # Compatibilidad con el filtro anterior de mes + año.
+    # El filtro tradicional mes/año sigue funcionando para todos, incluidos admins.
     if not mes_desde_raw and not mes_hasta_raw:
-        old_month = str(request.args.get("mes") or "").strip()
-        old_year = str(request.args.get("anio") or "").strip()
-
-        if old_month and old_year:
-            try:
-                old_month_int = int(old_month)
-                old_year_int = int(old_year)
-                if 1 <= old_month_int <= 12 and 1900 <= old_year_int <= 2200:
-                    legacy_value = f"{old_year_int:04d}-{old_month_int:02d}"
-                    mes_desde_raw = legacy_value
-                    mes_hasta_raw = legacy_value
-            except Exception:
-                pass
-
-    # Rango seguro por defecto: mes actual en Bogotá.
-    if not mes_desde_raw and not mes_hasta_raw:
-        now_bogota = datetime.now(ZoneInfo("America/Bogota"))
-        current_month = f"{now_bogota.year:04d}-{now_bogota.month:02d}"
-        mes_desde_raw = current_month
-        mes_hasta_raw = current_month
+        return None
 
     if not mes_desde_raw or not mes_hasta_raw:
         raise ValueError("Debes seleccionar el mes inicial y el mes final")
