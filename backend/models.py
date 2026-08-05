@@ -231,7 +231,7 @@ class Login(db.Model):
     consultor = relationship('Consultor', backref=backref('logins', lazy=True))
 
 class Oportunidad(db.Model):
-    __tablename__ = 'oportunidades'
+    __tablename__ = "oportunidades"
 
     id = db.Column(db.Integer, primary_key=True)
     nombre_cliente = db.Column(db.String(255))
@@ -288,22 +288,36 @@ class Oportunidad(db.Model):
     tipo_servicio = db.Column(db.String(255))
     semestre_ejecucion = db.Column(db.String(32))
     publicacion_sharepoint = db.Column(db.String(255))
+
     mostrar_dashboard = db.Column(
         db.String(10),
         nullable=True,
-        server_default=text("'SI'")
+        server_default=text("'SI'"),
+    )
+
+    # NUEVO: indicador SI/NO mostrado después de MOSTRAR EN DASHBOARD.
+    tiene_codigo_proyecto_evolutivo = db.Column(
+        db.String(10),
+        nullable=True,
+        server_default=text("'NO'"),
+    )
+
+    # NUEVO: código que será usado para vincular y crear el registro en Proyectos.
+    codigo_proyecto_evolutivo = db.Column(
+        db.String(100),
+        nullable=True,
     )
 
     tipo_oportunidad = db.Column(
         db.String(30),
         nullable=False,
-        server_default=text("'SUBOPORTUNIDAD'")
+        server_default=text("'SUBOPORTUNIDAD'"),
     )
 
     oportunidad_padre_id = db.Column(
         db.Integer,
         db.ForeignKey("oportunidades.id", ondelete="SET NULL"),
-        nullable=True
+        nullable=True,
     )
 
     codigo_control = db.Column(db.String(30), nullable=True)
@@ -315,20 +329,28 @@ class Oportunidad(db.Model):
         "Oportunidad",
         backref=backref("oportunidad_principal", remote_side=[id]),
         foreign_keys=[oportunidad_padre_id],
-        lazy="select"
+        lazy="select",
     )
 
     __table_args__ = (
         db.Index("ix_oportunidades_padre", "oportunidad_padre_id"),
-        db.Index("ix_oportunidades_cliente_tipo", "cliente_grupo_key", "tipo_oportunidad"),
+        db.Index(
+            "ix_oportunidades_cliente_tipo",
+            "cliente_grupo_key",
+            "tipo_oportunidad",
+        ),
+        db.Index(
+            "ix_oportunidades_codigo_proyecto_evolutivo",
+            "codigo_proyecto_evolutivo",
+        ),
     )
-    
-    def to_dict(self):
-        def serializar_fecha(f):
-            return f.isoformat() if f else None
 
-        def serializar_numero(n):
-            return int(n) if n is not None else None
+    def to_dict(self):
+        def serializar_fecha(value):
+            return value.isoformat() if value else None
+
+        def serializar_numero(value):
+            return int(value) if value is not None else None
 
         return {
             "id": self.id,
@@ -356,9 +378,13 @@ class Oportunidad(db.Model):
             "observaciones": self.observaciones,
             "categoria_perdida": self.categoria_perdida,
             "subcategoria_perdida": self.subcategoria_perdida,
-            "fecha_entrega_oferta_final": serializar_fecha(self.fecha_entrega_oferta_final),
+            "fecha_entrega_oferta_final": serializar_fecha(
+                self.fecha_entrega_oferta_final
+            ),
             "vigencia_propuesta": serializar_fecha(self.vigencia_propuesta),
-            "fecha_aceptacion_oferta": serializar_fecha(self.fecha_aceptacion_oferta),
+            "fecha_aceptacion_oferta": serializar_fecha(
+                self.fecha_aceptacion_oferta
+            ),
             "tipo_moneda": self.tipo_moneda,
             "otc": serializar_numero(self.otc),
             "mrc": serializar_numero(self.mrc),
@@ -366,7 +392,9 @@ class Oportunidad(db.Model):
             "valor_oferta_claro": serializar_numero(self.valor_oferta_claro),
             "duracion": self.duracion,
             "pais": self.pais,
-            "fecha_cierre_oportunidad": serializar_fecha(self.fecha_cierre_oportunidad),
+            "fecha_cierre_oportunidad": serializar_fecha(
+                self.fecha_cierre_oportunidad
+            ),
             "codigo_prc": self.codigo_prc,
             "fecha_firma_aos": serializar_fecha(self.fecha_firma_aos),
             "pm_asignado_claro": self.pm_asignado_claro,
@@ -387,6 +415,10 @@ class Oportunidad(db.Model):
             "semestre_ejecucion": self.semestre_ejecucion,
             "publicacion_sharepoint": self.publicacion_sharepoint,
             "mostrar_dashboard": self.mostrar_dashboard,
+            "tiene_codigo_proyecto_evolutivo": (
+                self.tiene_codigo_proyecto_evolutivo
+            ),
+            "codigo_proyecto_evolutivo": self.codigo_proyecto_evolutivo,
             "tipo_oportunidad": self.tipo_oportunidad,
             "oportunidad_padre_id": self.oportunidad_padre_id,
             "codigo_control": self.codigo_control,
@@ -394,6 +426,7 @@ class Oportunidad(db.Model):
             "consecutivo_sub": self.consecutivo_sub,
             "cliente_grupo_key": self.cliente_grupo_key,
         }
+
 
 class Cliente(db.Model):
     __tablename__ = 'clientes'

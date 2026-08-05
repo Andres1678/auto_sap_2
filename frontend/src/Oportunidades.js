@@ -101,6 +101,8 @@ const COLUMN_LABELS = {
   fecha_creacion: "FECHA ASIGNACIÓN",
   anio_creacion_ot: "AÑO CREACIÓN OT",
   mostrar_dashboard: "MOSTRAR EN DASHBOARD",
+  tiene_codigo_proyecto_evolutivo: "¿TIENE CÓDIGO PROYECTO / EVOLUTIVO?",
+  codigo_proyecto_evolutivo: "CÓDIGO PROYECTO / EVOLUTIVO",
   num_enlace: "ID ENLACE",
 };
 
@@ -114,6 +116,9 @@ const EMPTY_FILTER_VALUE = "__EMPTY__";
 const EMPTY_FILTER_LABEL = "(Blanco)";
 
 const MOSTRAR_DASHBOARD_OPTS = ["SI", "NO"];
+const CODIGO_PROYECTO_EVOLUTIVO_OPTS = ["SI", "NO"];
+const FLAG_CODIGO_PROYECTO_COL = "tiene_codigo_proyecto_evolutivo";
+const CODIGO_PROYECTO_COL = "codigo_proyecto_evolutivo";
 
 function isNumericCol(col) {
   return NUMERIC_COLS.has(col);
@@ -639,6 +644,8 @@ const PRINCIPAL_EDITABLE_COLS = new Set([
   "anio_creacion_ot",
   "seguimiento_ot",
   "mostrar_dashboard",
+  "tiene_codigo_proyecto_evolutivo",
+  "codigo_proyecto_evolutivo",
 ]);
 
 const PRINCIPAL_ESTADO_FROM_FIRST_OT_COLS = new Set([
@@ -1170,6 +1177,8 @@ export default function Oportunidades() {
       "semestre_ejecucion",
       "publicacion_sharepoint",
       "mostrar_dashboard",
+      "tiene_codigo_proyecto_evolutivo",
+      "codigo_proyecto_evolutivo",
     ],
     []
   );
@@ -1247,6 +1256,14 @@ export default function Oportunidades() {
 
       if (col === "descripcion_ot") {
         classes.push("descripcion-ot-col", "descripcion-ot-wrap-cell");
+      }
+
+      if (col === FLAG_CODIGO_PROYECTO_COL) {
+        classes.push("codigo-proyecto-flag-col");
+      }
+
+      if (col === CODIGO_PROYECTO_COL) {
+        classes.push("codigo-proyecto-value-col");
       }
 
       const idx = tableColumnOrder.indexOf(col);
@@ -1599,6 +1616,9 @@ export default function Oportunidades() {
       categoria_perdida: normalizeText(rest.categoria_perdida),
       subcategoria_perdida: normalizeText(rest.subcategoria_perdida),
       mostrar_dashboard: normalizeMostrarDashboard(rest.mostrar_dashboard),
+      tiene_codigo_proyecto_evolutivo:
+        normalizeMostrarDashboard(rest.tiene_codigo_proyecto_evolutivo) || "NO",
+      codigo_proyecto_evolutivo: normalizeText(rest.codigo_proyecto_evolutivo).toUpperCase(),
 
       tipo_oportunidad: normalizeTipoOportunidad(rest.tipo_oportunidad),
       oportunidad_padre_id: rest.oportunidad_padre_id ?? null,
@@ -1759,6 +1779,18 @@ export default function Oportunidades() {
           const parsed = parseNumberSmart(v);
           out[col] = parsed === "" ? null : parsed;
         }
+        continue;
+      }
+
+      if (col === FLAG_CODIGO_PROYECTO_COL) {
+        out[col] = normalizeMostrarDashboard(v) || "NO";
+        continue;
+      }
+
+      if (col === CODIGO_PROYECTO_COL) {
+        const tieneCodigo =
+          normalizeMostrarDashboard(row?.[FLAG_CODIGO_PROYECTO_COL]) === "SI";
+        out[col] = tieneCodigo ? normalizeText(v).toUpperCase() || null : null;
         continue;
       }
 
@@ -2541,6 +2573,20 @@ export default function Oportunidades() {
       return;
     }
 
+    if (col === CODIGO_PROYECTO_COL) {
+      const tieneCodigo =
+        normalizeMostrarDashboard(row?.[FLAG_CODIGO_PROYECTO_COL]) === "SI";
+
+      if (!tieneCodigo) {
+        Swal.fire(
+          "Código deshabilitado",
+          "Primero cambia la opción ¿Tiene código proyecto/evolutivo? a SI.",
+          "info"
+        );
+        return;
+      }
+    }
+
     if (col === "valor_oferta_claro") {
       const isSubAsignada =
         normalizeTipoOportunidad(row?.tipo_oportunidad) === TIPO_SUBOPORTUNIDAD &&
@@ -2742,6 +2788,8 @@ export default function Oportunidades() {
     columnOrder.forEach((c) => (empty[c] = ""));
     empty.tipo_moneda = "COP";
     empty.mostrar_dashboard = "SI";
+    empty[FLAG_CODIGO_PROYECTO_COL] = "NO";
+    empty[CODIGO_PROYECTO_COL] = "";
     setNewRow(empty);
   };
 
@@ -2762,8 +2810,25 @@ export default function Oportunidades() {
         }
       }
 
+      const tieneCodigo =
+        normalizeMostrarDashboard(newRow?.[FLAG_CODIGO_PROYECTO_COL]) === "SI";
+      const codigoProyecto = normalizeText(newRow?.[CODIGO_PROYECTO_COL]).toUpperCase();
+
+      if (tieneCodigo && !codigoProyecto) {
+        Swal.fire(
+          "Código requerido",
+          "Debes ingresar el código de proyecto o evolutivo antes de guardar.",
+          "warning"
+        );
+        return;
+      }
+
       setLoading(true);
-      const cleanedNewRow = limpiarPerdidaSiNoAplica(newRow);
+      const cleanedNewRow = limpiarPerdidaSiNoAplica({
+        ...newRow,
+        [FLAG_CODIGO_PROYECTO_COL]: tieneCodigo ? "SI" : "NO",
+        [CODIGO_PROYECTO_COL]: tieneCodigo ? codigoProyecto : "",
+      });
       const payload = toDbPayload(cleanedNewRow);
 
       const res = await jfetch("/oportunidades", {
@@ -2928,6 +2993,93 @@ export default function Oportunidades() {
 
     if (col === "mostrar_dashboard") {
       return renderSelect(row, col, MOSTRAR_DASHBOARD_OPTS);
+    }
+
+    if (col === FLAG_CODIGO_PROYECTO_COL) {
+      return (
+        <select
+          className="cell-input codigo-proyecto-select"
+          autoFocus
+          value={editValue ?? "NO"}
+          onChange={async (e) => {
+            const next = e.target.value || "NO";
+            setEditValue(next);
+
+            if (next === "SI" && !normalizeText(row?.[CODIGO_PROYECTO_COL])) {
+              const result = await Swal.fire({
+                icon: "question",
+                title: "Código proyecto / evolutivo",
+                text: "Ingresa el código que se vinculará con la vista de proyectos.",
+                input: "text",
+                inputPlaceholder: "Ej: PRY-2026-001 o EVO-2026-001",
+                showCancelButton: true,
+                confirmButtonText: "Guardar",
+                cancelButtonText: "Cancelar",
+                inputValidator: (value) =>
+                  normalizeText(value) ? undefined : "El código es obligatorio",
+              });
+
+              if (!result.isConfirmed) {
+                closeEditing();
+                return;
+              }
+
+              await saveEditMulti(row.id, {
+                [FLAG_CODIGO_PROYECTO_COL]: "SI",
+                [CODIGO_PROYECTO_COL]: normalizeText(result.value).toUpperCase(),
+              });
+              return;
+            }
+
+            await saveEditMulti(row.id, {
+              [FLAG_CODIGO_PROYECTO_COL]: next,
+              [CODIGO_PROYECTO_COL]:
+                next === "SI" ? row?.[CODIGO_PROYECTO_COL] || "" : "",
+            });
+          }}
+          onBlur={closeEditing}
+        >
+          {CODIGO_PROYECTO_EVOLUTIVO_OPTS.map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === CODIGO_PROYECTO_COL) {
+      return (
+        <input
+          className="cell-input codigo-proyecto-input"
+          autoFocus
+          value={editValue ?? ""}
+          placeholder="Ej: PRY-2026-001 o EVO-2026-001"
+          onChange={(e) => setEditValue(e.target.value.toUpperCase())}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              e.preventDefault();
+              closeEditing();
+            }
+          }}
+          onBlur={(e) => {
+            const codigo = normalizeText(e.currentTarget.value).toUpperCase();
+
+            if (!codigo) {
+              Swal.fire(
+                "Código requerido",
+                "Cuando la opción está en SI debes ingresar un código de proyecto o evolutivo.",
+                "warning"
+              );
+              closeEditing();
+              return;
+            }
+
+            saveEdit(row.id, col, codigo);
+          }}
+        />
+      );
     }
 
     if (col === "tipo_cliente") {
@@ -3189,6 +3341,50 @@ export default function Oportunidades() {
             </option>
           ))}
         </select>
+      );
+    }
+
+    if (col === FLAG_CODIGO_PROYECTO_COL) {
+      return (
+        <select
+          className="cell-input codigo-proyecto-select"
+          value={newRow[col] || "NO"}
+          onChange={(e) => {
+            const next = e.target.value || "NO";
+            setNewRow((prev) => ({
+              ...prev,
+              [FLAG_CODIGO_PROYECTO_COL]: next,
+              [CODIGO_PROYECTO_COL]:
+                next === "SI" ? prev?.[CODIGO_PROYECTO_COL] || "" : "",
+            }));
+          }}
+        >
+          {CODIGO_PROYECTO_EVOLUTIVO_OPTS.map((op) => (
+            <option key={op} value={op}>
+              {op}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (col === CODIGO_PROYECTO_COL) {
+      const enabled =
+        normalizeMostrarDashboard(newRow?.[FLAG_CODIGO_PROYECTO_COL]) === "SI";
+
+      return (
+        <input
+          className="cell-input codigo-proyecto-input"
+          value={newRow[col] ?? ""}
+          disabled={!enabled}
+          placeholder={enabled ? "Ej: PRY-2026-001 o EVO-2026-001" : "Selecciona SI"}
+          onChange={(e) =>
+            setNewRow((prev) => ({
+              ...prev,
+              [col]: e.target.value.toUpperCase(),
+            }))
+          }
+        />
       );
     }
 

@@ -1,4 +1,4 @@
-from flask import request, jsonify, Blueprint, current_app as app, g, send_file
+from flask import request, jsonify, Blueprint, current_app as app, g
 from backend.models import (
     db, Modulo, Consultor, Registro, BaseRegistro, BaseRegistroInfoCoeSapFuncional, Login,
     Rol, Equipo, Horario, Oportunidad, Cliente,
@@ -25,17 +25,12 @@ import logging
 import traceback
 import math
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from openpyxl import load_workbook, Workbook
-from openpyxl.cell import WriteOnlyCell
-from openpyxl.styles import Font, PatternFill, Alignment
-from openpyxl.utils import get_column_letter
+from openpyxl import load_workbook
 from zoneinfo import ZoneInfo
 import bcrypt
 import holidays
 import secrets
 import json
-import os
-import tempfile
 
 
 bp = Blueprint('routes', __name__, url_prefix="/api")
@@ -105,7 +100,6 @@ GRAFICOS_ALL_ROLES = {
     "ADMIN",
     "ADMIN_GERENTES",
     "ADMIN_GESTION_PREVENTA",
-    "ADMIN_OPORTUNIDADES",
 }
 
 def _consultor_role_id(consultor_login):
@@ -2142,306 +2136,8 @@ def obtener_registros_graficos():
             "detalle": str(exc),
         }), 500
 
-
-@bp.route('/registros/graficos/equipos-personas', methods=['GET'])
-@permission_required("GRAFICOS_VER")
-def obtener_resumen_personas_por_equipo():
-    """
-    Devuelve el cumplimiento de registro por equipo para el período aplicado.
-
-    Solo considera consultores activos en la lista de consultores. Además de los
-    totales, retorna el detalle de cada persona para que el modal del gráfico
-    muestre quién registró y quién no registró, sin cargar todos los registros.
-    """
-    try:
-        usuario = _get_usuario_from_request()
-        rol_req = _get_rol_from_request()
-
-        if not usuario:
-            return jsonify({'error': 'Usuario no enviado'}), 400
-
-        usuario_norm = str(usuario).strip().lower()
-
-        consultor_login = (
-            Consultor.query.options(
-                joinedload(Consultor.rol_obj),
-                joinedload(Consultor.equipo_obj),
-            )
-            .filter(func.lower(Consultor.usuario) == usuario_norm)
-            .first()
-        )
-
-        if not consultor_login:
-            return jsonify({'error': 'Consultor no encontrado'}), 404
-
-        scope, scope_value = _scope_for_graficos(consultor_login, rol_req)
-
-        # ----------------------------------------------------------
-        # Período: mismas reglas usadas por /registros/graficos
-        # ----------------------------------------------------------
-        filtro_mes = str(request.args.get("mes") or "").strip()
-        filtro_desde = str(request.args.get("desde") or "").strip()
-        filtro_hasta = str(request.args.get("hasta") or "").strip()
-
-        if filtro_mes:
-            start_date, end_date = _graficos_month_bounds(filtro_mes)
-        else:
-            if not filtro_desde or not filtro_hasta:
-                return jsonify({
-                    'error': 'Selecciona un mes o un rango completo de fechas'
-                }), 400
-
-            start_date = _graficos_parse_iso_date(filtro_desde, "desde")
-            hasta_date = _graficos_parse_iso_date(filtro_hasta, "hasta")
-
-            if start_date > hasta_date:
-                return jsonify({
-                    'error': 'La fecha desde no puede ser mayor que hasta'
-                }), 400
-
-            if (hasta_date - start_date).days > 365:
-                return jsonify({
-                    'error': 'El rango máximo permitido para el dashboard es de 366 días'
-                }), 400
-
-            end_date = hasta_date + timedelta(days=1)
-
-        C = aliased(Consultor)
-        E = aliased(Equipo)
-        R = aliased(Registro)
-
-        equipos_filtrados = [
-            str(value or "").strip().upper()
-            for value in _graficos_list_arg("equipo")
-            if str(value or "").strip()
-        ]
-
-        def aplicar_scope_y_equipo(query):
-            # La fuente oficial de personas es la lista de consultores activos.
-            query = query.filter(
-                C.activo.is_(True),
-                C.usuario.isnot(None),
-                func.trim(C.usuario) != "",
-            )
-
-            if scope == "SELF":
-                query = query.filter(C.id == consultor_login.id)
-
-            elif scope == "TEAM":
-                equipo_id = int(scope_value or 0)
-                if not equipo_id:
-                    return None
-                query = query.filter(C.equipo_id == equipo_id)
-
-            elif scope == "ROLE_POOL":
-                rol_id = int(scope_value or 0)
-                if not rol_id:
-                    return None
-                query = query.filter(C.rol_id == rol_id)
-
-            if equipos_filtrados:
-                equipo_sql = func.upper(func.coalesce(E.nombre, "SIN EQUIPO"))
-                query = query.filter(equipo_sql.in_(equipos_filtrados))
-
-            return query
-
-        # Se agrupan los registros una sola vez por usuario. El outer join permite
-        # conservar también a los consultores activos que no registraron horas.
-        registros_periodo = (
-            db.session.query(
-                func.lower(func.trim(R.usuario_consultor)).label("usuario_norm"),
-                func.count(R.id).label("total_registros"),
-                func.coalesce(func.sum(R.tiempo_invertido), 0).label("horas_registradas"),
-            )
-            .filter(
-                R.fecha >= start_date.isoformat(),
-                R.fecha < end_date.isoformat(),
-                R.usuario_consultor.isnot(None),
-                func.trim(R.usuario_consultor) != "",
-            )
-            .group_by(func.lower(func.trim(R.usuario_consultor)))
-            .subquery()
-        )
-
-        personas_query = (
-            db.session.query(
-                C.id.label("consultor_id"),
-                C.usuario.label("usuario"),
-                C.nombre.label("nombre"),
-                E.nombre.label("equipo"),
-                func.coalesce(registros_periodo.c.total_registros, 0).label("total_registros"),
-                func.coalesce(registros_periodo.c.horas_registradas, 0).label("horas_registradas"),
-            )
-            .select_from(C)
-            .outerjoin(E, C.equipo_id == E.id)
-            .outerjoin(
-                registros_periodo,
-                func.lower(func.trim(C.usuario)) == registros_periodo.c.usuario_norm,
-            )
-        )
-
-        personas_query = aplicar_scope_y_equipo(personas_query)
-        if personas_query is None:
-            return jsonify({'error': 'Alcance de usuario sin configuración'}), 403
-
-        rows = personas_query.order_by(E.nombre.asc(), C.nombre.asc()).all()
-
-        equipos_map = {}
-
-        for row in rows:
-            equipo_nombre = str(row.equipo or "SIN EQUIPO").strip().upper()
-            total_registros = int(row.total_registros or 0)
-
-            try:
-                horas_registradas = round(float(row.horas_registradas or 0), 2)
-            except Exception:
-                horas_registradas = 0.0
-
-            registro = total_registros > 0
-
-            persona = {
-                "id": int(row.consultor_id),
-                "usuario": str(row.usuario or "").strip().lower(),
-                "nombre": str(row.nombre or row.usuario or "SIN NOMBRE").strip(),
-                "equipo": equipo_nombre,
-                "activo": True,
-                "registro": registro,
-                "estado": "REGISTRÓ" if registro else "NO REGISTRÓ",
-                "totalRegistros": total_registros,
-                "horasRegistradas": horas_registradas,
-            }
-
-            bucket = equipos_map.setdefault(equipo_nombre, {
-                "equipo": equipo_nombre,
-                "personas": [],
-            })
-            bucket["personas"].append(persona)
-
-        equipos = []
-
-        for equipo_nombre, bucket in equipos_map.items():
-            personas = bucket["personas"]
-            personas.sort(key=lambda item: (
-                0 if not item["registro"] else 1,
-                item["nombre"].upper(),
-            ))
-
-            total_personas = len(personas)
-            registraron = sum(1 for persona in personas if persona["registro"])
-            no_registraron = total_personas - registraron
-            porcentaje = round(
-                (registraron * 100.0 / total_personas), 2
-            ) if total_personas else 0.0
-
-            equipos.append({
-                "equipo": equipo_nombre,
-                "totalPersonas": total_personas,
-                "registraron": registraron,
-                "noRegistraron": no_registraron,
-                "porcentajeRegistro": porcentaje,
-                "personas": personas,
-            })
-
-        equipos.sort(key=lambda item: item["equipo"])
-
-        response = jsonify({
-            "periodo": {
-                "desde": start_date.isoformat(),
-                "hasta": (end_date - timedelta(days=1)).isoformat(),
-            },
-            "equipos": equipos,
-        })
-        response.headers["Cache-Control"] = "private, max-age=30"
-        return response, 200
-
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-
-    except Exception as exc:
-        app.logger.exception("Error en /registros/graficos/equipos-personas")
-        return jsonify({
-            "error": "Error interno del servidor",
-            "detalle": str(exc),
-        }), 500
-
 USUARIOS_PUEDE_SEMANAS_ANTERIORES = {
 }
-
-REGISTRO_ADMIN_MAX_MESES = 12
-
-def _registro_rol_real(consultor):
-    if consultor and getattr(consultor, "rol_obj", None) and getattr(consultor.rol_obj, "nombre", None):
-        return str(consultor.rol_obj.nombre or "").strip().upper()
-    return str(getattr(consultor, "rol", "") or "").strip().upper()
-
-def _registro_parse_month_value(value, field_name):
-    raw = str(value or "").strip()
-    match = re.fullmatch(r"(\d{4})-(0[1-9]|1[0-2])", raw)
-
-    if not match:
-        raise ValueError(f"{field_name} inválido. Usa el formato YYYY-MM")
-
-    return int(match.group(1)), int(match.group(2)), raw
-
-def _registro_next_month(year, month):
-    if month == 12:
-        return date(year + 1, 1, 1)
-    return date(year, month + 1, 1)
-
-def _registro_admin_month_range(consultor_login):
-    """
-    Retorna el rango de meses exclusivo para roles ADMIN/ADMIN_*.
-
-    El rango es opcional y adicional al filtro tradicional mes/año:
-    - si no se envía mes_desde ni mes_hasta, retorna None;
-    - si se envía solo uno, rechaza el rango incompleto;
-    - si ambos llegan, valida el orden y limita a máximo 12 meses.
-    """
-    if not _is_admin_role(_registro_rol_real(consultor_login)):
-        return None
-
-    mes_desde_raw = str(request.args.get("mes_desde") or "").strip()
-    mes_hasta_raw = str(request.args.get("mes_hasta") or "").strip()
-
-    # El filtro tradicional mes/año sigue funcionando para todos, incluidos admins.
-    if not mes_desde_raw and not mes_hasta_raw:
-        return None
-
-    if not mes_desde_raw or not mes_hasta_raw:
-        raise ValueError("Debes seleccionar el mes inicial y el mes final")
-
-    year_from, month_from, mes_desde = _registro_parse_month_value(
-        mes_desde_raw,
-        "mes_desde",
-    )
-    year_to, month_to, mes_hasta = _registro_parse_month_value(
-        mes_hasta_raw,
-        "mes_hasta",
-    )
-
-    start_index = (year_from * 12) + month_from
-    end_index = (year_to * 12) + month_to
-
-    if start_index > end_index:
-        raise ValueError("El mes inicial no puede ser mayor que el mes final")
-
-    month_count = end_index - start_index + 1
-    if month_count > REGISTRO_ADMIN_MAX_MESES:
-        raise ValueError(
-            f"El rango máximo permitido es de {REGISTRO_ADMIN_MAX_MESES} meses"
-        )
-
-    start_date = date(year_from, month_from, 1)
-    end_exclusive = _registro_next_month(year_to, month_to)
-
-    return {
-        "mes_desde": mes_desde,
-        "mes_hasta": mes_hasta,
-        "start_date": start_date,
-        "end_exclusive": end_exclusive,
-        "month_count": month_count,
-    }
-
 
 @bp.route('/registros', methods=['GET'])
 def obtener_registros():
@@ -2508,7 +2204,6 @@ def obtener_registros():
         filtro_mes = (request.args.get("mes") or "").strip()
         filtro_anio = (request.args.get("anio") or "").strip()
         filtro_nro_caso = (request.args.get("nroCasoCliente") or "").strip()
-        rango_meses_admin = _registro_admin_month_range(consultor_login)
 
         filtro_clientes = [v.strip() for v in _get_list_arg("cliente") if str(v).strip()]
         filtro_consultores = [v.strip() for v in _get_list_arg("consultor") if str(v).strip()]
@@ -2553,25 +2248,17 @@ def obtener_registros():
                     return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
             q = q.filter(func.upper(E.nombre) == filtro_equipo)
 
-        if rango_meses_admin:
-            q = q.filter(
-                Registro.fecha >= rango_meses_admin["start_date"].isoformat(),
-                Registro.fecha < rango_meses_admin["end_exclusive"].isoformat(),
-            )
-        else:
-            # Compatibilidad para usuarios no administradores que todavía
-            # consuman los parámetros anteriores.
-            if filtro_mes:
-                try:
-                    q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
-                except Exception:
-                    pass
+        if filtro_mes:
+            try:
+                q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
+            except Exception:
+                pass
 
-            if filtro_anio:
-                try:
-                    q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == int(filtro_anio))
-                except Exception:
-                    pass
+        if filtro_anio:
+            try:
+                q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == int(filtro_anio))
+            except Exception:
+                pass
 
         if filtro_nro_caso:
             q = q.filter(Registro.nro_caso_cliente.ilike(f"%{filtro_nro_caso}%"))
@@ -2694,16 +2381,8 @@ def obtener_registros():
             "total": total,
             "page": page,
             "per_page": per_page,
-            "total_pages": math.ceil(total / per_page) if per_page else 1,
-            "rango_meses": {
-                "desde": rango_meses_admin["mes_desde"],
-                "hasta": rango_meses_admin["mes_hasta"],
-                "cantidad_meses": rango_meses_admin["month_count"],
-            } if rango_meses_admin else None,
+            "total_pages": math.ceil(total / per_page) if per_page else 1
         }), 200
-
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
 
     except Exception as e:
         app.logger.exception("❌ Error en obtener_registros (/registros)")
@@ -3866,6 +3545,7 @@ ESTADO_RESULTADO = {
     "EN ESPERA DEL RFI / RFP": {"EN ESPERA DEL CLIENTE"},
     "RFI PRESENTADO": {"EN ESPERA DEL CLIENTE"},
     "ENTREGA COMERCIAL": {"OPORTUNIDAD EN PROCESO"},
+    "EJECUCION OPERACION": {"CONSUMO DE BOLSA DE HORAS"},
     "GANADA": {
         "BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN",
         "EVOLUTIVO",
@@ -4068,6 +3748,193 @@ def _normalizar_mostrar_dashboard(v):
     return "SI"
 
 
+
+def _normalizar_si_no(v, default=None):
+    """Normaliza valores equivalentes a SI/NO sin inventar un valor cuando está vacío."""
+    if v is None:
+        return default
+
+    s = str(v).replace("\u00A0", " ").strip().upper()
+
+    if s in ("", "NAN", "NONE", "NULL"):
+        return default
+
+    if s in ("SI", "SÍ", "S", "TRUE", "1", "YES", "Y"):
+        return "SI"
+
+    if s in ("NO", "N", "FALSE", "0"):
+        return "NO"
+
+    return default
+
+
+def _normalizar_codigo_proyecto_evolutivo(v):
+    if v is None:
+        return None
+
+    s = str(v).replace("\u00A0", " ").strip().upper()
+    s = re.sub(r"\s+", " ", s)
+
+    if s in ("", "NAN", "NONE", "NULL"):
+        return None
+
+    return s[:100]
+
+
+def _validar_codigo_proyecto_evolutivo_data(data):
+    """Valida y normaliza los dos nuevos campos del módulo de oportunidades."""
+    data = data or {}
+
+    tiene = _normalizar_si_no(
+        data.get("tiene_codigo_proyecto_evolutivo"),
+        default="NO",
+    )
+    codigo = _normalizar_codigo_proyecto_evolutivo(
+        data.get("codigo_proyecto_evolutivo")
+    )
+
+    if codigo and tiene != "SI":
+        tiene = "SI"
+
+    if tiene == "SI" and not codigo:
+        return False, (
+            "Debes ingresar el código de proyecto o evolutivo cuando la opción está en SI"
+        )
+
+    if tiene == "NO":
+        codigo = None
+
+    data["tiene_codigo_proyecto_evolutivo"] = tiene
+    data["codigo_proyecto_evolutivo"] = codigo
+
+    return True, None
+
+
+def _codigo_proyecto_evolutivo_oportunidad(opp):
+    if not opp:
+        return None
+
+    tiene = _normalizar_si_no(
+        getattr(opp, "tiene_codigo_proyecto_evolutivo", None),
+        default="NO",
+    )
+
+    if tiene != "SI":
+        return None
+
+    return _normalizar_codigo_proyecto_evolutivo(
+        getattr(opp, "codigo_proyecto_evolutivo", None)
+    )
+
+
+def _tipo_negocio_desde_oportunidad(opp):
+    """Retorna el tipo de negocio si la combinación estado/resultado es elegible."""
+    if not opp:
+        return None
+
+    estado = _norm_key_for_match(getattr(opp, "estado_oferta", None))
+    resultado = _norm_key_for_match(getattr(opp, "resultado_oferta", None))
+
+    estado_ganada = _norm_key_for_match("GANADA")
+    estado_ejecucion = _norm_key_for_match("EJECUCION OPERACION")
+
+    resultado_proyecto = _norm_key_for_match("PROYECTO")
+    resultado_evolutivo = _norm_key_for_match("EVOLUTIVO")
+    resultado_bolsa_legacy = _norm_key_for_match(
+        "BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN"
+    )
+    resultado_consumo_bolsa = _norm_key_for_match("CONSUMO DE BOLSA DE HORAS")
+
+    if estado == estado_ganada and resultado == resultado_proyecto:
+        return "PROYECTO"
+
+    if estado == estado_ganada and resultado == resultado_evolutivo:
+        return "EVOLUTIVO"
+
+    if (
+        estado == estado_ganada
+        and resultado == resultado_bolsa_legacy
+    ) or (
+        estado == estado_ejecucion
+        and resultado == resultado_consumo_bolsa
+    ):
+        return "BOLSA_HORAS"
+
+    return None
+
+
+def _validar_oportunidad_elegible_proyecto(opp):
+    if not opp:
+        return False, "La oportunidad no existe", None, None
+
+    codigo = _codigo_proyecto_evolutivo_oportunidad(opp)
+
+    if not codigo:
+        return (
+            False,
+            "La oportunidad debe tener 'Código de proyecto/evolutivo' en SI y un código válido",
+            None,
+            None,
+        )
+
+    tipo_negocio = _tipo_negocio_desde_oportunidad(opp)
+
+    if not tipo_negocio:
+        return (
+            False,
+            (
+                "La oportunidad no cumple una combinación válida. Debe ser GANADA con "
+                "resultado PROYECTO/EVOLUTIVO, o EJECUCION OPERACION con resultado "
+                "CONSUMO DE BOLSA DE HORAS"
+            ),
+            None,
+            None,
+        )
+
+    return True, None, codigo, tipo_negocio
+
+
+def _sincronizar_proyectos_desde_oportunidad(opp):
+    """Mantiene el código y tipo del proyecto cuando cambia la oportunidad vinculada."""
+    if not opp or not getattr(opp, "id", None):
+        return True, None
+
+    proyectos = Proyecto.query.filter(
+        Proyecto.oportunidad_id == opp.id
+    ).all()
+
+    if not proyectos:
+        return True, None
+
+    codigo = _codigo_proyecto_evolutivo_oportunidad(opp)
+
+    if not codigo:
+        return False, (
+            "Esta oportunidad ya está vinculada a un proyecto. No puedes marcar el código "
+            "de proyecto/evolutivo en NO ni dejarlo vacío"
+        )
+
+    tipo_negocio = _tipo_negocio_desde_oportunidad(opp)
+
+    for proyecto in proyectos:
+        duplicado = Proyecto.query.filter(
+            Proyecto.id != proyecto.id,
+            func.lower(Proyecto.codigo) == codigo.lower(),
+        ).first()
+
+        if duplicado:
+            return False, (
+                f"El código {codigo} ya está utilizado por el proyecto {duplicado.codigo}"
+            )
+
+        proyecto.codigo = codigo
+
+        if tipo_negocio:
+            proyecto.tipo_negocio = tipo_negocio
+
+    return True, None
+
+
 def clean_payload(data: dict) -> dict:
     out = {}
     data = data or {}
@@ -4090,7 +3957,19 @@ def clean_payload(data: dict) -> dict:
         if k == "mostrar_dashboard":
             v = _normalizar_mostrar_dashboard(v)
 
+        if k == "tiene_codigo_proyecto_evolutivo":
+            v = _normalizar_si_no(v, default="NO")
+
+        if k == "codigo_proyecto_evolutivo":
+            v = _normalizar_codigo_proyecto_evolutivo(v)
+
         out[k] = v
+
+    if (
+        "tiene_codigo_proyecto_evolutivo" in out
+        or "codigo_proyecto_evolutivo" in out
+    ):
+        _validar_codigo_proyecto_evolutivo_data(out)
 
     moneda = out.get("tipo_moneda")
     if moneda is not None:
@@ -4150,6 +4029,7 @@ def clean_payload(data: dict) -> dict:
 
 ESTADO_RESULTADO_FORZADO = {
     "EN ESPERA DEL RFI / RFP": "EN ESPERA DEL CLIENTE",
+    "EJECUCION OPERACION": "CONSUMO DE BOLSA DE HORAS",
     "RFI PRESENTADO": "EN ESPERA DEL CLIENTE",
     "SUSPENDIDA": "EN ESPERA DEL CLIENTE",
 }
@@ -4161,6 +4041,14 @@ def normalize_oportunidad_dict(row: dict) -> dict:
     for _field in DATE_FIELDS_API:
         if _field in row:
             row[_field] = _date_to_iso_string(row.get(_field))
+
+    row["tiene_codigo_proyecto_evolutivo"] = _normalizar_si_no(
+        row.get("tiene_codigo_proyecto_evolutivo"),
+        default="NO",
+    )
+    row["codigo_proyecto_evolutivo"] = _normalizar_codigo_proyecto_evolutivo(
+        row.get("codigo_proyecto_evolutivo")
+    )
 
     estado = _upper(row.get("estado_oferta"))
     resultado = _upper(row.get("resultado_oferta"))
@@ -4252,6 +4140,11 @@ def importar_oportunidades():
         "TIPO DE SERVICIO": "tipo_servicio",
         "SEMESTRE DE EJECUCIÓN": "semestre_ejecucion",
         "PUBLICACIÓN SHAREPOINT": "publicacion_sharepoint",
+        "TIENE CODIGO DE PROYECTO / EVOLUTIVO": "tiene_codigo_proyecto_evolutivo",
+        "TIENE CÓDIGO DE PROYECTO / EVOLUTIVO": "tiene_codigo_proyecto_evolutivo",
+        "PROYECTO / EVOLUTIVO": "tiene_codigo_proyecto_evolutivo",
+        "CODIGO DE PROYECTO / EVOLUTIVO": "codigo_proyecto_evolutivo",
+        "CÓDIGO DE PROYECTO / EVOLUTIVO": "codigo_proyecto_evolutivo",
     }
 
     DATE_FIELDS = {
@@ -4375,6 +4268,12 @@ def importar_oportunidades():
             obj["mrc_normalizado"] = None
 
         obj = clean_payload(obj)
+
+        ok_codigo, mensaje_codigo = _validar_codigo_proyecto_evolutivo_data(obj)
+        if not ok_codigo:
+            return jsonify({
+                "mensaje": f"Fila de importación inválida: {mensaje_codigo}"
+            }), 400
 
         data_list.append(Oportunidad(**obj))
 
@@ -4534,6 +4433,10 @@ def listar_oportunidades():
 def crear_oportunidad():
     try:
         data = clean_payload(request.get_json() or {})
+
+        ok_codigo, mensaje_codigo = _validar_codigo_proyecto_evolutivo_data(data)
+        if not ok_codigo:
+            return jsonify({"mensaje": mensaje_codigo}), 400
 
         if _norm_key_for_match(data.get("tipo_oportunidad")) == "PRINCIPAL":
             duplicada = _buscar_principal_mismo_cliente_servicio(
@@ -4745,6 +4648,30 @@ def editar_oportunidad(id):
             if hasattr(o, k):
                 setattr(o, k, v)
 
+        ok_codigo, mensaje_codigo = _validar_codigo_proyecto_evolutivo_data({
+            "tiene_codigo_proyecto_evolutivo": getattr(
+                o, "tiene_codigo_proyecto_evolutivo", None
+            ),
+            "codigo_proyecto_evolutivo": getattr(
+                o, "codigo_proyecto_evolutivo", None
+            ),
+        })
+
+        if not ok_codigo:
+            db.session.rollback()
+            return jsonify({"mensaje": mensaje_codigo}), 400
+
+        o.tiene_codigo_proyecto_evolutivo = _normalizar_si_no(
+            getattr(o, "tiene_codigo_proyecto_evolutivo", None),
+            default="NO",
+        )
+        o.codigo_proyecto_evolutivo = _normalizar_codigo_proyecto_evolutivo(
+            getattr(o, "codigo_proyecto_evolutivo", None)
+        )
+
+        if o.tiene_codigo_proyecto_evolutivo == "NO":
+            o.codigo_proyecto_evolutivo = None
+
         principal_sincronizada = None
 
         if es_principal(o):
@@ -4760,6 +4687,11 @@ def editar_oportunidad(id):
 
         else:
             principal_sincronizada = sync_principal_desde_primera_ot(o)
+
+        ok_sync, mensaje_sync = _sincronizar_proyectos_desde_oportunidad(o)
+        if not ok_sync:
+            db.session.rollback()
+            return jsonify({"mensaje": mensaje_sync}), 409
 
         db.session.commit()
 
@@ -5999,62 +5931,6 @@ def commit_import_excel():
 
 @bp.route('/registros/export', methods=['GET'])
 def export_registros():
-    """
-    Genera el XLSX directamente en el servidor usando openpyxl en modo
-    write_only y una consulta SQL por proyección/streaming.
-
-    Así se evita:
-    - construir miles de modelos ORM con relaciones;
-    - crear un JSON gigante;
-    - duplicar todos los registros en la memoria del navegador;
-    - volver a construir el libro completo con SheetJS en el frontend.
-    """
-    temp_path = None
-
-    # Excel/OpenXML no permite algunos caracteres de control. Por ejemplo,
-    # el salto de página \x0c (form feed) provoca IllegalCharacterError con
-    # el mensaje "... cannot be used in worksheets".
-    excel_illegal_chars_re = re.compile(
-        r"[\x00-\x08\x0B\x0C\x0E-\x1F\uD800-\uDFFF\uFFFE\uFFFF]"
-    )
-
-    def excel_safe(value):
-        """
-        Convierte valores a tipos seguros para Excel, elimina caracteres no
-        permitidos por XML y evita fórmulas inyectadas.
-        """
-        if value is None:
-            return ""
-
-        if isinstance(value, (datetime, date)):
-            return value.isoformat()
-
-        if isinstance(value, Decimal):
-            return float(value)
-
-        if isinstance(value, bool):
-            return "Sí" if value else "No"
-
-        if isinstance(value, (int, float)):
-            if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
-                return 0
-            return value
-
-        text_value = str(value)
-
-        # Sustituye caracteres ilegales por espacio para no unir palabras.
-        text_value = excel_illegal_chars_re.sub(" ", text_value)
-
-        # Una celda de Excel admite máximo 32.767 caracteres.
-        if len(text_value) > 32767:
-            text_value = text_value[:32767]
-
-        # Evita que contenido proveniente de BD sea interpretado como fórmula.
-        if text_value.startswith(("=", "+", "-", "@")):
-            text_value = "'" + text_value
-
-        return text_value
-
     try:
         usuario = _get_usuario_from_request()
         rol_req = _get_rol_from_request()
@@ -6062,7 +5938,7 @@ def export_registros():
         if not usuario:
             return jsonify({'error': 'Usuario no enviado'}), 400
 
-        usuario_norm = str(usuario or '').strip().lower()
+        usuario_norm = (usuario or "").strip().lower()
 
         consultor_login = (
             Consultor.query.options(
@@ -6072,120 +5948,71 @@ def export_registros():
             .filter(func.lower(Consultor.usuario) == usuario_norm)
             .first()
         )
-
         if not consultor_login:
             return jsonify({'error': 'Consultor no encontrado'}), 404
 
-        scope, scope_value = scope_for(consultor_login, rol_req)
+        scope, val = scope_for(consultor_login, rol_req)
 
         C = aliased(Consultor)
         E = aliased(Equipo)
-        T = aliased(Tarea)
-        O = aliased(Ocupacion)
-        P = aliased(Proyecto)
-        PF = aliased(ProyectoFase)
 
-        # Proyección liviana: no crea modelos Registro ni carga relaciones ORM.
         q = (
-            db.session.query(
-                Registro.id.label('id'),
-                Registro.fecha.label('fecha'),
-                Registro.modulo.label('modulo'),
-                Registro.cliente.label('cliente'),
-                Registro.nro_caso_cliente.label('nro_caso_cliente'),
-                Registro.nro_caso_interno.label('nro_caso_interno'),
-                Registro.nro_caso_escalado.label('nro_caso_escalado'),
-                Registro.ocupacion_id.label('ocupacion_id'),
-                O.codigo.label('ocupacion_codigo'),
-                O.nombre.label('ocupacion_nombre'),
-                Registro.tarea_id.label('tarea_id'),
-                T.codigo.label('tarea_codigo'),
-                T.nombre.label('tarea_nombre'),
-                Registro.tipo_tarea.label('tipo_tarea_legacy'),
-                C.nombre.label('consultor_nombre'),
-                Registro.usuario_consultor.label('usuario_consultor'),
-                E.nombre.label('equipo_relacion'),
-                Registro.equipo.label('equipo_registro'),
-                Registro.hora_inicio.label('hora_inicio'),
-                Registro.hora_fin.label('hora_fin'),
-                Registro.tiempo_invertido.label('tiempo_invertido'),
-                Registro.tiempo_facturable.label('tiempo_facturable'),
-                Registro.horas_adicionales.label('horas_adicionales'),
-                Registro.horario_trabajo.label('horario_trabajo'),
-                Registro.descripcion.label('descripcion'),
-                Registro.total_horas.label('total_horas'),
-                Registro.bloqueado.label('bloqueado'),
-                Registro.oncall.label('oncall'),
-                Registro.desborde.label('desborde'),
-                Registro.actividad_malla.label('actividad_malla'),
-                Registro.proyecto_id.label('proyecto_id'),
-                Registro.fase_proyecto_id.label('fase_proyecto_id'),
-                P.codigo.label('proyecto_codigo'),
-                P.nombre.label('proyecto_nombre'),
-                PF.nombre.label('fase_proyecto_nombre'),
+            Registro.query
+            .options(
+                joinedload(Registro.consultor).joinedload(Consultor.equipo_obj),
+                joinedload(Registro.tarea),
+                joinedload(Registro.ocupacion),
+                joinedload(Registro.proyecto),
+                joinedload(Registro.fase_proyecto),
             )
-            .select_from(Registro)
-            .outerjoin(C, Registro.usuario_consultor == C.usuario)
+            .outerjoin(C, func.lower(Registro.usuario_consultor) == func.lower(C.usuario))
             .outerjoin(E, C.equipo_id == E.id)
-            .outerjoin(T, Registro.tarea_id == T.id)
-            .outerjoin(O, Registro.ocupacion_id == O.id)
-            .outerjoin(P, Registro.proyecto_id == P.id)
-            .outerjoin(PF, Registro.fase_proyecto_id == PF.id)
         )
 
-        # ----------------------------------------------------------
-        # Scope de seguridad
-        # ----------------------------------------------------------
-        if scope == 'SELF':
-            q = q.filter(Registro.usuario_consultor == consultor_login.usuario)
+        # Scope
+        if scope == "SELF":
+            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
 
-        elif scope == 'TEAM':
-            equipo_id = int(scope_value or 0)
-            if not equipo_id:
+        elif scope == "TEAM":
+            if not int(val or 0):
                 return jsonify({'error': 'Consultor sin equipo asignado'}), 403
-            q = q.filter(C.equipo_id == equipo_id)
+            q = q.filter(C.equipo_id == int(val))
 
-        elif scope == 'ROLE_POOL':
-            rol_id = int(scope_value or 0)
-            if not rol_id:
+        elif scope == "ROLE_POOL":
+            if not int(val or 0):
                 return jsonify({'error': 'Consultor sin rol asignado'}), 403
-            q = q.filter(C.rol_id == rol_id)
+            q = q.filter(C.rol_id == int(val))
 
-        # ----------------------------------------------------------
-        # Filtros actuales de la vista Registro
-        # ----------------------------------------------------------
-        filtro_id = str(request.args.get('id') or '').strip()
-        filtro_fecha = str(request.args.get('fecha') or '').strip()
-        filtro_equipo = str(request.args.get('equipo') or '').strip().upper()
-        filtro_mes = str(request.args.get('mes') or '').strip()
-        filtro_anio = str(request.args.get('anio') or '').strip()
-        filtro_nro_caso = str(request.args.get('nroCasoCliente') or '').strip()
-        rango_meses_admin = _registro_admin_month_range(consultor_login)
+        # Filtros
+        filtro_id = (request.args.get("id") or "").strip()
+        filtro_fecha = (request.args.get("fecha") or "").strip()
+        filtro_equipo = (request.args.get("equipo") or "").strip().upper()
+        filtro_mes = (request.args.get("mes") or "").strip()
+        filtro_anio = (request.args.get("anio") or "").strip()
+        filtro_nro_caso = (request.args.get("nroCasoCliente") or "").strip()
 
-        filtro_clientes = list(dict.fromkeys(
-            str(v).strip() for v in _get_list_arg('cliente') if str(v).strip()
-        ))
-        filtro_consultores = list(dict.fromkeys(
-            str(v).strip() for v in _get_list_arg('consultor') if str(v).strip()
-        ))
-        filtro_horas_adic = list(dict.fromkeys(
-            str(v).strip().upper() for v in _get_list_arg('horasAdicionales') if str(v).strip()
-        ))
-
+        filtro_clientes = [v.strip() for v in _get_list_arg("cliente") if str(v).strip()]
+        filtro_consultores = [v.strip() for v in _get_list_arg("consultor") if str(v).strip()]
+        filtro_horas_adic = [str(v).strip().upper() for v in _get_list_arg("horasAdicionales") if str(v).strip()]
         filtro_tarea_ids = []
-        for value in _get_list_arg('tarea_id'):
-            try:
-                filtro_tarea_ids.append(int(value))
-            except Exception:
-                continue
-        filtro_tarea_ids = list(dict.fromkeys(filtro_tarea_ids))
-
         filtro_ocupacion_ids = []
-        for value in _get_list_arg('ocupacion_id'):
+
+        for v in _get_list_arg("tarea_id"):
             try:
-                filtro_ocupacion_ids.append(int(value))
+                filtro_tarea_ids.append(int(v))
             except Exception:
-                continue
+                pass
+
+        for v in _get_list_arg("ocupacion_id"):
+            try:
+                filtro_ocupacion_ids.append(int(v))
+            except Exception:
+                pass
+
+        filtro_clientes = list(dict.fromkeys(filtro_clientes))
+        filtro_consultores = list(dict.fromkeys(filtro_consultores))
+        filtro_horas_adic = list(dict.fromkeys(filtro_horas_adic))
+        filtro_tarea_ids = list(dict.fromkeys(filtro_tarea_ids))
         filtro_ocupacion_ids = list(dict.fromkeys(filtro_ocupacion_ids))
 
         if filtro_id and filtro_id.isdigit():
@@ -6201,60 +6028,26 @@ def export_registros():
             q = q.filter(C.nombre.in_(filtro_consultores))
 
         if filtro_equipo:
-            if scope == 'TEAM':
-                equipo_login = (
-                    str(consultor_login.equipo_obj.nombre or '').strip().upper()
-                    if consultor_login.equipo_obj else ''
-                )
-                if filtro_equipo != equipo_login:
+            if scope == "TEAM":
+                eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper() if consultor_login.equipo_obj else ""
+                if filtro_equipo != eq_login:
                     return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
+            q = q.filter(func.upper(E.nombre) == filtro_equipo)
 
-            q = q.filter(or_(
-                func.upper(E.nombre) == filtro_equipo,
-                func.upper(Registro.equipo) == filtro_equipo,
-            ))
-
-        if rango_meses_admin:
-            q = q.filter(
-                Registro.fecha >= rango_meses_admin["start_date"].isoformat(),
-                Registro.fecha < rango_meses_admin["end_exclusive"].isoformat(),
-            )
-        else:
-            # Compatibilidad para usuarios no administradores.
-            month_int = None
-            year_int = None
-
+        if filtro_mes:
             try:
-                month_int = int(filtro_mes) if filtro_mes else None
-                if month_int is not None and not 1 <= month_int <= 12:
-                    month_int = None
+                q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
             except Exception:
-                month_int = None
+                pass
 
+        if filtro_anio:
             try:
-                year_int = int(filtro_anio) if filtro_anio else None
-                if year_int is not None and not 1900 <= year_int <= 2200:
-                    year_int = None
+                q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == int(filtro_anio))
             except Exception:
-                year_int = None
-
-            if year_int and month_int:
-                start_date = date(year_int, month_int, 1)
-                end_date = _registro_next_month(year_int, month_int)
-                q = q.filter(
-                    Registro.fecha >= start_date.isoformat(),
-                    Registro.fecha < end_date.isoformat(),
-                )
-            elif year_int:
-                q = q.filter(
-                    Registro.fecha >= date(year_int, 1, 1).isoformat(),
-                    Registro.fecha < date(year_int + 1, 1, 1).isoformat(),
-                )
-            elif month_int:
-                q = q.filter(func.substring(Registro.fecha, 6, 2) == f'{month_int:02d}')
+                pass
 
         if filtro_nro_caso:
-            q = q.filter(Registro.nro_caso_cliente.ilike(f'%{filtro_nro_caso}%'))
+            q = q.filter(Registro.nro_caso_cliente.ilike(f"%{filtro_nro_caso}%"))
 
         if filtro_horas_adic:
             q = q.filter(func.upper(Registro.horas_adicionales).in_(filtro_horas_adic))
@@ -6265,234 +6058,93 @@ def export_registros():
         if filtro_ocupacion_ids:
             q = q.filter(Registro.ocupacion_id.in_(filtro_ocupacion_ids))
 
-        q = q.order_by(Registro.fecha.desc(), Registro.id.desc())
+        registros = q.order_by(Registro.fecha.desc(), Registro.id.desc()).all()
 
-        # ----------------------------------------------------------
-        # Libro XLSX de bajo consumo de memoria
-        # ----------------------------------------------------------
-        workbook = Workbook(write_only=True)
+        data = []
+        for r in registros:
+            tarea = getattr(r, "tarea", None)
+            ocup = getattr(r, "ocupacion", None)
 
-        header_font = Font(color='FFFFFF', bold=True)
-        header_fill = PatternFill('solid', fgColor='DA291C')
-        header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-
-        headers = [
-            'ID', 'Fecha', 'Módulo', 'Equipo', 'Cliente',
-            'Nro. Caso Cliente', 'Nro. Caso Interno', 'Nro. Caso Escalado SAP',
-            'Ocupación', 'Tipo Tarea Azure', 'Consultor', 'Usuario',
-            'Hora Inicio', 'Hora Fin', 'Tiempo Invertido', 'Tiempo Facturable',
-            'Horas Adicionales', 'Horario Trabajo', 'Descripción', 'Total Horas',
-            'ONCALL', 'Desborde', 'Actividad Malla', 'Proyecto',
-            'Fase Proyecto', 'Bloqueado'
-        ]
-
-        column_widths = [
-            10, 13, 20, 24, 28,
-            20, 20, 24,
-            28, 38, 28, 20,
-            13, 13, 17, 18,
-            18, 20, 55, 15,
-            14, 14, 20, 36,
-            28, 13,
-        ]
-
-        def create_data_sheet(index):
-            ws = workbook.create_sheet(title=f'Registros_{index}')
-            ws.freeze_panes = 'A2'
-            for col_idx, width in enumerate(column_widths, start=1):
-                ws.column_dimensions[get_column_letter(col_idx)].width = width
-
-            header_cells = []
-            for title in headers:
-                cell = WriteOnlyCell(ws, value=title)
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.alignment = header_alignment
-                header_cells.append(cell)
-            ws.append(header_cells)
-            return ws
-
-        metadata_ws = workbook.create_sheet(title='Filtros')
-        metadata_ws.column_dimensions['A'].width = 28
-        metadata_ws.column_dimensions['B'].width = 90
-
-        metadata_headers = []
-        for title in ('Filtro', 'Valor'):
-            cell = WriteOnlyCell(metadata_ws, value=title)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = header_alignment
-            metadata_headers.append(cell)
-        metadata_ws.append(metadata_headers)
-
-        filtros_metadata = [
-            ('Usuario que genera', usuario_norm),
-            ('Rol', rol_req),
-            ('ID', filtro_id or 'Todos'),
-            ('Fecha', filtro_fecha or 'Todas'),
-            ('Mes desde', rango_meses_admin['mes_desde'] if rango_meses_admin else (filtro_mes or 'Todos')),
-            ('Mes hasta', rango_meses_admin['mes_hasta'] if rango_meses_admin else (filtro_mes or 'Todos')),
-            ('Año anterior', filtro_anio or 'No aplica'),
-            ('Equipo', filtro_equipo or 'Todos'),
-            ('Consultores', ', '.join(filtro_consultores) or 'Todos'),
-            ('Clientes', ', '.join(filtro_clientes) or 'Todos'),
-            ('Nro. Caso Cliente', filtro_nro_caso or 'Todos'),
-            ('Horas adicionales', ', '.join(filtro_horas_adic) or 'Todas'),
-            ('Tareas ID', ', '.join(map(str, filtro_tarea_ids)) or 'Todas'),
-            ('Ocupaciones ID', ', '.join(map(str, filtro_ocupacion_ids)) or 'Todas'),
-            ('Generado', datetime.now(ZoneInfo('America/Bogota')).strftime('%Y-%m-%d %H:%M:%S')),
-        ]
-
-        for key, value in filtros_metadata:
-            metadata_ws.append([excel_safe(key), excel_safe(value)])
-
-        MAX_DATA_ROWS_PER_SHEET = 500000
-        sheet_index = 1
-        sheet_row_count = 0
-        total_exported = 0
-        data_ws = create_data_sheet(sheet_index)
-
-        rows = q.execution_options(stream_results=True).yield_per(2000)
-
-        for row in rows:
-            if sheet_row_count >= MAX_DATA_ROWS_PER_SHEET:
-                sheet_index += 1
-                sheet_row_count = 0
-                data_ws = create_data_sheet(sheet_index)
-
-            if row.tarea_codigo and row.tarea_nombre:
-                tipo_tarea = f'{row.tarea_codigo} - {row.tarea_nombre}'
+            if tarea and getattr(tarea, "codigo", None) and getattr(tarea, "nombre", None):
+                tipo_tarea_str = f"{tarea.codigo} - {tarea.nombre}"
             else:
-                tipo_tarea = str(row.tipo_tarea_legacy or '').strip()
+                tipo_tarea_str = (r.tipo_tarea or "").strip() or None
 
-            if row.ocupacion_codigo and row.ocupacion_nombre:
-                ocupacion = f'{row.ocupacion_codigo} - {row.ocupacion_nombre}'
-            else:
-                ocupacion = row.ocupacion_nombre or ''
+            equipo_nombre = None
+            if r.consultor and getattr(r.consultor, "equipo_obj", None):
+                equipo_nombre = (r.consultor.equipo_obj.nombre or "").strip().upper()
 
-            equipo_nombre = str(
-                row.equipo_relacion or row.equipo_registro or 'SIN EQUIPO'
-            ).strip().upper()
+            proyecto = getattr(r, "proyecto", None)
+            fase_proyecto = getattr(r, "fase_proyecto", None)
 
-            horario_trabajo = _normalizar_horario_trabajo_por_equipo(
-                row.horario_trabajo,
-                equipo_nombre,
-            )
+            data.append({
+                "id": r.id,
+                "fecha": r.fecha,
+                "modulo": r.modulo,
+                "cliente": r.cliente,
+                "equipo": equipo_nombre or (r.equipo or "").strip().upper() or "SIN EQUIPO",
+                "nroCasoCliente": r.nro_caso_cliente,
+                "nroCasoInterno": r.nro_caso_interno,
+                "nroCasoEscaladoSap": r.nro_caso_escalado,
 
-            horas_adicionales = _calcular_horas_adicionales_por_horario(
-                row.hora_inicio,
-                row.hora_fin,
-                horario_trabajo,
-                equipo_nombre,
-                row.horas_adicionales,
-            )
+                "ocupacion_id": r.ocupacion_id,
+                "ocupacion_codigo": ocup.codigo if ocup else None,
+                "ocupacion_nombre": ocup.nombre if ocup else None,
 
-            proyecto = ' - '.join(
-                value for value in [
-                    str(row.proyecto_codigo or '').strip(),
-                    str(row.proyecto_nombre or '').strip(),
-                ] if value
-            )
+                "tarea_id": r.tarea_id,
+                "tipoTarea": tipo_tarea_str,
+                "tarea": {
+                    "id": tarea.id,
+                    "codigo": getattr(tarea, "codigo", None),
+                    "nombre": getattr(tarea, "nombre", None),
+                } if tarea else None,
 
-            data_ws.append([
-                excel_safe(row.id),
-                excel_safe(row.fecha),
-                excel_safe(row.modulo),
-                excel_safe(equipo_nombre),
-                excel_safe(row.cliente),
-                excel_safe(row.nro_caso_cliente),
-                excel_safe(row.nro_caso_interno),
-                excel_safe(row.nro_caso_escalado),
-                excel_safe(ocupacion),
-                excel_safe(tipo_tarea),
-                excel_safe(row.consultor_nombre),
-                excel_safe(str(row.usuario_consultor or '').strip().lower()),
-                excel_safe(row.hora_inicio),
-                excel_safe(row.hora_fin),
-                excel_safe(row.tiempo_invertido),
-                excel_safe(row.tiempo_facturable),
-                excel_safe(horas_adicionales),
-                excel_safe(horario_trabajo),
-                excel_safe(row.descripcion),
-                excel_safe(row.total_horas),
-                excel_safe(row.oncall),
-                excel_safe(row.desborde),
-                excel_safe(row.actividad_malla),
-                excel_safe(proyecto),
-                excel_safe(row.fase_proyecto_nombre),
-                excel_safe(bool(row.bloqueado)),
-            ])
+                "consultor": r.consultor.nombre if r.consultor else None,
+                "usuario_consultor": (r.usuario_consultor or "").strip().lower(),
 
-            sheet_row_count += 1
-            total_exported += 1
+                "horaInicio": r.hora_inicio,
+                "horaFin": r.hora_fin,
+                "tiempoInvertido": r.tiempo_invertido,
+                "tiempoFacturable": r.tiempo_facturable,
+                "horasAdicionales": _calcular_horas_adicionales_por_horario(
+                    r.hora_inicio,
+                    r.hora_fin,
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                    r.horas_adicionales,
+                ),
+                "horarioTrabajo": _normalizar_horario_trabajo_por_equipo(
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                ),
+                "horario_trabajo": _normalizar_horario_trabajo_por_equipo(
+                    getattr(r, "horario_trabajo", None),
+                    equipo_nombre or getattr(r, "equipo", None),
+                ),
+                "descripcion": r.descripcion,
+                "totalHoras": r.total_horas,
 
-        metadata_ws.append(['Total exportado', total_exported])
-        metadata_ws.append(['Hojas de registros', sheet_index])
+                "bloqueado": bool(r.bloqueado),
+                "oncall": r.oncall,
+                "desborde": r.desborde,
+                "actividadMalla": r.actividad_malla,
 
-        tmp = tempfile.NamedTemporaryFile(prefix='registros_', suffix='.xlsx', delete=False)
-        temp_path = tmp.name
-        tmp.close()
+                "proyecto_id": r.proyecto_id,
+                "fase_proyecto_id": r.fase_proyecto_id,
 
-        workbook.save(temp_path)
+                "proyecto_codigo": proyecto.codigo if proyecto else None,
+                "proyecto_nombre": proyecto.nombre if proyecto else None,
+                "proyecto_fase": fase_proyecto.nombre if fase_proyecto else None,
+            })
 
-        generated_at = datetime.now(ZoneInfo('America/Bogota'))
-        timestamp = generated_at.strftime('%Y%m%d_%H%M%S')
-
-        if rango_meses_admin:
-            periodo_archivo = (
-                f"{rango_meses_admin['mes_desde']}_a_"
-                f"{rango_meses_admin['mes_hasta']}"
-            )
-            filename = f'registros_{periodo_archivo}_{timestamp}.xlsx'
-        else:
-            filename = f'registros_{timestamp}.xlsx'
-
-        response = send_file(
-            temp_path,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=filename,
-            conditional=True,
-            max_age=0,
-        )
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-        response.headers['X-Total-Registros'] = str(total_exported)
-        if rango_meses_admin:
-            response.headers['X-Mes-Desde'] = rango_meses_admin['mes_desde']
-            response.headers['X-Mes-Hasta'] = rango_meses_admin['mes_hasta']
-
-        @response.call_on_close
-        def cleanup_export_file():
-            try:
-                if temp_path and os.path.exists(temp_path):
-                    os.remove(temp_path)
-            except Exception:
-                app.logger.warning('No se pudo eliminar el temporal de exportación: %s', temp_path)
-
-        return response
-
-    except ValueError as exc:
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except Exception:
-                pass
         return jsonify({
-            'error': str(exc),
-        }), 400
+            "data": data,
+            "total": len(data)
+        }), 200
 
-    except Exception as exc:
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except Exception:
-                pass
-
-        app.logger.exception('Error generando XLSX en /registros/export')
-        return jsonify({
-            'error': 'No se pudo generar el archivo Excel',
-            'detalle': str(exc),
-        }), 500
+    except Exception as e:
+        app.logger.exception("❌ Error en /registros/export")
+        return jsonify({'error': str(e)}), 500
 
 @bp.route("/horarios-permitidos", methods=["GET"])
 def horarios_permitidos():
@@ -7756,38 +7408,12 @@ def crear_proyecto():
         if not opp:
             return jsonify({"mensaje": "La oportunidad no existe"}), 400
 
-        prc = (opp.codigo_prc or "").strip().upper()
-
-        if not prc:
-            return jsonify({
-                "mensaje": "La oportunidad no tiene código PRC"
-            }), 400
-
-        estado = _norm_key_for_match(opp.estado_oferta)
-        resultado = _norm_key_for_match(opp.resultado_oferta)
-
-        if estado != _norm_key_for_match("GANADA"):
-            return jsonify({
-                "mensaje": "Solo se pueden crear proyectos desde oportunidades GANADAS"
-            }), 400
-
-        resultados_permitidos = {
-            _norm_key_for_match("PROYECTO"),
-            _norm_key_for_match("BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN"),
-        }
-
-        if resultado not in resultados_permitidos:
-            return jsonify({
-                "mensaje": "La oportunidad ganada no es de tipo PROYECTO ni BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN"
-            }), 400
-
-        tipo_negocio = (
-            "BOLSA_HORAS"
-            if resultado == _norm_key_for_match("BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN")
-            else "PROYECTO"
+        ok_opp, mensaje_opp, codigo, tipo_negocio = (
+            _validar_oportunidad_elegible_proyecto(opp)
         )
 
-        codigo = prc
+        if not ok_opp:
+            return jsonify({"mensaje": mensaje_opp}), 400
 
         dupe = Proyecto.query.filter(
             func.lower(Proyecto.codigo) == codigo.lower()
@@ -7795,7 +7421,7 @@ def crear_proyecto():
 
         if dupe:
             return jsonify({
-                "mensaje": "Ya existe un proyecto con ese código PRC"
+                "mensaje": "Ya existe un proyecto con ese código de proyecto/evolutivo"
             }), 400
 
         # ------------------------------------------------------------
@@ -8067,49 +7693,25 @@ def editar_proyecto(id):
                     "mensaje": "La oportunidad no existe"
                 }), 400
 
-            prc = (opp.codigo_prc or "").strip().upper()
+            ok_opp, mensaje_opp, codigo_opp, tipo_negocio = (
+                _validar_oportunidad_elegible_proyecto(opp)
+            )
 
-            if not prc:
-                return jsonify({
-                    "mensaje": "La oportunidad no tiene código PRC válido"
-                }), 400
-
-            estado = _norm_key_for_match(opp.estado_oferta)
-            resultado = _norm_key_for_match(opp.resultado_oferta)
-
-            if estado != _norm_key_for_match("GANADA"):
-                return jsonify({
-                    "mensaje": "Solo se pueden asociar oportunidades GANADAS"
-                }), 400
-
-            resultados_permitidos = {
-                _norm_key_for_match("PROYECTO"),
-                _norm_key_for_match("BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN"),
-            }
-
-            if resultado not in resultados_permitidos:
-                return jsonify({
-                    "mensaje": "La oportunidad ganada no es de tipo PROYECTO ni BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN"
-                }), 400
+            if not ok_opp:
+                return jsonify({"mensaje": mensaje_opp}), 400
 
             dupe = Proyecto.query.filter(
                 Proyecto.id != id,
-                func.lower(Proyecto.codigo) == prc.lower()
+                func.lower(Proyecto.codigo) == codigo_opp.lower()
             ).first()
 
             if dupe:
                 return jsonify({
-                    "mensaje": "Ya existe otro proyecto con ese código PRC"
+                    "mensaje": "Ya existe otro proyecto con ese código de proyecto/evolutivo"
                 }), 400
 
-            tipo_negocio = (
-                "BOLSA_HORAS"
-                if resultado == _norm_key_for_match("BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN")
-                else "PROYECTO"
-            )
-
             p.oportunidad_id = opp.id
-            p.codigo = prc
+            p.codigo = codigo_opp
             p.tipo_negocio = tipo_negocio
 
         # ------------------------------------------------------------
@@ -8117,17 +7719,14 @@ def editar_proyecto(id):
         # ------------------------------------------------------------
         if "codigo" in data and p.oportunidad_id:
             opp_actual = Oportunidad.query.get(p.oportunidad_id)
-            prc_actual = (
-                (opp_actual.codigo_prc or "").strip().upper()
-                if opp_actual else ""
-            )
+            codigo_actual = _codigo_proyecto_evolutivo_oportunidad(opp_actual)
 
-            if not prc_actual:
+            if not codigo_actual:
                 return jsonify({
-                    "mensaje": "La oportunidad asociada no tiene código PRC válido"
+                    "mensaje": "La oportunidad asociada no tiene código de proyecto/evolutivo válido"
                 }), 400
 
-            p.codigo = prc_actual
+            p.codigo = codigo_actual
 
         # ------------------------------------------------------------
         # perfiles
@@ -8686,62 +8285,77 @@ def _valor_hora_consultor(consultor_id, anio, mes):
 @permission_required("OPORTUNIDADES_VER")
 def listar_oportunidades_elegibles_proyecto():
     try:
-        query = Oportunidad.query
-
-        # Solo oportunidades con PRC
-        query = query.filter(Oportunidad.codigo_prc.isnot(None))
-        query = query.filter(func.trim(Oportunidad.codigo_prc) != "")
-
-        # Orden seguro para MySQL/MariaDB
-        query = query.order_by(
-            Oportunidad.fecha_cierre_oportunidad.desc(),
-            Oportunidad.id.desc()
+        rows = (
+            Oportunidad.query
+            .filter(Oportunidad.codigo_proyecto_evolutivo.isnot(None))
+            .filter(func.trim(Oportunidad.codigo_proyecto_evolutivo) != "")
+            .filter(
+                func.upper(
+                    func.trim(Oportunidad.tiene_codigo_proyecto_evolutivo)
+                ) == "SI"
+            )
+            .order_by(
+                Oportunidad.fecha_cierre_oportunidad.desc(),
+                Oportunidad.id.desc(),
+            )
+            .all()
         )
 
-        rows = query.all()
+        oportunidad_ids = [int(o.id) for o in rows if o.id]
+        proyectos_vinculados = {}
 
-        resultados_permitidos = {
-            _norm_key_for_match("PROYECTO"),
-            _norm_key_for_match("BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN"),
-        }
+        if oportunidad_ids:
+            proyectos_vinculados = {
+                int(proyecto.oportunidad_id): proyecto
+                for proyecto in (
+                    Proyecto.query
+                    .filter(Proyecto.oportunidad_id.in_(oportunidad_ids))
+                    .all()
+                )
+                if proyecto.oportunidad_id
+            }
 
         data = []
-        for o in rows:
-            estado = _norm_key_for_match(o.estado_oferta)
-            resultado = _norm_key_for_match(o.resultado_oferta)
-            prc = (o.codigo_prc or "").strip().upper()
 
-            if estado != _norm_key_for_match("GANADA"):
-                continue
-
-            if resultado not in resultados_permitidos:
-                continue
-
-            tipo_negocio = (
-                "BOLSA_HORAS"
-                if resultado == _norm_key_for_match("BOLSA DE HORAS / CONTINUIDAD DE LA OPERACIÓN")
-                else "PROYECTO"
+        for oportunidad in rows:
+            ok_opp, _, codigo, tipo_negocio = (
+                _validar_oportunidad_elegible_proyecto(oportunidad)
             )
 
+            if not ok_opp:
+                continue
+
+            proyecto_existente = proyectos_vinculados.get(int(oportunidad.id))
+
             data.append({
-                "id": o.id,
-                "codigo_prc": prc,
-                "nombre_cliente": o.nombre_cliente,
-                "servicio": o.servicio,
-                "fecha_cierre_oportunidad": o.fecha_cierre_oportunidad.isoformat() if o.fecha_cierre_oportunidad else None,
-                "pm_asignado_claro": o.pm_asignado_claro,
-                "pm_asignado_hitss": o.pm_asignado_hitss,
-                "estado_oferta": o.estado_oferta,
-                "resultado_oferta": o.resultado_oferta,
+                "id": oportunidad.id,
+                "codigo_prc": codigo,
+                "codigo_proyecto_evolutivo": codigo,
+                "tiene_codigo_proyecto_evolutivo": "SI",
+                "nombre_cliente": oportunidad.nombre_cliente,
+                "servicio": oportunidad.servicio,
+                "fecha_cierre_oportunidad": (
+                    oportunidad.fecha_cierre_oportunidad.isoformat()
+                    if oportunidad.fecha_cierre_oportunidad else None
+                ),
+                "pm_asignado_claro": oportunidad.pm_asignado_claro,
+                "pm_asignado_hitss": oportunidad.pm_asignado_hitss,
+                "estado_oferta": oportunidad.estado_oferta,
+                "resultado_oferta": oportunidad.resultado_oferta,
                 "tipo_negocio": tipo_negocio,
+                "proyecto_existente_id": (
+                    proyecto_existente.id if proyecto_existente else None
+                ),
             })
 
         return jsonify(data), 200
 
     except Exception:
+        app.logger.exception(
+            "Error interno en /oportunidades/elegibles-proyecto"
+        )
         return jsonify({
-            "mensaje": "Error interno en /oportunidades/elegibles-proyecto",
-            "trace": traceback.format_exc()
+            "mensaje": "Error interno en /oportunidades/elegibles-proyecto"
         }), 500
 
 ## ----------
@@ -14429,6 +14043,8 @@ def listar_oportunidades_principales():
 POST_PRC_CLEAR_FIELDS = [
     "observaciones",
     "codigo_prc",
+    "tiene_codigo_proyecto_evolutivo",
+    "codigo_proyecto_evolutivo",
     "pm_asignado_claro",
     "pm_asignado_hitss",
     "descripcion_ot",
@@ -19700,315 +19316,68 @@ def _coe_rep_closed_condition():
 def _coe_rep_estado_general(query):
     """
     Backlog completo por estado principal/subestado controlados.
-
-    Reglas:
-    - Solo muestra estados principales abiertos/controlables:
-        EN CURSO
-        PENDIENTE DE CLIENTE
-    - Si el registro tiene subestado, agrupa por subestado.
-    - Si NO tiene subestado, muestra el estado principal.
-    - Si el estado original coincide con un subestado del catálogo,
-      lo vincula automáticamente a su estado principal.
+    Se consolida por ID de catálogo cuando existe y, como respaldo,
+    por texto normalizado para evitar duplicados visuales.
     """
-    estados_backlog_permitidos = {
-        "EN CURSO",
-        "PENDIENTE DE CLIENTE",
-        "PENDIENTE CLIENTE",
-    }
+    total = int(query.count() or 0)
 
-    def norm_estado(value):
-        if "_coe_cfg_norm" in globals():
-            return _coe_cfg_norm(value)
-        return str(value or "").strip().upper()
-
-    def str_estado(value):
-        return _coe_rep_str(value)
-
-    Catalogo = globals().get("CoeSapFuncionalCatalogo")
-    tipo_estado_principal = globals().get("COE_TIPO_ESTADO_PRINCIPAL", "ESTADO_PRINCIPAL")
-    tipo_subestado = globals().get("COE_TIPO_SUBESTADO", "SUBESTADO")
-
-    estados_por_id = {}
-    estados_por_norm = {}
-    subestados_por_id = {}
-    subestados_por_norm = {}
-
-    if Catalogo is not None:
-        try:
-            estados_catalogo = (
-                Catalogo.query
-                .filter(Catalogo.tipo == tipo_estado_principal)
-                .all()
-            )
-
-            for estado_cat in estados_catalogo:
-                estado_label = str_estado(estado_cat.valor)
-                estado_norm = norm_estado(estado_label)
-
-                estados_por_id[int(estado_cat.id)] = estado_label
-
-                if estado_norm:
-                    estados_por_norm[estado_norm] = {
-                        "id": int(estado_cat.id),
-                        "valor": estado_label,
-                    }
-
-            subestados_catalogo = (
-                Catalogo.query
-                .filter(Catalogo.tipo == tipo_subestado)
-                .all()
-            )
-
-            for sub_cat in subestados_catalogo:
-                sub_label = str_estado(sub_cat.valor)
-                sub_norm = norm_estado(sub_label)
-
-                estado_padre_id = None
-                try:
-                    estado_padre_id = int(sub_cat.extra_1) if sub_cat.extra_1 not in (None, "") else None
-                except Exception:
-                    estado_padre_id = None
-
-                estado_padre_label = estados_por_id.get(estado_padre_id)
-
-                meta = {
-                    "id": int(sub_cat.id),
-                    "valor": sub_label,
-                    "estado_catalogo_id": estado_padre_id,
-                    "estado_principal": estado_padre_label,
-                }
-
-                subestados_por_id[int(sub_cat.id)] = meta
-
-                if sub_norm:
-                    subestados_por_norm[sub_norm] = meta
-
-        except Exception:
-            estados_por_id = {}
-            estados_por_norm = {}
-            subestados_por_id = {}
-            subestados_por_norm = {}
-
-    rows = (
+    principales_rows = (
         query.with_entities(
             CoeSapFuncionalCalificacion.estado_catalogo_id.label("estado_catalogo_id"),
             CoeSapFuncionalCalificacion.estado_principal.label("estado_principal"),
-            CoeSapFuncionalCalificacion.subestado_catalogo_id.label("subestado_catalogo_id"),
-            CoeSapFuncionalCalificacion.subestado.label("subestado"),
-            CoeSapFuncionalCalificacion.estado.label("estado"),
-            CoeSapFuncionalCalificacion.estado_consolidado.label("estado_consolidado"),
             func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
         )
         .group_by(
             CoeSapFuncionalCalificacion.estado_catalogo_id,
             CoeSapFuncionalCalificacion.estado_principal,
-            CoeSapFuncionalCalificacion.subestado_catalogo_id,
-            CoeSapFuncionalCalificacion.subestado,
-            CoeSapFuncionalCalificacion.estado,
-            CoeSapFuncionalCalificacion.estado_consolidado,
         )
         .all()
     )
 
-    principales_map = {}
-    subestados_map = {}
-    total = 0
-
-    def resolver_estado_principal(row):
-        """
-        Devuelve:
-        {
-            estado_catalogo_id,
-            estado_principal
-        }
-        o None si el registro no pertenece al backlog permitido.
-        """
-        estado_catalogo_id = None
-
-        try:
-            estado_catalogo_id = int(row.estado_catalogo_id) if row.estado_catalogo_id not in (None, "") else None
-        except Exception:
-            estado_catalogo_id = None
-
-        principal = str_estado(row.estado_principal)
-
-        if not principal and estado_catalogo_id:
-            principal = estados_por_id.get(estado_catalogo_id)
-
-        subestado_id = None
-        try:
-            subestado_id = int(row.subestado_catalogo_id) if row.subestado_catalogo_id not in (None, "") else None
-        except Exception:
-            subestado_id = None
-
-        if subestado_id and subestado_id in subestados_por_id:
-            meta_sub = subestados_por_id[subestado_id]
-
-            if not principal:
-                principal = meta_sub.get("estado_principal")
-
-            if not estado_catalogo_id:
-                estado_catalogo_id = meta_sub.get("estado_catalogo_id")
-
-        raw_candidates = [
-            row.subestado,
-            row.estado,
-            row.estado_consolidado,
-        ]
-
-        if not principal:
-            for candidate in raw_candidates:
-                candidate_norm = norm_estado(candidate)
-
-                if not candidate_norm:
-                    continue
-
-                if candidate_norm in subestados_por_norm:
-                    meta_sub = subestados_por_norm[candidate_norm]
-                    principal = meta_sub.get("estado_principal")
-                    estado_catalogo_id = meta_sub.get("estado_catalogo_id")
-                    break
-
-                if candidate_norm in estados_por_norm:
-                    meta_estado = estados_por_norm[candidate_norm]
-                    principal = meta_estado.get("valor")
-                    estado_catalogo_id = meta_estado.get("id")
-                    break
-
-        principal_norm = norm_estado(principal)
-
-        if principal_norm not in estados_backlog_permitidos:
-            return None
-
-        principal_final = (
-            estados_por_norm.get(principal_norm, {}).get("valor")
-            or principal
-            or "Sin dato"
+    subestados_rows = (
+        query.with_entities(
+            CoeSapFuncionalCalificacion.subestado_catalogo_id.label("subestado_catalogo_id"),
+            CoeSapFuncionalCalificacion.subestado.label("subestado"),
+            CoeSapFuncionalCalificacion.estado.label("estado"),
+            func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
         )
-
-        return {
-            "estado_catalogo_id": estado_catalogo_id,
-            "estado_principal": principal_final,
-        }
-
-    def resolver_subestado(row, principal_info):
-        """
-        Si hay subestado controlado, devuelve el subestado.
-        Si no hay subestado, devuelve el estado principal.
-        """
-        subestado_id = None
-        try:
-            subestado_id = int(row.subestado_catalogo_id) if row.subestado_catalogo_id not in (None, "") else None
-        except Exception:
-            subestado_id = None
-
-        if subestado_id and subestado_id in subestados_por_id:
-            sub_label = subestados_por_id[subestado_id].get("valor")
-            if sub_label:
-                return {
-                    "subestado_catalogo_id": subestado_id,
-                    "subestado": sub_label,
-                    "estado_original": str_estado(row.estado) or "Sin dato",
-                }
-
-        subestado_texto = str_estado(row.subestado)
-
-        if subestado_texto:
-            subestado_norm = norm_estado(subestado_texto)
-
-            if subestado_norm in subestados_por_norm:
-                meta_sub = subestados_por_norm[subestado_norm]
-                return {
-                    "subestado_catalogo_id": meta_sub.get("id"),
-                    "subestado": meta_sub.get("valor") or subestado_texto,
-                    "estado_original": str_estado(row.estado) or "Sin dato",
-                }
-
-            if subestado_norm not in estados_backlog_permitidos:
-                return {
-                    "subestado_catalogo_id": None,
-                    "subestado": subestado_texto,
-                    "estado_original": str_estado(row.estado) or "Sin dato",
-                }
-
-        estado_original = str_estado(row.estado)
-
-        if estado_original:
-            estado_original_norm = norm_estado(estado_original)
-
-            if estado_original_norm in subestados_por_norm:
-                meta_sub = subestados_por_norm[estado_original_norm]
-                return {
-                    "subestado_catalogo_id": meta_sub.get("id"),
-                    "subestado": meta_sub.get("valor") or estado_original,
-                    "estado_original": estado_original,
-                }
-
-        return {
-            "subestado_catalogo_id": None,
-            "subestado": principal_info.get("estado_principal") or "Sin dato",
-            "estado_original": estado_original or "Sin dato",
-        }
-
-    for r in rows:
-        cantidad = int(r.cantidad or 0)
-
-        if cantidad <= 0:
-            continue
-
-        principal_info = resolver_estado_principal(r)
-
-        if not principal_info:
-            continue
-
-        subestado_info = resolver_subestado(r, principal_info)
-
-        total += cantidad
-
-        principal_label = principal_info.get("estado_principal") or "Sin dato"
-        principal_id = principal_info.get("estado_catalogo_id")
-        principal_key = f"ID:{principal_id}" if principal_id else f"TXT:{norm_estado(principal_label)}"
-
-        if principal_key not in principales_map:
-            principales_map[principal_key] = {
-                "estadoPrincipal": principal_label,
-                "cantidad": 0,
-            }
-
-        principales_map[principal_key]["cantidad"] += cantidad
-
-        subestado_label = subestado_info.get("subestado") or principal_label
-        subestado_id = subestado_info.get("subestado_catalogo_id")
-
-        if subestado_id:
-            subestado_key = f"ID:{subestado_id}"
-        else:
-            subestado_key = f"PRINCIPAL:{principal_key}:TXT:{norm_estado(subestado_label)}"
-
-        if subestado_key not in subestados_map:
-            subestados_map[subestado_key] = {
-                "subestado": subestado_label,
-                "estadoOriginal": subestado_info.get("estado_original") or "Sin dato",
-                "estadoPrincipal": principal_label,
-                "cantidad": 0,
-            }
-
-        subestados_map[subestado_key]["cantidad"] += cantidad
+        .group_by(
+            CoeSapFuncionalCalificacion.subestado_catalogo_id,
+            CoeSapFuncionalCalificacion.subestado,
+            CoeSapFuncionalCalificacion.estado,
+        )
+        .all()
+    )
 
     def pct(cantidad):
         return round((float(cantidad or 0) / total) * 100, 2) if total else 0
 
-    principales = sorted(
-        principales_map.values(),
-        key=lambda item: item["cantidad"],
-        reverse=True,
-    )
+    principales_map = {}
+    for r in principales_rows:
+        label = _coe_rep_str(r.estado_principal) or "OTROS"
+        key = f"ID:{r.estado_catalogo_id}" if r.estado_catalogo_id else f"TXT:{_coe_cfg_norm(label)}"
+        if key not in principales_map:
+            principales_map[key] = {
+                "estadoPrincipal": label,
+                "cantidad": 0,
+            }
+        principales_map[key]["cantidad"] += int(r.cantidad or 0)
 
-    subestados = sorted(
-        subestados_map.values(),
-        key=lambda item: item["cantidad"],
-        reverse=True,
-    )
+    subestados_map = {}
+    for r in subestados_rows:
+        label = _coe_rep_str(r.subestado) or _coe_rep_str(r.estado) or "Sin dato"
+        estado_original = _coe_rep_str(r.estado) or "Sin dato"
+        key = f"ID:{r.subestado_catalogo_id}" if r.subestado_catalogo_id else f"TXT:{_coe_cfg_norm(label)}"
+        if key not in subestados_map:
+            subestados_map[key] = {
+                "subestado": label,
+                "estadoOriginal": estado_original,
+                "cantidad": 0,
+            }
+        subestados_map[key]["cantidad"] += int(r.cantidad or 0)
+
+    principales = sorted(principales_map.values(), key=lambda item: item["cantidad"], reverse=True)
+    subestados = sorted(subestados_map.values(), key=lambda item: item["cantidad"], reverse=True)
 
     for item in principales:
         item["porcentaje"] = pct(item["cantidad"])
@@ -20086,76 +19455,25 @@ def _coe_rep_norm_key(value):
 
 def _coe_rep_distribucion_modulos_consultores(query):
     """
-    Consolida el backlog filtrado por módulo y cruza la asignación de consultores.
+    Consolida el backlog filtrado por módulo y cruza la asignación de consultores
+    definida en el catálogo consultor <-> módulo.
 
-    Corrección aplicada:
-    - El total se calcula sobre la misma consulta del gráfico Estado general.
-    - Si la calificación NO tiene módulo, se intenta inferir desde el consultor asignado.
-    - El texto "Sin módulo" solo aparece cuando el caso no tiene módulo y tampoco se
-      pudo encontrar un consultor asignado con módulos relacionados.
-    - La lista de consultores por módulo se arma desde Consultor.modulos y se completa
-      con los casos asignados a cada consultor.
+    - El tamaño del segmento principal corresponde a la cantidad de casos del módulo.
+    - En el detalle de cada módulo se listan los consultores asociados y la cantidad
+      de casos que tienen asignados dentro del mismo módulo.
+    - Si un consultor pertenece al módulo pero no tiene casos en el filtro actual,
+      igualmente se muestra con cantidad 0 para control operativo.
     """
-    def _is_empty_module(value):
-        value_norm = _coe_rep_norm_key(value)
-        return value_norm in {
-            "",
-            "SIN MODULO",
-            "SIN MODULOS",
-            "SIN MODULO ASIGNADO",
-            "SIN ASIGNAR",
-            "N/A",
-            "NA",
-            "NO APLICA",
-            "-",
-            "--",
-        }
+    total = int(query.count() or 0)
 
-    def _consultor_display(consultor):
-        return (
-            _coe_rep_str(getattr(consultor, "nombre", None))
-            or _coe_rep_str(getattr(consultor, "usuario", None))
-            or f"Consultor {getattr(consultor, 'id', '')}".strip()
-        )
-
-    def _modulo_nombre_catalogado(value, modulo_nombre_por_norm):
-        if _is_empty_module(value):
-            return None, None
-
-        raw = _coe_rep_str(value)
-        key = _coe_rep_norm_key(raw)
-        nombre = modulo_nombre_por_norm.get(key) or raw
-        return key, nombre
-
-    def _pick_modulo_from_consultor(consultor_meta):
-        modulos = list((consultor_meta or {}).get("modulos") or [])
-        if not modulos:
-            return None
-
-        modulos = sorted(
-            modulos,
-            key=lambda item: str(item.get("nombre") or "").upper()
-        )
-        return modulos[0]
-
-    # ------------------------------------------------------------
-    # 1) Catálogo de módulos
-    # ------------------------------------------------------------
     modulos_catalogo = Modulo.query.order_by(Modulo.nombre.asc()).all()
-    modulo_nombre_por_id = {
-        int(m.id): (_coe_rep_str(m.nombre) or f"Módulo {m.id}")
-        for m in modulos_catalogo
-        if getattr(m, "id", None)
-    }
+    modulo_nombre_por_id = {m.id: (_coe_rep_str(m.nombre) or f"Módulo {m.id}") for m in modulos_catalogo}
     modulo_nombre_por_norm = {
         _coe_rep_norm_key(m.nombre): (_coe_rep_str(m.nombre) or f"Módulo {m.id}")
         for m in modulos_catalogo
         if _coe_rep_norm_key(m.nombre)
     }
 
-    # ------------------------------------------------------------
-    # 2) Consultores y módulos asociados
-    # ------------------------------------------------------------
     consultores = (
         Consultor.query
         .options(selectinload(Consultor.modulos))
@@ -20163,292 +19481,103 @@ def _coe_rep_distribucion_modulos_consultores(query):
         .all()
     )
 
-    consultor_por_alias = {}
-    consultor_alias_items = []
+    consultor_display_por_norm = {}
     consultores_por_modulo = {}
 
     for consultor in consultores:
-        display = _consultor_display(consultor)
-        modulos_consultor = []
-
-        # Relación muchos a muchos consultor.modulos
-        for modulo in getattr(consultor, "modulos", None) or []:
-            modulo_key, modulo_nombre = _modulo_nombre_catalogado(
-                getattr(modulo, "nombre", None),
-                modulo_nombre_por_norm,
-            )
-
-            if modulo_key and modulo_nombre:
-                modulos_consultor.append({
-                    "key": modulo_key,
-                    "nombre": modulo_nombre,
-                })
-
-        # Fallback por consultor.modulo_id
-        modulo_id = getattr(consultor, "modulo_id", None)
-        try:
-            modulo_id = int(modulo_id) if modulo_id not in (None, "") else None
-        except Exception:
-            modulo_id = None
-
-        if modulo_id and modulo_id in modulo_nombre_por_id:
-            modulo_nombre = modulo_nombre_por_id[modulo_id]
-            modulo_key = _coe_rep_norm_key(modulo_nombre)
-
-            if modulo_key and not any(m["key"] == modulo_key for m in modulos_consultor):
-                modulos_consultor.append({
-                    "key": modulo_key,
-                    "nombre": modulo_nombre,
-                })
-
-        # Quitar duplicados por módulo
-        modulos_unicos = {}
-        for item in modulos_consultor:
-            modulos_unicos[item["key"]] = item
-        modulos_consultor = list(modulos_unicos.values())
-
-        meta = {
-            "display": display,
-            "modulos": modulos_consultor,
-        }
-
+        display = _coe_rep_str(consultor.nombre) or _coe_rep_str(consultor.usuario) or f"Consultor {consultor.id}"
         aliases = {
-            _coe_rep_norm_key(getattr(consultor, "nombre", None)),
-            _coe_rep_norm_key(getattr(consultor, "usuario", None)),
-            _coe_rep_norm_key(getattr(consultor, "cedula", None)),
+            _coe_rep_norm_key(consultor.nombre),
+            _coe_rep_norm_key(consultor.usuario),
+            _coe_rep_norm_key(consultor.cedula),
         }
-
         for alias in aliases:
             if alias:
-                consultor_por_alias.setdefault(alias, meta)
-                consultor_alias_items.append((alias, meta))
+                consultor_display_por_norm.setdefault(alias, display)
 
-        for modulo_item in modulos_consultor:
-            modulo_key = modulo_item["key"]
+        modulos_consultor = list(getattr(consultor, 'modulos', None) or [])
+        if not modulos_consultor and getattr(consultor, 'modulo_id', None):
+            nombre_modulo = modulo_nombre_por_id.get(consultor.modulo_id)
+            if nombre_modulo:
+                modulos_consultor = [type('ModuloLite', (), {'nombre': nombre_modulo})()]
+
+        for modulo in modulos_consultor:
+            modulo_nombre = _coe_rep_str(getattr(modulo, 'nombre', None))
+            modulo_key = _coe_rep_norm_key(modulo_nombre)
+            if not modulo_key:
+                continue
             consultores_por_modulo.setdefault(modulo_key, {})
             consultores_por_modulo[modulo_key].setdefault(
                 display,
                 {"consultor": display, "cantidad": 0}
             )
 
-    def _tokens_for_consultor_match(value):
-        key = _coe_rep_norm_key(value)
-        if not key:
-            return []
-
-        tokens = []
-        for token in re.split(r"[^A-Z0-9]+", key):
-            token = token.strip()
-            if not token:
-                continue
-            if token in {"DE", "DEL", "LA", "LAS", "LOS", "Y", "EL"}:
-                continue
-            tokens.append(token)
-
-        return tokens
-
-    def _find_consultor_meta(asignado_a):
-        asignado_key = _coe_rep_norm_key(asignado_a)
-
-        if not asignado_key:
-            return None
-
-        exact = consultor_por_alias.get(asignado_key)
-        if exact:
-            return exact
-
-        # 1) Contención directa: usuario/correo/nombre pegado dentro de Asignado a.
-        best = None
-        best_score = 0
-
-        for alias, meta in consultor_alias_items:
-            if len(alias) < 5:
-                continue
-
-            if alias in asignado_key or asignado_key in alias:
-                score = len(alias) + 1000
-                if score > best_score:
-                    best = meta
-                    best_score = score
-
-        if best:
-            return best
-
-        # 2) Coincidencia por tokens del nombre.
-        #    Esto corrige casos como:
-        #    - "Anibardo Javier Gonzalez Ortega"  -> "Anibardo Gonzalez"
-        #    - "Claudio Nicolás López Amaya"      -> "Claudio Lopez"
-        #    - "FREDDY LEONARDO CELY PUIN"        -> "Fredy Leonardo Cely Puin"
-        #
-        #    No exige que el texto sea idéntico; exige que el alias del consultor
-        #    quede suficientemente contenido en los tokens del asignado o viceversa.
-        asignado_tokens = _tokens_for_consultor_match(asignado_key)
-        asignado_set = set(asignado_tokens)
-
-        if not asignado_set:
-            return None
-
-        for alias, meta in consultor_alias_items:
-            alias_tokens = _tokens_for_consultor_match(alias)
-            alias_set = set(alias_tokens)
-
-            if not alias_set:
-                continue
-
-            comunes = alias_set.intersection(asignado_set)
-            comunes_count = len(comunes)
-
-            if comunes_count < 2:
-                continue
-
-            alias_ratio = comunes_count / max(len(alias_set), 1)
-            asignado_ratio = comunes_count / max(len(asignado_set), 1)
-
-            first_match = bool(alias_tokens and asignado_tokens and alias_tokens[0] == asignado_tokens[0])
-            last_match = bool(alias_tokens and asignado_tokens and alias_tokens[-1] == asignado_tokens[-1])
-
-            is_match = (
-                # Alias casi completamente contenido en el Asignado a.
-                (alias_ratio >= 0.80 and (last_match or comunes_count >= 3))
-                # Nombres con una diferencia pequeña, por ejemplo FREDY/FREDDY.
-                or (alias_ratio >= 0.70 and asignado_ratio >= 0.60 and comunes_count >= 3)
-                # Dos tokens exactos con mismo primer nombre y apellido final.
-                or (comunes_count >= 2 and first_match and last_match)
-            )
-
-            if not is_match:
-                continue
-
-            score = (alias_ratio * 70) + (asignado_ratio * 20)
-            if first_match:
-                score += 5
-            if last_match:
-                score += 5
-            score += min(comunes_count, 5)
-
-            if score > best_score:
-                best = meta
-                best_score = score
-
-        return best
-
-
-    # ------------------------------------------------------------
-    # 3) Recorrer casos del backlog filtrado
-    # ------------------------------------------------------------
-    total = int(query.count() or 0)
+    rows = (
+        query.with_entities(
+            CoeSapFuncionalCalificacion.modulo.label('modulo'),
+            CoeSapFuncionalCalificacion.asignado_a.label('asignado_a'),
+            func.count(CoeSapFuncionalCalificacion.id).label('cantidad'),
+        )
+        .group_by(
+            CoeSapFuncionalCalificacion.modulo,
+            CoeSapFuncionalCalificacion.asignado_a,
+        )
+        .all()
+    )
 
     resultado_map = {}
 
-    def ensure_modulo(modulo_key, modulo_nombre):
-        if not modulo_key:
-            modulo_key = "SIN MODULO"
-            modulo_nombre = "Sin módulo"
-
+    def ensure_modulo(modulo_label):
+        modulo_key = _coe_rep_norm_key(modulo_label) or 'SIN MODULO'
+        modulo_final = modulo_nombre_por_norm.get(modulo_key, _coe_rep_str(modulo_label) or 'Sin módulo')
         if modulo_key not in resultado_map:
             base_consultores = consultores_por_modulo.get(modulo_key, {})
             resultado_map[modulo_key] = {
-                "modulo": modulo_nombre or "Sin módulo",
-                "cantidad": 0,
-                "_consultores": {
-                    nombre: {
-                        "consultor": data["consultor"],
-                        "cantidad": int(data.get("cantidad") or 0),
-                    }
+                'modulo': modulo_final,
+                'cantidad': 0,
+                '_consultores': {
+                    nombre: {'consultor': data['consultor'], 'cantidad': int(data.get('cantidad') or 0)}
                     for nombre, data in base_consultores.items()
                 },
             }
-
-        return resultado_map[modulo_key]
-
-    rows = (
-        query.with_entities(
-            CoeSapFuncionalCalificacion.id.label("id"),
-            CoeSapFuncionalCalificacion.modulo.label("modulo"),
-            CoeSapFuncionalCalificacion.asignado_a.label("asignado_a"),
-        )
-        .yield_per(2000)
-    )
+        return modulo_key, resultado_map[modulo_key]
 
     for row in rows:
-        consultor_meta = _find_consultor_meta(row.asignado_a)
+        modulo_label = _coe_rep_str(row.modulo) or 'Sin módulo'
+        modulo_key, modulo_item = ensure_modulo(modulo_label)
 
-        modulo_key, modulo_nombre = _modulo_nombre_catalogado(
-            row.modulo,
-            modulo_nombre_por_norm,
-        )
+        cantidad = int(row.cantidad or 0)
+        modulo_item['cantidad'] += cantidad
 
-        origen_modulo = "calificacion"
+        asignado_raw = _coe_rep_str(row.asignado_a)
+        consultor_label = 'Sin asignar'
+        if asignado_raw:
+            consultor_label = consultor_display_por_norm.get(_coe_rep_norm_key(asignado_raw), asignado_raw)
 
-        if not modulo_key:
-            modulo_desde_consultor = _pick_modulo_from_consultor(consultor_meta)
-
-            if modulo_desde_consultor:
-                modulo_key = modulo_desde_consultor["key"]
-                modulo_nombre = modulo_desde_consultor["nombre"]
-                origen_modulo = "consultor"
-            else:
-                modulo_key = "SIN MODULO"
-                modulo_nombre = "Sin módulo"
-                origen_modulo = "sin_modulo"
-
-        modulo_item = ensure_modulo(modulo_key, modulo_nombre)
-        modulo_item["cantidad"] += 1
-
-        if consultor_meta:
-            consultor_label = consultor_meta.get("display") or "Sin asignar"
-        else:
-            consultor_label = _coe_rep_str(row.asignado_a) or "Sin asignar"
-
-        consultor_item = modulo_item["_consultores"].setdefault(
+        consultor_item = modulo_item['_consultores'].setdefault(
             consultor_label,
-            {"consultor": consultor_label, "cantidad": 0}
+            {'consultor': consultor_label, 'cantidad': 0}
         )
-        consultor_item["cantidad"] += 1
+        consultor_item['cantidad'] += cantidad
 
-        # Campo interno útil para depuración si luego se necesita exponer.
-        modulo_item.setdefault("_origenes", defaultdict(int))
-        modulo_item["_origenes"][origen_modulo] += 1
-
-    # ------------------------------------------------------------
-    # 4) Formato final
-    # ------------------------------------------------------------
     resultado = []
-
     for item in resultado_map.values():
         consultores_detalle = sorted(
-            item["_consultores"].values(),
-            key=lambda elem: (
-                -int(elem.get("cantidad") or 0),
-                str(elem.get("consultor") or "").upper(),
-            )
+            item['_consultores'].values(),
+            key=lambda elem: (-int(elem.get('cantidad') or 0), str(elem.get('consultor') or '').upper())
         )
-
-        origenes = item.get("_origenes") or {}
-
         resultado.append({
-            "modulo": item["modulo"],
-            "cantidad": int(item["cantidad"] or 0),
-            "porcentaje": round((float(item["cantidad"] or 0) / total) * 100, 2) if total else 0,
-            "consultores": consultores_detalle,
-            "origenModulo": {
-                "calificacion": int(origenes.get("calificacion", 0) or 0),
-                "consultor": int(origenes.get("consultor", 0) or 0),
-                "sinModulo": int(origenes.get("sin_modulo", 0) or 0),
-            },
+            'modulo': item['modulo'],
+            'cantidad': int(item['cantidad'] or 0),
+            'porcentaje': round((float(item['cantidad'] or 0) / total) * 100, 2) if total else 0,
+            'consultores': consultores_detalle,
         })
 
-    resultado.sort(
-        key=lambda elem: (
-            str(elem.get("modulo") or "").upper() == "SIN MÓDULO",
-            -int(elem.get("cantidad") or 0),
-            str(elem.get("modulo") or "").upper(),
-        )
-    )
+    resultado.sort(key=lambda elem: (-int(elem.get('cantidad') or 0), str(elem.get('modulo') or '').upper()))
 
     return {
-        "total": total,
-        "modulos": resultado,
+        'total': total,
+        'modulos': resultado,
     }
 
 
@@ -20487,217 +19616,9 @@ def _coe_rep_recibidos_vs_cerrados(base_query):
     - Abierto/recibido: fecha_asignacion dentro del mes propio.
     - Cerrado/finalizado: fecha_finalizacion_cierre o
       fecha_finalizacion_cierre_sistema_gestion dentro del mes propio.
-    - No aplica filtros globales. Solo responde al filtro propio de sociedad.
 
-    Corrección aplicada:
-    - Si calificación.modulo viene vacío, se infiere el módulo desde el consultor
-      asignado usando consultor.nombre / consultor.usuario / consultor.cedula y
-      la relación consultor_modulo.
-    - Esto evita que aparezca "Sin módulo" cuando el consultor sí tiene módulos
-      configurados pero el caso no trae módulo en la calificación.
+    No aplica filtros globales. Solo responde al filtro propio de sociedad.
     """
-    def _is_empty_module(value):
-        value_norm = _coe_rep_norm_key(value)
-        return value_norm in {
-            "",
-            "SIN MODULO",
-            "SIN MODULOS",
-            "SIN MODULO ASIGNADO",
-            "SIN ASIGNAR",
-            "N/A",
-            "NA",
-            "NO APLICA",
-            "-",
-            "--",
-        }
-
-    def _modulo_nombre_catalogado(value, modulo_nombre_por_norm):
-        if _is_empty_module(value):
-            return None, None
-
-        raw = _coe_rep_str(value)
-        key = _coe_rep_norm_key(raw)
-        nombre = modulo_nombre_por_norm.get(key) or raw
-        return key, nombre
-
-    def _consultor_display(consultor):
-        return (
-            _coe_rep_str(getattr(consultor, "nombre", None))
-            or _coe_rep_str(getattr(consultor, "usuario", None))
-            or f"Consultor {getattr(consultor, 'id', '')}".strip()
-        )
-
-    def _tokens_for_consultor_match(value):
-        key = _coe_rep_norm_key(value)
-        if not key:
-            return []
-
-        tokens = []
-        for token in re.split(r"[^A-Z0-9]+", key):
-            token = token.strip()
-            if not token:
-                continue
-            if token in {"DE", "DEL", "LA", "LAS", "LOS", "Y", "EL"}:
-                continue
-            tokens.append(token)
-
-        return tokens
-
-    # ------------------------------------------------------------
-    # 1) Catálogo de módulos
-    # ------------------------------------------------------------
-    modulos_catalogo = Modulo.query.order_by(Modulo.nombre.asc()).all()
-    modulo_nombre_por_id = {
-        int(m.id): (_coe_rep_str(m.nombre) or f"Módulo {m.id}")
-        for m in modulos_catalogo
-        if getattr(m, "id", None)
-    }
-    modulo_nombre_por_norm = {
-        _coe_rep_norm_key(m.nombre): (_coe_rep_str(m.nombre) or f"Módulo {m.id}")
-        for m in modulos_catalogo
-        if _coe_rep_norm_key(m.nombre)
-    }
-
-    # ------------------------------------------------------------
-    # 2) Índice de consultores -> módulos
-    # ------------------------------------------------------------
-    consultores = (
-        Consultor.query
-        .options(selectinload(Consultor.modulos))
-        .order_by(Consultor.nombre.asc(), Consultor.usuario.asc())
-        .all()
-    )
-
-    consultor_por_alias = {}
-    consultor_alias_items = []
-
-    for consultor in consultores:
-        display = _consultor_display(consultor)
-        modulos_consultor = []
-
-        for modulo in getattr(consultor, "modulos", None) or []:
-            modulo_key, modulo_nombre = _modulo_nombre_catalogado(
-                getattr(modulo, "nombre", None),
-                modulo_nombre_por_norm,
-            )
-            if modulo_key and modulo_nombre:
-                modulos_consultor.append({
-                    "key": modulo_key,
-                    "nombre": modulo_nombre,
-                })
-
-        modulo_id = getattr(consultor, "modulo_id", None)
-        try:
-            modulo_id = int(modulo_id) if modulo_id not in (None, "") else None
-        except Exception:
-            modulo_id = None
-
-        if modulo_id and modulo_id in modulo_nombre_por_id:
-            modulo_nombre = modulo_nombre_por_id[modulo_id]
-            modulo_key = _coe_rep_norm_key(modulo_nombre)
-            if modulo_key and not any(m["key"] == modulo_key for m in modulos_consultor):
-                modulos_consultor.append({
-                    "key": modulo_key,
-                    "nombre": modulo_nombre,
-                })
-
-        modulos_unicos = {}
-        for item in modulos_consultor:
-            modulos_unicos[item["key"]] = item
-
-        meta = {
-            "display": display,
-            "modulos": list(modulos_unicos.values()),
-        }
-
-        aliases = {
-            _coe_rep_norm_key(getattr(consultor, "nombre", None)),
-            _coe_rep_norm_key(getattr(consultor, "usuario", None)),
-            _coe_rep_norm_key(getattr(consultor, "cedula", None)),
-        }
-
-        for alias in aliases:
-            if alias:
-                consultor_por_alias.setdefault(alias, meta)
-                consultor_alias_items.append((alias, meta))
-
-    def _find_consultor_meta(asignado_a):
-        asignado_key = _coe_rep_norm_key(asignado_a)
-        if not asignado_key:
-            return None
-
-        exact = consultor_por_alias.get(asignado_key)
-        if exact:
-            return exact
-
-        best = None
-        best_score = 0
-
-        # Contención directa.
-        for alias, meta in consultor_alias_items:
-            if len(alias) < 5:
-                continue
-            if alias in asignado_key or asignado_key in alias:
-                score = len(alias) + 1000
-                if score > best_score:
-                    best = meta
-                    best_score = score
-
-        if best:
-            return best
-
-        # Coincidencia por tokens para nombres incompletos o con nombres adicionales.
-        asignado_tokens = set(_tokens_for_consultor_match(asignado_key))
-        if not asignado_tokens:
-            return None
-
-        for alias, meta in consultor_alias_items:
-            alias_tokens = set(_tokens_for_consultor_match(alias))
-            if not alias_tokens:
-                continue
-
-            common = asignado_tokens.intersection(alias_tokens)
-
-            # Si el nombre del consultor es corto, exige que todos sus tokens estén en asignado_a.
-            if len(alias_tokens) <= 3 and alias_tokens.issubset(asignado_tokens):
-                score = len(common) * 100 + len(alias)
-            else:
-                score = len(common) * 100 - abs(len(asignado_tokens) - len(alias_tokens))
-
-            if len(common) >= 2 and score > best_score:
-                best = meta
-                best_score = score
-
-        return best
-
-    def _pick_modulo_from_consultor(consultor_meta):
-        modulos = list((consultor_meta or {}).get("modulos") or [])
-        if not modulos:
-            return None
-
-        # Si tiene varios módulos, se toma el primero ordenado para evitar duplicar un mismo caso.
-        # El detalle de consultores/módulos conserva la lista completa en su propio gráfico.
-        return sorted(modulos, key=lambda item: str(item.get("nombre") or "").upper())[0]
-
-    def _resolver_modulo(modulo_calificacion, asignado_a):
-        modulo_key, modulo_nombre = _modulo_nombre_catalogado(
-            modulo_calificacion,
-            modulo_nombre_por_norm,
-        )
-
-        if modulo_key and modulo_nombre:
-            return modulo_key, modulo_nombre
-
-        consultor_meta = _find_consultor_meta(asignado_a)
-        modulo_consultor = _pick_modulo_from_consultor(consultor_meta)
-        if modulo_consultor:
-            return modulo_consultor.get("key"), modulo_consultor.get("nombre")
-
-        return "SIN MODULO", "Sin módulo"
-
-    # ------------------------------------------------------------
-    # 3) Consulta mensual y agrupación en Python para poder inferir módulo
-    # ------------------------------------------------------------
     query = _coe_rep_apply_graficas_mensuales_sociedad(base_query)
 
     abierto_cond = _coe_dashboard_month_condition_for_columns(
@@ -20714,46 +19635,24 @@ def _coe_rep_recibidos_vs_cerrados(base_query):
     rows = (
         query.with_entities(
             CoeSapFuncionalCalificacion.modulo.label("modulo"),
-            CoeSapFuncionalCalificacion.asignado_a.label("asignado_a"),
-            case((abierto_cond, 1), else_=0).label("abierto"),
-            case((cerrado_cond, 1), else_=0).label("cerrado"),
+            func.coalesce(func.sum(case((abierto_cond, 1), else_=0)), 0).label("abierto"),
+            func.coalesce(func.sum(case((cerrado_cond, 1), else_=0)), 0).label("cerrado"),
         )
         .filter(or_(abierto_cond, cerrado_cond))
+        .group_by(CoeSapFuncionalCalificacion.modulo)
+        .order_by(CoeSapFuncionalCalificacion.modulo.asc())
         .all()
     )
 
-    out = {}
-
-    for row in rows:
-        modulo_key, modulo_nombre = _resolver_modulo(row.modulo, row.asignado_a)
-        modulo_key = modulo_key or "SIN MODULO"
-        modulo_nombre = modulo_nombre or "Sin módulo"
-
-        if modulo_key not in out:
-            out[modulo_key] = {
-                "modulo": modulo_nombre,
-                "abierto": 0,
-                "cerrado": 0,
-                "total": 0,
-            }
-
-        abierto = int(row.abierto or 0)
-        cerrado = int(row.cerrado or 0)
-
-        out[modulo_key]["abierto"] += abierto
-        out[modulo_key]["cerrado"] += cerrado
-        out[modulo_key]["total"] += abierto + cerrado
-
-    result = list(out.values())
-    result.sort(
-        key=lambda item: (
-            str(item.get("modulo") or "").upper() == "SIN MÓDULO",
-            -int(item.get("total") or 0),
-            str(item.get("modulo") or "").upper(),
-        )
-    )
-
-    return result
+    return [
+        {
+            "modulo": _coe_rep_str(r.modulo) or "Sin módulo",
+            "abierto": int(r.abierto or 0),
+            "cerrado": int(r.cerrado or 0),
+            "total": int((r.abierto or 0) + (r.cerrado or 0)),
+        }
+        for r in rows
+    ]
 
 
 def _coe_rep_estado_estimacion_horas(base_query):
@@ -20763,13 +19662,8 @@ def _coe_rep_estado_estimacion_horas(base_query):
     Esta tabla NO usa el periodo global del dashboard.
     - Periodo: fecha_aprobacion_estimacion dentro del mes actual por defecto.
     - Sociedad: filtro propio compartido con Recibidos vs cerrados.
-    - Sumas: total_horas_funcionales, horas_estimadas_abap,
-      total_horas_estimadas y valor_ot.
-
-    Importante:
-    Los cuadros superiores de H. funcionales, H. estimadas y Valor OT
-    se calculan sobre la lista devuelta por esta misma función. De esa
-    manera siempre coinciden con el Total general visible en la tabla.
+    - Sumas: total_horas_funcionales, horas_estimadas_abap y
+      total_horas_estimadas.
     """
     query = _coe_rep_apply_graficas_mensuales_sociedad(base_query)
 
@@ -20778,14 +19672,8 @@ def _coe_rep_estado_estimacion_horas(base_query):
         CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion,
     )
 
-    anio_aprobado_expr = extract(
-        "year",
-        CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion,
-    )
-    mes_aprobado_expr = extract(
-        "month",
-        CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion,
-    )
+    anio_aprobado_expr = extract("year", CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion)
+    mes_aprobado_expr = extract("month", CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion)
 
     rows = (
         query.with_entities(
@@ -20793,22 +19681,9 @@ def _coe_rep_estado_estimacion_horas(base_query):
             anio_aprobado_expr.label("anio"),
             mes_aprobado_expr.label("mes"),
             CoeSapFuncionalCalificacion.numero.label("numero"),
-            func.coalesce(
-                func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales),
-                0,
-            ).label("total_funcionales"),
-            func.coalesce(
-                func.sum(CoeSapFuncionalCalificacion.horas_estimadas_abap),
-                0,
-            ).label("horas_abap"),
-            func.coalesce(
-                func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas),
-                0,
-            ).label("total_estimadas"),
-            func.coalesce(
-                func.sum(CoeSapFuncionalCalificacion.valor_ot),
-                0,
-            ).label("valor_ot"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales), 0).label("total_funcionales"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_estimadas_abap), 0).label("horas_abap"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas), 0).label("total_estimadas"),
         )
         .filter(periodo_estimacion_cond)
         .filter(CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion.isnot(None))
@@ -20839,41 +19714,9 @@ def _coe_rep_estado_estimacion_horas(base_query):
             "totalHorasFuncionales": _coe_rep_float(r.total_funcionales),
             "horasEstimadasAbap": _coe_rep_float(r.horas_abap),
             "totalHorasEstimadas": _coe_rep_float(r.total_estimadas),
-            "valorOt": _coe_rep_float(r.valor_ot),
         }
         for r in rows
     ]
-
-
-def _coe_rep_resumen_estado_estimacion_horas(rows):
-    """
-    Resume exactamente las filas que se envían a Estado estimación y horas.
-    No lanza una segunda consulta ni usa el backlog; por eso los cuadros y
-    el Total general de la tabla siempre trabajan con el mismo universo.
-    """
-    resumen = {
-        "totalHorasFuncionales": 0.0,
-        "horasEstimadasAbap": 0.0,
-        "totalHorasEstimadas": 0.0,
-        "valorOt": 0.0,
-    }
-
-    for row in rows or []:
-        resumen["totalHorasFuncionales"] += _coe_rep_float(
-            row.get("totalHorasFuncionales")
-        )
-        resumen["horasEstimadasAbap"] += _coe_rep_float(
-            row.get("horasEstimadasAbap")
-        )
-        resumen["totalHorasEstimadas"] += _coe_rep_float(
-            row.get("totalHorasEstimadas")
-        )
-        resumen["valorOt"] += _coe_rep_float(row.get("valorOt"))
-
-    return {
-        key: round(float(value or 0), 2)
-        for key, value in resumen.items()
-    }
 
 
 def _coe_rep_estado_estimacion_query(base_query):
@@ -21046,139 +19889,22 @@ def listar_importaciones_coe_sap_funcional():
             "trace": traceback.format_exc(),
         }), 500
 
-def _coe_dash_norm_estado(value):
-    s = str(value or "").strip().upper()
-    s = unicodedata.normalize("NFD", s)
-    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
-
-
-def _coe_dash_backlog_catalog_ids():
-    """
-    Retorna IDs de estado principal y subestado asociados a:
-    - EN CURSO
-    - PENDIENTE DE CLIENTE
-
-    Se usa para que los cuadros superiores y el gráfico de backlog
-    trabajen sobre el mismo universo de datos.
-    """
-    estado_ids = []
-    subestado_ids = []
-
-    try:
-        tipo_estado = globals().get("COE_TIPO_ESTADO_PRINCIPAL", "ESTADO_PRINCIPAL")
-        tipo_subestado = globals().get("COE_TIPO_SUBESTADO", "SUBESTADO")
-
-        estados = (
-            CoeSapFuncionalCatalogo.query
-            .filter(CoeSapFuncionalCatalogo.tipo == tipo_estado)
-            .filter(CoeSapFuncionalCatalogo.activo == True)
-            .all()
-        )
-
-        estados_permitidos = {"EN CURSO", "PENDIENTE DE CLIENTE", "PENDIENTE CLIENTE"}
-
-        for estado in estados:
-            valor_norm = _coe_dash_norm_estado(estado.valor)
-            if valor_norm in estados_permitidos:
-                estado_ids.append(int(estado.id))
-
-        if estado_ids:
-            subestados = (
-                CoeSapFuncionalCatalogo.query
-                .filter(CoeSapFuncionalCatalogo.tipo == tipo_subestado)
-                .filter(CoeSapFuncionalCatalogo.activo == True)
-                .all()
-            )
-
-            estado_ids_str = {str(x) for x in estado_ids}
-
-            for subestado in subestados:
-                padre = str(subestado.extra_1 or "").strip()
-                if padre in estado_ids_str:
-                    subestado_ids.append(int(subestado.id))
-
-    except Exception:
-        estado_ids = []
-        subestado_ids = []
-
-    return estado_ids, subestado_ids
-
-
-def _coe_dash_apply_backlog_controlado(query):
-    """
-    Aplica el mismo criterio del gráfico Estado general:
-    solo backlog de EN CURSO y PENDIENTE DE CLIENTE.
-    """
-    estado_ids, subestado_ids = _coe_dash_backlog_catalog_ids()
-
-    conditions = [
-        CoeSapFuncionalCalificacion.estado_principal.ilike("%EN CURSO%"),
-        CoeSapFuncionalCalificacion.estado_principal.ilike("%PENDIENTE%CLIENTE%"),
-    ]
-
-    if estado_ids:
-        conditions.append(CoeSapFuncionalCalificacion.estado_catalogo_id.in_(estado_ids))
-
-    if subestado_ids:
-        conditions.append(CoeSapFuncionalCalificacion.subestado_catalogo_id.in_(subestado_ids))
-
-    return query.filter(or_(*conditions))
-
-
-def _coe_dash_resumen_estado_general(query_backlog, estado_general_data):
-    """
-    Construye únicamente los tres cuadros del backlog usando la misma data
-    del gráfico Estado general de requerimientos.
-
-    Las horas y el Valor OT se calculan por separado sobre la tabla mensual
-    Estado estimación y horas.
-    """
-    principales = estado_general_data.get("principales") or []
-
-    en_curso = 0
-    pendiente_cliente = 0
-
-    for row in principales:
-        nombre = _coe_dash_norm_estado(row.get("estadoPrincipal"))
-        cantidad = int(row.get("cantidad") or 0)
-
-        if nombre == "EN CURSO":
-            en_curso += cantidad
-
-        if nombre in {"PENDIENTE DE CLIENTE", "PENDIENTE CLIENTE"}:
-            pendiente_cliente += cantidad
-
-    return {
-        "totalCasos": int(estado_general_data.get("total") or 0),
-        "enCurso": int(en_curso),
-        "pendienteCliente": int(pendiente_cliente),
-    }
-
 
 @bp.route("/coe-sap-funcional/calificacion/dashboard-clientes", methods=["GET"])
 @permission_required("BASE_REGISTRO_VER")
 def dashboard_clientes_coe_sap_funcional():
     try:
         base_query = CoeSapFuncionalCalificacion.query
+
+        # Consulta general del dashboard: conserva el periodo global para métricas,
+        # cerrados por mes, horas y demás bloques generales.
         query = _coe_rep_apply_filters(base_query)
 
+        # Backlog de estado general: NO aplica periodo/mes/rango de fechas.
+        # Sí conserva los demás filtros globales como sociedad, estado,
+        # estado principal, subestado, estado consolidado, módulo, líder,
+        # responsable, asignado, tipo de solicitud, control horas y búsqueda.
         query_backlog_estado = _coe_rep_apply_filters(base_query, include_period=False)
-        query_backlog_estado = _coe_dash_apply_backlog_controlado(query_backlog_estado)
-
-        estado_general_data = _coe_rep_estado_general(query_backlog_estado)
-        resumen_estado_general = _coe_dash_resumen_estado_general(
-            query_backlog_estado,
-            estado_general_data
-        )
-
-        # Se calcula una sola vez y se reutiliza tanto para la tabla como para
-        # los tres cuadros superiores relacionados con estimación.
-        estado_estimacion_horas = _coe_rep_estado_estimacion_horas(base_query)
-        resumen_estimacion_horas = _coe_rep_resumen_estado_estimacion_horas(
-            estado_estimacion_horas
-        )
 
         total_casos = query.count()
 
@@ -21287,12 +20013,10 @@ def dashboard_clientes_coe_sap_funcional():
                 "horasProyectoAbap": _coe_rep_float(horas.proyecto_abap if horas else 0),
                 "valorOt": _coe_rep_float(horas.valor_ot if horas else 0),
             },
-            "resumenEstadoGeneral": resumen_estado_general,
-            "resumenEstimacionHoras": resumen_estimacion_horas,
-            "estadoGeneralRequerimientos": estado_general_data,
-            "distribucionModulosConsultores": _coe_rep_distribucion_modulos_consultores(query_backlog_estado),
+            "estadoGeneralRequerimientos": _coe_rep_estado_general(query_backlog_estado),
+            "distribucionModulosConsultores": _coe_rep_distribucion_modulos_consultores(query),
             "casosRecibidosVsCerrados": _coe_rep_recibidos_vs_cerrados(base_query),
-            "estadoEstimacionHoras": estado_estimacion_horas,
+            "estadoEstimacionHoras": _coe_rep_estado_estimacion_horas(base_query),
             "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),
             "casosPorEstadoPrincipal": _coe_rep_group_count_estado_principal(query),
             "casosPorSubestado": _coe_rep_group_count_subestado(query),
@@ -21794,57 +20518,43 @@ def exportar_calificacion_coe_sap_funcional_excel():
 @permission_required("BASE_REGISTRO_VER")
 def exportar_dashboard_clientes_coe_sap_funcional_excel():
     try:
-        base_query = CoeSapFuncionalCalificacion.query
-        query = _coe_rep_apply_filters(base_query)
+        query = _coe_rep_apply_filters(CoeSapFuncionalCalificacion.query)
 
-        query_backlog_estado = _coe_rep_apply_filters(
-            base_query,
-            include_period=False,
-        )
-        query_backlog_estado = _coe_dash_apply_backlog_controlado(
-            query_backlog_estado
-        )
+        total_casos = query.count()
+        abiertos = query.filter(or_(
+            CoeSapFuncionalCalificacion.estado_consolidado.ilike("%SIN CERRAR%"),
+            CoeSapFuncionalCalificacion.estado.ilike("%ABIERTO%"),
+            CoeSapFuncionalCalificacion.estado.ilike("%PROCESO%"),
+        )).count()
+        cerrados = query.filter(or_(
+            CoeSapFuncionalCalificacion.estado_consolidado.ilike("%CERRADO%"),
+            CoeSapFuncionalCalificacion.estado.ilike("%CERRADO%"),
+            CoeSapFuncionalCalificacion.estado.ilike("%SOLUCIONADO%"),
+        )).count()
+        con_sm = query.filter(CoeSapFuncionalCalificacion.cruce_sm == True).count()
+        con_itop = query.filter(CoeSapFuncionalCalificacion.cruce_itop == True).count()
+        solo_excel = query.filter(CoeSapFuncionalCalificacion.solo_excel == True).count()
 
-        estado_general_data = _coe_rep_estado_general(query_backlog_estado)
-        resumen_backlog = _coe_dash_resumen_estado_general(
-            query_backlog_estado,
-            estado_general_data,
-        )
-
-        estado_estimacion_horas = _coe_rep_estado_estimacion_horas(base_query)
-        resumen_estimacion = _coe_rep_resumen_estado_estimacion_horas(
-            estado_estimacion_horas
-        )
+        horas = query.with_entities(
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales), 0).label("total_funcionales"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas), 0).label("total_estimadas"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_garantia), 0).label("garantia"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_proyecto_abap), 0).label("proyecto_abap"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor_ot"),
+        ).first()
 
         resumen_rows = [
-            {
-                "indicador": "Backlog total",
-                "valor": int(resumen_backlog.get("totalCasos") or 0),
-            },
-            {
-                "indicador": "En curso",
-                "valor": int(resumen_backlog.get("enCurso") or 0),
-            },
-            {
-                "indicador": "Pendiente de cliente",
-                "valor": int(resumen_backlog.get("pendienteCliente") or 0),
-            },
-            {
-                "indicador": "Total horas funcionales",
-                "valor": _coe_rep_float(
-                    resumen_estimacion.get("totalHorasFuncionales")
-                ),
-            },
-            {
-                "indicador": "Total horas estimadas",
-                "valor": _coe_rep_float(
-                    resumen_estimacion.get("totalHorasEstimadas")
-                ),
-            },
-            {
-                "indicador": "Valor OT",
-                "valor": _coe_rep_float(resumen_estimacion.get("valorOt")),
-            },
+            {"indicador": "Total casos", "valor": int(total_casos or 0)},
+            {"indicador": "Abiertos", "valor": int(abiertos or 0)},
+            {"indicador": "Cerrados", "valor": int(cerrados or 0)},
+            {"indicador": "Con cruce SM", "valor": int(con_sm or 0)},
+            {"indicador": "Con cruce ITOP", "valor": int(con_itop or 0)},
+            {"indicador": "Solo Excel", "valor": int(solo_excel or 0)},
+            {"indicador": "Total horas funcionales", "valor": _coe_rep_float(horas.total_funcionales if horas else 0)},
+            {"indicador": "Total horas estimadas", "valor": _coe_rep_float(horas.total_estimadas if horas else 0)},
+            {"indicador": "Horas garantía", "valor": _coe_rep_float(horas.garantia if horas else 0)},
+            {"indicador": "Horas proyecto ABAP", "valor": _coe_rep_float(horas.proyecto_abap if horas else 0)},
+            {"indicador": "Valor OT", "valor": _coe_rep_float(horas.valor_ot if horas else 0)},
         ]
 
         cerrados_por_mes_rows = (
@@ -21855,14 +20565,8 @@ def exportar_dashboard_clientes_coe_sap_funcional_excel():
             )
             .filter(CoeSapFuncionalCalificacion.anio_cierre.isnot(None))
             .filter(CoeSapFuncionalCalificacion.mes_cierre.isnot(None))
-            .group_by(
-                CoeSapFuncionalCalificacion.anio_cierre,
-                CoeSapFuncionalCalificacion.mes_cierre,
-            )
-            .order_by(
-                CoeSapFuncionalCalificacion.anio_cierre.asc(),
-                CoeSapFuncionalCalificacion.mes_cierre.asc(),
-            )
+            .group_by(CoeSapFuncionalCalificacion.anio_cierre, CoeSapFuncionalCalificacion.mes_cierre)
+            .order_by(CoeSapFuncionalCalificacion.anio_cierre.asc(), CoeSapFuncionalCalificacion.mes_cierre.asc())
             .all()
         )
 
@@ -21870,14 +20574,8 @@ def exportar_dashboard_clientes_coe_sap_funcional_excel():
             query.with_entities(
                 CoeSapFuncionalCalificacion.estado_facturacion_ot.label("estado"),
                 func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
-                func.coalesce(
-                    func.sum(CoeSapFuncionalCalificacion.valor_ot),
-                    0,
-                ).label("valor"),
-                func.coalesce(
-                    func.sum(CoeSapFuncionalCalificacion.horas_oferta),
-                    0,
-                ).label("horas"),
+                func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor"),
+                func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_oferta), 0).label("horas"),
             )
             .group_by(CoeSapFuncionalCalificacion.estado_facturacion_ot)
             .order_by(func.count(CoeSapFuncionalCalificacion.id).desc())
@@ -21887,112 +20585,21 @@ def exportar_dashboard_clientes_coe_sap_funcional_excel():
         return _coe_xls_response(
             _coe_xls_filename("dashboard_clientes_coe_sap_funcional"),
             [
-                {
-                    "title": "Resumen",
-                    "headers": [
-                        ("Indicador", "indicador"),
-                        ("Valor", "valor"),
-                    ],
-                    "rows": resumen_rows,
-                },
-                {
-                    "title": "Estado general",
-                    "headers": [
-                        ("Subestado", "subestado"),
-                        ("Cantidad", "cantidad"),
-                    ],
-                    "rows": estado_general_data.get("subestados") or [],
-                },
-                {
-                    "title": "Estimacion y horas",
-                    "headers": [
-                        ("Estado estimación", "estadoEstimacion"),
-                        ("Año aprobado", "anioAprobadoEstimacion"),
-                        ("Mes aprobado", "mesAprobadoEstimacion"),
-                        ("ID", "numero"),
-                        ("Horas funcionales", "totalHorasFuncionales"),
-                        ("Horas ABAP", "horasEstimadasAbap"),
-                        ("Horas estimadas", "totalHorasEstimadas"),
-                        ("Valor OT", "valorOt"),
-                    ],
-                    "rows": estado_estimacion_horas,
-                },
-                {
-                    "title": "Por estado",
-                    "headers": [
-                        ("Estado original", "estado"),
-                        ("Cantidad", "cantidad"),
-                    ],
-                    "rows": _coe_rep_group_count(
-                        query,
-                        CoeSapFuncionalCalificacion.estado,
-                        "estado",
-                    ),
-                },
-                {
-                    "title": "Por estado principal",
-                    "headers": [
-                        ("Estado principal", "estadoPrincipal"),
-                        ("Cantidad", "cantidad"),
-                    ],
-                    "rows": _coe_rep_group_count_estado_principal(query),
-                },
-                {
-                    "title": "Por subestado",
-                    "headers": [
-                        ("Subestado", "subestado"),
-                        ("Cantidad", "cantidad"),
-                    ],
-                    "rows": _coe_rep_group_count_subestado(query),
-                },
-                {
-                    "title": "Cerrados por mes",
-                    "headers": [
-                        ("Año", "anio"),
-                        ("Mes", "mes"),
-                        ("Mes nombre", "mesNombre"),
-                        ("Cantidad", "cantidad"),
-                    ],
-                    "rows": [
-                        {
-                            "anio": int(r.anio or 0),
-                            "mes": int(r.mes or 0),
-                            "mesNombre": _coe_rep_month_name(r.mes),
-                            "cantidad": int(r.cantidad or 0),
-                        }
-                        for r in cerrados_por_mes_rows
-                    ],
-                },
-                {
-                    "title": "OT facturacion",
-                    "headers": [
-                        ("Estado facturación OT", "estadoFacturacionOt"),
-                        ("Cantidad", "cantidad"),
-                        ("Valor", "valor"),
-                        ("Horas", "horas"),
-                    ],
-                    "rows": [
-                        {
-                            "estadoFacturacionOt": _coe_rep_str(r.estado) or "Sin dato",
-                            "cantidad": int(r.cantidad or 0),
-                            "valor": _coe_rep_float(r.valor),
-                            "horas": _coe_rep_float(r.horas),
-                        }
-                        for r in ot_facturacion_rows
-                    ],
-                },
+                {"title": "Resumen", "headers": [("Indicador", "indicador"), ("Valor", "valor")], "rows": resumen_rows},
+                {"title": "Por estado", "headers": [("Estado original", "estado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado")},
+                {"title": "Por estado principal", "headers": [("Estado principal", "estadoPrincipal"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_principal, "estadoPrincipal")},
+                {"title": "Por subestado", "headers": [("Subestado", "subestado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.subestado, "subestado")},
+                {"title": "Por consolidado", "headers": [("Estado consolidado", "estadoConsolidado"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado_consolidado, "estadoConsolidado")},
+                {"title": "Por modulo", "headers": [("Módulo", "modulo"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.modulo, "modulo")},
+                {"title": "Por tipo solicitud", "headers": [("Tipo solicitud", "tipoSolicitud"), ("Cantidad", "cantidad")], "rows": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.tipo_solicitud, "tipoSolicitud")},
+                {"title": "Cerrados por mes", "headers": [("Año", "anio"), ("Mes", "mes"), ("Mes nombre", "mesNombre"), ("Cantidad", "cantidad")], "rows": [{"anio": int(r.anio or 0), "mes": int(r.mes or 0), "mesNombre": _coe_rep_month_name(r.mes), "cantidad": int(r.cantidad or 0)} for r in cerrados_por_mes_rows]},
+                {"title": "OT facturacion", "headers": [("Estado facturación OT", "estadoFacturacionOt"), ("Cantidad", "cantidad"), ("Valor", "valor"), ("Horas", "horas")], "rows": [{"estadoFacturacionOt": _coe_rep_str(r.estado) or "Sin dato", "cantidad": int(r.cantidad or 0), "valor": _coe_rep_float(r.valor), "horas": _coe_rep_float(r.horas)} for r in ot_facturacion_rows]},
             ],
         )
 
     except Exception as e:
-        app.logger.exception(
-            "Error exportando dashboard clientes COE SAP Funcional"
-        )
-        return jsonify({
-            "mensaje": "Error exportando dashboard clientes",
-            "error": str(e),
-            "trace": traceback.format_exc(),
-        }), 500
+        app.logger.exception("Error exportando dashboard clientes COE SAP Funcional")
+        return jsonify({"mensaje": "Error exportando dashboard clientes", "error": str(e), "trace": traceback.format_exc()}), 500
 
 
 @bp.route("/coe-sap-funcional/calificacion/detalle-cliente/export-excel", methods=["GET"])

@@ -169,12 +169,22 @@ const findClienteIdByNombre = (clientes, nombreCliente) => {
   return found?.id ? String(found.id) : "";
 };
 
+const getOpportunityProjectCode = (o) =>
+  String(
+    o?.codigo_proyecto_evolutivo ??
+      o?.codigo_prc ??
+      ""
+  )
+    .trim()
+    .toUpperCase();
+
 const oppLabel = (o) => {
-  const prc = String(o?.codigo_prc || "").trim();
+  const codigo = getOpportunityProjectCode(o);
   const cliente = String(o?.nombre_cliente || "").trim();
   const servicio = String(o?.servicio || "").trim();
+  const tipo = String(o?.tipo_negocio || "").trim().replace(/_/g, " ");
 
-  return [prc, cliente, servicio].filter(Boolean).join(" — ");
+  return [codigo, tipo, cliente, servicio].filter(Boolean).join(" — ");
 };
 
 const getProyectoPerfilConsultoresMap = (p) => {
@@ -636,7 +646,7 @@ export default function Proyectos() {
     setForm((f) => ({
       ...f,
       oportunidad_id: String(opp.id),
-      codigo: String(opp.codigo_prc || "").trim().toUpperCase(),
+      codigo: getOpportunityProjectCode(opp),
       tipo_negocio: String(opp.tipo_negocio || "").trim().toUpperCase(),
       cliente_id: clienteIdFound || f.cliente_id || "",
     }));
@@ -653,7 +663,7 @@ export default function Proyectos() {
       !oppFromProject && p?.codigo
         ? (oportunidades || []).find(
             (o) =>
-              String(o.codigo_prc || "").trim().toUpperCase() ===
+              getOpportunityProjectCode(o) ===
               String(p.codigo || "").trim().toUpperCase()
           )
         : null;
@@ -668,7 +678,7 @@ export default function Proyectos() {
           : opp?.id
             ? String(opp.id)
             : "",
-      codigo: p.codigo || (opp?.codigo_prc ?? ""),
+      codigo: p.codigo || getOpportunityProjectCode(opp),
       nombre: p.nombre || "",
       tipo_negocio: p?.tipo_negocio || (opp?.tipo_negocio ?? ""),
       activo: asBool(p.activo),
@@ -751,10 +761,10 @@ export default function Proyectos() {
 
   const validateForm = () => {
     if (!String(form.oportunidad_id || "").trim()) {
-      return "Debes seleccionar una oportunidad ganada";
+      return "Debes seleccionar una oportunidad elegible";
     }
 
-    if (!norm(form.codigo)) return "El código PRC es obligatorio";
+    if (!norm(form.codigo)) return "El código de proyecto/evolutivo es obligatorio";
     if (!norm(form.nombre)) return "El nombre es obligatorio";
 
     if (!Array.isArray(form.perfiles) || form.perfiles.length === 0) {
@@ -852,9 +862,9 @@ export default function Proyectos() {
           <div>
             <h2 className="proj-title">Gestión de Proyectos</h2>
             <p className="proj-subtitle">
-              Crear / editar proyectos desde oportunidades ganadas, asignar cliente,
-              perfiles permitidos, módulos automáticos por perfil, consultores por
-              perfil, múltiples fases y estado activo.
+              Crear / editar proyectos desde oportunidades marcadas con código de
+              proyecto o evolutivo. También admite ejecución de operación con consumo
+              de bolsa de horas, asignación de perfiles, módulos, consultores y fases.
             </p>
           </div>
 
@@ -889,36 +899,58 @@ export default function Proyectos() {
           <form onSubmit={onSubmit} className="proj-form">
             <div className="grid-2">
               <div className="field">
-                <label>Oportunidad ganada</label>
+                <label>Oportunidad elegible</label>
 
                 <select
                   value={form.oportunidad_id ?? ""}
                   onChange={(e) => handleOportunidadChange(e.target.value)}
                 >
-                  <option value="">— Selecciona una oportunidad —</option>
+                  <option value="">— Selecciona proyecto, evolutivo o bolsa —</option>
 
-                  {(oportunidades || []).map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {oppLabel(o)}
-                    </option>
-                  ))}
+                  {(oportunidades || []).map((o) => {
+                    const vinculadaAOtro =
+                      o?.proyecto_existente_id &&
+                      String(o.proyecto_existente_id) !== String(form.id || "");
+
+                    return (
+                      <option
+                        key={o.id}
+                        value={o.id}
+                        disabled={Boolean(vinculadaAOtro)}
+                      >
+                        {oppLabel(o)}{vinculadaAOtro ? " — YA VINCULADA" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
 
                 <div className="muted">
-                  Solo se muestran oportunidades ganadas de tipo proyecto o bolsa de horas.
+                  Se muestran oportunidades con indicador en SI y código válido: GANADA + PROYECTO/EVOLUTIVO o EJECUCION OPERACION + CONSUMO DE BOLSA DE HORAS.
                 </div>
               </div>
 
               <div className="field">
-                <label>Código PRC</label>
+                <label>Código proyecto / evolutivo</label>
 
                 <input
                   value={form.codigo}
                   readOnly
-                  placeholder="Se llena automáticamente desde la oportunidad"
+                  placeholder="Se llena desde la oportunidad seleccionada"
                 />
               </div>
             </div>
+
+            {form.oportunidad_id && (
+              <div className="project-link-summary">
+                <div>
+                  <span className="project-link-summary__label">Vinculación automática</span>
+                  <strong>{form.codigo || "Sin código"}</strong>
+                </div>
+                <span className="project-link-summary__type">
+                  {String(form.tipo_negocio || "SIN TIPO").replace(/_/g, " ")}
+                </span>
+              </div>
+            )}
 
             <div className="grid-2">
               <div className="field">
@@ -1191,7 +1223,7 @@ export default function Proyectos() {
             <div className="proj-list-filters">
               <input
                 className="search"
-                placeholder="Buscar por PRC, nombre, cliente, perfiles, fases, módulos o tipo…"
+                placeholder="Buscar por código, nombre, cliente, perfiles, fases, módulos o tipo…"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
@@ -1212,7 +1244,7 @@ export default function Proyectos() {
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>PRC</th>
+                  <th>Código proyecto / evolutivo</th>
                   <th>Nombre</th>
                   <th className="cliente">Cliente</th>
                   <th>Tipo</th>

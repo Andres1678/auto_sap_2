@@ -2356,3 +2356,71 @@
   color: #7c2d12 !important;
 }
 
+
+/* =========================================================
+   Código de proyecto / evolutivo
+========================================================= */
+.oportunidades-wrapper .tabla-oportunidades th.codigo-proyecto-flag-col,
+.oportunidades-wrapper .tabla-oportunidades td.codigo-proyecto-flag-col {
+  width: 210px !important;
+  min-width: 210px !important;
+  max-width: 210px !important;
+  text-align: center !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades th.codigo-proyecto-value-col,
+.oportunidades-wrapper .tabla-oportunidades td.codigo-proyecto-value-col {
+  width: 240px !important;
+  min-width: 240px !important;
+  max-width: 240px !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades td.codigo-proyecto-flag-col {
+  font-weight: 900 !important;
+  color: #1e3a8a !important;
+  background: #f0f7ff !important;
+}
+
+.oportunidades-wrapper .tabla-oportunidades td.codigo-proyecto-value-col {
+  color: #0f3f91 !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-weight: 900 !important;
+  letter-spacing: 0.02em;
+  background: #f7fbff !important;
+}
+
+.oportunidades-wrapper .codigo-proyecto-select,
+.oportunidades-wrapper .codigo-proyecto-input {
+  min-height: 40px !important;
+  border-color: #60a5fa !important;
+  background: #eff6ff !important;
+}
+
+.oportunidades-wrapper .codigo-proyecto-input:disabled {
+  border-color: #cbd5e1 !important;
+  background: #f1f5f9 !important;
+  color: #94a3b8 !important;
+  cursor: not-allowed !important;
+}
+
+.oportunidades-wrapper .new-row td.codigo-proyecto-flag-col,
+.oportunidades-wrapper .new-row td.codigo-proyecto-value-col {
+  background: #eaf7ff !important;
+}
+
+@media (max-width: 768px) {
+  .oportunidades-wrapper .tabla-oportunidades th.codigo-proyecto-flag-col,
+  .oportunidades-wrapper .tabla-oportunidades td.codigo-proyecto-flag-col {
+    width: 180px !important;
+    min-width: 180px !important;
+    max-width: 180px !important;
+  }
+
+  .oportunidades-wrapper .tabla-oportunidades th.codigo-proyecto-value-col,
+  .oportunidades-wrapper .tabla-oportunidades td.codigo-proyecto-value-col {
+    width: 210px !important;
+    min-width: 210px !important;
+    max-width: 210px !important;
+  }
+}
