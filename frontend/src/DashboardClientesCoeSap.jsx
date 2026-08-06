@@ -65,6 +65,7 @@ const FILTER_PARAM_MAP = {
   graficasAnio: "graficas_anio",
   graficasMes: "graficas_mes",
   graficasSociedad: "graficas_sociedad",
+  aplicarFiltrosBacklog: "aplicar_filtros_backlog",
 };
 
 const PIE_COLORS = [
@@ -647,7 +648,7 @@ function PieSvg({ rows, labelKey, valueKey = "cantidad" }) {
   );
 }
 
-function EstadoGeneralRequerimientos({ data }) {
+function EstadoGeneralRequerimientos({ data, filtrosAplicados = false }) {
   const subestados = data?.subestados || [];
   const principales = data?.principales || [];
 
@@ -656,8 +657,10 @@ function EstadoGeneralRequerimientos({ data }) {
       <div className="coedash-panel-head center">
         <h2>Estado general de requerimientos</h2>
         <p>
-          Backlog completo solo para estados principales En curso y Pendiente de cliente.
-          Si el caso no tiene subestado, se muestra el estado principal.
+          {filtrosAplicados
+            ? "Backlog filtrado según los filtros globales aplicados. Solo incluye En curso y Pendiente de cliente."
+            : "Backlog completo sin filtros en el primer cargue. Solo incluye En curso y Pendiente de cliente."}
+          {" "}Si el caso no tiene subestado, se muestra el estado principal.
         </p>
       </div>
 
@@ -1097,6 +1100,7 @@ export default function DashboardClientesCoeSap() {
 
   const [filters, setFilters] = useState(() => getDefaultFilters());
   const [appliedFilters, setAppliedFilters] = useState(() => getDefaultFilters());
+  const [backlogFiltersApplied, setBacklogFiltersApplied] = useState(false);
 
   // Filtro independiente para las dos secciones mensuales.
   // No se actualiza cuando se aplican los filtros globales.
@@ -1155,6 +1159,7 @@ export default function DashboardClientesCoeSap() {
       const qs = buildQuery({
         ...appliedFilters,
         ...appliedGraphFilters,
+        aplicarFiltrosBacklog: backlogFiltersApplied ? "1" : "",
       });
       const url = `/coe-sap-funcional/calificacion/dashboard-clientes${qs ? `?${qs}` : ""}`;
 
@@ -1184,7 +1189,13 @@ export default function DashboardClientesCoeSap() {
     } finally {
       setLoading(false);
     }
-  }, [canView, commonHeaders, appliedFilters, appliedGraphFilters]);
+  }, [
+    canView,
+    commonHeaders,
+    appliedFilters,
+    appliedGraphFilters,
+    backlogFiltersApplied,
+  ]);
 
   const descargarExcel = useCallback(async () => {
     setDownloadingExcel(true);
@@ -1193,6 +1204,7 @@ export default function DashboardClientesCoeSap() {
       const qs = buildQuery({
         ...appliedFilters,
         ...appliedGraphFilters,
+        aplicarFiltrosBacklog: backlogFiltersApplied ? "1" : "",
       });
       const url = `/coe-sap-funcional/calificacion/dashboard-clientes/export-excel${qs ? `?${qs}` : ""}`;
 
@@ -1211,18 +1223,25 @@ export default function DashboardClientesCoeSap() {
     } finally {
       setDownloadingExcel(false);
     }
-  }, [appliedFilters, appliedGraphFilters, commonHeaders]);
+  }, [
+    appliedFilters,
+    appliedGraphFilters,
+    commonHeaders,
+    backlogFiltersApplied,
+  ]);
 
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
 
   const applyFilters = () => {
+    setBacklogFiltersApplied(true);
     setAppliedFilters(cloneFilters(filters));
   };
 
   const clearFilters = () => {
     const defaults = getDefaultFilters();
+    setBacklogFiltersApplied(false);
     setFilters(defaults);
     setAppliedFilters(cloneFilters(defaults));
   };
@@ -1427,7 +1446,10 @@ export default function DashboardClientesCoeSap() {
             />
           </section>
 
-          <EstadoGeneralRequerimientos data={payload?.estadoGeneralRequerimientos} />
+          <EstadoGeneralRequerimientos
+            data={payload?.estadoGeneralRequerimientos}
+            filtrosAplicados={backlogFiltersApplied}
+          />
           <DistribucionModulosConsultores data={payload?.distribucionModulosConsultores} />
 
           <section className="coedash-card coedash-graph-filter-section coedash-graph-filter-attached">
