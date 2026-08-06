@@ -23,14 +23,6 @@ function getDefaultFilters() {
     fechaDesde: "",
     fechaHasta: "",
 
-    // Filtros propios por gráfica. Estos NO dependen del rango global.
-    recibidosAnio: anioActual,
-    recibidosMes: mesActual,
-    estimacionAnio: anioActual,
-    estimacionMes: mesActual,
-    estimacionEstado: [],
-
-
     sociedad: [],
     clienteAsociadoNombre: [],
     validarCliente: [],
@@ -48,7 +40,11 @@ function getDefaultFilters() {
 }
 
 function getDefaultGraphFilters() {
+  const hoy = new Date();
+
   return {
+    graficasAnio: String(hoy.getFullYear()),
+    graficasMes: String(hoy.getMonth() + 1),
     graficasSociedad: [],
   };
 }
@@ -66,6 +62,8 @@ const FILTER_PARAM_MAP = {
   estimacionAnio: "estimacion_anio",
   estimacionMes: "estimacion_mes",
   estimacionEstado: "estimacion_estado",
+  graficasAnio: "graficas_anio",
+  graficasMes: "graficas_mes",
   graficasSociedad: "graficas_sociedad",
 };
 
@@ -278,25 +276,33 @@ function buildYearOptions(opciones) {
 }
 
 function buildMonthOptions(opciones) {
-  const base = optionItems(opciones?.mes);
-  const months = base.length ? base : [
-    { value: 1, label: "Enero" },
-    { value: 2, label: "Febrero" },
-    { value: 3, label: "Marzo" },
-    { value: 4, label: "Abril" },
-    { value: 5, label: "Mayo" },
-    { value: 6, label: "Junio" },
-    { value: 7, label: "Julio" },
-    { value: 8, label: "Agosto" },
-    { value: 9, label: "Septiembre" },
-    { value: 10, label: "Octubre" },
-    { value: 11, label: "Noviembre" },
-    { value: 12, label: "Diciembre" },
+  const backendItems = optionItems(opciones?.mes);
+  const backendLabels = new Map(
+    backendItems.map((item) => [String(item.value), String(item.label)])
+  );
+
+  const monthNames = [
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre",
   ];
 
-  return base.length
-    ? base.map((item) => ({ value: String(item.value), label: item.label }))
-    : months.map((item) => ({ value: String(item.value), label: item.label }));
+  return monthNames.map((label, index) => {
+    const value = String(index + 1);
+    return {
+      value,
+      label: backendLabels.get(value) || label,
+    };
+  });
 }
 
 function optionItems(values) {
@@ -1431,7 +1437,9 @@ export default function DashboardClientesCoeSap() {
                 <h2>Filtro propio de gráficas mensuales</h2>
               </div>
               <span className={`coedash-filter-counter blue${activeGraphFilterCount ? " active" : ""}`}>
-                {activeGraphFilterCount ? "Sociedad personalizada" : "Todas las sociedades"}
+                {activeGraphFilterCount
+                  ? "Periodo o sociedad personalizados"
+                  : "Mes actual · todas las sociedades"}
               </span>
               <p>
                 Este filtro afecta Casos recibidos vs cerrados, Estado estimación y horas,
@@ -1442,14 +1450,45 @@ export default function DashboardClientesCoeSap() {
             <div className="coedash-graph-filter-grid single">
               <div className="coedash-graph-filter-card coedash-graph-shared-card">
                 <div className="coedash-graph-filter-head">
-                  <h3>Sociedad para gráficas mensuales</h3>
+                  <h3>Periodo y sociedad para gráficas mensuales</h3>
                   <p>
-                    El periodo se mantiene por defecto en el mes actual.
-                    También actualiza las tres tarjetas superiores relacionadas con estimación.
+                    Selecciona el año, el mes y una o varias sociedades. El mismo periodo
+                    se aplica a Casos recibidos vs cerrados, Estado estimación y horas,
+                    y a las tarjetas H. funcionales, H. estimadas y Valor OT.
                   </p>
                 </div>
 
                 <div className="coedash-graph-filter-fields">
+                  <label className="coedash-filter">
+                    <span>Año</span>
+                    <select
+                      value={graphFilters.graficasAnio}
+                      disabled={loading}
+                      onChange={(e) => updateGraphFilter("graficasAnio", e.target.value)}
+                    >
+                      {buildYearOptions(opciones).map((item) => (
+                        <option key={`graficas-anio-${item.value}`} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="coedash-filter">
+                    <span>Mes</span>
+                    <select
+                      value={graphFilters.graficasMes}
+                      disabled={loading}
+                      onChange={(e) => updateGraphFilter("graficasMes", e.target.value)}
+                    >
+                      {buildMonthOptions(opciones).map((item) => (
+                        <option key={`graficas-mes-${item.value}`} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
                   <MultiSelect
                     label="Sociedad"
                     value={graphFilters.graficasSociedad}
@@ -1462,11 +1501,13 @@ export default function DashboardClientesCoeSap() {
                 <div className="coedash-actions coedash-graph-actions">
                   <div className="coedash-action-hint">
                     <span className={graphFiltersDirty ? "pending" : "saved"} aria-hidden="true" />
-                    {graphFiltersDirty ? "Cambio pendiente para las gráficas y tarjetas de estimación." : "La sociedad seleccionada ya está aplicada."}
+                    {graphFiltersDirty
+                      ? "Hay cambios de periodo o sociedad pendientes por aplicar."
+                      : "El periodo y la sociedad visibles ya están aplicados."}
                   </div>
                   <div className="coedash-action-buttons">
                     <button type="button" className="coedash-btn light" onClick={clearGraphFilters} disabled={loading || (!graphFiltersDirty && activeGraphFilterCount === 0)}>
-                      Restablecer sociedad
+                      Restablecer periodo
                     </button>
                     <button type="button" className="coedash-btn danger" onClick={applyGraphFilters} disabled={loading || !graphFiltersDirty}>
                       <span className="coedash-btn-icon" aria-hidden="true">✓</span>

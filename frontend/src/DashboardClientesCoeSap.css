@@ -1697,7 +1697,7 @@
 }
 
 .coedash-graph-filter-grid.single {
-  grid-template-columns: minmax(280px, 780px);
+  grid-template-columns: minmax(280px, 980px);
 }
 
 .coedash-graph-filter-card {
@@ -1742,11 +1742,12 @@
 }
 
 .coedash-graph-shared-card .coedash-graph-filter-fields {
-  grid-template-columns: minmax(260px, 1fr);
+  grid-template-columns: minmax(145px, 0.55fr) minmax(170px, 0.65fr) minmax(280px, 1.8fr);
 }
 
 .coedash-graph-shared-card .coedash-filter-select {
-  max-width: 560px;
+  grid-column: auto;
+  max-width: none;
 }
 
 /* ============================================================

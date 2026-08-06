@@ -19014,14 +19014,30 @@ def _coe_dashboard_month_filter_values(prefix):
     prefix = str(prefix or "").strip()
     camel = prefix
 
+    # El filtro compartido de gráficas mensuales tiene prioridad como respaldo.
+    # Los parámetros específicos por gráfica se conservan por compatibilidad.
+    anio_compartido = _coe_dashboard_parse_int(
+        request.args.get("graficas_anio")
+        or request.args.get("graficasAnio")
+        or request.args.get("grafica_anio")
+        or request.args.get("graficaAnio")
+    )
+    mes_compartido = _coe_dashboard_parse_int(
+        request.args.get("graficas_mes")
+        or request.args.get("graficasMes")
+        or request.args.get("grafica_mes")
+        or request.args.get("graficaMes")
+    )
+
     anio = _coe_dashboard_parse_int(
         request.args.get(f"{prefix}_anio")
         or request.args.get(f"{camel}Anio")
-    )
+    ) or anio_compartido
+
     mes = _coe_dashboard_parse_int(
         request.args.get(f"{prefix}_mes")
         or request.args.get(f"{camel}Mes")
-    )
+    ) or mes_compartido
 
     if not anio or not mes or mes < 1 or mes > 12:
         anio, mes = _coe_dashboard_periodo_actual()
@@ -19311,6 +19327,147 @@ def _coe_rep_closed_condition():
         estado_original.like("%CERR%"),
         estado_original.like("%SOLUC%"),
     )
+
+
+def _coe_dash_norm_estado(value):
+    s = str(value or "").replace("\u00A0", " ").strip().upper()
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _coe_dash_backlog_catalog_ids():
+    """Obtiene los IDs activos de En curso y Pendiente de cliente."""
+    estado_ids = []
+    subestado_ids = []
+
+    try:
+        tipo_estado = globals().get("COE_TIPO_ESTADO_PRINCIPAL", "ESTADO_PRINCIPAL")
+        tipo_subestado = globals().get("COE_TIPO_SUBESTADO", "SUBESTADO")
+        permitidos = {"EN CURSO", "PENDIENTE DE CLIENTE", "PENDIENTE CLIENTE"}
+
+        estados = (
+            CoeSapFuncionalCatalogo.query
+            .filter(CoeSapFuncionalCatalogo.tipo == tipo_estado)
+            .filter(CoeSapFuncionalCatalogo.activo == True)
+            .all()
+        )
+
+        for estado in estados:
+            if _coe_dash_norm_estado(estado.valor) in permitidos:
+                estado_ids.append(int(estado.id))
+
+        if estado_ids:
+            estados_padre = {str(value) for value in estado_ids}
+            subestados = (
+                CoeSapFuncionalCatalogo.query
+                .filter(CoeSapFuncionalCatalogo.tipo == tipo_subestado)
+                .filter(CoeSapFuncionalCatalogo.activo == True)
+                .all()
+            )
+
+            for subestado in subestados:
+                if str(subestado.extra_1 or "").strip() in estados_padre:
+                    subestado_ids.append(int(subestado.id))
+
+    except Exception:
+        app.logger.exception("No fue posible resolver el catálogo del backlog controlado")
+        return [], []
+
+    return estado_ids, subestado_ids
+
+
+def _coe_dash_estado_general_exclusion_condition():
+    """
+    Identifica estados que no deben formar parte del backlog operativo.
+
+    Se revisan todas las columnas de estado para cubrir registros históricos
+    que todavía no tienen estado principal o subestado de catálogo asignados.
+    """
+    columns = [
+        CoeSapFuncionalCalificacion.estado,
+        CoeSapFuncionalCalificacion.estado_herramienta_gestion,
+        CoeSapFuncionalCalificacion.estado_principal,
+        CoeSapFuncionalCalificacion.subestado,
+        CoeSapFuncionalCalificacion.estado_consolidado,
+    ]
+
+    excluded_patterns = [
+        "%CERRAD%",
+        "%CUMPLID%",
+        "%SOLUCIONAD%",
+        "%CANCELAD%",
+        "%SUSPENDID%",
+        "%CLOSED%",
+    ]
+
+    conditions = []
+
+    for column in columns:
+        normalized = func.upper(func.trim(func.coalesce(column, "")))
+
+        for pattern in excluded_patterns:
+            conditions.append(normalized.like(pattern))
+
+        # Acepta variantes con barra, espacios o texto adicional.
+        conditions.append(and_(
+            normalized.like("%VENDEDOR%"),
+            normalized.like("%ABASTECEDOR%"),
+            normalized.like("%PENDIENTE%"),
+        ))
+
+    return or_(*conditions)
+
+
+def _coe_dash_apply_backlog_controlado(query):
+    """
+    Limita Estado general de requerimientos al backlog de En curso y
+    Pendiente de cliente, excluyendo estados cerrados o no operativos.
+    """
+    estado_ids, subestado_ids = _coe_dash_backlog_catalog_ids()
+
+    allowed_conditions = [
+        CoeSapFuncionalCalificacion.estado_principal.ilike("%EN CURSO%"),
+        CoeSapFuncionalCalificacion.estado_principal.ilike("%PENDIENTE%CLIENTE%"),
+    ]
+
+    if estado_ids:
+        allowed_conditions.append(
+            CoeSapFuncionalCalificacion.estado_catalogo_id.in_(estado_ids)
+        )
+
+    if subestado_ids:
+        allowed_conditions.append(
+            CoeSapFuncionalCalificacion.subestado_catalogo_id.in_(subestado_ids)
+        )
+
+    return (
+        query
+        .filter(or_(*allowed_conditions))
+        .filter(~_coe_dash_estado_general_exclusion_condition())
+    )
+
+
+def _coe_dash_resumen_estado_general(estado_general_data):
+    """Construye las tres tarjetas del backlog con el mismo universo del gráfico."""
+    en_curso = 0
+    pendiente_cliente = 0
+
+    for row in estado_general_data.get("principales") or []:
+        nombre = _coe_dash_norm_estado(row.get("estadoPrincipal"))
+        cantidad = int(row.get("cantidad") or 0)
+
+        if nombre == "EN CURSO":
+            en_curso += cantidad
+        elif nombre in {"PENDIENTE DE CLIENTE", "PENDIENTE CLIENTE"}:
+            pendiente_cliente += cantidad
+
+    return {
+        "totalCasos": int(estado_general_data.get("total") or 0),
+        "enCurso": int(en_curso),
+        "pendienteCliente": int(pendiente_cliente),
+    }
 
 
 def _coe_rep_estado_general(query):
@@ -19684,6 +19841,7 @@ def _coe_rep_estado_estimacion_horas(base_query):
             func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales), 0).label("total_funcionales"),
             func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_estimadas_abap), 0).label("horas_abap"),
             func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas), 0).label("total_estimadas"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor_ot"),
         )
         .filter(periodo_estimacion_cond)
         .filter(CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion.isnot(None))
@@ -19714,6 +19872,7 @@ def _coe_rep_estado_estimacion_horas(base_query):
             "totalHorasFuncionales": _coe_rep_float(r.total_funcionales),
             "horasEstimadasAbap": _coe_rep_float(r.horas_abap),
             "totalHorasEstimadas": _coe_rep_float(r.total_estimadas),
+            "valorOt": _coe_rep_float(r.valor_ot),
         }
         for r in rows
     ]
@@ -19905,6 +20064,10 @@ def dashboard_clientes_coe_sap_funcional():
         # estado principal, subestado, estado consolidado, módulo, líder,
         # responsable, asignado, tipo de solicitud, control horas y búsqueda.
         query_backlog_estado = _coe_rep_apply_filters(base_query, include_period=False)
+        query_backlog_estado = _coe_dash_apply_backlog_controlado(query_backlog_estado)
+
+        estado_general_data = _coe_rep_estado_general(query_backlog_estado)
+        resumen_estado_general = _coe_dash_resumen_estado_general(estado_general_data)
 
         total_casos = query.count()
 
@@ -20013,8 +20176,9 @@ def dashboard_clientes_coe_sap_funcional():
                 "horasProyectoAbap": _coe_rep_float(horas.proyecto_abap if horas else 0),
                 "valorOt": _coe_rep_float(horas.valor_ot if horas else 0),
             },
-            "estadoGeneralRequerimientos": _coe_rep_estado_general(query_backlog_estado),
-            "distribucionModulosConsultores": _coe_rep_distribucion_modulos_consultores(query),
+            "resumenEstadoGeneral": resumen_estado_general,
+            "estadoGeneralRequerimientos": estado_general_data,
+            "distribucionModulosConsultores": _coe_rep_distribucion_modulos_consultores(query_backlog_estado),
             "casosRecibidosVsCerrados": _coe_rep_recibidos_vs_cerrados(base_query),
             "estadoEstimacionHoras": _coe_rep_estado_estimacion_horas(base_query),
             "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),
