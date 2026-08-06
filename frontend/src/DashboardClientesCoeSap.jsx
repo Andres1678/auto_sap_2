@@ -1273,7 +1273,7 @@ export default function DashboardClientesCoeSap() {
       <section className="coedash-hero">
         <div className="coedash-hero-copy">
           <span className="coedash-eyebrow">Dashboard clientes</span>
-          <h1>Dashboard COE SAP Funcional</h1>
+          <h1>Dashboard COE SAP</h1>
           <p>
             Consulta el backlog, revisa su distribución y analiza el comportamiento mensual desde una sola vista.
           </p>

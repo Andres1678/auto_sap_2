@@ -1763,7 +1763,7 @@ export default function CalificacionCoeSapFuncional() {
       <section className="calcoe-hero">
         <div>
           <span className="calcoe-eyebrow">Calificación</span>
-          <h1>Calificación COE SAP Funcional</h1>
+          <h1>Calificación COE SAP</h1>
           <p>
             Consulta, filtra por columnas, selecciona qué columnas ver y lleva el
             seguimiento semanal desde Observaciones.

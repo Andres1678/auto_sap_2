@@ -175,7 +175,7 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
               aria-expanded={coeMenuOpen}
               aria-haspopup="true"
             >
-              <span>Base COE SAP Funcional</span>
+              <span>Base COE SAP</span>
               <span className="navc-dropdown-arrow">▾</span>
             </button>
 
