@@ -2917,12 +2917,29 @@ def parse_horas_adicionales(valor):
         return 0.0
 
 def inferir_modulo_por_consultor(nombre_consultor):
+    # Reutiliza el mismo resolvedor robusto utilizado por COE SAP Funcional.
+    # La función se define más adelante en el módulo, pero estará disponible
+    # cuando este endpoint sea ejecutado.
     if not nombre_consultor:
         return None
-    c = Consultor.query.filter_by(nombre=str(nombre_consultor).strip()).first()
-    if c and c.modulo:
-        return c.modulo.nombre
-    return None
+
+    resolver = globals().get("_coe_inferir_modulo_por_asignado")
+    if resolver:
+        try:
+            return resolver(nombre_consultor)
+        except Exception:
+            pass
+
+    # Fallback compatible con instalaciones donde aún no esté cargado el helper.
+    c = Consultor.query.filter(
+        func.lower(Consultor.nombre) == str(nombre_consultor).strip().lower()
+    ).first()
+
+    if not c:
+        return None
+
+    modulos_payload = _consultor_modulos_payload(c)
+    return modulos_payload[0]["nombre"] if len(modulos_payload) == 1 else None
 
 def partir_fecha_mas_campos(fecha_val, dia_val=None, mes_val=None, anio_val=None):
     try:
@@ -15568,7 +15585,401 @@ def _calificacion_usuario_actual():
         return ""
 
 
+
+# ============================================================
+# COE SAP FUNCIONAL - RESOLUCION CONSULTOR <-> MODULO
+# ============================================================
+#
+# Objetivo:
+# - Cuando la base/calificacion trae "asignado_a" pero no trae modulo,
+#   buscar el consultor configurado en la tabla Consultor.
+# - Resolver diferencias de tildes, mayusculas, orden de nombres y aliases
+#   basicos (nombre, usuario, cedula, correo cuando venga en el texto).
+# - Nunca inventar un modulo: si el consultor tiene varios modulos y no hay
+#   un modulo principal (modulo_id), el caso queda sin modulo.
+# - El lookup se guarda en flask.g durante la peticion para no consultar la
+#   tabla Consultor una vez por cada caso durante una sincronizacion masiva.
+
+_COE_MODULOS_SIN_VALOR = {
+    "",
+    "SIN MODULO",
+    "SIN MODULOS",
+    "N A",
+    "NA",
+    "NO APLICA",
+    "NONE",
+    "NULL",
+    "NAN",
+    "-",
+}
+
+_COE_CONSULTOR_STOPWORDS = {
+    "DE", "DEL", "LA", "LAS", "LOS", "Y", "EL",
+}
+
+
+def _coe_consultor_norm(value):
+    if value is None:
+        return ""
+
+    value = str(value).replace("\u00A0", " ").strip().upper()
+    if not value:
+        return ""
+
+    value = unicodedata.normalize("NFD", value)
+    value = "".join(ch for ch in value if unicodedata.category(ch) != "Mn")
+
+    # Dejamos solo letras/numeros para que puntuacion, guiones y dobles
+    # espacios no rompan una coincidencia valida.
+    value = re.sub(r"[^A-Z0-9]+", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    return value
+
+
+def _coe_consultor_tokens(value):
+    norm_value = _coe_consultor_norm(value)
+    if not norm_value:
+        return set()
+
+    return {
+        token
+        for token in norm_value.split()
+        if token and token not in _COE_CONSULTOR_STOPWORDS
+    }
+
+
+def _coe_modulo_sin_valor(value):
+    return _coe_consultor_norm(value) in _COE_MODULOS_SIN_VALOR
+
+
+def _coe_consultor_aliases(*values):
+    aliases = set()
+
+    for value in values:
+        if value is None:
+            continue
+
+        raw = str(value).replace("\u00A0", " ").strip()
+        if not raw:
+            continue
+
+        normal = _coe_consultor_norm(raw)
+        if normal:
+            aliases.add(normal)
+
+        # Si el campo viene como "Nombre <correo@dominio>" o directamente
+        # como correo, tambien se compara contra el usuario/local-part.
+        for email in re.findall(
+            r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
+            raw,
+        ):
+            email_norm = _coe_consultor_norm(email)
+            local_norm = _coe_consultor_norm(email.split("@", 1)[0])
+            if email_norm:
+                aliases.add(email_norm)
+            if local_norm:
+                aliases.add(local_norm)
+
+    return aliases
+
+
+def _coe_consultor_lookup(force_refresh=False):
+    cache_attr = "_coe_consultor_modulo_lookup_v1"
+
+    if not force_refresh:
+        try:
+            cached = getattr(g, cache_attr, None)
+            if cached:
+                return cached
+        except Exception:
+            pass
+
+    modulos_catalogo = Modulo.query.order_by(Modulo.nombre.asc()).all()
+
+    modulo_nombre_por_id = {
+        int(modulo.id): str(modulo.nombre or "").strip()
+        for modulo in modulos_catalogo
+        if getattr(modulo, "id", None) and str(getattr(modulo, "nombre", "") or "").strip()
+    }
+
+    modulo_nombre_por_norm = {
+        _coe_consultor_norm(nombre): nombre
+        for nombre in modulo_nombre_por_id.values()
+        if _coe_consultor_norm(nombre)
+    }
+
+    consultores = (
+        Consultor.query
+        .options(selectinload(Consultor.modulos))
+        .order_by(Consultor.nombre.asc(), Consultor.usuario.asc())
+        .all()
+    )
+
+    exactos = defaultdict(list)
+    candidatos = []
+    metas = []
+
+    for consultor in consultores:
+        display = (
+            str(getattr(consultor, "nombre", "") or "").strip()
+            or str(getattr(consultor, "usuario", "") or "").strip()
+            or f"Consultor {consultor.id}"
+        )
+
+        modulos_map = {}
+
+        for modulo in list(getattr(consultor, "modulos", None) or []):
+            modulo_id = getattr(modulo, "id", None)
+            modulo_nombre = str(getattr(modulo, "nombre", "") or "").strip()
+            modulo_key = _coe_consultor_norm(modulo_nombre)
+
+            if not modulo_key:
+                continue
+
+            modulos_map[modulo_key] = {
+                "id": int(modulo_id) if modulo_id else None,
+                "nombre": modulo_nombre,
+                "key": modulo_key,
+            }
+
+        modulo_id_directo = getattr(consultor, "modulo_id", None)
+        modulo_directo = None
+
+        if modulo_id_directo:
+            try:
+                modulo_id_directo = int(modulo_id_directo)
+            except Exception:
+                modulo_id_directo = None
+
+        if modulo_id_directo:
+            nombre_directo = modulo_nombre_por_id.get(modulo_id_directo)
+            if nombre_directo:
+                key_directo = _coe_consultor_norm(nombre_directo)
+                modulo_directo = {
+                    "id": modulo_id_directo,
+                    "nombre": nombre_directo,
+                    "key": key_directo,
+                }
+                modulos_map.setdefault(key_directo, modulo_directo)
+
+        meta = {
+            "id": int(consultor.id),
+            "display": display,
+            "usuario": str(getattr(consultor, "usuario", "") or "").strip(),
+            "cedula": str(getattr(consultor, "cedula", "") or "").strip(),
+            "modulo_directo": modulo_directo,
+            "modulos": list(modulos_map.values()),
+        }
+
+        aliases = _coe_consultor_aliases(
+            getattr(consultor, "nombre", None),
+            getattr(consultor, "usuario", None),
+            getattr(consultor, "cedula", None),
+        )
+
+        meta["aliases"] = sorted(aliases)
+        metas.append(meta)
+
+        for alias in aliases:
+            exactos[alias].append(meta)
+            candidatos.append((alias, meta))
+
+    lookup = {
+        "exactos": exactos,
+        "candidatos": candidatos,
+        "consultores": metas,
+        "modulo_nombre_por_id": modulo_nombre_por_id,
+        "modulo_nombre_por_norm": modulo_nombre_por_norm,
+    }
+
+    try:
+        setattr(g, cache_attr, lookup)
+    except Exception:
+        pass
+
+    return lookup
+
+
+def _coe_resolver_consultor(asignado_a, lookup=None):
+    """
+    Retorna metadata del consultor o None.
+
+    Prioridad:
+    1. Coincidencia exacta normalizada por nombre/usuario/cedula/correo.
+    2. Contencion de nombres suficientemente largos.
+    3. Coincidencia conservadora por conjunto de palabras.
+
+    Si dos consultores obtienen el mismo mejor puntaje, no se asigna ninguno
+    para evitar mapear un caso al consultor equivocado.
+    """
+    if not asignado_a:
+        return None
+
+    lookup = lookup or _coe_consultor_lookup()
+    target_aliases = _coe_consultor_aliases(asignado_a)
+
+    if not target_aliases:
+        return None
+
+    # 1) Exacto. Solo se acepta cuando el alias identifica a un unico consultor.
+    exact_ids = {}
+    for target in target_aliases:
+        for meta in lookup["exactos"].get(target, []):
+            exact_ids[meta["id"]] = meta
+
+    if len(exact_ids) == 1:
+        return next(iter(exact_ids.values()))
+
+    if len(exact_ids) > 1:
+        return None
+
+    # 2 y 3) Fuzzy conservador.
+    score_por_consultor = {}
+    meta_por_id = {}
+
+    for target in target_aliases:
+        target_tokens = _coe_consultor_tokens(target)
+
+        for alias, meta in lookup["candidatos"]:
+            if not alias:
+                continue
+
+            score = 0.0
+
+            alias_tokens = _coe_consultor_tokens(alias)
+
+            # Contencion: ayuda cuando una fuente agrega segundo apellido,
+            # identificadores o un sufijo al nombre.
+            if (
+                len(alias) >= 8
+                and len(target) >= 8
+                and len(alias_tokens) >= 2
+                and len(target_tokens) >= 2
+                and (alias in target or target in alias)
+            ):
+                score = max(score, 1000.0 + min(len(alias), len(target)))
+
+            if alias_tokens and target_tokens:
+                comunes = alias_tokens & target_tokens
+                union = alias_tokens | target_tokens
+                menor = min(len(alias_tokens), len(target_tokens))
+
+                if len(comunes) >= 2 and menor >= 2:
+                    cobertura_menor = len(comunes) / menor
+                    jaccard = len(comunes) / max(len(union), 1)
+
+                    # Permite distinto orden de nombres/apellidos y omision de
+                    # un nombre intermedio, pero evita coincidencias debiles.
+                    if cobertura_menor >= 1.0 or jaccard >= 0.75:
+                        score = max(
+                            score,
+                            500.0
+                            + (len(comunes) * 50.0)
+                            + (cobertura_menor * 50.0)
+                            + (jaccard * 100.0),
+                        )
+
+            if score <= 0:
+                continue
+
+            cid = meta["id"]
+            if score > score_por_consultor.get(cid, 0):
+                score_por_consultor[cid] = score
+                meta_por_id[cid] = meta
+
+    if not score_por_consultor:
+        return None
+
+    orden = sorted(
+        score_por_consultor.items(),
+        key=lambda item: (-item[1], item[0]),
+    )
+
+    mejor_id, mejor_score = orden[0]
+
+    # Empate o puntajes practicamente iguales => ambiguo, no inventar match.
+    if len(orden) > 1 and abs(mejor_score - orden[1][1]) < 0.001:
+        return None
+
+    return meta_por_id.get(mejor_id)
+
+
+def _coe_modulo_desde_consultor_meta(meta):
+    if not meta:
+        return None
+
+    modulo_directo = meta.get("modulo_directo")
+    if modulo_directo and modulo_directo.get("nombre"):
+        return modulo_directo
+
+    unicos = {}
+    for modulo in meta.get("modulos") or []:
+        key = modulo.get("key") or _coe_consultor_norm(modulo.get("nombre"))
+        if key:
+            unicos[key] = modulo
+
+    if len(unicos) == 1:
+        return next(iter(unicos.values()))
+
+    # Con multiples modulos y sin modulo principal no se puede saber cual
+    # corresponde al caso. Es preferible dejarlo sin modulo que inventarlo.
+    return None
+
+
+def _coe_inferir_modulo_por_asignado(asignado_a, lookup=None):
+    meta = _coe_resolver_consultor(asignado_a, lookup=lookup)
+    modulo = _coe_modulo_desde_consultor_meta(meta)
+
+    if not modulo:
+        return None
+
+    return str(modulo.get("nombre") or "").strip() or None
+
+
+def _coe_aplicar_modulo_consultor_si_falta(
+    row,
+    asignado_a=None,
+    manual_fields=None,
+    source="CONSULTOR",
+    lookup=None,
+):
+    """Completa row.modulo sin pisar un modulo real ni uno marcado como manual."""
+    if row is None or not hasattr(row, "modulo"):
+        return False
+
+    manual_fields = manual_fields or {}
+    if manual_fields.get("modulo"):
+        return False
+
+    actual = getattr(row, "modulo", None)
+    if not _coe_modulo_sin_valor(actual):
+        return False
+
+    asignado = asignado_a or getattr(row, "asignado_a", None)
+    modulo_nombre = _coe_inferir_modulo_por_asignado(asignado, lookup=lookup)
+
+    if not modulo_nombre:
+        return False
+
+    row.modulo = modulo_nombre
+
+    if hasattr(row, "origen_datos_json"):
+        try:
+            origen = _coe_ext_origen_fields(row) if "_coe_ext_origen_fields" in globals() else {}
+            origen["modulo"] = source
+            row.origen_datos_json = json.dumps(origen, ensure_ascii=False, default=str)
+        except Exception:
+            pass
+
+    return True
+
 def _calificacion_campos_desde_base(base):
+    asignado_a = getattr(base, "asignado_a", None)
+
+    # La base principal no siempre trae MODULO. Cuando falta, se resuelve
+    # contra la tabla Consultor usando el nombre/usuario/cedula configurados.
+    modulo_inferido = _coe_inferir_modulo_por_asignado(asignado_a)
+
     campos = {
         "base_registro_id": base.id,
 
@@ -15590,7 +16001,8 @@ def _calificacion_campos_desde_base(base):
 
         "estado": base.estado,
         "estado_herramienta_gestion": base.estado,
-        "asignado_a": base.asignado_a,
+        "asignado_a": asignado_a,
+        "modulo": modulo_inferido,
 
         "fecha_asignacion": base.fecha_entrega,
         "hora_ultima_actualizacion": base.fecha_cargue,
@@ -16997,6 +17409,16 @@ def generar_calificacion_coe_sap_funcional():
                     if campo in campos and hasattr(existente, campo):
                         setattr(existente, campo, campos[campo])
 
+                # No se agrega modulo a campos_automaticos para no pisar un
+                # modulo manual o proveniente de SM/ITOP. Solo se completa
+                # cuando realmente esta vacio o marcado como SIN MODULO.
+                _coe_aplicar_modulo_consultor_si_falta(
+                    existente,
+                    asignado_a=getattr(base, "asignado_a", None),
+                    manual_fields=_coe_ext_manual_fields(existente),
+                    source="CONSULTOR_BASE",
+                )
+
                 _coe_ext_recalcular_row(existente)
 
                 existente.actualizado_por = usuario
@@ -17665,6 +18087,15 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
                 if value is not None and hasattr(row_calificacion, campo):
                     setattr(row_calificacion, campo, value)
 
+            # Si el Excel/base no definieron modulo, completar desde Consultor.
+            # Un modulo manual real conserva siempre prioridad.
+            _coe_aplicar_modulo_consultor_si_falta(
+                row_calificacion,
+                asignado_a=getattr(row_calificacion, "asignado_a", None),
+                manual_fields=_coe_ext_manual_fields(row_calificacion),
+                source="CONSULTOR_BASE",
+            )
+
             # Limpiar horas importadas anteriormente desde Excel para que el proceso sea repetible.
             try:
                 CoeSapFuncionalCalificacionHora.query.filter_by(
@@ -18175,7 +18606,18 @@ def _coe_ext_sync_desde_base(row, base, modo):
     _coe_ext_set_field(row, "estado", getattr(base, "estado", None), "BASE_COE", manual_fields, force, only_empty)
     _coe_ext_set_field(row, "estado_herramienta_gestion", getattr(base, "estado", None), "BASE_COE", manual_fields, force, only_empty)
 
-    _coe_ext_set_field(row, "asignado_a", getattr(base, "asignado_a", None), "BASE_COE", manual_fields, force, only_empty)
+    asignado_a = getattr(base, "asignado_a", None)
+    _coe_ext_set_field(row, "asignado_a", asignado_a, "BASE_COE", manual_fields, force, only_empty)
+
+    # NUEVO: si la base no trae modulo y la calificacion tampoco tiene uno
+    # valido, se cruza asignado_a contra Consultor y se toma el modulo real.
+    # No se pisa un modulo manual ni uno que ya venga de SM/ITOP.
+    _coe_aplicar_modulo_consultor_si_falta(
+        row,
+        asignado_a=asignado_a,
+        manual_fields=manual_fields,
+        source="CONSULTOR_BASE",
+    )
 
     _coe_ext_set_field(row, "fecha_asignacion", getattr(base, "fecha_entrega", None), "BASE_COE", manual_fields, force, only_empty)
     _coe_ext_set_field(row, "hora_ultima_actualizacion", getattr(base, "fecha_cargue", None), "BASE_COE", manual_fields, force, only_empty)
@@ -18185,7 +18627,6 @@ def _coe_ext_sync_desde_base(row, base, modo):
     row.solo_excel = False
 
     return row
-
 
 def _coe_ext_sync_desde_fuente(row, fuente_row, modo):
     force = modo == "forzar"
@@ -18223,6 +18664,15 @@ def _coe_ext_sync_desde_fuente(row, fuente_row, modo):
     _coe_ext_set_field(row, "hora_ultima_actualizacion_sistema_gestion", fuente_row.hora_ultima_actualizacion, source, manual_fields, force, only_empty)
     _coe_ext_set_field(row, "fecha_resolucion_sistema_gestion", fuente_row.fecha_resolucion, source, manual_fields, force, only_empty)
     _coe_ext_set_field(row, "fecha_finalizacion_cierre_sistema_gestion", fuente_row.fecha_finalizacion_cierre, source, manual_fields, force, only_empty)
+
+    # Si la fuente no entregó modulo, usar el consultor como fallback.
+    # Cuando fuente_row.modulo sí existe, ya quedó aplicado arriba y no se pisa.
+    _coe_aplicar_modulo_consultor_si_falta(
+        row,
+        asignado_a=fuente_row.asignado_a or getattr(row, "asignado_a", None),
+        manual_fields=manual_fields,
+        source=f"CONSULTOR_{source}",
+    )
 
     return row
 
@@ -19876,6 +20326,7 @@ def _coe_rep_estado_general(query):
             sub_key,
             {
                 "subestado": substate["label"],
+                "estadoPrincipal": principal["label"],
                 "estadoOriginal": (
                     str(row.estado or row.estado_herramienta_gestion or "")
                     .strip()
@@ -19980,68 +20431,48 @@ def _coe_rep_norm_key(value):
 
 def _coe_rep_distribucion_modulos_consultores(query):
     """
-    Consolida el backlog filtrado por módulo y cruza la asignación de consultores
-    definida en el catálogo consultor <-> módulo.
+    Distribuye el backlog por modulo y consultor.
 
-    - El tamaño del segmento principal corresponde a la cantidad de casos del módulo.
-    - En el detalle de cada módulo se listan los consultores asociados y la cantidad
-      de casos que tienen asignados dentro del mismo módulo.
-    - Si un consultor pertenece al módulo pero no tiene casos en el filtro actual,
-      igualmente se muestra con cantidad 0 para control operativo.
+    Regla de modulo:
+    1. Si la calificacion ya tiene un modulo real, se respeta.
+    2. Si modulo esta vacio / SIN MODULO, se compara asignado_a contra Consultor.
+    3. Se usa modulo_id como modulo principal cuando existe.
+    4. Si no hay modulo_id, solo se infiere cuando el consultor tiene un unico modulo.
+    5. Si el nombre o los modulos son ambiguos, queda Sin modulo.
+
+    Esto permite visualizar correctamente registros historicos aunque todavia no
+    se haya ejecutado nuevamente la sincronizacion que persiste el modulo.
     """
     total = int(query.count() or 0)
 
-    modulos_catalogo = Modulo.query.order_by(Modulo.nombre.asc()).all()
-    modulo_nombre_por_id = {m.id: (_coe_rep_str(m.nombre) or f"Módulo {m.id}") for m in modulos_catalogo}
-    modulo_nombre_por_norm = {
-        _coe_rep_norm_key(m.nombre): (_coe_rep_str(m.nombre) or f"Módulo {m.id}")
-        for m in modulos_catalogo
-        if _coe_rep_norm_key(m.nombre)
-    }
+    lookup = _coe_consultor_lookup()
+    modulo_nombre_por_norm = lookup.get("modulo_nombre_por_norm", {})
 
-    consultores = (
-        Consultor.query
-        .options(selectinload(Consultor.modulos))
-        .order_by(Consultor.nombre.asc(), Consultor.usuario.asc())
-        .all()
-    )
-
-    consultor_display_por_norm = {}
     consultores_por_modulo = {}
 
-    for consultor in consultores:
-        display = _coe_rep_str(consultor.nombre) or _coe_rep_str(consultor.usuario) or f"Consultor {consultor.id}"
-        aliases = {
-            _coe_rep_norm_key(consultor.nombre),
-            _coe_rep_norm_key(consultor.usuario),
-            _coe_rep_norm_key(consultor.cedula),
-        }
-        for alias in aliases:
-            if alias:
-                consultor_display_por_norm.setdefault(alias, display)
+    # Mantener el comportamiento anterior: cada modulo muestra tambien sus
+    # consultores configurados aunque tengan 0 casos en el filtro actual.
+    for meta in lookup.get("consultores", []):
+        display = meta.get("display") or f"Consultor {meta.get('id')}"
 
-        modulos_consultor = list(getattr(consultor, 'modulos', None) or [])
-        if not modulos_consultor and getattr(consultor, 'modulo_id', None):
-            nombre_modulo = modulo_nombre_por_id.get(consultor.modulo_id)
-            if nombre_modulo:
-                modulos_consultor = [type('ModuloLite', (), {'nombre': nombre_modulo})()]
+        for modulo in meta.get("modulos") or []:
+            modulo_nombre = str(modulo.get("nombre") or "").strip()
+            modulo_key = _coe_consultor_norm(modulo_nombre)
 
-        for modulo in modulos_consultor:
-            modulo_nombre = _coe_rep_str(getattr(modulo, 'nombre', None))
-            modulo_key = _coe_rep_norm_key(modulo_nombre)
             if not modulo_key:
                 continue
+
             consultores_por_modulo.setdefault(modulo_key, {})
             consultores_por_modulo[modulo_key].setdefault(
                 display,
-                {"consultor": display, "cantidad": 0}
+                {"consultor": display, "cantidad": 0},
             )
 
     rows = (
         query.with_entities(
-            CoeSapFuncionalCalificacion.modulo.label('modulo'),
-            CoeSapFuncionalCalificacion.asignado_a.label('asignado_a'),
-            func.count(CoeSapFuncionalCalificacion.id).label('cantidad'),
+            CoeSapFuncionalCalificacion.modulo.label("modulo"),
+            CoeSapFuncionalCalificacion.asignado_a.label("asignado_a"),
+            func.count(CoeSapFuncionalCalificacion.id).label("cantidad"),
         )
         .group_by(
             CoeSapFuncionalCalificacion.modulo,
@@ -20053,58 +20484,99 @@ def _coe_rep_distribucion_modulos_consultores(query):
     resultado_map = {}
 
     def ensure_modulo(modulo_label):
-        modulo_key = _coe_rep_norm_key(modulo_label) or 'SIN MODULO'
-        modulo_final = modulo_nombre_por_norm.get(modulo_key, _coe_rep_str(modulo_label) or 'Sin módulo')
+        if _coe_modulo_sin_valor(modulo_label):
+            modulo_key = "SIN MODULO"
+            modulo_final = "Sin módulo"
+        else:
+            modulo_key = _coe_consultor_norm(modulo_label) or "SIN MODULO"
+            modulo_final = modulo_nombre_por_norm.get(
+                modulo_key,
+                str(modulo_label or "").strip() or "Sin módulo",
+            )
+
         if modulo_key not in resultado_map:
             base_consultores = consultores_por_modulo.get(modulo_key, {})
+
             resultado_map[modulo_key] = {
-                'modulo': modulo_final,
-                'cantidad': 0,
-                '_consultores': {
-                    nombre: {'consultor': data['consultor'], 'cantidad': int(data.get('cantidad') or 0)}
+                "modulo": modulo_final,
+                "cantidad": 0,
+                "_consultores": {
+                    nombre: {
+                        "consultor": data["consultor"],
+                        "cantidad": int(data.get("cantidad") or 0),
+                    }
                     for nombre, data in base_consultores.items()
                 },
             }
+
         return modulo_key, resultado_map[modulo_key]
 
     for row in rows:
-        modulo_label = _coe_rep_str(row.modulo) or 'Sin módulo'
-        modulo_key, modulo_item = ensure_modulo(modulo_label)
-
         cantidad = int(row.cantidad or 0)
-        modulo_item['cantidad'] += cantidad
+        asignado_raw = str(row.asignado_a or "").replace("\u00A0", " ").strip()
 
-        asignado_raw = _coe_rep_str(row.asignado_a)
-        consultor_label = 'Sin asignar'
-        if asignado_raw:
-            consultor_label = consultor_display_por_norm.get(_coe_rep_norm_key(asignado_raw), asignado_raw)
+        consultor_meta = _coe_resolver_consultor(
+            asignado_raw,
+            lookup=lookup,
+        ) if asignado_raw else None
 
-        consultor_item = modulo_item['_consultores'].setdefault(
+        modulo_label = row.modulo
+
+        # Solo inferimos si realmente falta el modulo. Un valor real de la
+        # calificacion tiene prioridad sobre el catalogo del consultor.
+        if _coe_modulo_sin_valor(modulo_label):
+            modulo_meta = _coe_modulo_desde_consultor_meta(consultor_meta)
+            if modulo_meta and modulo_meta.get("nombre"):
+                modulo_label = modulo_meta["nombre"]
+            else:
+                modulo_label = "Sin módulo"
+
+        _, modulo_item = ensure_modulo(modulo_label)
+        modulo_item["cantidad"] += cantidad
+
+        if consultor_meta:
+            consultor_label = consultor_meta.get("display") or asignado_raw or "Sin asignar"
+        else:
+            consultor_label = asignado_raw or "Sin asignar"
+
+        consultor_item = modulo_item["_consultores"].setdefault(
             consultor_label,
-            {'consultor': consultor_label, 'cantidad': 0}
+            {"consultor": consultor_label, "cantidad": 0},
         )
-        consultor_item['cantidad'] += cantidad
+        consultor_item["cantidad"] += cantidad
 
     resultado = []
+
     for item in resultado_map.values():
         consultores_detalle = sorted(
-            item['_consultores'].values(),
-            key=lambda elem: (-int(elem.get('cantidad') or 0), str(elem.get('consultor') or '').upper())
+            item["_consultores"].values(),
+            key=lambda elem: (
+                -int(elem.get("cantidad") or 0),
+                str(elem.get("consultor") or "").upper(),
+            ),
         )
+
         resultado.append({
-            'modulo': item['modulo'],
-            'cantidad': int(item['cantidad'] or 0),
-            'porcentaje': round((float(item['cantidad'] or 0) / total) * 100, 2) if total else 0,
-            'consultores': consultores_detalle,
+            "modulo": item["modulo"],
+            "cantidad": int(item["cantidad"] or 0),
+            "porcentaje": round(
+                (float(item["cantidad"] or 0) / total) * 100,
+                2,
+            ) if total else 0,
+            "consultores": consultores_detalle,
         })
 
-    resultado.sort(key=lambda elem: (-int(elem.get('cantidad') or 0), str(elem.get('modulo') or '').upper()))
+    resultado.sort(
+        key=lambda elem: (
+            -int(elem.get("cantidad") or 0),
+            str(elem.get("modulo") or "").upper(),
+        )
+    )
 
     return {
-        'total': total,
-        'modulos': resultado,
+        "total": total,
+        "modulos": resultado,
     }
-
 
 def _coe_rep_apply_graficas_mensuales_sociedad(query):
     """
@@ -20206,6 +20678,7 @@ def _coe_rep_estado_estimacion_horas(base_query):
             anio_aprobado_expr.label("anio"),
             mes_aprobado_expr.label("mes"),
             CoeSapFuncionalCalificacion.numero.label("numero"),
+            func.max(CoeSapFuncionalCalificacion.asunto).label("asunto"),
             func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales), 0).label("total_funcionales"),
             func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_estimadas_abap), 0).label("horas_abap"),
             func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas), 0).label("total_estimadas"),
@@ -20237,6 +20710,7 @@ def _coe_rep_estado_estimacion_horas(base_query):
             "mesAprobadoEstimacion": int(r.mes) if r.mes is not None else None,
             "mesNombre": _coe_rep_month_name(r.mes) if r.mes is not None else "Sin mes",
             "numero": _coe_rep_str(r.numero) or "Sin ID",
+            "asunto": _coe_rep_str(r.asunto) or "Sin asunto",
             "totalHorasFuncionales": _coe_rep_float(r.total_funcionales),
             "horasEstimadasAbap": _coe_rep_float(r.horas_abap),
             "totalHorasEstimadas": _coe_rep_float(r.total_estimadas),
@@ -20603,6 +21077,283 @@ def dashboard_clientes_coe_sap_funcional():
             "mensaje": "Error consultando dashboard clientes",
             "error": str(e),
             "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/dashboard-clientes/detalle-estado", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def detalle_estado_dashboard_clientes_coe_sap_funcional():
+    """
+    Detalle bajo demanda del segmento seleccionado en Estado general.
+
+    No se envían estos registros en el cargue inicial del dashboard; solo se
+    consultan cuando el usuario pulsa una porción de la gráfica o su leyenda.
+    Así se mantiene liviano el dashboard.
+    """
+    try:
+        detalle_tipo = str(
+            request.args.get("detalle_tipo")
+            or request.args.get("detalleTipo")
+            or "principal"
+        ).strip().lower()
+
+        if detalle_tipo not in {"principal", "subestado"}:
+            return jsonify({
+                "mensaje": "detalle_tipo debe ser principal o subestado"
+            }), 400
+
+        principal_objetivo = str(
+            request.args.get("detalle_estado_principal")
+            or request.args.get("detalleEstadoPrincipal")
+            or ""
+        ).strip()
+        subestado_objetivo = str(
+            request.args.get("detalle_subestado")
+            or request.args.get("detalleSubestado")
+            or ""
+        ).strip()
+
+        if detalle_tipo == "principal" and not principal_objetivo:
+            return jsonify({"mensaje": "Debe seleccionar un estado principal"}), 400
+
+        if detalle_tipo == "subestado" and not subestado_objetivo:
+            return jsonify({"mensaje": "Debe seleccionar un subestado"}), 400
+
+        page = max(int(request.args.get("page", 1)), 1)
+        page_size = min(max(int(request.args.get("page_size", 50)), 1), 200)
+
+        aplicar_filtros_backlog_raw = (
+            request.args.get("aplicar_filtros_backlog")
+            or request.args.get("aplicarFiltrosBacklog")
+            or ""
+        )
+        aplicar_filtros_backlog = str(
+            aplicar_filtros_backlog_raw
+        ).strip().lower() in {"1", "true", "si", "sí", "yes", "on"}
+
+        base_query = CoeSapFuncionalCalificacion.query
+
+        if aplicar_filtros_backlog:
+            query = _coe_rep_apply_filters(base_query, include_period=True)
+        else:
+            query = base_query
+
+        query = _coe_dash_apply_backlog_controlado(query)
+
+        meta = _coe_dash_backlog_catalog_meta()
+        allowed_principals = set(meta["estado_values"])
+
+        def parse_id(value):
+            try:
+                return int(value) if value not in (None, "") else None
+            except Exception:
+                return None
+
+        def canonical_principal(normalized, fallback=None):
+            item = meta["estados_por_norm"].get(normalized) or {}
+            return item.get("valor") or fallback or normalized
+
+        def resolve_principal(row):
+            estado_id = parse_id(row.estado_catalogo_id)
+            subestado_id = parse_id(row.subestado_catalogo_id)
+
+            if estado_id in meta["estados_por_id"]:
+                return {
+                    "id": estado_id,
+                    "label": meta["estados_por_id"][estado_id],
+                }
+
+            explicit = str(row.estado_principal or "").strip()
+            explicit_norm = _coe_dash_norm_estado(explicit)
+            if explicit_norm in allowed_principals:
+                item = meta["estados_por_norm"].get(explicit_norm) or {}
+                return {
+                    "id": item.get("id") or estado_id,
+                    "label": item.get("valor") or explicit,
+                }
+
+            if subestado_id in meta["subestados_por_id"]:
+                sub_meta = meta["subestados_por_id"][subestado_id]
+                return {
+                    "id": sub_meta.get("estado_catalogo_id"),
+                    "label": sub_meta.get("estado_principal"),
+                }
+
+            for candidate in (
+                row.subestado,
+                row.estado,
+                row.estado_herramienta_gestion,
+            ):
+                candidate_text = str(candidate or "").strip()
+                candidate_norm = _coe_dash_norm_estado(candidate_text)
+                if not candidate_norm:
+                    continue
+
+                if candidate_norm in meta["subestados_por_norm"]:
+                    sub_meta = meta["subestados_por_norm"][candidate_norm]
+                    return {
+                        "id": sub_meta.get("estado_catalogo_id"),
+                        "label": sub_meta.get("estado_principal"),
+                    }
+
+                if candidate_norm in allowed_principals:
+                    item = meta["estados_por_norm"].get(candidate_norm) or {}
+                    return {
+                        "id": item.get("id"),
+                        "label": canonical_principal(
+                            candidate_norm,
+                            candidate_text,
+                        ),
+                    }
+
+            return None
+
+        def resolve_substate(row, principal):
+            subestado_id = parse_id(row.subestado_catalogo_id)
+
+            if subestado_id in meta["subestados_por_id"]:
+                sub_meta = meta["subestados_por_id"][subestado_id]
+                label = sub_meta.get("valor")
+                if label and not _coe_dash_estado_excluido_texto(label):
+                    return {
+                        "id": subestado_id,
+                        "label": label,
+                    }
+
+            sub_text = str(row.subestado or "").strip()
+            sub_norm = _coe_dash_norm_estado(sub_text)
+
+            if sub_text:
+                if _coe_dash_estado_excluido_texto(sub_text):
+                    return None
+
+                if sub_norm in meta["subestados_por_norm"]:
+                    sub_meta = meta["subestados_por_norm"][sub_norm]
+                    return {
+                        "id": sub_meta.get("id"),
+                        "label": sub_meta.get("valor") or sub_text,
+                    }
+
+                if sub_norm not in allowed_principals:
+                    return {
+                        "id": None,
+                        "label": sub_text,
+                    }
+
+            for candidate in (
+                row.estado,
+                row.estado_herramienta_gestion,
+            ):
+                candidate_text = str(candidate or "").strip()
+                candidate_norm = _coe_dash_norm_estado(candidate_text)
+
+                if candidate_norm in meta["subestados_por_norm"]:
+                    sub_meta = meta["subestados_por_norm"][candidate_norm]
+                    return {
+                        "id": sub_meta.get("id"),
+                        "label": sub_meta.get("valor") or candidate_text,
+                    }
+
+            return {
+                "id": None,
+                "label": principal["label"],
+            }
+
+        principal_norm_objetivo = _coe_dash_norm_estado(principal_objetivo)
+        subestado_norm_objetivo = _coe_dash_norm_estado(subestado_objetivo)
+
+        rows_query = (
+            query.with_entities(
+                CoeSapFuncionalCalificacion.id.label("id_bd"),
+                CoeSapFuncionalCalificacion.numero.label("numero"),
+                CoeSapFuncionalCalificacion.caso_sm.label("caso_sm"),
+                CoeSapFuncionalCalificacion.sociedad.label("sociedad"),
+                CoeSapFuncionalCalificacion.asunto.label("asunto"),
+                CoeSapFuncionalCalificacion.observaciones.label("observaciones"),
+                CoeSapFuncionalCalificacion.estado_catalogo_id.label("estado_catalogo_id"),
+                CoeSapFuncionalCalificacion.estado_principal.label("estado_principal"),
+                CoeSapFuncionalCalificacion.subestado_catalogo_id.label("subestado_catalogo_id"),
+                CoeSapFuncionalCalificacion.subestado.label("subestado"),
+                CoeSapFuncionalCalificacion.estado.label("estado"),
+                CoeSapFuncionalCalificacion.estado_herramienta_gestion.label("estado_herramienta_gestion"),
+                CoeSapFuncionalCalificacion.estado_consolidado.label("estado_consolidado"),
+                CoeSapFuncionalCalificacion.asignado_a.label("asignado_a"),
+            )
+            .order_by(
+                CoeSapFuncionalCalificacion.sociedad.asc(),
+                CoeSapFuncionalCalificacion.numero.asc(),
+            )
+            .yield_per(1000)
+        )
+
+        total = 0
+        data = []
+        offset = (page - 1) * page_size
+        limit_end = offset + page_size
+
+        for row in rows_query:
+            principal = resolve_principal(row)
+            if not principal:
+                continue
+
+            principal_norm = _coe_dash_norm_estado(principal.get("label"))
+            if principal_norm not in allowed_principals:
+                continue
+
+            substate = resolve_substate(row, principal)
+            if not substate:
+                continue
+
+            substate_norm = _coe_dash_norm_estado(substate.get("label"))
+
+            if detalle_tipo == "principal":
+                coincide = principal_norm == principal_norm_objetivo
+            else:
+                coincide = substate_norm == subestado_norm_objetivo
+                if coincide and principal_norm_objetivo:
+                    coincide = principal_norm == principal_norm_objetivo
+
+            if not coincide:
+                continue
+
+            if offset <= total < limit_end:
+                data.append({
+                    # En el dashboard el ID visible corresponde a numero.
+                    "id": _coe_rep_str(row.numero) or str(row.id_bd),
+                    "idBd": int(row.id_bd),
+                    "casoSm": _coe_rep_str(row.caso_sm),
+                    "sociedad": _coe_rep_str(row.sociedad),
+                    "asunto": _coe_rep_str(row.asunto),
+                    "observaciones": _coe_rep_str(row.observaciones),
+                    "estadoHerramienta": _coe_rep_str(row.estado_herramienta_gestion),
+                    "estadoConsolidado": _coe_rep_str(row.estado_consolidado),
+                    "asignadoA": _coe_rep_str(row.asignado_a),
+                    "estadoPrincipal": principal.get("label"),
+                    "subestado": substate.get("label"),
+                })
+
+            total += 1
+
+        return jsonify({
+            "data": data,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": math.ceil(total / page_size) if page_size else 1,
+            "seleccion": {
+                "tipo": detalle_tipo,
+                "estadoPrincipal": principal_objetivo or None,
+                "subestado": subestado_objetivo or None,
+            },
+        }), 200
+
+    except Exception as e:
+        app.logger.exception(
+            "Error consultando detalle de estado del dashboard COE SAP Funcional"
+        )
+        return jsonify({
+            "mensaje": "Error consultando detalle del estado",
+            "error": str(e),
         }), 500
 
 

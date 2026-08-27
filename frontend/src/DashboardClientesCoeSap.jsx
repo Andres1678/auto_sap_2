@@ -587,8 +587,17 @@ function BarList({ title, rows, labelKey, valueKey = "cantidad", emptyText = "Si
   );
 }
 
-function PieSvg({ rows, labelKey, valueKey = "cantidad" }) {
-  const total = (rows || []).reduce((acc, row) => acc + Number(row?.[valueKey] || 0), 0);
+function PieSvg({
+  rows,
+  labelKey,
+  valueKey = "cantidad",
+  onSelect,
+  selectedLabel = "",
+}) {
+  const total = (rows || []).reduce(
+    (acc, row) => acc + Number(row?.[valueKey] || 0),
+    0
+  );
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
@@ -601,6 +610,14 @@ function PieSvg({ rows, labelKey, valueKey = "cantidad" }) {
     );
   }
 
+  const handleKeyDown = (event, row) => {
+    if (!onSelect) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect(row);
+    }
+  };
+
   return (
     <div className="coedash-pie-layout">
       <svg viewBox="0 0 120 120" className="coedash-pie-svg" aria-label="Gráfico circular">
@@ -609,6 +626,8 @@ function PieSvg({ rows, labelKey, valueKey = "cantidad" }) {
           const value = Number(row?.[valueKey] || 0);
           const dash = (value / total) * circumference;
           const color = PIE_COLORS[index % PIE_COLORS.length];
+          const label = cleanText(row?.[labelKey]);
+          const active = String(selectedLabel || "") === String(row?.[labelKey] || "");
           const segment = (
             <circle
               key={`${labelKey}-${index}`}
@@ -622,6 +641,12 @@ function PieSvg({ rows, labelKey, valueKey = "cantidad" }) {
               strokeDashoffset={-offset}
               transform="rotate(-90 60 60)"
               strokeLinecap="butt"
+              className={`${onSelect ? "coedash-pie-segment-clickable" : ""}${active ? " active" : ""}`}
+              role={onSelect ? "button" : undefined}
+              tabIndex={onSelect ? 0 : undefined}
+              aria-label={onSelect ? `Ver casos de ${label}` : undefined}
+              onClick={onSelect ? () => onSelect(row) : undefined}
+              onKeyDown={onSelect ? (event) => handleKeyDown(event, row) : undefined}
             />
           );
           offset += dash;
@@ -635,12 +660,31 @@ function PieSvg({ rows, labelKey, valueKey = "cantidad" }) {
         {(rows || []).map((row, index) => {
           const value = Number(row?.[valueKey] || 0);
           const pct = total ? Math.round((value / total) * 100) : 0;
+          const label = cleanText(row?.[labelKey]);
+          const active = String(selectedLabel || "") === String(row?.[labelKey] || "");
+
+          if (!onSelect) {
+            return (
+              <div key={`legend-${labelKey}-${index}`}>
+                <i style={{ background: PIE_COLORS[index % PIE_COLORS.length] }} />
+                <span>{label}</span>
+                <strong>{numberText(value)} · {pct}%</strong>
+              </div>
+            );
+          }
+
           return (
-            <div key={`legend-${labelKey}-${index}`}>
+            <button
+              type="button"
+              key={`legend-${labelKey}-${index}`}
+              className={`coedash-pie-legend-button${active ? " active" : ""}`}
+              onClick={() => onSelect(row)}
+              title={`Ver ${numberText(value)} caso(s) de ${label}`}
+            >
               <i style={{ background: PIE_COLORS[index % PIE_COLORS.length] }} />
-              <span>{cleanText(row?.[labelKey])}</span>
+              <span>{label}</span>
               <strong>{numberText(value)} · {pct}%</strong>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -648,9 +692,134 @@ function PieSvg({ rows, labelKey, valueKey = "cantidad" }) {
   );
 }
 
-function EstadoGeneralRequerimientos({ data, filtrosAplicados = false }) {
+function EstadoDetalleTable({ detalle, loading, onClose, onPageChange }) {
+  const rows = detalle?.data || [];
+  const total = Number(detalle?.total || 0);
+  const page = Number(detalle?.page || 1);
+  const totalPages = Math.max(Number(detalle?.total_pages || 1), 1);
+  const selection = detalle?.selection || null;
+
+  if (!selection) return null;
+
+  const selectedText =
+    selection.tipo === "subestado"
+      ? selection.subestado
+      : selection.estadoPrincipal;
+
+  return (
+    <div className="coedash-state-detail">
+      <div className="coedash-state-detail-head">
+        <div>
+          <span className="coedash-section-kicker blue">Control de casos</span>
+          <h3>{cleanText(selectedText)}</h3>
+          <p>
+            {loading
+              ? "Consultando casos del estado seleccionado..."
+              : `${numberText(total)} caso(s) asociados al segmento seleccionado.`}
+          </p>
+        </div>
+
+        <button type="button" className="coedash-btn ghost compact" onClick={onClose}>
+          Cerrar detalle
+        </button>
+      </div>
+
+      <div className="coedash-table-wrap coedash-state-detail-table-wrap">
+        <table className="coedash-table coedash-state-detail-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Caso SM</th>
+              <th>Sociedad</th>
+              <th>Observaciones</th>
+              <th>Estado herramienta</th>
+              <th>Estado consolidado</th>
+              <th>Asignado a</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan="7" className="coedash-empty small">Cargando detalle...</td>
+              </tr>
+            ) : !rows.length ? (
+              <tr>
+                <td colSpan="7" className="coedash-empty small">No hay casos para este estado.</td>
+              </tr>
+            ) : (
+              rows.map((row, index) => (
+                <tr key={`detalle-estado-${row.idBd || row.id}-${index}`}>
+                  <td className="mono strong">{cleanText(row.id)}</td>
+                  <td className="mono">{cleanText(row.casoSm)}</td>
+                  <td>{cleanText(row.sociedad)}</td>
+                  <td className="coedash-detail-long-text" title={cleanText(row.observaciones)}>
+                    {cleanText(row.observaciones)}
+                  </td>
+                  <td>{cleanText(row.estadoHerramienta)}</td>
+                  <td>{cleanText(row.estadoConsolidado)}</td>
+                  <td>{cleanText(row.asignadoA)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="coedash-state-detail-pagination">
+        <span>
+          Página <b>{page}</b> de <b>{totalPages}</b> · {numberText(total)} caso(s)
+        </span>
+        <div>
+          <button
+            type="button"
+            className="coedash-btn light compact"
+            disabled={loading || page <= 1}
+            onClick={() => onPageChange(page - 1)}
+          >
+            Anterior
+          </button>
+          <button
+            type="button"
+            className="coedash-btn light compact"
+            disabled={loading || page >= totalPages}
+            onClick={() => onPageChange(page + 1)}
+          >
+            Siguiente
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EstadoGeneralRequerimientos({
+  data,
+  filtrosAplicados = false,
+  detalle,
+  detalleLoading = false,
+  onSelectEstado,
+  onCloseDetalle,
+  onDetallePageChange,
+}) {
   const subestados = data?.subestados || [];
   const principales = data?.principales || [];
+  const selection = detalle?.selection || null;
+
+  const selectPrincipal = (row) => {
+    onSelectEstado?.({
+      tipo: "principal",
+      estadoPrincipal: row?.estadoPrincipal || "",
+      subestado: "",
+    });
+  };
+
+  const selectSubestado = (row) => {
+    onSelectEstado?.({
+      tipo: "subestado",
+      estadoPrincipal: row?.estadoPrincipal || "",
+      subestado: row?.subestado || "",
+    });
+  };
 
   return (
     <section className="coedash-panel coedash-wide-panel coedash-excel-card">
@@ -660,7 +829,7 @@ function EstadoGeneralRequerimientos({ data, filtrosAplicados = false }) {
           {filtrosAplicados
             ? "Backlog filtrado según los filtros globales aplicados. Solo incluye En curso y Pendiente de cliente."
             : "Backlog completo sin filtros en el primer cargue. Solo incluye En curso y Pendiente de cliente."}
-          {" "}Si el caso no tiene subestado, se muestra el estado principal.
+          {" "}Si el caso no tiene subestado, se muestra el estado principal. Selecciona una porción de la gráfica o su leyenda para ver los casos.
         </p>
       </div>
 
@@ -678,7 +847,12 @@ function EstadoGeneralRequerimientos({ data, filtrosAplicados = false }) {
                 <tr><td colSpan="2" className="coedash-empty small">Sin datos.</td></tr>
               ) : (
                 subestados.map((row, index) => (
-                  <tr key={`estado-general-${index}-${row.subestado}`}>
+                  <tr
+                    key={`estado-general-${index}-${row.subestado}`}
+                    className="coedash-state-row-clickable"
+                    onClick={() => selectSubestado(row)}
+                    title={`Ver casos de ${cleanText(row.subestado)}`}
+                  >
                     <td>{cleanText(row.subestado)}</td>
                     <td className="right strong">{numberText(row.cantidad)}</td>
                   </tr>
@@ -694,14 +868,31 @@ function EstadoGeneralRequerimientos({ data, filtrosAplicados = false }) {
 
         <div className="coedash-chart-panel">
           <h3>Distribución por estado principal</h3>
-          <PieSvg rows={principales} labelKey="estadoPrincipal" />
+          <PieSvg
+            rows={principales}
+            labelKey="estadoPrincipal"
+            onSelect={selectPrincipal}
+            selectedLabel={selection?.tipo === "principal" ? selection?.estadoPrincipal : ""}
+          />
         </div>
 
         <div className="coedash-chart-panel">
           <h3>Detalle por subestado</h3>
-          <PieSvg rows={subestados} labelKey="subestado" />
+          <PieSvg
+            rows={subestados}
+            labelKey="subestado"
+            onSelect={selectSubestado}
+            selectedLabel={selection?.tipo === "subestado" ? selection?.subestado : ""}
+          />
         </div>
       </div>
+
+      <EstadoDetalleTable
+        detalle={detalle}
+        loading={detalleLoading}
+        onClose={onCloseDetalle}
+        onPageChange={onDetallePageChange}
+      />
     </section>
   );
 }
@@ -963,6 +1154,7 @@ function EstadoEstimacionHoras({ rows, periodo }) {
               <th>Año aprobado estimación</th>
               <th>Mes aprobado estimación</th>
               <th>ID</th>
+              <th>Asunto</th>
               <th>Suma total horas funcionales</th>
               <th>Suma total horas ABAP</th>
               <th>Suma total horas estimadas</th>
@@ -971,13 +1163,14 @@ function EstadoEstimacionHoras({ rows, periodo }) {
           </thead>
           <tbody>
             {!rows?.length ? (
-              <tr><td colSpan="8" className="coedash-empty small">Sin información de estimación.</td></tr>
+              <tr><td colSpan="9" className="coedash-empty small">Sin información de estimación.</td></tr>
             ) : rows.map((row, index) => (
               <tr key={`estimacion-${index}-${row.numero}`}>
                 <td className="strong">{cleanText(row.estadoEstimacion)}</td>
                 <td className="center">{cleanText(row.anioAprobadoEstimacion)}</td>
                 <td className="center">{cleanText(row.mesAprobadoEstimacion)}</td>
                 <td className="mono">{cleanText(row.numero)}</td>
+                <td className="coedash-estimation-subject" title={cleanText(row.asunto)}>{cleanText(row.asunto)}</td>
                 <td className="right strong">{numberText(row.totalHorasFuncionales, 2)}</td>
                 <td className="right strong">{numberText(row.horasEstimadasAbap, 2)}</td>
                 <td className="right strong">{numberText(row.totalHorasEstimadas, 2)}</td>
@@ -985,7 +1178,7 @@ function EstadoEstimacionHoras({ rows, periodo }) {
               </tr>
             ))}
             <tr className="coedash-total-row">
-              <td colSpan="4">Total general</td>
+              <td colSpan="5">Total general</td>
               <td className="right">{numberText(totals.totalHorasFuncionales, 2)}</td>
               <td className="right">{numberText(totals.horasEstimadasAbap, 2)}</td>
               <td className="right">{numberText(totals.totalHorasEstimadas, 2)}</td>
@@ -1112,6 +1305,11 @@ export default function DashboardClientesCoeSap() {
   const [downloadingExcel, setDownloadingExcel] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
 
+  // Detalle de Estado general: se carga solo al hacer clic en una porción.
+  const [estadoDetalleSelection, setEstadoDetalleSelection] = useState(null);
+  const [estadoDetalleData, setEstadoDetalleData] = useState(null);
+  const [estadoDetalleLoading, setEstadoDetalleLoading] = useState(false);
+
   const defaultFilters = useMemo(() => getDefaultFilters(), []);
   const defaultGraphFilters = useMemo(() => getDefaultGraphFilters(), []);
 
@@ -1230,17 +1428,95 @@ export default function DashboardClientesCoeSap() {
     backlogFiltersApplied,
   ]);
 
+  const fetchEstadoDetalle = useCallback(async (selection, page = 1) => {
+    if (!canView || !selection) return;
+
+    setEstadoDetalleLoading(true);
+
+    try {
+      const qs = buildQuery({
+        ...appliedFilters,
+        aplicarFiltrosBacklog: backlogFiltersApplied ? "1" : "",
+        detalle_tipo: selection.tipo,
+        detalle_estado_principal: selection.estadoPrincipal || "",
+        detalle_subestado: selection.subestado || "",
+        page: String(page),
+        page_size: "50",
+      });
+
+      const res = await jfetch(
+        `/coe-sap-funcional/calificacion/dashboard-clientes/detalle-estado${qs ? `?${qs}` : ""}`,
+        {
+          method: "GET",
+          headers: commonHeaders,
+        }
+      );
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+      }
+
+      setEstadoDetalleData({
+        ...data,
+        selection,
+      });
+    } catch (error) {
+      console.error("Error consultando detalle de estado:", error);
+      Swal.fire({
+        icon: "error",
+        title: "No se pudo consultar el detalle",
+        text: error?.message || "Revisa el backend.",
+        confirmButtonColor: "#DA291C",
+      });
+    } finally {
+      setEstadoDetalleLoading(false);
+    }
+  }, [
+    canView,
+    appliedFilters,
+    backlogFiltersApplied,
+    commonHeaders,
+  ]);
+
+  const handleEstadoSelect = useCallback((selection) => {
+    setEstadoDetalleSelection(selection);
+    setEstadoDetalleData({
+      data: [],
+      total: 0,
+      page: 1,
+      total_pages: 1,
+      selection,
+    });
+    fetchEstadoDetalle(selection, 1);
+  }, [fetchEstadoDetalle]);
+
+  const closeEstadoDetalle = useCallback(() => {
+    setEstadoDetalleSelection(null);
+    setEstadoDetalleData(null);
+  }, []);
+
+  const changeEstadoDetallePage = useCallback((page) => {
+    if (!estadoDetalleSelection) return;
+    fetchEstadoDetalle(estadoDetalleSelection, page);
+  }, [estadoDetalleSelection, fetchEstadoDetalle]);
+
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
 
   const applyFilters = () => {
+    setEstadoDetalleSelection(null);
+    setEstadoDetalleData(null);
     setBacklogFiltersApplied(true);
     setAppliedFilters(cloneFilters(filters));
   };
 
   const clearFilters = () => {
     const defaults = getDefaultFilters();
+    setEstadoDetalleSelection(null);
+    setEstadoDetalleData(null);
     setBacklogFiltersApplied(false);
     setFilters(defaults);
     setAppliedFilters(cloneFilters(defaults));
@@ -1449,6 +1725,11 @@ export default function DashboardClientesCoeSap() {
           <EstadoGeneralRequerimientos
             data={payload?.estadoGeneralRequerimientos}
             filtrosAplicados={backlogFiltersApplied}
+            detalle={estadoDetalleData}
+            detalleLoading={estadoDetalleLoading}
+            onSelectEstado={handleEstadoSelect}
+            onCloseDetalle={closeEstadoDetalle}
+            onDetallePageChange={changeEstadoDetallePage}
           />
           <DistribucionModulosConsultores data={payload?.distribucionModulosConsultores} />
 
