@@ -1091,18 +1091,22 @@ export default function CalificacionCoeSapFuncional() {
     setGenerating(true);
 
     try {
-      const res = await jfetch("/coe-sap-funcional/calificacion/sincronizar", {
-        method: "POST",
-        headers: {
-          ...commonHeaders,
-          "Content-Type": "application/json",
+      const res = await jfetch(
+      "/coe-sap-funcional/calificacion/sincronizar-lote",
+      {
+        method:"POST",
+        headers:{
+            ...commonHeaders,
+            "Content-Type":"application/json",
         },
         body: JSON.stringify({
-          modo: modo || "preservar_manual",
-          crear_desde_base: true,
-          crear_desde_fuentes: true,
-        }),
-      });
+            modo: modo || "preservar_manual",
+            crear_desde_base:true,
+            crear_desde_fuentes:true,
+            limit:300
+        })
+      }
+      );
 
       const data = await res.json().catch(() => ({}));
 

@@ -320,7 +320,7 @@ export default function BaseCoeSapFuncional() {
       const confirm = await Swal.fire({
         icon: "warning",
         title: "Carga principal",
-        text: "Esta acción reemplazará toda la información actual de la base COE SAP Funcional.",
+        text: "Esta acción reemplazará toda la información actual de la base COE SAP.",
         showCancelButton: true,
         confirmButtonText: "Sí, reemplazar",
         cancelButtonText: "Cancelar",
@@ -429,7 +429,7 @@ export default function BaseCoeSapFuncional() {
       <section className="coe-hero">
         <div>
           <span className="coe-eyebrow">Base principal</span>
-          <h1>BASE DE REGISTRO DE INFORMACION COE SAP FUNCIONAL</h1>
+          <h1>BASE DE REGISTRO DE INFORMACION COE SAP</h1>
           <p>
             Consulta, filtra y carga información principal o adicional desde archivos
             Excel o CSV.
