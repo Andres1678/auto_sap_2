@@ -226,7 +226,7 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
               <Link to="/coe-sap-funcional/control-bolsa" onClick={closeMenu}>
                 <span className="navc-sub-icon">🧮</span>
                 <span>
-                  <strong>Control consiliación contratos</strong>
+                  <strong>Control conciliación contratos</strong>
                   <small>Tabla manual independiente por cliente</small>
                 </span>
               </Link>
