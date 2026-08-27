@@ -20429,6 +20429,40 @@ def _coe_rep_norm_key(value):
     return value
 
 
+def _coe_rep_resolver_modulo_desde_calificacion(modulo_value, asignado_a_value, lookup=None):
+    """
+    Resuelve el modulo visible de una calificacion.
+
+    Prioridad:
+    1. Modulo real guardado en la calificacion.
+    2. Si falta el modulo, se intenta inferir desde asignado_a -> Consultor.
+    3. Si no se puede determinar, queda "Sin módulo".
+    """
+    lookup = lookup or _coe_consultor_lookup()
+    modulo_nombre_por_norm = lookup.get("modulo_nombre_por_norm", {})
+
+    modulo_label = _coe_rep_str(modulo_value)
+
+    if not _coe_modulo_sin_valor(modulo_label):
+        modulo_key = _coe_consultor_norm(modulo_label)
+        return modulo_nombre_por_norm.get(
+            modulo_key,
+            modulo_label,
+        ) or "Sin módulo"
+
+    asignado_raw = str(asignado_a_value or "").replace("\u00A0", " ").strip()
+    consultor_meta = _coe_resolver_consultor(
+        asignado_raw,
+        lookup=lookup,
+    ) if asignado_raw else None
+
+    modulo_meta = _coe_modulo_desde_consultor_meta(consultor_meta)
+    if modulo_meta and modulo_meta.get("nombre"):
+        return str(modulo_meta.get("nombre") or "").strip() or "Sin módulo"
+
+    return "Sin módulo"
+
+
 def _coe_rep_distribucion_modulos_consultores(query):
     """
     Distribuye el backlog por modulo y consultor.
@@ -20446,7 +20480,6 @@ def _coe_rep_distribucion_modulos_consultores(query):
     total = int(query.count() or 0)
 
     lookup = _coe_consultor_lookup()
-    modulo_nombre_por_norm = lookup.get("modulo_nombre_por_norm", {})
 
     consultores_por_modulo = {}
 
@@ -20489,10 +20522,7 @@ def _coe_rep_distribucion_modulos_consultores(query):
             modulo_final = "Sin módulo"
         else:
             modulo_key = _coe_consultor_norm(modulo_label) or "SIN MODULO"
-            modulo_final = modulo_nombre_por_norm.get(
-                modulo_key,
-                str(modulo_label or "").strip() or "Sin módulo",
-            )
+            modulo_final = str(modulo_label or "").strip() or "Sin módulo"
 
         if modulo_key not in resultado_map:
             base_consultores = consultores_por_modulo.get(modulo_key, {})
@@ -20520,16 +20550,11 @@ def _coe_rep_distribucion_modulos_consultores(query):
             lookup=lookup,
         ) if asignado_raw else None
 
-        modulo_label = row.modulo
-
-        # Solo inferimos si realmente falta el modulo. Un valor real de la
-        # calificacion tiene prioridad sobre el catalogo del consultor.
-        if _coe_modulo_sin_valor(modulo_label):
-            modulo_meta = _coe_modulo_desde_consultor_meta(consultor_meta)
-            if modulo_meta and modulo_meta.get("nombre"):
-                modulo_label = modulo_meta["nombre"]
-            else:
-                modulo_label = "Sin módulo"
+        modulo_label = _coe_rep_resolver_modulo_desde_calificacion(
+            row.modulo,
+            asignado_raw,
+            lookup=lookup,
+        )
 
         _, modulo_item = ensure_modulo(modulo_label)
         modulo_item["cantidad"] += cantidad
@@ -20615,6 +20640,12 @@ def _coe_rep_recibidos_vs_cerrados(base_query):
       fecha_finalizacion_cierre_sistema_gestion dentro del mes propio.
 
     No aplica filtros globales. Solo responde al filtro propio de sociedad.
+
+    IMPORTANTE:
+    Si la calificacion no trae modulo, esta seccion tambien intenta mapearlo
+    desde asignado_a -> Consultor, igual que la distribucion por modulos.
+    De esa manera el cuadro/tabla no deja los casos en "Sin módulo" cuando
+    realmente el consultor tiene un modulo configurado.
     """
     query = _coe_rep_apply_graficas_mensuales_sociedad(base_query)
 
@@ -20632,24 +20663,58 @@ def _coe_rep_recibidos_vs_cerrados(base_query):
     rows = (
         query.with_entities(
             CoeSapFuncionalCalificacion.modulo.label("modulo"),
+            CoeSapFuncionalCalificacion.asignado_a.label("asignado_a"),
             func.coalesce(func.sum(case((abierto_cond, 1), else_=0)), 0).label("abierto"),
             func.coalesce(func.sum(case((cerrado_cond, 1), else_=0)), 0).label("cerrado"),
         )
         .filter(or_(abierto_cond, cerrado_cond))
-        .group_by(CoeSapFuncionalCalificacion.modulo)
-        .order_by(CoeSapFuncionalCalificacion.modulo.asc())
+        .group_by(
+            CoeSapFuncionalCalificacion.modulo,
+            CoeSapFuncionalCalificacion.asignado_a,
+        )
         .all()
     )
 
-    return [
-        {
-            "modulo": _coe_rep_str(r.modulo) or "Sin módulo",
-            "abierto": int(r.abierto or 0),
-            "cerrado": int(r.cerrado or 0),
-            "total": int((r.abierto or 0) + (r.cerrado or 0)),
-        }
-        for r in rows
-    ]
+    lookup = _coe_consultor_lookup()
+    resultado_map = {}
+
+    for row in rows:
+        modulo_label = _coe_rep_resolver_modulo_desde_calificacion(
+            row.modulo,
+            row.asignado_a,
+            lookup=lookup,
+        )
+        modulo_key = _coe_consultor_norm(modulo_label) or "SIN MODULO"
+
+        item = resultado_map.setdefault(
+            modulo_key,
+            {
+                "modulo": modulo_label,
+                "abierto": 0,
+                "cerrado": 0,
+            },
+        )
+
+        item["abierto"] += int(row.abierto or 0)
+        item["cerrado"] += int(row.cerrado or 0)
+
+    resultado = []
+    for item in resultado_map.values():
+        resultado.append({
+            "modulo": item["modulo"],
+            "abierto": int(item["abierto"] or 0),
+            "cerrado": int(item["cerrado"] or 0),
+            "total": int((item["abierto"] or 0) + (item["cerrado"] or 0)),
+        })
+
+    resultado.sort(
+        key=lambda elem: (
+            -int(elem.get("total") or 0),
+            str(elem.get("modulo") or "").upper(),
+        )
+    )
+
+    return resultado
 
 
 def _coe_rep_estado_estimacion_horas(base_query):
