@@ -180,6 +180,17 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
             </button>
 
             <div className="navc-dropdown-menu">
+              
+               {can("BASE_REGISTRO_IMPORTAR") && (
+                <Link to="/coe-sap-funcional/cargas" onClick={closeMenu}>
+                  <span className="navc-sub-icon">⚙️</span>
+                  <span>
+                    <strong>Configuración COE SAP</strong>
+                    <small>Estados, subestados, clientes y clasificación</small>
+                  </span>
+                </Link>
+              )}
+              
               <Link to="/coe-sap-funcional" onClick={closeMenu}>
                 <span className="navc-sub-icon">📄</span>
                 <span>
@@ -191,20 +202,18 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
               <Link to="/coe-sap-funcional/calificacion" onClick={closeMenu}>
                 <span className="navc-sub-icon">✅</span>
                 <span>
-                  <strong>Calificación</strong>
+                  <strong>Consolidación</strong>
                   <small>Calificación, horas y sincronización</small>
                 </span>
               </Link>
 
-              {can("BASE_REGISTRO_IMPORTAR") && (
-                <Link to="/coe-sap-funcional/cargas" onClick={closeMenu}>
-                  <span className="navc-sub-icon">⚙️</span>
-                  <span>
-                    <strong>Configuración COE SAP</strong>
-                    <small>Estados, subestados, clientes y clasificación</small>
-                  </span>
-                </Link>
-              )}
+              <Link to="/coe-sap-funcional/promedio-atencion" onClick={closeMenu}>
+                <span className="navc-sub-icon">⏱️</span>
+                <span>
+                  <strong>Promedio atención</strong>
+                  <small>Tiempos de respuesta, resolución y cierre</small>
+                </span>
+              </Link>
 
               <Link to="/coe-sap-funcional/dashboard-clientes" onClick={closeMenu}>
                 <span className="navc-sub-icon">📊</span>
@@ -217,7 +226,7 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
               <Link to="/coe-sap-funcional/control-bolsa" onClick={closeMenu}>
                 <span className="navc-sub-icon">🧮</span>
                 <span>
-                  <strong>Control bolsa cliente</strong>
+                  <strong>Control consiliación contratos</strong>
                   <small>Tabla manual independiente por cliente</small>
                 </span>
               </Link>
@@ -225,16 +234,8 @@ const Navbar = ({ isAdmin: isAdminProp, rol: rolProp, nombre: nombreProp, onLogo
               <Link to="/coe-sap-funcional/detalle-seguimiento" onClick={closeMenu}>
                 <span className="navc-sub-icon">📝</span>
                 <span>
-                  <strong>Detalle seguimiento</strong>
-                  <small>Casos, responsables y observaciones</small>
-                </span>
-              </Link>
-
-              <Link to="/coe-sap-funcional/promedio-atencion" onClick={closeMenu}>
-                <span className="navc-sub-icon">⏱️</span>
-                <span>
-                  <strong>Promedio atención</strong>
-                  <small>Tiempos de respuesta, resolución y cierre</small>
+                  <strong>Informe Cliente</strong>
+                  <small>Información de informe cliente</small>
                 </span>
               </Link>
             </div>
