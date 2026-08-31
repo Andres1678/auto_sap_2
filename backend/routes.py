@@ -20471,6 +20471,135 @@ def _coe_rep_resolver_modulo_desde_calificacion(modulo_value, asignado_a_value, 
     return "Sin módulo"
 
 
+def _coe_dash_resolver_estado_caso(row, meta=None):
+    """
+    Resuelve el estado principal y el subestado de un caso con la misma
+    prioridad utilizada por Estado general. Soporta registros actuales e
+    históricos que todavía no tienen los textos controlados persistidos.
+    """
+    meta = meta or _coe_dash_backlog_catalog_meta()
+    allowed_principals = set(meta["estado_values"])
+
+    def parse_id(value):
+        try:
+            return int(value) if value not in (None, "") else None
+        except Exception:
+            return None
+
+    estado_id = parse_id(getattr(row, "estado_catalogo_id", None))
+    subestado_id = parse_id(getattr(row, "subestado_catalogo_id", None))
+    principal = None
+
+    # 1. Estado controlado asociado directamente al caso.
+    if estado_id in meta["estados_por_id"]:
+        principal = {
+            "id": estado_id,
+            "label": meta["estados_por_id"][estado_id],
+        }
+
+    # 2. Texto de estado principal persistido y válido en el catálogo.
+    if not principal:
+        explicit = str(getattr(row, "estado_principal", None) or "").strip()
+        explicit_norm = _coe_dash_norm_estado(explicit)
+        if explicit_norm in allowed_principals:
+            estado_meta = meta["estados_por_norm"].get(explicit_norm) or {}
+            principal = {
+                "id": estado_meta.get("id") or estado_id,
+                "label": estado_meta.get("valor") or explicit,
+            }
+
+    # 3. El subestado controlado también permite conocer su estado padre.
+    if not principal and subestado_id in meta["subestados_por_id"]:
+        sub_meta = meta["subestados_por_id"][subestado_id]
+        principal = {
+            "id": sub_meta.get("estado_catalogo_id"),
+            "label": sub_meta.get("estado_principal"),
+        }
+
+    # 4. Compatibilidad con casos históricos: subestado, estado original o
+    #    estado recibido desde la herramienta de gestión.
+    if not principal:
+        for candidate in (
+            getattr(row, "subestado", None),
+            getattr(row, "estado", None),
+            getattr(row, "estado_herramienta_gestion", None),
+        ):
+            candidate_text = str(candidate or "").strip()
+            candidate_norm = _coe_dash_norm_estado(candidate_text)
+            if not candidate_norm:
+                continue
+
+            if candidate_norm in meta["subestados_por_norm"]:
+                sub_meta = meta["subestados_por_norm"][candidate_norm]
+                principal = {
+                    "id": sub_meta.get("estado_catalogo_id"),
+                    "label": sub_meta.get("estado_principal"),
+                }
+                break
+
+            if candidate_norm in allowed_principals:
+                estado_meta = meta["estados_por_norm"].get(candidate_norm) or {}
+                principal = {
+                    "id": estado_meta.get("id"),
+                    "label": estado_meta.get("valor") or candidate_text,
+                }
+                break
+
+    if not principal:
+        return None, None
+
+    principal_norm = _coe_dash_norm_estado(principal.get("label"))
+    if principal_norm not in allowed_principals:
+        return None, None
+
+    substate = None
+
+    # 1. Subestado controlado por ID.
+    if subestado_id in meta["subestados_por_id"]:
+        sub_meta = meta["subestados_por_id"][subestado_id]
+        label = sub_meta.get("valor")
+        if label and not _coe_dash_estado_excluido_texto(label):
+            substate = {"id": subestado_id, "label": label}
+
+    # 2. Subestado aplicado guardado como texto.
+    if not substate:
+        sub_text = str(getattr(row, "subestado", None) or "").strip()
+        sub_norm = _coe_dash_norm_estado(sub_text)
+
+        if sub_text and not _coe_dash_estado_excluido_texto(sub_text):
+            if sub_norm in meta["subestados_por_norm"]:
+                sub_meta = meta["subestados_por_norm"][sub_norm]
+                substate = {
+                    "id": sub_meta.get("id"),
+                    "label": sub_meta.get("valor") or sub_text,
+                }
+            elif sub_norm not in allowed_principals:
+                substate = {"id": None, "label": sub_text}
+
+    # 3. Recuperar subestado histórico desde los campos originales.
+    if not substate:
+        for candidate in (
+            getattr(row, "estado", None),
+            getattr(row, "estado_herramienta_gestion", None),
+        ):
+            candidate_text = str(candidate or "").strip()
+            candidate_norm = _coe_dash_norm_estado(candidate_text)
+            if candidate_norm in meta["subestados_por_norm"]:
+                sub_meta = meta["subestados_por_norm"][candidate_norm]
+                substate = {
+                    "id": sub_meta.get("id"),
+                    "label": sub_meta.get("valor") or candidate_text,
+                }
+                break
+
+    # Igual que en el gráfico: cuando no existe un subestado real, se muestra
+    # el estado principal para no dejar el caso vacío.
+    if not substate:
+        substate = {"id": None, "label": principal["label"]}
+
+    return principal, substate
+
+
 def _coe_dash_clientes_backlog(query):
     """Agrupa el backlog por cliente e identifica los casos con número de OT."""
     rows = (
@@ -20480,8 +20609,12 @@ def _coe_dash_clientes_backlog(query):
             CoeSapFuncionalCalificacion.cliente_asociado_nombre.label("cliente"),
             CoeSapFuncionalCalificacion.sociedad.label("sociedad"),
             CoeSapFuncionalCalificacion.asunto.label("asunto"),
+            CoeSapFuncionalCalificacion.estado_catalogo_id.label("estado_catalogo_id"),
             CoeSapFuncionalCalificacion.estado_principal.label("estado_principal"),
+            CoeSapFuncionalCalificacion.subestado_catalogo_id.label("subestado_catalogo_id"),
             CoeSapFuncionalCalificacion.subestado.label("subestado"),
+            CoeSapFuncionalCalificacion.estado.label("estado"),
+            CoeSapFuncionalCalificacion.estado_herramienta_gestion.label("estado_herramienta_gestion"),
             CoeSapFuncionalCalificacion.nro_ot.label("nro_ot"),
             CoeSapFuncionalCalificacion.valor_ot.label("valor_ot"),
         )
@@ -20494,12 +20627,14 @@ def _coe_dash_clientes_backlog(query):
     )
 
     grouped = {}
+    meta = _coe_dash_backlog_catalog_meta()
     valores_sin_ot = {"0", "N/A", "NA", "NO APLICA", "SIN OT", "NONE", "NULL"}
 
     for row in rows:
         cliente = _coe_rep_str(row.cliente) or _coe_rep_str(row.sociedad) or "Sin cliente identificado"
         nro_ot = _coe_rep_str(row.nro_ot)
         tiene_ot = bool(nro_ot and nro_ot.strip().upper() not in valores_sin_ot)
+        principal, substate = _coe_dash_resolver_estado_caso(row, meta)
 
         item = grouped.setdefault(cliente, {
             "cliente": cliente,
@@ -20518,8 +20653,8 @@ def _coe_dash_clientes_backlog(query):
             "idBd": row.id_bd,
             "numero": _coe_rep_str(row.numero) or str(row.id_bd),
             "asunto": _coe_rep_str(row.asunto),
-            "estadoPrincipal": _coe_rep_str(row.estado_principal),
-            "subestado": _coe_rep_str(row.subestado),
+            "estadoPrincipal": principal.get("label") if principal else "Sin estado identificado",
+            "subestado": substate.get("label") if substate else "Sin estado identificado",
             "tieneOt": tiene_ot,
             "nroOt": nro_ot if tiene_ot else None,
             "valorOt": _coe_rep_float(row.valor_ot) if tiene_ot else 0.0,

@@ -1843,8 +1843,8 @@ export default function DashboardClientesCoeSap() {
             onCloseDetalle={closeEstadoDetalle}
             onDetallePageChange={changeEstadoDetallePage}
           />
-          <ClientesBacklogTable data={payload?.clientesBacklog} />
           <DistribucionModulosConsultores data={payload?.distribucionModulosConsultores} />
+          <ClientesBacklogTable data={payload?.clientesBacklog} />
 
           <section className="coedash-card coedash-graph-filter-section coedash-graph-filter-attached">
             <div className="coedash-graph-filter-title">
