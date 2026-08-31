@@ -20600,12 +20600,73 @@ def _coe_dash_resolver_estado_caso(row, meta=None):
     return principal, substate
 
 
+def _coe_dash_normalizar_cliente(value):
+    """Normaliza una razón social sin perder las palabras que la identifican."""
+    text_value = str(value or "").replace("\u00a0", " ").strip().upper()
+    text_value = unicodedata.normalize("NFD", text_value)
+    text_value = "".join(
+        ch for ch in text_value
+        if unicodedata.category(ch) != "Mn"
+    )
+    text_value = re.sub(r"[^A-Z0-9]+", " ", text_value)
+    tokens = [token for token in text_value.split() if token]
+
+    # Solo se eliminan formas societarias. Palabras como COLOMBIA, LOGISTICS
+    # o CARTAGENA se conservan para evitar uniones demasiado agresivas.
+    legal_suffixes = {
+        "S", "A", "SA", "SAS", "LTDA", "LIMITADA", "INC", "LLC",
+        "SCA", "CIA", "COMPANIA", "CORP", "CORPORATION",
+    }
+    while tokens and tokens[-1] in legal_suffixes:
+        tokens.pop()
+
+    return " ".join(tokens)
+
+
+def _coe_dash_clientes_compatibles(left, right):
+    """Determina si dos nombres representan el mismo cliente."""
+    left_norm = _coe_dash_normalizar_cliente(left)
+    right_norm = _coe_dash_normalizar_cliente(right)
+
+    if not left_norm or not right_norm:
+        return False
+    if left_norm == right_norm:
+        return True
+
+    # Diferencias únicamente de guiones o espacios: AIR-E / AIRE.
+    left_compact = left_norm.replace(" ", "")
+    right_compact = right_norm.replace(" ", "")
+    if (
+        len(left_compact) >= 4
+        and left_compact == right_compact
+    ):
+        return True
+
+    left_tokens = left_norm.split()
+    right_tokens = right_norm.split()
+    shorter = left_tokens if len(left_tokens) <= len(right_tokens) else right_tokens
+    longer = right_tokens if shorter is left_tokens else left_tokens
+
+    # La coincidencia por contenido solo es segura cuando el nombre corto es
+    # una palabra completa de al menos cuatro caracteres. Ejemplos válidos:
+    # JGB/JGB S.A. se iguala antes al retirar el sufijo; LACTALIS se puede unir
+    # con LACTALIS COLOMBIA y ANAVA con ANAVA LOGISTICS.
+    if len(shorter) == 1:
+        token = shorter[0]
+        return len(token) >= 4 and token in longer
+
+    # Para nombres de varias palabras se exige que todas las palabras del
+    # nombre corto aparezcan en el nombre largo, sin comparar fragmentos.
+    return len("".join(shorter)) >= 6 and set(shorter).issubset(set(longer))
+
+
 def _coe_dash_clientes_backlog(query):
     """Agrupa el backlog por cliente e identifica los casos con número de OT."""
     rows = (
         query.with_entities(
             CoeSapFuncionalCalificacion.id.label("id_bd"),
             CoeSapFuncionalCalificacion.numero.label("numero"),
+            CoeSapFuncionalCalificacion.cliente_id.label("cliente_id"),
             CoeSapFuncionalCalificacion.cliente_asociado_nombre.label("cliente"),
             CoeSapFuncionalCalificacion.sociedad.label("sociedad"),
             CoeSapFuncionalCalificacion.asunto.label("asunto"),
@@ -20630,13 +20691,73 @@ def _coe_dash_clientes_backlog(query):
     meta = _coe_dash_backlog_catalog_meta()
     valores_sin_ot = {"0", "N/A", "NA", "NO APLICA", "SIN OT", "NONE", "NULL"}
 
+    clientes_catalogo = (
+        Cliente.query
+        .with_entities(Cliente.id.label("id"), Cliente.nombre_cliente.label("nombre"))
+        .filter(Cliente.nombre_cliente.isnot(None))
+        .filter(func.trim(Cliente.nombre_cliente) != "")
+        .all()
+    )
+    cliente_nombre_por_id = {
+        int(cliente.id): str(cliente.nombre or "").strip()
+        for cliente in clientes_catalogo
+        if cliente.id is not None and str(cliente.nombre or "").strip()
+    }
+    grupos_cliente = []
+
+    def resolve_cliente_group(row):
+        try:
+            cliente_id = int(row.cliente_id) if row.cliente_id not in (None, "") else None
+        except Exception:
+            cliente_id = None
+
+        nombre_oficial = cliente_nombre_por_id.get(cliente_id)
+        nombre_raw = (
+            nombre_oficial
+            or _coe_rep_str(row.cliente)
+            or _coe_rep_str(row.sociedad)
+            or "Sin cliente identificado"
+        )
+
+        for group_meta in grupos_cliente:
+            mismo_id = cliente_id is not None and cliente_id in group_meta["ids"]
+            nombre_similar = any(
+                _coe_dash_clientes_compatibles(nombre_raw, alias)
+                for alias in group_meta["aliases"]
+            )
+            if not mismo_id and not nombre_similar:
+                continue
+
+            if cliente_id is not None:
+                group_meta["ids"].add(cliente_id)
+            group_meta["aliases"].add(nombre_raw)
+
+            # El nombre de la tabla Cliente tiene prioridad sobre sociedad o
+            # textos históricos porque es el nombre configurado oficialmente.
+            if nombre_oficial and not group_meta["tiene_nombre_oficial"]:
+                group_meta["label"] = nombre_oficial
+                group_meta["tiene_nombre_oficial"] = True
+
+            return group_meta["key"], group_meta["label"]
+
+        key = f"CLIENTE:{len(grupos_cliente) + 1}"
+        group_meta = {
+            "key": key,
+            "label": nombre_raw,
+            "ids": {cliente_id} if cliente_id is not None else set(),
+            "aliases": {nombre_raw},
+            "tiene_nombre_oficial": bool(nombre_oficial),
+        }
+        grupos_cliente.append(group_meta)
+        return key, nombre_raw
+
     for row in rows:
-        cliente = _coe_rep_str(row.cliente) or _coe_rep_str(row.sociedad) or "Sin cliente identificado"
+        cliente_key, cliente = resolve_cliente_group(row)
         nro_ot = _coe_rep_str(row.nro_ot)
         tiene_ot = bool(nro_ot and nro_ot.strip().upper() not in valores_sin_ot)
         principal, substate = _coe_dash_resolver_estado_caso(row, meta)
 
-        item = grouped.setdefault(cliente, {
+        item = grouped.setdefault(cliente_key, {
             "cliente": cliente,
             "totalCasos": 0,
             "casosConOt": 0,
@@ -20644,6 +20765,12 @@ def _coe_dash_clientes_backlog(query):
             "valorOt": 0.0,
             "casos": [],
         })
+        # El grupo puede haber sido creado con un texto histórico y después
+        # encontrar su nombre oficial; se actualiza sin separar los casos.
+        item["cliente"] = next(
+            (group_meta["label"] for group_meta in grupos_cliente if group_meta["key"] == cliente_key),
+            item["cliente"],
+        )
         item["totalCasos"] += 1
         item["casosConOt" if tiene_ot else "casosSinOt"] += 1
         if tiene_ot:
