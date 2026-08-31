@@ -1058,7 +1058,7 @@ export default function CalificacionCoeSapFuncional() {
       Swal.fire({
         icon: "warning",
         title: "Sin permiso",
-        text: "No tienes permiso para sincronizar la calificación.",
+        text: "No tienes permiso para generar la calificación.",
         confirmButtonColor: "#DA291C",
       });
       return;
@@ -1068,18 +1068,31 @@ export default function CalificacionCoeSapFuncional() {
       icon: "question",
       title: "Sincronizar calificación",
       html: `
-        <div style="text-align:left;line-height:1.5">
-          <p>Se cruzará la calificación con la base principal, SM e ITOP.</p>
-          <p><b>Recomendado:</b> preservar manual para no pisar observaciones ni ajustes hechos por el usuario.</p>
+        <div style="text-align:left;line-height:1.6">
+          <p>
+            Se crearán o actualizarán los registros tomando
+            <b>únicamente la Base Principal COE SAP</b>.
+          </p>
+
+          <p>
+            La información será procesada en lotes para evitar
+            sobrecargar el servidor.
+          </p>
+
+          <p>
+            <b>No se sincronizarán fuentes SM ni ITOP.</b>
+          </p>
         </div>
       `,
       input: "select",
       inputValue: "preservar_manual",
+
       inputOptions: {
         preservar_manual: "Preservar campos manuales",
         solo_vacios: "Solo completar campos vacíos",
-        forzar: "Forzar actualización desde bases",
+        forzar: "Forzar actualización desde la Base Principal",
       },
+
       showCancelButton: true,
       confirmButtonText: "Sí, sincronizar",
       cancelButtonText: "Cancelar",
@@ -1090,55 +1103,343 @@ export default function CalificacionCoeSapFuncional() {
 
     setGenerating(true);
 
+    let offsetBase = 0;
+
+    let totalBase = 0;
+    let totalProcesados = 0;
+    let totalCreados = 0;
+    let totalActualizados = 0;
+    let totalCrucesBase = 0;
+    let loteActual = 0;
+
     try {
-      const res = await jfetch(
-      "/coe-sap-funcional/calificacion/sincronizar-lote",
-      {
-        method:"POST",
-        headers:{
-            ...commonHeaders,
-            "Content-Type":"application/json",
-        },
-        body: JSON.stringify({
-            modo: modo || "preservar_manual",
-            crear_desde_base:true,
-            crear_desde_fuentes:true,
-            limit:300
-        })
-      }
-      );
+      Swal.fire({
+        title: "Sincronizando Base Principal...",
+        html: `
+          <div style="text-align:left;line-height:1.6">
 
-      const data = await res.json().catch(() => ({}));
+            <p id="calcoe-sync-message">
+              Iniciando sincronización...
+            </p>
 
-      if (!res.ok) {
-        throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+            <p>
+              <b>Procesados:</b>
+              <span id="calcoe-sync-processed">0</span>
+            </p>
+
+            <p>
+              <b>Total:</b>
+              <span id="calcoe-sync-total">—</span>
+            </p>
+
+            <p>
+              <b>Lote:</b>
+              <span id="calcoe-sync-batch">0</span>
+            </p>
+
+            <div
+              style="
+                width:100%;
+                height:10px;
+                background:#e9ecef;
+                border-radius:10px;
+                overflow:hidden;
+                margin-top:15px;
+              "
+            >
+              <div
+                id="calcoe-sync-progress"
+                style="
+                  width:0%;
+                  height:100%;
+                  background:#DA291C;
+                  transition:width .3s ease;
+                "
+              ></div>
+            </div>
+
+            <p
+              id="calcoe-sync-percent"
+              style="
+                text-align:center;
+                margin-top:8px;
+                font-weight:700;
+              "
+            >
+              0%
+            </p>
+
+          </div>
+        `,
+
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        showCancelButton: false,
+      });
+
+      while (true) {
+        loteActual += 1;
+
+        const offsetAnterior = offsetBase;
+
+        const res = await jfetch(
+          "/coe-sap-funcional/calificacion/sincronizar-lote",
+          {
+            method: "POST",
+
+            headers: {
+              ...commonHeaders,
+              "Content-Type": "application/json",
+            },
+
+            body: JSON.stringify({
+              modo: modo || "preservar_manual",
+
+              // SOLO BASE PRINCIPAL
+              crear_desde_base: true,
+
+              // IMPORTANTE:
+              // No procesar SM ni ITOP
+              crear_desde_fuentes: false,
+
+              // Tamaño controlado
+              limit: 300,
+
+              // Continuación del proceso
+              offset_base: offsetBase,
+            }),
+          }
+        );
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(
+            data?.error ||
+            data?.mensaje ||
+            `HTTP ${res.status}`
+          );
+        }
+
+        // ---------------------------------------------------------
+        // ACUMULAR RESULTADOS
+        // ---------------------------------------------------------
+
+        totalBase = Number(
+          data?.totalBase ??
+          data?.total_base ??
+          totalBase
+        );
+
+        totalProcesados += Number(
+          data?.procesados ?? 0
+        );
+
+        totalCreados += Number(
+          data?.creados ?? 0
+        );
+
+        totalActualizados += Number(
+          data?.actualizados ?? 0
+        );
+
+        totalCrucesBase += Number(
+          data?.cruzadosBase ??
+          data?.cruzados_base ??
+          0
+        );
+
+        // ---------------------------------------------------------
+        // SIGUIENTE OFFSET
+        // ---------------------------------------------------------
+
+        const siguienteOffset = Number(
+          data?.offsetBase ??
+          data?.offset_base ??
+          offsetBase
+        );
+
+        // ---------------------------------------------------------
+        // ACTUALIZAR PROGRESO
+        // ---------------------------------------------------------
+
+        const porcentaje =
+          totalBase > 0
+            ? Math.min(
+                100,
+                Math.round(
+                  (siguienteOffset / totalBase) * 100
+                )
+              )
+            : 0;
+
+        const processedElement =
+          document.getElementById(
+            "calcoe-sync-processed"
+          );
+
+        const totalElement =
+          document.getElementById(
+            "calcoe-sync-total"
+          );
+
+        const batchElement =
+          document.getElementById(
+            "calcoe-sync-batch"
+          );
+
+        const messageElement =
+          document.getElementById(
+            "calcoe-sync-message"
+          );
+
+        const progressElement =
+          document.getElementById(
+            "calcoe-sync-progress"
+          );
+
+        const percentElement =
+          document.getElementById(
+            "calcoe-sync-percent"
+          );
+
+        if (processedElement) {
+          processedElement.textContent =
+            siguienteOffset.toLocaleString("es-CO");
+        }
+
+        if (totalElement) {
+          totalElement.textContent =
+            totalBase.toLocaleString("es-CO");
+        }
+
+        if (batchElement) {
+          batchElement.textContent =
+            loteActual;
+        }
+
+        if (messageElement) {
+          messageElement.textContent =
+            data?.terminado
+              ? "Finalizando sincronización..."
+              : "Procesando Base Principal...";
+        }
+
+        if (progressElement) {
+          progressElement.style.width =
+            `${porcentaje}%`;
+        }
+
+        if (percentElement) {
+          percentElement.textContent =
+            `${porcentaje}%`;
+        }
+
+        // ---------------------------------------------------------
+        // TERMINÓ
+        // ---------------------------------------------------------
+
+        if (data?.terminado === true) {
+          offsetBase = siguienteOffset;
+          break;
+        }
+
+        // ---------------------------------------------------------
+        // PROTECCIÓN CONTRA LOOP INFINITO
+        // ---------------------------------------------------------
+
+        if (siguienteOffset <= offsetAnterior) {
+          throw new Error(
+            "La sincronización no pudo avanzar al siguiente lote. " +
+            `Offset actual: ${offsetAnterior}. ` +
+            `Offset recibido: ${siguienteOffset}.`
+          );
+        }
+
+        offsetBase = siguienteOffset;
       }
+
+      Swal.close();
 
       await Swal.fire({
         icon: "success",
         title: "Sincronización finalizada",
+
         html: `
-          <div style="text-align:left">
-            <p><b>Mensaje:</b> ${data?.mensaje || "Calificación sincronizada"}</p>
-            <p><b>Modo:</b> ${data?.modo ?? "—"}</p>
-            <p><b>Creados:</b> ${data?.creados ?? "—"}</p>
-            <p><b>Actualizados:</b> ${data?.actualizados ?? "—"}</p>
-            <p><b>Cruces base:</b> ${data?.cruzados_base ?? "—"}</p>
-            <p><b>Cruces SM:</b> ${data?.cruzados_sm ?? "—"}</p>
-            <p><b>Cruces ITOP:</b> ${data?.cruzados_itop ?? "—"}</p>
+          <div style="text-align:left;line-height:1.6">
+
+            <p>
+              <b>Fuente:</b>
+              Base Principal COE SAP
+            </p>
+
+            <p>
+              <b>Total Base:</b>
+              ${totalBase.toLocaleString("es-CO")}
+            </p>
+
+            <p>
+              <b>Procesados:</b>
+              ${totalProcesados.toLocaleString("es-CO")}
+            </p>
+
+            <p>
+              <b>Creados:</b>
+              ${totalCreados.toLocaleString("es-CO")}
+            </p>
+
+            <p>
+              <b>Actualizados:</b>
+              ${totalActualizados.toLocaleString("es-CO")}
+            </p>
+
+            <p>
+              <b>Cruces con Base:</b>
+              ${totalCrucesBase.toLocaleString("es-CO")}
+            </p>
+
+            <p>
+              <b>Lotes procesados:</b>
+              ${loteActual.toLocaleString("es-CO")}
+            </p>
+
+            <hr>
+
+            <p>
+              <b>SM:</b> No sincronizado
+            </p>
+
+            <p>
+              <b>ITOP:</b> No sincronizado
+            </p>
+
           </div>
         `,
+
         confirmButtonColor: "#008C67",
       });
 
-      fetchRows();
+      await fetchRows();
+
     } catch (error) {
-      Swal.fire({
+
+      console.error(
+        "Error sincronizando calificación COE SAP:",
+        error
+      );
+
+      Swal.close();
+
+      await Swal.fire({
         icon: "error",
         title: "Error sincronizando calificación",
-        text: error?.message || "No se pudo sincronizar la información.",
+        text:
+          error?.message ||
+          "No se pudo completar la sincronización de la Base Principal.",
         confirmButtonColor: "#DA291C",
       });
+
     } finally {
       setGenerating(false);
     }

@@ -18677,374 +18677,382 @@ def _coe_ext_sync_desde_fuente(row, fuente_row, modo):
     return row
 
 
-@bp.route("/coe-sap-funcional/calificacion/sincronizar", methods=["POST"])
-@permission_required("BASE_REGISTRO_IMPORTAR")
-def sincronizar_calificacion_coe_sap_funcional():
-    try:
-        data = request.get_json(silent=True) or {}
-
-        modo = str(data.get("modo") or "preservar_manual").strip().lower()
-
-        if modo not in ("preservar_manual", "solo_vacios", "forzar"):
-            modo = "preservar_manual"
-
-        crear_desde_base = data.get("crear_desde_base", True)
-        crear_desde_fuentes = data.get("crear_desde_fuentes", False)
-
-        usuario = _coe_ext_usuario()
-
-        creados = 0
-        actualizados = 0
-        cruzados_base = 0
-        cruzados_sm = 0
-        cruzados_itop = 0
-
-        # 1. Crear/actualizar desde BASE COE SAP Funcional
-        if crear_desde_base:
-            bases = BaseRegistroInfoCoeSapFuncional.query.all()
-
-            for base in bases:
-                if not getattr(base, "numero", None):
-                    continue
-
-                row, created = _coe_ext_upsert_calificacion(base.numero, usuario)
-
-                if not row:
-                    continue
-
-                if created:
-                    creados += 1
-                else:
-                    actualizados += 1
-
-                _coe_ext_sync_desde_base(row, base, modo)
-
-                row.actualizado_por = usuario
-                row.updated_at = datetime.utcnow()
-
-                with db.session.no_autoflush:
-                    _coe_ext_recalcular_row(row)
-
-                cruzados_base += 1
-
-                if cruzados_base % 500 == 0:
-                    db.session.flush()
-
-        # 2. Crear/actualizar desde fuentes SM / ITOP
-        if crear_desde_fuentes:
-            fuentes = CoeSapFuncionalFuenteGestion.query.all()
-
-            for fuente_row in fuentes:
-                if not fuente_row.numero:
-                    continue
-
-                row, created = _coe_ext_upsert_calificacion(fuente_row.numero, usuario)
-
-                if not row:
-                    continue
-
-                if created:
-                    creados += 1
-                    row.solo_excel = True
-                else:
-                    actualizados += 1
-
-                _coe_ext_sync_desde_fuente(row, fuente_row, modo)
-
-                row.actualizado_por = usuario
-                row.updated_at = datetime.utcnow()
-
-                with db.session.no_autoflush:
-                    _coe_ext_recalcular_row(row)
-
-                if (cruzados_sm + cruzados_itop + 1) % 500 == 0:
-                    db.session.flush()
-
-                if fuente_row.fuente == "SM":
-                    cruzados_sm += 1
-
-                if fuente_row.fuente == "ITOP":
-                    cruzados_itop += 1
-
-        db.session.commit()
-
-        return jsonify({
-            "mensaje": "Sincronización de calificación realizada correctamente",
-            "modo": modo,
-            "creados": creados,
-            "actualizados": actualizados,
-            "cruzados_base": cruzados_base,
-            "cruzados_sm": cruzados_sm,
-            "cruzados_itop": cruzados_itop,
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        app.logger.exception("Error sincronizando calificación COE SAP Funcional")
-        return jsonify({
-            "mensaje": "Error sincronizando calificación",
-            "error": str(e),
-            "trace": traceback.format_exc(),
-        }), 500
-
-
 @bp.route("/coe-sap-funcional/calificacion/sincronizar-lote", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def sincronizar_calificacion_coe_sap_funcional_lote():
     """
-    Sincronización por lotes para evitar 504 / WORKER TIMEOUT.
+    Sincronización por lotes de la CALIFICACIÓN COE SAP.
 
-    Mantiene la misma lógica de la sincronización completa, pero procesa una ventana
-    pequeña de registros por petición. El frontend llama varias veces este endpoint
-    hasta que `terminado` sea True.
+    La sincronización se realiza ÚNICAMENTE desde la Base Principal.
+
+    No se procesan:
+        - SM
+        - ITOP
+        - CoeSapFuncionalFuenteGestion
+
+    El procesamiento se realiza en lotes para evitar:
+        - 504 Gateway Timeout
+        - bloqueos del worker
+        - consumo excesivo de memoria
+        - transacciones demasiado grandes
+
+    El frontend debe enviar nuevamente el offset_base
+    hasta que el backend responda terminado=True.
     """
+
     try:
         data = request.get_json(silent=True) or {}
 
-        modo = str(data.get("modo") or "preservar_manual").strip().lower()
-        if modo not in ("preservar_manual", "solo_vacios", "forzar"):
+        # =========================================================
+        # MODO DE SINCRONIZACIÓN
+        # =========================================================
+
+        modo = str(
+            data.get("modo") or "preservar_manual"
+        ).strip().lower()
+
+        if modo not in (
+            "preservar_manual",
+            "solo_vacios",
+            "forzar",
+        ):
             modo = "preservar_manual"
 
-        crear_desde_base = bool(data.get("crear_desde_base", True))
-        crear_desde_fuentes = bool(data.get("crear_desde_fuentes", False))
+        # =========================================================
+        # FUENTE DE SINCRONIZACIÓN
+        # =========================================================
+        #
+        # IMPORTANTE:
+        # Esta ruta trabaja SIEMPRE con la Base Principal.
+        #
+        # Aunque el frontend enviara:
+        #
+        #     crear_desde_fuentes = true
+        #
+        # el backend NO lo tendrá en cuenta.
+        #
+        # Esto evita que por error vuelvan a procesarse
+        # registros provenientes de SM / ITOP.
+        #
+
+        crear_desde_base = True
+        crear_desde_fuentes = False
+
+        # =========================================================
+        # TAMAÑO DEL LOTE
+        # =========================================================
 
         try:
-            limit = int(data.get("limit") or 300)
+            limit = int(
+                data.get("limit") or 300
+            )
         except Exception:
             limit = 300
 
-        # Evita lotes demasiado grandes desde el front.
-        limit = max(50, min(limit, 1000))
+        # Permitimos entre 50 y 300 registros por lote.
+        #
+        # No permitimos valores mayores para evitar que
+        # una petición vuelva a ser demasiado pesada.
+
+        limit = max(
+            50,
+            min(limit, 300)
+        )
+
+        # =========================================================
+        # OFFSET DE LA BASE PRINCIPAL
+        # =========================================================
 
         try:
-            offset_base = max(0, int(data.get("offset_base") or 0))
+            offset_base = max(
+                0,
+                int(
+                    data.get("offset_base") or 0
+                )
+            )
         except Exception:
             offset_base = 0
 
-        try:
-            offset_fuentes = max(0, int(data.get("offset_fuentes") or 0))
-        except Exception:
-            offset_fuentes = 0
-
         usuario = _coe_ext_usuario()
 
-        total_base = BaseRegistroInfoCoeSapFuncional.query.count() if crear_desde_base else 0
-        total_fuentes = CoeSapFuncionalFuenteGestion.query.count() if crear_desde_fuentes else 0
+        # =========================================================
+        # TOTAL DE REGISTROS DE LA BASE PRINCIPAL
+        # =========================================================
+
+        total_base = (
+            BaseRegistroInfoCoeSapFuncional.query.count()
+            if crear_desde_base
+            else 0
+        )
+
+        # =========================================================
+        # VALIDACIÓN: YA TERMINÓ
+        # =========================================================
+
+        if offset_base >= total_base:
+
+            return jsonify({
+                "mensaje": (
+                    "Sincronización de la Base Principal "
+                    "finalizada"
+                ),
+
+                "modo": modo,
+
+                "fase": "finalizado",
+
+                "terminado": True,
+
+                "limit": limit,
+
+                "offsetBase": total_base,
+
+                "totalBase": total_base,
+
+                "procesados": 0,
+
+                "creados": 0,
+
+                "actualizados": 0,
+
+                "cruzadosBase": 0,
+
+                # -------------------------------------------------
+                # Compatibilidad con versiones anteriores
+                # -------------------------------------------------
+                "offsetFuentes": 0,
+                "totalFuentes": 0,
+                "cruzadosSm": 0,
+                "cruzadosItop": 0,
+            }), 200
+
+        # =========================================================
+        # OBTENER LOTE DE BASE PRINCIPAL
+        # =========================================================
+        #
+        # IMPORTANTE:
+        # Ordenamos por ID para garantizar que el offset
+        # avance de manera estable entre las peticiones.
+        #
+
+        bases = (
+            BaseRegistroInfoCoeSapFuncional.query
+            .order_by(
+                BaseRegistroInfoCoeSapFuncional.id.asc()
+            )
+            .offset(offset_base)
+            .limit(limit)
+            .all()
+        )
+
+        # =========================================================
+        # CONTADORES DEL LOTE
+        # =========================================================
 
         creados = 0
         actualizados = 0
         cruzados_base = 0
-        cruzados_sm = 0
-        cruzados_itop = 0
-        fase = "finalizado"
+        procesados = 0
 
-        # 1) Primero se procesa la base principal.
-        if crear_desde_base and offset_base < total_base:
-            fase = "base"
-            bases = (
-                BaseRegistroInfoCoeSapFuncional.query
-                .order_by(BaseRegistroInfoCoeSapFuncional.id.asc())
-                .offset(offset_base)
-                .limit(limit)
-                .all()
+        # =========================================================
+        # PROCESAR LOTE
+        # =========================================================
+
+        for base in bases:
+
+            # -----------------------------------------------------
+            # Este registro ya fue recorrido.
+            #
+            # Incluso si no tiene número, contamos el registro
+            # como procesado para que el offset pueda avanzar
+            # correctamente.
+            # -----------------------------------------------------
+
+            procesados += 1
+
+            numero = getattr(
+                base,
+                "numero",
+                None
             )
 
-            for base in bases:
-                if not getattr(base, "numero", None):
-                    continue
+            if not numero:
+                continue
 
-                row, created = _coe_ext_upsert_calificacion(base.numero, usuario)
-                if not row:
-                    continue
+            # -----------------------------------------------------
+            # OBTENER / CREAR REGISTRO DE CALIFICACIÓN
+            # -----------------------------------------------------
 
-                if created:
-                    creados += 1
-                else:
-                    actualizados += 1
-
-                _coe_ext_sync_desde_base(row, base, modo)
-                row.actualizado_por = usuario
-                row.updated_at = datetime.utcnow()
-
-                with db.session.no_autoflush:
-                    _coe_ext_recalcular_row(row)
-
-                cruzados_base += 1
-
-            db.session.commit()
-            offset_base_next = min(offset_base + limit, total_base)
-
-            return jsonify({
-                "mensaje": "Lote de base procesado",
-                "modo": modo,
-                "fase": fase,
-                "terminado": False,
-                "limit": limit,
-                "offsetBase": offset_base_next,
-                "offsetFuentes": offset_fuentes,
-                "totalBase": total_base,
-                "totalFuentes": total_fuentes,
-                "creados": creados,
-                "actualizados": actualizados,
-                "cruzadosBase": cruzados_base,
-                "cruzadosSm": cruzados_sm,
-                "cruzadosItop": cruzados_itop,
-            }), 200
-
-        # 2) Luego, si se solicita, se procesan fuentes de gestión.
-        if crear_desde_fuentes and offset_fuentes < total_fuentes:
-            fase = "fuentes"
-            fuentes = (
-                CoeSapFuncionalFuenteGestion.query
-                .order_by(CoeSapFuncionalFuenteGestion.id.asc())
-                .offset(offset_fuentes)
-                .limit(limit)
-                .all()
+            row, created = _coe_ext_upsert_calificacion(
+                numero,
+                usuario
             )
 
-            for fuente_row in fuentes:
-                if not getattr(fuente_row, "numero", None):
-                    continue
+            if not row:
+                continue
 
-                row, created = _coe_ext_upsert_calificacion(fuente_row.numero, usuario)
-                if not row:
-                    continue
+            # -----------------------------------------------------
+            # CONTADORES
+            # -----------------------------------------------------
 
-                if created:
-                    creados += 1
-                    row.solo_excel = True
-                else:
-                    actualizados += 1
+            if created:
+                creados += 1
+            else:
+                actualizados += 1
 
-                _coe_ext_sync_desde_fuente(row, fuente_row, modo)
-                row.actualizado_por = usuario
-                row.updated_at = datetime.utcnow()
+            # -----------------------------------------------------
+            # SINCRONIZAR DESDE BASE PRINCIPAL
+            # -----------------------------------------------------
+            #
+            # Esta es la única fuente que alimenta la
+            # calificación.
+            #
 
-                with db.session.no_autoflush:
-                    _coe_ext_recalcular_row(row)
+            _coe_ext_sync_desde_base(
+                row,
+                base,
+                modo
+            )
 
-                if fuente_row.fuente == "SM":
-                    cruzados_sm += 1
-                elif fuente_row.fuente == "ITOP":
-                    cruzados_itop += 1
+            # -----------------------------------------------------
+            # AUDITORÍA
+            # -----------------------------------------------------
 
-            db.session.commit()
-            offset_fuentes_next = min(offset_fuentes + limit, total_fuentes)
+            row.actualizado_por = usuario
+            row.updated_at = datetime.utcnow()
 
-            return jsonify({
-                "mensaje": "Lote de fuentes procesado",
-                "modo": modo,
-                "fase": fase,
-                "terminado": False,
-                "limit": limit,
-                "offsetBase": offset_base,
-                "offsetFuentes": offset_fuentes_next,
-                "totalBase": total_base,
-                "totalFuentes": total_fuentes,
-                "creados": creados,
-                "actualizados": actualizados,
-                "cruzadosBase": cruzados_base,
-                "cruzadosSm": cruzados_sm,
-                "cruzadosItop": cruzados_itop,
-            }), 200
+            # -----------------------------------------------------
+            # RECALCULAR CAMPOS DERIVADOS
+            # -----------------------------------------------------
+
+            with db.session.no_autoflush:
+                _coe_ext_recalcular_row(row)
+
+            cruzados_base += 1
+
+        # =========================================================
+        # GUARDAR LOTE
+        # =========================================================
+
+        db.session.commit()
+
+        # =========================================================
+        # CALCULAR SIGUIENTE OFFSET
+        # =========================================================
+        #
+        # Usamos len(bases), NO procesados.
+        #
+        # Esto es importante porque procesados puede incluir
+        # registros sin número, pero todos ellos ya fueron
+        # recorridos y deben avanzar el offset.
+        #
+
+        offset_base_next = min(
+            offset_base + len(bases),
+            total_base
+        )
+
+        # =========================================================
+        # DETERMINAR SI TERMINÓ
+        # =========================================================
+
+        terminado = (
+            offset_base_next >= total_base
+        )
+
+        # =========================================================
+        # RESPUESTA
+        # =========================================================
 
         return jsonify({
-            "mensaje": "Sincronización por lotes finalizada",
+
+            "mensaje": (
+                "Sincronización de la Base Principal "
+                "finalizada"
+                if terminado
+                else "Lote de Base Principal procesado"
+            ),
+
             "modo": modo,
-            "fase": "finalizado",
-            "terminado": True,
+
+            "fase": (
+                "finalizado"
+                if terminado
+                else "base"
+            ),
+
+            "terminado": terminado,
+
+            # -----------------------------------------------------
+            # INFORMACIÓN DEL LOTE
+            # -----------------------------------------------------
+
             "limit": limit,
-            "offsetBase": total_base,
-            "offsetFuentes": total_fuentes,
+
+            "procesados": procesados,
+
+            "creados": creados,
+
+            "actualizados": actualizados,
+
+            "cruzadosBase": cruzados_base,
+
+            # -----------------------------------------------------
+            # PROGRESO TOTAL
+            # -----------------------------------------------------
+
+            "offsetBase": offset_base_next,
+
             "totalBase": total_base,
-            "totalFuentes": total_fuentes,
-            "creados": 0,
-            "actualizados": 0,
-            "cruzadosBase": 0,
+
+            # -----------------------------------------------------
+            # COMPATIBILIDAD
+            #
+            # Se devuelven en cero porque esta versión
+            # NO sincroniza SM ni ITOP.
+            # -----------------------------------------------------
+
+            "offsetFuentes": 0,
+
+            "totalFuentes": 0,
+
             "cruzadosSm": 0,
+
             "cruzadosItop": 0,
         }), 200
 
     except Exception as e:
+
+        # =========================================================
+        # ROLLBACK
+        # =========================================================
+
         db.session.rollback()
-        app.logger.exception("Error sincronizando calificación COE SAP Funcional por lotes")
-        return jsonify({
-            "mensaje": "Error sincronizando calificación por lotes",
-            "error": str(e),
-            "trace": traceback.format_exc(),
-        }), 500
 
-@bp.route("/coe-sap-funcional/calificacion/catalogos", methods=["GET"])
-@permission_required("BASE_REGISTRO_VER")
-def listar_catalogos_coe_sap_funcional():
-    try:
-        tipo = (request.args.get("tipo") or "").strip()
-        modulo = (request.args.get("modulo") or "").strip()
-        categoria = (request.args.get("categoria") or "").strip()
+        # =========================================================
+        # LOG COMPLETO
+        # =========================================================
 
-        if tipo:
-            rows = (
-                CoeSapFuncionalCatalogo.query
-                .filter(CoeSapFuncionalCatalogo.tipo == _coe_ext_norm(tipo))
-                .filter(CoeSapFuncionalCatalogo.activo == True)
-                .order_by(CoeSapFuncionalCatalogo.orden.asc(), CoeSapFuncionalCatalogo.valor.asc())
-                .all()
-            )
-
-            return jsonify({
-                "data": [
-                    {
-                        "id": r.id,
-                        "tipo": r.tipo,
-                        "valor": r.valor,
-                        "extra1": r.extra_1,
-                        "extra2": r.extra_2,
-                        "extra3": r.extra_3,
-                    }
-                    for r in rows
-                ]
-            }), 200
-
-        cat_q = CoeSapFuncionalCategoriaCatalogo.query.filter(
-            CoeSapFuncionalCategoriaCatalogo.activo == True
+        app.logger.exception(
+            "Error sincronizando lote de Base Principal "
+            "COE SAP Funcional"
         )
 
-        if modulo:
-            cat_q = cat_q.filter(
-                func.upper(CoeSapFuncionalCategoriaCatalogo.modulo) == _coe_ext_norm(modulo)
-            )
-
-        if categoria:
-            cat_q = cat_q.filter(
-                func.upper(CoeSapFuncionalCategoriaCatalogo.categoria) == _coe_ext_norm(categoria)
-            )
-
-        categorias = cat_q.order_by(
-            CoeSapFuncionalCategoriaCatalogo.modulo.asc(),
-            CoeSapFuncionalCategoriaCatalogo.categoria.asc(),
-            CoeSapFuncionalCategoriaCatalogo.subcategoria.asc(),
-            CoeSapFuncionalCategoriaCatalogo.articulo.asc(),
-        ).all()
+        # =========================================================
+        # RESPUESTA DE ERROR
+        # =========================================================
 
         return jsonify({
-            "categorias": [
-                {
-                    "id": r.id,
-                    "modulo": r.modulo,
-                    "categoria": r.categoria,
-                    "subcategoria": r.subcategoria,
-                    "articulo": r.articulo,
-                }
-                for r in categorias
-            ]
-        }), 200
 
-    except Exception as e:
-        app.logger.exception("Error listando catálogos COE SAP Funcional")
-        return jsonify({
-            "mensaje": "Error listando catálogos",
+            "mensaje": (
+                "Error sincronizando "
+                "calificación"
+            ),
+
             "error": str(e),
+
             "trace": traceback.format_exc(),
+
         }), 500
 
 
