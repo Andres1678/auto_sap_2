@@ -23,6 +23,14 @@ function getDefaultFilters() {
     fechaDesde: "",
     fechaHasta: "",
 
+    // Filtros propios por gráfica. Estos NO dependen del rango global.
+    recibidosAnio: anioActual,
+    recibidosMes: mesActual,
+    estimacionAnio: anioActual,
+    estimacionMes: mesActual,
+    estimacionEstado: [],
+
+
     sociedad: [],
     clienteAsociadoNombre: [],
     validarCliente: [],
@@ -40,11 +48,7 @@ function getDefaultFilters() {
 }
 
 function getDefaultGraphFilters() {
-  const hoy = new Date();
-
   return {
-    graficasAnio: String(hoy.getFullYear()),
-    graficasMes: String(hoy.getMonth() + 1),
     graficasSociedad: [],
   };
 }
@@ -62,10 +66,7 @@ const FILTER_PARAM_MAP = {
   estimacionAnio: "estimacion_anio",
   estimacionMes: "estimacion_mes",
   estimacionEstado: "estimacion_estado",
-  graficasAnio: "graficas_anio",
-  graficasMes: "graficas_mes",
   graficasSociedad: "graficas_sociedad",
-  aplicarFiltrosBacklog: "aplicar_filtros_backlog",
 };
 
 const PIE_COLORS = [
@@ -277,33 +278,25 @@ function buildYearOptions(opciones) {
 }
 
 function buildMonthOptions(opciones) {
-  const backendItems = optionItems(opciones?.mes);
-  const backendLabels = new Map(
-    backendItems.map((item) => [String(item.value), String(item.label)])
-  );
-
-  const monthNames = [
-    "Enero",
-    "Febrero",
-    "Marzo",
-    "Abril",
-    "Mayo",
-    "Junio",
-    "Julio",
-    "Agosto",
-    "Septiembre",
-    "Octubre",
-    "Noviembre",
-    "Diciembre",
+  const base = optionItems(opciones?.mes);
+  const months = base.length ? base : [
+    { value: 1, label: "Enero" },
+    { value: 2, label: "Febrero" },
+    { value: 3, label: "Marzo" },
+    { value: 4, label: "Abril" },
+    { value: 5, label: "Mayo" },
+    { value: 6, label: "Junio" },
+    { value: 7, label: "Julio" },
+    { value: 8, label: "Agosto" },
+    { value: 9, label: "Septiembre" },
+    { value: 10, label: "Octubre" },
+    { value: 11, label: "Noviembre" },
+    { value: 12, label: "Diciembre" },
   ];
 
-  return monthNames.map((label, index) => {
-    const value = String(index + 1);
-    return {
-      value,
-      label: backendLabels.get(value) || label,
-    };
-  });
+  return base.length
+    ? base.map((item) => ({ value: String(item.value), label: item.label }))
+    : months.map((item) => ({ value: String(item.value), label: item.label }));
 }
 
 function optionItems(values) {
@@ -587,17 +580,8 @@ function BarList({ title, rows, labelKey, valueKey = "cantidad", emptyText = "Si
   );
 }
 
-function PieSvg({
-  rows,
-  labelKey,
-  valueKey = "cantidad",
-  onSelect,
-  selectedLabel = "",
-}) {
-  const total = (rows || []).reduce(
-    (acc, row) => acc + Number(row?.[valueKey] || 0),
-    0
-  );
+function PieSvg({ rows, labelKey, valueKey = "cantidad" }) {
+  const total = (rows || []).reduce((acc, row) => acc + Number(row?.[valueKey] || 0), 0);
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
@@ -610,14 +594,6 @@ function PieSvg({
     );
   }
 
-  const handleKeyDown = (event, row) => {
-    if (!onSelect) return;
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelect(row);
-    }
-  };
-
   return (
     <div className="coedash-pie-layout">
       <svg viewBox="0 0 120 120" className="coedash-pie-svg" aria-label="Gráfico circular">
@@ -626,8 +602,6 @@ function PieSvg({
           const value = Number(row?.[valueKey] || 0);
           const dash = (value / total) * circumference;
           const color = PIE_COLORS[index % PIE_COLORS.length];
-          const label = cleanText(row?.[labelKey]);
-          const active = String(selectedLabel || "") === String(row?.[labelKey] || "");
           const segment = (
             <circle
               key={`${labelKey}-${index}`}
@@ -641,12 +615,6 @@ function PieSvg({
               strokeDashoffset={-offset}
               transform="rotate(-90 60 60)"
               strokeLinecap="butt"
-              className={`${onSelect ? "coedash-pie-segment-clickable" : ""}${active ? " active" : ""}`}
-              role={onSelect ? "button" : undefined}
-              tabIndex={onSelect ? 0 : undefined}
-              aria-label={onSelect ? `Ver casos de ${label}` : undefined}
-              onClick={onSelect ? () => onSelect(row) : undefined}
-              onKeyDown={onSelect ? (event) => handleKeyDown(event, row) : undefined}
             />
           );
           offset += dash;
@@ -660,31 +628,12 @@ function PieSvg({
         {(rows || []).map((row, index) => {
           const value = Number(row?.[valueKey] || 0);
           const pct = total ? Math.round((value / total) * 100) : 0;
-          const label = cleanText(row?.[labelKey]);
-          const active = String(selectedLabel || "") === String(row?.[labelKey] || "");
-
-          if (!onSelect) {
-            return (
-              <div key={`legend-${labelKey}-${index}`}>
-                <i style={{ background: PIE_COLORS[index % PIE_COLORS.length] }} />
-                <span>{label}</span>
-                <strong>{numberText(value)} · {pct}%</strong>
-              </div>
-            );
-          }
-
           return (
-            <button
-              type="button"
-              key={`legend-${labelKey}-${index}`}
-              className={`coedash-pie-legend-button${active ? " active" : ""}`}
-              onClick={() => onSelect(row)}
-              title={`Ver ${numberText(value)} caso(s) de ${label}`}
-            >
+            <div key={`legend-${labelKey}-${index}`}>
               <i style={{ background: PIE_COLORS[index % PIE_COLORS.length] }} />
-              <span>{label}</span>
+              <span>{cleanText(row?.[labelKey])}</span>
               <strong>{numberText(value)} · {pct}%</strong>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -692,144 +641,17 @@ function PieSvg({
   );
 }
 
-function EstadoDetalleTable({ detalle, loading, onClose, onPageChange }) {
-  const rows = detalle?.data || [];
-  const total = Number(detalle?.total || 0);
-  const page = Number(detalle?.page || 1);
-  const totalPages = Math.max(Number(detalle?.total_pages || 1), 1);
-  const selection = detalle?.selection || null;
-
-  if (!selection) return null;
-
-  const selectedText =
-    selection.tipo === "subestado"
-      ? selection.subestado
-      : selection.estadoPrincipal;
-
-  return (
-    <div className="coedash-state-detail">
-      <div className="coedash-state-detail-head">
-        <div>
-          <span className="coedash-section-kicker blue">Control de casos</span>
-          <h3>{cleanText(selectedText)}</h3>
-          <p>
-            {loading
-              ? "Consultando casos del estado seleccionado..."
-              : `${numberText(total)} caso(s) asociados al segmento seleccionado.`}
-          </p>
-        </div>
-
-        <button type="button" className="coedash-btn ghost compact" onClick={onClose}>
-          Cerrar detalle
-        </button>
-      </div>
-
-      <div className="coedash-table-wrap coedash-state-detail-table-wrap">
-        <table className="coedash-table coedash-state-detail-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Caso SM</th>
-              <th>Sociedad</th>
-              <th>Observaciones</th>
-              <th>Estado herramienta</th>
-              <th>Estado consolidado</th>
-              <th>Asignado a</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan="7" className="coedash-empty small">Cargando detalle...</td>
-              </tr>
-            ) : !rows.length ? (
-              <tr>
-                <td colSpan="7" className="coedash-empty small">No hay casos para este estado.</td>
-              </tr>
-            ) : (
-              rows.map((row, index) => (
-                <tr key={`detalle-estado-${row.idBd || row.id}-${index}`}>
-                  <td className="mono strong">{cleanText(row.id)}</td>
-                  <td className="mono">{cleanText(row.casoSm)}</td>
-                  <td>{cleanText(row.sociedad)}</td>
-                  <td className="coedash-detail-long-text" title={cleanText(row.observaciones)}>
-                    {cleanText(row.observaciones)}
-                  </td>
-                  <td>{cleanText(row.estadoHerramienta)}</td>
-                  <td>{cleanText(row.estadoConsolidado)}</td>
-                  <td>{cleanText(row.asignadoA)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="coedash-state-detail-pagination">
-        <span>
-          Página <b>{page}</b> de <b>{totalPages}</b> · {numberText(total)} caso(s)
-        </span>
-        <div>
-          <button
-            type="button"
-            className="coedash-btn light compact"
-            disabled={loading || page <= 1}
-            onClick={() => onPageChange(page - 1)}
-          >
-            Anterior
-          </button>
-          <button
-            type="button"
-            className="coedash-btn light compact"
-            disabled={loading || page >= totalPages}
-            onClick={() => onPageChange(page + 1)}
-          >
-            Siguiente
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EstadoGeneralRequerimientos({
-  data,
-  filtrosAplicados = false,
-  detalle,
-  detalleLoading = false,
-  onSelectEstado,
-  onCloseDetalle,
-  onDetallePageChange,
-}) {
+function EstadoGeneralRequerimientos({ data }) {
   const subestados = data?.subestados || [];
   const principales = data?.principales || [];
-  const selection = detalle?.selection || null;
-
-  const selectPrincipal = (row) => {
-    onSelectEstado?.({
-      tipo: "principal",
-      estadoPrincipal: row?.estadoPrincipal || "",
-      subestado: "",
-    });
-  };
-
-  const selectSubestado = (row) => {
-    onSelectEstado?.({
-      tipo: "subestado",
-      estadoPrincipal: row?.estadoPrincipal || "",
-      subestado: row?.subestado || "",
-    });
-  };
 
   return (
     <section className="coedash-panel coedash-wide-panel coedash-excel-card">
       <div className="coedash-panel-head center">
         <h2>Estado general de requerimientos</h2>
         <p>
-          {filtrosAplicados
-            ? "Backlog filtrado según los filtros globales aplicados. Solo incluye En curso y Pendiente de cliente."
-            : "Backlog completo sin filtros en el primer cargue. Solo incluye En curso y Pendiente de cliente."}
-          {" "}Si el caso no tiene subestado, se muestra el estado principal. Selecciona una porción de la gráfica o su leyenda para ver los casos.
+          Backlog completo solo para estados principales En curso y Pendiente de cliente.
+          Si el caso no tiene subestado, se muestra el estado principal.
         </p>
       </div>
 
@@ -847,12 +669,7 @@ function EstadoGeneralRequerimientos({
                 <tr><td colSpan="2" className="coedash-empty small">Sin datos.</td></tr>
               ) : (
                 subestados.map((row, index) => (
-                  <tr
-                    key={`estado-general-${index}-${row.subestado}`}
-                    className="coedash-state-row-clickable"
-                    onClick={() => selectSubestado(row)}
-                    title={`Ver casos de ${cleanText(row.subestado)}`}
-                  >
+                  <tr key={`estado-general-${index}-${row.subestado}`}>
                     <td>{cleanText(row.subestado)}</td>
                     <td className="right strong">{numberText(row.cantidad)}</td>
                   </tr>
@@ -868,31 +685,14 @@ function EstadoGeneralRequerimientos({
 
         <div className="coedash-chart-panel">
           <h3>Distribución por estado principal</h3>
-          <PieSvg
-            rows={principales}
-            labelKey="estadoPrincipal"
-            onSelect={selectPrincipal}
-            selectedLabel={selection?.tipo === "principal" ? selection?.estadoPrincipal : ""}
-          />
+          <PieSvg rows={principales} labelKey="estadoPrincipal" />
         </div>
 
         <div className="coedash-chart-panel">
           <h3>Detalle por subestado</h3>
-          <PieSvg
-            rows={subestados}
-            labelKey="subestado"
-            onSelect={selectSubestado}
-            selectedLabel={selection?.tipo === "subestado" ? selection?.subestado : ""}
-          />
+          <PieSvg rows={subestados} labelKey="subestado" />
         </div>
       </div>
-
-      <EstadoDetalleTable
-        detalle={detalle}
-        loading={detalleLoading}
-        onClose={onCloseDetalle}
-        onPageChange={onDetallePageChange}
-      />
     </section>
   );
 }
@@ -1115,34 +915,22 @@ function RecibidosVsCerrados({ rows, periodo }) {
   );
 }
 
-function calculateEstadoEstimacionTotals(rows) {
-  return (rows || []).reduce(
-    (acc, row) => {
-      acc.totalHorasFuncionales += Number(row?.totalHorasFuncionales || 0);
-      acc.horasEstimadasAbap += Number(row?.horasEstimadasAbap || 0);
-      acc.totalHorasEstimadas += Number(row?.totalHorasEstimadas || 0);
-      acc.valorOt += Number(row?.valorOt || 0);
-      return acc;
-    },
-    {
-      totalHorasFuncionales: 0,
-      horasEstimadasAbap: 0,
-      totalHorasEstimadas: 0,
-      valorOt: 0,
-    }
-  );
-}
-
 function EstadoEstimacionHoras({ rows, periodo }) {
-  const totals = useMemo(() => calculateEstadoEstimacionTotals(rows), [rows]);
+  const totals = useMemo(() => {
+    return (rows || []).reduce((acc, row) => {
+      acc.totalHorasFuncionales += Number(row.totalHorasFuncionales || 0);
+      acc.horasEstimadasAbap += Number(row.horasEstimadasAbap || 0);
+      acc.totalHorasEstimadas += Number(row.totalHorasEstimadas || 0);
+      return acc;
+    }, { totalHorasFuncionales: 0, horasEstimadasAbap: 0, totalHorasEstimadas: 0 });
+  }, [rows]);
 
   return (
     <section className="coedash-panel coedash-wide-panel coedash-estimacion-card">
       <div className="coedash-panel-head center">
         <h2>Estado estimación y horas</h2>
         <p>
-          Mes actual: <b>{periodoMensualText(periodo)}</b>. Las tarjetas de horas y valor OT
-          usan exactamente los mismos registros y totales de esta tabla.
+          Mes actual: <b>{periodoMensualText(periodo)}</b>. Solo responde al filtro propio de sociedad y se calcula por fecha de aprobación de estimación.
         </p>
       </div>
 
@@ -1154,35 +942,30 @@ function EstadoEstimacionHoras({ rows, periodo }) {
               <th>Año aprobado estimación</th>
               <th>Mes aprobado estimación</th>
               <th>ID</th>
-              <th>Asunto</th>
               <th>Suma total horas funcionales</th>
               <th>Suma total horas ABAP</th>
               <th>Suma total horas estimadas</th>
-              <th>Valor OT</th>
             </tr>
           </thead>
           <tbody>
             {!rows?.length ? (
-              <tr><td colSpan="9" className="coedash-empty small">Sin información de estimación.</td></tr>
+              <tr><td colSpan="7" className="coedash-empty small">Sin información de estimación.</td></tr>
             ) : rows.map((row, index) => (
               <tr key={`estimacion-${index}-${row.numero}`}>
                 <td className="strong">{cleanText(row.estadoEstimacion)}</td>
                 <td className="center">{cleanText(row.anioAprobadoEstimacion)}</td>
                 <td className="center">{cleanText(row.mesAprobadoEstimacion)}</td>
                 <td className="mono">{cleanText(row.numero)}</td>
-                <td className="coedash-estimation-subject" title={cleanText(row.asunto)}>{cleanText(row.asunto)}</td>
                 <td className="right strong">{numberText(row.totalHorasFuncionales, 2)}</td>
                 <td className="right strong">{numberText(row.horasEstimadasAbap, 2)}</td>
                 <td className="right strong">{numberText(row.totalHorasEstimadas, 2)}</td>
-                <td className="right strong">{moneyText(row.valorOt)}</td>
               </tr>
             ))}
             <tr className="coedash-total-row">
-              <td colSpan="5">Total general</td>
+              <td colSpan="4">Total general</td>
               <td className="right">{numberText(totals.totalHorasFuncionales, 2)}</td>
               <td className="right">{numberText(totals.horasEstimadasAbap, 2)}</td>
               <td className="right">{numberText(totals.totalHorasEstimadas, 2)}</td>
-              <td className="right">{moneyText(totals.valorOt)}</td>
             </tr>
           </tbody>
         </table>
@@ -1293,7 +1076,6 @@ export default function DashboardClientesCoeSap() {
 
   const [filters, setFilters] = useState(() => getDefaultFilters());
   const [appliedFilters, setAppliedFilters] = useState(() => getDefaultFilters());
-  const [backlogFiltersApplied, setBacklogFiltersApplied] = useState(false);
 
   // Filtro independiente para las dos secciones mensuales.
   // No se actualiza cuando se aplican los filtros globales.
@@ -1304,11 +1086,6 @@ export default function DashboardClientesCoeSap() {
   const [loading, setLoading] = useState(false);
   const [downloadingExcel, setDownloadingExcel] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
-
-  // Detalle de Estado general: se carga solo al hacer clic en una porción.
-  const [estadoDetalleSelection, setEstadoDetalleSelection] = useState(null);
-  const [estadoDetalleData, setEstadoDetalleData] = useState(null);
-  const [estadoDetalleLoading, setEstadoDetalleLoading] = useState(false);
 
   const defaultFilters = useMemo(() => getDefaultFilters(), []);
   const defaultGraphFilters = useMemo(() => getDefaultGraphFilters(), []);
@@ -1332,12 +1109,6 @@ export default function DashboardClientesCoeSap() {
 
   const resumen = payload?.resumen || {};
   const resumenEstadoGeneral = payload?.resumenEstadoGeneral || resumen;
-  const estadoEstimacionHoras = payload?.estadoEstimacionHoras || [];
-  const resumenEstimacionHoras = useMemo(
-    () => calculateEstadoEstimacionTotals(estadoEstimacionHoras),
-    [estadoEstimacionHoras]
-  );
-  const periodoEstadoEstimacion = payload?.periodosGraficas?.estadoEstimacionHoras;
   const opciones = payload?.opciones || {};
 
   const updateFilter = (key, value) => {
@@ -1357,7 +1128,6 @@ export default function DashboardClientesCoeSap() {
       const qs = buildQuery({
         ...appliedFilters,
         ...appliedGraphFilters,
-        aplicarFiltrosBacklog: backlogFiltersApplied ? "1" : "",
       });
       const url = `/coe-sap-funcional/calificacion/dashboard-clientes${qs ? `?${qs}` : ""}`;
 
@@ -1387,13 +1157,7 @@ export default function DashboardClientesCoeSap() {
     } finally {
       setLoading(false);
     }
-  }, [
-    canView,
-    commonHeaders,
-    appliedFilters,
-    appliedGraphFilters,
-    backlogFiltersApplied,
-  ]);
+  }, [canView, commonHeaders, appliedFilters, appliedGraphFilters]);
 
   const descargarExcel = useCallback(async () => {
     setDownloadingExcel(true);
@@ -1402,7 +1166,6 @@ export default function DashboardClientesCoeSap() {
       const qs = buildQuery({
         ...appliedFilters,
         ...appliedGraphFilters,
-        aplicarFiltrosBacklog: backlogFiltersApplied ? "1" : "",
       });
       const url = `/coe-sap-funcional/calificacion/dashboard-clientes/export-excel${qs ? `?${qs}` : ""}`;
 
@@ -1421,103 +1184,18 @@ export default function DashboardClientesCoeSap() {
     } finally {
       setDownloadingExcel(false);
     }
-  }, [
-    appliedFilters,
-    appliedGraphFilters,
-    commonHeaders,
-    backlogFiltersApplied,
-  ]);
-
-  const fetchEstadoDetalle = useCallback(async (selection, page = 1) => {
-    if (!canView || !selection) return;
-
-    setEstadoDetalleLoading(true);
-
-    try {
-      const qs = buildQuery({
-        ...appliedFilters,
-        aplicarFiltrosBacklog: backlogFiltersApplied ? "1" : "",
-        detalle_tipo: selection.tipo,
-        detalle_estado_principal: selection.estadoPrincipal || "",
-        detalle_subestado: selection.subestado || "",
-        page: String(page),
-        page_size: "50",
-      });
-
-      const res = await jfetch(
-        `/coe-sap-funcional/calificacion/dashboard-clientes/detalle-estado${qs ? `?${qs}` : ""}`,
-        {
-          method: "GET",
-          headers: commonHeaders,
-        }
-      );
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
-      }
-
-      setEstadoDetalleData({
-        ...data,
-        selection,
-      });
-    } catch (error) {
-      console.error("Error consultando detalle de estado:", error);
-      Swal.fire({
-        icon: "error",
-        title: "No se pudo consultar el detalle",
-        text: error?.message || "Revisa el backend.",
-        confirmButtonColor: "#DA291C",
-      });
-    } finally {
-      setEstadoDetalleLoading(false);
-    }
-  }, [
-    canView,
-    appliedFilters,
-    backlogFiltersApplied,
-    commonHeaders,
-  ]);
-
-  const handleEstadoSelect = useCallback((selection) => {
-    setEstadoDetalleSelection(selection);
-    setEstadoDetalleData({
-      data: [],
-      total: 0,
-      page: 1,
-      total_pages: 1,
-      selection,
-    });
-    fetchEstadoDetalle(selection, 1);
-  }, [fetchEstadoDetalle]);
-
-  const closeEstadoDetalle = useCallback(() => {
-    setEstadoDetalleSelection(null);
-    setEstadoDetalleData(null);
-  }, []);
-
-  const changeEstadoDetallePage = useCallback((page) => {
-    if (!estadoDetalleSelection) return;
-    fetchEstadoDetalle(estadoDetalleSelection, page);
-  }, [estadoDetalleSelection, fetchEstadoDetalle]);
+  }, [appliedFilters, appliedGraphFilters, commonHeaders]);
 
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
 
   const applyFilters = () => {
-    setEstadoDetalleSelection(null);
-    setEstadoDetalleData(null);
-    setBacklogFiltersApplied(true);
     setAppliedFilters(cloneFilters(filters));
   };
 
   const clearFilters = () => {
     const defaults = getDefaultFilters();
-    setEstadoDetalleSelection(null);
-    setEstadoDetalleData(null);
-    setBacklogFiltersApplied(false);
     setFilters(defaults);
     setAppliedFilters(cloneFilters(defaults));
   };
@@ -1549,7 +1227,7 @@ export default function DashboardClientesCoeSap() {
       <section className="coedash-hero">
         <div className="coedash-hero-copy">
           <span className="coedash-eyebrow">Dashboard clientes</span>
-          <h1>Dashboard COE SAP</h1>
+          <h1>Dashboard COE SAP Funcional</h1>
           <p>
             Consulta el backlog, revisa su distribución y analiza el comportamiento mensual desde una sola vista.
           </p>
@@ -1672,7 +1350,7 @@ export default function DashboardClientesCoeSap() {
         </section>
       ) : (
         <>
-          <section className="coedash-metrics-grid coedash-metrics-grid-six">
+          <section className="coedash-metrics-grid">
             <MetricCard
               title="Backlog total"
               icon="▦"
@@ -1685,7 +1363,7 @@ export default function DashboardClientesCoeSap() {
               title="En curso"
               icon="◔"
               value={numberText(resumenEstadoGeneral.enCurso)}
-              sub="Casos activos del backlog"
+              sub="Casos activos"
               tone="warn"
             />
 
@@ -1693,44 +1371,60 @@ export default function DashboardClientesCoeSap() {
               title="Pend. cliente"
               icon="◷"
               value={numberText(resumenEstadoGeneral.pendienteCliente)}
-              sub="Casos pendientes por cliente"
+              sub="Pendientes por cliente"
               tone="info"
+            />
+
+            <MetricCard
+              title="Cruce SM"
+              icon="SM"
+              value={numberText(resumenEstadoGeneral.conSm)}
+              sub="Backlog cruzado SM"
+              tone="info"
+            />
+
+            <MetricCard
+              title="Cruce ITOP"
+              icon="IT"
+              value={numberText(resumenEstadoGeneral.conItop)}
+              sub="Backlog cruzado ITOP"
+              tone="info"
+            />
+
+            <MetricCard
+              title="Solo Excel"
+              icon="XLS"
+              value={numberText(resumenEstadoGeneral.soloExcel)}
+              sub="Backlog sin cruce completo"
+              tone="neutral"
             />
 
             <MetricCard
               title="H. funcionales"
               icon="HF"
-              value={numberText(resumenEstimacionHoras.totalHorasFuncionales, 2)}
-              sub={`Tabla de estimación · ${periodoMensualText(periodoEstadoEstimacion)}`}
+              value={numberText(resumenEstadoGeneral.totalHorasFuncionales, 2)}
+              sub="Total funcional backlog"
               tone="ok"
             />
 
             <MetricCard
               title="H. estimadas"
               icon="HE"
-              value={numberText(resumenEstimacionHoras.totalHorasEstimadas, 2)}
-              sub={`Funcionales + ABAP · ${periodoMensualText(periodoEstadoEstimacion)}`}
+              value={numberText(resumenEstadoGeneral.totalHorasEstimadas, 2)}
+              sub="Total estimado backlog"
               tone="dark"
             />
 
             <MetricCard
               title="Valor OT"
               icon="$"
-              value={moneyText(resumenEstimacionHoras.valorOt)}
-              sub={`Tabla de estimación · ${periodoMensualText(periodoEstadoEstimacion)}`}
+              value={moneyText(resumenEstadoGeneral.valorOt)}
+              sub="Suma valor OT backlog"
               tone="money"
             />
           </section>
 
-          <EstadoGeneralRequerimientos
-            data={payload?.estadoGeneralRequerimientos}
-            filtrosAplicados={backlogFiltersApplied}
-            detalle={estadoDetalleData}
-            detalleLoading={estadoDetalleLoading}
-            onSelectEstado={handleEstadoSelect}
-            onCloseDetalle={closeEstadoDetalle}
-            onDetallePageChange={changeEstadoDetallePage}
-          />
+          <EstadoGeneralRequerimientos data={payload?.estadoGeneralRequerimientos} />
           <DistribucionModulosConsultores data={payload?.distribucionModulosConsultores} />
 
           <section className="coedash-card coedash-graph-filter-section coedash-graph-filter-attached">
@@ -1740,58 +1434,25 @@ export default function DashboardClientesCoeSap() {
                 <h2>Filtro propio de gráficas mensuales</h2>
               </div>
               <span className={`coedash-filter-counter blue${activeGraphFilterCount ? " active" : ""}`}>
-                {activeGraphFilterCount
-                  ? "Periodo o sociedad personalizados"
-                  : "Mes actual · todas las sociedades"}
+                {activeGraphFilterCount ? "Sociedad personalizada" : "Todas las sociedades"}
               </span>
               <p>
-                Este filtro afecta Casos recibidos vs cerrados, Estado estimación y horas,
-                y las tarjetas H. funcionales, H. estimadas y Valor OT. No modifica el backlog.
+                Este filtro solo afecta los dos bloques siguientes: Casos recibidos vs cerrados
+                y Estado estimación y horas. No cambia las métricas ni las gráficas generales.
               </p>
             </div>
 
             <div className="coedash-graph-filter-grid single">
               <div className="coedash-graph-filter-card coedash-graph-shared-card">
                 <div className="coedash-graph-filter-head">
-                  <h3>Periodo y sociedad para gráficas mensuales</h3>
+                  <h3>Sociedad para gráficas mensuales</h3>
                   <p>
-                    Selecciona el año, el mes y una o varias sociedades. El mismo periodo
-                    se aplica a Casos recibidos vs cerrados, Estado estimación y horas,
-                    y a las tarjetas H. funcionales, H. estimadas y Valor OT.
+                    El periodo se mantiene por defecto en el mes actual.
+                    Aplica únicamente a las dos secciones que están debajo de este filtro.
                   </p>
                 </div>
 
                 <div className="coedash-graph-filter-fields">
-                  <label className="coedash-filter">
-                    <span>Año</span>
-                    <select
-                      value={graphFilters.graficasAnio}
-                      disabled={loading}
-                      onChange={(e) => updateGraphFilter("graficasAnio", e.target.value)}
-                    >
-                      {buildYearOptions(opciones).map((item) => (
-                        <option key={`graficas-anio-${item.value}`} value={item.value}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="coedash-filter">
-                    <span>Mes</span>
-                    <select
-                      value={graphFilters.graficasMes}
-                      disabled={loading}
-                      onChange={(e) => updateGraphFilter("graficasMes", e.target.value)}
-                    >
-                      {buildMonthOptions(opciones).map((item) => (
-                        <option key={`graficas-mes-${item.value}`} value={item.value}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
                   <MultiSelect
                     label="Sociedad"
                     value={graphFilters.graficasSociedad}
@@ -1804,13 +1465,11 @@ export default function DashboardClientesCoeSap() {
                 <div className="coedash-actions coedash-graph-actions">
                   <div className="coedash-action-hint">
                     <span className={graphFiltersDirty ? "pending" : "saved"} aria-hidden="true" />
-                    {graphFiltersDirty
-                      ? "Hay cambios de periodo o sociedad pendientes por aplicar."
-                      : "El periodo y la sociedad visibles ya están aplicados."}
+                    {graphFiltersDirty ? "Cambio pendiente para estas dos gráficas." : "La sociedad seleccionada ya está aplicada."}
                   </div>
                   <div className="coedash-action-buttons">
                     <button type="button" className="coedash-btn light" onClick={clearGraphFilters} disabled={loading || (!graphFiltersDirty && activeGraphFilterCount === 0)}>
-                      Restablecer periodo
+                      Restablecer sociedad
                     </button>
                     <button type="button" className="coedash-btn danger" onClick={applyGraphFilters} disabled={loading || !graphFiltersDirty}>
                       <span className="coedash-btn-icon" aria-hidden="true">✓</span>
@@ -1823,7 +1482,7 @@ export default function DashboardClientesCoeSap() {
           </section>
 
           <RecibidosVsCerrados rows={payload?.casosRecibidosVsCerrados || []} periodo={payload?.periodosGraficas?.recibidosVsCerrados} />
-          <EstadoEstimacionHoras rows={estadoEstimacionHoras} periodo={periodoEstadoEstimacion} />
+          <EstadoEstimacionHoras rows={payload?.estadoEstimacionHoras || []} periodo={payload?.periodosGraficas?.estadoEstimacionHoras} />
 
 
           <section className="coedash-grid-panels two">
