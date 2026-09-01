@@ -84,12 +84,25 @@
 }
 
 .coeavg-hero-actions {
-  min-width: 190px;
+  min-width: 320px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
   z-index: 1;
 }
+
+.coeavg-cutoff {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.coeavg-cutoff span { font-size: 10px; text-transform: uppercase; opacity: .75; font-weight: 900; }
+.coeavg-cutoff strong { font-size: 13px; }
 
 .coeavg-card,
 .coeavg-metric,
@@ -267,6 +280,85 @@
 .coeavg-metric.ok { border-left-color: var(--coeavg-green); background: linear-gradient(180deg, #ffffff, #fbfffd); }
 .coeavg-metric.warn { border-left-color: var(--coeavg-yellow); background: linear-gradient(180deg, #ffffff, #fffdf6); }
 .coeavg-metric.info { border-left-color: var(--coeavg-blue); background: linear-gradient(180deg, #ffffff, #fbfdff); }
+.coeavg-metric.critical { border-left-color: var(--coeavg-red); background: linear-gradient(180deg, #ffffff, #fff5f4); }
+.coeavg-alert-metrics .coeavg-metric { min-height: 94px; }
+
+.coeavg-alert-card,
+.coeavg-consultants {
+  padding: 20px;
+  margin-bottom: 18px;
+}
+
+.coeavg-section-kicker {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--coeavg-red);
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.coeavg-count {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.coeavg-alert-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr)) minmax(230px, 1.4fr);
+  gap: 10px;
+  padding: 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--coeavg-border);
+  border-radius: 14px;
+  background: #fafafa;
+}
+.coeavg-alert-filters label { display: flex; flex-direction: column; gap: 6px; }
+.coeavg-alert-filters label > span { color: #4b5563; font-size: 11px; font-weight: 900; }
+.coeavg-alert-filters select,
+.coeavg-alert-filters input { min-height: 40px; padding: 0 11px; border: 1px solid #dbe3ef; border-radius: 10px; background: white; outline: none; }
+.coeavg-alert-filters select:focus,
+.coeavg-alert-filters input:focus { border-color: rgba(218, 41, 28, .55); box-shadow: 0 0 0 3px rgba(218, 41, 28, .08); }
+
+.coeavg-alert-table-wrap { max-height: 58vh; overflow: auto; border: 1px solid #dbe3ef; border-radius: 14px; }
+.coeavg-alert-table { width: 100%; min-width: 1280px; border-collapse: separate; border-spacing: 0; }
+.coeavg-alert-table th { position: sticky; top: 0; z-index: 2; padding: 12px; text-align: left; color: #4b5563; background: #f8fafc; border-bottom: 2px solid #dbe3ef; font-size: 11px; font-weight: 950; }
+.coeavg-alert-table td { padding: 11px 12px; border-bottom: 1px solid #e8edf4; vertical-align: top; font-size: 12px; background: #fff; }
+.coeavg-alert-table tr:last-child td { border-bottom: 0; }
+.coeavg-alert-table tr.row-critica td:first-child { box-shadow: inset 4px 0 var(--coeavg-red); }
+.coeavg-alert-table tr.row-alta td:first-child { box-shadow: inset 4px 0 var(--coeavg-yellow); }
+.coeavg-alert-table tr.row-media td:first-child { box-shadow: inset 4px 0 var(--coeavg-blue); }
+.coeavg-alert-table tr.row-baja td:first-child { box-shadow: inset 4px 0 #64748b; }
+.coeavg-alert-table td strong,
+.coeavg-alert-table td small { display: block; }
+.coeavg-alert-table td small { max-width: 310px; margin-top: 4px; color: var(--coeavg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coeavg-alert-table td p { max-width: 380px; margin: 0; line-height: 1.45; }
+.coeavg-severity,
+.coeavg-front { display: inline-flex; align-items: center; padding: 5px 9px; border-radius: 999px; font-size: 10px; font-weight: 950; white-space: nowrap; }
+.coeavg-severity.critica { color: #a4130a; background: #ffe1de; }
+.coeavg-severity.alta { color: #92400e; background: #fef3c7; }
+.coeavg-severity.media { color: #1d4ed8; background: #dbeafe; }
+.coeavg-severity.baja { color: #475569; background: #e2e8f0; }
+.coeavg-front { color: #374151; background: #f1f5f9; }
+
+.coeavg-consultant-grid { display: grid; grid-template-columns: repeat(2, minmax(300px, 1fr)); gap: 10px; }
+.coeavg-consultant-grid article { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--coeavg-border); border-radius: 14px; background: linear-gradient(180deg, #fff, #fcfcfd); }
+.coeavg-consultant-grid article > div:first-child { min-width: 0; }
+.coeavg-consultant-grid article strong,
+.coeavg-consultant-grid article span { display: block; }
+.coeavg-consultant-grid article strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.coeavg-consultant-grid article span { margin-top: 4px; color: var(--coeavg-muted); font-size: 11px; }
+.coeavg-consultant-levels { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 5px; }
+.coeavg-consultant-levels b { padding: 4px 7px; border-radius: 7px; font-size: 9px; white-space: nowrap; }
+.coeavg-consultant-levels .critica { color: #a4130a; background: #ffe1de; }
+.coeavg-consultant-levels .alta { color: #92400e; background: #fef3c7; }
+.coeavg-consultant-levels .media { color: #1d4ed8; background: #dbeafe; }
 
 .coeavg-loading-card {
   min-height: 180px;
@@ -482,6 +574,8 @@
   .coeavg-period-list {
     grid-template-columns: 1fr;
   }
+
+  .coeavg-alert-filters { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
 }
 
 @media (max-width: 980px) {
@@ -494,6 +588,8 @@
   .coeavg-metrics-grid {
     grid-template-columns: repeat(2, minmax(170px, 1fr));
   }
+
+  .coeavg-consultant-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {
@@ -523,4 +619,9 @@
   .coeavg-mini-bar strong {
     text-align: left;
   }
+
+  .coeavg-hero-actions { min-width: 0; justify-content: flex-start; }
+  .coeavg-alert-filters { grid-template-columns: 1fr; }
+  .coeavg-consultant-grid article { align-items: flex-start; flex-direction: column; }
+  .coeavg-consultant-levels { justify-content: flex-start; }
 }

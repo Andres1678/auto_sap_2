@@ -21972,6 +21972,104 @@ def detalle_cliente_coe_sap_funcional():
         }), 500
 
 
+def _coe_avg_datetime(value):
+    """Normaliza date/datetime/string sin depender del motor de base de datos."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+        return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+    except (TypeError, ValueError):
+        pass
+
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%Y %H:%M", "%d/%m/%Y", "%d-%m-%Y %H:%M:%S", "%d-%m-%Y",
+    ):
+        try:
+            return datetime.strptime(text[:19], fmt)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _coe_avg_last_comment_date(observaciones, *fallbacks):
+    """Obtiene la fecha más reciente escrita en observaciones; usa actualización como respaldo."""
+    text = str(observaciones or "")
+    candidates = []
+    patterns = (
+        r"(?<!\d)(\d{4}-\d{2}-\d{2}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?)",
+        r"(?<!\d)(\d{1,2}[/-]\d{1,2}[/-]\d{4}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?)",
+    )
+    for pattern in patterns:
+        for match in re.findall(pattern, text):
+            parsed = _coe_avg_datetime(match)
+            if parsed:
+                candidates.append(parsed)
+
+    for fallback in fallbacks:
+        parsed = _coe_avg_datetime(fallback)
+        if parsed:
+            candidates.append(parsed)
+
+    return max(candidates) if candidates else None
+
+
+def _coe_avg_days(start, end=None):
+    start_dt = _coe_avg_datetime(start)
+    end_dt = _coe_avg_datetime(end) if end is not None else datetime.utcnow()
+    if not start_dt or not end_dt:
+        return None
+    return max((end_dt.date() - start_dt.date()).days, 0)
+
+
+def _coe_avg_state_text(row):
+    return " ".join(filter(None, [
+        _coe_rep_str(getattr(row, "estado_principal", None)),
+        _coe_rep_str(getattr(row, "subestado", None)),
+        _coe_rep_str(getattr(row, "estado", None)),
+        _coe_rep_str(getattr(row, "estado_consolidado", None)),
+        _coe_rep_str(getattr(row, "estado_estimacion", None)),
+    ]))
+
+
+def _coe_avg_is_closed(row):
+    state = _coe_dash_norm_estado(_coe_avg_state_text(row))
+    return bool(
+        getattr(row, "fecha_finalizacion_cierre", None)
+        or getattr(row, "fecha_finalizacion_cierre_sistema_gestion", None)
+        or any(token in state for token in ("CERRAD", "FINALIZAD", "SOLUCIONAD", "RESUELT", "CANCELAD", "ANULAD"))
+    )
+
+
+def _coe_avg_alert(level, front, row, days, message, base_date=None, remaining=None):
+    return {
+        "id": int(row.id),
+        "numero": _coe_rep_str(row.numero) or str(row.id),
+        "asunto": _coe_rep_str(row.asunto) or "Sin asunto",
+        "cliente": _coe_rep_str(getattr(row, "cliente_asociado_nombre", None)) or _coe_rep_str(row.sociedad) or "Sin cliente",
+        "consultor": _coe_rep_str(row.asignado_a) or "Sin asignar",
+        "estadoPrincipal": _coe_rep_str(getattr(row, "estado_principal", None)),
+        "subestado": _coe_rep_str(getattr(row, "subestado", None)),
+        "nivel": level,
+        "frente": front,
+        "dias": int(days or 0),
+        "diasRestantes": remaining,
+        "fechaBase": _coe_rep_date(base_date),
+        "mensaje": message,
+    }
+
+
 @bp.route("/coe-sap-funcional/calificacion/promedio-atencion", methods=["GET"])
 @permission_required("BASE_REGISTRO_VER")
 def promedio_atencion_coe_sap_funcional():
@@ -22002,6 +22100,99 @@ def promedio_atencion_coe_sap_funcional():
             func.avg(CoeSapFuncionalCalificacion.tiempo_finalizacion_cierre).label("promedio_cierre"),
         ).first()
 
+        detail_rows = query.order_by(CoeSapFuncionalCalificacion.fecha_asignacion.asc()).all()
+        now = datetime.utcnow()
+        alerts = []
+        resolution_days = []
+        open_age_days = []
+        comment_days = []
+        estimation_days = []
+        consultant_map = {}
+
+        for item in detail_rows:
+            opened = _coe_avg_datetime(getattr(item, "fecha_asignacion", None))
+            closed_at = _coe_avg_datetime(getattr(item, "fecha_finalizacion_cierre", None)) or _coe_avg_datetime(
+                getattr(item, "fecha_finalizacion_cierre_sistema_gestion", None)
+            )
+            is_closed = _coe_avg_is_closed(item)
+            last_comment = _coe_avg_last_comment_date(
+                getattr(item, "observaciones", None),
+                getattr(item, "hora_ultima_actualizacion", None),
+                getattr(item, "hora_ultima_actualizacion_sistema_gestion", None),
+            )
+            consultant = _coe_rep_str(getattr(item, "asignado_a", None)) or "Sin asignar"
+            bucket = consultant_map.setdefault(consultant, {
+                "consultor": consultant, "casos": 0, "alertas": 0,
+                "informativas": 0, "medias": 0, "altas": 0, "criticas": 0,
+            })
+            bucket["casos"] += 1
+
+            if opened and closed_at:
+                value = _coe_avg_days(opened, closed_at)
+                if value is not None:
+                    resolution_days.append(value)
+
+            if is_closed:
+                continue
+
+            age = _coe_avg_days(opened, now)
+            if age is not None:
+                open_age_days.append(age)
+                if age >= 91:
+                    alerts.append(_coe_avg_alert("critica", "cierre", item, age, f"Caso vencido: lleva {age} días abierto y supera el límite de 90 días.", opened, 0))
+                elif age >= 61:
+                    alerts.append(_coe_avg_alert("alta", "cierre", item, age, f"Tercer mes de atención: lleva {age} días abierto; prioriza su cierre.", opened, 90 - age))
+                elif age >= 31:
+                    alerts.append(_coe_avg_alert("media", "cierre", item, age, f"Segundo mes de atención: lleva {age} días abierto; requiere plan de cierre.", opened, 90 - age))
+                else:
+                    alerts.append(_coe_avg_alert("baja", "cierre", item, age, f"Primer mes de atención: lleva {age} días abierto.", opened, 90 - age))
+
+            since_comment = _coe_avg_days(last_comment, now)
+            if since_comment is not None:
+                comment_days.append(since_comment)
+                if since_comment >= 4:
+                    alerts.append(_coe_avg_alert("critica", "comentario", item, since_comment, f"Seguimiento vencido: han pasado {since_comment} días sin comentario.", last_comment, 0))
+                elif since_comment == 3:
+                    alerts.append(_coe_avg_alert("alta", "comentario", item, since_comment, "Debe actualizarse hoy: cumple 3 días sin comentario.", last_comment, 0))
+                elif since_comment == 2:
+                    alerts.append(_coe_avg_alert("media", "comentario", item, since_comment, "Seguimiento próximo a vencer: actualiza el caso hoy o mañana.", last_comment, 1))
+            else:
+                alerts.append(_coe_avg_alert("alta", "comentario", item, 0, "No fue posible identificar una fecha de comentario o actualización.", None, None))
+
+            normalized_state = _coe_dash_norm_estado(_coe_avg_state_text(item))
+            if "EN ESTIMACION" in normalized_state:
+                estimation_base = last_comment or opened
+                elapsed = _coe_avg_days(estimation_base, now)
+                if elapsed is not None:
+                    estimation_days.append(elapsed)
+                    if elapsed >= 4:
+                        alerts.append(_coe_avg_alert("critica", "estimacion", item, elapsed, f"Estimación vencida por {elapsed - 3} día(s); debe enviarse al cliente de inmediato.", estimation_base, 0))
+                    elif elapsed == 3:
+                        alerts.append(_coe_avg_alert("critica", "estimacion", item, elapsed, "Último día para generar y enviar la estimación al cliente.", estimation_base, 0))
+                    elif elapsed == 2:
+                        alerts.append(_coe_avg_alert("alta", "estimacion", item, elapsed, "Queda 1 día para generar y enviar la estimación.", estimation_base, 1))
+                    elif elapsed == 1:
+                        alerts.append(_coe_avg_alert("baja", "estimacion", item, elapsed, "Quedan 2 días para generar y enviar la estimación.", estimation_base, 2))
+
+        level_rank = {"critica": 4, "alta": 3, "media": 2, "baja": 1}
+        for alert in alerts:
+            bucket = consultant_map[alert["consultor"]]
+            bucket["alertas"] += 1
+            if alert["nivel"] == "critica":
+                bucket["criticas"] += 1
+            elif alert["nivel"] == "alta":
+                bucket["altas"] += 1
+            elif alert["nivel"] == "media":
+                bucket["medias"] += 1
+            else:
+                bucket["informativas"] += 1
+
+        alerts.sort(key=lambda a: (-level_rank.get(a["nivel"], 0), -a["dias"], a["numero"]))
+        consultants = sorted(consultant_map.values(), key=lambda x: (-x["criticas"], -x["altas"], -x["alertas"], x["consultor"]))
+
+        def avg(values):
+            return round(sum(values) / len(values), 2) if values else 0
+
         return jsonify({
             "data": [
                 {
@@ -22021,6 +22212,28 @@ def promedio_atencion_coe_sap_funcional():
                 "promedioTiempoRespuesta": round(_coe_rep_float(total_row.promedio_respuesta if total_row else 0), 2),
                 "promedioTiempoResolucion": round(_coe_rep_float(total_row.promedio_resolucion if total_row else 0), 2),
                 "promedioTiempoCierre": round(_coe_rep_float(total_row.promedio_cierre if total_row else 0), 2),
+                "promedioAperturaCierre": avg(resolution_days),
+                "casosCerradosMedidos": len(resolution_days),
+                "promedioEdadAbiertos": avg(open_age_days),
+                "casosAbiertos": len(open_age_days),
+                "promedioSinComentario": avg(comment_days),
+                "casosSinFechaComentario": sum(1 for a in alerts if a["frente"] == "comentario" and a["fechaBase"] is None),
+                "promedioEnEstimacion": avg(estimation_days),
+                "casosEnEstimacion": len(estimation_days),
+                "alertasTotal": len(alerts),
+                "alertasCriticas": sum(1 for a in alerts if a["nivel"] == "critica"),
+                "alertasAltas": sum(1 for a in alerts if a["nivel"] == "alta"),
+                "alertasMedias": sum(1 for a in alerts if a["nivel"] == "media"),
+                "alertasBajas": sum(1 for a in alerts if a["nivel"] == "baja"),
+            },
+            "alertas": alerts,
+            "consultores": consultants,
+            "reglas": {
+                "diasEstimacion": 3,
+                "diasSeguimientoComentario": 3,
+                "diasMaximoCasoAbierto": 90,
+                "unidad": "dias_calendario",
+                "fechaCorte": now.date().isoformat(),
             },
             "opciones": _coe_rep_distinct_options(base_query),
         }), 200
