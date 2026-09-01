@@ -176,7 +176,13 @@ const TABLE_COLUMNS = [
 ];
 
 const EDIT_FIELDS = [
-  { key: "observaciones", label: "Observaciones / Seguimiento semanal", type: "textarea", wide: true },
+  {
+    key: "comentarioSeguimiento",
+    label: "Comentario de seguimiento de hoy",
+    type: "textarea",
+    wide: true,
+    transient: true,
+  },
   { key: "doc1", label: "DOC 1", type: "text" },
   { key: "documentacion", label: "Documentación", type: "text" },
   { key: "casoTransporte", label: "Caso transporte", type: "text" },
@@ -415,6 +421,24 @@ function todayStamp() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function getTodaySeguimiento(observaciones) {
+  const hoy = todayStamp();
+  const lineas = String(observaciones || "").split(/\r?\n/);
+  const patron = new RegExp(`^\\s*${hoy}(?:\\s+\\d{2}:\\d{2})?\\s*-\\s*Seguimiento\\s+por\\s+[^:]+:\\s*(.*)$`, "i");
+  const patronLegado = new RegExp(`^\\s*${hoy}(?:\\s+\\d{2}:\\d{2})?\\s*-\\s*(.*)$`, "i");
+
+  for (const linea of lineas) {
+    const match = linea.match(patron);
+    if (match) return match[1] || "";
+
+    const legado = linea.match(patronLegado);
+    if (legado && !/^Cambio de estado controlado\b/i.test(legado[1] || "")) {
+      return legado[1] || "";
+    }
+  }
+  return "";
+}
+
 function getStatusClass(value) {
   const s = String(value || "").toUpperCase();
 
@@ -476,6 +500,8 @@ function createEditForm(row) {
       form[field.key] = toDateInput(value);
     } else if (field.type === "datetime") {
       form[field.key] = toDatetimeLocalInput(value);
+    } else if (field.key === "comentarioSeguimiento") {
+      form[field.key] = getTodaySeguimiento(row?.observaciones);
     } else {
       form[field.key] = value || "";
     }
@@ -1682,13 +1708,6 @@ export default function CalificacionCoeSapFuncional() {
     setEditForm({});
   };
 
-  const addWeeklyObservation = () => {
-    setEditForm((prev) => ({
-      ...prev,
-      observaciones: `${prev.observaciones ? `${prev.observaciones}\n` : ""}${todayStamp()} - `,
-    }));
-  };
-
   const editObservaciones = async (row) => {
     if (!row?.id) return;
 
@@ -1702,7 +1721,8 @@ export default function CalificacionCoeSapFuncional() {
       return;
     }
 
-    const current = row?.observaciones || "";
+    const current = getTodaySeguimiento(row?.observaciones);
+    const history = row?.observaciones || "Sin observaciones anteriores.";
     const stamp = todayStamp();
 
     const result = await Swal.fire({
@@ -1714,27 +1734,18 @@ export default function CalificacionCoeSapFuncional() {
           <b>Asunto:</b> ${escapeHtml(row?.asunto || "-")}<br/>
           <b>Estado:</b> ${escapeHtml(row?.estado || "-")}
         </div>
-        <button type="button" id="calcoe-add-weekly-entry" class="calcoe-swal-weekly-btn">
-          + Agregar entrada semanal (${stamp})
-        </button>
+        <div style="margin:12px 0 6px;text-align:left;font-weight:800">
+          Comentario de hoy (${stamp})
+        </div>
+        <div style="margin-top:14px;text-align:left">
+          <b>Historial protegido</b>
+          <pre style="max-height:220px;overflow:auto;white-space:pre-wrap;padding:12px;border:1px solid #e8e8e8;border-radius:10px;background:#f8fafc">${escapeHtml(history)}</pre>
+        </div>
       `,
       input: "textarea",
       inputValue: current,
       inputAttributes: {
-        placeholder: `${stamp} - Escribe aquí el seguimiento semanal...`,
-      },
-      didOpen: () => {
-        const btn = document.getElementById("calcoe-add-weekly-entry");
-        const textarea = Swal.getInput();
-
-        if (btn && textarea) {
-          btn.addEventListener("click", () => {
-            const prefix = textarea.value ? `${textarea.value}\n` : "";
-            textarea.value = `${prefix}${stamp} - `;
-            textarea.focus();
-            textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-          });
-        }
+        placeholder: "Escribe el seguimiento de hoy. La fecha y el usuario se agregan automáticamente.",
       },
       showCancelButton: true,
       confirmButtonText: "Guardar",
@@ -1759,7 +1770,7 @@ export default function CalificacionCoeSapFuncional() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          observaciones: nextValue,
+          comentarioSeguimiento: nextValue,
         }),
       });
 
@@ -1771,8 +1782,8 @@ export default function CalificacionCoeSapFuncional() {
 
       await Swal.fire({
         icon: "success",
-        title: "Observaciones actualizadas",
-        text: "El seguimiento fue guardado correctamente.",
+        title: "Seguimiento actualizado",
+        text: "El comentario de hoy quedó arriba del historial.",
         confirmButtonColor: "#008C67",
       });
 
@@ -1794,6 +1805,14 @@ export default function CalificacionCoeSapFuncional() {
 
     try {
       const payload = { ...editForm };
+
+      // No reescribir el seguimiento de hoy cuando se guardan otros campos.
+      if (
+        String(payload.comentarioSeguimiento || "").trim() ===
+        String(getTodaySeguimiento(editRow?.observaciones) || "").trim()
+      ) {
+        delete payload.comentarioSeguimiento;
+      }
 
       // Estos campos son derivados del catálogo oficial y no se envían como texto libre.
       [
@@ -2566,14 +2585,10 @@ export default function CalificacionCoeSapFuncional() {
                   >
                     <span>
                       {field.label}
-                      {field.key === "observaciones" && (
-                        <button
-                          type="button"
-                          className="calcoe-inline-action"
-                          onClick={addWeeklyObservation}
-                        >
-                          + entrada semanal
-                        </button>
+                      {field.key === "comentarioSeguimiento" && (
+                        <small className="calcoe-field-help">
+                          Solo la entrada del día actual se puede corregir; el historial anterior permanece bloqueado.
+                        </small>
                       )}
                     </span>
 

@@ -17701,6 +17701,22 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
         data = request.get_json(silent=True) or {}
         usuario = _calificacion_usuario_actual()
 
+        # El historial completo nunca se reemplaza desde el frontend. Solo se
+        # admite crear/editar la entrada manual correspondiente al día actual.
+        if "observaciones" in data:
+            return jsonify({
+                "mensaje": (
+                    "El historial de observaciones está protegido. "
+                    "Usa comentarioSeguimiento para anexar o editar el comentario de hoy."
+                )
+            }), 400
+
+        comentario_seguimiento = (
+            data.pop("comentarioSeguimiento", None)
+            if "comentarioSeguimiento" in data
+            else data.pop("comentario_seguimiento", None)
+        )
+
         # Estado controlado: se maneja por ID de subestado de catálogo, no por texto libre.
         subestado_catalogo_payload = (
             data.get("subestadoCatalogoId")
@@ -17790,8 +17806,6 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "horasEjecutadasBasis": "horas_ejecutadas_basis",
             "horasGarantia": "horas_garantia",
             "horasProyectoAbap": "horas_proyecto_abap",
-
-            "observaciones": "observaciones",
 
             "doc1": "doc_1",
             "manejo": "manejo",
@@ -17909,6 +17923,24 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             origen[model_key] = "MANUAL"
             row.origen_datos_json = _coe_ext_json_dumps(origen)
 
+        if comentario_seguimiento is not None:
+            try:
+                _coe_cfg_guardar_seguimiento_hoy(
+                    row,
+                    comentario_seguimiento,
+                    usuario=usuario,
+                )
+            except ValueError as exc:
+                return jsonify({"mensaje": str(exc)}), 400
+
+            manual_fields = _coe_ext_manual_fields(row)
+            manual_fields["observaciones"] = True
+            row.campos_editados_manual_json = _coe_ext_json_dumps(manual_fields)
+
+            origen = _coe_ext_origen_fields(row)
+            origen["observaciones"] = "SEGUIMIENTO_PROTEGIDO"
+            row.origen_datos_json = _coe_ext_json_dumps(origen)
+
         if subestado_catalogo_payload not in (None, "", "null", "None"):
             subestado_controlado = _coe_cfg_find_subestado_by_id(subestado_catalogo_payload, solo_activos=False)
 
@@ -17927,6 +17959,19 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
 
         with db.session.no_autoflush:
             _coe_ext_recalcular_row(row)
+
+        # El catálogo de estados es la última autoridad. Se aplica después del
+        # recálculo para que responsable/estado consolidado no sean reemplazados
+        # por textos provenientes de la base.
+        if getattr(row, "subestado_catalogo_id", None):
+            subestado_final = _coe_cfg_find_subestado_by_id(
+                row.subestado_catalogo_id,
+                solo_activos=False,
+            )
+            if subestado_final:
+                _coe_cfg_aplicar_subestado_catalogo(row, subestado_final)
+        elif "estadoHerramientaGestion" in data:
+            _coe_cfg_clasificar_estado(row)
 
         row.actualizado_por = usuario
         row.updated_at = datetime.utcnow()
@@ -23236,11 +23281,84 @@ def _coe_cfg_append_observacion_estado(row, estado_anterior, subestado_anterior,
     if observacion:
         linea = f"{linea} Observación: {observacion}"
 
-    actual = str(getattr(row, "observaciones", None) or "").rstrip()
+    actual = str(getattr(row, "observaciones", None) or "").strip()
     if linea in actual:
         return
 
-    row.observaciones = f"{actual}\n{linea}".strip() if actual else linea
+    # El seguimiento más reciente siempre queda arriba.
+    row.observaciones = f"{linea}\n{actual}".strip() if actual else linea
+
+
+def _coe_cfg_fecha_bogota():
+    try:
+        return datetime.now(ZoneInfo("America/Bogota"))
+    except Exception:
+        return datetime.utcnow()
+
+
+def _coe_cfg_normalizar_comentario(value):
+    """Convierte el comentario en una entrada compacta sin permitir encabezados falsos."""
+    value = _coe_cfg_str(value)
+    if not value:
+        return None
+    value = re.sub(r"\s+", " ", value).strip()
+    # La fecha y el autor siempre los genera el servidor.
+    value = re.sub(r"^\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?\s*-\s*", "", value).strip()
+    return value or None
+
+
+def _coe_cfg_guardar_seguimiento_hoy(row, comentario, usuario=None):
+    """
+    Crea o reemplaza únicamente la entrada de seguimiento del día actual.
+
+    Todo lo registrado en días anteriores permanece byte a byte dentro del
+    historial. Los cambios automáticos de estado tampoco se pueden editar por
+    esta vía aunque hayan sido creados hoy.
+    """
+    if not hasattr(row, "observaciones"):
+        return False
+
+    comentario = _coe_cfg_normalizar_comentario(comentario)
+    if not comentario:
+        raise ValueError("Escribe un comentario de seguimiento antes de guardar.")
+
+    ahora = _coe_cfg_fecha_bogota()
+    fecha_hoy = ahora.strftime("%Y-%m-%d")
+    stamp = ahora.strftime("%Y-%m-%d %H:%M")
+    usuario_txt = _coe_cfg_str(usuario) or "sistema"
+    nueva_linea = f"{stamp} - Seguimiento por {usuario_txt}: {comentario}"
+
+    actual = str(getattr(row, "observaciones", None) or "").strip()
+    lineas = actual.splitlines() if actual else []
+    patron_hoy = re.compile(
+        rf"^\s*{re.escape(fecha_hoy)}(?:\s+\d{{2}}:\d{{2}})?\s*-\s*Seguimiento\b",
+        re.IGNORECASE,
+    )
+    patron_hoy_legado = re.compile(
+        rf"^\s*{re.escape(fecha_hoy)}(?:\s+\d{{2}}:\d{{2}})?\s*-\s*(.+)$",
+        re.IGNORECASE,
+    )
+
+    # Solo se reemplaza la primera entrada manual de hoy. Las observaciones de
+    # fechas anteriores y las auditorías de cambio de estado son inmutables.
+    for index, linea in enumerate(lineas):
+        if patron_hoy.search(linea):
+            lineas[index] = nueva_linea
+            row.observaciones = "\n".join(lineas).strip()
+            return True
+
+        legado = patron_hoy_legado.search(linea)
+        if legado and not re.match(
+            r"^Cambio de estado controlado\b",
+            str(legado.group(1) or "").strip(),
+            re.IGNORECASE,
+        ):
+            lineas[index] = nueva_linea
+            row.observaciones = "\n".join(lineas).strip()
+            return True
+
+    row.observaciones = f"{nueva_linea}\n{actual}".strip() if actual else nueva_linea
+    return True
 
 
 def _coe_cfg_marcar_estado_origen(row, origen="CATALOGO_ESTADOS"):
@@ -23249,6 +23367,7 @@ def _coe_cfg_marcar_estado_origen(row, origen="CATALOGO_ESTADOS"):
     origen_fields = _coe_ext_origen_fields(row) if "_coe_ext_origen_fields" in globals() else {}
 
     for field in (
+        "estado",
         "estado_catalogo_id",
         "estado_principal",
         "subestado_catalogo_id",
@@ -23259,6 +23378,11 @@ def _coe_cfg_marcar_estado_origen(row, origen="CATALOGO_ESTADOS"):
     ):
         if hasattr(row, field):
             origen_fields[field] = origen
+
+    # El estado visible proviene de una selección controlada y no debe volver a
+    # ser pisado por una sincronización normal de la base.
+    if hasattr(row, "estado"):
+        manual_fields["estado"] = True
 
     if hasattr(row, "campos_editados_manual_json"):
         row.campos_editados_manual_json = _coe_ext_json_dumps(manual_fields)
@@ -23273,7 +23397,8 @@ def _coe_cfg_aplicar_subestado_catalogo(row, subestado, usuario=None, observacio
     - llena subestado_catalogo_id y subestado;
     - llena estado_catalogo_id y estado_principal desde el padre;
     - recalcula responsable_estado y estado_consolidado;
-    - NO modifica row.estado, porque ese es el estado original de la base.
+    - actualiza row.estado con el estado principal oficial;
+    - conserva estado_herramienta_gestion como dato original de la fuente.
     """
     if not row or not subestado:
         return row
@@ -23295,9 +23420,11 @@ def _coe_cfg_aplicar_subestado_catalogo(row, subestado, usuario=None, observacio
     if estado_padre:
         _coe_cfg_set_if_exists(row, "estado_catalogo_id", estado_padre.id)
         _coe_cfg_set_if_exists(row, "estado_principal", estado_padre.valor)
+        _coe_cfg_set_if_exists(row, "estado", estado_padre.valor)
     else:
         _coe_cfg_set_if_exists(row, "estado_catalogo_id", None)
         _coe_cfg_set_if_exists(row, "estado_principal", estado_principal_valor)
+        _coe_cfg_set_if_exists(row, "estado", estado_principal_valor)
 
     responsable, consolidado = _coe_cfg_estado_responsable_consolidado(
         estado_principal_valor,
