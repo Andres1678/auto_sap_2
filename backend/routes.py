@@ -22075,7 +22075,19 @@ def _coe_avg_alert(level, front, row, days, message, base_date=None, remaining=N
 def promedio_atencion_coe_sap_funcional():
     try:
         base_query = CoeSapFuncionalCalificacion.query
-        query = _coe_rep_apply_filters(base_query)
+        # Esta vista debe partir de la misma población completa que la tabla
+        # de clasificación. Antes se aplicaba implícitamente el mes actual y,
+        # si no había casos creados en ese mes, todos los indicadores quedaban
+        # en cero aunque /calificacion sí mostrara información.
+        modo_periodo = (
+            request.args.get("modo_periodo")
+            or request.args.get("modoPeriodo")
+            or ""
+        ).strip()
+        query = _coe_rep_apply_filters(
+            base_query,
+            include_period=bool(modo_periodo),
+        )
 
         rows = (
             query.with_entities(

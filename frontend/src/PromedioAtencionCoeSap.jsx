@@ -19,7 +19,7 @@ function num(value, decimals = 2) { const n = Number(value || 0); return (Number
 function integer(value) { return Number(value || 0).toLocaleString("es-CO"); }
 function text(value) { return value === null || value === undefined || value === "" ? "—" : String(value); }
 function options(values) { return (Array.isArray(values) ? values : []).map((item) => item && typeof item === "object" ? { value: item.value ?? item.label ?? "", label: item.label ?? item.value ?? "" } : { value: item, label: item }).filter((item) => String(item.value ?? "").trim()); }
-function queryString(filters) { const qs = new URLSearchParams(); Object.entries(filters || {}).forEach(([key, value]) => { if (String(value ?? "").trim()) qs.set(key, String(value).trim()); }); return qs.toString(); }
+function queryString(filters) { const qs = new URLSearchParams(); qs.set("modo_periodo", "sin_filtro"); Object.entries(filters || {}).forEach(([key, value]) => { if (String(value ?? "").trim()) qs.set(key, String(value).trim()); }); return qs.toString(); }
 function fileName(header, fallback) { const utf8 = (header || "").match(/filename\*=UTF-8''([^;]+)/i); const basic = (header || "").match(/filename="?([^";]+)"?/i); return utf8?.[1] ? decodeURIComponent(utf8[1]) : basic?.[1] || fallback; }
 
 async function downloadFile(url, headers) {
