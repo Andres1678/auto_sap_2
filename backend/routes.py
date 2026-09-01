@@ -3616,6 +3616,62 @@ INT_FIELDS_API = {
     "valor_oferta_claro",
 }
 
+OPORTUNIDAD_LINK_FIELDS = {
+    "acceso_sharepoint",
+    "acceso_aos",
+    "acceso_ot",
+    "borrador_contrato",
+    "contrato_oficial",
+}
+
+PERMISO_OPORTUNIDADES_ELIMINAR = "OPORTUNIDADES_ELIMINAR"
+PERMISO_OPORTUNIDADES_ENLACES_VER = "OPORTUNIDADES_ENLACES_VER"
+PERMISO_OPORTUNIDADES_ENLACES_EDITAR = "OPORTUNIDADES_ENLACES_EDITAR"
+
+
+def _usuario_actual_tiene_permiso(codigo):
+    usuario = getattr(g, "current_user", None)
+    if not usuario:
+        return False
+
+    rol_nombre = str(
+        getattr(getattr(usuario, "rol_obj", None), "nombre", "")
+        or getattr(usuario, "rol", "")
+        or ""
+    ).strip().upper()
+
+    if rol_nombre == "ADMIN":
+        return True
+
+    return str(codigo or "").strip().upper() in obtener_permisos_finales(usuario)
+
+
+def _payload_modifica_enlaces(data):
+    data = data or {}
+    return any(
+        field in data and str(data.get(field) or "").strip()
+        for field in OPORTUNIDAD_LINK_FIELDS
+    )
+
+
+def _payload_cambia_enlaces(data, oportunidad_actual):
+    data = data or {}
+    for field in OPORTUNIDAD_LINK_FIELDS:
+        if field not in data:
+            continue
+        nuevo = str(data.get(field) or "").strip()
+        actual = str(getattr(oportunidad_actual, field, None) or "").strip()
+        if nuevo != actual:
+            return True
+    return False
+
+
+def _ocultar_enlaces_oportunidad(payload):
+    result = dict(payload or {})
+    for field in OPORTUNIDAD_LINK_FIELDS:
+        result.pop(field, None)
+    return result
+
 def _upper(v):
     return str(v).strip().upper() if v is not None else None
 
@@ -4082,6 +4138,15 @@ def normalize_oportunidad_dict(row: dict) -> dict:
     return row
 
 
+def _oportunidad_to_dict_seguro(oportunidad):
+    payload = normalize_oportunidad_dict(oportunidad.to_dict())
+    puede_ver = (
+        _usuario_actual_tiene_permiso(PERMISO_OPORTUNIDADES_ENLACES_VER)
+        or _usuario_actual_tiene_permiso(PERMISO_OPORTUNIDADES_ENLACES_EDITAR)
+    )
+    return payload if puede_ver else _ocultar_enlaces_oportunidad(payload)
+
+
 @bp.route("/oportunidades/import", methods=["POST"])
 @permission_required("OPORTUNIDADES_CREAR")
 def importar_oportunidades():
@@ -4157,6 +4222,14 @@ def importar_oportunidades():
         "TIPO DE SERVICIO": "tipo_servicio",
         "SEMESTRE DE EJECUCIÓN": "semestre_ejecucion",
         "PUBLICACIÓN SHAREPOINT": "publicacion_sharepoint",
+        "ACCESO SHAREPOINT": "acceso_sharepoint",
+        "SHAREPOINT": "acceso_sharepoint",
+        "AOS": "acceso_aos",
+        "ACCESO AOS": "acceso_aos",
+        "OT": "acceso_ot",
+        "ACCESO OT": "acceso_ot",
+        "BORRADOR DE CONTRATO": "borrador_contrato",
+        "CONTRATO OFICIAL": "contrato_oficial",
         "TIENE CODIGO DE PROYECTO / EVOLUTIVO": "tiene_codigo_proyecto_evolutivo",
         "TIENE CÓDIGO DE PROYECTO / EVOLUTIVO": "tiene_codigo_proyecto_evolutivo",
         "PROYECTO / EVOLUTIVO": "tiene_codigo_proyecto_evolutivo",
@@ -4285,6 +4358,14 @@ def importar_oportunidades():
             obj["mrc_normalizado"] = None
 
         obj = clean_payload(obj)
+
+        if (
+            any(obj.get(field) for field in OPORTUNIDAD_LINK_FIELDS)
+            and not _usuario_actual_tiene_permiso(PERMISO_OPORTUNIDADES_ENLACES_EDITAR)
+        ):
+            return jsonify({
+                "mensaje": "No tiene permiso para importar enlaces y documentos de oportunidades"
+            }), 403
 
         ok_codigo, mensaje_codigo = _validar_codigo_proyecto_evolutivo_data(obj)
         if not ok_codigo:
@@ -4439,7 +4520,9 @@ def listar_oportunidades():
             query = _apply_detalle_ots_scope(query)
 
         query = query.order_by(Oportunidad.id.desc())
-        data = [normalize_oportunidad_dict(o.to_dict()) for o in query.limit(5000).all()]
+        data = []
+        for oportunidad in query.limit(5000).all():
+            data.append(_oportunidad_to_dict_seguro(oportunidad))
         return jsonify(data), 200
 
     except Exception:
@@ -4450,6 +4533,14 @@ def listar_oportunidades():
 def crear_oportunidad():
     try:
         data = clean_payload(request.get_json() or {})
+
+        if (
+            _payload_modifica_enlaces(data)
+            and not _usuario_actual_tiene_permiso(PERMISO_OPORTUNIDADES_ENLACES_EDITAR)
+        ):
+            return jsonify({
+                "mensaje": "No tiene permiso para modificar enlaces y documentos de oportunidades"
+            }), 403
 
         ok_codigo, mensaje_codigo = _validar_codigo_proyecto_evolutivo_data(data)
         if not ok_codigo:
@@ -4467,7 +4558,7 @@ def crear_oportunidad():
         o = Oportunidad(**data)
         db.session.add(o)
         db.session.commit()
-        return jsonify(o.to_dict()), 201
+        return jsonify(_oportunidad_to_dict_seguro(o)), 201
     except Exception:
         db.session.rollback()
         return jsonify({"mensaje": "Error creando oportunidad", "trace": traceback.format_exc()}), 500
@@ -4482,6 +4573,14 @@ def editar_oportunidad(id):
 
         data = clean_payload(request.get_json() or {})
         o = Oportunidad.query.get_or_404(id)
+
+        if (
+            _payload_cambia_enlaces(data, o)
+            and not _usuario_actual_tiene_permiso(PERMISO_OPORTUNIDADES_ENLACES_EDITAR)
+        ):
+            return jsonify({
+                "mensaje": "No tiene permiso para modificar enlaces y documentos de oportunidades"
+            }), 403
 
         def norm_key(value):
             return re.sub(r"\s+", " ", str(value or "").strip().upper())
@@ -4616,9 +4715,14 @@ def editar_oportunidad(id):
                 "duracion",
                 "pais",
                 "fecha_cierre_oportunidad",
+                "codigo_prc",
                 "fecha_firma_aos",
                 "pm_asignado_claro",
                 "pm_asignado_hitss",
+                "descripcion_ot",
+                "num_enlace",
+                "num_incidente",
+                "num_ot",
                 "estado_ot",
                 "proyeccion_ingreso",
                 "fecha_compromiso",
@@ -4626,6 +4730,11 @@ def editar_oportunidad(id):
                 "estado_proyecto",
                 "anio_creacion_ot",
                 "seguimiento_ot",
+                "acceso_sharepoint",
+                "acceso_aos",
+                "acceso_ot",
+                "borrador_contrato",
+                "contrato_oficial",
                 "mostrar_dashboard",
             ]
 
@@ -4714,9 +4823,9 @@ def editar_oportunidad(id):
 
         return jsonify({
             "mensaje": "Actualizado correctamente",
-            "oportunidad": normalize_oportunidad_dict(o.to_dict()),
+            "oportunidad": _oportunidad_to_dict_seguro(o),
             "principal_sincronizada": (
-                normalize_oportunidad_dict(principal_sincronizada.to_dict())
+                _oportunidad_to_dict_seguro(principal_sincronizada)
                 if principal_sincronizada else None
             ),
         }), 200
@@ -4730,7 +4839,7 @@ def editar_oportunidad(id):
 
 
 @bp.route("/oportunidades/<int:id>", methods=["DELETE"])
-@permission_required("OPORTUNIDADES_ELIMINAR")
+@permission_required(PERMISO_OPORTUNIDADES_ELIMINAR)
 def eliminar_oportunidad(id):
     try:
         data = request.get_json(silent=True) or {}
@@ -4949,7 +5058,7 @@ def eliminar_oportunidad(id):
         return jsonify({
             "mensaje": "Oportunidad principal eliminada y asignaciones movidas correctamente.",
             "modo": modo,
-            "principal_destino": principal_destino.to_dict(),
+            "principal_destino": _oportunidad_to_dict_seguro(principal_destino),
             "nueva_principal_id": principal_destino.id,
             "total_asignaciones_movidas": len(hijos_asignados),
         }), 200
@@ -13916,7 +14025,7 @@ def marcar_oportunidad_principal(id):
 
         return jsonify({
             "mensaje": "Oportunidad marcada como principal",
-            "oportunidad": oportunidad.to_dict()
+            "oportunidad": _oportunidad_to_dict_seguro(oportunidad)
         }), 200
 
     except Exception as e:
@@ -13987,11 +14096,31 @@ def asignar_oportunidad_a_principal(id):
         oportunidad.consecutivo_sub = consecutivo_sub
         oportunidad.codigo_control = f"{principal.codigo_control or principal.consecutivo_principal}.{consecutivo_sub}"
 
+        # Cuando se asigna la primera OT, la principal toma su información
+        # descriptiva. Las siguientes OTs no reemplazan estos textos.
+        if consecutivo_sub == 1:
+            campos_primera_ot = [
+                "tipo_cliente", "tipo_solicitud", "caso_sm", "salesforce",
+                "ultimos_6_meses", "ultimo_mes", "retraso", "estado_oferta",
+                "resultado_oferta", "calificacion_oportunidad", "origen_oportunidad",
+                "direccion_comercial", "gerencia_comercial", "comercial_asignado",
+                "consultor_comercial", "comercial_asignado_hitss", "observaciones",
+                "categoria_perdida", "subcategoria_perdida", "tipo_moneda",
+                "duracion", "pais", "pm_asignado_claro", "pm_asignado_hitss",
+                "descripcion_ot", "num_enlace", "num_incidente", "num_ot",
+                "estado_ot", "estado_proyecto", "anio_creacion_ot", "seguimiento_ot",
+                "acceso_sharepoint", "acceso_aos", "acceso_ot",
+                "borrador_contrato", "contrato_oficial", "mostrar_dashboard",
+            ]
+            for campo in campos_primera_ot:
+                if hasattr(principal, campo) and hasattr(oportunidad, campo):
+                    setattr(principal, campo, getattr(oportunidad, campo))
+
         db.session.commit()
 
         return jsonify({
             "mensaje": "Oportunidad asignada a principal",
-            "oportunidad": oportunidad.to_dict()
+            "oportunidad": _oportunidad_to_dict_seguro(oportunidad)
         }), 200
 
     except Exception as e:
@@ -14017,7 +14146,7 @@ def quitar_oportunidad_de_principal(id):
 
         return jsonify({
             "mensaje": "Oportunidad retirada de la principal",
-            "oportunidad": oportunidad.to_dict()
+            "oportunidad": _oportunidad_to_dict_seguro(oportunidad)
         }), 200
 
     except Exception:
@@ -14049,7 +14178,7 @@ def listar_oportunidades_principales():
             Oportunidad.id.asc()
         ).all()
 
-        return jsonify([o.to_dict() for o in rows]), 200
+        return jsonify([_oportunidad_to_dict_seguro(o) for o in rows]), 200
 
     except Exception:
         return jsonify({
@@ -14165,8 +14294,8 @@ def copiar_oportunidad_como_principal(id):
 
         return jsonify({
             "mensaje": "Oportunidad principal creada desde copia",
-            "principal": principal.to_dict(),
-            "suboportunidad": origen.to_dict(),
+            "principal": _oportunidad_to_dict_seguro(principal),
+            "suboportunidad": _oportunidad_to_dict_seguro(origen),
         }), 201
 
     except Exception as e:
@@ -14380,9 +14509,9 @@ def quitar_oportunidad_principal_avanzado(id):
         return jsonify({
             "mensaje": "Oportunidad principal retirada y OTs reasignadas correctamente.",
             "modo": modo,
-            "principal_destino": principal_destino.to_dict(),
-            "principal_convertida": principal_actual.to_dict(),
-            "ots_reasignadas": [o.to_dict() for o in movidas],
+            "principal_destino": _oportunidad_to_dict_seguro(principal_destino),
+            "principal_convertida": _oportunidad_to_dict_seguro(principal_actual),
+            "ots_reasignadas": [_oportunidad_to_dict_seguro(o) for o in movidas],
             "total_ots_reasignadas": len(movidas),
             "nueva_principal_id": principal_destino.id,
         }), 200

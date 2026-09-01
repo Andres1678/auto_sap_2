@@ -289,6 +289,14 @@ class Oportunidad(db.Model):
     semestre_ejecucion = db.Column(db.String(32))
     publicacion_sharepoint = db.Column(db.String(255))
 
+    # Enlaces/documentos de gestión. Se dejan como texto libre porque pueden
+    # contener URLs completas de SharePoint u otras plataformas internas.
+    acceso_sharepoint = db.Column(db.Text, nullable=True)
+    acceso_aos = db.Column(db.Text, nullable=True)
+    acceso_ot = db.Column(db.Text, nullable=True)
+    borrador_contrato = db.Column(db.Text, nullable=True)
+    contrato_oficial = db.Column(db.Text, nullable=True)
+
     mostrar_dashboard = db.Column(
         db.String(10),
         nullable=True,
@@ -414,6 +422,11 @@ class Oportunidad(db.Model):
             "tipo_servicio": self.tipo_servicio,
             "semestre_ejecucion": self.semestre_ejecucion,
             "publicacion_sharepoint": self.publicacion_sharepoint,
+            "acceso_sharepoint": self.acceso_sharepoint,
+            "acceso_aos": self.acceso_aos,
+            "acceso_ot": self.acceso_ot,
+            "borrador_contrato": self.borrador_contrato,
+            "contrato_oficial": self.contrato_oficial,
             "mostrar_dashboard": self.mostrar_dashboard,
             "tiene_codigo_proyecto_evolutivo": (
                 self.tiene_codigo_proyecto_evolutivo

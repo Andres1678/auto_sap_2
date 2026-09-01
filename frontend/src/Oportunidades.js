@@ -104,7 +104,43 @@ const COLUMN_LABELS = {
   tiene_codigo_proyecto_evolutivo: "¿TIENE CÓDIGO PROYECTO / EVOLUTIVO?",
   codigo_proyecto_evolutivo: "CÓDIGO PROYECTO / EVOLUTIVO",
   num_enlace: "ID ENLACE",
+  acceso_sharepoint: "ACCESO SHAREPOINT",
+  acceso_aos: "AOS",
+  acceso_ot: "OT",
+  borrador_contrato: "BORRADOR DE CONTRATO",
+  contrato_oficial: "CONTRATO OFICIAL",
 };
+
+const LINK_ACCESS_COLS = new Set([
+  "acceso_sharepoint",
+  "acceso_aos",
+  "acceso_ot",
+  "borrador_contrato",
+  "contrato_oficial",
+]);
+
+function readStoredUser() {
+  try {
+    const raw =
+      localStorage.getItem("userData") ||
+      localStorage.getItem("user") ||
+      sessionStorage.getItem("userData") ||
+      sessionStorage.getItem("user") ||
+      "{}";
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function normalizeUserPermissions(user) {
+  const raw = user?.permisos || user?.user?.permisos || [];
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((p) => (typeof p === "string" ? p : p?.codigo || p?.code || p?.nombre))
+    .filter(Boolean)
+    .map((p) => String(p).trim().toUpperCase());
+}
 
 const CLIENTE_COL = "nombre_cliente";
 const SERVICIO_COL = "servicio";
@@ -646,6 +682,11 @@ const PRINCIPAL_EDITABLE_COLS = new Set([
   "mostrar_dashboard",
   "tiene_codigo_proyecto_evolutivo",
   "codigo_proyecto_evolutivo",
+  "acceso_sharepoint",
+  "acceso_aos",
+  "acceso_ot",
+  "borrador_contrato",
+  "contrato_oficial",
 ]);
 
 const PRINCIPAL_ESTADO_FROM_FIRST_OT_COLS = new Set([
@@ -681,9 +722,14 @@ const FIRST_OT_TO_PRINCIPAL_SYNC_FIELDS = new Set([
   "duracion",
   "pais",
   "fecha_cierre_oportunidad",
+  "codigo_prc",
   "fecha_firma_aos",
   "pm_asignado_claro",
   "pm_asignado_hitss",
+  "descripcion_ot",
+  "num_enlace",
+  "num_incidente",
+  "num_ot",
   "estado_ot",
   "proyeccion_ingreso",
   "fecha_compromiso",
@@ -691,6 +737,11 @@ const FIRST_OT_TO_PRINCIPAL_SYNC_FIELDS = new Set([
   "estado_proyecto",
   "anio_creacion_ot",
   "seguimiento_ot",
+  "acceso_sharepoint",
+  "acceso_aos",
+  "acceso_ot",
+  "borrador_contrato",
+  "contrato_oficial",
   "mostrar_dashboard",
 ]);
 
@@ -1102,6 +1153,23 @@ function isAsiCloudRow(row) {
 }
 
 export default function Oportunidades() {
+  const currentUser = useMemo(() => readStoredUser(), []);
+  const currentRole = String(
+    currentUser?.rol || currentUser?.user?.rol || currentUser?.rol_obj?.nombre || ""
+  ).toUpperCase();
+  const userPermissions = useMemo(
+    () => normalizeUserPermissions(currentUser),
+    [currentUser]
+  );
+  const isAdmin = currentRole === "ADMIN";
+  const canEditOpportunityLinks =
+    isAdmin || userPermissions.includes("OPORTUNIDADES_ENLACES_EDITAR");
+  const canViewOpportunityLinks =
+    isAdmin ||
+    canEditOpportunityLinks ||
+    userPermissions.includes("OPORTUNIDADES_ENLACES_VER");
+  const canDeleteOpportunities =
+    isAdmin || userPermissions.includes("OPORTUNIDADES_ELIMINAR");
   const [data, setData] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
   const [uniqueValues, setUniqueValues] = useState({});
@@ -1176,6 +1244,11 @@ export default function Oportunidades() {
       "tipo_servicio",
       "semestre_ejecucion",
       "publicacion_sharepoint",
+      "acceso_sharepoint",
+      "acceso_aos",
+      "acceso_ot",
+      "borrador_contrato",
+      "contrato_oficial",
       "mostrar_dashboard",
       "tiene_codigo_proyecto_evolutivo",
       "codigo_proyecto_evolutivo",
@@ -1204,8 +1277,16 @@ export default function Oportunidades() {
   };
 
   const columnOrder = useMemo(
-    () => [...new Set(baseColumnOrder.filter((c) => !REMOVE_COLS.has(c)))],
-    [baseColumnOrder]
+    () => [
+      ...new Set(
+        baseColumnOrder.filter(
+          (c) =>
+            !REMOVE_COLS.has(c) &&
+            (canViewOpportunityLinks || !LINK_ACCESS_COLS.has(c))
+        )
+      ),
+    ],
+    [baseColumnOrder, canViewOpportunityLinks]
   );
 
   const displayColumnOrder = useMemo(() => {
@@ -1264,6 +1345,10 @@ export default function Oportunidades() {
 
       if (col === CODIGO_PROYECTO_COL) {
         classes.push("codigo-proyecto-value-col");
+      }
+
+      if (LINK_ACCESS_COLS.has(col)) {
+        classes.push("access-link-col");
       }
 
       const idx = tableColumnOrder.indexOf(col);
@@ -2568,6 +2653,15 @@ export default function Oportunidades() {
   const startEdit = (row, col) => {
     if (!row?.id) return;
 
+    if (LINK_ACCESS_COLS.has(col) && !canEditOpportunityLinks) {
+      Swal.fire(
+        "Solo lectura",
+        "Tienes permiso para consultar este enlace, pero no para modificarlo.",
+        "info"
+      );
+      return;
+    }
+
     if (col === "mrc_normalizado") {
       Swal.fire("Info", "Este campo se calcula automáticamente (OTC/12 + MRC).", "info");
       return;
@@ -3242,6 +3336,27 @@ export default function Oportunidades() {
     }
 
 
+    if (LINK_ACCESS_COLS.has(col)) {
+      return (
+        <input
+          className="cell-input access-link-input"
+          type="text"
+          autoFocus
+          value={editValue ?? ""}
+          placeholder="Pega el enlace o escribe una referencia"
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              e.preventDefault();
+              closeEditing();
+            }
+          }}
+          onBlur={(e) => saveEdit(row.id, col, e.currentTarget.value)}
+        />
+      );
+    }
+
     return (
       <input
         className="cell-input"
@@ -3272,6 +3387,23 @@ export default function Oportunidades() {
 
     if (col === "valor_oferta_claro") {
       return <span className="cell-readonly-hint">Se edita al asignar OT</span>;
+    }
+
+    if (LINK_ACCESS_COLS.has(col)) {
+      return (
+        <input
+          className="cell-input access-link-input"
+          type="text"
+          value={newRow[col] ?? ""}
+          disabled={!canEditOpportunityLinks}
+          placeholder={
+            canEditOpportunityLinks
+              ? "Pega el enlace o escribe una referencia"
+              : "Solo lectura"
+          }
+          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+        />
+      );
     }
 
     if (col === CLIENTE_COL) {
@@ -3984,6 +4116,8 @@ export default function Oportunidades() {
               ? renderLongTextCell(row?.[col])
               : col === SERVICIO_COL
               ? renderMultilineTextCell(row?.[col])
+              : LINK_ACCESS_COLS.has(col)
+              ? renderAccessLink(row?.[col])
               : formatCell(col, row[col])}
           </td>
         );
@@ -3991,16 +4125,6 @@ export default function Oportunidades() {
 
       <td className="acciones">
         <div className="op-actions">
-          <button
-            type="button"
-            className="op-action-btn op-action-main"
-            onClick={() => marcarComoPrincipal(row)}
-            disabled={loading}
-            title="Volver esta misma fila oportunidad principal sin copiar información"
-          >
-            Hacer principal
-          </button>
-
           <button
             type="button"
             className="op-action-btn op-action-copy"
@@ -4033,15 +4157,17 @@ export default function Oportunidades() {
             </button>
           )}
 
-          <button
-            type="button"
-            className="op-action-btn op-action-delete"
-            onClick={() => eliminarOportunidad(row)}
-            disabled={loading}
-            title="Eliminar oportunidad duplicada por error"
-          >
-            Eliminar
-          </button>
+          {canDeleteOpportunities && (
+            <button
+              type="button"
+              className="op-action-btn op-action-delete"
+              onClick={() => eliminarOportunidad(row)}
+              disabled={loading}
+              title="Eliminar oportunidad duplicada por error"
+            >
+              Eliminar
+            </button>
+          )}
         </div>
       </td>
     </tr>
@@ -4145,6 +4271,8 @@ export default function Oportunidades() {
               ? "-"
               : isLong
               ? renderLongTextCell(grupo.principalRow?.[col])
+              : LINK_ACCESS_COLS.has(col)
+              ? renderAccessLink(grupo.principalRow?.[col])
               : formatCell(col, grupo.principalRow?.[col])
             : "-";
 
@@ -4304,7 +4432,7 @@ export default function Oportunidades() {
               {isOpen ? "Ocultar" : "Ver"}
             </button>
 
-            {!grupo.sinPrincipal && grupo.principalRow?.id && (
+            {!grupo.sinPrincipal && grupo.principalRow?.id && canDeleteOpportunities && (
               <button
                 type="button"
                 className="op-action-btn op-action-remove-principal"
@@ -4586,5 +4714,26 @@ export default function Oportunidades() {
         categoriesMap={CATEGORIA_SUBCATEGORIA}
       />
     </div>
+  );
+}
+
+function renderAccessLink(value) {
+  const text = normalizeText(value);
+  if (!text) return "-";
+  if (!/^https?:\/\//i.test(text)) {
+    return <span className="access-link-text">{text}</span>;
+  }
+
+  return (
+    <a
+      className="access-link-button"
+      href={text}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(event) => event.stopPropagation()}
+      title={text}
+    >
+      Abrir enlace
+    </a>
   );
 }
