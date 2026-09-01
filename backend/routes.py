@@ -22809,6 +22809,8 @@ def exportar_importaciones_coe_sap_funcional_excel():
 
 COE_TIPO_ESTADO_PRINCIPAL = "ESTADO_PRINCIPAL"
 COE_TIPO_SUBESTADO = "SUBESTADO"
+COE_TIPO_CLIENTE_ALIAS = "CLIENTE_ALIAS"
+COE_RESPONSABLES_VALIDOS = {"CLARO", "CLIENTE", "CERRADO"}
 
 
 def _coe_cfg_norm(value):
@@ -22858,7 +22860,7 @@ def _coe_cfg_set_if_exists(row, field, value):
 
 
 def _coe_cfg_catalogo_to_dict(row):
-    return {
+    payload = {
         "id": row.id,
         "tipo": row.tipo,
         "valor": row.valor,
@@ -22873,6 +22875,27 @@ def _coe_cfg_catalogo_to_dict(row):
         "createdAt": _calificacion_fecha_str(row.created_at) if "_calificacion_fecha_str" in globals() else None,
         "updatedAt": _calificacion_fecha_str(row.updated_at) if "_calificacion_fecha_str" in globals() else None,
     }
+
+    if row.tipo == COE_TIPO_ESTADO_PRINCIPAL:
+        payload["responsable"] = _coe_cfg_responsable_valido(row.extra_2, row.valor)
+
+    return payload
+
+
+def _coe_cfg_responsable_valido(value, estado_nombre=None):
+    responsable = _coe_cfg_norm(value)
+    if responsable in COE_RESPONSABLES_VALIDOS:
+        return responsable
+
+    # Compatibilidad para estados creados antes de incorporar el campo.
+    estado_norm = _coe_cfg_norm(estado_nombre)
+    if estado_norm == "CERRADO" or "SOLUCION" in estado_norm:
+        return "CERRADO"
+    if estado_norm == "PENDIENTE DE CLIENTE" or "CLIENTE" in estado_norm or "USUARIO" in estado_norm:
+        return "CLIENTE"
+    if estado_norm:
+        return "CLARO"
+    return None
 
 
 def _coe_cfg_estado_texto_original(row):
@@ -22893,20 +22916,29 @@ def _coe_cfg_find_cliente_by_nombre(nombre):
     if not nombre_norm:
         return None
 
+    # 1) Los alias manuales son la fuente de mayor prioridad. A diferencia de
+    # actualizar casos directamente, esta regla no se pierde al reclasificar.
+    alias = CoeSapFuncionalCatalogo.query.filter(
+        CoeSapFuncionalCatalogo.tipo == COE_TIPO_CLIENTE_ALIAS,
+        CoeSapFuncionalCatalogo.valor_normalizado == nombre_norm,
+        CoeSapFuncionalCatalogo.activo == True,
+    ).first()
+    if alias:
+        cliente_id = _coe_cfg_safe_int(alias.extra_1)
+        cliente = Cliente.query.get(cliente_id) if cliente_id else None
+        if cliente:
+            return cliente
+
     clientes = Cliente.query.order_by(Cliente.nombre_cliente.asc()).all()
 
-    # Coincidencia exacta normalizada.
+    # 2) Coincidencia exacta normalizada.
     for cliente in clientes:
         if _coe_cfg_norm(getattr(cliente, "nombre_cliente", None)) == nombre_norm:
             return cliente
 
-    # Coincidencia flexible.
-    # Ejemplo: sociedad viene "AIRE S.A.S" y cliente está "AIR-E".
-    for cliente in clientes:
-        cliente_norm = _coe_cfg_norm(getattr(cliente, "nombre_cliente", None))
-        if cliente_norm and (cliente_norm in nombre_norm or nombre_norm in cliente_norm):
-            return cliente
-
+    # No se usa coincidencia por texto contenido: nombres cortos como SAP,
+    # JGB, AIRE o CLARO podrían asociarse al cliente equivocado. Esos casos
+    # deben resolverse creando un alias desde la pantalla de configuración.
     return None
 
 
@@ -22962,22 +22994,19 @@ def _coe_cfg_find_subestado_by_id(subestado_id, solo_activos=False):
     return q.first()
 
 
-def _coe_cfg_estado_responsable_consolidado(estado_principal):
+def _coe_cfg_estado_responsable_consolidado(estado_principal, responsable_configurado=None):
     """
     Regla única para que los reportes no dependan de textos libres.
     Se deriva del estado principal configurado en la lista controlada.
     """
-    estado_norm = _coe_cfg_norm(estado_principal)
-
-    if not estado_norm:
+    responsable = _coe_cfg_responsable_valido(responsable_configurado, estado_principal)
+    if not responsable:
         return None, None
 
-    if "CERR" in estado_norm or "SOLUCION" in estado_norm:
-        return "CLARO", "CERRADO"
-
-    if "CLIENTE" in estado_norm or "USUARIO" in estado_norm:
+    if responsable == "CERRADO":
+        return "CERRADO", "CERRADO"
+    if responsable == "CLIENTE":
         return "CLIENTE", "SIN CERRAR"
-
     return "CLARO", "SIN CERRAR"
 
 
@@ -23076,7 +23105,10 @@ def _coe_cfg_aplicar_subestado_catalogo(row, subestado, usuario=None, observacio
         _coe_cfg_set_if_exists(row, "estado_catalogo_id", None)
         _coe_cfg_set_if_exists(row, "estado_principal", estado_principal_valor)
 
-    responsable, consolidado = _coe_cfg_estado_responsable_consolidado(estado_principal_valor)
+    responsable, consolidado = _coe_cfg_estado_responsable_consolidado(
+        estado_principal_valor,
+        getattr(estado_padre, "extra_2", None) if estado_padre else None,
+    )
 
     if responsable:
         _coe_cfg_set_if_exists(row, "responsable_estado", responsable)
@@ -23153,7 +23185,10 @@ def _coe_cfg_clasificar_estado(row):
         _coe_cfg_set_if_exists(row, "estado_principal", estado_principal.valor)
         _coe_cfg_set_if_exists(row, "subestado_catalogo_id", None)
         _coe_cfg_set_if_exists(row, "subestado", estado_original)
-        responsable, consolidado = _coe_cfg_estado_responsable_consolidado(estado_principal.valor)
+        responsable, consolidado = _coe_cfg_estado_responsable_consolidado(
+            estado_principal.valor,
+            getattr(estado_principal, "extra_2", None),
+        )
         if responsable:
             _coe_cfg_set_if_exists(row, "responsable_estado", responsable)
         if consolidado:
@@ -23288,11 +23323,14 @@ def coe_config_crear_estado():
         data = request.get_json(silent=True) or {}
         nombre = _coe_cfg_str(data.get("nombre") or data.get("valor"))
         descripcion = _coe_cfg_str(data.get("descripcion"))
+        responsable = _coe_cfg_responsable_valido(data.get("responsable"), nombre)
         orden = _coe_cfg_safe_int(data.get("orden"), 0) or 0
         activo = _coe_cfg_bool(data.get("activo"), True)
 
         if not nombre:
             return jsonify({"mensaje": "El nombre del estado es obligatorio"}), 400
+        if responsable not in COE_RESPONSABLES_VALIDOS:
+            return jsonify({"mensaje": "Selecciona un responsable válido: CLARO, CLIENTE o CERRADO"}), 400
 
         valor_normalizado = _coe_cfg_norm(nombre)
         row = CoeSapFuncionalCatalogo.query.filter_by(
@@ -23306,6 +23344,7 @@ def coe_config_crear_estado():
                 valor=nombre,
                 valor_normalizado=valor_normalizado,
                 extra_1=descripcion,
+                extra_2=responsable,
                 activo=activo,
                 orden=orden,
                 created_at=datetime.utcnow(),
@@ -23316,6 +23355,7 @@ def coe_config_crear_estado():
         else:
             row.valor = nombre
             row.extra_1 = descripcion
+            row.extra_2 = responsable
             row.activo = activo
             row.orden = orden
             row.updated_at = datetime.utcnow()
@@ -23345,11 +23385,17 @@ def coe_config_actualizar_estado(estado_id):
         data = request.get_json(silent=True) or {}
         nombre = _coe_cfg_str(data.get("nombre") or data.get("valor") or row.valor)
         descripcion = _coe_cfg_str(data.get("descripcion"))
+        responsable = _coe_cfg_responsable_valido(
+            data.get("responsable") or row.extra_2,
+            nombre,
+        )
         orden = _coe_cfg_safe_int(data.get("orden"), row.orden or 0) or 0
         activo = _coe_cfg_bool(data.get("activo"), bool(row.activo))
 
         if not nombre:
             return jsonify({"mensaje": "El nombre del estado es obligatorio"}), 400
+        if responsable not in COE_RESPONSABLES_VALIDOS:
+            return jsonify({"mensaje": "Selecciona un responsable válido: CLARO, CLIENTE o CERRADO"}), 400
 
         nuevo_norm = _coe_cfg_norm(nombre)
         duplicado = CoeSapFuncionalCatalogo.query.filter(
@@ -23364,6 +23410,7 @@ def coe_config_actualizar_estado(estado_id):
         row.valor = nombre
         row.valor_normalizado = nuevo_norm
         row.extra_1 = descripcion
+        row.extra_2 = responsable
         row.orden = orden
         row.activo = activo
         row.updated_at = datetime.utcnow()
@@ -23443,6 +23490,11 @@ def coe_config_listar_subestados():
             item["estadoId"] = _coe_cfg_safe_int(row.extra_1, None)
             item["estadoNombre"] = row.extra_2
             item["descripcion"] = row.extra_3
+            estado_padre = _coe_cfg_find_estado_principal_by_id(item["estadoId"])
+            item["responsable"] = _coe_cfg_responsable_valido(
+                getattr(estado_padre, "extra_2", None) if estado_padre else None,
+                getattr(estado_padre, "valor", None) if estado_padre else item["estadoNombre"],
+            )
             casos = 0
             if hasattr(CoeSapFuncionalCalificacion, "subestado_catalogo_id"):
                 casos = CoeSapFuncionalCalificacion.query.filter_by(subestado_catalogo_id=row.id).count()
@@ -23627,6 +23679,14 @@ def coe_config_listar_clientes():
                 "nombreCliente": cliente.nombre_cliente,
                 "nombre_cliente": cliente.nombre_cliente,
                 "totalCasosAsociados": int(asociados or 0),
+                "aliases": [
+                    alias.valor
+                    for alias in CoeSapFuncionalCatalogo.query.filter(
+                        CoeSapFuncionalCatalogo.tipo == COE_TIPO_CLIENTE_ALIAS,
+                        CoeSapFuncionalCatalogo.extra_1 == str(cliente.id),
+                        CoeSapFuncionalCatalogo.activo == True,
+                    ).order_by(CoeSapFuncionalCatalogo.valor.asc()).all()
+                ],
             })
 
         pendientes = 0
@@ -23667,6 +23727,29 @@ def coe_config_asociar_clientes():
                 return jsonify({"mensaje": "Cliente no encontrado"}), 404
 
             sociedad_norm = _coe_cfg_norm(sociedad)
+
+            # Guardar una regla permanente sociedad -> cliente. La asociación
+            # sobrevivirá futuras reclasificaciones y nuevas cargas.
+            alias = CoeSapFuncionalCatalogo.query.filter_by(
+                tipo=COE_TIPO_CLIENTE_ALIAS,
+                valor_normalizado=sociedad_norm,
+            ).first()
+            if not alias:
+                alias = CoeSapFuncionalCatalogo(
+                    tipo=COE_TIPO_CLIENTE_ALIAS,
+                    valor=sociedad,
+                    valor_normalizado=sociedad_norm,
+                    created_at=datetime.utcnow(),
+                )
+                db.session.add(alias)
+
+            alias.valor = sociedad
+            alias.valor_normalizado = sociedad_norm
+            alias.extra_1 = str(cliente.id)
+            alias.extra_2 = cliente.nombre_cliente
+            alias.activo = True
+            alias.updated_at = datetime.utcnow()
+
             rows = [
                 row for row in CoeSapFuncionalCalificacion.query.all()
                 if _coe_cfg_norm(getattr(row, "sociedad", None)) == sociedad_norm
@@ -23683,7 +23766,13 @@ def coe_config_asociar_clientes():
                 actualizados += 1
 
             db.session.commit()
-            return jsonify({"mensaje": "Asociación manual realizada", "actualizados": actualizados}), 200
+            return jsonify({
+                "mensaje": "Alias permanente creado y casos asociados",
+                "actualizados": actualizados,
+                "alias": sociedad,
+                "clienteId": cliente.id,
+                "clienteNombre": cliente.nombre_cliente,
+            }), 200
 
         rows = CoeSapFuncionalCalificacion.query.all()
         for row in rows:

@@ -79,9 +79,24 @@ const EMPTY_ESTADO = {
   id: null,
   nombre: "",
   descripcion: "",
+  responsable: "CLARO",
   orden: 0,
   activo: true,
 };
+
+const RESPONSABLES = [
+  { value: "CLARO", label: "Claro", description: "La siguiente acción corresponde a Claro o consultoría." },
+  { value: "CLIENTE", label: "Cliente", description: "La siguiente acción corresponde al cliente." },
+  { value: "CERRADO", label: "Cerrado", description: "El caso ya no tiene una acción pendiente." },
+];
+
+function responsableClass(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "CLIENTE") return "warn";
+  if (normalized === "CERRADO") return "ok";
+  if (normalized === "CLARO") return "source";
+  return "danger";
+}
 
 const EMPTY_SUBESTADO = {
   id: null,
@@ -249,6 +264,10 @@ export default function CargarBasesAuxiliaresCoeSap() {
     if (!requireImport()) return;
     if (!String(estadoForm.nombre || "").trim()) {
       Swal.fire({ icon: "warning", title: "Nombre requerido", confirmButtonColor: "#DA291C" });
+      return;
+    }
+    if (!RESPONSABLES.some((item) => item.value === estadoForm.responsable)) {
+      Swal.fire({ icon: "warning", title: "Selecciona el lado responsable", confirmButtonColor: "#DA291C" });
       return;
     }
 
@@ -547,10 +566,10 @@ export default function CargarBasesAuxiliaresCoeSap() {
     <div className="coeload-page">
       <section className="coeload-hero">
         <span className="coeload-eyebrow">Configuración controlada</span>
-        <h1>Configuración COE SAP Funcional</h1>
+        <h1>Configuración COE SAP</h1>
         <p>
-          Administra estados principales, subestados y asociación de clientes directamente
-          desde el aplicativo. Se eliminan los cargues auxiliares de Base Datos SM e ITOP.
+          Administra estados, el lado responsable, subestados y alias permanentes de clientes.
+          La sincronización de bases se ejecuta desde su módulo correspondiente.
         </p>
       </section>
 
@@ -559,7 +578,6 @@ export default function CargarBasesAuxiliaresCoeSap() {
           ["estados", "Estados y subestados"],
           ["clientes", "Clientes"],
           ["pendientes", "Casos sin clasificar"],
-          ["sync", "Sincronización"],
           ["historial", "Histórico"],
         ].map(([key, label]) => (
           <button
@@ -612,6 +630,20 @@ export default function CargarBasesAuxiliaresCoeSap() {
                   placeholder="Casos activos o en gestión"
                   onChange={(e) => setEstadoForm((p) => ({ ...p, descripcion: e.target.value }))}
                 />
+              </label>
+
+              <label className="coeload-field wide">
+                <span>Lado responsable</span>
+                <select
+                  value={estadoForm.responsable || ""}
+                  onChange={(e) => setEstadoForm((p) => ({ ...p, responsable: e.target.value }))}
+                >
+                  <option value="">Selecciona...</option>
+                  {RESPONSABLES.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+                <small>{RESPONSABLES.find((item) => item.value === estadoForm.responsable)?.description}</small>
               </label>
 
               <label className="coeload-field">
@@ -721,6 +753,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
                   <tr>
                     <th>Estado</th>
                     <th>Descripción</th>
+                    <th>Lado responsable</th>
                     <th>Subestados</th>
                     <th>Activo</th>
                     <th>Orden</th>
@@ -729,16 +762,17 @@ export default function CargarBasesAuxiliaresCoeSap() {
                 </thead>
                 <tbody>
                   {estados.length === 0 ? (
-                    <tr><td colSpan="6" className="coeload-empty">No hay estados configurados.</td></tr>
+                    <tr><td colSpan="7" className="coeload-empty">No hay estados configurados.</td></tr>
                   ) : estados.map((row) => (
                     <tr key={row.id}>
                       <td><b>{text(row.valor)}</b></td>
                       <td>{text(row.descripcion)}</td>
+                      <td><span className={`coeload-pill ${responsableClass(row.responsable)}`}>{text(row.responsable)}</span></td>
                       <td>{numberText(row.totalSubestados)}</td>
                       <td><span className={`coeload-pill ${row.activo ? "ok" : "danger"}`}>{row.activo ? "Activo" : "Inactivo"}</span></td>
                       <td>{numberText(row.orden)}</td>
                       <td className="coeload-actions-cell">
-                        <button className="coeload-btn small" type="button" onClick={() => setEstadoForm({ id: row.id, nombre: row.valor, descripcion: row.descripcion || "", orden: row.orden || 0, activo: row.activo })}>Editar</button>
+                        <button className="coeload-btn small" type="button" onClick={() => setEstadoForm({ id: row.id, nombre: row.valor, descripcion: row.descripcion || "", responsable: row.responsable || "CLARO", orden: row.orden || 0, activo: row.activo })}>Editar</button>
                         <button className="coeload-btn small ghost" type="button" onClick={() => deleteEstado(row)} disabled={!row.activo}>Inactivar</button>
                       </td>
                     </tr>
@@ -762,6 +796,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
                   <tr>
                     <th>Subestado</th>
                     <th>Estado principal</th>
+                    <th>Lado responsable</th>
                     <th>Descripción</th>
                     <th>Activo</th>
                     <th>Orden</th>
@@ -770,11 +805,12 @@ export default function CargarBasesAuxiliaresCoeSap() {
                 </thead>
                 <tbody>
                   {subestados.length === 0 ? (
-                    <tr><td colSpan="6" className="coeload-empty">No hay subestados configurados.</td></tr>
+                    <tr><td colSpan="7" className="coeload-empty">No hay subestados configurados.</td></tr>
                   ) : subestados.map((row) => (
                     <tr key={row.id}>
                       <td><b>{text(row.valor)}</b></td>
                       <td>{text(row.estadoNombre)}</td>
+                      <td><span className={`coeload-pill ${responsableClass(row.responsable)}`}>{text(row.responsable)}</span></td>
                       <td>{text(row.descripcion)}</td>
                       <td><span className={`coeload-pill ${row.activo ? "ok" : "danger"}`}>{row.activo ? "Activo" : "Inactivo"}</span></td>
                       <td>{numberText(row.orden)}</td>
@@ -796,7 +832,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
           <article className="coeload-card-panel">
             <h2>Asociación automática</h2>
             <p className="coeload-muted">
-              Se comparan las sociedades de la calificación contra la tabla Clientes.
+              Se aplican primero los alias guardados y después la coincidencia exacta normalizada.
               Pendientes por validar: <b>{numberText(clientePendientes)}</b>
             </p>
             <button className="coeload-btn danger" type="button" onClick={asociarClientesAuto} disabled={!canImport}>
@@ -806,7 +842,7 @@ export default function CargarBasesAuxiliaresCoeSap() {
 
           <article className="coeload-card-panel">
             <h2>Asociación manual</h2>
-            <p className="coeload-muted">Usa esta opción cuando el nombre de sociedad no coincide exactamente con el cliente.</p>
+            <p className="coeload-muted">Crea un alias permanente. Las cargas futuras con esta sociedad quedarán asociadas al mismo cliente.</p>
             <div className="coeload-form-grid">
               <label className="coeload-field wide">
                 <span>Sociedad en calificación</span>
@@ -848,15 +884,17 @@ export default function CargarBasesAuxiliaresCoeSap() {
                 <thead>
                   <tr>
                     <th>Cliente</th>
+                    <th>Alias registrados</th>
                     <th>Casos asociados</th>
                   </tr>
                 </thead>
                 <tbody>
                   {clientes.length === 0 ? (
-                    <tr><td colSpan="2" className="coeload-empty">No hay clientes registrados.</td></tr>
+                    <tr><td colSpan="3" className="coeload-empty">No hay clientes registrados.</td></tr>
                   ) : clientes.map((row) => (
                     <tr key={row.id}>
                       <td><b>{text(row.nombreCliente)}</b></td>
+                      <td>{Array.isArray(row.aliases) && row.aliases.length ? row.aliases.map((alias) => <span key={alias} className="coeload-pill source">{alias}</span>) : "—"}</td>
                       <td>{numberText(row.totalCasosAsociados)}</td>
                     </tr>
                   ))}

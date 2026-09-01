@@ -108,7 +108,9 @@ function todayStamp() {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
 }
 
 function escapeHtml(value) {
@@ -123,8 +125,11 @@ function escapeHtml(value) {
 function buildQuery(filters, page, pageSize) {
   const qs = new URLSearchParams();
 
-  qs.set("page", String(page));
-  qs.set("page_size", String(pageSize));
+  // La vista de detalle debe consultar la misma población completa que
+  // clasificación. Año y mes solo se aplican cuando el usuario los elige.
+  qs.set("modo_periodo", "sin_filtro");
+  if (page) qs.set("page", String(page));
+  if (pageSize) qs.set("page_size", String(pageSize));
 
   Object.entries(filters || {}).forEach(([key, value]) => {
     const s = String(value ?? "").trim();
@@ -181,6 +186,69 @@ function statusClass(value) {
   if (s.includes("CANCEL")) return "neutral";
 
   return "neutral";
+}
+
+function normalizeValue(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9]+/gi, " ")
+    .trim()
+    .toUpperCase();
+}
+
+function resolveSide(row) {
+  const responsible = normalizeValue(row?.responsableEstado);
+  const consolidated = normalizeValue(row?.estadoConsolidado);
+  const principal = normalizeValue(row?.estadoPrincipal);
+  const substate = normalizeValue(row?.subestado || row?.estado);
+
+  if (
+    responsible === "CERRADO" ||
+    consolidated.includes("CERRADO") ||
+    principal === "CERRADO" ||
+    ["CERRADO", "SOLUCIONADO", "RESUELTO", "FINALIZADO"].some((value) => substate.includes(value))
+  ) {
+    return { key: "CERRADO", label: "Cerrado", reason: "El caso está cerrado o solucionado." };
+  }
+
+  if (
+    responsible === "CLIENTE" ||
+    principal === "PENDIENTE DE CLIENTE" ||
+    principal.includes("CLIENTE") ||
+    ["EN ESPERA DE USUARIO", "EN PRUEBAS DE USUARIO", "APROBADO ESTIMACION CLIENTE"].some((value) => substate.includes(value))
+  ) {
+    return { key: "CLIENTE", label: "Cliente", reason: "La siguiente acción corresponde al cliente." };
+  }
+
+  if (
+    responsible === "CLARO" ||
+    principal === "EN CURSO" ||
+    ["ABIERTO", "EN ESTIMACION", "EN PROCESO", "ASIGNADO"].some((value) => substate.includes(value))
+  ) {
+    return { key: "CLARO", label: "Claro", reason: "La siguiente acción corresponde a Claro/consultoría." };
+  }
+
+  return { key: "VALIDAR", label: "Por validar", reason: "No existe una clasificación controlada suficiente." };
+}
+
+function validationState(row) {
+  const clientOk = normalizeValue(row?.validarCliente) === "OK";
+  const stateOk = normalizeValue(row?.validarEstadoControl) === "OK";
+  if (clientOk && stateOk) return { key: "ok", label: "Validado" };
+  if (!clientOk && !stateOk) return { key: "danger", label: "Cliente y estado" };
+  if (!clientOk) return { key: "warn", label: "Validar cliente" };
+  return { key: "warn", label: "Validar estado" };
+}
+
+function SideBadge({ row, compact = false }) {
+  const side = resolveSide(row);
+  return (
+    <span className={`coedetail-side ${side.key.toLowerCase()} ${compact ? "compact" : ""}`} title={side.reason}>
+      <i aria-hidden="true" />
+      <span>{side.label}</span>
+    </span>
+  );
 }
 
 const DATE_AT_START = /^\s*(\d{2}[./-]\d{2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})\s*[-–—]?\s*/;
@@ -245,7 +313,7 @@ function splitDatedEntries(raw) {
 }
 
 function renderObservaciones(value) {
-  const items = splitDatedEntries(value);
+  const items = splitDatedEntries(value).reverse();
 
   if (!items.length) {
     return <span className="coedetail-empty-text">—</span>;
@@ -293,6 +361,23 @@ export default function DetalleSeguimientoClienteCoeSap() {
 
   const canPrev = page > 1;
   const canNext = page < totalPages;
+
+  const sideTotals = useMemo(() => {
+    const totals = { CLARO: 0, CLIENTE: 0, CERRADO: 0, VALIDAR: 0 };
+    (resumen || []).forEach((item) => {
+      const side = resolveSide(item).key;
+      totals[side] += Number(item?.cantidad || 0);
+    });
+    return totals;
+  }, [resumen]);
+
+  const pageValidation = useMemo(() => {
+    return (rows || []).reduce((acc, row) => {
+      const key = validationState(row).key;
+      if (key !== "ok") acc += 1;
+      return acc;
+    }, 0);
+  }, [rows]);
 
   const updateFilter = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -380,6 +465,14 @@ export default function DetalleSeguimientoClienteCoeSap() {
     setAppliedFilters(EMPTY_FILTERS);
   };
 
+  const filterBySide = (side) => {
+    const value = side === "VALIDAR" ? "" : side;
+    const next = { ...filters, responsableEstado: value };
+    setPage(1);
+    setFilters(next);
+    setAppliedFilters(next);
+  };
+
   const editObservaciones = async (row) => {
     if (!row?.id) return;
 
@@ -395,6 +488,8 @@ export default function DetalleSeguimientoClienteCoeSap() {
 
     const stamp = todayStamp();
     const current = row?.observaciones || "";
+    const side = resolveSide(row);
+    const validation = validationState(row);
 
     const result = await Swal.fire({
       title: "Seguimiento semanal",
@@ -404,7 +499,10 @@ export default function DetalleSeguimientoClienteCoeSap() {
           <b>Sociedad:</b> ${escapeHtml(row?.sociedad || "-")}<br/>
           <b>Cliente asociado:</b> ${escapeHtml(row?.clienteAsociadoNombre || "-")}<br/>
           <b>Asunto:</b> ${escapeHtml(row?.asunto || "-")}<br/>
-          <b>Estado:</b> ${escapeHtml(row?.estado || "-")}
+          <b>Estado principal:</b> ${escapeHtml(row?.estadoPrincipal || "-")}<br/>
+          <b>Subestado:</b> ${escapeHtml(row?.subestado || row?.estado || "-")}<br/>
+          <b>Lado actual:</b> ${escapeHtml(side.label)}<br/>
+          <b>Clasificación:</b> ${escapeHtml(validation.label)}
         </div>
         <button type="button" id="coedetail-add-weekly-entry" class="coedetail-swal-weekly-btn">
           + Agregar entrada semanal (${stamp})
@@ -496,8 +594,8 @@ export default function DetalleSeguimientoClienteCoeSap() {
           <span className="coedetail-eyebrow">Detalle seguimiento</span>
           <h1>Seguimiento por cliente COE SAP Funcional</h1>
           <p>
-            Vista tipo detalle del Excel para reuniones semanales: responsable, estado,
-            ID, asunto y observaciones.
+            Identifica quién tiene la siguiente acción, revisa la clasificación controlada
+            y registra el seguimiento semanal de cada caso.
           </p>
         </div>
 
@@ -516,7 +614,7 @@ export default function DetalleSeguimientoClienteCoeSap() {
         <div className="coedetail-card-head">
           <div>
             <h2>Filtros</h2>
-            <p>Filtra por sociedad, estado, responsable, módulo, asignado o búsqueda general.</p>
+            <p>Filtra por cliente, lado responsable, estado controlado, módulo o consultor asignado.</p>
           </div>
 
           <button type="button" className="coedetail-btn ghost" onClick={clearFilters} disabled={loading}>
@@ -548,7 +646,7 @@ export default function DetalleSeguimientoClienteCoeSap() {
           <SimpleSelect label="Estado principal" value={filters.estadoPrincipal} options={opciones.estadoPrincipal} onChange={(v) => updateFilter("estadoPrincipal", v)} />
           <SimpleSelect label="Subestado" value={filters.subestado} options={opciones.subestado} onChange={(v) => updateFilter("subestado", v)} />
           <SimpleSelect label="Validar estado" value={filters.validarEstadoControl} options={opciones.validarEstadoControl} onChange={(v) => updateFilter("validarEstadoControl", v)} />
-          <SimpleSelect label="Responsable" value={filters.responsableEstado} options={opciones.responsableEstado} onChange={(v) => updateFilter("responsableEstado", v)} />
+          <SimpleSelect label="Lado responsable" value={filters.responsableEstado} options={opciones.responsableEstado} onChange={(v) => updateFilter("responsableEstado", v)} />
           <SimpleSelect label="Módulo" value={filters.modulo} options={opciones.modulo} onChange={(v) => updateFilter("modulo", v)} />
           <SimpleSelect label="Tipo solicitud" value={filters.tipoSolicitud} options={opciones.tipoSolicitud} onChange={(v) => updateFilter("tipoSolicitud", v)} />
           <SimpleSelect label="Asignado a" value={filters.asignadoA} options={opciones.asignadoA} onChange={(v) => updateFilter("asignadoA", v)} />
@@ -565,34 +663,20 @@ export default function DetalleSeguimientoClienteCoeSap() {
       </section>
 
       <section className="coedetail-summary-grid">
-        <article className="coedetail-summary-card total">
+        <article className="coedetail-summary-card total" onClick={clearFilters} role="button" tabIndex="0">
           <span>Total registros</span>
           <strong>{numberText(total)}</strong>
           <small>Según filtros aplicados</small>
         </article>
+        <article className="coedetail-summary-card claro" onClick={() => filterBySide("CLARO")} role="button" tabIndex="0"><span>Del lado de Claro</span><strong>{numberText(sideTotals.CLARO)}</strong><small>Estados principales En curso</small></article>
+        <article className="coedetail-summary-card cliente" onClick={() => filterBySide("CLIENTE")} role="button" tabIndex="0"><span>Del lado del cliente</span><strong>{numberText(sideTotals.CLIENTE)}</strong><small>Estados Pendiente de cliente</small></article>
+        <article className="coedetail-summary-card cerrado"><span>Cerrados</span><strong>{numberText(sideTotals.CERRADO)}</strong><small>Sin acción pendiente</small></article>
+        <article className="coedetail-summary-card validar"><span>Por validar</span><strong>{numberText(sideTotals.VALIDAR)}</strong><small>{numberText(pageValidation)} visibles con alertas de clasificación</small></article>
+      </section>
 
-        <article className="coedetail-resumen-card">
-          <div className="coedetail-card-head compact">
-            <div>
-              <h2>Resumen por responsable y estado</h2>
-              <p>Equivalente al agrupado del detalle.</p>
-            </div>
-          </div>
-
-          <div className="coedetail-resumen-list">
-            {!resumen.length ? (
-              <div className="coedetail-empty small">Sin resumen.</div>
-            ) : (
-              resumen.slice(0, 12).map((item, index) => (
-                <div key={`res-${index}-${item.responsableEstado}-${item.estado}`}>
-                  <span>{cleanText(item.responsableEstado)}</span>
-                  <em>{cleanText(item.estado)}</em>
-                  <strong>{numberText(item.cantidad)}</strong>
-                </div>
-              ))
-            )}
-          </div>
-        </article>
+      <section className="coedetail-card coedetail-legend">
+        <div><strong>Criterio de responsable</strong><span>El estado principal controlado manda sobre el texto original.</span></div>
+        <div className="coedetail-legend-items"><SideBadge row={{ responsableEstado: "CLARO" }} compact /><SideBadge row={{ responsableEstado: "CLIENTE" }} compact /><SideBadge row={{ responsableEstado: "CERRADO" }} compact /><SideBadge row={{}} compact /></div>
       </section>
 
       <section className="coedetail-card coedetail-table-card">
@@ -624,7 +708,8 @@ export default function DetalleSeguimientoClienteCoeSap() {
           <table className="coedetail-table">
             <thead>
               <tr>
-                <th>Responsable</th>
+                <th className="side-col">Lado actual</th>
+                <th className="validation-col">Validación</th>
                 <th>Estado original</th>
                 <th>Estado principal</th>
                 <th>Subestado</th>
@@ -646,19 +731,23 @@ export default function DetalleSeguimientoClienteCoeSap() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="16" className="coedetail-empty">
+                  <td colSpan="17" className="coedetail-empty">
                     <div className="coedetail-loader" />
                     Cargando detalle...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan="16" className="coedetail-empty">No hay registros para mostrar.</td>
+                  <td colSpan="17" className="coedetail-empty">No hay registros para mostrar.</td>
                 </tr>
               ) : (
                 rows.map((row, index) => (
-                  <tr key={`${row.id || row.numero}-${index}`}>
-                    <td>{cleanText(row.responsableEstado)}</td>
+                  <tr key={`${row.id || row.numero}-${index}`} className={`coedetail-row side-${resolveSide(row).key.toLowerCase()}`}>
+                    <td className="side-col"><SideBadge row={row} /></td>
+                    <td className="validation-col">
+                      <span className={`coedetail-validation ${validationState(row).key}`}>{validationState(row).label}</span>
+                      <small className="coedetail-validation-detail">Cliente: {cleanText(row.validarCliente)} · Estado: {cleanText(row.validarEstadoControl)}</small>
+                    </td>
                     <td>
                       <span className={`coedetail-pill ${statusClass(row.estado)}`}>{cleanText(row.estado)}</span>
                     </td>
