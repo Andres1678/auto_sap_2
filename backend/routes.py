@@ -18806,6 +18806,200 @@ def _coe_ext_sync_desde_fuente(row, fuente_row, modo):
     return row
 
 
+# Campos de la base que se pueden completar automáticamente sin alterar la
+# identidad del cliente. "compania" / "sociedad" se excluye deliberadamente:
+# el nombre del cliente se sigue administrando desde su tabla especializada.
+_COE_CAMPOS_BASE_AUTOCOMPLETABLES = (
+    ("caso_sm", "id_interaccion"),
+    ("asunto", "titulo"),
+    ("observaciones", "accion_actualizacion"),
+    ("nombre_solicitante", "nombre_completo_contacto"),
+    ("impacto", "impacto"),
+    ("urgencia", "urgencia"),
+    ("prioridad", "prioridad"),
+    ("tipo_solicitud", "clr_txt_client_type"),
+    ("articulo", "clr_txt_servicio"),
+    ("estado", "estado"),
+    ("estado_herramienta_gestion", "estado"),
+    ("fecha_asignacion", "fecha_entrega"),
+    ("hora_ultima_actualizacion", "fecha_cargue"),
+    ("fecha_resolucion", "fecha_resolucion"),
+    ("fecha_finalizacion_cierre", "fecha_cierre"),
+)
+
+
+def _coe_completar_desde_maestros_row(row, base, lookup, usuario):
+    """Completa vacíos y normaliza el consultor sin tocar datos de cliente."""
+    manual_fields = _coe_ext_manual_fields(row)
+    cambios = []
+    consultor_sin_resolver = None
+
+    if base:
+        if not getattr(row, "base_registro_id", None):
+            row.base_registro_id = base.id
+            cambios.append("base_registro_id")
+
+        for campo_destino, campo_base in _COE_CAMPOS_BASE_AUTOCOMPLETABLES:
+            if manual_fields.get(campo_destino):
+                continue
+
+            if _coe_ext_set_field(
+                row,
+                campo_destino,
+                getattr(base, campo_base, None),
+                "BASE_COE_AUTOCOMPLETADO",
+                manual_fields,
+                force=False,
+                only_empty=True,
+            ):
+                cambios.append(campo_destino)
+
+    asignado_origen = (
+        getattr(row, "asignado_a", None)
+        or (getattr(base, "asignado_a", None) if base else None)
+    )
+
+    if asignado_origen and not manual_fields.get("asignado_a"):
+        meta = _coe_resolver_consultor(asignado_origen, lookup=lookup)
+
+        if meta:
+            nombre_canonico = str(meta.get("display") or "").strip()
+            if nombre_canonico and getattr(row, "asignado_a", None) != nombre_canonico:
+                row.asignado_a = nombre_canonico
+                origen = _coe_ext_origen_fields(row)
+                origen["asignado_a"] = "MAESTRO_CONSULTOR"
+                row.origen_datos_json = _coe_ext_json_dumps(origen)
+                cambios.append("asignado_a")
+        else:
+            consultor_sin_resolver = str(asignado_origen).strip()
+
+    if _coe_aplicar_modulo_consultor_si_falta(
+        row,
+        asignado_a=getattr(row, "asignado_a", None) or asignado_origen,
+        manual_fields=manual_fields,
+        source="MAESTRO_CONSULTOR",
+        lookup=lookup,
+    ):
+        cambios.append("modulo")
+
+    # responsable_estado y estado_consolidado se alimentan desde el catálogo
+    # de estados durante el recálculo. Los campos manuales continúan protegidos.
+    responsable_anterior = getattr(row, "responsable_estado", None)
+    consolidado_anterior = getattr(row, "estado_consolidado", None)
+    _coe_ext_recalcular_row(row)
+
+    if manual_fields.get("responsable_estado"):
+        row.responsable_estado = responsable_anterior
+    elif getattr(row, "responsable_estado", None) != responsable_anterior:
+        cambios.append("responsable_estado")
+
+    if manual_fields.get("estado_consolidado"):
+        row.estado_consolidado = consolidado_anterior
+    elif getattr(row, "estado_consolidado", None) != consolidado_anterior:
+        cambios.append("estado_consolidado")
+
+    if cambios:
+        row.actualizado_por = usuario
+        row.updated_at = datetime.utcnow()
+
+    return sorted(set(cambios)), consultor_sin_resolver
+
+
+@bp.route("/coe-sap-funcional/calificacion/completar-desde-maestros", methods=["POST"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def completar_calificacion_desde_maestros():
+    """
+    Etapa segura posterior a la sincronización.
+
+    - Solo completa valores vacíos desde la Base Principal.
+    - Normaliza asignado_a contra el maestro Consultor.
+    - Completa módulo cuando el consultor tiene uno inequívoco.
+    - Recalcula responsable/consolidado desde el catálogo de estados.
+    - Nunca modifica sociedad ni campos de asociación del cliente.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        try:
+            limit = max(50, min(int(data.get("limit") or 300), 500))
+            offset = max(0, int(data.get("offset") or 0))
+        except Exception:
+            limit, offset = 300, 0
+
+        total = CoeSapFuncionalCalificacion.query.count()
+        rows = (
+            CoeSapFuncionalCalificacion.query
+            .order_by(CoeSapFuncionalCalificacion.id.asc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        numeros = [str(r.numero).strip() for r in rows if getattr(r, "numero", None)]
+        base_ids = [r.base_registro_id for r in rows if getattr(r, "base_registro_id", None)]
+        bases = []
+        if numeros or base_ids:
+            filtros = []
+            if numeros:
+                filtros.append(BaseRegistroInfoCoeSapFuncional.numero.in_(numeros))
+            if base_ids:
+                filtros.append(BaseRegistroInfoCoeSapFuncional.id.in_(base_ids))
+            bases = BaseRegistroInfoCoeSapFuncional.query.filter(or_(*filtros)).all()
+
+        base_por_id = {b.id: b for b in bases}
+        base_por_numero = {
+            str(b.numero).strip(): b for b in bases if getattr(b, "numero", None)
+        }
+        lookup = _coe_consultor_lookup(force_refresh=True)
+        usuario = _coe_ext_usuario()
+
+        registros_modificados = 0
+        campos_completados = 0
+        consultores_normalizados = 0
+        modulos_completados = 0
+        no_resueltos = set()
+
+        for row in rows:
+            base = base_por_id.get(getattr(row, "base_registro_id", None))
+            if not base:
+                base = base_por_numero.get(str(getattr(row, "numero", "") or "").strip())
+
+            cambios, no_resuelto = _coe_completar_desde_maestros_row(
+                row, base, lookup, usuario
+            )
+            if cambios:
+                registros_modificados += 1
+                campos_completados += len(cambios)
+                consultores_normalizados += int("asignado_a" in cambios)
+                modulos_completados += int("modulo" in cambios)
+            if no_resuelto:
+                no_resueltos.add(no_resuelto)
+
+        db.session.commit()
+        siguiente_offset = min(offset + len(rows), total)
+
+        return jsonify({
+            "mensaje": "Autocompletado desde tablas maestras procesado",
+            "terminado": siguiente_offset >= total,
+            "offset": siguiente_offset,
+            "total": total,
+            "procesados": len(rows),
+            "registrosModificados": registros_modificados,
+            "camposCompletados": campos_completados,
+            "consultoresNormalizados": consultores_normalizados,
+            "modulosCompletados": modulos_completados,
+            "consultoresSinResolver": sorted(no_resueltos)[:100],
+            "totalConsultoresSinResolver": len(no_resueltos),
+            "clientesModificados": 0,
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error completando calificación desde maestros")
+        return jsonify({
+            "mensaje": "No se pudo completar desde las tablas maestras",
+            "error": str(e),
+        }), 500
+
+
 @bp.route("/coe-sap-funcional/calificacion/sincronizar-lote", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def sincronizar_calificacion_coe_sap_funcional_lote():

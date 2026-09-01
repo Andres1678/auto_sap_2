@@ -1064,34 +1064,39 @@ export default function CalificacionCoeSapFuncional() {
       return;
     }
 
-    const { value: modo, isConfirmed } = await Swal.fire({
+    const { value: opcionesSync, isConfirmed } = await Swal.fire({
       icon: "question",
       title: "Sincronizar calificación",
       html: `
         <div style="text-align:left;line-height:1.6">
-          <p>
-            Se crearán o actualizarán los registros tomando
-            <b>únicamente la Base Principal COE SAP</b>.
-          </p>
+          <p>Se crearán o actualizarán los registros tomando <b>únicamente la Base Principal COE SAP</b>.</p>
+          <p><b>No se sincronizarán fuentes SM ni ITOP.</b></p>
 
-          <p>
-            La información será procesada en lotes para evitar
-            sobrecargar el servidor.
-          </p>
+          <label for="calcoe-sync-mode" style="display:block;font-weight:700;margin-top:14px">
+            Modo de sincronización
+          </label>
+          <select id="calcoe-sync-mode" class="swal2-select" style="display:block;width:100%;margin:8px 0 14px">
+            <option value="preservar_manual">Preservar campos manuales</option>
+            <option value="solo_vacios">Solo completar campos vacíos</option>
+            <option value="forzar">Forzar actualización desde la Base Principal</option>
+          </select>
 
-          <p>
-            <b>No se sincronizarán fuentes SM ni ITOP.</b>
-          </p>
+          <label style="display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid #e8e8e8;border-radius:12px;background:#f8fafc">
+            <input id="calcoe-completar-maestros" type="checkbox" checked style="margin-top:5px" />
+            <span>
+              <b>Completar automáticamente desde tablas maestras</b><br />
+              <small>
+                Llena vacíos, normaliza el consultor y completa su módulo cuando sea inequívoco.
+                Los clientes y los campos manuales no se modifican.
+              </small>
+            </span>
+          </label>
         </div>
       `,
-      input: "select",
-      inputValue: "preservar_manual",
-
-      inputOptions: {
-        preservar_manual: "Preservar campos manuales",
-        solo_vacios: "Solo completar campos vacíos",
-        forzar: "Forzar actualización desde la Base Principal",
-      },
+      preConfirm: () => ({
+        modo: document.getElementById("calcoe-sync-mode")?.value || "preservar_manual",
+        completarMaestros: Boolean(document.getElementById("calcoe-completar-maestros")?.checked),
+      }),
 
       showCancelButton: true,
       confirmButtonText: "Sí, sincronizar",
@@ -1100,6 +1105,9 @@ export default function CalificacionCoeSapFuncional() {
     });
 
     if (!isConfirmed) return;
+
+    const modo = opcionesSync?.modo || "preservar_manual";
+    const completarMaestros = opcionesSync?.completarMaestros !== false;
 
     setGenerating(true);
 
@@ -1111,6 +1119,11 @@ export default function CalificacionCoeSapFuncional() {
     let totalActualizados = 0;
     let totalCrucesBase = 0;
     let loteActual = 0;
+    let maestrosModificados = 0;
+    let camposCompletados = 0;
+    let consultoresNormalizados = 0;
+    let modulosCompletados = 0;
+    const consultoresSinResolver = new Set();
 
     try {
       Swal.fire({
@@ -1360,6 +1373,55 @@ export default function CalificacionCoeSapFuncional() {
         offsetBase = siguienteOffset;
       }
 
+      if (completarMaestros) {
+        let offsetMaestros = 0;
+        let totalMaestros = 0;
+
+        while (true) {
+          const offsetAnterior = offsetMaestros;
+          const messageElement = document.getElementById("calcoe-sync-message");
+          if (messageElement) messageElement.textContent = "Completando desde tablas maestras...";
+
+          const res = await jfetch(
+            "/coe-sap-funcional/calificacion/completar-desde-maestros",
+            {
+              method: "POST",
+              headers: { ...commonHeaders, "Content-Type": "application/json" },
+              body: JSON.stringify({ offset: offsetMaestros, limit: 300 }),
+            }
+          );
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+          }
+
+          totalMaestros = Number(data?.total ?? totalMaestros);
+          maestrosModificados += Number(data?.registrosModificados ?? 0);
+          camposCompletados += Number(data?.camposCompletados ?? 0);
+          consultoresNormalizados += Number(data?.consultoresNormalizados ?? 0);
+          modulosCompletados += Number(data?.modulosCompletados ?? 0);
+          (data?.consultoresSinResolver || []).forEach((nombre) => consultoresSinResolver.add(nombre));
+          offsetMaestros = Number(data?.offset ?? offsetMaestros);
+
+          const porcentaje = totalMaestros > 0
+            ? Math.min(100, Math.round((offsetMaestros / totalMaestros) * 100))
+            : 100;
+          const processedElement = document.getElementById("calcoe-sync-processed");
+          const totalElement = document.getElementById("calcoe-sync-total");
+          const progressElement = document.getElementById("calcoe-sync-progress");
+          const percentElement = document.getElementById("calcoe-sync-percent");
+          if (processedElement) processedElement.textContent = offsetMaestros.toLocaleString("es-CO");
+          if (totalElement) totalElement.textContent = totalMaestros.toLocaleString("es-CO");
+          if (progressElement) progressElement.style.width = `${porcentaje}%`;
+          if (percentElement) percentElement.textContent = `${porcentaje}%`;
+
+          if (data?.terminado === true) break;
+          if (offsetMaestros <= offsetAnterior) {
+            throw new Error("El autocompletado desde maestros no pudo avanzar al siguiente lote.");
+          }
+        }
+      }
+
       Swal.close();
 
       await Swal.fire({
@@ -1413,6 +1475,18 @@ export default function CalificacionCoeSapFuncional() {
             <p>
               <b>ITOP:</b> No sincronizado
             </p>
+
+            <hr>
+
+            <p><b>Autocompletado desde maestros:</b> ${completarMaestros ? "Ejecutado" : "Omitido"}</p>
+            ${completarMaestros ? `
+              <p><b>Registros modificados:</b> ${maestrosModificados.toLocaleString("es-CO")}</p>
+              <p><b>Campos completados:</b> ${camposCompletados.toLocaleString("es-CO")}</p>
+              <p><b>Consultores normalizados:</b> ${consultoresNormalizados.toLocaleString("es-CO")}</p>
+              <p><b>Módulos completados:</b> ${modulosCompletados.toLocaleString("es-CO")}</p>
+              <p><b>Consultores sin coincidencia segura:</b> ${consultoresSinResolver.size.toLocaleString("es-CO")}</p>
+              <p><b>Clientes modificados:</b> 0</p>
+            ` : ""}
 
           </div>
         `,
