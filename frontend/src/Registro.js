@@ -50,6 +50,9 @@ const OCCUPATIONS_FORBID_HITSS = new Set(['01', '02', '06']);
 const CODES_RESTRICTED_CLIENT_9H = new Set(['09', '13', '14', '15']);
 const CODE_SUPERVISION_EQUIPO = '06';
 const OCCUPATIONS_ONLY_HITSS = new Set(['03','08']);
+const TASK_CODE_HIDDEN_FOR_CONSULTORIA = '46';
+const TEAM_WITHOUT_TASK_46 = 'CONSULTORIA';
+const OCCUPATIONS_ALLOWED_FOR_TASK_46 = new Set(['01', '02']);
 
 const parseHHMM = (s) => {
   if (!s || typeof s !== "string") return null;
@@ -713,6 +716,7 @@ const Registro = ({ userData }) => {
   ).trim();
 
   const equipoUser = (userData?.equipo ?? userData?.user?.equipo) || '';
+  const esEquipoConsultoria = normKey(equipoUser) === TEAM_WITHOUT_TASK_46;
 
   const usuarioLogin = String(
     userData?.usuario ??
@@ -851,8 +855,17 @@ const Registro = ({ userData }) => {
 
   const tareasDeOcupacion = useMemo(() => {
     const occ = (ocupaciones || []).find(o => String(o.id) === String(ocupacionSeleccionada));
-    return Array.isArray(occ?.tareas) ? occ.tareas : [];
-  }, [ocupaciones, ocupacionSeleccionada]);
+    const tareas = Array.isArray(occ?.tareas) ? occ.tareas : [];
+    const codigoOcupacion = String(occ?.codigo || '').trim();
+
+    // La tarea 46 - Gestión de Cambios solo pertenece a las ocupaciones 01 y 02
+    // y nunca está disponible para Consultoría.
+    return tareas.filter((t) => {
+      const codigoTarea = String(t?.codigo || '').trim();
+      if (codigoTarea !== TASK_CODE_HIDDEN_FOR_CONSULTORIA) return true;
+      return !esEquipoConsultoria && OCCUPATIONS_ALLOWED_FOR_TASK_46.has(codigoOcupacion);
+    });
+  }, [ocupaciones, ocupacionSeleccionada, esEquipoConsultoria]);
 
   const occCodeSeleccionada = useMemo(() => {
     return ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
@@ -1360,12 +1373,36 @@ const Registro = ({ userData }) => {
   }, [ocupaciones, registrosProcesados]);
 
   const tareasOptions = useMemo(() => {
+    const tareasVisibles = esEquipoConsultoria
+      ? todasTareas.filter(
+          (t) => String(t?.codigo || '').trim() !== TASK_CODE_HIDDEN_FOR_CONSULTORIA
+        )
+      : todasTareas;
+
     return buildOptionsSortedByCount(
-      todasTareas.map((t) => `${t.codigo} - ${t.nombre}`),
+      tareasVisibles.map((t) => `${t.codigo} - ${t.nombre}`),
       registrosProcesados,
       (r) => r.tipoTareaTexto
     );
-  }, [todasTareas, registrosProcesados]);
+  }, [todasTareas, registrosProcesados, esEquipoConsultoria]);
+
+  useEffect(() => {
+    if (!esEquipoConsultoria) return;
+
+    // Elimina una selección previa que pudiera haber quedado en memoria antes
+    // de iniciar sesión o cambiar al equipo Consultoría.
+    setFiltroTarea((prev) =>
+      (Array.isArray(prev) ? prev : []).filter(
+        (label) => taskCode(label) !== TASK_CODE_HIDDEN_FOR_CONSULTORIA
+      )
+    );
+
+    setRegistro((prev) => {
+      const codigoActual = tareaCodeFromRegistro(prev, todasTareas);
+      if (codigoActual !== TASK_CODE_HIDDEN_FOR_CONSULTORIA) return prev;
+      return { ...prev, tarea_id: '', tipoTarea: '' };
+    });
+  }, [esEquipoConsultoria, todasTareas]);
 
   const consultoresOptions = useMemo(() => {
     return buildOptionsSortedByCount(
@@ -1507,7 +1544,25 @@ const Registro = ({ userData }) => {
     }
 
     const occCode = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
-    const tareaCode = tareaCodeFromRegistro(registro, tareasDeOcupacion);
+    const tareaCode = tareaCodeFromRegistro(registro, todasTareas);
+
+    // Validación defensiva: aunque se manipule el HTML o se conserve un valor
+    // anterior en el estado del formulario, Consultoría no puede registrar la 46.
+    if (
+      String(tareaCode || '').trim() === TASK_CODE_HIDDEN_FOR_CONSULTORIA &&
+      (
+        esEquipoConsultoria ||
+        !OCCUPATIONS_ALLOWED_FOR_TASK_46.has(String(occCode || '').trim())
+      )
+    ) {
+      return Swal.fire({
+        icon: "warning",
+        title: "Tarea no disponible",
+        text: esEquipoConsultoria
+          ? 'La tarea "46 - Gestión de Cambios" no está habilitada para el equipo Consultoría.'
+          : 'La tarea "46 - Gestión de Cambios" solo está habilitada en las ocupaciones 01 y 02.',
+      });
+    }
 
     if (
       OCCUPATIONS_ONLY_HITSS.has(occCode) &&

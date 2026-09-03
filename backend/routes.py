@@ -1191,6 +1191,63 @@ def _norm_text_basic(value):
     return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
 
 
+TASK_CODE_GESTION_CAMBIOS = "46"
+TASK_46_ALLOWED_OCCUPATIONS = {"01", "02"}
+TASK_46_EXCLUDED_TEAM = "CONSULTORIA"
+
+
+def _equipo_consultor_nombre(consultor):
+    if not consultor:
+        return ""
+
+    equipo_obj = getattr(consultor, "equipo_obj", None)
+    nombre = getattr(equipo_obj, "nombre", None) if equipo_obj else None
+
+    if not nombre and getattr(consultor, "equipo_id", None):
+        equipo = Equipo.query.get(consultor.equipo_id)
+        nombre = getattr(equipo, "nombre", None) if equipo else None
+
+    return _norm_text_basic(nombre)
+
+
+def _consultor_actual_para_catalogos():
+    consultor = getattr(g, "current_user", None)
+    if consultor:
+        return consultor
+
+    usuario = (request.headers.get("X-User-Usuario") or "").strip().lower()
+    if not usuario:
+        return None
+
+    return Consultor.query.filter(func.lower(Consultor.usuario) == usuario).first()
+
+
+def _mensaje_restriccion_tarea_46(tarea, ocupacion, consultor):
+    """Retorna el motivo de bloqueo o None cuando la combinación es válida."""
+    codigo_tarea = str(getattr(tarea, "codigo", "") or "").strip()
+    if codigo_tarea != TASK_CODE_GESTION_CAMBIOS:
+        return None
+
+    if _equipo_consultor_nombre(consultor) == TASK_46_EXCLUDED_TEAM:
+        return (
+            'La tarea "46 - Gestión de Cambios" no está habilitada '
+            'para el equipo Consultoría.'
+        )
+
+    codigo_ocupacion = str(getattr(ocupacion, "codigo", "") or "").strip()
+    if codigo_ocupacion not in TASK_46_ALLOWED_OCCUPATIONS:
+        return (
+            'La tarea "46 - Gestión de Cambios" solo está habilitada '
+            'en las ocupaciones 01 y 02.'
+        )
+
+    return None
+
+
+def _tarea_visible_en_ocupacion(tarea, ocupacion, consultor):
+    return _mensaje_restriccion_tarea_46(tarea, ocupacion, consultor) is None
+
+
 def _is_vacaciones_payload(data: dict) -> bool:
     if not bool(data.get("generarRangoVacaciones")):
         return False
@@ -1478,6 +1535,17 @@ def registrar_hora():
                 ocupacion_id = t.ocupaciones[0].id
             else:
                 ocupacion_id = None
+
+    # La tarea 46 solo es válida para ocupaciones 01/02 y nunca para el equipo
+    # Consultoría. Se valida con los objetos reales de base de datos.
+    occ_obj = Ocupacion.query.get(ocupacion_id) if ocupacion_id else None
+    restriccion_tarea = _mensaje_restriccion_tarea_46(
+        tarea_obj,
+        occ_obj,
+        consultor,
+    )
+    if restriccion_tarea:
+        return jsonify({'mensaje': restriccion_tarea}), 403
 
     # --------------------------------------------------
     # 10.1) Validación cliente restringido por ocupación
@@ -2742,6 +2810,20 @@ def editar_registro(id):
             tarea_db = Tarea.query.options(db.joinedload(Tarea.ocupaciones)).get(registro.tarea_id)
             if tarea_db and getattr(tarea_db, "ocupaciones", None) and tarea_db.ocupaciones:
                 registro.ocupacion_id = tarea_db.ocupaciones[0].id
+
+        tarea_final = Tarea.query.get(registro.tarea_id) if registro.tarea_id else None
+        ocupacion_final = (
+            Ocupacion.query.get(registro.ocupacion_id)
+            if registro.ocupacion_id
+            else None
+        )
+        restriccion_tarea = _mensaje_restriccion_tarea_46(
+            tarea_final,
+            ocupacion_final,
+            consultor_login,
+        )
+        if restriccion_tarea:
+            return jsonify({'mensaje': restriccion_tarea}), 403
 
         # ----------------------------------------------------------
         # 7.1) Validación cliente restringido por ocupación
@@ -5299,7 +5381,26 @@ def quitar_permiso_consultor(consultor_id, permiso_id):
 @bp.route("/ocupaciones", methods=["GET"])
 def listar_ocupaciones():
     ocupaciones = Ocupacion.query.order_by(Ocupacion.codigo).all()
-    return jsonify([o.to_dict() for o in ocupaciones]), 200
+    consultor = _consultor_actual_para_catalogos()
+    resultado = []
+
+    for ocupacion in ocupaciones:
+        item = ocupacion.to_dict()
+        if isinstance(item, dict) and isinstance(item.get("tareas"), list):
+            tareas_permitidas = {
+                str(t.id)
+                for t in (getattr(ocupacion, "tareas", None) or [])
+                if _tarea_visible_en_ocupacion(t, ocupacion, consultor)
+            }
+            item["tareas"] = [
+                tarea
+                for tarea in item["tareas"]
+                if isinstance(tarea, dict)
+                and str(tarea.get("id") or "") in tareas_permitidas
+            ]
+        resultado.append(item)
+
+    return jsonify(resultado), 200
 
 
 @bp.route("/ocupaciones", methods=["POST"])
@@ -5348,6 +5449,12 @@ def eliminar_ocupacion(id):
 @bp.route("/tareas", methods=["GET"])
 def listar_tareas():
     tareas = Tarea.query.order_by(Tarea.codigo).all()
+    consultor = _consultor_actual_para_catalogos()
+    if _equipo_consultor_nombre(consultor) == TASK_46_EXCLUDED_TEAM:
+        tareas = [
+            tarea for tarea in tareas
+            if str(getattr(tarea, "codigo", "") or "").strip() != TASK_CODE_GESTION_CAMBIOS
+        ]
     return jsonify([t.to_dict() for t in tareas]), 200
 
 
@@ -5426,7 +5533,12 @@ def eliminar_alias(id):
 @bp.route("/ocupaciones/<int:ocupacion_id>/tareas", methods=["GET"])
 def tareas_por_ocupacion(ocupacion_id):
     ocupacion = Ocupacion.query.get_or_404(ocupacion_id)
-    return jsonify([t.to_dict_simple() for t in ocupacion.tareas]), 200
+    consultor = _consultor_actual_para_catalogos()
+    tareas = [
+        tarea for tarea in ocupacion.tareas
+        if _tarea_visible_en_ocupacion(tarea, ocupacion, consultor)
+    ]
+    return jsonify([t.to_dict_simple() for t in tareas]), 200
 
 
 @bp.route("/ocupaciones/<int:ocupacion_id>/tareas", methods=["POST"])
@@ -5439,6 +5551,12 @@ def asignar_tarea_a_ocupacion(ocupacion_id):
         return jsonify({"mensaje": "tarea_id requerido"}), 400
 
     tarea = Tarea.query.get_or_404(tarea_id)
+
+    # En el catálogo la tarea 46 tampoco puede asociarse a ocupaciones distintas
+    # de 01 y 02. La exclusión de Consultoría se evalúa al usar/listar la tarea.
+    restriccion = _mensaje_restriccion_tarea_46(tarea, ocupacion, None)
+    if restriccion:
+        return jsonify({"mensaje": restriccion}), 400
 
     if tarea in ocupacion.tareas:
         return jsonify({"mensaje": "La tarea ya está asignada"}), 400
