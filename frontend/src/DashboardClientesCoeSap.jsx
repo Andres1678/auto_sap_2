@@ -50,6 +50,8 @@ function getDefaultGraphFilters() {
     graficasAnioHasta: anio,
     graficasMesHasta: mes,
     graficasSociedad: [],
+    graficasEstado: [],
+    graficasEstadoEstimacion: [],
   };
 }
 
@@ -71,6 +73,8 @@ const FILTER_PARAM_MAP = {
   graficasAnioHasta: "graficas_anio_hasta",
   graficasMesHasta: "graficas_mes_hasta",
   graficasSociedad: "graficas_sociedad",
+  graficasEstado: "graficas_estado",
+  graficasEstadoEstimacion: "graficas_estado_estimacion",
   aplicarFiltrosBacklog: "aplicar_filtros_backlog",
 };
 
@@ -1290,8 +1294,8 @@ function EstadoEstimacionHoras({ rows, periodo }) {
               <th>Estado del caso</th>
               <th>Fecha asignación</th>
               <th>Fecha cierre</th>
-              <th>Año aprobado estimación</th>
-              <th>Mes aprobado estimación</th>
+              <th>Año de referencia</th>
+              <th>Mes de referencia</th>
               <th>ID</th>
               <th>Asunto</th>
               <th>Suma total horas funcionales</th>
@@ -1912,21 +1916,21 @@ export default function DashboardClientesCoeSap() {
               </div>
               <span className={`coedash-filter-counter blue${activeGraphFilterCount ? " active" : ""}`}>
                 {activeGraphFilterCount
-                  ? "Periodo o sociedad personalizados"
-                  : "Mes actual · todas las sociedades"}
+                  ? "Filtros mensuales personalizados"
+                  : "Mes actual · todos los estados"}
               </span>
               <p>
                 Este filtro afecta Casos recibidos vs cerrados, Estado estimación y horas,
-                y las tarjetas H. funcionales, H. estimadas y Valor OT. No modifica el backlog.
+                detalle ABAP y las tarjetas H. funcionales, H. estimadas y Valor OT. No modifica el backlog.
               </p>
             </div>
 
             <div className="coedash-graph-filter-grid single">
               <div className="coedash-graph-filter-card coedash-graph-shared-card">
                 <div className="coedash-graph-filter-head">
-                  <h3>Periodo y sociedad para gráficas mensuales</h3>
+                  <h3>Periodo, sociedad y estados para gráficas mensuales</h3>
                   <p>
-                    Selecciona el periodo inicial, el periodo final y una o varias sociedades. El mismo rango
+                    Selecciona el periodo, las sociedades y los estados que deseas analizar. El mismo filtro
                     se aplica a Casos recibidos vs cerrados, Estado estimación y horas,
                     y a las tarjetas H. funcionales, H. estimadas y Valor OT.
                   </p>
@@ -1984,14 +1988,30 @@ export default function DashboardClientesCoeSap() {
                     onChange={(v) => updateGraphFilter("graficasSociedad", v)}
                     disabled={loading}
                   />
+
+                  <MultiSelect
+                    label="Estado del caso"
+                    value={graphFilters.graficasEstado}
+                    options={opciones.estado || []}
+                    onChange={(v) => updateGraphFilter("graficasEstado", v)}
+                    disabled={loading}
+                  />
+
+                  <MultiSelect
+                    label="Estado estimación"
+                    value={graphFilters.graficasEstadoEstimacion}
+                    options={opciones.estadoEstimacion || []}
+                    onChange={(v) => updateGraphFilter("graficasEstadoEstimacion", v)}
+                    disabled={loading}
+                  />
                 </div>
 
                 <div className="coedash-actions coedash-graph-actions">
                   <div className="coedash-action-hint">
                     <span className={graphFiltersDirty ? "pending" : "saved"} aria-hidden="true" />
                     {graphFiltersDirty
-                      ? "Hay cambios de periodo o sociedad pendientes por aplicar."
-                      : "El periodo y la sociedad visibles ya están aplicados."}
+                      ? "Hay cambios de periodo, sociedad o estado pendientes por aplicar."
+                      : "El periodo, la sociedad y los estados visibles ya están aplicados."}
                   </div>
                   <div className="coedash-action-buttons">
                     <button type="button" className="coedash-btn light" onClick={clearGraphFilters} disabled={loading || (!graphFiltersDirty && activeGraphFilterCount === 0)}>

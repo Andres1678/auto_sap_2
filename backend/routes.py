@@ -21467,8 +21467,7 @@ def _coe_rep_apply_graficas_mensuales_sociedad(query):
     - Estado estimación y horas.
 
     Intencionalmente NO aplica los filtros globales del dashboard.
-    Solo permite filtrar por SOCIEDAD y el periodo queda fijo por defecto
-    al mes actual mediante _coe_dashboard_month_filter_values.
+    Permite filtrar por sociedad, estado del caso y estado de estimación.
     """
     sociedades = _coe_rep_list_arg_any(
         "graficas_sociedad",
@@ -21482,6 +21481,27 @@ def _coe_rep_apply_graficas_mensuales_sociedad(query):
             query,
             CoeSapFuncionalCalificacion.sociedad,
             sociedades,
+        )
+
+    estados = _coe_rep_list_arg_any(
+        "graficas_estado", "graficasEstado", "grafica_estado", "graficaEstado"
+    )
+    if estados:
+        query = _coe_rep_apply_values(
+            query, CoeSapFuncionalCalificacion.estado, estados
+        )
+
+    estados_estimacion = _coe_rep_list_arg_any(
+        "graficas_estado_estimacion",
+        "graficasEstadoEstimacion",
+        "grafica_estado_estimacion",
+        "graficaEstadoEstimacion",
+    )
+    if estados_estimacion:
+        query = _coe_rep_apply_values(
+            query,
+            CoeSapFuncionalCalificacion.estado_estimacion,
+            estados_estimacion,
         )
 
     return query
@@ -21586,13 +21606,17 @@ def _coe_rep_estado_estimacion_horas(base_query):
     """
     query = _coe_rep_apply_graficas_mensuales_sociedad(base_query)
 
-    periodo_estimacion_cond = _coe_dashboard_month_condition_for_columns(
-        "estimacion",
+    fecha_periodo_expr = func.coalesce(
         CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion,
+        CoeSapFuncionalCalificacion.fecha_estimacion,
+        CoeSapFuncionalCalificacion.fecha_asignacion,
+    )
+    periodo_estimacion_cond = _coe_dashboard_month_condition_for_columns(
+        "estimacion", fecha_periodo_expr
     )
 
-    anio_aprobado_expr = extract("year", CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion)
-    mes_aprobado_expr = extract("month", CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion)
+    anio_aprobado_expr = extract("year", fecha_periodo_expr)
+    mes_aprobado_expr = extract("month", fecha_periodo_expr)
 
     rows = (
         query.with_entities(
@@ -21611,9 +21635,7 @@ def _coe_rep_estado_estimacion_horas(base_query):
             func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor_ot"),
         )
         .filter(periodo_estimacion_cond)
-        .filter(CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion.isnot(None))
-        .filter(CoeSapFuncionalCalificacion.estado_estimacion.isnot(None))
-        .filter(func.trim(CoeSapFuncionalCalificacion.estado_estimacion) != "")
+        .filter(fecha_periodo_expr.isnot(None))
         .group_by(
             CoeSapFuncionalCalificacion.estado_estimacion,
             anio_aprobado_expr,
@@ -21631,7 +21653,7 @@ def _coe_rep_estado_estimacion_horas(base_query):
 
     return [
         {
-            "estadoEstimacion": _coe_rep_str(r.estado_estimacion) or "Sin dato",
+            "estadoEstimacion": _coe_rep_str(r.estado_estimacion) or "Sin estado de estimación",
             "estado": _coe_rep_str(r.estado) or "Sin dato",
             "fechaAsignacion": _coe_rep_date(r.fecha_asignacion),
             "fechaCierre": _coe_rep_date(r.fecha_cierre or r.fecha_cierre_sistema),
@@ -21652,8 +21674,13 @@ def _coe_rep_estado_estimacion_horas(base_query):
 def _coe_rep_detalle_abap(base_query):
     """Detalle ABAP del mismo rango mensual, con nombres resueltos contra Consultor."""
     query = _coe_rep_apply_graficas_mensuales_sociedad(base_query)
+    fecha_periodo_expr = func.coalesce(
+        CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion,
+        CoeSapFuncionalCalificacion.fecha_estimacion,
+        CoeSapFuncionalCalificacion.fecha_asignacion,
+    )
     periodo_cond = _coe_dashboard_month_condition_for_columns(
-        "estimacion", CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion
+        "estimacion", fecha_periodo_expr
     )
     requiere_abap = func.upper(func.trim(func.coalesce(CoeSapFuncionalCalificacion.requiere_abap, "")))
 
@@ -21726,11 +21753,17 @@ def _coe_rep_estado_estimacion_query(base_query):
     query = query.filter(
         _coe_dashboard_month_condition_for_columns(
             "estimacion",
-            CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion,
+            func.coalesce(
+                CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion,
+                CoeSapFuncionalCalificacion.fecha_estimacion,
+                CoeSapFuncionalCalificacion.fecha_asignacion,
+            ),
         )
     )
 
     estados_estimacion = _coe_rep_list_arg_any(
+        "graficas_estado_estimacion",
+        "graficasEstadoEstimacion",
         "estimacion_estado",
         "estimacionEstado",
         "estadoEstimacion",

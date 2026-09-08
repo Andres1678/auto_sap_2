@@ -1746,12 +1746,16 @@
 }
 
 .coedash-graph-shared-card .coedash-graph-filter-fields {
-  grid-template-columns: repeat(4, minmax(135px, 0.65fr)) minmax(260px, 1.5fr);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
 }
 
 .coedash-graph-shared-card .coedash-filter-select {
-  grid-column: auto;
+  grid-column: span 4;
   max-width: none;
+}
+
+.coedash-graph-shared-card .coedash-graph-filter-fields > .coedash-filter:not(.coedash-filter-select) {
+  grid-column: span 3;
 }
 
 .coedash-monthly-kpi-grid {
