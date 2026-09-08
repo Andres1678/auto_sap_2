@@ -41,10 +41,14 @@ function getDefaultFilters() {
 
 function getDefaultGraphFilters() {
   const hoy = new Date();
+  const anio = String(hoy.getFullYear());
+  const mes = String(hoy.getMonth() + 1);
 
   return {
-    graficasAnio: String(hoy.getFullYear()),
-    graficasMes: String(hoy.getMonth() + 1),
+    graficasAnioDesde: anio,
+    graficasMesDesde: mes,
+    graficasAnioHasta: anio,
+    graficasMesHasta: mes,
     graficasSociedad: [],
   };
 }
@@ -62,8 +66,10 @@ const FILTER_PARAM_MAP = {
   estimacionAnio: "estimacion_anio",
   estimacionMes: "estimacion_mes",
   estimacionEstado: "estimacion_estado",
-  graficasAnio: "graficas_anio",
-  graficasMes: "graficas_mes",
+  graficasAnioDesde: "graficas_anio_desde",
+  graficasMesDesde: "graficas_mes_desde",
+  graficasAnioHasta: "graficas_anio_hasta",
+  graficasMesHasta: "graficas_mes_hasta",
   graficasSociedad: "graficas_sociedad",
   aplicarFiltrosBacklog: "aplicar_filtros_backlog",
 };
@@ -130,6 +136,14 @@ function moneyText(value) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   });
+}
+
+function dateText(value) {
+  if (!value) return "—";
+  const raw = String(value).slice(0, 10);
+  const parts = raw.split("-");
+  if (parts.length !== 3) return cleanText(value);
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
 function getFilenameFromDisposition(disposition, fallback) {
@@ -230,6 +244,10 @@ function countChangedFilterGroups(filters, defaults) {
     "mesHasta",
     "fechaDesde",
     "fechaHasta",
+    "graficasAnioDesde",
+    "graficasMesDesde",
+    "graficasAnioHasta",
+    "graficasMesHasta",
   ]);
 
   let count = 0;
@@ -483,6 +501,12 @@ function PeriodFilters({ filters, opciones, updateFilter, disabled }) {
 
 function periodoMensualText(periodo) {
   if (!periodo) return "Mes propio";
+
+  if (periodo.desde && periodo.hasta) {
+    const desde = `${cleanText(periodo.desde.mesNombre)} ${cleanText(periodo.desde.anio)}`;
+    const hasta = `${cleanText(periodo.hasta.mesNombre)} ${cleanText(periodo.hasta.anio)}`;
+    return desde === hasta ? desde : `${desde} – ${hasta}`;
+  }
 
   const mes = cleanText(periodo.mesNombre);
   const anio = cleanText(periodo.anio);
@@ -1253,7 +1277,7 @@ function EstadoEstimacionHoras({ rows, periodo }) {
       <div className="coedash-panel-head center">
         <h2>Estado estimación y horas</h2>
         <p>
-          Mes actual: <b>{periodoMensualText(periodo)}</b>. Las tarjetas de horas y valor OT
+          Periodo aplicado: <b>{periodoMensualText(periodo)}</b>. Las tarjetas de horas y valor OT
           usan exactamente los mismos registros y totales de esta tabla.
         </p>
       </div>
@@ -1263,6 +1287,9 @@ function EstadoEstimacionHoras({ rows, periodo }) {
           <thead>
             <tr>
               <th>Estado estimación</th>
+              <th>Estado del caso</th>
+              <th>Fecha asignación</th>
+              <th>Fecha cierre</th>
               <th>Año aprobado estimación</th>
               <th>Mes aprobado estimación</th>
               <th>ID</th>
@@ -1275,10 +1302,13 @@ function EstadoEstimacionHoras({ rows, periodo }) {
           </thead>
           <tbody>
             {!rows?.length ? (
-              <tr><td colSpan="9" className="coedash-empty small">Sin información de estimación.</td></tr>
+              <tr><td colSpan="12" className="coedash-empty small">Sin información de estimación.</td></tr>
             ) : rows.map((row, index) => (
               <tr key={`estimacion-${index}-${row.numero}`}>
                 <td className="strong">{cleanText(row.estadoEstimacion)}</td>
+                <td><span className="coedash-status-chip">{cleanText(row.estado)}</span></td>
+                <td className="mono">{dateText(row.fechaAsignacion)}</td>
+                <td className="mono">{dateText(row.fechaCierre)}</td>
                 <td className="center">{cleanText(row.anioAprobadoEstimacion)}</td>
                 <td className="center">{cleanText(row.mesAprobadoEstimacion)}</td>
                 <td className="mono">{cleanText(row.numero)}</td>
@@ -1290,11 +1320,61 @@ function EstadoEstimacionHoras({ rows, periodo }) {
               </tr>
             ))}
             <tr className="coedash-total-row">
-              <td colSpan="5">Total general</td>
+              <td colSpan="8">Total general</td>
               <td className="right">{numberText(totals.totalHorasFuncionales, 2)}</td>
               <td className="right">{numberText(totals.horasEstimadasAbap, 2)}</td>
               <td className="right">{numberText(totals.totalHorasEstimadas, 2)}</td>
               <td className="right">{moneyText(totals.valorOt)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function AbapSeguimientoTable({ rows, periodo }) {
+  const totals = useMemo(() => (rows || []).reduce((acc, row) => {
+    acc.aprobadas += Number(row.horasAprobadas || 0);
+    acc.entregadas += Number(row.horasEntregadas || 0);
+    return acc;
+  }, { aprobadas: 0, entregadas: 0 }), [rows]);
+
+  return (
+    <section className="coedash-panel coedash-wide-panel coedash-abap-card">
+      <div className="coedash-panel-head center">
+        <span className="coedash-section-kicker blue">Seguimiento técnico</span>
+        <h2>Detalle de horas ABAP</h2>
+        <p>Casos que requieren ABAP en <b>{periodoMensualText(periodo)}</b>. Los apoyos se normalizan con el catálogo de consultores.</p>
+      </div>
+      <div className="coedash-table-wrap">
+        <table className="coedash-table abap">
+          <thead><tr>
+            <th>ID</th><th>Cliente / sociedad</th><th>Asunto</th><th>Estado</th>
+            <th>Consultor ABAP</th><th>H. aprobadas</th><th>H. entregadas</th><th>Diferencia</th><th>Control</th>
+          </tr></thead>
+          <tbody>
+            {!rows?.length ? (
+              <tr><td colSpan="9" className="coedash-empty small">No hay casos que requieran ABAP en este periodo.</td></tr>
+            ) : rows.map((row, index) => (
+              <tr key={`abap-${row.numero}-${index}`}>
+                <td className="mono strong">{cleanText(row.numero)}</td>
+                <td>{cleanText(row.sociedad)}</td>
+                <td className="coedash-estimation-subject" title={cleanText(row.asunto)}>{cleanText(row.asunto)}</td>
+                <td><span className="coedash-status-chip">{cleanText(row.estado)}</span></td>
+                <td className="strong">{cleanText(row.consultoresAbap?.join(", "))}</td>
+                <td className="right strong">{numberText(row.horasAprobadas, 2)}</td>
+                <td className="right strong">{numberText(row.horasEntregadas, 2)}</td>
+                <td className={`right strong ${Number(row.diferencia || 0) > 0 ? "coedash-over" : ""}`}>{numberText(row.diferencia, 2)}</td>
+                <td><span className={`coedash-pill ${row.controlTone || "neutral"}`}>{cleanText(row.control)}</span></td>
+              </tr>
+            ))}
+            <tr className="coedash-total-row">
+              <td colSpan="5">Total general</td>
+              <td className="right">{numberText(totals.aprobadas, 2)}</td>
+              <td className="right">{numberText(totals.entregadas, 2)}</td>
+              <td className="right">{numberText(totals.entregadas - totals.aprobadas, 2)}</td>
+              <td>—</td>
             </tr>
           </tbody>
         </table>
@@ -1445,6 +1525,7 @@ export default function DashboardClientesCoeSap() {
   const resumen = payload?.resumen || {};
   const resumenEstadoGeneral = payload?.resumenEstadoGeneral || resumen;
   const estadoEstimacionHoras = payload?.estadoEstimacionHoras || [];
+  const detalleAbap = payload?.detalleAbap || [];
   const resumenEstimacionHoras = useMemo(
     () => calculateEstadoEstimacionTotals(estadoEstimacionHoras),
     [estadoEstimacionHoras]
@@ -1784,7 +1865,7 @@ export default function DashboardClientesCoeSap() {
         </section>
       ) : (
         <>
-          <section className="coedash-metrics-grid coedash-metrics-grid-six">
+          <section className="coedash-metrics-grid coedash-metrics-grid-summary">
             <MetricCard
               title="Backlog total"
               icon="▦"
@@ -1809,29 +1890,6 @@ export default function DashboardClientesCoeSap() {
               tone="info"
             />
 
-            <MetricCard
-              title="H. funcionales"
-              icon="HF"
-              value={numberText(resumenEstimacionHoras.totalHorasFuncionales, 2)}
-              sub={`Tabla de estimación · ${periodoMensualText(periodoEstadoEstimacion)}`}
-              tone="ok"
-            />
-
-            <MetricCard
-              title="H. estimadas"
-              icon="HE"
-              value={numberText(resumenEstimacionHoras.totalHorasEstimadas, 2)}
-              sub={`Funcionales + ABAP · ${periodoMensualText(periodoEstadoEstimacion)}`}
-              tone="dark"
-            />
-
-            <MetricCard
-              title="Valor OT"
-              icon="$"
-              value={moneyText(resumenEstimacionHoras.valorOt)}
-              sub={`Tabla de estimación · ${periodoMensualText(periodoEstadoEstimacion)}`}
-              tone="money"
-            />
           </section>
 
           <EstadoGeneralRequerimientos
@@ -1850,7 +1908,7 @@ export default function DashboardClientesCoeSap() {
             <div className="coedash-graph-filter-title">
               <div>
                 <span className="coedash-section-kicker blue">Análisis mensual</span>
-                <h2>Filtro propio de gráficas mensuales</h2>
+                <h2>Rango propio de gráficas mensuales</h2>
               </div>
               <span className={`coedash-filter-counter blue${activeGraphFilterCount ? " active" : ""}`}>
                 {activeGraphFilterCount
@@ -1868,7 +1926,7 @@ export default function DashboardClientesCoeSap() {
                 <div className="coedash-graph-filter-head">
                   <h3>Periodo y sociedad para gráficas mensuales</h3>
                   <p>
-                    Selecciona el año, el mes y una o varias sociedades. El mismo periodo
+                    Selecciona el periodo inicial, el periodo final y una o varias sociedades. El mismo rango
                     se aplica a Casos recibidos vs cerrados, Estado estimación y horas,
                     y a las tarjetas H. funcionales, H. estimadas y Valor OT.
                   </p>
@@ -1876,14 +1934,14 @@ export default function DashboardClientesCoeSap() {
 
                 <div className="coedash-graph-filter-fields">
                   <label className="coedash-filter">
-                    <span>Año</span>
+                    <span>Año desde</span>
                     <select
-                      value={graphFilters.graficasAnio}
+                      value={graphFilters.graficasAnioDesde}
                       disabled={loading}
-                      onChange={(e) => updateGraphFilter("graficasAnio", e.target.value)}
+                      onChange={(e) => updateGraphFilter("graficasAnioDesde", e.target.value)}
                     >
                       {buildYearOptions(opciones).map((item) => (
-                        <option key={`graficas-anio-${item.value}`} value={item.value}>
+                        <option key={`graficas-anio-desde-${item.value}`} value={item.value}>
                           {item.label}
                         </option>
                       ))}
@@ -1891,17 +1949,31 @@ export default function DashboardClientesCoeSap() {
                   </label>
 
                   <label className="coedash-filter">
-                    <span>Mes</span>
+                    <span>Mes desde</span>
                     <select
-                      value={graphFilters.graficasMes}
+                      value={graphFilters.graficasMesDesde}
                       disabled={loading}
-                      onChange={(e) => updateGraphFilter("graficasMes", e.target.value)}
+                      onChange={(e) => updateGraphFilter("graficasMesDesde", e.target.value)}
                     >
                       {buildMonthOptions(opciones).map((item) => (
-                        <option key={`graficas-mes-${item.value}`} value={item.value}>
+                        <option key={`graficas-mes-desde-${item.value}`} value={item.value}>
                           {item.label}
                         </option>
                       ))}
+                    </select>
+                  </label>
+
+                  <label className="coedash-filter">
+                    <span>Año hasta</span>
+                    <select value={graphFilters.graficasAnioHasta} disabled={loading} onChange={(e) => updateGraphFilter("graficasAnioHasta", e.target.value)}>
+                      {buildYearOptions(opciones).map((item) => <option key={`graficas-anio-hasta-${item.value}`} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+
+                  <label className="coedash-filter">
+                    <span>Mes hasta</span>
+                    <select value={graphFilters.graficasMesHasta} disabled={loading} onChange={(e) => updateGraphFilter("graficasMesHasta", e.target.value)}>
+                      {buildMonthOptions(opciones).map((item) => <option key={`graficas-mes-hasta-${item.value}`} value={item.value}>{item.label}</option>)}
                     </select>
                   </label>
 
@@ -1933,10 +2005,17 @@ export default function DashboardClientesCoeSap() {
                 </div>
               </div>
             </div>
+
+            <div className="coedash-monthly-kpi-grid">
+              <MetricCard title="H. funcionales" icon="HF" value={numberText(resumenEstimacionHoras.totalHorasFuncionales, 2)} sub={`Tabla de estimación · ${periodoMensualText(periodoEstadoEstimacion)}`} tone="ok" />
+              <MetricCard title="H. estimadas" icon="HE" value={numberText(resumenEstimacionHoras.totalHorasEstimadas, 2)} sub={`Funcionales + ABAP · ${periodoMensualText(periodoEstadoEstimacion)}`} tone="dark" />
+              <MetricCard title="Valor OT" icon="$" value={moneyText(resumenEstimacionHoras.valorOt)} sub={`Tabla de estimación · ${periodoMensualText(periodoEstadoEstimacion)}`} tone="money" />
+            </div>
           </section>
 
           <RecibidosVsCerrados rows={payload?.casosRecibidosVsCerrados || []} periodo={payload?.periodosGraficas?.recibidosVsCerrados} />
           <EstadoEstimacionHoras rows={estadoEstimacionHoras} periodo={periodoEstadoEstimacion} />
+          <AbapSeguimientoTable rows={detalleAbap} periodo={periodoEstadoEstimacion} />
 
 
           <section className="coedash-grid-panels two">

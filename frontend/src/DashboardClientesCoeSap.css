@@ -860,6 +860,10 @@
   grid-template-columns: repeat(6, minmax(170px, 1fr));
 }
 
+.coedash-metrics-grid-summary {
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+}
+
 .coedash-metric {
   position: relative;
   isolation: isolate;
@@ -1742,12 +1746,54 @@
 }
 
 .coedash-graph-shared-card .coedash-graph-filter-fields {
-  grid-template-columns: minmax(145px, 0.55fr) minmax(170px, 0.65fr) minmax(280px, 1.8fr);
+  grid-template-columns: repeat(4, minmax(135px, 0.65fr)) minmax(260px, 1.5fr);
 }
 
 .coedash-graph-shared-card .coedash-filter-select {
   grid-column: auto;
   max-width: none;
+}
+
+.coedash-monthly-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(210px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.coedash-monthly-kpi-grid .coedash-metric {
+  min-height: 125px;
+  margin: 0;
+  border: 1px solid var(--coedash-border);
+}
+
+.coedash-status-chip,
+.coedash-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 4px 9px;
+  border: 1px solid #d9e0ea;
+  border-radius: 999px;
+  background: #f7f9fc;
+  color: #475467;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.coedash-pill.ok { color: #08765b; background: #eaf8f3; border-color: #bde8d9; }
+.coedash-pill.info { color: #1859b7; background: #eef5ff; border-color: #cfe0fb; }
+.coedash-pill.warn { color: #986008; background: #fff8e8; border-color: #f7dda0; }
+.coedash-pill.danger { color: #b42318; background: #fff0ee; border-color: #ffc9c4; }
+.coedash-over { color: var(--coedash-red) !important; }
+
+.coedash-abap-card {
+  border-top: 4px solid var(--coedash-blue);
+}
+
+.coedash-table.abap {
+  min-width: 1220px;
 }
 
 /* ============================================================
@@ -2525,12 +2571,25 @@
 
 /* La nueva columna Asunto necesita más ancho en Estado estimación y horas. */
 .coedash-table.estimation {
-  min-width: 1480px;
+  min-width: 1780px;
 }
 
-.coedash-table.estimation th:nth-child(5),
-.coedash-table.estimation td:nth-child(5) {
+.coedash-table.estimation th:nth-child(8),
+.coedash-table.estimation td:nth-child(8) {
   min-width: 320px;
+}
+
+@media (max-width: 1100px) {
+  .coedash-graph-shared-card .coedash-graph-filter-fields {
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+  .coedash-graph-shared-card .coedash-filter-select { grid-column: 1 / -1; }
+  .coedash-monthly-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .coedash-metrics-grid-summary,
+  .coedash-monthly-kpi-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 650px) {

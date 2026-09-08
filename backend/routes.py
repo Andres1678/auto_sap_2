@@ -19989,6 +19989,39 @@ def _coe_dashboard_month_filter_values(prefix):
     return int(anio), int(mes)
 
 
+def _coe_dashboard_graph_range_values(prefix):
+    """Rango inclusivo para las gráficas mensuales; mantiene compatibilidad con el filtro de un mes."""
+    anio_actual, mes_actual = _coe_dashboard_periodo_actual()
+
+    anio_desde = _coe_dashboard_parse_int(
+        request.args.get("graficas_anio_desde") or request.args.get("graficasAnioDesde")
+    )
+    mes_desde = _coe_dashboard_parse_int(
+        request.args.get("graficas_mes_desde") or request.args.get("graficasMesDesde")
+    )
+    anio_hasta = _coe_dashboard_parse_int(
+        request.args.get("graficas_anio_hasta") or request.args.get("graficasAnioHasta")
+    )
+    mes_hasta = _coe_dashboard_parse_int(
+        request.args.get("graficas_mes_hasta") or request.args.get("graficasMesHasta")
+    )
+
+    if not all([anio_desde, mes_desde, anio_hasta, mes_hasta]):
+        anio_mes, mes_mes = _coe_dashboard_month_filter_values(prefix)
+        anio_desde = anio_hasta = anio_mes or anio_actual
+        mes_desde = mes_hasta = mes_mes or mes_actual
+
+    if not (1 <= int(mes_desde) <= 12 and 1 <= int(mes_hasta) <= 12):
+        anio_desde = anio_hasta = anio_actual
+        mes_desde = mes_hasta = mes_actual
+
+    desde = (int(anio_desde), int(mes_desde))
+    hasta = (int(anio_hasta), int(mes_hasta))
+    if (hasta[0] * 100 + hasta[1]) < (desde[0] * 100 + desde[1]):
+        desde, hasta = hasta, desde
+    return desde, hasta
+
+
 def _coe_dashboard_month_condition_for_columns(prefix, *columns):
     """
     Condición mensual independiente para una gráfica específica.
@@ -20003,13 +20036,15 @@ def _coe_dashboard_month_condition_for_columns(prefix, *columns):
     if not valid_columns:
         return literal(False)
 
-    anio, mes = _coe_dashboard_month_filter_values(prefix)
+    (anio_desde, mes_desde), (anio_hasta, mes_hasta) = _coe_dashboard_graph_range_values(prefix)
+    periodo_desde = (anio_desde * 100) + mes_desde
+    periodo_hasta = (anio_hasta * 100) + mes_hasta
 
     conditions = [
         and_(
             col.isnot(None),
-            extract("year", col) == anio,
-            extract("month", col) == mes,
+            ((extract("year", col) * 100) + extract("month", col)) >= periodo_desde,
+            ((extract("year", col) * 100) + extract("month", col)) <= periodo_hasta,
         )
         for col in valid_columns
     ]
@@ -20021,12 +20056,14 @@ def _coe_dashboard_month_condition_for_columns(prefix, *columns):
 
 
 def _coe_dashboard_month_payload(prefix):
-    anio, mes = _coe_dashboard_month_filter_values(prefix)
+    (anio_desde, mes_desde), (anio_hasta, mes_hasta) = _coe_dashboard_graph_range_values(prefix)
     return {
-        "anio": anio,
-        "mes": mes,
-        "mesNombre": _coe_rep_month_name(mes),
-        "periodo": f"{anio}-{mes:02d}",
+        "anio": anio_desde,
+        "mes": mes_desde,
+        "mesNombre": _coe_rep_month_name(mes_desde),
+        "periodo": f"{anio_desde}-{mes_desde:02d}",
+        "desde": {"anio": anio_desde, "mes": mes_desde, "mesNombre": _coe_rep_month_name(mes_desde)},
+        "hasta": {"anio": anio_hasta, "mes": mes_hasta, "mesNombre": _coe_rep_month_name(mes_hasta)},
     }
 
 
@@ -21560,6 +21597,10 @@ def _coe_rep_estado_estimacion_horas(base_query):
     rows = (
         query.with_entities(
             CoeSapFuncionalCalificacion.estado_estimacion.label("estado_estimacion"),
+            func.max(CoeSapFuncionalCalificacion.estado).label("estado"),
+            func.max(CoeSapFuncionalCalificacion.fecha_asignacion).label("fecha_asignacion"),
+            func.max(CoeSapFuncionalCalificacion.fecha_finalizacion_cierre).label("fecha_cierre"),
+            func.max(CoeSapFuncionalCalificacion.fecha_finalizacion_cierre_sistema_gestion).label("fecha_cierre_sistema"),
             anio_aprobado_expr.label("anio"),
             mes_aprobado_expr.label("mes"),
             CoeSapFuncionalCalificacion.numero.label("numero"),
@@ -21591,6 +21632,9 @@ def _coe_rep_estado_estimacion_horas(base_query):
     return [
         {
             "estadoEstimacion": _coe_rep_str(r.estado_estimacion) or "Sin dato",
+            "estado": _coe_rep_str(r.estado) or "Sin dato",
+            "fechaAsignacion": _coe_rep_date(r.fecha_asignacion),
+            "fechaCierre": _coe_rep_date(r.fecha_cierre or r.fecha_cierre_sistema),
             "anioAprobadoEstimacion": int(r.anio) if r.anio is not None else None,
             "mesAprobadoEstimacion": int(r.mes) if r.mes is not None else None,
             "mesNombre": _coe_rep_month_name(r.mes) if r.mes is not None else "Sin mes",
@@ -21603,6 +21647,76 @@ def _coe_rep_estado_estimacion_horas(base_query):
         }
         for r in rows
     ]
+
+
+def _coe_rep_detalle_abap(base_query):
+    """Detalle ABAP del mismo rango mensual, con nombres resueltos contra Consultor."""
+    query = _coe_rep_apply_graficas_mensuales_sociedad(base_query)
+    periodo_cond = _coe_dashboard_month_condition_for_columns(
+        "estimacion", CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion
+    )
+    requiere_abap = func.upper(func.trim(func.coalesce(CoeSapFuncionalCalificacion.requiere_abap, "")))
+
+    rows = (
+        query.with_entities(
+            CoeSapFuncionalCalificacion.numero.label("numero"),
+            func.max(CoeSapFuncionalCalificacion.sociedad).label("sociedad"),
+            func.max(CoeSapFuncionalCalificacion.asunto).label("asunto"),
+            func.max(CoeSapFuncionalCalificacion.estado).label("estado"),
+            func.max(CoeSapFuncionalCalificacion.asignacion_abap).label("asignacion_abap"),
+            func.max(CoeSapFuncionalCalificacion.apoyo_1).label("apoyo_1"),
+            func.max(CoeSapFuncionalCalificacion.apoyo_2).label("apoyo_2"),
+            func.max(CoeSapFuncionalCalificacion.apoyo_3).label("apoyo_3"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_estimadas_abap), 0).label("horas_aprobadas"),
+            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_ejecutadas_abap), 0).label("horas_entregadas"),
+        )
+        .filter(periodo_cond)
+        .filter(requiere_abap.in_(["SI", "SÍ", "YES", "TRUE", "1", "X"]))
+        .group_by(CoeSapFuncionalCalificacion.numero)
+        .order_by(CoeSapFuncionalCalificacion.numero.asc())
+        .all()
+    )
+
+    lookup = _coe_consultor_lookup()
+    resultado = []
+    for row in rows:
+        consultores = []
+        for raw in [row.asignacion_abap, row.apoyo_1, row.apoyo_2, row.apoyo_3]:
+            raw = _coe_rep_str(raw)
+            if not raw:
+                continue
+            meta = _coe_resolver_consultor(raw, lookup=lookup)
+            nombre = (meta or {}).get("display") or raw
+            if nombre not in consultores:
+                consultores.append(nombre)
+
+        aprobadas = _coe_rep_float(row.horas_aprobadas)
+        entregadas = _coe_rep_float(row.horas_entregadas)
+        diferencia = entregadas - aprobadas
+        if aprobadas <= 0 and entregadas <= 0:
+            control, tone = "Sin horas", "neutral"
+        elif entregadas > aprobadas:
+            control, tone = "Excedido", "danger"
+        elif aprobadas > 0 and entregadas >= aprobadas:
+            control, tone = "Cumplido", "ok"
+        elif entregadas > 0:
+            control, tone = "En ejecución", "info"
+        else:
+            control, tone = "Pendiente", "warn"
+
+        resultado.append({
+            "numero": _coe_rep_str(row.numero) or "Sin ID",
+            "sociedad": _coe_rep_str(row.sociedad) or "Sin sociedad",
+            "asunto": _coe_rep_str(row.asunto) or "Sin asunto",
+            "estado": _coe_rep_str(row.estado) or "Sin dato",
+            "consultoresAbap": consultores or ["Sin consultor ABAP"],
+            "horasAprobadas": aprobadas,
+            "horasEntregadas": entregadas,
+            "diferencia": diferencia,
+            "control": control,
+            "controlTone": tone,
+        })
+    return resultado
 
 
 def _coe_rep_estado_estimacion_query(base_query):
@@ -21927,6 +22041,7 @@ def dashboard_clientes_coe_sap_funcional():
             "distribucionModulosConsultores": _coe_rep_distribucion_modulos_consultores(query_backlog_estado),
             "casosRecibidosVsCerrados": _coe_rep_recibidos_vs_cerrados(base_query),
             "estadoEstimacionHoras": _coe_rep_estado_estimacion_horas(base_query),
+            "detalleAbap": _coe_rep_detalle_abap(base_query),
             "casosPorEstado": _coe_rep_group_count(query, CoeSapFuncionalCalificacion.estado, "estado"),
             "casosPorEstadoPrincipal": _coe_rep_group_count_estado_principal(query),
             "casosPorSubestado": _coe_rep_group_count_subestado(query),
