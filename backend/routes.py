@@ -4441,6 +4441,14 @@ def importar_oportunidades():
 
         obj = clean_payload(obj)
 
+        cliente_valido, mensaje_cliente = _validar_cliente_catalogo_en_payload(
+            obj, requerido=True
+        )
+        if not cliente_valido:
+            return jsonify({
+                "mensaje": f"Fila de importación inválida: {mensaje_cliente}"
+            }), 400
+
         if (
             any(obj.get(field) for field in OPORTUNIDAD_LINK_FIELDS)
             and not _usuario_actual_tiene_permiso(PERMISO_OPORTUNIDADES_ENLACES_EDITAR)
@@ -4489,6 +4497,56 @@ def distinct_clientes_model():
         .all()
     )
     return [r[0] for r in rows]
+
+
+def _resolver_cliente_oportunidad_desde_catalogo(nombre_cliente):
+    """Devuelve el nombre oficial de Cliente o None si no existe en el catálogo."""
+    cliente_key = _norm_key_for_match(nombre_cliente)
+    if not cliente_key:
+        return None
+
+    cliente = (
+        Cliente.query
+        .filter(Cliente.nombre_cliente.isnot(None))
+        .filter(func.trim(Cliente.nombre_cliente) != "")
+        .filter(_sql_norm_estado(Cliente.nombre_cliente) == cliente_key)
+        .order_by(Cliente.id.asc())
+        .first()
+    )
+    return str(cliente.nombre_cliente).strip() if cliente else None
+
+
+def _validar_cliente_catalogo_en_payload(data, requerido=False):
+    if "nombre_cliente" not in data and not requerido:
+        return True, None
+
+    nombre_oficial = _resolver_cliente_oportunidad_desde_catalogo(
+        data.get("nombre_cliente")
+    )
+    if not nombre_oficial:
+        return False, (
+            "El cliente seleccionado no existe en la tabla de clientes. "
+            "Seleccione un cliente válido del catálogo."
+        )
+
+    data["nombre_cliente"] = nombre_oficial
+    return True, None
+
+
+@bp.route("/oportunidades/clientes-catalogo", methods=["GET"])
+@permission_required("OPORTUNIDADES_VER")
+def oportunidades_clientes_catalogo():
+    clientes = (
+        Cliente.query
+        .filter(Cliente.nombre_cliente.isnot(None))
+        .filter(func.trim(Cliente.nombre_cliente) != "")
+        .order_by(Cliente.nombre_cliente.asc(), Cliente.id.asc())
+        .all()
+    )
+    return jsonify([
+        {"id": cliente.id, "nombre_cliente": str(cliente.nombre_cliente).strip()}
+        for cliente in clientes
+    ]), 200
 
 
 @bp.route("/oportunidades/filters", methods=["GET"])
@@ -4616,6 +4674,12 @@ def crear_oportunidad():
     try:
         data = clean_payload(request.get_json() or {})
 
+        cliente_valido, mensaje_cliente = _validar_cliente_catalogo_en_payload(
+            data, requerido=True
+        )
+        if not cliente_valido:
+            return jsonify({"mensaje": mensaje_cliente}), 400
+
         if (
             _payload_modifica_enlaces(data)
             and not _usuario_actual_tiene_permiso(PERMISO_OPORTUNIDADES_ENLACES_EDITAR)
@@ -4655,6 +4719,10 @@ def editar_oportunidad(id):
 
         data = clean_payload(request.get_json() or {})
         o = Oportunidad.query.get_or_404(id)
+
+        cliente_valido, mensaje_cliente = _validar_cliente_catalogo_en_payload(data)
+        if not cliente_valido:
+            return jsonify({"mensaje": mensaje_cliente}), 400
 
         if (
             _payload_cambia_enlaces(data, o)

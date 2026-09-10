@@ -1261,7 +1261,7 @@ export default function Oportunidades() {
 
   const fetchClientesCatalogo = async () => {
     try {
-      const res = await jfetch("/clientes");
+      const res = await jfetch("/oportunidades/clientes-catalogo");
       const json = await res.json().catch(() => []);
 
       if (!res.ok || !Array.isArray(json)) {
@@ -2892,6 +2892,15 @@ export default function Oportunidades() {
 
   const saveNewRow = async (crearComoPrincipal = false) => {
     try {
+      if (!clienteSuggestions.includes(normalizeText(newRow?.[CLIENTE_COL]))) {
+        Swal.fire(
+          "Cliente requerido",
+          "Selecciona un cliente válido de la tabla de clientes.",
+          "warning"
+        );
+        return;
+      }
+
       if (crearComoPrincipal) {
         const duplicada = existePrincipalMismoClienteServicio(newRow);
 
@@ -3061,26 +3070,31 @@ export default function Oportunidades() {
 
     if (col === CLIENTE_COL) {
       return (
-        <input
+        <select
           className="cell-input"
-          list="clientes-oportunidades-list"
           autoFocus
           value={editValue ?? ""}
-          placeholder="Selecciona o escribe cliente"
-          onChange={(e) => setEditValue(e.target.value)}
+          disabled={!clienteSuggestions.length}
+          onChange={(e) => {
+            const next = e.target.value;
+            setEditValue(next);
+            if (next) saveEdit(row.id, col, next);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              e.currentTarget.blur();
-            }
             if (e.key === "Escape") {
               e.preventDefault();
-              setEditing({ rowId: null, col: null });
-              setEditingContext(null);
+              closeEditing();
             }
           }}
-          onBlur={(e) => saveEdit(row.id, col, e.currentTarget.value)}
-        />
+          onBlur={closeEditing}
+        >
+          <option value="" disabled>
+            {clienteSuggestions.length ? "Selecciona un cliente" : "Sin clientes disponibles"}
+          </option>
+          {clienteSuggestions.map((cliente) => (
+            <option key={cliente} value={cliente}>{cliente}</option>
+          ))}
+        </select>
       );
     }
 
@@ -3411,13 +3425,19 @@ export default function Oportunidades() {
 
     if (col === CLIENTE_COL) {
       return (
-        <input
+        <select
           className="cell-input"
-          list="clientes-oportunidades-list"
           value={newRow[col] ?? ""}
-          placeholder="Selecciona o escribe cliente"
+          disabled={!clienteSuggestions.length}
           onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
-        />
+        >
+          <option value="">
+            {clienteSuggestions.length ? "Selecciona un cliente" : "Sin clientes disponibles"}
+          </option>
+          {clienteSuggestions.map((cliente) => (
+            <option key={cliente} value={cliente}>{cliente}</option>
+          ))}
+        </select>
       );
     }
 
@@ -4487,12 +4507,6 @@ export default function Oportunidades() {
   return (
     <div className="oportunidades-wrapper">
       <h2>Gestión de Oportunidades</h2>
-
-      <datalist id="clientes-oportunidades-list">
-        {clienteSuggestions.map((cliente) => (
-          <option key={cliente} value={cliente} />
-        ))}
-      </datalist>
 
       <datalist id="categoria-perdida-list">
         {CATEGORIA_PERDIDA_OPTS.map((categoria) => (
