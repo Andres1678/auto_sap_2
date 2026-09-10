@@ -4229,6 +4229,30 @@ def _oportunidad_to_dict_seguro(oportunidad):
     return payload if puede_ver else _ocultar_enlaces_oportunidad(payload)
 
 
+# La principal refleja la primera OT, excepto valores consolidados,
+# seguimiento OT e identificadores estructurales de la relación padre/hijo.
+PRINCIPAL_SYNC_FROM_FIRST_OT_FIELDS = (
+    "nombre_cliente", "servicio", "fecha_creacion", "semestre",
+    "tipo_cliente", "tipo_solicitud", "caso_sm", "fecha_cierre_sm",
+    "salesforce", "ultimos_6_meses", "ultimo_mes", "retraso",
+    "estado_oferta", "resultado_oferta", "calificacion_oportunidad",
+    "origen_oportunidad", "direccion_comercial", "gerencia_comercial",
+    "comercial_asignado", "consultor_comercial", "comercial_asignado_hitss",
+    "observaciones", "categoria_perdida", "subcategoria_perdida",
+    "fecha_entrega_oferta_final", "vigencia_propuesta",
+    "fecha_aceptacion_oferta", "tipo_moneda", "duracion", "pais",
+    "fecha_cierre_oportunidad", "codigo_prc", "fecha_firma_aos",
+    "pm_asignado_claro", "pm_asignado_hitss", "descripcion_ot",
+    "num_enlace", "num_incidente", "num_ot", "estado_ot",
+    "proyeccion_ingreso", "fecha_compromiso", "fecha_cierre",
+    "estado_proyecto", "anio_creacion_ot", "fecha_acta_cierre_ot",
+    "tipo_servicio", "semestre_ejecucion", "publicacion_sharepoint",
+    "acceso_sharepoint", "acceso_aos", "acceso_ot", "borrador_contrato",
+    "contrato_oficial", "mostrar_dashboard",
+    "tiene_codigo_proyecto_evolutivo", "codigo_proyecto_evolutivo",
+)
+
+
 @bp.route("/oportunidades/import", methods=["POST"])
 @permission_required("OPORTUNIDADES_CREAR")
 def importar_oportunidades():
@@ -4842,63 +4866,7 @@ def editar_oportunidad(id):
             if int(primera_ot.id) != int(ot_editada.id):
                 return None
 
-            # Estos dos campos se asignan explícitamente para garantizar que el
-            # cambio de la primera OT quede persistido en la principal.
-            principal.nombre_cliente = primera_ot.nombre_cliente
-            principal.servicio = primera_ot.servicio
-
-            campos_sincronizar = [
-                "nombre_cliente",
-                "servicio",
-                "tipo_cliente",
-                "tipo_solicitud",
-                "caso_sm",
-                "fecha_cierre_sm",
-                "salesforce",
-                "ultimos_6_meses",
-                "ultimo_mes",
-                "retraso",
-                "estado_oferta",
-                "resultado_oferta",
-                "calificacion_oportunidad",
-                "origen_oportunidad",
-                "direccion_comercial",
-                "gerencia_comercial",
-                "comercial_asignado",
-                "consultor_comercial",
-                "comercial_asignado_hitss",
-                "observaciones",
-                "categoria_perdida",
-                "subcategoria_perdida",
-                "fecha_entrega_oferta_final",
-                "tipo_moneda",
-                "duracion",
-                "pais",
-                "fecha_cierre_oportunidad",
-                "codigo_prc",
-                "fecha_firma_aos",
-                "pm_asignado_claro",
-                "pm_asignado_hitss",
-                "descripcion_ot",
-                "num_enlace",
-                "num_incidente",
-                "num_ot",
-                "estado_ot",
-                "proyeccion_ingreso",
-                "fecha_compromiso",
-                "fecha_cierre",
-                "estado_proyecto",
-                "anio_creacion_ot",
-                "seguimiento_ot",
-                "acceso_sharepoint",
-                "acceso_aos",
-                "acceso_ot",
-                "borrador_contrato",
-                "contrato_oficial",
-                "mostrar_dashboard",
-            ]
-
-            for campo in campos_sincronizar:
+            for campo in PRINCIPAL_SYNC_FROM_FIRST_OT_FIELDS:
                 if hasattr(principal, campo) and hasattr(primera_ot, campo):
                     setattr(principal, campo, getattr(primera_ot, campo))
 
@@ -14305,21 +14273,7 @@ def asignar_oportunidad_a_principal(id):
         # Cuando se asigna la primera OT, la principal toma su información
         # descriptiva. Las siguientes OTs no reemplazan estos textos.
         if consecutivo_sub == 1:
-            campos_primera_ot = [
-                "nombre_cliente", "servicio",
-                "tipo_cliente", "tipo_solicitud", "caso_sm", "salesforce",
-                "ultimos_6_meses", "ultimo_mes", "retraso", "estado_oferta",
-                "resultado_oferta", "calificacion_oportunidad", "origen_oportunidad",
-                "direccion_comercial", "gerencia_comercial", "comercial_asignado",
-                "consultor_comercial", "comercial_asignado_hitss", "observaciones",
-                "categoria_perdida", "subcategoria_perdida", "tipo_moneda",
-                "duracion", "pais", "pm_asignado_claro", "pm_asignado_hitss",
-                "descripcion_ot", "num_enlace", "num_incidente", "num_ot",
-                "estado_ot", "estado_proyecto", "anio_creacion_ot", "seguimiento_ot",
-                "acceso_sharepoint", "acceso_aos", "acceso_ot",
-                "borrador_contrato", "contrato_oficial", "mostrar_dashboard",
-            ]
-            for campo in campos_primera_ot:
+            for campo in PRINCIPAL_SYNC_FROM_FIRST_OT_FIELDS:
                 if hasattr(principal, campo) and hasattr(oportunidad, campo):
                     setattr(principal, campo, getattr(oportunidad, campo))
 

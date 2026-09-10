@@ -679,7 +679,6 @@ const PRINCIPAL_EDITABLE_COLS = new Set([
   "fecha_cierre",
   "estado_proyecto",
   "anio_creacion_ot",
-  "seguimiento_ot",
   "mostrar_dashboard",
   "tiene_codigo_proyecto_evolutivo",
   "codigo_proyecto_evolutivo",
@@ -690,62 +689,11 @@ const PRINCIPAL_EDITABLE_COLS = new Set([
   "contrato_oficial",
 ]);
 
-const PRINCIPAL_ESTADO_FROM_FIRST_OT_COLS = new Set([
-  "estado_oferta",
-  "resultado_oferta",
-  "estado_ot",
-  "estado_proyecto",
-]);
-
-const FIRST_OT_TO_PRINCIPAL_SYNC_FIELDS = new Set([
-  "nombre_cliente",
-  "servicio",
-  "tipo_cliente",
-  "tipo_solicitud",
-  "caso_sm",
-  "fecha_cierre_sm",
-  "salesforce",
-  "ultimos_6_meses",
-  "ultimo_mes",
-  "retraso",
-  "estado_oferta",
-  "resultado_oferta",
-  "calificacion_oportunidad",
-  "origen_oportunidad",
-  "direccion_comercial",
-  "gerencia_comercial",
-  "comercial_asignado",
-  "consultor_comercial",
-  "comercial_asignado_hitss",
-  "observaciones",
-  "categoria_perdida",
-  "subcategoria_perdida",
-  "fecha_entrega_oferta_final",
-  "tipo_moneda",
-  "duracion",
-  "pais",
-  "fecha_cierre_oportunidad",
-  "codigo_prc",
-  "fecha_firma_aos",
-  "pm_asignado_claro",
-  "pm_asignado_hitss",
-  "descripcion_ot",
-  "num_enlace",
-  "num_incidente",
-  "num_ot",
-  "estado_ot",
-  "proyeccion_ingreso",
-  "fecha_compromiso",
-  "fecha_cierre",
-  "estado_proyecto",
-  "anio_creacion_ot",
-  "seguimiento_ot",
-  "acceso_sharepoint",
-  "acceso_aos",
-  "acceso_ot",
-  "borrador_contrato",
-  "contrato_oficial",
-  "mostrar_dashboard",
+const PRINCIPAL_CALCULATED_COLS = new Set([
+  "otc",
+  "mrc",
+  "mrc_normalizado",
+  "valor_oferta_claro",
 ]);
 
 const ESTADOS_CERRADOS_RESUMEN = new Set([
@@ -1068,8 +1016,10 @@ function swapIsoDateDayMonth(isoValue) {
 function getPrincipalDateValue(grupo, col) {
   if (!grupo || grupo.sinPrincipal || !isDateCol(col)) return "";
 
-  if (col === "fecha_cierre_oportunidad") {
-    return getFechaCierrePrincipalAutomatica(grupo);
+  const primeraOt = getPrimeraOtAsignada(grupo);
+
+  if (primeraOt) {
+    return primeraOt?.[col] ?? "";
   }
 
   const principalValue = grupo?.principalRow?.[col] || "";
@@ -1101,6 +1051,8 @@ function getPrincipalDateValue(grupo, col) {
 }
 
 function getPrimeraOtAsignada(grupo) {
+  if (grupo?.primeraOt) return grupo.primeraOt;
+
   const rows = Array.isArray(grupo?.rows) ? grupo.rows : [];
 
   return rows.length > 0 ? rows[0] : null;
@@ -1109,18 +1061,16 @@ function getPrimeraOtAsignada(grupo) {
 function getPrincipalEstadoValue(grupo, col) {
   if (!grupo || grupo.sinPrincipal) return "";
 
-  if (!PRINCIPAL_ESTADO_FROM_FIRST_OT_COLS.has(col)) {
-    return grupo?.principalRow?.[col] ?? "";
-  }
+  const primeraOt = getPrimeraOtAsignada(grupo);
+  return primeraOt ? primeraOt?.[col] ?? "" : grupo?.principalRow?.[col] ?? "";
+}
+
+function getPrincipalDisplayValue(grupo, col) {
+  if (!grupo || grupo.sinPrincipal) return "";
+  if (PRINCIPAL_CALCULATED_COLS.has(col)) return grupo?.principalRow?.[col] ?? "";
 
   const primeraOt = getPrimeraOtAsignada(grupo);
-  const valorPrimeraOt = normalizeText(primeraOt?.[col]);
-
-  if (valorPrimeraOt) {
-    return valorPrimeraOt;
-  }
-
-  return grupo?.principalRow?.[col] ?? "";
+  return primeraOt ? primeraOt?.[col] ?? "" : grupo?.principalRow?.[col] ?? "";
 }
 
 function isFirstAssignedOt(row, allRows = []) {
@@ -1515,22 +1465,35 @@ export default function Oportunidades() {
         ])
       );
 
-      const estadosPrincipalExport = Object.fromEntries(
-        [...PRINCIPAL_ESTADO_FROM_FIRST_OT_COLS].map((estadoCol) => [
-          estadoCol,
-          getPrincipalEstadoValue(grupoPrincipalExport, estadoCol),
-        ])
+      const camposPrimeraOtExport = Object.fromEntries(
+        baseColumnOrder
+          .filter(
+            (field) =>
+              !PRINCIPAL_CALCULATED_COLS.has(field) && field !== "seguimiento_ot"
+          )
+          .map((field) => [
+            field,
+            getPrincipalDisplayValue(grupoPrincipalExport, field),
+          ])
       );
+
+      const clientePrincipalExport =
+        normalizeText(getPrincipalDisplayValue(grupoPrincipalExport, CLIENTE_COL)) ||
+        CLIENT_WITHOUT_NAME;
+      const servicioPrincipalExport =
+        normalizeText(getPrincipalDisplayValue(grupoPrincipalExport, SERVICIO_COL)) ||
+        "OPORTUNIDAD PRINCIPAL";
 
       const principalExport = {
         ...principal,
+        ...camposPrimeraOtExport,
         ...fechasPrincipalExport,
-        ...estadosPrincipalExport,
+        seguimiento_ot: "",
         nivel_export: "PRINCIPAL",
         codigo_principal_export: codigoPrincipal,
         id_principal_export: principal.id,
-        cliente_principal_export: normalizeText(principal?.nombre_cliente) || CLIENT_WITHOUT_NAME,
-        servicio_principal_export: normalizeText(principal?.servicio) || "OPORTUNIDAD PRINCIPAL",
+        cliente_principal_export: clientePrincipalExport,
+        servicio_principal_export: servicioPrincipalExport,
         cantidad_asociadas_export: hijosOrdenados.length,
         cantidad_suman_export: hijosQueSuman.length,
         relacion_export: `Principal con ${hijosOrdenados.length} asociada${hijosOrdenados.length === 1 ? "" : "s"}`,
@@ -1547,8 +1510,8 @@ export default function Oportunidades() {
       resumenRows.push({
         codigo_principal_export: codigoPrincipal,
         id_principal_export: principal.id,
-        cliente_principal_export: normalizeText(principal?.nombre_cliente) || CLIENT_WITHOUT_NAME,
-        servicio_principal_export: normalizeText(principal?.servicio) || "OPORTUNIDAD PRINCIPAL",
+        cliente_principal_export: clientePrincipalExport,
+        servicio_principal_export: servicioPrincipalExport,
         cantidad_asociadas_export: hijosOrdenados.length,
         cantidad_suman_export: hijosQueSuman.length,
         tipo_moneda:
@@ -3812,6 +3775,22 @@ export default function Oportunidades() {
     const gruposPorPrincipal = new Map();
     const sinPrincipalPorCliente = new Map();
 
+    const primeraOtPorPrincipal = new Map();
+
+    (data || [])
+      .filter(
+        (row) =>
+          normalizeTipoOportunidad(row?.tipo_oportunidad) !== TIPO_PRINCIPAL &&
+          row?.oportunidad_padre_id
+      )
+      .sort(compareOtsAsignadas)
+      .forEach((row) => {
+        const padreKey = String(row.oportunidad_padre_id);
+        if (!primeraOtPorPrincipal.has(padreKey)) {
+          primeraOtPorPrincipal.set(padreKey, row);
+        }
+      });
+
     const makeClienteInfo = (row) => {
       const cliente = normalizeText(row?.[CLIENTE_COL]) || CLIENT_WITHOUT_NAME;
       const clienteKey = normalizeClientGroupKey(cliente);
@@ -3852,6 +3831,7 @@ export default function Oportunidades() {
           cliente,
           clienteKey,
           principalRow: principal,
+          primeraOt: primeraOtPorPrincipal.get(String(principal.id)) || null,
           numeroPrincipal,
           codigo_control: codigoControl,
           rows: [],
@@ -3928,7 +3908,7 @@ export default function Oportunidades() {
       // La primera OT es la fuente visible del cliente y servicio de la
       // principal. Esto evita conservar en pantalla valores anteriores mientras
       // se recarga la información sincronizada por el backend.
-      const primeraOt = rowsOrdenadas[0] || null;
+      const primeraOt = grupo.primeraOt || rowsOrdenadas[0] || null;
       const clientePrimeraOt = normalizeText(primeraOt?.nombre_cliente);
       const servicioPrimeraOt = normalizeText(primeraOt?.servicio);
       const clienteVisual = clientePrimeraOt || grupo.cliente;
@@ -4309,14 +4289,16 @@ export default function Oportunidades() {
         {tableColumnOrder.map((col, colIdx) => {
           const isLong = isObservationsCol(col);
 
+          const principalDisplayValue = getPrincipalDisplayValue(grupo, col);
+
           let content = grupo.principalRow && !grupo.sinPrincipal
-            ? col === "observaciones"
+            ? col === "observaciones" || col === "seguimiento_ot"
               ? "-"
               : isLong
-              ? renderLongTextCell(grupo.principalRow?.[col])
+              ? renderLongTextCell(principalDisplayValue)
               : LINK_ACCESS_COLS.has(col)
-              ? renderAccessLink(grupo.principalRow?.[col])
-              : formatCell(col, grupo.principalRow?.[col])
+              ? renderAccessLink(principalDisplayValue)
+              : formatCell(col, principalDisplayValue)
             : "-";
 
           if (col === "id") {
@@ -4338,7 +4320,7 @@ export default function Oportunidades() {
           if (col === CLIENTE_COL) {
             content = (
               <div className="cliente-principal-info">
-                <strong>{grupo.cliente}</strong>
+                <strong>{normalizeText(principalDisplayValue) || CLIENT_WITHOUT_NAME}</strong>
                 <span>
                   {grupo.rows.length} sub oportunidad{grupo.rows.length === 1 ? "" : "es"}
                 </span>
@@ -4358,7 +4340,7 @@ export default function Oportunidades() {
           if (col === SERVICIO_COL) {
             content = grupo.sinPrincipal
               ? "SIN PRINCIPAL / PENDIENTES DE ASIGNAR"
-              : renderMultilineTextCell(grupo.principalRow?.servicio || "OPORTUNIDAD PRINCIPAL");
+              : renderMultilineTextCell(principalDisplayValue || "OPORTUNIDAD PRINCIPAL");
           }
 
           if (col === "estado_oferta") {
@@ -4410,17 +4392,10 @@ export default function Oportunidades() {
                 : toDisplayDateDDMMYYYY(principalDateValue);
           }
 
-          if (col === "num_ot") {
-            content = tieneHijosQueSuman
-              ? `${rowsQueSuman.length} OT válidas`
-              : grupo.principalRow && !grupo.sinPrincipal
-              ? formatCell(col, grupo.principalRow?.[col])
-              : "-";
-          }
-
           if (
             grupo.principalRow &&
             !grupo.sinPrincipal &&
+            !tieneHijosAsignados &&
             PRINCIPAL_EDITABLE_COLS.has(col) &&
             sameId(editing.rowId, grupo.principalRow?.id) &&
             editing.col === col
@@ -4433,8 +4408,9 @@ export default function Oportunidades() {
               key={`principal-${grupo.key}-${col}-${colIdx}`}
               onDoubleClick={() => {
                 if (!grupo.principalRow || grupo.sinPrincipal) return;
+                if (tieneHijosAsignados) return;
                 if (!PRINCIPAL_EDITABLE_COLS.has(col)) return;
-                if (col === "observaciones") return;
+                if (col === "observaciones" || col === "seguimiento_ot") return;
 
                 if (isLong) {
                   return editLongText(grupo.principalRow.id, col);
@@ -4446,7 +4422,9 @@ export default function Oportunidades() {
                 getColumnClassNames(col),
                 isLong ? "obs-col" : "",
                 col === SERVICIO_COL ? "servicio-wrap-cell" : "",
-                PRINCIPAL_EDITABLE_COLS.has(col) ? "principal-editable-cell" : "",
+                PRINCIPAL_EDITABLE_COLS.has(col) && !tieneHijosAsignados
+                  ? "principal-editable-cell"
+                  : "",
                 sameId(editing.rowId, grupo.principalRow?.id) && editing.col === col ? "editing" : "",
                 ["otc", "mrc", "mrc_normalizado", "valor_oferta_claro"].includes(col)
                   ? "principal-total-cell"
@@ -4455,7 +4433,7 @@ export default function Oportunidades() {
                 .join(" ")
                 .trim()}
               title={
-                PRINCIPAL_EDITABLE_COLS.has(col)
+                PRINCIPAL_EDITABLE_COLS.has(col) && !tieneHijosAsignados
                   ? "Doble clic para editar este campo en la oportunidad principal"
                   : undefined
               }
