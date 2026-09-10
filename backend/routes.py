@@ -4758,7 +4758,10 @@ def editar_oportunidad(id):
 
             principal = Oportunidad.query.get(ot_editada.oportunidad_padre_id)
 
-            if not principal or not es_principal(principal):
+            # La relación oportunidad_padre_id es la fuente principal. Se acepta
+            # también información histórica marcada como PADRE/MASTER o sin tipo
+            # normalizado, siempre que exista el registro padre.
+            if not principal:
                 return None
 
             hijos = get_hijos_principal(principal.id)
@@ -4770,6 +4773,11 @@ def editar_oportunidad(id):
 
             if int(primera_ot.id) != int(ot_editada.id):
                 return None
+
+            # Estos dos campos se asignan explícitamente para garantizar que el
+            # cambio de la primera OT quede persistido en la principal.
+            principal.nombre_cliente = primera_ot.nombre_cliente
+            principal.servicio = primera_ot.servicio
 
             campos_sincronizar = [
                 "nombre_cliente",
@@ -4833,6 +4841,8 @@ def editar_oportunidad(id):
                 principal.cliente_grupo_key = nueva_cliente_key
                 for hijo in hijos:
                     hijo.cliente_grupo_key = nueva_cliente_key
+
+            db.session.flush()
 
             hijos_para_sumar = [h for h in hijos if row_suma_en_principal(h)]
 

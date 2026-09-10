@@ -3905,8 +3905,28 @@ export default function Oportunidades() {
           };
         });
 
+      // La primera OT es la fuente visible del cliente y servicio de la
+      // principal. Esto evita conservar en pantalla valores anteriores mientras
+      // se recarga la información sincronizada por el backend.
+      const primeraOt = rowsOrdenadas[0] || null;
+      const clientePrimeraOt = normalizeText(primeraOt?.nombre_cliente);
+      const servicioPrimeraOt = normalizeText(primeraOt?.servicio);
+      const clienteVisual = clientePrimeraOt || grupo.cliente;
+      const clienteKeyVisual = normalizeClientGroupKey(clienteVisual);
+      const principalVisual = grupo.principalRow
+        ? {
+            ...grupo.principalRow,
+            nombre_cliente: clienteVisual,
+            servicio: servicioPrimeraOt || grupo.principalRow?.servicio,
+            cliente_grupo_key: clienteKeyVisual,
+          }
+        : grupo.principalRow;
+
       return {
         ...grupo,
+        cliente: clienteVisual,
+        clienteKey: clienteKeyVisual,
+        principalRow: principalVisual,
         rows: rowsOrdenadas,
         totals: getPrincipalTotals(rowsOrdenadas),
       };
