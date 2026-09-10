@@ -103,7 +103,8 @@ const COLUMN_LABELS = {
   mostrar_dashboard: "MOSTRAR EN DASHBOARD",
   tiene_codigo_proyecto_evolutivo: "¿TIENE CÓDIGO PROYECTO / EVOLUTIVO?",
   codigo_proyecto_evolutivo: "CÓDIGO PROYECTO / EVOLUTIVO",
-  num_enlace: "ID ENLACE",
+  num_enlace: "ID ENLACE OT",
+  fecha_cierre: "FECHA CIERRE OT",
   acceso_sharepoint: "ACCESO SHAREPOINT",
   acceso_aos: "AOS",
   acceso_ot: "OT",
@@ -697,6 +698,8 @@ const PRINCIPAL_ESTADO_FROM_FIRST_OT_COLS = new Set([
 ]);
 
 const FIRST_OT_TO_PRINCIPAL_SYNC_FIELDS = new Set([
+  "nombre_cliente",
+  "servicio",
   "tipo_cliente",
   "tipo_solicitud",
   "caso_sm",

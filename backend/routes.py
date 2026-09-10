@@ -4772,6 +4772,8 @@ def editar_oportunidad(id):
                 return None
 
             campos_sincronizar = [
+                "nombre_cliente",
+                "servicio",
                 "tipo_cliente",
                 "tipo_solicitud",
                 "caso_sm",
@@ -4823,6 +4825,14 @@ def editar_oportunidad(id):
             for campo in campos_sincronizar:
                 if hasattr(principal, campo) and hasattr(primera_ot, campo):
                     setattr(principal, campo, getattr(primera_ot, campo))
+
+            # Si la primera OT cambia de cliente, la principal y todas sus OTs
+            # deben conservar la misma clave de agrupación.
+            nueva_cliente_key = _norm_key_for_match(primera_ot.nombre_cliente)
+            if nueva_cliente_key:
+                principal.cliente_grupo_key = nueva_cliente_key
+                for hijo in hijos:
+                    hijo.cliente_grupo_key = nueva_cliente_key
 
             hijos_para_sumar = [h for h in hijos if row_suma_en_principal(h)]
 
@@ -14218,6 +14228,7 @@ def asignar_oportunidad_a_principal(id):
         # descriptiva. Las siguientes OTs no reemplazan estos textos.
         if consecutivo_sub == 1:
             campos_primera_ot = [
+                "nombre_cliente", "servicio",
                 "tipo_cliente", "tipo_solicitud", "caso_sm", "salesforce",
                 "ultimos_6_meses", "ultimo_mes", "retraso", "estado_oferta",
                 "resultado_oferta", "calificacion_oportunidad", "origen_oportunidad",
@@ -14233,6 +14244,11 @@ def asignar_oportunidad_a_principal(id):
             for campo in campos_primera_ot:
                 if hasattr(principal, campo) and hasattr(oportunidad, campo):
                     setattr(principal, campo, getattr(oportunidad, campo))
+
+            nueva_cliente_key = _norm_key_for_match(oportunidad.nombre_cliente)
+            if nueva_cliente_key:
+                principal.cliente_grupo_key = nueva_cliente_key
+                oportunidad.cliente_grupo_key = nueva_cliente_key
 
         db.session.commit()
 
