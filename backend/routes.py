@@ -5220,7 +5220,12 @@ def listar_clientes():
 
     if q:
         like = f"%{q}%"
-        query = query.filter(Cliente.nombre_cliente.ilike(like))
+        query = query.filter(or_(
+            Cliente.nombre_cliente.ilike(like),
+            Cliente.nit.ilike(like),
+            Cliente.razon_social.ilike(like),
+            Cliente.alias.ilike(like),
+        ))
 
     data = [c.to_dict() for c in query.order_by(Cliente.nombre_cliente).all()]
     return jsonify(data), 200
@@ -5229,8 +5234,19 @@ def listar_clientes():
 @permission_required("CLIENTES_CREAR")
 def crear_cliente():
     data = request.get_json() or {}
+    nombre = str(data.get("nombre_cliente") or "").strip()
+    nit = str(data.get("nit") or "").strip()
+    razon_social = str(data.get("razon_social") or "").strip()
+    alias = str(data.get("alias") or "").strip() or None
+    if not nombre or not nit or not razon_social:
+        return jsonify({"mensaje": "NIT, razón social y cliente son obligatorios"}), 400
 
-    c = Cliente(nombre_cliente=data.get("nombre_cliente").strip())
+    c = Cliente(
+        nit=nit,
+        razon_social=razon_social,
+        alias=alias,
+        nombre_cliente=nombre,
+    )
 
     db.session.add(c)
     try:
@@ -5238,7 +5254,7 @@ def crear_cliente():
         return jsonify({"mensaje": "Cliente creado correctamente"}), 201
     except IntegrityError:
         db.session.rollback()
-        return jsonify({"mensaje": "Cliente duplicado"}), 400
+        return jsonify({"mensaje": "Ya existe un cliente con ese NIT o nombre"}), 400
 
 
 @bp.route('/clientes/<int:id>', methods=['PUT'])
@@ -5247,14 +5263,24 @@ def editar_cliente(id):
     c = Cliente.query.get_or_404(id)
     data = request.get_json() or {}
 
-    c.nombre_cliente = data.get("nombre_cliente", c.nombre_cliente).strip()
+    nombre = str(data.get("nombre_cliente", c.nombre_cliente) or "").strip()
+    nit = str(data.get("nit", c.nit) or "").strip()
+    razon_social = str(data.get("razon_social", c.razon_social) or "").strip()
+    alias = str(data.get("alias", c.alias) or "").strip() or None
+    if not nombre or not nit or not razon_social:
+        return jsonify({"mensaje": "NIT, razón social y cliente son obligatorios"}), 400
+
+    c.nombre_cliente = nombre
+    c.nit = nit
+    c.razon_social = razon_social
+    c.alias = alias
 
     try:
         db.session.commit()
         return jsonify({"mensaje": "Cliente actualizado correctamente"}), 200
     except IntegrityError:
         db.session.rollback()
-        return jsonify({"mensaje": "Cliente ya existe"}), 400
+        return jsonify({"mensaje": "Ya existe un cliente con ese NIT o nombre"}), 400
 
 
 @bp.route('/clientes/<int:id>', methods=['DELETE'])

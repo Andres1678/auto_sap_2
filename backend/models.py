@@ -445,10 +445,19 @@ class Cliente(db.Model):
     __tablename__ = 'clientes'
 
     id = db.Column(db.Integer, primary_key=True)
+    nit = db.Column(db.String(50), nullable=False, unique=True)
+    razon_social = db.Column(db.String(255), nullable=False)
+    alias = db.Column(db.String(255), nullable=True)
     nombre_cliente = db.Column(db.String(255), nullable=False, unique=True)
 
     def to_dict(self):
-        return {"id": self.id, "nombre_cliente": self.nombre_cliente}
+        return {
+            "id": self.id,
+            "nit": self.nit,
+            "razon_social": self.razon_social,
+            "alias": self.alias,
+            "nombre_cliente": self.nombre_cliente,
+        }
 
 class Permiso(db.Model):
     __tablename__ = "permiso"
