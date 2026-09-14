@@ -853,6 +853,8 @@ export default function CalificacionCoeSapFuncional() {
   });
 
   const [showFilters, setShowFilters] = useState(true);
+  const [deletingBase, setDeletingBase] = useState(false);
+  const [filterSearch, setFilterSearch] = useState("");
   const [columnPanelOpen, setColumnPanelOpen] = useState(false);
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [configSearch, setConfigSearch] = useState("");
@@ -1598,6 +1600,31 @@ export default function CalificacionCoeSapFuncional() {
 
 
 
+  const borrarBase = async () => {
+    if (!canImport || deletingBase || uploadingExcel || generating) return;
+    const result = await Swal.fire({
+      title: "Borrar base de clasificación",
+      text: "Se eliminarán TODOS los casos, sus observaciones y sus horas asociadas, aunque haya filtros. Conserva una copia antes de continuar. Escribe BORRAR CLASIFICACION.",
+      input: "text", showCancelButton: true, confirmButtonText: "Borrar base", cancelButtonText: "Cancelar",
+      confirmButtonColor: "#B52217", focusCancel: true,
+      inputValidator: (value) => value === "BORRAR CLASIFICACION" ? undefined : "Escribe BORRAR CLASIFICACION para confirmar."
+    });
+    if (!result.isConfirmed) return;
+    setDeletingBase(true);
+    try {
+      const res = await jfetch("/coe-sap-funcional/calificacion/borrar-base", {
+        method: "DELETE", headers: {...commonHeaders, "Content-Type": "application/json"},
+        body: JSON.stringify({confirmacion: result.value})
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.mensaje || "No se pudo borrar la clasificación.");
+      setAllRows([]); setBackendTotal(0); clearAllFilters(); setPage(1);
+      await Swal.fire({icon: "success", title: "Base vacía", text: data.mensaje});
+    } catch (error) {
+      await Swal.fire({icon: "error", title: "No se completó el borrado", text: error.message});
+    } finally { setDeletingBase(false); }
+  };
+
   const descargarExcel = async () => {
     setDownloadingExcel(true);
 
@@ -2302,6 +2329,10 @@ export default function CalificacionCoeSapFuncional() {
         </div>
 
         <div className="calcoe-toolbar-actions">
+          <button type="button" className="calcoe-btn danger" onClick={borrarBase}
+            disabled={!canImport || deletingBase || uploadingExcel || generating}>
+            {deletingBase ? "Borrando..." : "Borrar base"}
+          </button>
           <button
             type="button"
             className={`calcoe-btn ${showFilters ? "danger" : "light"}`}
@@ -2432,6 +2463,29 @@ export default function CalificacionCoeSapFuncional() {
         </section>
       )}
 
+      {showFilters && (
+        <section className="calcoe-filter-panel">
+          <h2>Filtros de clasificación</h2>
+          <input className="calcoe-filter-search" aria-label="Buscar un filtro" placeholder="Buscar filtro: cliente, estado, fecha..." value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} />
+          <p>Combina filtros para encontrar los casos. {activeFiltersCount} filtros activos.</p>
+          <div className="calcoe-filter-panel-grid">
+            {TABLE_COLUMNS.filter((col) => normalizeForCompare(col.label).includes(normalizeForCompare(filterSearch))).map((col) => (
+              <label key={col.key}>
+                <span>{col.label}</span>
+                <Select options={uniqueValues[col.key] || []}
+                  value={(columnFilters[col.key] || []).map(toFilterOption)}
+                  onChange={(opts) => handleFilterChange(col.key, opts)}
+                  placeholder="Todos" isMulti isClearable isSearchable
+                  closeMenuOnSelect={false} hideSelectedOptions={false}
+                  noOptionsMessage={() => "Sin opciones"}
+                  menuPortalTarget={portalTarget}
+                  styles={{menuPortal: (base) => ({...base, zIndex: 99999})}}
+                  classNamePrefix="calcoe-react-select" />
+              </label>
+            ))}
+          </div>
+        </section>
+      )}
       <section className="calcoe-card calcoe-table-card">
         <div className="calcoe-table-head">
           <div>
@@ -2482,36 +2536,7 @@ export default function CalificacionCoeSapFuncional() {
                 <th className="sticky-actions">Acciones</th>
               </tr>
 
-              {showFilters && (
-                <tr className="calcoe-filter-row">
-                  {visibleColumns.map((col) => (
-                    <th
-                      key={`filter-${col.key}`}
-                      className={`${col.cls || ""} ${getColumnGroupClass(col.group)}`}
-                    >
-                      <Select
-                        options={uniqueValues[col.key] || []}
-                        value={(columnFilters[col.key] || []).map(toFilterOption)}
-                        onChange={(opts) => handleFilterChange(col.key, opts)}
-                        placeholder="Filtrar..."
-                        className="calcoe-select-filter"
-                        classNamePrefix="calcoe-react-select"
-                        isMulti
-                        isClearable
-                        isSearchable
-                        closeMenuOnSelect={false}
-                        hideSelectedOptions={false}
-                        noOptionsMessage={() => "Sin opciones"}
-                        menuPortalTarget={portalTarget}
-                        styles={{
-                          menuPortal: (base) => ({ ...base, zIndex: 99999 }),
-                        }}
-                      />
-                    </th>
-                  ))}
-                  <th className="sticky-actions" />
-                </tr>
-              )}
+
             </thead>
 
             <tbody>

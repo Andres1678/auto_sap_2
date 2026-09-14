@@ -1,4 +1,5 @@
 :root {
+  --calcoe-panel-gap: 16px;
   --calcoe-red: #da291c;
   --calcoe-red-dark: #b91f15;
   --calcoe-green: #008c67;
@@ -1437,6 +1438,12 @@ th.col-ot {
 .calcoe-filter select option[disabled] {
   color: #94a3b8;
 }
+.calcoe-filter-panel { padding: 22px; margin-bottom: 18px; border: 1px solid #dfe5ec; border-radius: 16px; background: white; }
+.calcoe-filter-panel h2 { margin: 0 0 8px; font-size: 20px; color: #243044; }
+.calcoe-filter-panel p { color: #5e6b7e; font-size: 13px; }
+.calcoe-filter-search { width: min(100%, 460px); padding: 11px 14px; border: 1px solid #cfd8e3; border-radius: 9px; box-sizing: border-box; }
+.calcoe-filter-panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; max-height: 340px; overflow-y: auto; padding: 6px 6px 12px; }
+.calcoe-filter-panel-grid label > span { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 650; color: #344054; }
 
 .calcoe-table td.calcoe-editable-cell { cursor: text; box-shadow: inset 0 -2px 0 #e5bc75; }
 .calcoe-table td.calcoe-editable-cell:hover { box-shadow: inset 0 -2px 0 #0097a9; }

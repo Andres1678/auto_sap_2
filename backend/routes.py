@@ -18312,6 +18312,50 @@ def agregar_horas_calificacion_coe_sap_funcional(calificacion_id):
             "trace": traceback.format_exc(),
         }), 500
     
+def _coe_identidades_importacion(rows):
+    """Resolver SD/RF antes de escribir; rechazar asociaciones ambiguas."""
+    import re
+    pairs = []
+    rf_to_sd = {}
+    sd_to_rf = {}
+    for row in rows:
+        values = [_calificacion_get_excel(row, CALIFICACION_EXCEL_ALIASES[key])
+                  for key in ("numero", "caso_sm")]
+        # También aceptar la columna explícita de interacción del export de SM.
+        values.append(_calificacion_get_excel(row, ["ID de Interacción", "ID INTERACCION", "ID DE INTERACCION"]))
+        tokens = set()
+        for value in values:
+            if value is None or str(value).strip() == "":
+                continue
+            raw = str(value).strip().upper()
+            found = re.findall(r"(?<![A-Z0-9])(SD|RF)[ -]*(\d+)(?![A-Z0-9])", raw)
+            tokens.update(prefix + digits for prefix, digits in found)
+        sd = sorted(t for t in tokens if t.startswith("SD"))
+        rf = sorted(t for t in tokens if t.startswith("RF"))
+        if len(sd) > 1 or len(rf) > 1 or not tokens:
+            raise ValueError("Revisa el ID y Caso SM de la fila " + str(row.get("_excel_fila", "")) + ": se requiere un SD o RF sin asociaciones ambiguas.")
+        sd, rf = (sd[0] if sd else None), (rf[0] if rf else None)
+        if sd and rf:
+            if sd in sd_to_rf and sd_to_rf[sd] != rf:
+                raise ValueError("El ID " + sd + " tiene más de un RF. Revisa la asociación.")
+            sd_to_rf[sd] = rf
+            if rf in rf_to_sd and rf_to_sd[rf] != sd:
+                raise ValueError("El caso " + rf + " está asociado a más de un SD.")
+            rf_to_sd[rf] = sd
+        pairs.append((row, sd, rf))
+    result = []
+    for row, sd, rf in pairs:
+        canonical = sd or rf_to_sd.get(rf) or rf
+        case = (rf or sd_to_rf.get(canonical) or "") if canonical.startswith("SD") else ""
+        row = dict(row)
+        for alias in CALIFICACION_EXCEL_ALIASES["numero"]:
+            row[alias] = canonical
+        for alias in CALIFICACION_EXCEL_ALIASES["caso_sm"]:
+            row[alias] = case
+        result.append(row)
+    return result
+
+
 @bp.route("/coe-sap-funcional/calificacion/import-excel", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def importar_excel_historico_calificacion_coe_sap_funcional():
@@ -18329,6 +18373,11 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
             return jsonify({
                 "mensaje": "El Excel no contiene registros válidos"
             }), 400
+
+        try:
+            rows_excel = _coe_identidades_importacion(rows_excel)
+        except ValueError as exc:
+            return jsonify({"mensaje": str(exc)}), 400
 
         grupos = {}
 
@@ -18390,6 +18439,30 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
             row_calificacion = CoeSapFuncionalCalificacion.query.filter_by(
                 numero=numero
             ).first()
+
+            caso_rf = campos_excel_primer_row.get("caso_sm")
+            if numero.startswith("RF"):
+                linked = CoeSapFuncionalCalificacion.query.filter_by(caso_sm=numero).all()
+                if len(linked) > 1:
+                    db.session.rollback()
+                    return jsonify({"mensaje": "Hay más de un SD asociado a " + numero + ". Revisa los registros existentes."}), 400
+                if linked:
+                    if row_calificacion and row_calificacion.id != linked[0].id:
+                        db.session.rollback()
+                        return jsonify({"mensaje": "Existen registros separados SD/RF. Revisa la duplicidad antes de importar."}), 400
+                    row_calificacion = linked[0]
+                    caso_rf = numero
+                    numero = row_calificacion.numero
+            elif caso_rf:
+                previous = CoeSapFuncionalCalificacion.query.filter_by(numero=caso_rf).first()
+                linked = CoeSapFuncionalCalificacion.query.filter_by(caso_sm=caso_rf).all()
+                if any(item.numero != numero for item in linked) or (previous and row_calificacion and previous.id != row_calificacion.id):
+                    db.session.rollback()
+                    return jsonify({"mensaje": "Asociación SD/RF duplicada o conflictiva: " + caso_rf}), 400
+                if previous and not row_calificacion:
+                    row_calificacion = previous
+                    row_calificacion.numero = numero
+                    CoeSapFuncionalCalificacionHora.query.filter_by(calificacion_id=previous.id).update({"numero": numero}, synchronize_session=False)
 
             if row_calificacion:
                 actualizados += 1
@@ -18518,6 +18591,8 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
                     db.session.add(movimiento)
                     horas_movimientos += 1
 
+            row_calificacion.numero = numero
+            row_calificacion.caso_sm = caso_rf if numero.startswith("SD") else None
             campos_actuales = {
                 c.name: getattr(row_calificacion, c.name)
                 for c in CoeSapFuncionalCalificacion.__table__.columns
@@ -24745,3 +24820,21 @@ def delete_all_coe_sap_funcional():
             "mensaje": "Error eliminando la base",
             "error": str(e)
         }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/borrar-base", methods=["DELETE"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def borrar_base_clasificacion():
+    data = request.get_json(silent=True) or {}
+    if data.get("confirmacion") != "BORRAR CLASIFICACION":
+        return jsonify({"mensaje": "Confirma escribiendo BORRAR CLASIFICACION."}), 400
+    try:
+        horas = CoeSapFuncionalCalificacionHora.query.delete(synchronize_session=False)
+        registros = CoeSapFuncionalCalificacion.query.delete(synchronize_session=False)
+        db.session.commit()
+        app.logger.info("Borrado de clasificación por %s: %s casos, %s horas", _calificacion_usuario_actual(), registros, horas)
+        return jsonify({"mensaje": "Clasificación vaciada. Ya puedes cargar el último Excel.", "registros": registros, "movimientosHoras": horas}), 200
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("No se pudo vaciar clasificación")
+        return jsonify({"mensaje": "No se pudo borrar. No se confirmaron cambios; revisa relaciones o procesos activos."}), 409
