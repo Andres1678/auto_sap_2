@@ -98,6 +98,9 @@ const CATEGORIA_SUBCATEGORIA = {
 
 const COLUMN_LABELS = {
   id: "COD. CONTROL",
+  nit: "NIT",
+  razon_social: "RAZÓN SOCIAL",
+  nombre_cliente: "NOMBRE CLIENTE",
   fecha_creacion: "FECHA ASIGNACIÓN",
   anio_creacion_ot: "AÑO CREACIÓN OT",
   mostrar_dashboard: "MOSTRAR EN DASHBOARD",
@@ -1143,7 +1146,10 @@ export default function Oportunidades() {
 
   const baseColumnOrder = useMemo(
     () => [
+      "nit",
+      "razon_social",
       "nombre_cliente",
+      "servicio",
       "servicio",
       "fecha_creacion",
       "semestre",
@@ -1221,13 +1227,46 @@ export default function Oportunidades() {
 
       setClientesCatalogo(
         json
-          .map((c) => normalizeText(c?.nombre_cliente))
-          .filter(Boolean)
+          .map((c) => ({
+            id: c?.id ?? null,
+            nombre_cliente: normalizeText(c?.nombre_cliente),
+            nit: normalizeText(c?.nit),
+            razon_social: normalizeText(c?.razon_social),
+          }))
+          .filter((c) => c.nombre_cliente)
       );
     } catch {
       setClientesCatalogo([]);
     }
   };
+
+  const getClienteCatalogoInfo = useCallback(
+    (nombreCliente) => {
+      const clienteKey = normalizeClientGroupKey(nombreCliente);
+
+      if (!clienteKey) {
+        return {
+          nit: "",
+          razon_social: "",
+          nombre_cliente: normalizeText(nombreCliente),
+        };
+      }
+
+      const clienteEncontrado = (clientesCatalogo || []).find(
+        (cliente) =>
+          normalizeClientGroupKey(cliente?.nombre_cliente) === clienteKey
+      );
+
+      return {
+        nit: normalizeText(clienteEncontrado?.nit),
+        razon_social: normalizeText(clienteEncontrado?.razon_social),
+        nombre_cliente:
+          normalizeText(clienteEncontrado?.nombre_cliente) ||
+          normalizeText(nombreCliente),
+      };
+    },
+    [clientesCatalogo]
+  );
 
   const columnOrder = useMemo(
     () => [
@@ -1270,9 +1309,12 @@ export default function Oportunidades() {
   const portalTarget = typeof document !== "undefined" ? document.body : null;
 
   const clienteSuggestions = useMemo(() => {
-    return [...new Set((clientesCatalogo || []).filter(Boolean))].sort((a, b) =>
-      a.localeCompare(b, "es", { sensitivity: "base" })
-    );
+    return (clientesCatalogo || [])
+      .map((cliente) => cliente?.nombre_cliente)
+      .filter(Boolean)
+      .sort((a, b) =>
+        a.localeCompare(b, "es", { sensitivity: "base" })
+      );
   }, [clientesCatalogo]);
 
   const prcStartIndex = useMemo(
@@ -3031,33 +3073,32 @@ export default function Oportunidades() {
       );
     }
 
+    if (col === "nit") {
+      const clienteInfo = getClienteCatalogoInfo(clienteGrupo.cliente);
+
+      content = clienteInfo.nit || "-";
+    }
+
+    if (col === "razon_social") {
+      const clienteInfo = getClienteCatalogoInfo(clienteGrupo.cliente);
+
+      content = clienteInfo.razon_social || "-";
+    }
+
     if (col === CLIENTE_COL) {
-      return (
-        <select
-          className="cell-input"
-          autoFocus
-          value={editValue ?? ""}
-          disabled={!clienteSuggestions.length}
-          onChange={(e) => {
-            const next = e.target.value;
-            setEditValue(next);
-            if (next) saveEdit(row.id, col, next);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              closeEditing();
-            }
-          }}
-          onBlur={closeEditing}
-        >
-          <option value="" disabled>
-            {clienteSuggestions.length ? "Selecciona un cliente" : "Sin clientes disponibles"}
-          </option>
-          {clienteSuggestions.map((cliente) => (
-            <option key={cliente} value={cliente}>{cliente}</option>
-          ))}
-        </select>
+      content = (
+        <div className="cliente-principal-info cliente-group-info">
+          <strong>{clienteGrupo.cliente}</strong>
+          <span>
+            {clienteGrupo.totalPrincipales} oportunidad{clienteGrupo.totalPrincipales === 1 ? "" : "es"} principal{clienteGrupo.totalPrincipales === 1 ? "" : "es"}
+          </span>
+          <small>
+            {clienteGrupo.totalOts} OT/suboportunidad{clienteGrupo.totalOts === 1 ? "" : "es"}
+            {clienteGrupo.totalSinPrincipal > 0
+              ? ` · ${clienteGrupo.totalSinPrincipal} sin principal`
+              : ""}
+          </small>
+        </div>
       );
     }
 
@@ -3361,6 +3402,18 @@ export default function Oportunidades() {
   };
 
   const renderNewRowCell = (col) => {
+    if (col === "nit" || col === "razon_social") {
+      const clienteInfo = getClienteCatalogoInfo(newRow?.nombre_cliente);
+
+      return (
+        <span className="cell-readonly-hint">
+          {col === "nit"
+            ? clienteInfo.nit || "-"
+            : clienteInfo.razon_social || "-"}
+        </span>
+      );
+    }
+
     if (col === "mrc_normalizado") {
       return <span>{formatCell("mrc_normalizado", computeMrcNormalizado(newRow))}</span>;
     }
@@ -4112,7 +4165,13 @@ export default function Oportunidades() {
             key={`${row.id ?? i}-${col}-${colIdx}`}
             onDoubleClick={() => {
               if (col === "id") return;
+
+              if (col === "nit" || col === "razon_social") {
+                return;
+              }
+
               if (isLong) return editLongText(row.id, col);
+
               startEdit(row, col);
             }}
             className={[
@@ -4133,6 +4192,10 @@ export default function Oportunidades() {
           >
             {col === "id"
               ? row?.codigo_control ?? row?.id ?? "-"
+              : col === "nit"
+              ? getClienteCatalogoInfo(row?.nombre_cliente).nit || "-"
+              : col === "razon_social"
+              ? getClienteCatalogoInfo(row?.nombre_cliente).razon_social || "-"
               : sameId(editing.rowId, row?.id) && editing.col === col
               ? renderEditorCell(row, col)
               : isLong
@@ -4317,13 +4380,29 @@ export default function Oportunidades() {
             );
           }
 
+          if (col === "nit") {
+            const clienteInfo = getClienteCatalogoInfo(principalDisplayValue);
+
+            content = clienteInfo.nit || "-";
+          }
+
+          if (col === "razon_social") {
+            const clienteInfo = getClienteCatalogoInfo(principalDisplayValue);
+
+            content = clienteInfo.razon_social || "-";
+          }
+
           if (col === CLIENTE_COL) {
             content = (
               <div className="cliente-principal-info">
-                <strong>{normalizeText(principalDisplayValue) || CLIENT_WITHOUT_NAME}</strong>
+                <strong>
+                  {normalizeText(principalDisplayValue) || CLIENT_WITHOUT_NAME}
+                </strong>
+
                 <span>
                   {grupo.rows.length} sub oportunidad{grupo.rows.length === 1 ? "" : "es"}
                 </span>
+
                 <small>
                   {grupo.sinPrincipal
                     ? "Pendientes por asignar a una oportunidad principal"
@@ -4408,6 +4487,11 @@ export default function Oportunidades() {
               key={`principal-${grupo.key}-${col}-${colIdx}`}
               onDoubleClick={() => {
                 if (!grupo.principalRow || grupo.sinPrincipal) return;
+
+                if (col === "nit" || col === "razon_social") {
+                  return;
+                }
+
                 if (tieneHijosAsignados) return;
                 if (!PRINCIPAL_EDITABLE_COLS.has(col)) return;
                 if (col === "observaciones" || col === "seguimiento_ot") return;

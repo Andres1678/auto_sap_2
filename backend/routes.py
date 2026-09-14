@@ -4567,8 +4567,14 @@ def oportunidades_clientes_catalogo():
         .order_by(Cliente.nombre_cliente.asc(), Cliente.id.asc())
         .all()
     )
+
     return jsonify([
-        {"id": cliente.id, "nombre_cliente": str(cliente.nombre_cliente).strip()}
+        {
+            "id": cliente.id,
+            "nombre_cliente": str(cliente.nombre_cliente or "").strip(),
+            "nit": str(cliente.nit or "").strip(),
+            "razon_social": str(cliente.razon_social or "").strip(),
+        }
         for cliente in clientes
     ]), 200
 
