@@ -3423,14 +3423,16 @@ export default function Oportunidades() {
       return (
         <select
           className="cell-input"
-          value={newRow[col] ?? ""}
+          value={newRow?.[CLIENTE_COL] ?? ""}
           disabled={!clienteSuggestions.length}
-          onChange={(e) =>
-            setNewRow({
-              ...newRow,
-              [col]: e.target.value,
-            })
-          }
+          onChange={(e) => {
+            const nombreCliente = e.target.value;
+
+            setNewRow((prev) => ({
+              ...prev,
+              [CLIENTE_COL]: nombreCliente,
+            }));
+          }}
         >
           <option value="">
             {clienteSuggestions.length
