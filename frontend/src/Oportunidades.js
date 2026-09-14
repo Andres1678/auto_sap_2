@@ -1214,10 +1214,6 @@ export default function Oportunidades() {
     []
   );
 
-  // Catálogo oficial de clientes. Cada oportunidad (principal u OT)
-  // se cruza por nombre_cliente para mostrar NIT y razón social sin permitir
-  // edición manual de esos dos campos. El endpoint debe devolver también
-  // nit y razon_social desde la tabla Cliente.
   const fetchClientesCatalogo = async () => {
     try {
       const res = await jfetch("/oportunidades/clientes-catalogo");
@@ -1244,15 +1240,14 @@ export default function Oportunidades() {
   };
 
   const getClienteCatalogoInfo = useCallback(
-    (nombreCliente, fallback = {}) => {
-      const nombreNormalizado = normalizeText(nombreCliente);
-      const clienteKey = normalizeClientGroupKey(nombreNormalizado);
+    (nombreCliente) => {
+      const clienteKey = normalizeClientGroupKey(nombreCliente);
 
       if (!clienteKey) {
         return {
-          nit: normalizeText(fallback?.nit),
-          razon_social: normalizeText(fallback?.razon_social),
-          nombre_cliente: nombreNormalizado,
+          nit: "",
+          razon_social: "",
+          nombre_cliente: normalizeText(nombreCliente),
         };
       }
 
@@ -1262,15 +1257,11 @@ export default function Oportunidades() {
       );
 
       return {
-        nit:
-          normalizeText(clienteEncontrado?.nit) ||
-          normalizeText(fallback?.nit),
-        razon_social:
-          normalizeText(clienteEncontrado?.razon_social) ||
-          normalizeText(fallback?.razon_social),
+        nit: normalizeText(clienteEncontrado?.nit),
+        razon_social: normalizeText(clienteEncontrado?.razon_social),
         nombre_cliente:
           normalizeText(clienteEncontrado?.nombre_cliente) ||
-          nombreNormalizado,
+          normalizeText(nombreCliente),
       };
     },
     [clientesCatalogo]
@@ -1318,10 +1309,14 @@ export default function Oportunidades() {
 
   const clienteSuggestions = useMemo(() => {
     return (clientesCatalogo || [])
-      .map((cliente) => cliente?.nombre_cliente)
-      .filter(Boolean)
+      .filter((cliente) => cliente?.nombre_cliente)
+      .slice()
       .sort((a, b) =>
-        a.localeCompare(b, "es", { sensitivity: "base" })
+        String(a?.nombre_cliente || "").localeCompare(
+          String(b?.nombre_cliente || ""),
+          "es",
+          { sensitivity: "base" }
+        )
       );
   }, [clientesCatalogo]);
 
@@ -2905,7 +2900,13 @@ export default function Oportunidades() {
 
   const saveNewRow = async (crearComoPrincipal = false) => {
     try {
-      if (!clienteSuggestions.includes(normalizeText(newRow?.[CLIENTE_COL]))) {
+      if (
+        !clienteSuggestions.some(
+          (cliente) =>
+            normalizeClientGroupKey(cliente?.nombre_cliente) ===
+            normalizeClientGroupKey(newRow?.[CLIENTE_COL])
+        )
+      ) {
         Swal.fire(
           "Cliente requerido",
           "Selecciona un cliente válido de la tabla de clientes.",
@@ -3430,7 +3431,12 @@ export default function Oportunidades() {
             {clienteSuggestions.length ? "Selecciona un cliente" : "Sin clientes disponibles"}
           </option>
           {clienteSuggestions.map((cliente) => (
-            <option key={cliente} value={cliente}>{cliente}</option>
+            <option
+              key={cliente.id ?? cliente.nombre_cliente}
+              value={cliente.nombre_cliente}
+            >
+              {cliente.nit || "SIN NIT"} — {cliente.razon_social || "SIN RAZÓN SOCIAL"} — {cliente.nombre_cliente}
+            </option>
           ))}
         </select>
       );
@@ -4172,9 +4178,9 @@ export default function Oportunidades() {
             {col === "id"
               ? row?.codigo_control ?? row?.id ?? "-"
               : col === "nit"
-              ? getClienteCatalogoInfo(row?.nombre_cliente, row).nit || "-"
+              ? getClienteCatalogoInfo(row?.nombre_cliente).nit || "-"
               : col === "razon_social"
-              ? getClienteCatalogoInfo(row?.nombre_cliente, row).razon_social || "-"
+              ? getClienteCatalogoInfo(row?.nombre_cliente).razon_social || "-"
               : sameId(editing.rowId, row?.id) && editing.col === col
               ? renderEditorCell(row, col)
               : isLong
@@ -4327,6 +4333,11 @@ export default function Oportunidades() {
   const renderClientePrincipalRow = (grupo) => {
     const isOpen = !!expandedClientes[grupo.key];
     const rowsQueSuman = grupo.rows.filter(estadoSumaEnPrincipal);
+    const nombreClientePrincipal =
+      normalizeText(grupo?.principalRow?.nombre_cliente) ||
+      normalizeText(grupo?.cliente) ||
+      normalizeText(getPrincipalDisplayValue(grupo, CLIENTE_COL));
+    const clienteInfo = getClienteCatalogoInfo(nombreClientePrincipal);
     const fechaCierreAutomaticaPrincipal = getFechaCierrePrincipalAutomatica(grupo);
     const tieneHijosAsignados = (grupo.rows || []).length > 0;
     const tieneHijosQueSuman = rowsQueSuman.length > 0;
@@ -4374,20 +4385,10 @@ export default function Oportunidades() {
           }
 
           if (col === "nit") {
-            const clienteInfo = getClienteCatalogoInfo(
-              grupo.cliente || principalDisplayValue,
-              grupo.principalRow
-            );
-
             content = clienteInfo.nit || "-";
           }
 
           if (col === "razon_social") {
-            const clienteInfo = getClienteCatalogoInfo(
-              grupo.cliente || principalDisplayValue,
-              grupo.principalRow
-            );
-
             content = clienteInfo.razon_social || "-";
           }
 

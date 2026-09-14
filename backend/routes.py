@@ -4579,6 +4579,7 @@ def oportunidades_clientes_catalogo():
     ]), 200
 
 
+
 @bp.route("/oportunidades/filters", methods=["GET"])
 @permission_required("OPORTUNIDADES_VER")
 def oportunidades_filters():
