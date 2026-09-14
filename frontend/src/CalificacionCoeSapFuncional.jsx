@@ -118,7 +118,21 @@ const TABLE_COLUMNS = [
   { key: "nroOt", label: "N° OT", w: 15, cls: "mono", group: "ot" },
   { key: "valorOt", label: "Valor OT", w: 16, cls: "right number", group: "ot" },
   { key: "horasOferta", label: "Horas oferta", w: 16, cls: "right number", group: "ot" },
-  { key: "fechaEstimacion", label: "Fecha estimación", w: 20, cls: "mono", group: "manual" },
+  {
+    key: "fechaInicioLaboracionEstimacion",
+    label: "Fecha inicio laboración estimación",
+    w: 24,
+    cls: "mono",
+    group: "manual"
+  },
+
+  {
+    key: "fechaEstimacion",
+    label: "Fecha estimación",
+    w: 20,
+    cls: "mono",
+    group: "manual"
+  },
   { key: "diasEntregaEstimacion", label: "Días entrega estimación", w: 17, cls: "right", group: "calc" },
   { key: "mesEstimacion", label: "Mes estimación", w: 14, cls: "right", group: "calc" },
   { key: "anioEstimacion", label: "Año estimación", w: 14, cls: "right", group: "calc" },
@@ -229,7 +243,17 @@ const EDIT_FIELDS = [
   { key: "fechaCompromiso", label: "Fecha compromiso", type: "date" },
   { key: "liderClaro", label: "Líder Claro", type: "text" },
   { key: "tipoIngreso", label: "Tipo ingreso", type: "text" },
-  { key: "fechaEstimacion", label: "Fecha estimación", type: "date" },
+  {
+    key: "fechaInicioLaboracionEstimacion",
+    label: "Fecha inicio laboración estimación",
+    type: "date"
+  },
+
+  {
+    key: "fechaEstimacion",
+    label: "Fecha estimación",
+    type: "date"
+  },
   { key: "fechaAprobacionEstimacion", label: "Fecha aprobación estimación", type: "date" },
   { key: "estadoEstimacion", label: "Estado estimación", type: "select", catalog: "ESTADO_ESTIMACION" },
 
@@ -790,7 +814,18 @@ export default function CalificacionCoeSapFuncional() {
   const [columnFilters, setColumnFilters] = useState({});
 
   const [visibleColumnKeys, setVisibleColumnKeys] = useState(() =>
-    getStorageArray(STORAGE_VISIBLE_COLUMNS, allColumnKeys)
+    (() => {
+      const stored = getStorageArray(STORAGE_VISIBLE_COLUMNS, allColumnKeys);
+      const key = "fechaInicioLaboracionEstimacion";
+      const marker = "calcoe_inicio_estimacion_visible_v1";
+      try {
+        if (!localStorage.getItem(marker)) {
+          localStorage.setItem(marker, "1");
+          return [...new Set([...stored, key])];
+        }
+      } catch { /* Almacenamiento no disponible: conservar configuración. */ }
+      return stored;
+    })()
   );
 
   const [filterColumnKeys, setFilterColumnKeys] = useState(() => {
@@ -1046,6 +1081,7 @@ export default function CalificacionCoeSapFuncional() {
         "fechaRespuesta",
         "fechaResolucion",
         "fechaFinalizacionCierre",
+        "fechaInicioLaboracionEstimacion",
         "fechaEstimacion",
         "diasEntregaEstimacion",
         "estadoEstimacion",

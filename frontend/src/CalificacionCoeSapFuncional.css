@@ -1437,3 +1437,86 @@ th.col-ot {
 .calcoe-filter select option[disabled] {
   color: #94a3b8;
 }
+
+/* Renovación visual: conserva columnas fijas, filtros y clases funcionales. */
+.calcoe-page {
+  --calcoe-bg: #f4f6f9;
+  --calcoe-text: #243044;
+  --calcoe-muted: #5e6b7e;
+  --calcoe-border: #dfe5ec;
+  --calcoe-blue: #007e8c;
+  --calcoe-blue-soft: #eaf6f7;
+  --calcoe-shadow: 0 6px 24px rgba(25, 40, 65, .06);
+  padding: clamp(14px, 2vw, 28px);
+  background: var(--calcoe-bg);
+  line-height: 1.5;
+}
+.calcoe-hero {
+  color: #243044;
+  background: #fff;
+  border: 1px solid #dfe5ec;
+  border-left: 5px solid #da291c;
+  border-radius: 16px;
+  padding: clamp(20px, 2.5vw, 32px);
+  box-shadow: 0 6px 24px rgba(25,40,65,.05);
+}
+.calcoe-hero::after { display: none; }
+.calcoe-hero h1 { font-size: clamp(24px, 2.4vw, 34px); font-weight: 750; line-height: 1.2; }
+.calcoe-hero p { color: #5e6b7e; max-width: 72ch; }
+.calcoe-eyebrow { color: #b52217; background: #fff0ed; font-weight: 700; letter-spacing: .08em; }
+.calcoe-card, .calcoe-toolbar-card, .calcoe-config-panel, .calcoe-table-card {
+  border: 1px solid #dfe5ec;
+  border-radius: 16px;
+  box-shadow: 0 4px 18px rgba(25,40,65,.04);
+  background: #fff;
+}
+.calcoe-toolbar-card { gap: 20px; padding: 20px; }
+.calcoe-toolbar-left, .calcoe-toolbar-actions { gap: 12px; }
+.calcoe-metrics { gap: 12px; }
+.calcoe-metrics div { background: #f8fafc; border: 1px solid #e5eaf0; border-radius: 12px; padding: 14px 18px; }
+.calcoe-metrics strong { color: #243044; font-size: 26px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.calcoe-metrics span { color: #5e6b7e; font-weight: 600; }
+.calcoe-btn { min-height: 40px; border-radius: 10px; padding: 10px 16px; font-weight: 650; box-shadow: none; transition: background .16s, box-shadow .16s; }
+.calcoe-btn:hover:not(:disabled) { transform: none; box-shadow: 0 3px 10px rgba(25,40,65,.12); }
+.calcoe-btn.dark { background: #243044; color: white; }
+.calcoe-btn.light, .calcoe-btn.ghost { background: #fff; color: #344054; border: 1px solid #cfd8e3; }
+.calcoe-btn.danger { background: #da291c; color: white; border-color: #da291c; }
+.calcoe-btn.danger:hover:not(:disabled) { background: #b52217; }
+.calcoe-page :is(button, input, select, textarea):focus-visible,
+.calcoe-modal :is(button, input, select, textarea):focus-visible {
+  outline: 3px solid #0097a9; outline-offset: 3px;
+}
+.calcoe-search input, .calcoe-filter input, .calcoe-filter select, .calcoe-filter textarea {
+  background: #fff; border: 1px solid #cfd8e3; border-radius: 9px; font-weight: 400;
+}
+.calcoe-search input:focus, .calcoe-filter input:focus, .calcoe-filter select:focus, .calcoe-filter textarea:focus {
+  border-color: #0097a9; box-shadow: 0 0 0 3px rgba(0,151,169,.12);
+}
+.calcoe-table-head { padding: 20px; border-bottom: 1px solid #e5eaf0; }
+.calcoe-table-head h2, .calcoe-config-head h2 { font-weight: 700; color: #243044; }
+.calcoe-table thead th { background: #f0f3f7; color: #344054; font-weight: 700; border-color: #dfe5ec; }
+.calcoe-table thead tr.calcoe-filter-row th { background: #fafbfd; }
+.calcoe-table tbody td { border-bottom-color: #edf0f4; font-variant-numeric: tabular-nums; }
+.calcoe-table tbody tr:nth-child(even) td { background-color: #fafbfd; }
+.calcoe-table tbody tr:hover td, .calcoe-table tbody tr:hover .sticky-col { background-color: #edf6f8; }
+.calcoe-column-picker label { border-radius: 10px; border-color: #e5eaf0; }
+.calcoe-column-picker label:hover { background: #f0f7f8; border-color: #0097a9; }
+.calcoe-modal { border-radius: 16px; border: 1px solid #dfe5ec; }
+.calcoe-modal-head { background: #f8fafc; padding: 22px 24px; }
+.calcoe-modal-head h3 { color: #243044; font-weight: 750; }
+.calcoe-modal-body { padding: 24px; }
+.calcoe-modal-overlay { background: rgba(18,30,48,.55); }
+@media (max-width: 700px) {
+  .calcoe-hero { flex-direction: column; gap: 16px; }
+  .calcoe-hero-actions { min-width: 0; width: 100%; }
+  .calcoe-toolbar-card, .calcoe-toolbar-left { flex-direction: column; align-items: stretch; }
+  .calcoe-search { min-width: 0; width: 100%; }
+  .calcoe-toolbar-actions { flex-wrap: wrap; }
+  .calcoe-toolbar-actions .calcoe-btn { flex: 1 1 140px; }
+  .calcoe-modal-overlay { padding: 10px; }
+  .calcoe-modal { width: 100%; max-height: 95dvh; }
+  .calcoe-modal-body, .calcoe-modal-head { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .calcoe-page *, .calcoe-modal * { animation: none !important; transition: none !important; }
+}

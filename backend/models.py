@@ -1346,6 +1346,7 @@ class CoeSapFuncionalCalificacion(db.Model):
     lider_claro = db.Column(db.String(255))
     tipo_ingreso = db.Column(db.String(150))
 
+    fecha_inicio_laboracion_estimacion = db.Column(db.DateTime, nullable=True)
     fecha_estimacion = db.Column(db.DateTime)
     dias_entrega_estimacion = db.Column(db.Integer)
     mes_estimacion = db.Column(db.Integer)

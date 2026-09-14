@@ -15652,10 +15652,11 @@ def _calificacion_recalcular(campos):
     campos["tiempo_finalizacion_cierre"] = _calificacion_diff_dias(fecha_finalizacion_cierre, fecha_asignacion)
 
     fecha_fin_estimacion = fecha_estimacion or datetime.utcnow()
+    fecha_inicio_estimacion = campos.get("fecha_inicio_laboracion_estimacion")
 
-    if fecha_asignacion:
+    if fecha_inicio_estimacion:
         campos["dias_entrega_estimacion"] = _calificacion_networkdays(
-            fecha_asignacion + timedelta(days=1),
+            fecha_inicio_estimacion + timedelta(days=1),
             fecha_fin_estimacion
         )
     else:
@@ -15780,6 +15781,7 @@ def _calificacion_to_dict(r):
         "liderClaro": r.lider_claro,
         "tipoIngreso": r.tipo_ingreso,
 
+        "fechaInicioLaboracionEstimacion": _calificacion_fecha_str(r.fecha_inicio_laboracion_estimacion),
         "fechaEstimacion": _calificacion_fecha_str(r.fecha_estimacion),
         "diasEntregaEstimacion": r.dias_entrega_estimacion,
         "mesEstimacion": r.mes_estimacion,
@@ -16489,6 +16491,10 @@ CALIFICACION_EXCEL_ALIASES = {
         "TIPO DE INGRESO",
         "TIPO INGRESO",
     ],
+    "fecha_inicio_laboracion_estimacion": [
+        "FECHA INICIO LABORACION ESTIMACION",
+        "FECHA INICIO LABORACIÓN ESTIMACIÓN",
+    ],
     "fecha_estimacion": [
         "FECHA ESTIMACION",
         "FECHA ESTIMACIÓN",
@@ -16545,6 +16551,7 @@ CALIFICACION_EXCEL_HORAS = [
 
 
 CALIFICACION_EXCEL_FECHAS = {
+    "fecha_inicio_laboracion_estimacion",
     "fecha_asignacion",
     "hora_ultima_actualizacion",
     "fecha_respuesta",
@@ -16557,6 +16564,7 @@ CALIFICACION_EXCEL_FECHAS = {
 
 
 CALIFICACION_EXCEL_MANUALES = [
+    "fecha_inicio_laboracion_estimacion",
     "caso_sm",
     "documentacion",
     "caso_transporte",
@@ -17554,11 +17562,14 @@ def _coe_ext_recalcular_row(row):
     fecha_estimacion = getattr(row, "fecha_estimacion", None)
     fecha_aprobacion_estimacion = getattr(row, "fecha_aprobacion_estimacion", None)
 
-    if fecha_asignacion:
+    fecha_inicio_estimacion = getattr(row, "fecha_inicio_laboracion_estimacion", None)
+    if fecha_inicio_estimacion:
         row.dias_entrega_estimacion = _coe_ext_networkdays(
-            fecha_asignacion + timedelta(days=1),
+            fecha_inicio_estimacion + timedelta(days=1),
             fecha_estimacion or datetime.utcnow()
         )
+    else:
+        row.dias_entrega_estimacion = None
 
     if fecha_estimacion:
         row.mes_estimacion = fecha_estimacion.month
@@ -17959,6 +17970,7 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "fechaCompromiso": "fecha_compromiso",
             "liderClaro": "lider_claro",
             "tipoIngreso": "tipo_ingreso",
+            "fechaInicioLaboracionEstimacion": "fecha_inicio_laboracion_estimacion",
             "fechaEstimacion": "fecha_estimacion",
             "fechaAprobacionEstimacion": "fecha_aprobacion_estimacion",
             "estadoEstimacion": "estado_estimacion",
@@ -18033,6 +18045,7 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
         }
 
         campos_fecha = {
+            "fechaInicioLaboracionEstimacion",
             "fechaRespuesta",
             "fechaCompromiso",
             "fechaEstimacion",
@@ -23053,6 +23066,7 @@ def _coe_xls_calificacion_rows(query):
             "nro_ot": getattr(r, "nro_ot", None),
             "valor_ot": getattr(r, "valor_ot", None),
             "horas_oferta": getattr(r, "horas_oferta", None),
+            "fecha_inicio_laboracion_estimacion": _coe_rep_date(r.fecha_inicio_laboracion_estimacion),
             "fecha_estimacion": _coe_rep_date(r.fecha_estimacion),
             "dias_entrega_estimacion": r.dias_entrega_estimacion,
             "mes_estimacion": r.mes_estimacion,
@@ -23114,7 +23128,7 @@ def _coe_xls_calificacion_headers():
         ("TIEMPO FINALIZACIÓN / CIERRE", "tiempo_finalizacion_cierre"), ("FECHA COMPROMISO", "fecha_compromiso"),
         ("LÍDER CLARO", "lider_claro"), ("TIPO INGRESO", "tipo_ingreso"),
         ("ESTADO FACTURACIÓN OT", "estado_facturacion_ot"), ("N° OT", "nro_ot"), ("VALOR OT", "valor_ot"),
-        ("HORAS OFERTA", "horas_oferta"), ("FECHA ESTIMACIÓN", "fecha_estimacion"),
+        ("HORAS OFERTA", "horas_oferta"), ("FECHA INICIO LABORACION ESTIMACION", "fecha_inicio_laboracion_estimacion"), ("FECHA ESTIMACIÓN", "fecha_estimacion"),
         ("DÍAS ENTREGA ESTIMACIÓN", "dias_entrega_estimacion"), ("MES ESTIMACIÓN", "mes_estimacion"),
         ("AÑO ESTIMACIÓN", "anio_estimacion"), ("FECHA APROBACIÓN ESTIMACIÓN", "fecha_aprobacion_estimacion"),
         ("MES APROBADO ESTIMACIÓN", "mes_aprobado_estimacion"), ("AÑO APROBADO ESTIMACIÓN", "anio_aprobado_estimacion"),
