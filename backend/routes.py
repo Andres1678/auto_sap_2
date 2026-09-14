@@ -24714,3 +24714,27 @@ def coe_sap_control_bolsa_cliente_delete(control_id):
             "error": str(e),
             "trace": traceback.format_exc(),
         }), 500
+
+# Boton de borrado en Base de cargue #
+
+@bp.route("/coe-sap-funcional/delete-all", methods=["DELETE"])
+@permission_required("BASE_REGISTRO_IMPORTAR")
+def delete_all_coe_sap_funcional():
+    try:
+        total = BaseRegistroInfoCoeSapFuncional.query.count()
+
+        BaseRegistroInfoCoeSapFuncional.query.delete()
+
+        db.session.commit()
+
+        return jsonify({
+            "mensaje": f"Se eliminaron {total} registros correctamente"
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+
+        return jsonify({
+            "mensaje": "Error eliminando la base",
+            "error": str(e)
+        }), 500

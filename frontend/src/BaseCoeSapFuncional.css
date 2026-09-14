@@ -581,3 +581,31 @@
     justify-content: center;
   }
 }
+
+.coe-upload-card.delete {
+  border-left: 5px solid #991b1b;
+}
+
+.coe-upload-card.delete .coe-upload-icon {
+  background: #fee2e2;
+}
+
+.coe-btn.delete {
+  background: #991b1b;
+  color: #fff;
+  border-color: #991b1b;
+}
+
+.coe-btn.delete:hover:not(:disabled) {
+  background: #7f1d1d;
+}
+
+.coe-upload-grid {
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
+}
+
+@media (max-width: 1180px) {
+  .coe-upload-grid {
+    grid-template-columns: 1fr;
+  }
+}

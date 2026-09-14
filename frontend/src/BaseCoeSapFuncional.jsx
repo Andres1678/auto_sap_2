@@ -311,6 +311,66 @@ export default function BaseCoeSapFuncional() {
     adicionalInputRef.current?.click();
   };
 
+  const handleDeleteAll = async () => {
+    if (!canImport) {
+      Swal.fire({
+        icon: "warning",
+        title: "Sin permiso",
+        text: "No tienes permiso para eliminar la base.",
+        confirmButtonColor: "#DA291C",
+      });
+      return;
+    }
+
+    const confirm = await Swal.fire({
+      icon: "warning",
+      title: "Eliminar base completa",
+      html: `
+        <p>Esta acción eliminará TODOS los registros de la base.</p>
+        <p><b>Esta acción NO se puede deshacer.</b></p>
+      `,
+      showCancelButton: true,
+      confirmButtonText: "Sí, eliminar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#991b1b",
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const res = await jfetch("/coe-sap-funcional/delete-all", {
+        method: "DELETE",
+        headers: commonHeaders,
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.mensaje || "Error eliminando los registros");
+      }
+
+      await Swal.fire({
+        icon: "success",
+        title: "Base eliminada",
+        text: data?.mensaje || "Todos los registros fueron eliminados.",
+        confirmButtonColor: "#008C67",
+      });
+
+      setRows([]);
+      setTotal(0);
+
+      fetchFilters();
+      fetchRows();
+    } catch (error) {
+      Swal.fire({
+        icon: "error",
+        title: "Error",
+        text: error?.message || "No se pudo eliminar la base.",
+        confirmButtonColor: "#DA291C",
+      });
+    }
+  };
+
   const uploadFile = async (file, tipo) => {
     if (!file) return;
 
@@ -449,11 +509,15 @@ export default function BaseCoeSapFuncional() {
       </section>
 
       <section className="coe-upload-grid">
+
         <article className="coe-upload-card principal">
           <div className="coe-upload-icon">📌</div>
+
           <div>
             <h3>Carga principal</h3>
-            <p>Reemplaza toda la información actual y deja el archivo como base oficial.</p>
+            <p>
+              Reemplaza toda la información actual y deja el archivo como base oficial.
+            </p>
           </div>
 
           <input
@@ -476,9 +540,12 @@ export default function BaseCoeSapFuncional() {
 
         <article className="coe-upload-card adicional">
           <div className="coe-upload-icon">➕</div>
+
           <div>
             <h3>Carga adicional</h3>
-            <p>Inserta nuevos registros o actualiza los existentes usando el campo Número.</p>
+            <p>
+              Inserta nuevos registros o actualiza los existentes usando el campo Número.
+            </p>
           </div>
 
           <input
@@ -498,6 +565,27 @@ export default function BaseCoeSapFuncional() {
             {uploadingAdicional ? "Cargando..." : "Cargar adicional"}
           </button>
         </article>
+
+        <article className="coe-upload-card delete">
+          <div className="coe-upload-icon">🗑️</div>
+
+          <div>
+            <h3>Vaciar base</h3>
+            <p>
+              Elimina completamente el contenido actual para cargar una nueva base.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="coe-btn delete"
+            onClick={handleDeleteAll}
+            disabled={uploadingPrincipal || uploadingAdicional}
+          >
+            Borrar base completa
+          </button>
+        </article>
+
       </section>
 
       <section className="coe-card coe-filters-card">
