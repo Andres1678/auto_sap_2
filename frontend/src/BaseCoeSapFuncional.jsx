@@ -15,8 +15,8 @@ const INITIAL_FILTERS = {
 };
 
 const COLUMNS = [
-  { key: "numero", label: "Número", w: 16, cls: "mono strong" },
-  { key: "idInteraccion", label: "ID de interacción", w: 18, cls: "mono" },
+  { key: "idInteraccion", label: "ID de interacción", w: 18, cls: "mono strong" },
+  { key: "numero", label: "Número", w: 16, cls: "mono" },
   { key: "compania", label: "Compañía", w: 34 },
   { key: "fechaEntrega", label: "Fecha de entrega", w: 20, cls: "mono" },
   { key: "fechaResolucion", label: "Fecha de Resolucion", w: 20, cls: "mono" },
