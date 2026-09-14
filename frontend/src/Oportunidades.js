@@ -4262,8 +4262,13 @@ export default function Oportunidades() {
   const renderClienteGroupRow = (clienteGrupo) => {
     const isOpen = !!expandedClientes[clienteGrupo.key];
 
+    const clienteInfo = getClienteCatalogoInfo(clienteGrupo.cliente);
+
     return (
-      <tr className="cliente-group-row" data-cliente-key={clienteGrupo.key}>
+      <tr
+        className="cliente-group-row"
+        data-cliente-key={clienteGrupo.key}
+      >
         {tableColumnOrder.map((col, colIdx) => {
           let content = "";
 
@@ -4274,7 +4279,11 @@ export default function Oportunidades() {
                   type="button"
                   className="cliente-toggle-btn cliente-group-toggle-btn"
                   onClick={() => toggleClienteGroup(clienteGrupo.key)}
-                  title={isOpen ? "Ocultar oportunidades del cliente" : "Ver oportunidades del cliente"}
+                  title={
+                    isOpen
+                      ? "Ocultar oportunidades del cliente"
+                      : "Ver oportunidades del cliente"
+                  }
                 >
                   {isOpen ? "−" : "+"}
                 </button>
@@ -4282,15 +4291,29 @@ export default function Oportunidades() {
             );
           }
 
+          if (col === "nit") {
+            content = clienteInfo.nit || "-";
+          }
+
+          if (col === "razon_social") {
+            content = clienteInfo.razon_social || "-";
+          }
+
           if (col === CLIENTE_COL) {
             content = (
               <div className="cliente-principal-info cliente-group-info">
                 <strong>{clienteGrupo.cliente}</strong>
+
                 <span>
-                  {clienteGrupo.totalPrincipales} oportunidad{clienteGrupo.totalPrincipales === 1 ? "" : "es"} principal{clienteGrupo.totalPrincipales === 1 ? "" : "es"}
+                  {clienteGrupo.totalPrincipales} oportunidad
+                  {clienteGrupo.totalPrincipales === 1 ? "" : "es"} principal
+                  {clienteGrupo.totalPrincipales === 1 ? "" : "es"}
                 </span>
+
                 <small>
-                  {clienteGrupo.totalOts} OT/suboportunidad{clienteGrupo.totalOts === 1 ? "" : "es"}
+                  {clienteGrupo.totalOts} OT/suboportunidad
+                  {clienteGrupo.totalOts === 1 ? "" : "es"}
+
                   {clienteGrupo.totalSinPrincipal > 0
                     ? ` · ${clienteGrupo.totalSinPrincipal} sin principal`
                     : ""}
@@ -4303,30 +4326,21 @@ export default function Oportunidades() {
             content = "AGRUPACIÓN DE OPORTUNIDADES DEL CLIENTE";
           }
 
+          if (
+            !["id", "nit", "razon_social", CLIENTE_COL, SERVICIO_COL].includes(col)
+          ) {
+            content = "-";
+          }
+
           return (
             <td
               key={`cliente-group-${clienteGrupo.key}-${col}-${colIdx}`}
-              className={[
-                getColumnClassNames(col),
-                col === SERVICIO_COL ? "servicio-wrap-cell" : "",
-              ]
-                .join(" ")
-                .trim()}
+              className={getColumnClassNames(col)}
             >
-              {content || "-"}
+              {content}
             </td>
           );
         })}
-
-        <td className="acciones">
-          <button
-            type="button"
-            className="cliente-ver-btn cliente-group-ver-btn"
-            onClick={() => toggleClienteGroup(clienteGrupo.key)}
-          >
-            {isOpen ? "Ocultar" : "Ver"}
-          </button>
-        </td>
       </tr>
     );
   };
