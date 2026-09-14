@@ -1150,7 +1150,6 @@ export default function Oportunidades() {
       "razon_social",
       "nombre_cliente",
       "servicio",
-      "servicio",
       "fecha_creacion",
       "semestre",
       "tipo_cliente",
@@ -3070,35 +3069,6 @@ export default function Oportunidades() {
           }}
           onBlur={(e) => saveEdit(row.id, col, e.currentTarget.value)}
         />
-      );
-    }
-
-    if (col === "nit") {
-      const clienteInfo = getClienteCatalogoInfo(clienteGrupo.cliente);
-
-      content = clienteInfo.nit || "-";
-    }
-
-    if (col === "razon_social") {
-      const clienteInfo = getClienteCatalogoInfo(clienteGrupo.cliente);
-
-      content = clienteInfo.razon_social || "-";
-    }
-
-    if (col === CLIENTE_COL) {
-      content = (
-        <div className="cliente-principal-info cliente-group-info">
-          <strong>{clienteGrupo.cliente}</strong>
-          <span>
-            {clienteGrupo.totalPrincipales} oportunidad{clienteGrupo.totalPrincipales === 1 ? "" : "es"} principal{clienteGrupo.totalPrincipales === 1 ? "" : "es"}
-          </span>
-          <small>
-            {clienteGrupo.totalOts} OT/suboportunidad{clienteGrupo.totalOts === 1 ? "" : "es"}
-            {clienteGrupo.totalSinPrincipal > 0
-              ? ` · ${clienteGrupo.totalSinPrincipal} sin principal`
-              : ""}
-          </small>
-        </div>
       );
     }
 
