@@ -1214,6 +1214,10 @@ export default function Oportunidades() {
     []
   );
 
+  // Catálogo oficial de clientes. Cada oportunidad (principal u OT)
+  // se cruza por nombre_cliente para mostrar NIT y razón social sin permitir
+  // edición manual de esos dos campos. El endpoint debe devolver también
+  // nit y razon_social desde la tabla Cliente.
   const fetchClientesCatalogo = async () => {
     try {
       const res = await jfetch("/oportunidades/clientes-catalogo");
@@ -1240,14 +1244,15 @@ export default function Oportunidades() {
   };
 
   const getClienteCatalogoInfo = useCallback(
-    (nombreCliente) => {
-      const clienteKey = normalizeClientGroupKey(nombreCliente);
+    (nombreCliente, fallback = {}) => {
+      const nombreNormalizado = normalizeText(nombreCliente);
+      const clienteKey = normalizeClientGroupKey(nombreNormalizado);
 
       if (!clienteKey) {
         return {
-          nit: "",
-          razon_social: "",
-          nombre_cliente: normalizeText(nombreCliente),
+          nit: normalizeText(fallback?.nit),
+          razon_social: normalizeText(fallback?.razon_social),
+          nombre_cliente: nombreNormalizado,
         };
       }
 
@@ -1257,11 +1262,15 @@ export default function Oportunidades() {
       );
 
       return {
-        nit: normalizeText(clienteEncontrado?.nit),
-        razon_social: normalizeText(clienteEncontrado?.razon_social),
+        nit:
+          normalizeText(clienteEncontrado?.nit) ||
+          normalizeText(fallback?.nit),
+        razon_social:
+          normalizeText(clienteEncontrado?.razon_social) ||
+          normalizeText(fallback?.razon_social),
         nombre_cliente:
           normalizeText(clienteEncontrado?.nombre_cliente) ||
-          normalizeText(nombreCliente),
+          nombreNormalizado,
       };
     },
     [clientesCatalogo]
@@ -4163,9 +4172,9 @@ export default function Oportunidades() {
             {col === "id"
               ? row?.codigo_control ?? row?.id ?? "-"
               : col === "nit"
-              ? getClienteCatalogoInfo(row?.nombre_cliente).nit || "-"
+              ? getClienteCatalogoInfo(row?.nombre_cliente, row).nit || "-"
               : col === "razon_social"
-              ? getClienteCatalogoInfo(row?.nombre_cliente).razon_social || "-"
+              ? getClienteCatalogoInfo(row?.nombre_cliente, row).razon_social || "-"
               : sameId(editing.rowId, row?.id) && editing.col === col
               ? renderEditorCell(row, col)
               : isLong
@@ -4365,13 +4374,19 @@ export default function Oportunidades() {
           }
 
           if (col === "nit") {
-            const clienteInfo = getClienteCatalogoInfo(principalDisplayValue);
+            const clienteInfo = getClienteCatalogoInfo(
+              grupo.cliente || principalDisplayValue,
+              grupo.principalRow
+            );
 
             content = clienteInfo.nit || "-";
           }
 
           if (col === "razon_social") {
-            const clienteInfo = getClienteCatalogoInfo(principalDisplayValue);
+            const clienteInfo = getClienteCatalogoInfo(
+              grupo.cliente || principalDisplayValue,
+              grupo.principalRow
+            );
 
             content = clienteInfo.razon_social || "-";
           }
