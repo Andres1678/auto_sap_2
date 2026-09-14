@@ -3425,17 +3425,27 @@ export default function Oportunidades() {
           className="cell-input"
           value={newRow[col] ?? ""}
           disabled={!clienteSuggestions.length}
-          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+          onChange={(e) =>
+            setNewRow({
+              ...newRow,
+              [col]: e.target.value,
+            })
+          }
         >
           <option value="">
-            {clienteSuggestions.length ? "Selecciona un cliente" : "Sin clientes disponibles"}
+            {clienteSuggestions.length
+              ? "Selecciona un cliente"
+              : "Sin clientes disponibles"}
           </option>
+
           {clienteSuggestions.map((cliente) => (
             <option
               key={cliente.id ?? cliente.nombre_cliente}
               value={cliente.nombre_cliente}
             >
-              {cliente.nit || "SIN NIT"} — {cliente.razon_social || "SIN RAZÓN SOCIAL"} — {cliente.nombre_cliente}
+              {cliente.nit || "SIN NIT"} —{" "}
+              {cliente.razon_social || "SIN RAZÓN SOCIAL"} —{" "}
+              {cliente.nombre_cliente}
             </option>
           ))}
         </select>
@@ -4385,10 +4395,18 @@ export default function Oportunidades() {
           }
 
           if (col === "nit") {
+            const clienteInfo = getClienteCatalogoInfo(
+              grupo?.principalRow?.nombre_cliente
+            );
+
             content = clienteInfo.nit || "-";
           }
 
           if (col === "razon_social") {
+            const clienteInfo = getClienteCatalogoInfo(
+              grupo?.principalRow?.nombre_cliente
+            );
+
             content = clienteInfo.razon_social || "-";
           }
 
