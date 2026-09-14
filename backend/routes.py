@@ -15523,18 +15523,26 @@ def _calificacion_decimal(value):
 
 
 def _calificacion_fecha(value):
-    if value is None:
+    if value is None or str(value).strip() in ("", "NaT", "nan"):
         return None
-
-    if isinstance(value, datetime):
-        return value
-
     try:
-        parsed = pd.to_datetime(value, errors="coerce", dayfirst=True)
-        if pd.isna(parsed):
-            return None
-        return parsed.to_pydatetime()
-    except Exception:
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, date):
+            parsed = datetime.combine(value, time.min)
+        else:
+            raw = str(value).strip()
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                result = pd.to_datetime(value, errors="coerce", dayfirst=True)
+                if pd.isna(result):
+                    return None
+                parsed = result.to_pydatetime()
+        if parsed.utcoffset() is not None:
+            parsed = (parsed - parsed.utcoffset()).replace(tzinfo=None)
+        return parsed
+    except (ValueError, TypeError, OverflowError, AttributeError):
         return None
 
 
@@ -15552,37 +15560,23 @@ def _calificacion_fecha_str(value):
 
 
 def _calificacion_diff_dias(fecha_fin, fecha_ini):
-    if not fecha_fin or not fecha_ini:
+    fin = _calificacion_fecha(fecha_fin)
+    ini = _calificacion_fecha(fecha_ini)
+    if fin is None or ini is None:
         return None
-
-    try:
-        return round((fecha_fin - fecha_ini).total_seconds() / 86400, 2)
-    except Exception:
-        return None
+    return round((fin - ini).total_seconds() / 86400, 2)
 
 
 def _calificacion_networkdays(fecha_inicio, fecha_fin):
-    if not fecha_inicio or not fecha_fin:
+    inicio = _calificacion_fecha(fecha_inicio)
+    fin = _calificacion_fecha(fecha_fin)
+    if inicio is None or fin is None:
         return None
-
-    try:
-        inicio = fecha_inicio.date()
-        fin = fecha_fin.date()
-
-        if fin < inicio:
-            return 0
-
-        dias = 0
-        actual = inicio
-
-        while actual <= fin:
-            if actual.weekday() < 5:
-                dias += 1
-            actual += timedelta(days=1)
-
-        return dias
-    except Exception:
-        return None
+    inicio, fin = inicio.date(), fin.date()
+    if fin < inicio:
+        return 0
+    semanas, resto = divmod((fin - inicio).days + 1, 7)
+    return semanas * 5 + sum((inicio.weekday() + i) % 7 < 5 for i in range(resto))
 
 
 def _calificacion_estado_consolidado(estado):
@@ -15706,6 +15700,16 @@ def _calificacion_recalcular(campos):
     return campos
 
 
+def _calificacion_dias_estimacion_actual(r):
+    inicio = getattr(r, "fecha_inicio_laboracion_estimacion", None)
+    if inicio is None:
+        return None
+    return _calificacion_networkdays(
+        inicio + timedelta(days=1),
+        getattr(r, "fecha_estimacion", None) or datetime.utcnow()
+    )
+
+
 def _calificacion_to_dict(r):
     return {
         "id": r.id,
@@ -15783,7 +15787,7 @@ def _calificacion_to_dict(r):
 
         "fechaInicioLaboracionEstimacion": _calificacion_fecha_str(r.fecha_inicio_laboracion_estimacion),
         "fechaEstimacion": _calificacion_fecha_str(r.fecha_estimacion),
-        "diasEntregaEstimacion": r.dias_entrega_estimacion,
+        "diasEntregaEstimacion": _calificacion_dias_estimacion_actual(r),
         "mesEstimacion": r.mes_estimacion,
         "anioEstimacion": r.anio_estimacion,
 
@@ -17448,13 +17452,7 @@ def _coe_ext_set_field(row, field, value, source, manual_fields, force=False, on
 
 
 def _coe_ext_diff_days(fin, ini):
-    if not fin or not ini:
-        return None
-
-    try:
-        return round((fin - ini).total_seconds() / 86400, 2)
-    except Exception:
-        return None
+    return _calificacion_diff_dias(fin, ini)
 
 
 def _coe_ext_validacion_fecha(app_fecha, fuente_fecha):
@@ -17473,31 +17471,12 @@ def _coe_ext_validacion_fecha(app_fecha, fuente_fecha):
 
 
 def _coe_ext_networkdays(fecha_inicio, fecha_fin):
-    if not fecha_inicio or not fecha_fin:
-        return None
-
-    try:
-        inicio = fecha_inicio.date()
-        fin = fecha_fin.date()
-
-        if fin < inicio:
-            return 0
-
-        dias = 0
-        actual = inicio
-
-        while actual <= fin:
-            if actual.weekday() < 5:
-                dias += 1
-
-            actual += timedelta(days=1)
-
-        return dias
-    except Exception:
-        return None
+    return _calificacion_networkdays(fecha_inicio, fecha_fin)
 
 
 def _coe_ext_validar_categoria(row):
+    row.validar_subcategoria = ""
+    row.validar_articulo = ""
     modulo = _coe_ext_str(getattr(row, "modulo", None))
     categoria = _coe_ext_str(getattr(row, "categoria", None))
     subcategoria = _coe_ext_str(getattr(row, "subcategoria", None))
@@ -18044,6 +18023,10 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "fecha10ReasignacionClaro": "fecha_10_reasignacion_claro",
         }
 
+        # Campos de fuentes automáticas: no aceptar sobrescrituras manuales.
+        for campo_automatico in ('impacto', 'urgencia', 'prioridad', 'fechaAsignacionSistemaGestion', 'horaUltimaActualizacionSistemaGestion', 'fechaResolucionSistemaGestion', 'fechaFinalizacionCierreSistemaGestion'):
+            campos_editables.pop(campo_automatico, None)
+
         campos_fecha = {
             "fechaInicioLaboracionEstimacion",
             "fechaRespuesta",
@@ -18113,10 +18096,20 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             value = data.get(json_key)
 
             if json_key in campos_fecha:
-                value = _calificacion_fecha(value)
+                parsed = _calificacion_fecha(value)
+                if value not in (None, "") and parsed is None:
+                    db.session.rollback()
+                    return jsonify({"mensaje": "Revisa la fecha ingresada en " + json_key}), 400
+                value = parsed
 
             if json_key in campos_decimal:
-                value = _calificacion_decimal(value)
+                try:
+                    value = 0 if value in (None, "") else float(str(value).replace(",", "."))
+                    if not math.isfinite(value):
+                        raise ValueError()
+                except (TypeError, ValueError, OverflowError):
+                    db.session.rollback()
+                    return jsonify({"mensaje": "Ingresa un número válido en " + json_key}), 400
 
             setattr(row, model_key, value)
 
@@ -23068,7 +23061,7 @@ def _coe_xls_calificacion_rows(query):
             "horas_oferta": getattr(r, "horas_oferta", None),
             "fecha_inicio_laboracion_estimacion": _coe_rep_date(r.fecha_inicio_laboracion_estimacion),
             "fecha_estimacion": _coe_rep_date(r.fecha_estimacion),
-            "dias_entrega_estimacion": r.dias_entrega_estimacion,
+            "dias_entrega_estimacion": _calificacion_dias_estimacion_actual(r),
             "mes_estimacion": r.mes_estimacion,
             "anio_estimacion": r.anio_estimacion,
             "fecha_aprobacion_estimacion": _coe_rep_date(r.fecha_aprobacion_estimacion),

@@ -1438,6 +1438,11 @@ th.col-ot {
   color: #94a3b8;
 }
 
+.calcoe-table td.calcoe-editable-cell { cursor: text; box-shadow: inset 0 -2px 0 #e5bc75; }
+.calcoe-table td.calcoe-editable-cell:hover { box-shadow: inset 0 -2px 0 #0097a9; }
+.calcoe-table td.calcoe-editable-cell:focus-visible { outline: 2px solid #0097a9; outline-offset: -3px; }
+.calcoe-edit-hint { grid-column: 1 / -1; margin: 0 0 8px; padding: 12px; background: #edf6f8; color: #344054; border-radius: 8px; font-size: 13px; }
+
 /* Renovación visual: conserva columnas fijas, filtros y clases funcionales. */
 .calcoe-page {
   --calcoe-bg: #f4f6f9;

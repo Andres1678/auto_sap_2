@@ -393,6 +393,7 @@ function normalizeForCompare(value) {
 
 function cleanText(value) {
   if (value === null || value === undefined || value === "") return "—";
+  if (/^#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|NUM!|NULL!|SPILL!|CALC!|¡REF!|¡VALOR!)$/i.test(String(value).trim())) return "Sin dato";
   return String(value);
 }
 
@@ -406,9 +407,9 @@ function escapeHtml(value) {
 }
 
 function numberText(value) {
-  if (value === null || value === undefined || value === "") return "0";
+  if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
-  if (Number.isNaN(n)) return String(value);
+  if (!Number.isFinite(n)) return "Sin dato";
 
   return n.toLocaleString("es-CO", {
     minimumFractionDigits: 0,
@@ -514,6 +515,19 @@ function originSummary(value) {
   return origins.slice(0, 4).join(", ") + (origins.length > 4 ? ` +${origins.length - 4}` : "");
 }
 
+// Una sola política para doble clic, formulario y envío de cambios.
+const LOCKED_COLUMN_GROUPS = new Set(["auto", "calc", "validation", "source"]);
+function isManualField(field) {
+  if (!field || field.type === "readonly") return false;
+  const col = TABLE_COLUMNS.find((item) => item.key === field.key);
+  return !col || !LOCKED_COLUMN_GROUPS.has(col.group);
+}
+function canEditColumn(col) {
+  if (col.key === "observaciones") return true;
+  return !LOCKED_COLUMN_GROUPS.has(col.group) &&
+    EDIT_FIELDS.some((field) => field.key === col.key && isManualField(field));
+}
+
 function createEditForm(row) {
   const form = {};
 
@@ -527,7 +541,7 @@ function createEditForm(row) {
     } else if (field.key === "comentarioSeguimiento") {
       form[field.key] = getTodaySeguimiento(row?.observaciones);
     } else {
-      form[field.key] = value || "";
+      form[field.key] = value ?? "";
     }
   });
 
@@ -852,6 +866,7 @@ export default function CalificacionCoeSapFuncional() {
   const [downloadingExcel, setDownloadingExcel] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
+  const [editFieldKey, setEditFieldKey] = useState(null);
   const [editRow, setEditRow] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
@@ -1729,8 +1744,10 @@ export default function CalificacionCoeSapFuncional() {
     }
   };
 
-  const openEdit = (row) => {
-    if (!canImport) return;
+  const openEdit = (row, fieldKey = null) => {
+    if (!canImport || savingEdit) return;
+    if (fieldKey && !canEditColumn(TABLE_COLUMNS.find((c) => c.key === fieldKey))) return;
+    setEditFieldKey(fieldKey);
 
     setEditRow(row);
     setEditForm(createEditForm(row));
@@ -1840,7 +1857,16 @@ export default function CalificacionCoeSapFuncional() {
     setSavingEdit(true);
 
     try {
-      const payload = { ...editForm };
+      const initial = createEditForm(editRow);
+      const payload = Object.fromEntries(
+        EDIT_FIELDS.filter(isManualField)
+          .filter((field) => String(editForm[field.key] ?? "") !== String(initial[field.key] ?? ""))
+          .map((field) => [field.key, editForm[field.key]])
+      );
+      if (!Object.keys(payload).length) {
+        setEditOpen(false);
+        return;
+      }
 
       // No reescribir el seguimiento de hoy cuando se guardan otros campos.
       if (
@@ -2509,19 +2535,27 @@ export default function CalificacionCoeSapFuncional() {
                       <td
                         key={`${row.id}-${col.key}`}
                         className={`${col.cls || ""} ${getColumnGroupClass(col.group)} ${
-                          col.key === "observaciones" ? "editable-observaciones" : ""
+                          canImport && canEditColumn(col) ? "calcoe-editable-cell" : ""
                         }`}
                         title={
-                          col.key === "observaciones"
-                            ? "Doble clic para editar observaciones"
+                          canImport && canEditColumn(col)
+                            ? `Doble clic o Enter para editar ${col.label}`
                             : String(row[col.key] ?? "").length > 40
                               ? cleanText(row[col.key])
                               : undefined
                         }
-                        onDoubleClick={() => {
-                          if (col.key === "observaciones") {
-                            editObservaciones(row);
+                        tabIndex={canImport && canEditColumn(col) ? 0 : undefined}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && canImport && canEditColumn(col)) {
+                            event.preventDefault();
+                            if (col.key === "observaciones") editObservaciones(row);
+                            else openEdit(row, col.key);
                           }
+                        }}
+                        onDoubleClick={() => {
+                          if (!canImport || !canEditColumn(col)) return;
+                          if (col.key === "observaciones") editObservaciones(row);
+                          else openEdit(row, col.key);
                         }}
                       >
                         {renderCell(row, col)}
@@ -2601,7 +2635,7 @@ export default function CalificacionCoeSapFuncional() {
           <div className="calcoe-modal large">
             <div className="calcoe-modal-head">
               <div>
-                <h3>Editar campos manuales / no automáticos</h3>
+                <h3>{editFieldKey ? `Editar ${TABLE_COLUMNS.find((col) => col.key === editFieldKey)?.label}` : "Editar campos manuales"}</h3>
                 <p>
                   Caso <b>{editRow?.numero}</b> • El estado se controla desde la lista oficial de subestados.
                 </p>
@@ -2613,8 +2647,16 @@ export default function CalificacionCoeSapFuncional() {
             </div>
 
             <div className="calcoe-modal-body">
-              <div className="calcoe-edit-grid">
-                {EDIT_FIELDS.map((field) => (
+              <div className="calcoe-edit-grid"><p className="calcoe-edit-hint">Solo se guardan los campos modificados. Los totales y fechas derivadas se recalculan al guardar.</p>
+                {EDIT_FIELDS.filter(isManualField).filter((field) => {
+                  if (!editFieldKey) return true;
+                  const dependencies = {
+                    modulo: ["modulo", "categoria", "subcategoria", "articulo"],
+                    categoria: ["categoria", "subcategoria", "articulo"],
+                    subcategoria: ["subcategoria", "articulo"],
+                  };
+                  return (dependencies[editFieldKey] || [editFieldKey]).includes(field.key);
+                }).map((field) => (
                   <label
                     key={field.key}
                     className={`calcoe-filter ${field.wide ? "wide" : ""}`}
