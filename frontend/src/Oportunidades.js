@@ -667,6 +667,7 @@ const TIPO_PRINCIPAL = "PRINCIPAL";
 const TIPO_SUBOPORTUNIDAD = "SUBOPORTUNIDAD";
 const ESTADOS_SUMAN_PRINCIPAL = new Set(["OT", "GANADA"]);
 const PRINCIPAL_EDITABLE_COLS = new Set([
+  CLIENTE_COL,
   "fecha_cierre_oportunidad",
   "codigo_prc",
   "fecha_firma_aos",
@@ -1138,6 +1139,9 @@ export default function Oportunidades() {
   const [editValue, setEditValue] = useState("");
   const [estadoResultadoMap, setEstadoResultadoMap] = useState(ESTADO_RESULTADO_BASE);
   const [clientesCatalogo, setClientesCatalogo] = useState([]);
+  const [clientesLoading, setClientesLoading] = useState(false);
+  const [clientesError, setClientesError] = useState("");
+  const [clienteSaving, setClienteSaving] = useState(false);
   const [openCategoriaModal, setOpenCategoriaModal] = useState(false);
   const [expandedClientes, setExpandedClientes] = useState({});
   const [filtroCierreDesde, setFiltroCierreDesde] = useState("");
@@ -1215,28 +1219,29 @@ export default function Oportunidades() {
   );
 
   const fetchClientesCatalogo = async () => {
+    setClientesLoading(true);
+    setClientesError("");
     try {
       const res = await jfetch("/oportunidades/clientes-catalogo");
-      const json = await res.json().catch(() => []);
-
-      if (!res.ok || !Array.isArray(json)) {
-        setClientesCatalogo([]);
-        return;
-      }
-
-      setClientesCatalogo(
-        json
-          .map((c) => ({
-            id: c?.id ?? null,
-            nombre_cliente: normalizeText(c?.nombre_cliente),
-            nit: normalizeText(c?.nit),
-            razon_social: normalizeText(c?.razon_social),
-          }))
-          .filter((c) => c.nombre_cliente)
-      );
-    } catch {
+      let json;
+      try { json = await res.json(); }
+      catch { throw new Error(`El catálogo no devolvió JSON (HTTP ${res.status}). Revisa la sesión y la configuración de la API.`); }
+      if (!res.ok) throw new Error(json?.mensaje || `No se pudo consultar el catálogo (HTTP ${res.status}).`);
+      if (!Array.isArray(json)) throw new Error("La respuesta del catálogo no contiene una lista de clientes.");
+      const rows = json.map(c => ({
+        id: c?.id ?? null,
+        nombre_cliente: normalizeText(c?.nombre_cliente),
+        nit: normalizeText(c?.nit),
+        razon_social: normalizeText(c?.razon_social),
+        alias: normalizeText(c?.alias),
+      })).filter(c => c.nombre_cliente);
+      setClientesCatalogo(rows);
+      return rows;
+    } catch (error) {
       setClientesCatalogo([]);
-    }
+      setClientesError(error.message || "No se pudo cargar el catálogo.");
+      return [];
+    } finally { setClientesLoading(false); }
   };
 
   const getClienteCatalogoInfo = useCallback(
@@ -2662,7 +2667,8 @@ export default function Oportunidades() {
   };
 
   const startEdit = (row, col) => {
-    if (!row?.id) return;
+    if (!row?.id || clienteSaving) return;
+    if (col === CLIENTE_COL) fetchClientesCatalogo();
 
     if (LINK_ACCESS_COLS.has(col) && !canEditOpportunityLinks) {
       Swal.fire(
@@ -3032,6 +3038,41 @@ export default function Oportunidades() {
 
   const renderEditorCell = (row, col) => {
     if (!sameId(editing.rowId, row?.id) || editing.col !== col) return null;
+
+    if (col === CLIENTE_COL) {
+      const options = clienteSuggestions.map(cliente => ({
+        value: cliente.nombre_cliente,
+        label: `${cliente.nombre_cliente} — ${cliente.nit || "Sin NIT"} — ${cliente.razon_social || "Sin razón social"}`,
+        alias: cliente.alias || "",
+      }));
+      const selected = options.find(option => option.value === editValue) || null;
+      return <div className="oportunidad-cliente-editor" onDoubleClick={e => e.stopPropagation()}>
+        <Select autoFocus options={options} value={selected}
+          isLoading={clientesLoading} isDisabled={clientesLoading || clienteSaving || Boolean(clientesError)}
+          isSearchable isClearable={false}
+          placeholder={clientesLoading ? "Cargando clientes…" : "Busca cliente, NIT o razón social…"}
+          noOptionsMessage={() => "No hay clientes disponibles. Regístralos en Gestión de clientes."}
+          menuPortalTarget={portalTarget} menuPosition="fixed"
+          styles={{menuPortal: base => ({...base, zIndex: 10050}), control: base => ({...base, minWidth: 280})}}
+          filterOption={(candidate, input) => normalizeClientGroupKey(candidate.label + " " + candidate.data.alias).includes(normalizeClientGroupKey(input))}
+          onChange={option => { if (option) setEditValue(option.value); }}
+          onKeyDown={e => { if (e.key === "Escape" && !clienteSaving) { e.stopPropagation(); closeEditing(); } }}
+        />
+        {clientesError && <p role="alert">{clientesError}</p>}
+        {!clientesLoading && !clientesError && !options.length && <p>No hay clientes registrados en el catálogo.</p>}
+        {!clientesLoading && options.length > 0 && !selected && <small>Selecciona un cliente del catálogo. El valor actual es: {row?.nombre_cliente || "—"}.</small>}
+        <div className="oportunidad-cliente-editor-actions">
+          <button type="button" disabled={clientesLoading || clienteSaving || Boolean(clientesError) || !selected}
+            onClick={async () => {
+              setClienteSaving(true);
+              try { await saveEdit(row.id, CLIENTE_COL, selected.value); }
+              finally { setClienteSaving(false); }
+            }}>{clienteSaving ? "Guardando…" : "Guardar"}</button>
+          <button type="button" disabled={clienteSaving} onClick={closeEditing}>Cancelar</button>
+          <button type="button" disabled={clientesLoading || clienteSaving} onClick={fetchClientesCatalogo}>Actualizar lista</button>
+        </div>
+      </div>;
+    }
 
     if (isDateCol(col)) {
       return (
@@ -3424,7 +3465,7 @@ export default function Oportunidades() {
         <select
           className="cell-input"
           value={newRow?.[CLIENTE_COL] ?? ""}
-          disabled={!clienteSuggestions.length}
+          disabled={clientesLoading}
           onChange={(e) => {
             const nombreCliente = e.target.value;
 
@@ -3435,7 +3476,7 @@ export default function Oportunidades() {
           }}
         >
           <option value="">
-            {clienteSuggestions.length
+            {clientesLoading ? "Cargando clientes…" : clientesError ? clientesError : clienteSuggestions.length
               ? "Selecciona un cliente"
               : "Sin clientes disponibles"}
           </option>

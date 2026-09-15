@@ -24845,3 +24845,123 @@ def borrar_base_clasificacion():
         db.session.rollback()
         app.logger.exception("No se pudo vaciar clasificación")
         return jsonify({"mensaje": "No se pudo borrar. No se confirmaron cambios; revisa relaciones o procesos activos."}), 409
+
+
+# Integrado al final del archivo de rutas; no registrar otro Blueprint.
+@bp.route('/clientes/export-excel', methods=['GET'])
+@permission_required('CLIENTES_VER')
+def clientes_export_excel():
+    from io import BytesIO
+    from flask import send_file
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Clientes'
+    fields = ['nit', 'razon_social', 'alias', 'nombre_cliente']
+    ws.append(['NIT', 'RAZON SOCIAL', 'ALIAS', 'CLIENTE'])
+    if request.args.get('plantilla') != '1':
+        for cliente in Cliente.query.order_by(Cliente.nombre_cliente).all():
+            ws.append([str(getattr(cliente, k, '') or '') for k in fields])
+            for cell in ws[ws.max_row]:
+                cell.data_type = 's'  # texto, también si comienza con =, + o -
+                cell.number_format = '@'
+    for c in ws[1]:
+        c.font = Font(color='FFFFFF', bold=True)
+        c.fill = PatternFill('solid', fgColor='DA291C')
+    for col, width in zip('ABCD', [24, 45, 30, 45]):
+        ws.column_dimensions[col].width = width
+    ws.freeze_panes = 'A2'
+    ws.auto_filter.ref = ws.dimensions
+    stream = BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return send_file(stream, as_attachment=True, download_name='Clientes.xlsx', mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+def _clientes_excel_leer(file):
+    import unicodedata
+    from openpyxl import load_workbook
+    def norm(v):
+        return ''.join(c for c in unicodedata.normalize('NFKD', str(v or '').strip().upper()) if not unicodedata.combining(c)).replace('_', ' ')
+    aliases = {'NIT':'nit', 'RAZON SOCIAL':'razon_social', 'ALIAS':'alias', 'CLIENTE':'nombre_cliente', 'NOMBRE CLIENTE':'nombre_cliente'}
+    wb = load_workbook(file, read_only=True, data_only=False)
+    try:
+        ws = wb['Clientes'] if 'Clientes' in wb.sheetnames else wb.worksheets[0]
+        rows = ws.iter_rows()
+        headers = next(rows, None)
+        if not headers:
+            raise ValueError('El Excel está vacío.')
+        mapping = {}
+        for i, c in enumerate(headers):
+            key = aliases.get(norm(c.value))
+            if key:
+                if key in mapping.values():
+                    raise ValueError('Encabezado duplicado: ' + key)
+                mapping[i] = key
+        if not {'nit','razon_social','nombre_cliente'} <= set(mapping.values()):
+            raise ValueError('Usa los encabezados NIT, RAZON SOCIAL, ALIAS y CLIENTE de la plantilla.')
+        result = []; seen = set(); names = set()
+        for line, cells in enumerate(rows, 2):
+            if not any(c.value is not None and str(c.value).strip() for c in cells):
+                continue
+            if len(result) >= 10000:
+                raise ValueError('El archivo supera 10.000 clientes; divide el cargue.')
+            item = {'nit':'', 'razon_social':'', 'alias':'', 'nombre_cliente':''}
+            for i,key in mapping.items():
+                cell = cells[i]
+                if cell.data_type in ('f','e'):
+                    raise ValueError(f'Fila {line}: utiliza valores, sin fórmulas ni errores Excel.')
+                value = cell.value
+                if key == 'nit' and value is not None and not isinstance(value, str):
+                    raise ValueError(f'Fila {line}: guarda el NIT como texto para conservar ceros y dígitos.')
+                item[key] = '' if value is None else str(value).strip()
+                if len(item[key]) > (50 if key == 'nit' else 255):
+                    raise ValueError(f'Fila {line}: {key} supera la longitud permitida.')
+            if not all(item[k] for k in ('nit','razon_social','nombre_cliente')):
+                raise ValueError(f'Fila {line}: NIT, razón social y cliente son obligatorios.')
+            if item['nit'].casefold() in seen or item['nombre_cliente'].casefold() in names:
+                raise ValueError(f'Fila {line}: NIT o nombre repetido en el archivo.')
+            seen.add(item['nit'].casefold()); names.add(item['nombre_cliente'].casefold())
+            result.append(item)
+        if not result: raise ValueError('El Excel no contiene clientes.')
+        return result
+    finally: wb.close()
+
+
+@bp.route('/clientes/import-excel', methods=['POST'])
+@permission_required('CLIENTES_CREAR')
+@permission_required('CLIENTES_EDITAR')
+def clientes_import_excel():
+    file = request.files.get('file')
+    if not file or not (file.filename or '').lower().endswith('.xlsx'):
+        return jsonify({'mensaje':'Selecciona un archivo .xlsx con la plantilla de clientes.'}), 400
+    try:
+        items = _clientes_excel_leer(file)
+    except ValueError as exc:
+        return jsonify({'mensaje':str(exc)}), 400
+    except Exception:
+        app.logger.exception('No se pudo leer Excel de clientes')
+        return jsonify({'mensaje':'No se pudo leer el archivo. Comprueba que sea un Excel .xlsx válido.'}), 400
+    created = updated = unchanged = 0
+    try:
+        for item in items:
+            row = Cliente.query.filter_by(nit=item['nit']).first()
+            owner = Cliente.query.filter_by(nombre_cliente=item['nombre_cliente']).first()
+            if owner and (row is None or owner.id != row.id):
+                raise ValueError('El nombre ' + item['nombre_cliente'] + ' pertenece a otro NIT. No se importó ningún cambio.')
+            if row is None:
+                row = Cliente(**item); db.session.add(row); created += 1
+            elif any(str(getattr(row,k,None) or '') != v for k,v in item.items()):
+                for k,v in item.items(): setattr(row,k,v)
+                updated += 1
+            else: unchanged += 1
+        db.session.commit()
+        return jsonify({'creados':created,'actualizados':updated,'sin_cambios':unchanged}), 200
+    except (ValueError, IntegrityError) as exc:
+        db.session.rollback()
+        return jsonify({'mensaje':str(exc) if isinstance(exc,ValueError) else 'Hay un conflicto de NIT o nombre. No se importó ningún cambio.'}), 400
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('Error importando clientes')
+        return jsonify({'mensaje':'No se pudo completar la importación. No se confirmaron cambios.'}), 500
