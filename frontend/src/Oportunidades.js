@@ -3042,7 +3042,7 @@ export default function Oportunidades() {
     if (col === CLIENTE_COL) {
       const options = clienteSuggestions.map(cliente => ({
         value: cliente.nombre_cliente,
-        label: `${cliente.nombre_cliente} — ${cliente.nit || "Sin NIT"} — ${cliente.razon_social || "Sin razón social"}`,
+        label: cliente.nombre_cliente,
         alias: cliente.alias || "",
       }));
       const selected = options.find(option => option.value === editValue) || null;
@@ -3050,11 +3050,11 @@ export default function Oportunidades() {
         <Select autoFocus options={options} value={selected}
           isLoading={clientesLoading} isDisabled={clientesLoading || clienteSaving || Boolean(clientesError)}
           isSearchable isClearable={false}
-          placeholder={clientesLoading ? "Cargando clientes…" : "Busca cliente, NIT o razón social…"}
+          placeholder={clientesLoading ? "Cargando clientes…" : "Busca el nombre del cliente…"}
           noOptionsMessage={() => "No hay clientes disponibles. Regístralos en Gestión de clientes."}
           menuPortalTarget={portalTarget} menuPosition="fixed"
           styles={{menuPortal: base => ({...base, zIndex: 10050}), control: base => ({...base, minWidth: 280})}}
-          filterOption={(candidate, input) => normalizeClientGroupKey(candidate.label + " " + candidate.data.alias).includes(normalizeClientGroupKey(input))}
+          filterOption={(candidate, input) => normalizeClientGroupKey(candidate.label).includes(normalizeClientGroupKey(input))}
           onChange={option => { if (option) setEditValue(option.value); }}
           onKeyDown={e => { if (e.key === "Escape" && !clienteSaving) { e.stopPropagation(); closeEditing(); } }}
         />
@@ -3486,8 +3486,6 @@ export default function Oportunidades() {
               key={cliente.id ?? cliente.nombre_cliente}
               value={cliente.nombre_cliente}
             >
-              {cliente.nit || "SIN NIT"} —{" "}
-              {cliente.razon_social || "SIN RAZÓN SOCIAL"} —{" "}
               {cliente.nombre_cliente}
             </option>
           ))}
