@@ -3043,7 +3043,6 @@ export default function Oportunidades() {
       const options = clienteSuggestions.map(cliente => ({
         value: cliente.nombre_cliente,
         label: cliente.nombre_cliente,
-        alias: cliente.alias || "",
       }));
       const selected = options.find(option => option.value === editValue) || null;
       return <div className="oportunidad-cliente-editor" onDoubleClick={e => e.stopPropagation()}>
