@@ -2601,3 +2601,6 @@
   .oportunidades-wrapper .floating-add-btn { right: 16px; bottom: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .oportunidades-wrapper * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* Código interno generado por la oportunidad principal. */
+.tabla-oportunidades .codigo-interno-auto { display:inline-block; padding:6px 10px; border-radius:8px; background:#e0f2fe; color:#075985; font-size:.85rem; font-weight:600; }

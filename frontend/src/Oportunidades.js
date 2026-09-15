@@ -106,6 +106,8 @@ const COLUMN_LABELS = {
   mostrar_dashboard: "MOSTRAR EN DASHBOARD",
   tiene_codigo_proyecto_evolutivo: "¿TIENE CÓDIGO PROYECTO / EVOLUTIVO?",
   codigo_proyecto_evolutivo: "CÓDIGO PROYECTO / EVOLUTIVO",
+  tiene_codigo_interno: "¿TIENE CÓDIGO INTERNO?",
+  codigo_interno: "CÓDIGO INTERNO",
   num_enlace: "ID ENLACE OT",
   fecha_cierre: "FECHA CIERRE OT",
   acceso_sharepoint: "ACCESO SHAREPOINT",
@@ -159,6 +161,8 @@ const MOSTRAR_DASHBOARD_OPTS = ["SI", "NO"];
 const CODIGO_PROYECTO_EVOLUTIVO_OPTS = ["SI", "NO"];
 const FLAG_CODIGO_PROYECTO_COL = "tiene_codigo_proyecto_evolutivo";
 const CODIGO_PROYECTO_COL = "codigo_proyecto_evolutivo";
+const FLAG_INTERNO_COL = "tiene_codigo_interno";
+const CODIGO_INTERNO_COL = "codigo_interno";
 
 function isNumericCol(col) {
   return NUMERIC_COLS.has(col);
@@ -686,6 +690,7 @@ const PRINCIPAL_EDITABLE_COLS = new Set([
   "mostrar_dashboard",
   "tiene_codigo_proyecto_evolutivo",
   "codigo_proyecto_evolutivo",
+  "tiene_codigo_interno",
   "acceso_sharepoint",
   "acceso_aos",
   "acceso_ot",
@@ -1214,6 +1219,8 @@ export default function Oportunidades() {
       "mostrar_dashboard",
       "tiene_codigo_proyecto_evolutivo",
       "codigo_proyecto_evolutivo",
+      "tiene_codigo_interno",
+      "codigo_interno",
     ],
     []
   );
@@ -1342,11 +1349,11 @@ export default function Oportunidades() {
         classes.push("descripcion-ot-col", "descripcion-ot-wrap-cell");
       }
 
-      if (col === FLAG_CODIGO_PROYECTO_COL) {
+      if (col === FLAG_CODIGO_PROYECTO_COL || col === FLAG_INTERNO_COL) {
         classes.push("codigo-proyecto-flag-col");
       }
 
-      if (col === CODIGO_PROYECTO_COL) {
+      if (col === CODIGO_PROYECTO_COL || col === CODIGO_INTERNO_COL) {
         classes.push("codigo-proyecto-value-col");
       }
 
@@ -1720,6 +1727,8 @@ export default function Oportunidades() {
       tiene_codigo_proyecto_evolutivo:
         normalizeMostrarDashboard(rest.tiene_codigo_proyecto_evolutivo) || "NO",
       codigo_proyecto_evolutivo: normalizeText(rest.codigo_proyecto_evolutivo).toUpperCase(),
+      tiene_codigo_interno: normalizeMostrarDashboard(rest.tiene_codigo_interno) || "NO",
+      codigo_interno: normalizeText(rest.codigo_interno),
 
       tipo_oportunidad: normalizeTipoOportunidad(rest.tipo_oportunidad),
       oportunidad_padre_id: rest.oportunidad_padre_id ?? null,
@@ -1866,6 +1875,11 @@ export default function Oportunidades() {
 
     for (const col of columnOrder) {
       const v = row?.[col];
+      if (col === CODIGO_INTERNO_COL) continue;
+      if (col === FLAG_INTERNO_COL) {
+        out[col] = normalizeMostrarDashboard(v) || "NO";
+        continue;
+      }
 
       if (isDateCol(col)) {
         out[col] = normalizeDateForPayload(v, col);
@@ -2668,6 +2682,16 @@ export default function Oportunidades() {
 
   const startEdit = (row, col) => {
     if (!row?.id || clienteSaving) return;
+    if (col === CODIGO_INTERNO_COL) return;
+    if (col === FLAG_INTERNO_COL) {
+      const raizId = row.oportunidad_padre_id || row.id;
+      const hijos = data.filter(r => sameId(r.oportunidad_padre_id, raizId))
+        .slice().sort((a, b) => (Number(a.consecutivo_sub || 0) - Number(b.consecutivo_sub || 0)) || Number(a.id) - Number(b.id));
+      if (hijos.length && !sameId(hijos[0].id, row.id)) {
+        Swal.fire("Dato heredado", "Modifica esta opción en la primera OT asignada a la principal.", "info");
+        return;
+      }
+    }
     if (col === CLIENTE_COL) fetchClientesCatalogo();
 
     if (LINK_ACCESS_COLS.has(col) && !canEditOpportunityLinks) {
@@ -2778,6 +2802,8 @@ export default function Oportunidades() {
         })
       );
 
+      // El cambio puede recalcular el código de todas las OTs del grupo.
+      await fetchData();
       highlightRow(row.id);
 
       if (principalSincronizada) {
@@ -2901,6 +2927,8 @@ export default function Oportunidades() {
     empty.mostrar_dashboard = "SI";
     empty[FLAG_CODIGO_PROYECTO_COL] = "NO";
     empty[CODIGO_PROYECTO_COL] = "";
+    empty[FLAG_INTERNO_COL] = "NO";
+    empty[CODIGO_INTERNO_COL] = "";
     setNewRow(empty);
   };
 
@@ -3129,6 +3157,18 @@ export default function Oportunidades() {
     if (col === "mostrar_dashboard") {
       return renderSelect(row, col, MOSTRAR_DASHBOARD_OPTS);
     }
+
+    if (col === FLAG_INTERNO_COL) {
+      return <select autoFocus aria-label="¿Tiene código interno?" value={editValue || "NO"}
+        onChange={async e => {
+          const next = e.target.value;
+          setEditValue(next);
+          await saveEditMulti(row.id, { [FLAG_INTERNO_COL]: next });
+        }} onKeyDown={e => { if (e.key === "Escape") closeEditing(); }}>
+        <option value="NO">NO</option><option value="SI">SÍ</option>
+      </select>;
+    }
+    if (col === CODIGO_INTERNO_COL) return <span className="codigo-interno-auto">{row.codigo_interno || "Pendiente de principal"}</span>;
 
     if (col === FLAG_CODIGO_PROYECTO_COL) {
       return (
@@ -3548,6 +3588,16 @@ export default function Oportunidades() {
           ))}
         </select>
       );
+    }
+
+    if (col === FLAG_INTERNO_COL) {
+      return <select aria-label="¿Tiene código interno?" value={newRow?.[FLAG_INTERNO_COL] || "NO"}
+        onChange={e => setNewRow(prev => ({ ...prev, [FLAG_INTERNO_COL]: e.target.value }))}>
+        <option value="NO">NO</option><option value="SI">SÍ</option>
+      </select>;
+    }
+    if (col === CODIGO_INTERNO_COL) {
+      return <span className="codigo-interno-auto">{newRow?.[FLAG_INTERNO_COL] === "SI" ? "Se genera al asignar principal" : "—"}</span>;
     }
 
     if (col === FLAG_CODIGO_PROYECTO_COL) {

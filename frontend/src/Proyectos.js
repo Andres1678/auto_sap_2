@@ -171,7 +171,9 @@ const findClienteIdByNombre = (clientes, nombreCliente) => {
 
 const getOpportunityProjectCode = (o) =>
   String(
-    o?.codigo_proyecto_evolutivo ??
+    o?.codigo_proyecto ??
+      (o?.tiene_codigo_interno === "SI" ? o?.codigo_interno : null) ??
+      o?.codigo_proyecto_evolutivo ??
       o?.codigo_prc ??
       ""
   )
@@ -764,7 +766,7 @@ export default function Proyectos() {
       return "Debes seleccionar una oportunidad elegible";
     }
 
-    if (!norm(form.codigo)) return "El código de proyecto/evolutivo es obligatorio";
+    if (!norm(form.codigo)) return "El código de proyecto o interno es obligatorio";
     if (!norm(form.nombre)) return "El nombre es obligatorio";
 
     if (!Array.isArray(form.perfiles) || form.perfiles.length === 0) {
@@ -863,7 +865,7 @@ export default function Proyectos() {
             <h2 className="proj-title">Gestión de Proyectos</h2>
             <p className="proj-subtitle">
               Crear / editar proyectos desde oportunidades marcadas con código de
-              proyecto o evolutivo. También admite ejecución de operación con consumo
+              proyecto, evolutivo o código interno PRY. También admite ejecución de operación con consumo
               de bolsa de horas, asignación de perfiles, módulos, consultores y fases.
             </p>
           </div>
@@ -925,18 +927,20 @@ export default function Proyectos() {
                 </select>
 
                 <div className="muted">
-                  Se muestran oportunidades con indicador en SI y código válido: GANADA + PROYECTO/EVOLUTIVO o EJECUCION OPERACION + CONSUMO DE BOLSA DE HORAS.
+                  Se muestran oportunidades con código de proyecto/evolutivo o interno habilitado: GANADA + PROYECTO/EVOLUTIVO o EJECUCION OPERACION + CONSUMO DE BOLSA DE HORAS.
                 </div>
               </div>
 
               <div className="field">
-                <label>Código proyecto / evolutivo</label>
+                <label>Código de proyecto / interno</label>
 
                 <input
+                  className="proyecto-codigo-automatico"
                   value={form.codigo}
                   readOnly
                   placeholder="Se llena desde la oportunidad seleccionada"
                 />
+                <div className="muted">El código interno PRY se genera en la principal desde su primera OT. Selecciona los perfiles para configurar módulos y consultores.</div>
               </div>
             </div>
 
@@ -1244,7 +1248,7 @@ export default function Proyectos() {
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Código proyecto / evolutivo</th>
+                  <th>Código de proyecto / interno</th>
                   <th>Nombre</th>
                   <th className="cliente">Cliente</th>
                   <th>Tipo</th>

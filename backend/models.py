@@ -316,6 +316,12 @@ class Oportunidad(db.Model):
         nullable=True,
     )
 
+    # El indicador se configura en la primera OT; el código lo genera el servidor.
+    tiene_codigo_interno = db.Column(
+        db.String(10), nullable=False, server_default=text("'NO'"),
+    )
+    codigo_interno = db.Column(db.String(100), nullable=True)
+
     tipo_oportunidad = db.Column(
         db.String(30),
         nullable=False,
@@ -432,6 +438,8 @@ class Oportunidad(db.Model):
                 self.tiene_codigo_proyecto_evolutivo
             ),
             "codigo_proyecto_evolutivo": self.codigo_proyecto_evolutivo,
+            "tiene_codigo_interno": self.tiene_codigo_interno or "NO",
+            "codigo_interno": self.codigo_interno,
             "tipo_oportunidad": self.tipo_oportunidad,
             "oportunidad_padre_id": self.oportunidad_padre_id,
             "codigo_control": self.codigo_control,

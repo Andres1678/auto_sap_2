@@ -3969,6 +3969,10 @@ def _codigo_proyecto_evolutivo_oportunidad(opp):
     if not opp:
         return None
 
+    # El interno tiene prioridad si está habilitado; nunca se acepta texto manual.
+    if _normalizar_si_no(getattr(opp, "tiene_codigo_interno", None), default="NO") == "SI":
+        return getattr(opp, "codigo_interno", None)
+
     tiene = _normalizar_si_no(
         getattr(opp, "tiene_codigo_proyecto_evolutivo", None),
         default="NO",
@@ -4027,12 +4031,17 @@ def _validar_oportunidad_elegible_proyecto(opp):
     if not codigo:
         return (
             False,
-            "La oportunidad debe tener 'Código de proyecto/evolutivo' en SI y un código válido",
+            "La oportunidad debe tener un código de proyecto/evolutivo o un código interno válido. El interno requiere una principal numerada",
             None,
             None,
         )
 
-    tipo_negocio = _tipo_negocio_desde_oportunidad(opp)
+    fuente = opp
+    if getattr(opp, "tiene_codigo_interno", None) == "SI":
+        raiz_id = opp.oportunidad_padre_id or opp.id
+        fuente = (Oportunidad.query.filter(Oportunidad.oportunidad_padre_id == raiz_id)
+                  .order_by(Oportunidad.consecutivo_sub.asc(), Oportunidad.id.asc()).first()) or opp
+    tipo_negocio = _tipo_negocio_desde_oportunidad(fuente)
 
     if not tipo_negocio:
         return (
@@ -4066,10 +4075,10 @@ def _sincronizar_proyectos_desde_oportunidad(opp):
     if not codigo:
         return False, (
             "Esta oportunidad ya está vinculada a un proyecto. No puedes marcar el código "
-            "de proyecto/evolutivo en NO ni dejarlo vacío"
+            "interno y el de proyecto/evolutivo en NO ni dejar ambos vacíos"
         )
 
-    tipo_negocio = _tipo_negocio_desde_oportunidad(opp)
+    _, _, _, tipo_negocio = _validar_oportunidad_elegible_proyecto(opp)
 
     for proyecto in proyectos:
         duplicado = Proyecto.query.filter(
@@ -4108,6 +4117,12 @@ def clean_payload(data: dict) -> dict:
 
         if k == "mrc_normalizado":
             v = None
+
+        if k == "codigo_interno":
+            continue  # Campo calculado: no aceptar modificaciones desde el navegador.
+
+        if k == "tiene_codigo_interno":
+            v = _normalizar_si_no(v, default="NO")
 
         if k == "mostrar_dashboard":
             v = _normalizar_mostrar_dashboard(v)
@@ -4250,6 +4265,7 @@ PRINCIPAL_SYNC_FROM_FIRST_OT_FIELDS = (
     "acceso_sharepoint", "acceso_aos", "acceso_ot", "borrador_contrato",
     "contrato_oficial", "mostrar_dashboard",
     "tiene_codigo_proyecto_evolutivo", "codigo_proyecto_evolutivo",
+    "tiene_codigo_interno",
 )
 
 
@@ -4339,6 +4355,8 @@ def importar_oportunidades():
         "TIENE CODIGO DE PROYECTO / EVOLUTIVO": "tiene_codigo_proyecto_evolutivo",
         "TIENE CÓDIGO DE PROYECTO / EVOLUTIVO": "tiene_codigo_proyecto_evolutivo",
         "PROYECTO / EVOLUTIVO": "tiene_codigo_proyecto_evolutivo",
+        "TIENE CODIGO INTERNO": "tiene_codigo_interno",
+        "¿TIENE CÓDIGO INTERNO?": "tiene_codigo_interno",
         "CODIGO DE PROYECTO / EVOLUTIVO": "codigo_proyecto_evolutivo",
         "CÓDIGO DE PROYECTO / EVOLUTIVO": "codigo_proyecto_evolutivo",
     }
@@ -4490,9 +4508,12 @@ def importar_oportunidades():
         data_list.append(Oportunidad(**obj))
 
     try:
-        db.session.bulk_save_objects(data_list)
+        db.session.add_all(data_list)
         db.session.commit()
         return jsonify({"mensaje": f"Carga inicial exitosa ({len(data_list)} registros)"}), 200
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception as e:
         db.session.rollback()
         return jsonify({"mensaje": f"Error al guardar: {str(e)}"}), 500
@@ -4673,6 +4694,9 @@ def oportunidades_filters():
             }
         ), 200
 
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception:
         return jsonify({
             "mensaje": "Error interno en /oportunidades/filters",
@@ -4696,6 +4720,9 @@ def listar_oportunidades():
             data.append(_oportunidad_to_dict_seguro(oportunidad))
         return jsonify(data), 200
 
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception:
         return jsonify({"mensaje": "Error interno en /oportunidades", "trace": traceback.format_exc()}), 500
 
@@ -4736,6 +4763,9 @@ def crear_oportunidad():
         db.session.add(o)
         db.session.commit()
         return jsonify(_oportunidad_to_dict_seguro(o)), 201
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception:
         db.session.rollback()
         return jsonify({"mensaje": "Error creando oportunidad", "trace": traceback.format_exc()}), 500
@@ -4915,6 +4945,15 @@ def editar_oportunidad(id):
 
             return principal
 
+        if "tiene_codigo_interno" in data:
+            raiz_id = o.oportunidad_padre_id or o.id
+            primera = (Oportunidad.query
+                .filter(Oportunidad.oportunidad_padre_id == raiz_id)
+                .order_by(Oportunidad.consecutivo_sub.asc(), Oportunidad.id.asc()).first())
+            if (primera and primera.id != o.id and
+                data["tiene_codigo_interno"] != (o.tiene_codigo_interno or "NO")):
+                return jsonify({"mensaje": "Configura el código interno en la primera OT asignada."}), 400
+
         for k, v in data.items():
             if hasattr(o, k):
                 setattr(o, k, v)
@@ -4959,12 +4998,7 @@ def editar_oportunidad(id):
         else:
             principal_sincronizada = sync_principal_desde_primera_ot(o)
 
-        ok_sync, mensaje_sync = _sincronizar_proyectos_desde_oportunidad(o)
-        if not ok_sync:
-            db.session.rollback()
-            return jsonify({"mensaje": mensaje_sync}), 409
-
-        db.session.commit()
+        db.session.commit()  # El hook transaccional sincroniza también la principal y sus proyectos.
 
         return jsonify({
             "mensaje": "Actualizado correctamente",
@@ -4975,6 +5009,9 @@ def editar_oportunidad(id):
             ),
         }), 200
 
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception:
         db.session.rollback()
         return jsonify({
@@ -5208,6 +5245,9 @@ def eliminar_oportunidad(id):
             "total_asignaciones_movidas": len(hijos_asignados),
         }), 200
 
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception:
         db.session.rollback()
 
@@ -8619,19 +8659,13 @@ def _valor_hora_consultor(consultor_id, anio, mes):
 def listar_oportunidades_elegibles_proyecto():
     try:
         rows = (
-            Oportunidad.query
-            .filter(Oportunidad.codigo_proyecto_evolutivo.isnot(None))
-            .filter(func.trim(Oportunidad.codigo_proyecto_evolutivo) != "")
-            .filter(
-                func.upper(
-                    func.trim(Oportunidad.tiene_codigo_proyecto_evolutivo)
-                ) == "SI"
-            )
-            .order_by(
-                Oportunidad.fecha_cierre_oportunidad.desc(),
-                Oportunidad.id.desc(),
-            )
-            .all()
+            Oportunidad.query.filter(or_(
+                and_(func.upper(func.trim(Oportunidad.tiene_codigo_proyecto_evolutivo)) == "SI",
+                     Oportunidad.codigo_proyecto_evolutivo.isnot(None)),
+                and_(Oportunidad.tiene_codigo_interno == "SI",
+                     Oportunidad.codigo_interno.isnot(None)),
+            )).order_by(Oportunidad.fecha_cierre_oportunidad.desc(),
+                        Oportunidad.id.desc()).all()
         )
 
         oportunidad_ids = [int(o.id) for o in rows if o.id]
@@ -8651,6 +8685,8 @@ def listar_oportunidades_elegibles_proyecto():
         data = []
 
         for oportunidad in rows:
+            if oportunidad.tiene_codigo_interno == "SI" and oportunidad.oportunidad_padre_id:
+                continue
             ok_opp, _, codigo, tipo_negocio = (
                 _validar_oportunidad_elegible_proyecto(oportunidad)
             )
@@ -8659,12 +8695,18 @@ def listar_oportunidades_elegibles_proyecto():
                 continue
 
             proyecto_existente = proyectos_vinculados.get(int(oportunidad.id))
+            if not proyecto_existente:
+                proyecto_existente = Proyecto.query.filter(func.lower(Proyecto.codigo) == codigo.lower()).first()
 
             data.append({
                 "id": oportunidad.id,
                 "codigo_prc": codigo,
-                "codigo_proyecto_evolutivo": codigo,
-                "tiene_codigo_proyecto_evolutivo": "SI",
+                "codigo_proyecto": codigo,
+                "codigo_proyecto_evolutivo": oportunidad.codigo_proyecto_evolutivo,
+                "tiene_codigo_proyecto_evolutivo": oportunidad.tiene_codigo_proyecto_evolutivo,
+                "codigo_interno": oportunidad.codigo_interno,
+                "tiene_codigo_interno": oportunidad.tiene_codigo_interno,
+                "origen_codigo": "INTERNO" if oportunidad.tiene_codigo_interno == "SI" else "PROYECTO_EVOLUTIVO",
                 "nombre_cliente": oportunidad.nombre_cliente,
                 "servicio": oportunidad.servicio,
                 "fecha_cierre_oportunidad": (
@@ -8683,6 +8725,9 @@ def listar_oportunidades_elegibles_proyecto():
 
         return jsonify(data), 200
 
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception:
         app.logger.exception(
             "Error interno en /oportunidades/elegibles-proyecto"
@@ -14235,6 +14280,9 @@ def marcar_oportunidad_principal(id):
             "oportunidad": _oportunidad_to_dict_seguro(oportunidad)
         }), 200
 
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception as e:
         db.session.rollback()
         app.logger.exception(f"Error marcando oportunidad como principal id={id}")
@@ -14322,6 +14370,9 @@ def asignar_oportunidad_a_principal(id):
             "oportunidad": _oportunidad_to_dict_seguro(oportunidad)
         }), 200
 
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception as e:
         db.session.rollback()
         app.logger.exception(f"Error asignando oportunidad id={id} a principal")
@@ -14348,6 +14399,9 @@ def quitar_oportunidad_de_principal(id):
             "oportunidad": _oportunidad_to_dict_seguro(oportunidad)
         }), 200
 
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception:
         db.session.rollback()
         return jsonify({
@@ -14379,6 +14433,9 @@ def listar_oportunidades_principales():
 
         return jsonify([_oportunidad_to_dict_seguro(o) for o in rows]), 200
 
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception:
         return jsonify({
             "mensaje": "Error consultando oportunidades principales",
@@ -14497,6 +14554,9 @@ def copiar_oportunidad_como_principal(id):
             "suboportunidad": _oportunidad_to_dict_seguro(origen),
         }), 201
 
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception as e:
         db.session.rollback()
         app.logger.exception(f"Error copiando oportunidad como principal id={id}")
@@ -14715,6 +14775,9 @@ def quitar_oportunidad_principal_avanzado(id):
             "nueva_principal_id": principal_destino.id,
         }), 200
 
+    except CodigoInternoError as error:
+        db.session.rollback()
+        return jsonify({"mensaje": str(error)}), 409
     except Exception as e:
         db.session.rollback()
         app.logger.exception(f"Error quitando principal avanzada id={id}")
@@ -24965,3 +25028,134 @@ def clientes_import_excel():
         db.session.rollback()
         app.logger.exception('Error importando clientes')
         return jsonify({'mensaje':'No se pudo completar la importación. No se confirmaron cambios.'}), 500
+
+
+# ---------------------------------------------------------------------------
+# Código interno: una sola regla transaccional para edición, asignación,
+# movimiento, conversión, eliminación e importación de oportunidades.
+# ---------------------------------------------------------------------------
+from sqlalchemy import event as _codigo_event, inspect as _codigo_inspect
+from sqlalchemy.orm import Session as _CodigoSession
+
+
+class CodigoInternoError(ValueError):
+    pass
+
+
+def _numero_principal_codigo_interno(principal):
+    """Usar numeración de negocio, nunca ID de base de datos ni posición visual."""
+    numero = str(getattr(principal, "codigo_control", None) or
+                 getattr(principal, "consecutivo_principal", None) or "").strip()
+    return numero if numero.isdigit() else None
+
+
+def _resolver_codigo_interno(principal, hijos):
+    """Función pura: hijos ordenados igual que la herencia de la primera OT."""
+    fuente = hijos[0] if hijos else principal
+    indicador = _normalizar_si_no(getattr(fuente, "tiene_codigo_interno", None), default="NO")
+    numero = _numero_principal_codigo_interno(principal)
+    return indicador, f"PRY_{numero}" if indicador == "SI" and numero else None
+
+
+@_codigo_event.listens_for(_CodigoSession, "before_flush")
+def _registrar_cambios_codigo_interno(session, flush_context, instances):
+    registros = session.info.setdefault("codigo_interno_cambios", {})
+    for row in set(session.new) | set(session.dirty) | set(session.deleted):
+        if not isinstance(row, Oportunidad):
+            continue
+        padres = registros.setdefault(row, set())
+        historia = _codigo_inspect(row).attrs.oportunidad_padre_id.history
+        padres.update(x for x in historia.deleted if x is not None)
+        if row.oportunidad_padre_id:
+            padres.add(row.oportunidad_padre_id)
+
+
+@_codigo_event.listens_for(_CodigoSession, "before_commit")
+def _sincronizar_codigo_interno_commit(session):
+    pendientes = any(isinstance(x, Oportunidad) for x in
+                     (set(session.new) | set(session.dirty) | set(session.deleted)))
+    if not pendientes and not session.info.get("codigo_interno_cambios"):
+        return
+    # Primero materializar IDs, asignaciones y bajas. Ningún commit intermedio.
+    session.flush()
+    cambios = session.info.get("codigo_interno_cambios", {})
+    ids = set()
+    for row, padres in cambios.items():
+        ids.update(padres)
+        if row.id:
+            ids.add(row.id)
+        if row.oportunidad_padre_id:
+            ids.add(row.oportunidad_padre_id)
+    if not ids:
+        session.info.pop("codigo_interno_cambios", None)
+        return
+
+    with session.no_autoflush:
+        afectados = Oportunidad.query.filter(Oportunidad.id.in_(ids)).all()
+        raices = {}
+        sueltas = []
+        for row in afectados:
+            raiz = Oportunidad.query.get(row.oportunidad_padre_id) if row.oportunidad_padre_id else row
+            if not raiz:
+                raise CodigoInternoError("La oportunidad principal no existe.")
+            if raiz.oportunidad_padre_id:
+                raise CodigoInternoError("No se puede generar código interno con principales anidadas.")
+            if str(raiz.tipo_oportunidad or "").strip().upper() in ("PRINCIPAL", "PADRE", "MASTER"):
+                raices[raiz.id] = raiz
+            else:
+                sueltas.append(row)
+
+        sincronizados = {row.id: row for row in sueltas}
+        for row in sueltas:
+            # Se puede elegir SI antes de asignar, pero aún no hay número PRY.
+            row.tiene_codigo_interno = _normalizar_si_no(row.tiene_codigo_interno, default="NO")
+            row.codigo_interno = None
+
+        generados = {}
+        for raiz in raices.values():
+            hijos = (Oportunidad.query.filter(Oportunidad.oportunidad_padre_id == raiz.id)
+                     .order_by(Oportunidad.consecutivo_sub.asc(), Oportunidad.id.asc()).all())
+            indicador, codigo = _resolver_codigo_interno(raiz, hijos)
+            if codigo and codigo in generados and generados[codigo] != raiz.id:
+                raise CodigoInternoError(f"{codigo} corresponde a dos principales distintas. Revisa su numeración; no se mezclarán sus proyectos.")
+            if codigo:
+                generados[codigo] = raiz.id
+            for row in [raiz] + hijos:
+                row.tiene_codigo_interno = indicador
+                row.codigo_interno = codigo
+                sincronizados[row.id] = row
+
+        if generados:
+            existentes = Oportunidad.query.filter(
+                Oportunidad.codigo_interno.in_(list(generados)),
+                Oportunidad.oportunidad_padre_id.is_(None),
+            ).all()
+            for otra in existentes:
+                codigo = otra.codigo_interno
+                if codigo in generados and otra.id != generados[codigo] and otra.tiene_codigo_interno == "SI":
+                    raise CodigoInternoError(f"{codigo} ya pertenece a otra principal ({otra.nombre_cliente}). La numeración actual se repite por cliente; usa un número de principal único antes de habilitarlo.")
+
+        # Dos proyectos ya existentes en OTs distintas no se pueden fusionar
+        # implícitamente al habilitar el PRY compartido.
+        vinculados = Proyecto.query.filter(Proyecto.oportunidad_id.in_(list(sincronizados))).all()
+        codigos_destino = {}
+        for proyecto in vinculados:
+            row = sincronizados[proyecto.oportunidad_id]
+            codigo = _codigo_proyecto_evolutivo_oportunidad(row)
+            if codigo and codigo in codigos_destino and codigos_destino[codigo] != proyecto.id:
+                raise CodigoInternoError(f"Hay varios proyectos vinculados que quedarían con {codigo}. Debes resolver sus vínculos antes de habilitar el código interno; se conservan sus asignaciones.")
+            if codigo:
+                codigos_destino[codigo] = proyecto.id
+
+        for row in sincronizados.values():
+            ok, mensaje = _sincronizar_proyectos_desde_oportunidad(row)
+            if not ok:
+                raise CodigoInternoError(mensaje)
+
+    session.flush()
+    session.info.pop("codigo_interno_cambios", None)
+
+
+@_codigo_event.listens_for(_CodigoSession, "after_rollback")
+def _limpiar_cambios_codigo_interno(session):
+    session.info.pop("codigo_interno_cambios", None)

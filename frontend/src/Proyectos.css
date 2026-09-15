@@ -1050,3 +1050,5 @@
     flex-direction: column;
   }
 }
+
+.proyecto-codigo-automatico[readonly] { background:#eff6ff; border-color:#93c5fd; color:#1e40af; font-weight:700; }
