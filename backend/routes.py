@@ -18454,8 +18454,15 @@ def _coe_excel_fijar_identidad(row, numero, caso):
 
 
 def _coe_identidades_importacion(rows):
-    """Relacionar filas del mismo archivo por ID o RF, sin exigir prefijos."""
-    pairs, rf_to_id, id_to_rf = [], {}, {}
+    """
+    Identifica las filas del cargue histórico usando primero el ID.
+
+    El Excel histórico contiene RF reutilizados por casos diferentes, por lo
+    que el RF no puede imponer una relación uno-a-uno con el ID. También
+    contiene el valor provisional ID=1 en múltiples casos; para esas filas se
+    utiliza el RF como identidad sin guardar el 1 como ID real.
+    """
+    pairs = []
     for row in rows:
         try:
             numero, caso = _coe_separar_identidad(
@@ -18465,41 +18472,44 @@ def _coe_identidades_importacion(rows):
             )
         except ValueError as exc:
             raise ValueError(f"Fila {row.get('_excel_fila', '?')}: {exc}") from exc
-        if numero and caso:
-            if caso in rf_to_id and rf_to_id[caso] != numero:
-                raise ValueError(f"El caso {caso} está asociado a varios IDs en el archivo.")
-            if numero in id_to_rf and id_to_rf[numero] != caso:
-                raise ValueError(f"El ID {numero} está asociado a varios RF en el archivo.")
-            rf_to_id[caso], id_to_rf[numero] = numero, caso
+        numero_norm = str(numero or "").strip().upper()
+        if numero_norm in {"1", "0", "N/A", "NA", "NONE", "NULL", "-"}:
+            numero = None
+
         pairs.append((row, numero, caso))
-    return [_coe_excel_fijar_identidad(row, numero or rf_to_id.get(caso), caso or id_to_rf.get(numero))
-            for row, numero, caso in pairs]
+
+    return [
+        _coe_excel_fijar_identidad(row, numero, caso)
+        for row, numero, caso in pairs
+    ]
 
 
 def _coe_buscar_identidad_calificacion(numero, caso):
-    """Resolver altas, recargas y el paso de RF solo a ID+RF sin duplicar filas."""
-    condiciones = []
+    """
+    Busca primero por ID. El RF solo se usa como identidad cuando la fila no
+    tiene un ID real, porque el archivo histórico reutiliza algunos RF.
+    """
     if numero:
-        condiciones.append(CoeSapFuncionalCalificacion.numero == numero)
-    if caso:
-        condiciones.extend([
+        rows = CoeSapFuncionalCalificacion.query.filter(
+            CoeSapFuncionalCalificacion.numero == numero
+        ).all()
+    elif caso:
+        rows = CoeSapFuncionalCalificacion.query.filter(or_(
             CoeSapFuncionalCalificacion.caso_sm == caso,
             CoeSapFuncionalCalificacion.numero == caso,  # Compatibilidad con RF antiguos en ID.
-        ])
-    if not condiciones:
+        )).all()
+    else:
         raise ValueError("Se requiere ID o Caso SM para identificar el registro.")
-    rows = CoeSapFuncionalCalificacion.query.filter(or_(*condiciones)).all()
+
     if len(rows) > 1:
         raise ValueError(f"Existen registros separados para {numero or caso}. Revisa la duplicidad antes de importar; no se fusionarán sus horas automáticamente.")
+
     row = rows[0] if rows else None
     if row:
         anterior, rf_anterior = _coe_separar_identidad(row.numero, row.caso_sm)
-        if numero and anterior and numero != anterior:
-            raise ValueError(f"{caso} ya está relacionado con el ID {anterior}; no puede asociarse a {numero}.")
-        if caso and rf_anterior and caso != rf_anterior:
-            raise ValueError(f"El ID {numero} ya está relacionado con {rf_anterior}.")
         numero = numero or anterior
         caso = caso or rf_anterior
+
     return row, numero, caso
 
 
@@ -18912,6 +18922,69 @@ def importar_fuente_itop_coe_sap_funcional():
 # ============================================================
 # IMPORTAR LISTAS / CATALOGOS
 # ============================================================
+
+@bp.route("/coe-sap-funcional/calificacion/catalogos", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def listar_catalogos_coe_sap_funcional():
+    """Devuelve los catálogos generales y las categorías dependientes."""
+    try:
+        tipo = _coe_ext_norm(request.args.get("tipo"))
+
+        query = CoeSapFuncionalCatalogo.query.filter(
+            CoeSapFuncionalCatalogo.activo == True
+        )
+
+        if tipo:
+            query = query.filter(CoeSapFuncionalCatalogo.tipo == tipo)
+
+        catalogos = query.order_by(
+            CoeSapFuncionalCatalogo.orden.asc(),
+            CoeSapFuncionalCatalogo.valor.asc(),
+        ).all()
+
+        categorias = (
+            CoeSapFuncionalCategoriaCatalogo.query
+            .filter(CoeSapFuncionalCategoriaCatalogo.activo == True)
+            .order_by(
+                CoeSapFuncionalCategoriaCatalogo.modulo.asc(),
+                CoeSapFuncionalCategoriaCatalogo.categoria.asc(),
+                CoeSapFuncionalCategoriaCatalogo.subcategoria.asc(),
+                CoeSapFuncionalCategoriaCatalogo.articulo.asc(),
+            )
+            .all()
+        )
+
+        return jsonify({
+            "data": [
+                {
+                    "id": row.id,
+                    "tipo": row.tipo,
+                    "valor": row.valor,
+                    "extra1": row.extra_1,
+                    "extra2": row.extra_2,
+                    "extra3": row.extra_3,
+                    "orden": int(row.orden or 0),
+                }
+                for row in catalogos
+            ],
+            "categorias": [
+                {
+                    "id": row.id,
+                    "modulo": row.modulo,
+                    "categoria": row.categoria,
+                    "subcategoria": row.subcategoria,
+                    "articulo": row.articulo,
+                }
+                for row in categorias
+            ],
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error listando catálogos COE SAP Funcional")
+        return jsonify({
+            "mensaje": "Error listando catálogos",
+            "error": str(e),
+        }), 500
 
 def _catalogo_rows_from_sheet(ws):
     filas = list(ws.iter_rows(values_only=True))
