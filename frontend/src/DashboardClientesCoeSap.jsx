@@ -1281,8 +1281,8 @@ function EstadoEstimacionHoras({ rows, periodo }) {
       <div className="coedash-panel-head center">
         <h2>Estado estimación y horas</h2>
         <p>
-          Periodo aplicado: <b>{periodoMensualText(periodo)}</b>. Las tarjetas de horas y valor OT
-          usan exactamente los mismos registros y totales de esta tabla.
+          Periodo aplicado: <b>{periodoMensualText(periodo)}</b>. Las horas se distribuyen según la
+          fecha de aprobación de cada movimiento, incluso cuando pertenecen al mismo caso.
         </p>
       </div>
 

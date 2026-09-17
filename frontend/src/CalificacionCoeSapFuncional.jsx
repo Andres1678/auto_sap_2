@@ -14,6 +14,7 @@ const INITIAL_HOUR_FORM = {
   tipo: "ESTIMADA",
   modulo: "FI",
   horas: "",
+  fechaAprobacion: "",
   observacion: "",
 };
 
@@ -2788,6 +2789,21 @@ export default function CalificacionCoeSapFuncional() {
                   />
                 </label>
 
+                <label className="calcoe-filter">
+                  <span>Fecha de aprobación</span>
+                  <input
+                    type="date"
+                    value={hourForm.fechaAprobacion}
+                    required={hourForm.tipo === "ESTIMADA"}
+                    onChange={(e) =>
+                      setHourForm((prev) => ({
+                        ...prev,
+                        fechaAprobacion: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
                 <label className="calcoe-filter obs">
                   <span>Observación</span>
                   <input
@@ -2839,7 +2855,8 @@ export default function CalificacionCoeSapFuncional() {
                 <table className="calcoe-hours-table">
                   <thead>
                     <tr>
-                      <th>Fecha</th>
+                      <th>Fecha de aprobación</th>
+                      <th>Fecha de registro</th>
                       <th>Tipo</th>
                       <th>Módulo</th>
                       <th>Horas</th>
@@ -2853,19 +2870,20 @@ export default function CalificacionCoeSapFuncional() {
                   <tbody>
                     {hoursLoading ? (
                       <tr>
-                        <td colSpan="8" className="calcoe-empty small">
+                        <td colSpan="9" className="calcoe-empty small">
                           Cargando horas...
                         </td>
                       </tr>
                     ) : hoursRows.length === 0 ? (
                       <tr>
-                        <td colSpan="8" className="calcoe-empty small">
+                        <td colSpan="9" className="calcoe-empty small">
                           No hay movimientos de horas.
                         </td>
                       </tr>
                     ) : (
                       hoursRows.map((h) => (
                         <tr key={h.id}>
+                          <td className="mono">{dateText(h.fechaAprobacion)}</td>
                           <td className="mono">{cleanText(h.createdAt)}</td>
                           <td>
                             <span className="calcoe-mini-pill">{cleanText(h.tipo)}</span>

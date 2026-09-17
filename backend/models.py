@@ -1493,6 +1493,10 @@ class CoeSapFuncionalCalificacionHora(db.Model):
     horas = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     observacion = db.Column(db.Text)
 
+    # Fecha funcional del movimiento. Permite que un mismo caso tenga
+    # estimaciones aprobadas en periodos diferentes sin duplicar el caso.
+    fecha_aprobacion = db.Column(db.DateTime, nullable=True, index=True)
+
     origen = db.Column(db.String(50), default="MANUAL")
     excel_fila = db.Column(db.Integer)
 

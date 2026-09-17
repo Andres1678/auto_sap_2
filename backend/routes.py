@@ -15968,6 +15968,9 @@ def _calificacion_hora_to_dict(h):
         "modulo": h.modulo,
         "horas": float(h.horas or 0),
         "observacion": h.observacion,
+        "fechaAprobacion": _calificacion_fecha_str(
+            getattr(h, "fecha_aprobacion", None)
+        ),
         "origen": getattr(h, "origen", None),
         "excelFila": getattr(h, "excel_fila", None),
         "usuarioRegistro": h.usuario_registro,
@@ -16906,6 +16909,15 @@ def _calificacion_extraer_campos_excel(row):
 def _calificacion_horas_desde_row_excel(row):
     horas = []
 
+    # La fecha pertenece a cada fila/movimiento, no solamente al caso.
+    # Así, dos filas del mismo caso pueden alimentar meses diferentes.
+    fecha_aprobacion = _calificacion_excel_fecha(
+        _calificacion_get_excel(
+            row,
+            CALIFICACION_EXCEL_ALIASES.get("fecha_aprobacion_estimacion", []),
+        )
+    )
+
     for tipo, modulo, campo_modelo, aliases in CALIFICACION_EXCEL_HORAS:
         value = _calificacion_get_excel(row, aliases)
         cantidad = _calificacion_excel_horas(value)
@@ -16917,6 +16929,7 @@ def _calificacion_horas_desde_row_excel(row):
                 "campo_modelo": campo_modelo,
                 "horas": cantidad,
                 "excel_fila": row.get("_excel_fila"),
+                "fecha_aprobacion": fecha_aprobacion,
             })
 
     return horas
@@ -18308,6 +18321,8 @@ def agregar_horas_calificacion_coe_sap_funcional(calificacion_id):
         modulo = str(data.get("modulo") or "").strip().upper()
         horas = _calificacion_decimal(data.get("horas"))
         observacion = data.get("observacion")
+        fecha_aprobacion_raw = data.get("fechaAprobacion") or data.get("fecha_aprobacion")
+        fecha_aprobacion = _calificacion_fecha(fecha_aprobacion_raw)
 
         if tipo not in ("ESTIMADA", "EJECUTADA", "GARANTIA", "PROYECTO_ABAP"):
             return jsonify({
@@ -18320,6 +18335,19 @@ def agregar_horas_calificacion_coe_sap_funcional(calificacion_id):
         if horas <= 0:
             return jsonify({"mensaje": "Las horas deben ser mayores a cero"}), 400
 
+        if fecha_aprobacion_raw and not fecha_aprobacion:
+            return jsonify({"mensaje": "La fecha de aprobación no es válida"}), 400
+
+        # Para estimaciones manuales la fecha es necesaria para ubicarlas en
+        # el periodo correcto. Se conserva la fecha principal como respaldo.
+        if tipo == "ESTIMADA" and not fecha_aprobacion:
+            fecha_aprobacion = row.fecha_aprobacion_estimacion
+
+        if tipo == "ESTIMADA" and not fecha_aprobacion:
+            return jsonify({
+                "mensaje": "Debes indicar la fecha de aprobación de las horas estimadas"
+            }), 400
+
         usuario = _calificacion_usuario_actual()
 
         nueva_hora = CoeSapFuncionalCalificacionHora(
@@ -18329,6 +18357,7 @@ def agregar_horas_calificacion_coe_sap_funcional(calificacion_id):
             modulo=modulo,
             horas=horas,
             observacion=observacion,
+            fecha_aprobacion=fecha_aprobacion,
             usuario_registro=usuario,
             created_at=datetime.utcnow(),
         )
@@ -18679,6 +18708,7 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
                         modulo=hora_item["modulo"],
                         horas=cantidad,
                         observacion="Importado desde Excel histórico",
+                        fecha_aprobacion=hora_item.get("fecha_aprobacion"),
                         usuario_registro=usuario,
                         created_at=datetime.utcnow(),
                     )
@@ -21855,17 +21885,21 @@ def _coe_rep_recibidos_vs_cerrados(base_query):
 
 def _coe_rep_estado_estimacion_horas(base_query):
     """
-    Tabla independiente por mes de aprobación de estimación.
+    Tabla independiente por mes de aprobación de cada movimiento.
 
     Esta tabla NO usa el periodo global del dashboard.
-    - Periodo: fecha_aprobacion_estimacion dentro del mes actual por defecto.
+    - Periodo: fecha_aprobacion del movimiento dentro del mes seleccionado.
     - Sociedad: filtro propio compartido con Recibidos vs cerrados.
-    - Sumas: total_horas_funcionales, horas_estimadas_abap y
-      total_horas_estimadas.
+    - Un caso puede aparecer en meses diferentes, pero solo con las horas
+      aprobadas en cada fecha.
+    - Los movimientos históricos sin fecha usan la fecha principal del caso.
     """
     query = _coe_rep_apply_graficas_mensuales_sociedad(base_query)
 
+    hora = CoeSapFuncionalCalificacionHora
+
     fecha_periodo_expr = func.coalesce(
+        hora.fecha_aprobacion,
         CoeSapFuncionalCalificacion.fecha_aprobacion_estimacion,
         CoeSapFuncionalCalificacion.fecha_estimacion,
         CoeSapFuncionalCalificacion.fecha_asignacion,
@@ -21877,8 +21911,35 @@ def _coe_rep_estado_estimacion_horas(base_query):
     anio_aprobado_expr = extract("year", fecha_periodo_expr)
     mes_aprobado_expr = extract("month", fecha_periodo_expr)
 
+    tipo_estimado = func.upper(func.trim(func.coalesce(hora.tipo, ""))) == "ESTIMADA"
+    modulo_expr = func.upper(func.trim(func.coalesce(hora.modulo, "")))
+    modulos_funcionales = [m.upper() for m in CALIFICACION_FUNCIONALES_ESTIMADAS]
+
+    horas_funcionales_expr = case(
+        (and_(tipo_estimado, modulo_expr.in_(modulos_funcionales)), hora.horas),
+        else_=0,
+    )
+    horas_abap_expr = case(
+        (and_(tipo_estimado, modulo_expr == "ABAP"), hora.horas),
+        else_=0,
+    )
+    horas_estimadas_expr = case(
+        (
+            and_(
+                tipo_estimado,
+                or_(
+                    modulo_expr.in_(modulos_funcionales),
+                    modulo_expr.in_(["ABAP", "BASIS"]),
+                ),
+            ),
+            hora.horas,
+        ),
+        else_=0,
+    )
+
     rows = (
-        query.with_entities(
+        query.join(hora, hora.calificacion_id == CoeSapFuncionalCalificacion.id)
+        .with_entities(
             CoeSapFuncionalCalificacion.estado_estimacion.label("estado_estimacion"),
             func.max(CoeSapFuncionalCalificacion.estado).label("estado"),
             func.max(CoeSapFuncionalCalificacion.fecha_asignacion).label("fecha_asignacion"),
@@ -21888,11 +21949,12 @@ def _coe_rep_estado_estimacion_horas(base_query):
             mes_aprobado_expr.label("mes"),
             CoeSapFuncionalCalificacion.numero.label("numero"),
             func.max(CoeSapFuncionalCalificacion.asunto).label("asunto"),
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_funcionales), 0).label("total_funcionales"),
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.horas_estimadas_abap), 0).label("horas_abap"),
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.total_horas_estimadas), 0).label("total_estimadas"),
-            func.coalesce(func.sum(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor_ot"),
+            func.coalesce(func.sum(horas_funcionales_expr), 0).label("total_funcionales"),
+            func.coalesce(func.sum(horas_abap_expr), 0).label("horas_abap"),
+            func.coalesce(func.sum(horas_estimadas_expr), 0).label("total_estimadas"),
+            func.coalesce(func.max(CoeSapFuncionalCalificacion.valor_ot), 0).label("valor_ot"),
         )
+        .filter(tipo_estimado)
         .filter(periodo_estimacion_cond)
         .filter(fecha_periodo_expr.isnot(None))
         .group_by(
