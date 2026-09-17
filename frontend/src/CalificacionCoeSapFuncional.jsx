@@ -2883,7 +2883,7 @@ export default function CalificacionCoeSapFuncional() {
                     ) : (
                       hoursRows.map((h) => (
                         <tr key={h.id}>
-                          <td className="mono">{dateText(h.fechaAprobacion)}</td>
+                          <td className="mono">{cleanText(toDateInput(h.fechaAprobacion))}</td>
                           <td className="mono">{cleanText(h.createdAt)}</td>
                           <td>
                             <span className="calcoe-mini-pill">{cleanText(h.tipo)}</span>
