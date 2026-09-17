@@ -22947,6 +22947,15 @@ def _coe_avg_days(start, end=None):
     return max((end_dt.date() - start_dt.date()).days, 0)
 
 
+def _coe_avg_elapsed_days(start, end):
+    """Días calendario transcurridos, incluyendo fracciones de día."""
+    start_dt = _coe_avg_datetime(start)
+    end_dt = _coe_avg_datetime(end)
+    if not start_dt or not end_dt or end_dt < start_dt:
+        return None
+    return round((end_dt - start_dt).total_seconds() / 86400, 2)
+
+
 def _coe_avg_state_text(row):
     return " ".join(filter(None, [
         _coe_rep_str(getattr(row, "estado_principal", None)),
@@ -23003,6 +23012,23 @@ def promedio_atencion_coe_sap_funcional():
             include_period=bool(modo_periodo),
         )
 
+        estimacion_segundos_expr = case(
+            (
+                and_(
+                    CoeSapFuncionalCalificacion.fecha_inicio_laboracion_estimacion.isnot(None),
+                    CoeSapFuncionalCalificacion.fecha_estimacion.isnot(None),
+                    CoeSapFuncionalCalificacion.fecha_estimacion
+                    >= CoeSapFuncionalCalificacion.fecha_inicio_laboracion_estimacion,
+                ),
+                func.timestampdiff(
+                    text("SECOND"),
+                    CoeSapFuncionalCalificacion.fecha_inicio_laboracion_estimacion,
+                    CoeSapFuncionalCalificacion.fecha_estimacion,
+                ),
+            ),
+            else_=None,
+        )
+
         rows = (
             query.with_entities(
                 CoeSapFuncionalCalificacion.anio_creacion.label("anio"),
@@ -23011,6 +23037,8 @@ def promedio_atencion_coe_sap_funcional():
                 func.avg(CoeSapFuncionalCalificacion.tiempo_respuesta).label("promedio_respuesta"),
                 func.avg(CoeSapFuncionalCalificacion.tiempo_resolucion).label("promedio_resolucion"),
                 func.avg(CoeSapFuncionalCalificacion.tiempo_finalizacion_cierre).label("promedio_cierre"),
+                func.avg(estimacion_segundos_expr / 86400.0).label("promedio_elaboracion_estimacion"),
+                func.count(estimacion_segundos_expr).label("estimaciones_medidas"),
             )
             .filter(CoeSapFuncionalCalificacion.anio_creacion.isnot(None))
             .filter(CoeSapFuncionalCalificacion.mes_creacion.isnot(None))
@@ -23024,6 +23052,8 @@ def promedio_atencion_coe_sap_funcional():
             func.avg(CoeSapFuncionalCalificacion.tiempo_respuesta).label("promedio_respuesta"),
             func.avg(CoeSapFuncionalCalificacion.tiempo_resolucion).label("promedio_resolucion"),
             func.avg(CoeSapFuncionalCalificacion.tiempo_finalizacion_cierre).label("promedio_cierre"),
+            func.avg(estimacion_segundos_expr / 86400.0).label("promedio_elaboracion_estimacion"),
+            func.count(estimacion_segundos_expr).label("estimaciones_medidas"),
         ).first()
 
         detail_rows = query.order_by(CoeSapFuncionalCalificacion.fecha_asignacion.asc()).all()
@@ -23058,6 +23088,10 @@ def promedio_atencion_coe_sap_funcional():
                 if value is not None:
                     resolution_days.append(value)
 
+            fecha_inicio_estimacion = _coe_avg_datetime(
+                getattr(item, "fecha_inicio_laboracion_estimacion", None)
+            )
+
             if is_closed:
                 continue
 
@@ -23087,7 +23121,7 @@ def promedio_atencion_coe_sap_funcional():
 
             normalized_state = _coe_dash_norm_estado(_coe_avg_state_text(item))
             if "EN ESTIMACION" in normalized_state:
-                estimation_base = last_comment or opened
+                estimation_base = fecha_inicio_estimacion or last_comment or opened
                 elapsed = _coe_avg_days(estimation_base, now)
                 if elapsed is not None:
                     estimation_days.append(elapsed)
@@ -23130,6 +23164,8 @@ def promedio_atencion_coe_sap_funcional():
                     "promedioTiempoRespuesta": round(_coe_rep_float(r.promedio_respuesta), 2),
                     "promedioTiempoResolucion": round(_coe_rep_float(r.promedio_resolucion), 2),
                     "promedioTiempoCierre": round(_coe_rep_float(r.promedio_cierre), 2),
+                    "promedioElaboracionEstimacion": round(_coe_rep_float(r.promedio_elaboracion_estimacion), 2),
+                    "estimacionesMedidas": int(r.estimaciones_medidas or 0),
                 }
                 for r in rows
             ],
@@ -23138,6 +23174,8 @@ def promedio_atencion_coe_sap_funcional():
                 "promedioTiempoRespuesta": round(_coe_rep_float(total_row.promedio_respuesta if total_row else 0), 2),
                 "promedioTiempoResolucion": round(_coe_rep_float(total_row.promedio_resolucion if total_row else 0), 2),
                 "promedioTiempoCierre": round(_coe_rep_float(total_row.promedio_cierre if total_row else 0), 2),
+                "promedioElaboracionEstimacion": round(_coe_rep_float(total_row.promedio_elaboracion_estimacion if total_row else 0), 2),
+                "estimacionesMedidas": int(total_row.estimaciones_medidas or 0) if total_row else 0,
                 "promedioAperturaCierre": avg(resolution_days),
                 "casosCerradosMedidos": len(resolution_days),
                 "promedioEdadAbiertos": avg(open_age_days),
@@ -23168,6 +23206,159 @@ def promedio_atencion_coe_sap_funcional():
         app.logger.exception("Error consultando promedio de atención COE SAP Funcional")
         return jsonify({
             "mensaje": "Error consultando promedio de atención",
+            "error": str(e),
+            "trace": traceback.format_exc(),
+        }), 500
+
+
+@bp.route("/coe-sap-funcional/calificacion/promedio-atencion/detalle-calculo", methods=["GET"])
+@permission_required("BASE_REGISTRO_VER")
+def detalle_calculo_promedio_atencion_coe_sap_funcional():
+    """Detalle bajo demanda para explicar y auditar cada indicador."""
+    try:
+        tipo = str(request.args.get("tipo") or "").strip().lower()
+        configuraciones = {
+            "apertura_cierre": {
+                "titulo": "Apertura → cierre",
+                "formula": "Fecha de cierre − Fecha de asignación",
+                "descripcion": "Tiempo calendario transcurrido para los casos cerrados.",
+            },
+            "elaboracion_estimacion": {
+                "titulo": "Elaboración de estimación",
+                "formula": "Fecha de estimación − Fecha inicio laboración estimación",
+                "descripcion": "Tiempo real empleado en elaborar la estimación.",
+            },
+            "edad_abiertos": {
+                "titulo": "Edad de casos abiertos",
+                "formula": "Fecha de corte − Fecha de asignación",
+                "descripcion": "Antigüedad de los casos que todavía no están cerrados.",
+            },
+            "sin_comentario": {
+                "titulo": "Tiempo desde último comentario",
+                "formula": "Fecha de corte − Último comentario o actualización",
+                "descripcion": "Tiempo sin seguimiento registrado en cada caso abierto.",
+            },
+            "en_estimacion": {
+                "titulo": "Casos en estimación",
+                "formula": "Fecha de corte − Inicio de laboración de estimación",
+                "descripcion": "Antigüedad de los casos que permanecen en estimación.",
+            },
+        }
+
+        if tipo not in configuraciones:
+            return jsonify({"mensaje": "Tipo de cálculo no válido"}), 400
+
+        query = _coe_rep_apply_filters(
+            CoeSapFuncionalCalificacion.query,
+            include_period=bool(
+                (request.args.get("modo_periodo") or request.args.get("modoPeriodo") or "").strip()
+            ),
+        )
+        rows = query.order_by(CoeSapFuncionalCalificacion.fecha_asignacion.asc()).all()
+        now = datetime.utcnow()
+        detalle = []
+        excluidos = 0
+        invalidos = 0
+        no_aplican = 0
+        evolucion_map = defaultdict(list)
+
+        for item in rows:
+            inicio = None
+            fin = None
+            dias = None
+            is_closed = _coe_avg_is_closed(item)
+            opened = _coe_avg_datetime(getattr(item, "fecha_asignacion", None))
+            closed_at = _coe_avg_datetime(getattr(item, "fecha_finalizacion_cierre", None)) or _coe_avg_datetime(
+                getattr(item, "fecha_finalizacion_cierre_sistema_gestion", None)
+            )
+            last_comment = _coe_avg_last_comment_date(
+                getattr(item, "observaciones", None),
+                getattr(item, "hora_ultima_actualizacion", None),
+                getattr(item, "hora_ultima_actualizacion_sistema_gestion", None),
+            )
+            state = _coe_dash_norm_estado(_coe_avg_state_text(item))
+
+            if tipo == "apertura_cierre":
+                if not is_closed:
+                    no_aplican += 1
+                    continue
+                inicio, fin = opened, closed_at
+                dias = _coe_avg_days(inicio, fin)
+            elif tipo == "elaboracion_estimacion":
+                inicio = _coe_avg_datetime(getattr(item, "fecha_inicio_laboracion_estimacion", None))
+                fin = _coe_avg_datetime(getattr(item, "fecha_estimacion", None))
+                dias = _coe_avg_elapsed_days(inicio, fin)
+            elif tipo == "edad_abiertos":
+                if is_closed:
+                    no_aplican += 1
+                    continue
+                inicio, fin = opened, now
+                dias = _coe_avg_days(inicio, fin)
+            elif tipo == "sin_comentario":
+                if is_closed:
+                    no_aplican += 1
+                    continue
+                inicio, fin = last_comment, now
+                dias = _coe_avg_days(inicio, fin)
+            elif tipo == "en_estimacion":
+                if "EN ESTIMACION" not in state:
+                    no_aplican += 1
+                    continue
+                inicio = _coe_avg_datetime(getattr(item, "fecha_inicio_laboracion_estimacion", None)) or last_comment or opened
+                fin = now
+                dias = _coe_avg_days(inicio, fin)
+
+            if not inicio or not fin:
+                excluidos += 1
+                continue
+            if fin < inicio:
+                invalidos += 1
+                continue
+            if dias is None:
+                excluidos += 1
+                continue
+
+            periodo = f"{inicio.year:04d}-{inicio.month:02d}"
+            evolucion_map[periodo].append(float(dias))
+            detalle.append({
+                "id": int(item.id),
+                "numero": _coe_rep_str(item.numero) or str(item.id),
+                "cliente": _coe_rep_str(getattr(item, "cliente_asociado_nombre", None)) or _coe_rep_str(item.sociedad) or "Sin cliente",
+                "asunto": _coe_rep_str(item.asunto) or "Sin asunto",
+                "consultor": _coe_rep_str(item.asignado_a) or "Sin asignar",
+                "fechaInicio": _calificacion_fecha_str(inicio),
+                "fechaFin": _calificacion_fecha_str(fin),
+                "dias": round(float(dias), 2),
+            })
+
+        valores = [row["dias"] for row in detalle]
+        evolucion = [
+            {
+                "periodo": periodo,
+                "cantidad": len(values),
+                "promedio": round(sum(values) / len(values), 2),
+            }
+            for periodo, values in sorted(evolucion_map.items())
+        ]
+
+        return jsonify({
+            "tipo": tipo,
+            **configuraciones[tipo],
+            "unidad": "días calendario",
+            "promedio": round(sum(valores) / len(valores), 2) if valores else 0,
+            "medidos": len(detalle),
+            "excluidos": excluidos,
+            "invalidos": invalidos,
+            "noAplican": no_aplican,
+            "fechaCorte": now.date().isoformat(),
+            "evolucion": evolucion,
+            "casos": detalle,
+        }), 200
+
+    except Exception as e:
+        app.logger.exception("Error consultando detalle de cálculo de promedio")
+        return jsonify({
+            "mensaje": "Error consultando el detalle del cálculo",
             "error": str(e),
             "trace": traceback.format_exc(),
         }), 500
@@ -23646,6 +23837,23 @@ def exportar_promedio_atencion_coe_sap_funcional_excel():
     try:
         query = _coe_rep_apply_filters(CoeSapFuncionalCalificacion.query)
 
+        estimacion_segundos_expr = case(
+            (
+                and_(
+                    CoeSapFuncionalCalificacion.fecha_inicio_laboracion_estimacion.isnot(None),
+                    CoeSapFuncionalCalificacion.fecha_estimacion.isnot(None),
+                    CoeSapFuncionalCalificacion.fecha_estimacion
+                    >= CoeSapFuncionalCalificacion.fecha_inicio_laboracion_estimacion,
+                ),
+                func.timestampdiff(
+                    text("SECOND"),
+                    CoeSapFuncionalCalificacion.fecha_inicio_laboracion_estimacion,
+                    CoeSapFuncionalCalificacion.fecha_estimacion,
+                ),
+            ),
+            else_=None,
+        )
+
         rows = (
             query.with_entities(
                 CoeSapFuncionalCalificacion.anio_creacion.label("anio"),
@@ -23654,6 +23862,8 @@ def exportar_promedio_atencion_coe_sap_funcional_excel():
                 func.avg(CoeSapFuncionalCalificacion.tiempo_respuesta).label("promedio_respuesta"),
                 func.avg(CoeSapFuncionalCalificacion.tiempo_resolucion).label("promedio_resolucion"),
                 func.avg(CoeSapFuncionalCalificacion.tiempo_finalizacion_cierre).label("promedio_cierre"),
+                func.avg(estimacion_segundos_expr / 86400.0).label("promedio_elaboracion_estimacion"),
+                func.count(estimacion_segundos_expr).label("estimaciones_medidas"),
             )
             .filter(CoeSapFuncionalCalificacion.anio_creacion.isnot(None))
             .filter(CoeSapFuncionalCalificacion.mes_creacion.isnot(None))
@@ -23671,11 +23881,13 @@ def exportar_promedio_atencion_coe_sap_funcional_excel():
             "promedioTiempoRespuesta": round(_coe_rep_float(r.promedio_respuesta), 2),
             "promedioTiempoResolucion": round(_coe_rep_float(r.promedio_resolucion), 2),
             "promedioTiempoCierre": round(_coe_rep_float(r.promedio_cierre), 2),
+            "promedioElaboracionEstimacion": round(_coe_rep_float(r.promedio_elaboracion_estimacion), 2),
+            "estimacionesMedidas": int(r.estimaciones_medidas or 0),
         } for r in rows]
 
         return _coe_xls_response(
             _coe_xls_filename("promedio_atencion_coe_sap_funcional"),
-            [{"title": "Promedio atencion", "headers": [("Año", "anio"), ("Mes", "mes"), ("Mes nombre", "mesNombre"), ("Periodo", "periodo"), ("Cantidad", "cantidad"), ("Prom. respuesta", "promedioTiempoRespuesta"), ("Prom. resolución", "promedioTiempoResolucion"), ("Prom. cierre", "promedioTiempoCierre")], "rows": data_rows}],
+            [{"title": "Promedio atencion", "headers": [("Año", "anio"), ("Mes", "mes"), ("Mes nombre", "mesNombre"), ("Periodo", "periodo"), ("Cantidad", "cantidad"), ("Prom. respuesta", "promedioTiempoRespuesta"), ("Prom. resolución", "promedioTiempoResolucion"), ("Prom. cierre", "promedioTiempoCierre"), ("Prom. elaboración estimación", "promedioElaboracionEstimacion"), ("Estimaciones medidas", "estimacionesMedidas")], "rows": data_rows}],
         )
 
     except Exception as e:

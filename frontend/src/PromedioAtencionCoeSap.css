@@ -243,6 +243,10 @@
   margin-bottom: 18px;
 }
 
+.coeavg-metrics-grid.coeavg-main-metrics {
+  grid-template-columns: repeat(5, minmax(170px, 1fr));
+}
+
 .coeavg-metric {
   min-height: 116px;
   display: flex;
@@ -275,6 +279,11 @@
   font-size: 11px;
   font-weight: 750;
 }
+
+.coeavg-metric.clickable { width: 100%; text-align: left; font-family: inherit; color: inherit; cursor: pointer; transition: transform .16s ease, box-shadow .16s ease; }
+.coeavg-metric.clickable:hover { transform: translateY(-3px); box-shadow: 0 18px 34px rgba(17, 24, 39, .12); }
+.coeavg-metric.clickable:focus-visible { outline: 3px solid rgba(37, 99, 235, .24); outline-offset: 3px; }
+.coeavg-metric em { margin-top: 11px; color: var(--coeavg-blue); font-size: 10px; font-style: normal; font-weight: 900; }
 
 .coeavg-metric.dark { border-left-color: #222222; }
 .coeavg-metric.ok { border-left-color: var(--coeavg-green); background: linear-gradient(180deg, #ffffff, #fbfffd); }
@@ -561,6 +570,45 @@
   color: var(--coeavg-muted);
 }
 
+.coeavg-modal-overlay { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 22px; background: rgba(15, 23, 42, .62); backdrop-filter: blur(4px); }
+.coeavg-calc-modal { width: min(1120px, 96vw); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; border: 1px solid rgba(255,255,255,.35); border-radius: 22px; background: #fff; box-shadow: 0 30px 80px rgba(0,0,0,.28); }
+.coeavg-modal-head { display: flex; justify-content: space-between; gap: 20px; padding: 22px 24px 18px; border-bottom: 1px solid var(--coeavg-border); background: linear-gradient(135deg, #fff, #fff7f6); }
+.coeavg-modal-head h2 { margin: 0; font-size: 24px; font-weight: 950; letter-spacing: -.025em; }
+.coeavg-modal-head p { margin: 6px 0 0; color: var(--coeavg-muted); font-size: 12px; }
+.coeavg-modal-close { flex: 0 0 40px; width: 40px; height: 40px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; color: #374151; font-size: 25px; line-height: 1; cursor: pointer; }
+.coeavg-modal-close:hover { color: #fff; background: var(--coeavg-red); border-color: var(--coeavg-red); }
+.coeavg-modal-tabs { display: flex; gap: 4px; padding: 10px 24px 0; overflow-x: auto; border-bottom: 1px solid var(--coeavg-border); }
+.coeavg-modal-tabs button { padding: 11px 15px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--coeavg-muted); font-weight: 900; white-space: nowrap; cursor: pointer; }
+.coeavg-modal-tabs button.active { color: var(--coeavg-red); border-bottom-color: var(--coeavg-red); }
+.coeavg-modal-body { min-height: 300px; padding: 22px 24px 26px; overflow: auto; }
+.coeavg-modal-loading { min-height: 360px; display: grid; place-content: center; text-align: center; color: var(--coeavg-muted); font-weight: 850; }
+.coeavg-calc-summary { display: grid; grid-template-columns: minmax(230px,.75fr) 1.5fr; gap: 16px; }
+.coeavg-calc-result { grid-row: span 2; display: flex; flex-direction: column; justify-content: center; min-height: 210px; padding: 24px; border-radius: 18px; color: #fff; background: linear-gradient(135deg, #222, var(--coeavg-red)); }
+.coeavg-calc-result span { font-size: 12px; font-weight: 850; opacity: .8; }
+.coeavg-calc-result strong { margin: 8px 0; font-size: clamp(30px,4vw,48px); font-weight: 950; }
+.coeavg-calc-result small { opacity: .78; }
+.coeavg-calc-stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; }
+.coeavg-calc-stats article { padding: 16px; border: 1px solid var(--coeavg-border); border-radius: 14px; background: #fafafa; }
+.coeavg-calc-stats span { display: block; color: var(--coeavg-muted); font-size: 11px; font-weight: 800; }
+.coeavg-calc-stats strong { display: block; margin-top: 6px; font-size: 22px; }
+.coeavg-formula { padding: 18px; border: 1px solid #dbeafe; border-radius: 16px; background: var(--coeavg-blue-soft); }
+.coeavg-formula span { display: block; color: #1d4ed8; font-size: 10px; font-weight: 950; text-transform: uppercase; letter-spacing: .06em; }
+.coeavg-formula strong { display: block; margin-top: 6px; font-size: 16px; }
+.coeavg-formula p { margin: 7px 0 0; color: #475569; font-size: 13px; }
+.coeavg-calc-evolution { display: grid; gap: 8px; }
+.coeavg-calc-evolution article { display: grid; grid-template-columns: 150px 1fr 100px; align-items: center; gap: 14px; padding: 13px 14px; border: 1px solid var(--coeavg-border); border-radius: 13px; }
+.coeavg-calc-evolution article > div:first-child strong, .coeavg-calc-evolution article > div:first-child span { display: block; }
+.coeavg-calc-evolution article > div:first-child span { margin-top: 3px; color: var(--coeavg-muted); font-size: 11px; }
+.coeavg-calc-evolution article > b { text-align: right; font-size: 12px; }
+.coeavg-calc-bar { height: 11px; overflow: hidden; border-radius: 99px; background: #eef2f7; }
+.coeavg-calc-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,var(--coeavg-red),#222); }
+.coeavg-cases-wrap { max-height: 54vh; overflow: auto; border: 1px solid var(--coeavg-border); border-radius: 14px; }
+.coeavg-cases-wrap table { width: 100%; min-width: 980px; border-collapse: separate; border-spacing: 0; }
+.coeavg-cases-wrap th { position: sticky; top: 0; z-index: 2; padding: 12px; text-align: left; border-bottom: 2px solid #dbe3ef; color: #4b5563; background: #f8fafc; font-size: 11px; font-weight: 950; }
+.coeavg-cases-wrap td { padding: 11px 12px; border-bottom: 1px solid #edf0f4; vertical-align: top; font-size: 12px; }
+.coeavg-cases-wrap td strong, .coeavg-cases-wrap td small { display: block; }
+.coeavg-cases-wrap td small { max-width: 340px; margin-top: 4px; overflow: hidden; color: var(--coeavg-muted); text-overflow: ellipsis; white-space: nowrap; }
+
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 .strong { font-weight: 950; }
 .center { text-align: center !important; }
@@ -576,6 +624,10 @@
   }
 
   .coeavg-alert-filters { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+
+  .coeavg-metrics-grid.coeavg-main-metrics {
+    grid-template-columns: repeat(3, minmax(170px, 1fr));
+  }
 }
 
 @media (max-width: 980px) {
@@ -586,6 +638,10 @@
   }
 
   .coeavg-metrics-grid {
+    grid-template-columns: repeat(2, minmax(170px, 1fr));
+  }
+
+  .coeavg-metrics-grid.coeavg-main-metrics {
     grid-template-columns: repeat(2, minmax(170px, 1fr));
   }
 
@@ -607,6 +663,10 @@
     grid-template-columns: 1fr;
   }
 
+  .coeavg-metrics-grid.coeavg-main-metrics {
+    grid-template-columns: 1fr;
+  }
+
   .coeavg-filter.search {
     grid-column: span 1;
   }
@@ -624,4 +684,13 @@
   .coeavg-alert-filters { grid-template-columns: 1fr; }
   .coeavg-consultant-grid article { align-items: flex-start; flex-direction: column; }
   .coeavg-consultant-levels { justify-content: flex-start; }
+  .coeavg-modal-overlay { padding: 8px; }
+  .coeavg-calc-modal { width: 100%; max-height: 96vh; border-radius: 16px; }
+  .coeavg-modal-head, .coeavg-modal-body { padding-left: 16px; padding-right: 16px; }
+  .coeavg-modal-tabs { padding-left: 12px; padding-right: 12px; }
+  .coeavg-calc-summary { grid-template-columns: 1fr; }
+  .coeavg-calc-result { grid-row: auto; min-height: 150px; }
+  .coeavg-calc-stats { grid-template-columns: repeat(2,1fr); }
+  .coeavg-calc-evolution article { grid-template-columns: 100px 1fr; }
+  .coeavg-calc-evolution article > b { grid-column: 2; text-align: left; }
 }
