@@ -826,7 +826,9 @@ export default function CalificacionCoeSapFuncional() {
   const [backendTotal, setBackendTotal] = useState(0);
 
   const [quickSearch, setQuickSearch] = useState("");
+  const [draftQuickSearch, setDraftQuickSearch] = useState("");
   const [columnFilters, setColumnFilters] = useState({});
+  const [draftColumnFilters, setDraftColumnFilters] = useState({});
 
   const [visibleColumnKeys, setVisibleColumnKeys] = useState(() =>
     (() => {
@@ -914,15 +916,32 @@ export default function CalificacionCoeSapFuncional() {
     return Object.values(columnFilters).filter((values) => Array.isArray(values) && values.length > 0).length;
   }, [columnFilters]);
 
+  const draftFiltersCount = useMemo(() => {
+    return Object.values(draftColumnFilters).filter(
+      (values) => Array.isArray(values) && values.length > 0
+    ).length;
+  }, [draftColumnFilters]);
+
+  const hasPendingFilters = useMemo(() => {
+    return (
+      draftQuickSearch !== quickSearch ||
+      JSON.stringify(draftColumnFilters) !== JSON.stringify(columnFilters)
+    );
+  }, [draftQuickSearch, quickSearch, draftColumnFilters, columnFilters]);
+
   const rowsForFilterOptions = useCallback(
     (key) => {
       const otherFilters = Object.fromEntries(
-        Object.entries(columnFilters).filter(([filterKey]) => filterKey !== key)
+        Object.entries(draftColumnFilters).filter(([filterKey]) => filterKey !== key)
       );
 
-      return applyQuickSearch(applyColumnFilters(allRows, otherFilters), quickSearch, TABLE_COLUMNS);
+      return applyQuickSearch(
+        applyColumnFilters(allRows, otherFilters),
+        draftQuickSearch,
+        TABLE_COLUMNS
+      );
     },
-    [allRows, columnFilters, quickSearch]
+    [allRows, draftColumnFilters, draftQuickSearch]
   );
 
   const uniqueValues = useMemo(() => {
@@ -930,7 +949,7 @@ export default function CalificacionCoeSapFuncional() {
 
     TABLE_COLUMNS.forEach((col) => {
       const dynamicOptions = buildSelectOptionsFromRows(rowsForFilterOptions(col.key), col.key);
-      const selectedOptions = (columnFilters[col.key] || []).map(toFilterOption);
+      const selectedOptions = (draftColumnFilters[col.key] || []).map(toFilterOption);
       const merged = [...dynamicOptions];
 
       selectedOptions.forEach((selected) => {
@@ -945,7 +964,7 @@ export default function CalificacionCoeSapFuncional() {
     });
 
     return map;
-  }, [columnFilters, rowsForFilterOptions]);
+  }, [draftColumnFilters, rowsForFilterOptions]);
 
   useEffect(() => {
     saveStorageArray(STORAGE_VISIBLE_COLUMNS, visibleColumnKeys);
@@ -1030,16 +1049,29 @@ export default function CalificacionCoeSapFuncional() {
       ? selectedOptions.map((option) => option.value)
       : [];
 
-    setColumnFilters((prev) => ({
+    setDraftColumnFilters((prev) => ({
       ...prev,
       [column]: values,
     }));
+  };
 
+  const applyPendingFilters = () => {
+    setQuickSearch(draftQuickSearch);
+    setColumnFilters(
+      Object.fromEntries(
+        Object.entries(draftColumnFilters).map(([key, values]) => [
+          key,
+          Array.isArray(values) ? [...values] : [],
+        ])
+      )
+    );
     setPage(1);
   };
 
   const clearAllFilters = () => {
+    setDraftQuickSearch("");
     setQuickSearch("");
+    setDraftColumnFilters({});
     setColumnFilters({});
     setPage(1);
   };
@@ -1059,6 +1091,12 @@ export default function CalificacionCoeSapFuncional() {
       const exists = prev.includes(key);
 
       if (exists) {
+        setDraftColumnFilters((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+
         setColumnFilters((current) => {
           const next = { ...current };
           delete next[key];
@@ -2299,16 +2337,20 @@ export default function CalificacionCoeSapFuncional() {
       <section className="calcoe-toolbar-card">
         <div className="calcoe-toolbar-left">
           <label className="calcoe-search">
-            <span>Buscar en toda la tabla</span>
+            <span>Búsqueda general</span>
             <input
               type="text"
-              value={quickSearch}
+              value={draftQuickSearch}
               placeholder="ID, asunto, observaciones, estado, sociedad..."
-              onChange={(e) => {
-                setQuickSearch(e.target.value);
-                setPage(1);
+              onChange={(e) => setDraftQuickSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  applyPendingFilters();
+                }
               }}
             />
+            <small>Escribe y pulsa Enter o Aplicar filtros.</small>
           </label>
 
           <div className="calcoe-metrics">
@@ -2326,6 +2368,11 @@ export default function CalificacionCoeSapFuncional() {
               <span>Filtros activos</span>
               <strong>{activeFiltersCount}</strong>
             </div>
+
+            <div className={hasPendingFilters ? "pending" : ""}>
+              <span>Cambios pendientes</span>
+              <strong>{hasPendingFilters ? draftFiltersCount + (draftQuickSearch ? 1 : 0) : 0}</strong>
+            </div>
           </div>
         </div>
 
@@ -2336,10 +2383,11 @@ export default function CalificacionCoeSapFuncional() {
           </button>
           <button
             type="button"
-            className={`calcoe-btn ${showFilters ? "danger" : "light"}`}
+            className={`calcoe-btn ${showFilters ? "light" : "ghost"}`}
             onClick={() => setShowFilters((v) => !v)}
+            aria-expanded={showFilters}
           >
-            {showFilters ? "Ocultar filtros" : "Mostrar filtros"}
+            {showFilters ? "Ocultar filtros ▲" : "Mostrar filtros ▼"}
           </button>
 
           <button
@@ -2370,9 +2418,23 @@ export default function CalificacionCoeSapFuncional() {
             type="button"
             className="calcoe-btn ghost"
             onClick={clearAllFilters}
-            disabled={!quickSearch && activeFiltersCount === 0}
+            disabled={
+              !quickSearch &&
+              !draftQuickSearch &&
+              activeFiltersCount === 0 &&
+              draftFiltersCount === 0
+            }
           >
             Limpiar filtros
+          </button>
+
+          <button
+            type="button"
+            className={`calcoe-btn apply ${hasPendingFilters ? "has-pending" : ""}`}
+            onClick={applyPendingFilters}
+            disabled={!hasPendingFilters}
+          >
+            Aplicar filtros
           </button>
 
           <button
@@ -2466,15 +2528,42 @@ export default function CalificacionCoeSapFuncional() {
 
       {showFilters && (
         <section className="calcoe-filter-panel">
-          <h2>Filtros de clasificación</h2>
-          <input className="calcoe-filter-search" aria-label="Buscar un filtro" placeholder="Buscar filtro: cliente, estado, fecha..." value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} />
-          <p>Combina filtros para encontrar los casos. {activeFiltersCount} filtros activos.</p>
+          <div className="calcoe-filter-panel-head">
+            <div>
+              <span className="calcoe-section-kicker">Consulta avanzada</span>
+              <h2>Filtros de clasificación</h2>
+              <p>
+                Selecciona todos los criterios necesarios y aplícalos en una sola consulta.
+                {hasPendingFilters
+                  ? " Tienes cambios pendientes por aplicar."
+                  : ` ${activeFiltersCount} filtros activos.`}
+              </p>
+            </div>
+
+            <div className="calcoe-filter-panel-tools">
+              <input
+                className="calcoe-filter-search"
+                aria-label="Buscar un filtro"
+                placeholder="Buscar campo: cliente, estado, fecha..."
+                value={filterSearch}
+                onChange={(e) => setFilterSearch(e.target.value)}
+              />
+              <button
+                type="button"
+                className="calcoe-filter-collapse"
+                onClick={() => setShowFilters(false)}
+              >
+                Cerrar panel
+              </button>
+            </div>
+          </div>
+
           <div className="calcoe-filter-panel-grid">
             {TABLE_COLUMNS.filter((col) => normalizeForCompare(col.label).includes(normalizeForCompare(filterSearch))).map((col) => (
               <label key={col.key}>
                 <span>{col.label}</span>
                 <Select options={uniqueValues[col.key] || []}
-                  value={(columnFilters[col.key] || []).map(toFilterOption)}
+                  value={(draftColumnFilters[col.key] || []).map(toFilterOption)}
                   onChange={(opts) => handleFilterChange(col.key, opts)}
                   placeholder="Todos" isMulti isClearable isSearchable
                   closeMenuOnSelect={false} hideSelectedOptions={false}
@@ -2484,6 +2573,28 @@ export default function CalificacionCoeSapFuncional() {
                   classNamePrefix="calcoe-react-select" />
               </label>
             ))}
+          </div>
+
+          <div className="calcoe-filter-footer">
+            <div>
+              <strong>{draftFiltersCount}</strong>
+              <span>criterios seleccionados</span>
+              {hasPendingFilters && <small>Sin aplicar</small>}
+            </div>
+
+            <div className="calcoe-filter-footer-actions">
+              <button type="button" className="calcoe-btn ghost" onClick={clearAllFilters}>
+                Restablecer
+              </button>
+              <button
+                type="button"
+                className="calcoe-btn apply"
+                onClick={applyPendingFilters}
+                disabled={!hasPendingFilters}
+              >
+                Aplicar filtros
+              </button>
+            </div>
           </div>
         </section>
       )}
