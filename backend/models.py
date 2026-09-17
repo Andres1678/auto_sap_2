@@ -1293,7 +1293,8 @@ class CoeSapFuncionalCalificacion(db.Model):
     )
 
     # Columnas según Excel
-    numero = db.Column(db.String(80), nullable=False, unique=True, index=True)  # ID
+    # ID vacío cuando solo existe RF; el RF se guarda en caso_sm.
+    numero = db.Column(db.String(80), nullable=True, unique=True, index=True)  # ID
     sistema = db.Column(db.String(20))
     caso_sm = db.Column(db.String(100))
 
@@ -1483,7 +1484,8 @@ class CoeSapFuncionalCalificacionHora(db.Model):
         index=True
     )
 
-    numero = db.Column(db.String(80), nullable=False, index=True)
+    # Puede estar vacío; la relación obligatoria se mantiene por calificacion_id.
+    numero = db.Column(db.String(80), nullable=True, index=True)
 
     tipo = db.Column(db.String(50), nullable=False)
     modulo = db.Column(db.String(50), nullable=False)

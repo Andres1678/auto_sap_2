@@ -2662,7 +2662,7 @@ export default function CalificacionCoeSapFuncional() {
               <div>
                 <h3>{editFieldKey ? `Editar ${TABLE_COLUMNS.find((col) => col.key === editFieldKey)?.label}` : "Editar campos manuales"}</h3>
                 <p>
-                  Caso <b>{editRow?.numero}</b> • El estado se controla desde la lista oficial de subestados.
+                  Caso <b>{editRow?.numero || editRow?.casoSm || "Sin identificador"}</b> • El estado se controla desde la lista oficial de subestados.
                 </p>
               </div>
 
@@ -2721,7 +2721,7 @@ export default function CalificacionCoeSapFuncional() {
               <div>
                 <h3>Horas del caso</h3>
                 <p>
-                  Caso <b>{hoursRow?.numero}</b> • Total estimadas: {" "}
+                  Caso <b>{hoursRow?.numero || hoursRow?.casoSm || "Sin identificador"}</b> • Total estimadas: {" "}
                   <b>{numberText(hoursRow?.totalHorasEstimadas)}</b>
                 </p>
               </div>

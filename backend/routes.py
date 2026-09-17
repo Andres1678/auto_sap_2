@@ -16805,10 +16805,11 @@ def _calificacion_excel_detectar_header(filas):
     for idx, fila in enumerate(filas[:50]):
         normalizados = [_calificacion_norm_col(v) for v in fila if v is not None]
 
-        if "ID" in normalizados and ("SOCIEDAD" in normalizados or "ASUNTO" in normalizados):
+        identidades = CALIFICACION_EXCEL_ALIASES["numero"] + CALIFICACION_EXCEL_ALIASES["caso_sm"] + ["ID INTERACCION", "ID DE INTERACCION"]
+        if any(_calificacion_norm_col(alias) in normalizados for alias in identidades) and ("SOCIEDAD" in normalizados or "ASUNTO" in normalizados):
             return idx
 
-    raise ValueError("No se encontró la fila de encabezados. Debe existir una columna ID y columnas como SOCIEDAD o ASUNTO.")
+    raise ValueError("No se encontró la fila de encabezados. Debe existir ID, Caso SM o ID de Interacción, y columnas como SOCIEDAD o ASUNTO.")
 
 
 def _leer_excel_historico_calificacion(file):
@@ -17739,9 +17740,9 @@ def generar_calificacion_coe_sap_funcional():
 
             campos = _calificacion_campos_desde_base(base)
 
-            existente = CoeSapFuncionalCalificacion.query.filter_by(
-                numero=base.numero
-            ).first()
+            numero, caso = _coe_separar_identidad(base.numero, getattr(base, "id_interaccion", None))
+            existente, numero, caso = _coe_buscar_identidad_calificacion(numero, caso)
+            campos["numero"], campos["caso_sm"] = numero, caso
 
             if existente:
                 # Se actualizan solo campos automáticos.
@@ -17800,6 +17801,7 @@ def generar_calificacion_coe_sap_funcional():
                     source="CONSULTOR_BASE",
                 )
 
+                _coe_guardar_identidad_calificacion(existente, numero, caso)
                 _coe_ext_recalcular_row(existente)
 
                 existente.actualizado_por = usuario
@@ -18382,48 +18384,103 @@ def agregar_horas_calificacion_coe_sap_funcional(calificacion_id):
             "trace": traceback.format_exc(),
         }), 500
     
-def _coe_identidades_importacion(rows):
-    """Resolver SD/RF antes de escribir; rechazar asociaciones ambiguas."""
+def _coe_separar_identidad(numero=None, caso_sm=None, interaccion=None):
+    """Admite IDs de cualquier cliente; RF solo se almacena en Caso SM."""
     import re
-    pairs = []
-    rf_to_sd = {}
-    sd_to_rf = {}
+    sd, rf, otros = set(), set(), []
+    patron = re.compile(r"(?<![A-Z0-9])(SD|RF)[ -]*(\d+)(?![A-Z0-9])", re.I)
+    for value in (numero, caso_sm, interaccion):
+        value = _calificacion_excel_str(value)
+        if not value:
+            continue
+        matches = list(patron.finditer(value))
+        resto = patron.sub("", value).strip(" \t\r\n/,;|+()-")
+        # No recortar identificadores externos como CLIENTE-SD123-A.
+        if matches and not resto:
+            for match in matches:
+                token = match.group(1).upper() + match.group(2)
+                (sd if token.startswith("SD") else rf).add(token)
+        else:
+            otros.append(value)
+    if len(sd) > 1 or len(rf) > 1:
+        raise ValueError("La fila contiene varios SD o RF distintos. Separa los casos para evitar asociaciones incorrectas.")
+    identificador = next(iter(sd), None) or (otros[0] if otros else None)
+    caso = next(iter(rf), None)
+    if not identificador and not caso:
+        raise ValueError("La fila no contiene ningún identificador en ID, Caso SM o ID de Interacción.")
+    if identificador and len(identificador) > 80:
+        raise ValueError("El ID supera los 80 caracteres permitidos.")
+    if caso and len(caso) > 100:
+        raise ValueError("El Caso SM supera los 100 caracteres permitidos.")
+    return identificador, caso
+
+
+def _coe_excel_fijar_identidad(row, numero, caso):
+    row = dict(row)
+    for alias in CALIFICACION_EXCEL_ALIASES["numero"]:
+        row[_calificacion_norm_col(alias)] = numero or ""
+    for alias in CALIFICACION_EXCEL_ALIASES["caso_sm"]:
+        row[_calificacion_norm_col(alias)] = caso or ""
+    return row
+
+
+def _coe_identidades_importacion(rows):
+    """Relacionar filas del mismo archivo por ID o RF, sin exigir prefijos."""
+    pairs, rf_to_id, id_to_rf = [], {}, {}
     for row in rows:
-        values = [_calificacion_get_excel(row, CALIFICACION_EXCEL_ALIASES[key])
-                  for key in ("numero", "caso_sm")]
-        # También aceptar la columna explícita de interacción del export de SM.
-        values.append(_calificacion_get_excel(row, ["ID de Interacción", "ID INTERACCION", "ID DE INTERACCION"]))
-        tokens = set()
-        for value in values:
-            if value is None or str(value).strip() == "":
-                continue
-            raw = str(value).strip().upper()
-            found = re.findall(r"(?<![A-Z0-9])(SD|RF)[ -]*(\d+)(?![A-Z0-9])", raw)
-            tokens.update(prefix + digits for prefix, digits in found)
-        sd = sorted(t for t in tokens if t.startswith("SD"))
-        rf = sorted(t for t in tokens if t.startswith("RF"))
-        if len(sd) > 1 or len(rf) > 1 or not tokens:
-            raise ValueError("Revisa el ID y Caso SM de la fila " + str(row.get("_excel_fila", "")) + ": se requiere un SD o RF sin asociaciones ambiguas.")
-        sd, rf = (sd[0] if sd else None), (rf[0] if rf else None)
-        if sd and rf:
-            if sd in sd_to_rf and sd_to_rf[sd] != rf:
-                raise ValueError("El ID " + sd + " tiene más de un RF. Revisa la asociación.")
-            sd_to_rf[sd] = rf
-            if rf in rf_to_sd and rf_to_sd[rf] != sd:
-                raise ValueError("El caso " + rf + " está asociado a más de un SD.")
-            rf_to_sd[rf] = sd
-        pairs.append((row, sd, rf))
-    result = []
-    for row, sd, rf in pairs:
-        canonical = sd or rf_to_sd.get(rf) or rf
-        case = (rf or sd_to_rf.get(canonical) or "") if canonical.startswith("SD") else ""
-        row = dict(row)
-        for alias in CALIFICACION_EXCEL_ALIASES["numero"]:
-            row[alias] = canonical
-        for alias in CALIFICACION_EXCEL_ALIASES["caso_sm"]:
-            row[alias] = case
-        result.append(row)
-    return result
+        try:
+            numero, caso = _coe_separar_identidad(
+                _calificacion_get_excel(row, CALIFICACION_EXCEL_ALIASES["numero"]),
+                _calificacion_get_excel(row, CALIFICACION_EXCEL_ALIASES["caso_sm"]),
+                _calificacion_get_excel(row, ["ID de Interacción", "ID INTERACCION", "ID DE INTERACCION"]),
+            )
+        except ValueError as exc:
+            raise ValueError(f"Fila {row.get('_excel_fila', '?')}: {exc}") from exc
+        if numero and caso:
+            if caso in rf_to_id and rf_to_id[caso] != numero:
+                raise ValueError(f"El caso {caso} está asociado a varios IDs en el archivo.")
+            if numero in id_to_rf and id_to_rf[numero] != caso:
+                raise ValueError(f"El ID {numero} está asociado a varios RF en el archivo.")
+            rf_to_id[caso], id_to_rf[numero] = numero, caso
+        pairs.append((row, numero, caso))
+    return [_coe_excel_fijar_identidad(row, numero or rf_to_id.get(caso), caso or id_to_rf.get(numero))
+            for row, numero, caso in pairs]
+
+
+def _coe_buscar_identidad_calificacion(numero, caso):
+    """Resolver altas, recargas y el paso de RF solo a ID+RF sin duplicar filas."""
+    condiciones = []
+    if numero:
+        condiciones.append(CoeSapFuncionalCalificacion.numero == numero)
+    if caso:
+        condiciones.extend([
+            CoeSapFuncionalCalificacion.caso_sm == caso,
+            CoeSapFuncionalCalificacion.numero == caso,  # Compatibilidad con RF antiguos en ID.
+        ])
+    if not condiciones:
+        raise ValueError("Se requiere ID o Caso SM para identificar el registro.")
+    rows = CoeSapFuncionalCalificacion.query.filter(or_(*condiciones)).all()
+    if len(rows) > 1:
+        raise ValueError(f"Existen registros separados para {numero or caso}. Revisa la duplicidad antes de importar; no se fusionarán sus horas automáticamente.")
+    row = rows[0] if rows else None
+    if row:
+        anterior, rf_anterior = _coe_separar_identidad(row.numero, row.caso_sm)
+        if numero and anterior and numero != anterior:
+            raise ValueError(f"{caso} ya está relacionado con el ID {anterior}; no puede asociarse a {numero}.")
+        if caso and rf_anterior and caso != rf_anterior:
+            raise ValueError(f"El ID {numero} ya está relacionado con {rf_anterior}.")
+        numero = numero or anterior
+        caso = caso or rf_anterior
+    return row, numero, caso
+
+
+def _coe_guardar_identidad_calificacion(row, numero, caso):
+    anterior = row.numero
+    row.numero = numero
+    row.caso_sm = caso
+    if row.id and anterior != numero:
+        CoeSapFuncionalCalificacionHora.query.filter_by(calificacion_id=row.id).update(
+            {"numero": numero}, synchronize_session="fetch")
 
 
 @bp.route("/coe-sap-funcional/calificacion/import-excel", methods=["POST"])
@@ -18458,18 +18515,15 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
             )
 
             numero = _calificacion_excel_str(numero_raw)
-
-            if not numero:
-                continue
-
-            if numero not in grupos:
-                grupos[numero] = []
-
-            grupos[numero].append(row)
+            caso = _calificacion_excel_str(_calificacion_get_excel(row, CALIFICACION_EXCEL_ALIASES["caso_sm"]))
+            _, numero, caso = _coe_buscar_identidad_calificacion(numero, caso)
+            # Espacios de claves separados: un RF nunca se usa como ID ficticio.
+            clave = ("ID", numero) if numero else ("CASO_SM", caso)
+            grupos.setdefault(clave, []).append(_coe_excel_fijar_identidad(row, numero, caso))
 
         if not grupos:
             return jsonify({
-                "mensaje": "No se encontraron registros con ID válido en el Excel"
+                "mensaje": "No se encontraron registros con ID o Caso SM en el Excel"
             }), 400
 
         creados = 0
@@ -18481,13 +18535,13 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
 
         diferencias_detectadas = []
 
-        for numero, filas_caso in grupos.items():
+        for clave, filas_caso in grupos.items():
+            numero = clave[1] if clave[0] == "ID" else None
             if len(filas_caso) > 1:
                 duplicados_excel += len(filas_caso) - 1
 
-            base = BaseRegistroInfoCoeSapFuncional.query.filter_by(
-                numero=numero
-            ).first()
+            base = (BaseRegistroInfoCoeSapFuncional.query.filter_by(numero=numero).first()
+                    if numero else None)
 
             campos_excel_primer_row = _calificacion_extraer_campos_excel(filas_caso[0])
 
@@ -18506,33 +18560,8 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
             else:
                 no_encontrados_en_base += 1
 
-            row_calificacion = CoeSapFuncionalCalificacion.query.filter_by(
-                numero=numero
-            ).first()
-
             caso_rf = campos_excel_primer_row.get("caso_sm")
-            if numero.startswith("RF"):
-                linked = CoeSapFuncionalCalificacion.query.filter_by(caso_sm=numero).all()
-                if len(linked) > 1:
-                    db.session.rollback()
-                    return jsonify({"mensaje": "Hay más de un SD asociado a " + numero + ". Revisa los registros existentes."}), 400
-                if linked:
-                    if row_calificacion and row_calificacion.id != linked[0].id:
-                        db.session.rollback()
-                        return jsonify({"mensaje": "Existen registros separados SD/RF. Revisa la duplicidad antes de importar."}), 400
-                    row_calificacion = linked[0]
-                    caso_rf = numero
-                    numero = row_calificacion.numero
-            elif caso_rf:
-                previous = CoeSapFuncionalCalificacion.query.filter_by(numero=caso_rf).first()
-                linked = CoeSapFuncionalCalificacion.query.filter_by(caso_sm=caso_rf).all()
-                if any(item.numero != numero for item in linked) or (previous and row_calificacion and previous.id != row_calificacion.id):
-                    db.session.rollback()
-                    return jsonify({"mensaje": "Asociación SD/RF duplicada o conflictiva: " + caso_rf}), 400
-                if previous and not row_calificacion:
-                    row_calificacion = previous
-                    row_calificacion.numero = numero
-                    CoeSapFuncionalCalificacionHora.query.filter_by(calificacion_id=previous.id).update({"numero": numero}, synchronize_session=False)
+            row_calificacion, numero, caso_rf = _coe_buscar_identidad_calificacion(numero, caso_rf)
 
             if row_calificacion:
                 actualizados += 1
@@ -18548,6 +18577,8 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
 
                     creados_solo_excel += 1
 
+                campos_nuevo["numero"] = numero
+                campos_nuevo["caso_sm"] = caso_rf
                 campos_nuevo["creado_por"] = usuario
                 campos_nuevo["actualizado_por"] = usuario
 
@@ -18661,8 +18692,7 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
                     db.session.add(movimiento)
                     horas_movimientos += 1
 
-            row_calificacion.numero = numero
-            row_calificacion.caso_sm = caso_rf if numero.startswith("SD") else None
+            _coe_guardar_identidad_calificacion(row_calificacion, numero, caso_rf)
             campos_actuales = {
                 c.name: getattr(row_calificacion, c.name)
                 for c in CoeSapFuncionalCalificacion.__table__.columns
@@ -19072,20 +19102,23 @@ def importar_catalogos_coe_sap_funcional():
 # SINCRONIZACION CALIFICACION
 # ============================================================
 
-def _coe_ext_upsert_calificacion(numero, usuario):
+def _coe_ext_upsert_calificacion(numero, usuario, caso_sm=None):
     numero = _coe_ext_str(numero)
 
     if not numero:
         return None, False
 
-    row = CoeSapFuncionalCalificacion.query.filter_by(numero=numero).first()
+    numero, caso_sm = _coe_separar_identidad(numero, caso_sm)
+    row, numero, caso_sm = _coe_buscar_identidad_calificacion(numero, caso_sm)
 
     if row:
+        _coe_guardar_identidad_calificacion(row, numero, caso_sm)
         return row, False
 
     row = CoeSapFuncionalCalificacion(
         numero=numero,
-        sistema=numero[:2],
+        caso_sm=caso_sm,
+        sistema=(numero or caso_sm or "")[:2],
         tipo_contrato="BOLSA DE HORAS",
         creado_por=usuario,
         actualizado_por=usuario,
@@ -19107,7 +19140,7 @@ def _coe_ext_sync_desde_base(row, base, modo):
     manual_fields = _coe_ext_manual_fields(row)
 
     _coe_ext_set_field(row, "base_registro_id", base.id, "BASE_COE", manual_fields, force=True)
-    _coe_ext_set_field(row, "caso_sm", getattr(base, "id_interaccion", None), "BASE_COE", manual_fields, force, only_empty)
+    # El upsert ya resolvió ID/Caso SM; no sobrescribir el RF con un valor vacío de la base.
     _coe_ext_set_field(row, "sociedad", getattr(base, "compania", None), "BASE_COE", manual_fields, force, only_empty)
     _coe_ext_set_field(row, "asunto", getattr(base, "titulo", None), "BASE_COE", manual_fields, force, only_empty)
     _coe_ext_set_field(row, "observaciones", getattr(base, "accion_actualizacion", None), "BASE_COE", manual_fields, force, only_empty)
@@ -19596,7 +19629,8 @@ def sincronizar_calificacion_coe_sap_funcional_lote():
 
             row, created = _coe_ext_upsert_calificacion(
                 numero,
-                usuario
+                usuario,
+                getattr(base, "id_interaccion", None)
             )
 
             if not row:
