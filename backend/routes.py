@@ -18431,10 +18431,25 @@ def _coe_separar_identidad(numero=None, caso_sm=None, interaccion=None):
                 (sd if token.startswith("SD") else rf).add(token)
         else:
             otros.append(value)
-    if len(sd) > 1 or len(rf) > 1:
-        raise ValueError("La fila contiene varios SD o RF distintos. Separa los casos para evitar asociaciones incorrectas.")
+    if len(sd) > 1:
+        raise ValueError("La fila contiene varios ID SD distintos. Separa los casos para evitar asociaciones incorrectas.")
+
     identificador = next(iter(sd), None) or (otros[0] if otros else None)
-    caso = next(iter(rf), None)
+
+    # El histórico contiene algunos ID principales relacionados con dos o más
+    # RF en la misma celda. Si existe un ID inequívoco se conservan todos los
+    # RF como dato secundario, exactamente como vienen en N° CASO SM.
+    if len(rf) > 1:
+        if not identificador:
+            raise ValueError(
+                "La fila contiene varios RF y no tiene un ID principal para identificar el caso."
+            )
+
+        caso_raw = str(caso_sm or "").strip()
+        caso = caso_raw or "\n".join(sorted(rf))
+    else:
+        caso = next(iter(rf), None)
+
     if not identificador and not caso:
         raise ValueError("La fila no contiene ningún identificador en ID, Caso SM o ID de Interacción.")
     if identificador and len(identificador) > 80:
