@@ -4732,6 +4732,12 @@ def crear_oportunidad():
     try:
         data = clean_payload(request.get_json() or {})
 
+        # NIT y razón social pertenecen al catálogo de clientes y se muestran
+        # únicamente como datos informativos en el frontend. No son columnas
+        # del modelo Oportunidad, por lo que nunca deben llegar al constructor.
+        data.pop("nit", None)
+        data.pop("razon_social", None)
+
         cliente_valido, mensaje_cliente = _validar_cliente_catalogo_en_payload(
             data, requerido=True
         )
@@ -4779,6 +4785,11 @@ def editar_oportunidad(id):
         from decimal import Decimal, ROUND_HALF_UP
 
         data = clean_payload(request.get_json() or {})
+
+        # Protección equivalente para las ediciones realizadas desde la tabla.
+        data.pop("nit", None)
+        data.pop("razon_social", None)
+
         o = Oportunidad.query.get_or_404(id)
 
         cliente_valido, mensaje_cliente = _validar_cliente_catalogo_en_payload(data)
