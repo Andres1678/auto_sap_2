@@ -5812,7 +5812,9 @@ def listar_permisos_efectivos_personas():
                 "usuario": consultor.usuario,
                 "nombre": consultor.nombre,
                 "activo": bool(consultor.activo),
+                "rol_id": consultor.rol_id,
                 "rol": consultor.rol_obj.nombre if consultor.rol_obj else None,
+                "equipo_id": consultor.equipo_id,
                 "equipo": consultor.equipo_obj.nombre if consultor.equipo_obj else None,
                 "total_permisos": len(permisos),
                 "permisos": permisos,
@@ -5823,6 +5825,76 @@ def listar_permisos_efectivos_personas():
     except Exception as exc:
         app.logger.exception("Error en /permisos-personas")
         return jsonify({"error": "Error consultando permisos efectivos", "detalle": str(exc)}), 500
+
+
+@bp.route('/permisos-personas/quitar', methods=['DELETE'])
+@admin_required
+def quitar_permiso_persona_por_origen():
+    """Retira una asignación concreta sin confundir permiso efectivo con origen."""
+    try:
+        data = request.get_json(silent=True) or {}
+        origen = str(data.get("origen") or "").strip().upper()
+
+        try:
+            consultor_id = int(data.get("consultor_id"))
+            permiso_id = int(data.get("permiso_id"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "consultor_id y permiso_id son requeridos"}), 400
+
+        if origen not in {"ROL", "EQUIPO", "INDIVIDUAL"}:
+            return jsonify({"error": "Origen no permitido"}), 400
+
+        consultor = Consultor.query.get(consultor_id)
+        permiso = Permiso.query.get(permiso_id)
+        if not consultor or not permiso:
+            return jsonify({"error": "Consultor o permiso no encontrado"}), 404
+
+        afectados = 1
+        origen_nombre = consultor.nombre
+
+        if origen == "ROL":
+            if not consultor.rol_id:
+                return jsonify({"error": "La persona no tiene rol asignado"}), 400
+            asignacion = RolPermiso.query.filter_by(rol_id=consultor.rol_id, permiso_id=permiso_id).first()
+            afectados = Consultor.query.filter_by(rol_id=consultor.rol_id, activo=1).count()
+            origen_nombre = consultor.rol_obj.nombre if consultor.rol_obj else "ROL"
+        elif origen == "EQUIPO":
+            if not consultor.equipo_id:
+                return jsonify({"error": "La persona no tiene equipo asignado"}), 400
+            asignacion = EquipoPermiso.query.filter_by(equipo_id=consultor.equipo_id, permiso_id=permiso_id).first()
+            afectados = Consultor.query.filter_by(equipo_id=consultor.equipo_id, activo=1).count()
+            origen_nombre = consultor.equipo_obj.nombre if consultor.equipo_obj else "EQUIPO"
+        else:
+            asignacion = ConsultorPermiso.query.filter_by(consultor_id=consultor_id, permiso_id=permiso_id).first()
+
+        if not asignacion:
+            return jsonify({"error": "La asignación indicada ya no existe"}), 404
+
+        db.session.delete(asignacion)
+        db.session.commit()
+
+        origenes_restantes = []
+        if consultor.rol_id and RolPermiso.query.filter_by(rol_id=consultor.rol_id, permiso_id=permiso_id).first():
+            origenes_restantes.append("ROL")
+        if consultor.equipo_id and EquipoPermiso.query.filter_by(equipo_id=consultor.equipo_id, permiso_id=permiso_id).first():
+            origenes_restantes.append("EQUIPO")
+        if ConsultorPermiso.query.filter_by(consultor_id=consultor_id, permiso_id=permiso_id).first():
+            origenes_restantes.append("INDIVIDUAL")
+
+        return jsonify({
+            "mensaje": "Asignación retirada correctamente",
+            "permiso": permiso.codigo,
+            "origen_retirado": origen,
+            "origen_nombre": origen_nombre,
+            "personas_afectadas": afectados,
+            "permiso_sigue_efectivo": bool(origenes_restantes),
+            "origenes_restantes": origenes_restantes,
+        }), 200
+
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception("Error retirando permiso por origen")
+        return jsonify({"error": "No fue posible retirar el permiso", "detalle": str(exc)}), 500
 
 
 @bp.route('/consultores/<int:consultor_id>/permisos', methods=['POST'])
