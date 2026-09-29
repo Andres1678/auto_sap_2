@@ -339,9 +339,7 @@ function buildDateRangeISO(startISO, endISO) {
   const current = new Date(start);
 
   while (current <= end) {
-    if (current.getDay() !== 0 && current.getDay() !== 6) {
-      days.push(toISODate(current));
-    }
+    days.push(toISODate(current));
     current.setDate(current.getDate() + 1);
   }
 
@@ -666,9 +664,7 @@ const Registro = ({ userData }) => {
   const excelInputRef = useRef(null);
   const openButtonRef = useRef(null);
   const firstFieldRef = useRef(null);
-  const todayISO = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Bogota", year: "numeric", month: "2-digit", day: "2-digit"
-  }).format(new Date());
+  const { todayISO } = getWeekBoundsISO(new Date());
 
   const [registro, setRegistro] = useState(initRegistro());
   const [modoEdicion, setModoEdicion] = useState(false);
@@ -751,7 +747,12 @@ const Registro = ({ userData }) => {
   const isAdmin = canAccessRegistro && rolUpper.startsWith("ADMIN");
   const isAdminGlobal = canAccessRegistro && REGISTRO_GLOBAL_ROLES.has(rolUpper);
   const isAdminRolePool = canAccessRegistro && REGISTRO_ROLE_POOL_ROLES.has(rolUpper);
-  const isAdminEquipo = canAccessRegistro && isAdmin && !isAdminGlobal && !isAdminRolePool;
+  // LIDER tiene alcance por equipo igual que los antiguos ADMIN_* de equipo,
+  // pero no obtiene privilegios administrativos globales.
+  const isAdminEquipo = canAccessRegistro && (
+    rolUpper === "LIDER" ||
+    (isAdmin && !isAdminGlobal && !isAdminRolePool)
+  );
   
 
   const miEquipo = String(equipoUser || "").trim().toUpperCase();
@@ -1481,21 +1482,14 @@ const Registro = ({ userData }) => {
         return Swal.fire({
           icon: "warning",
           title: "Rango inválido",
-          text: "La fecha final debe ser mayor o igual a la inicial y el rango debe incluir días laborales. Los festivos de Colombia se excluyen al guardar.",
+          text: "La fecha final de vacaciones debe ser mayor o igual a la fecha inicial.",
         });
       }
-    } else if (!modoEdicion && registro.fecha !== todayISO) {
+    } else if (registro.fecha > todayISO) {
       return Swal.fire({
         icon: "warning",
-        title: "Registro diario",
-        text: "Los registros normales solo se pueden crear con la fecha de hoy. Para vacaciones usa el rango de fechas.",
-      });
-    } else if (modoEdicion && registro.fecha !== String(original?.fecha || "").slice(0, 10)
-               && registro.fecha !== todayISO) {
-      return Swal.fire({
-        icon: "warning",
-        title: "Fecha no permitida",
-        text: "Puedes corregir un registro histórico sin cambiar su fecha, o moverlo a hoy.",
+        title: "Fecha futura no permitida",
+        text: "No puedes registrar fechas futuras.",
       });
     }
 
@@ -2195,14 +2189,14 @@ const Registro = ({ userData }) => {
   useEffect(() => {
     if (!userData) return;
 
-    if (!isAdmin) {
-      setFiltroConsultor(nombreUser ? [nombreUser] : []);
+    if (isAdminEquipo) {
+      setFiltroConsultor([]);
       setFiltroEquipo(normKey(equipoUser));
       return;
     }
 
-    if (isAdminEquipo) {
-      setFiltroConsultor([]);
+    if (!isAdmin) {
+      setFiltroConsultor(nombreUser ? [nombreUser] : []);
       setFiltroEquipo(normKey(equipoUser));
       return;
     }
@@ -2658,11 +2652,11 @@ const Registro = ({ userData }) => {
 
                 setPage(1);
 
-                if (!isAdmin) {
-                  setFiltroConsultor(nombreUser ? [nombreUser] : []);
-                  setFiltroEquipo(normKey(equipoUser));
-                } else if (isAdminEquipo) {
+                if (isAdminEquipo) {
                   setFiltroConsultor([]);
+                  setFiltroEquipo(normKey(equipoUser));
+                } else if (!isAdmin) {
+                  setFiltroConsultor(nombreUser ? [nombreUser] : []);
                   setFiltroEquipo(normKey(equipoUser));
                 } else if (isAdminRolePool) {
                   setFiltroConsultor([]);
@@ -2751,7 +2745,6 @@ const Registro = ({ userData }) => {
                   <input
                     type="date"
                     value={registro.fecha}
-                    min={!habilitarRangoVacaciones && !modoEdicion ? todayISO : undefined}
                     max={habilitarRangoVacaciones ? undefined : todayISO}
                     onChange={(e) => {
                       const value = e.target.value;
@@ -2778,9 +2771,7 @@ const Registro = ({ userData }) => {
                     title={
                       habilitarRangoVacaciones
                         ? "Para vacaciones se permiten fechas futuras."
-                        : modoEdicion
-                          ? "Puedes mantener la fecha original o cambiarla a hoy."
-                          : "Los registros normales solo se crean con la fecha de hoy."
+                        : "Puedes editar fechas pasadas o de hoy, pero no fechas futuras."
                     }
                   />
 
