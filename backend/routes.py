@@ -1343,7 +1343,7 @@ def _is_vacaciones_payload(data: dict) -> bool:
     tipo_norm = _norm_text_basic(tipo)
 
     # En tu catálogo se ve como "15 - Vacaciones / Incapacidades"
-    return bool(re.match(r"^15(?:\s*[-–]|$)", tipo_norm))
+    return tipo_norm.startswith("15") or "VACACIONES" in tipo_norm
 
 
 def _parse_iso_date_for_range(value):
@@ -1364,14 +1364,12 @@ def _build_iso_dates_range(start_value, end_value):
     if not start or not end or end < start:
         return []
 
-    festivos_co = _cap_colombia_holidays_for_years(range(start.year, end.year + 1))
     dates = []
     current = start
 
     while current <= end:
-        if current.weekday() < 5 and current not in festivos_co:
-            dates.append(current.isoformat())
-        current += timedelta(days=1)
+        dates.append(current.isoformat())
+        current = current + timedelta(days=1)
 
     return dates
 
@@ -1440,7 +1438,7 @@ def registrar_hora():
 
         if not fechas_a_crear:
             return jsonify({
-                'mensaje': 'Rango de vacaciones inválido o sin días laborales (lunes a viernes, excluyendo festivos de Colombia).'
+                'mensaje': 'Rango de vacaciones inválido. Verifica fecha de inicio y fecha de fin.'
             }), 400
 
         fecha = fechas_a_crear[0]
@@ -1448,14 +1446,7 @@ def registrar_hora():
         if not fecha:
             return jsonify({'mensaje': 'Campos obligatorios faltantes'}), 400
 
-        fecha_normal = _parse_iso_date_for_range(fecha)
-        hoy_bogota = datetime.now(ZoneInfo("America/Bogota")).date()
-        if fecha_normal != hoy_bogota:
-            return jsonify({
-                'mensaje': 'Los registros normales solo se pueden crear con la fecha de hoy (Bogotá).'
-            }), 403
-        fechas_a_crear = [fecha_normal.isoformat()]
-        fecha = fechas_a_crear[0]
+        fechas_a_crear = [fecha]
 
     tiempo_calculado = _calcular_tiempo_horas(hora_inicio, hora_fin)
     if tiempo_calculado <= 0:
@@ -1502,9 +1493,6 @@ def registrar_hora():
             tarea_obj = Tarea.query.filter(Tarea.codigo == codigo).first()
             if tarea_obj:
                 tarea_id = tarea_obj.id
-
-    if es_rango_vacaciones and (not tarea_obj or str(tarea_obj.codigo).strip() != "15"):
-        return jsonify({'mensaje': 'El rango de fechas solo se permite para la tarea 15 - Vacaciones / Incapacidades.'}), 400
 
     # ------------------------------------------------------------------
     # 5) VALORES NUMÉRICOS
@@ -2833,12 +2821,9 @@ def editar_registro(id):
         # ----------------------------------------------------------
         # 3.1) No permitir fechas futuras
         # ----------------------------------------------------------
-        fecha_nueva_obj = _parse_iso_date_safe(nueva_fecha)
-        fecha_original_obj = _parse_iso_date_safe(registro.fecha)
-        hoy_bogota = datetime.now(ZoneInfo("America/Bogota")).date()
-        if not fecha_nueva_obj or (fecha_nueva_obj != fecha_original_obj and fecha_nueva_obj != hoy_bogota):
+        if not _fecha_no_futura(nueva_fecha):
             return jsonify({
-                'mensaje': 'Puedes mantener la fecha original del registro o cambiarla a hoy (Bogotá).'
+                'mensaje': 'No puedes actualizar el registro con una fecha futura.'
             }), 403
 
         # ----------------------------------------------------------
@@ -6889,6 +6874,7 @@ def registros_conteos():
 
 
 @bp.route("/resumen-calendario", methods=["GET"])
+@auth_required
 def resumen_calendario():
     try:
         usuario = _get_usuario_from_request()
@@ -6897,7 +6883,7 @@ def resumen_calendario():
         if not usuario:
             return jsonify({"error": "Usuario no enviado"}), 400
 
-        usuario_norm = usuario.strip().lower()
+        usuario_norm = (usuario or "").strip().lower()
 
         consultor_login = (
             Consultor.query
@@ -6910,129 +6896,92 @@ def resumen_calendario():
 
         scope, val = _scope_for_graficos(consultor_login, rol_req)
 
+        # filtros de fecha opcionales
         desde = (request.args.get("desde") or "").strip()
         hasta = (request.args.get("hasta") or "").strip()
-        equipo_filter = (request.args.get("equipo") or "").strip().upper()
 
+        # filtro opcional de equipo (ADMIN global), pero si es TEAM solo permite su equipo
+        equipo_filter = (request.args.get("equipo") or "").strip().upper()
         if equipo_filter and scope == "TEAM":
-            eq_login = (
-                (consultor_login.equipo_obj.nombre or "").strip().upper()
-                if consultor_login.equipo_obj else ""
-            )
+            eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper() if consultor_login.equipo_obj else ""
             if equipo_filter != eq_login:
-                return jsonify({
-                    "error": "No autorizado para consultar otro equipo"
-                }), 403
+                return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
+
+        # La consulta parte de Consultor para incluir también a los usuarios
+        # activos que todavía no tengan registros en el periodo consultado.
+        # Los filtros de fecha deben ir en el ON del LEFT JOIN; si se aplican
+        # en WHERE, SQL vuelve a excluir a quienes no tienen registros.
+        registro_join = (
+            func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario)
+        )
+
+        if desde and hasta:
+            registro_join = and_(
+                registro_join,
+                Registro.fecha.between(desde, hasta),
+            )
+        elif desde:
+            registro_join = and_(registro_join, Registro.fecha >= desde)
+        elif hasta:
+            registro_join = and_(registro_join, Registro.fecha <= hasta)
 
         q = (
             db.session.query(
-                func.lower(Registro.usuario_consultor).label("usuario_consultor"),
+                Consultor.id.label("consultor_id"),
+                func.lower(Consultor.usuario).label("usuario_consultor"),
                 Consultor.nombre.label("consultor"),
                 Registro.fecha.label("fecha"),
-                Registro.hora_inicio.label("hora_inicio"),
-                Registro.hora_fin.label("hora_fin"),
-                Registro.total_horas.label("total_horas"),
+                func.coalesce(func.sum(Registro.total_horas), 0).label("total_horas"),
             )
-            .select_from(Registro)
-            .join(
-                Consultor,
-                func.lower(Registro.usuario_consultor)
-                == func.lower(Consultor.usuario)
-            )
+            .select_from(Consultor)
             .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
+            .outerjoin(Registro, registro_join)
+            .filter(Consultor.activo == 1)
         )
 
+        # aplicar scope
         if scope == "SELF":
-            q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
+            q = q.filter(func.lower(Consultor.usuario) == usuario_norm)
         elif scope == "TEAM":
             q = q.filter(Consultor.equipo_id == int(val))
         elif scope == "ROLE_POOL":
             q = q.filter(Consultor.rol_id == int(val))
 
+        # aplicar equipo_filter si viene (solo realmente útil en ADMIN global)
         if equipo_filter:
             q = q.filter(func.upper(Equipo.nombre) == equipo_filter)
 
-        if desde and hasta:
-            q = q.filter(Registro.fecha.between(desde, hasta))
-        elif desde:
-            q = q.filter(Registro.fecha >= desde)
-        elif hasta:
-            q = q.filter(Registro.fecha <= hasta)
+        # agrupar por consultor+fecha
+        q = q.group_by(
+            Consultor.id,
+            func.lower(Consultor.usuario),
+            Consultor.nombre,
+            Registro.fecha,
+        )
+        q = q.order_by(Consultor.nombre.asc(), Registro.fecha.asc())
 
-        rows = q.order_by(Consultor.nombre.asc(), Registro.fecha.asc()).all()
+        rows = q.all()
 
-        def minutos_del_registro(inicio, fin):
-            """Devuelve minutos exactos; None si faltan horas válidas."""
-            def convertir(valor):
-                if isinstance(valor, time):
-                    return valor.hour * 60 + valor.minute
-
-                texto = str(valor or "").strip()
-                match = re.match(r"^(\d{1,2}):(\d{2})(?::\d{2})?$", texto)
-                if not match:
-                    return None
-
-                hora, minuto = map(int, match.groups())
-                if hora > 23 or minuto > 59:
-                    return None
-                return hora * 60 + minuto
-
-            inicio_min = convertir(inicio)
-            fin_min = convertir(fin)
-
-            if inicio_min is None or fin_min is None or fin_min <= inicio_min:
-                return None
-
-            return fin_min - inicio_min
-
-        # Agrupar en minutos. Los registros antiguos sin horas válidas
-        # conservan su total_horas como respaldo.
+        # armar respuesta agrupada por consultor
         out = {}
-        dias = {}
-
         for r in rows:
-            usuario_key = r.usuario_consultor or "na"
-            fecha_key = str(r.fecha)
-            clave_dia = (usuario_key, fecha_key)
-
-            if usuario_key not in out:
-                out[usuario_key] = {
+            key = r.usuario_consultor or "na"
+            if key not in out:
+                out[key] = {
                     "consultor": r.consultor or r.usuario_consultor or "—",
+                    "consultor_id": r.consultor_id,
                     "usuario_consultor": r.usuario_consultor,
-                    "registros": [],
+                    "registros": []
                 }
 
-            if clave_dia not in dias:
-                dias[clave_dia] = {
-                    "minutos": 0,
-                    "horas_respaldo": Decimal("0"),
-                }
-
-            minutos = minutos_del_registro(r.hora_inicio, r.hora_fin)
-            if minutos is not None:
-                dias[clave_dia]["minutos"] += minutos
-            else:
-                dias[clave_dia]["horas_respaldo"] += Decimal(
-                    str(r.total_horas or 0)
-                )
-
-        anios_dias = {int(fecha_key[:4]) for _, fecha_key in dias}
-        festivos_dias = _cap_colombia_holidays_for_years(anios_dias)
-        for (usuario_key, fecha_key), valores in dias.items():
-            horas = (
-                Decimal(valores["minutos"]) / Decimal("60")
-                + valores["horas_respaldo"]
-            )
-            total_horas = horas.quantize(
-                Decimal("0.01"),
-                rounding=ROUND_HALF_UP,
-            )
-
-            out[usuario_key]["registros"].append({
-                "fecha": fecha_key,
-                "total_horas": float(total_horas),
-                "es_festivo": date.fromisoformat(fecha_key[:10]) in festivos_dias,
-            })
+            # El LEFT JOIN genera una fila con fecha NULL para los consultores
+            # sin registros. El consultor sí se devuelve, pero su lista queda
+            # vacía para que el frontend pinte todos los días como sin registro.
+            if r.fecha is not None:
+                out[key]["registros"].append({
+                    "fecha": r.fecha,
+                    "total_horas": float(r.total_horas or 0),
+                })
 
         return jsonify(list(out.values())), 200
 
@@ -11524,12 +11473,12 @@ def _cap_meta_hours_for_day(d: date, co_holidays=None):
     if not _cap_is_standard_workday(d, co_holidays):
         return Decimal("0.00")
 
-    return Decimal("9.00") if d.weekday() == 4 else Decimal("8.50")
+    return Decimal("8.00") if d.weekday() == 0 else Decimal("9.00")
 
 
 
 def _cap_work_days_text():
-    return "Lunes a jueves 8,5 h / viernes 9 h (sin festivos CO)"
+    return "Lunes 8 h / martes a viernes 9 h (sin festivos CO)"
 
 
 def _cap_parse_month_year_from_request():
@@ -11774,10 +11723,7 @@ def resumen_capacidad_semanal():
                 "consultor": item["consultor"],
                 "equipo": item["equipo"],
                 "metaMes": meta_mes,
-                "metaDiaObjetivo": _cap_meta_hours_for_day(
-                    datetime.now(ZoneInfo("America/Bogota")).date(),
-                    co_holidays | _cap_colombia_holidays_for_years([datetime.now(ZoneInfo("America/Bogota")).year]),
-                ),
+                "metaDiaObjetivo": 9.0,
                 "horasMes": horas_mes,
                 "porcentajeMes": porcentaje_mes,
                 "diasTrabajoTexto": _cap_work_days_text(),
@@ -12160,8 +12106,8 @@ def _cap_is_standard_workday(d: date, co_holidays=None):
 def _cap_meta_hours_for_day(d: date, co_holidays=None):
     """
     Regla única:
-    - lunes a jueves: 8,5h
-    - viernes: 9h
+    - lunes: 8h
+    - martes a viernes: 9h
     - fines de semana / festivos: 0h
     """
     co_holidays = co_holidays or set()
@@ -12169,7 +12115,7 @@ def _cap_meta_hours_for_day(d: date, co_holidays=None):
     if not _cap_is_standard_workday(d, co_holidays):
         return 0.0
 
-    return 9.0 if d.weekday() == 4 else 8.5
+    return 8.0 if d.weekday() == 0 else 9.0
 
 def _cap_colombia_holidays_for_years(years):
     import holidays
