@@ -5723,6 +5723,108 @@ def permisos_efectivos_consultor(consultor_id):
     return permisos_asignados(consultor_id)
 
 
+@bp.route('/permisos-personas', methods=['GET'])
+@permission_required("PERMISOS_EFECTIVOS_VER")
+def listar_permisos_efectivos_personas():
+    """Lista permisos efectivos y su origen, respetando el alcance del usuario."""
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == str(usuario or "").strip().lower())
+            .first()
+        )
+        if not consultor_login:
+            return jsonify({"error": "Consultor de sesión no encontrado"}), 404
+
+        scope, scope_value = scope_for(consultor_login, rol_req)
+
+        query = Consultor.query.options(
+            joinedload(Consultor.rol_obj)
+                .joinedload(Rol.permisos_asignados)
+                .joinedload(RolPermiso.permiso),
+            joinedload(Consultor.equipo_obj)
+                .joinedload(Equipo.permisos_asignados)
+                .joinedload(EquipoPermiso.permiso),
+            joinedload(Consultor.permisos_especiales)
+                .joinedload(ConsultorPermiso.permiso),
+        )
+
+        if scope == "SELF":
+            query = query.filter(Consultor.id == consultor_login.id)
+        elif scope == "TEAM":
+            equipo_id = int(scope_value or 0)
+            if not equipo_id:
+                return jsonify({"error": "Usuario sin equipo asignado"}), 403
+            query = query.filter(Consultor.equipo_id == equipo_id)
+        elif scope == "ROLE_POOL":
+            query = query.filter(Consultor.rol_id == int(scope_value or 0))
+
+        consultores = query.order_by(Consultor.nombre.asc()).all()
+        catalogo_permisos = Permiso.query.order_by(Permiso.codigo.asc()).all()
+        resultado = []
+
+        for consultor in consultores:
+            por_codigo = {}
+
+            def agregar_permiso(permiso, origen):
+                if not permiso or not permiso.codigo:
+                    return
+                item = por_codigo.setdefault(permiso.codigo, {
+                    "id": permiso.id,
+                    "codigo": permiso.codigo,
+                    "descripcion": permiso.descripcion,
+                    "origenes": [],
+                })
+                if origen not in item["origenes"]:
+                    item["origenes"].append(origen)
+
+            rol_nombre = (
+                str(consultor.rol_obj.nombre or "").strip().upper()
+                if consultor.rol_obj else ""
+            )
+
+            # ADMIN tiene acceso total por lógica del backend aunque su tabla
+            # rol_permiso no contenga cada permiso del catálogo.
+            if rol_nombre == "ADMIN":
+                for permiso in catalogo_permisos:
+                    agregar_permiso(permiso, "ADMIN")
+            else:
+                if consultor.rol_obj:
+                    for rp in consultor.rol_obj.permisos_asignados:
+                        agregar_permiso(rp.permiso, "ROL")
+
+                if consultor.equipo_obj:
+                    for ep in consultor.equipo_obj.permisos_asignados:
+                        agregar_permiso(ep.permiso, "EQUIPO")
+
+                for cp in consultor.permisos_especiales:
+                    agregar_permiso(cp.permiso, "INDIVIDUAL")
+
+            permisos = sorted(por_codigo.values(), key=lambda p: p["codigo"])
+            resultado.append({
+                "id": consultor.id,
+                "usuario": consultor.usuario,
+                "nombre": consultor.nombre,
+                "activo": bool(consultor.activo),
+                "rol": consultor.rol_obj.nombre if consultor.rol_obj else None,
+                "equipo": consultor.equipo_obj.nombre if consultor.equipo_obj else None,
+                "total_permisos": len(permisos),
+                "permisos": permisos,
+            })
+
+        return jsonify({"personas": resultado, "total": len(resultado)}), 200
+
+    except Exception as exc:
+        app.logger.exception("Error en /permisos-personas")
+        return jsonify({"error": "Error consultando permisos efectivos", "detalle": str(exc)}), 500
+
+
 @bp.route('/consultores/<int:consultor_id>/permisos', methods=['POST'])
 @admin_required
 def asignar_permiso_consultor(consultor_id):

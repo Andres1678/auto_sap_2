@@ -15,6 +15,7 @@ import OportunidadesDashboard from './OportunidadesDashboard';
 import Configuracion from './Configuracion';
 import ClientesTable from './ClientesTable';
 import PermisosPage from "./PermisosPage";
+import PermisosPersonasPage from "./PermisosPersonasPage";
 import OcupacionesTareasPage from "./OcupacionesTareasPage";
 import RolesPage from "./RolesPage";
 import EquiposPage from "./EquiposPage";
@@ -411,6 +412,15 @@ function App() {
               element={
                 <AdminRoute allow={['ADMIN']} requirePermiso="PERMISOS_ADMIN">
                   <PermisosPage />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/configuracion/permisos-personas"
+              element={
+                <AdminRoute requirePermiso="PERMISOS_EFECTIVOS_VER">
+                  <PermisosPersonasPage />
                 </AdminRoute>
               }
             />

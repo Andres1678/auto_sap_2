@@ -3,18 +3,28 @@ import { Link } from "react-router-dom";
 import "./Configuracion.css";
 
 export default function Configuracion() {
-  const permisos = useMemo(() => {
+  const { permisos, isAdmin } = useMemo(() => {
     try {
       const raw = localStorage.getItem("userData");
       const u = raw ? JSON.parse(raw) : null;
-      return Array.isArray(u?.permisos) ? u.permisos : [];
+      const lista = Array.isArray(u?.permisos)
+        ? u.permisos
+            .map((p) => typeof p === "string" ? p : p?.codigo)
+            .filter(Boolean)
+            .map((p) => String(p).trim().toUpperCase())
+        : [];
+      return {
+        permisos: lista,
+        isAdmin: String(u?.rol || "").trim().toUpperCase() === "ADMIN",
+      };
     } catch {
-      return [];
+      return { permisos: [], isAdmin: false };
     }
   }, []);
 
   const canProyectos = permisos.includes("PROYECTOS_ADMIN");
   const canModulos = permisos.includes("ADMIN_MODULOS_GESTION");
+  const canVerPermisosPersonas = isAdmin || permisos.includes("PERMISOS_EFECTIVOS_VER");
 
   return (
     <div className="config-wrapper">
@@ -46,6 +56,14 @@ export default function Configuracion() {
           <h3>Gestión de Permisos</h3>
           <p>Otorga permisos a roles, equipos o consultores.</p>
         </Link>
+
+        {canVerPermisosPersonas && (
+          <Link to="/configuracion/permisos-personas" className="config-card is-featured">
+            <div className="config-icon">🧑‍💻</div>
+            <h3>Permisos por Persona</h3>
+            <p>Consulta los permisos efectivos y si provienen del rol, equipo o asignación individual.</p>
+          </Link>
+        )}
 
         {/* Card Ocupaciones y Tareas */}
         <Link to="/configuracion/ocupaciones-tareas" className="config-card">
