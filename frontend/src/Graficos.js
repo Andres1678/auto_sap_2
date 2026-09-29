@@ -288,6 +288,7 @@ export default function Graficos() {
 
   const GRAFICOS_ALL_ROLES = new Set([
     'ADMIN',
+    'JEFE',
     'ADMIN_GERENTES',
     'ADMIN_GESTION_PREVENTA',
     'ADMIN_OPORTUNIDADES',
@@ -300,7 +301,7 @@ export default function Graficos() {
 
   const isAdminAll = GRAFICOS_ALL_ROLES.has(rolUpper);
   const isAdminLike = rolUpper.startsWith('ADMIN_');
-  const isAdminTeam = !isAdminAll && isAdminLike && !!equipoUser;
+  const isAdminTeam = !isAdminAll && (rolUpper === 'LIDER' || isAdminLike) && !!equipoUser;
 
   const scope = isAdminAll ? 'ALL' : (isAdminTeam ? 'TEAM' : 'SELF');
   const isAdmin = scope !== 'SELF';

@@ -2300,6 +2300,142 @@ def obtener_registros_graficos():
             "detalle": str(exc),
         }), 500
 
+
+@bp.route('/registros/graficos/equipos-personas', methods=['GET'])
+@permission_required("GRAFICOS_VER")
+def obtener_personas_equipos_graficos():
+    """Personas activas visibles y cumplimiento de registro por periodo."""
+    try:
+        usuario = _get_usuario_from_request()
+        rol_req = _get_rol_from_request()
+
+        if not usuario:
+            return jsonify({'error': 'Usuario no enviado'}), 400
+
+        consultor_login = (
+            Consultor.query.options(
+                joinedload(Consultor.rol_obj),
+                joinedload(Consultor.equipo_obj),
+            )
+            .filter(func.lower(Consultor.usuario) == str(usuario).strip().lower())
+            .first()
+        )
+        if not consultor_login:
+            return jsonify({'error': 'Consultor no encontrado'}), 404
+
+        scope, scope_value = _scope_for_graficos(consultor_login, rol_req)
+
+        filtro_mes = str(request.args.get("mes") or "").strip()
+        filtro_desde = str(request.args.get("desde") or "").strip()
+        filtro_hasta = str(request.args.get("hasta") or "").strip()
+
+        if filtro_mes:
+            start_date, end_date = _graficos_month_bounds(filtro_mes)
+        else:
+            if not filtro_desde or not filtro_hasta:
+                return jsonify({'error': 'Selecciona un mes o un rango completo de fechas'}), 400
+            start_date = _graficos_parse_iso_date(filtro_desde, "desde")
+            end_inclusive = _graficos_parse_iso_date(filtro_hasta, "hasta")
+            if start_date > end_inclusive:
+                return jsonify({'error': 'La fecha desde no puede ser mayor que hasta'}), 400
+            if (end_inclusive - start_date).days > 365:
+                return jsonify({'error': 'El rango máximo permitido es de 366 días'}), 400
+            end_date = end_inclusive + timedelta(days=1)
+
+        registro_join = and_(
+            Registro.usuario_consultor == Consultor.usuario,
+            Registro.fecha >= start_date.isoformat(),
+            Registro.fecha < end_date.isoformat(),
+        )
+
+        q = (
+            db.session.query(
+                Consultor.id.label("consultor_id"),
+                Consultor.usuario.label("usuario"),
+                Consultor.nombre.label("nombre"),
+                Equipo.id.label("equipo_id"),
+                Equipo.nombre.label("equipo"),
+                func.count(Registro.id).label("total_registros"),
+                func.coalesce(
+                    func.sum(func.coalesce(Registro.total_horas, Registro.tiempo_invertido, 0)),
+                    0,
+                ).label("horas_registradas"),
+            )
+            .select_from(Consultor)
+            .join(Equipo, Consultor.equipo_id == Equipo.id)
+            .outerjoin(Registro, registro_join)
+            .filter(Consultor.activo == 1)
+        )
+
+        if scope == "SELF":
+            q = q.filter(Consultor.id == consultor_login.id)
+        elif scope == "TEAM":
+            equipo_id = int(scope_value or 0)
+            if not equipo_id:
+                return jsonify({'error': 'Consultor sin equipo asignado'}), 403
+            q = q.filter(Consultor.equipo_id == equipo_id)
+
+        filtro_equipos = [v.upper() for v in _graficos_list_arg("equipo")]
+        if filtro_equipos:
+            if scope in ("TEAM", "SELF"):
+                equipo_login = (
+                    str(consultor_login.equipo_obj.nombre or "").strip().upper()
+                    if consultor_login.equipo_obj else ""
+                )
+                if any(value != equipo_login for value in filtro_equipos):
+                    return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
+            q = q.filter(func.upper(Equipo.nombre).in_(filtro_equipos))
+
+        rows = (
+            q.group_by(
+                Consultor.id,
+                Consultor.usuario,
+                Consultor.nombre,
+                Equipo.id,
+                Equipo.nombre,
+            )
+            .order_by(Equipo.nombre.asc(), Consultor.nombre.asc())
+            .all()
+        )
+
+        equipos = {}
+        for row in rows:
+            equipo_nombre = str(row.equipo or "SIN EQUIPO").strip().upper()
+            total_registros = int(row.total_registros or 0)
+            equipo = equipos.setdefault(equipo_nombre, {
+                "equipo": equipo_nombre,
+                "totalPersonas": 0,
+                "registraron": 0,
+                "noRegistraron": 0,
+                "personas": [],
+            })
+
+            persona = {
+                "id": row.consultor_id,
+                "usuario": str(row.usuario or "").strip().lower(),
+                "nombre": row.nombre,
+                "equipo": equipo_nombre,
+                "activo": True,
+                "registro": total_registros > 0,
+                "estado": "REGISTRÓ" if total_registros > 0 else "NO REGISTRÓ",
+                "totalRegistros": total_registros,
+                "horasRegistradas": float(row.horas_registradas or 0),
+            }
+            equipo["personas"].append(persona)
+            equipo["totalPersonas"] += 1
+            if persona["registro"]:
+                equipo["registraron"] += 1
+            else:
+                equipo["noRegistraron"] += 1
+
+        return jsonify({"equipos": list(equipos.values())}), 200
+
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.exception("Error en /registros/graficos/equipos-personas")
+        return jsonify({'error': 'Error interno del servidor', 'detalle': str(exc)}), 500
+
 USUARIOS_PUEDE_SEMANAS_ANTERIORES = {
 }
 
