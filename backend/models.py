@@ -479,6 +479,9 @@ class Permiso(db.Model):
 
 class RolPermiso(db.Model):
     __tablename__ = "rol_permiso"
+    __table_args__ = (
+        db.UniqueConstraint("rol_id", "permiso_id", name="uq_rol_permiso"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     rol_id = db.Column(db.Integer, db.ForeignKey("rol.id"), nullable=False)
@@ -489,6 +492,9 @@ class RolPermiso(db.Model):
 
 class EquipoPermiso(db.Model):
     __tablename__ = "equipo_permiso"
+    __table_args__ = (
+        db.UniqueConstraint("equipo_id", "permiso_id", name="uq_equipo_permiso"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     equipo_id = db.Column(db.Integer, db.ForeignKey("equipo.id"), nullable=False)
@@ -499,6 +505,9 @@ class EquipoPermiso(db.Model):
 
 class ConsultorPermiso(db.Model):
     __tablename__ = "consultor_permiso"
+    __table_args__ = (
+        db.UniqueConstraint("consultor_id", "permiso_id", name="uq_consultor_permiso"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     consultor_id = db.Column(db.Integer, db.ForeignKey("consultor.id"), nullable=False)

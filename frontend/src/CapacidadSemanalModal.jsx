@@ -327,7 +327,7 @@ export default function CapacidadSemanalModal({
             <div className="capacidad-kicker">Vista operativa</div>
             <h3>Capacidad semanal del mes</h3>
             <p>
-              La meta mensual se calcula igual para todos: lunes 8 h, martes a viernes 9 h,
+              La meta mensual se calcula igual para todos: lunes a jueves 8,5 h, viernes 9 h,
               sin festivos de Colombia.
             </p>
           </div>

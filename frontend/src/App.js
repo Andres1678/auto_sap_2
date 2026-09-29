@@ -274,7 +274,7 @@ function App() {
             <Route
               path="/Oportunidades"
               element={
-                <AdminRoute allow={['ADMIN']} requirePermiso="OPORTUNIDADES_EDITAR">
+                <AdminRoute allow={['ADMIN']} requirePermiso="OPORTUNIDADES_VER">
                   <Oportunidades />
                 </AdminRoute>
               }
@@ -463,7 +463,7 @@ function App() {
             <Route
               path="/reportes/horas-consultor-cliente"
               element={
-                <AdminRoute allow={["ADMIN"]}>
+                <AdminRoute allow={["ADMIN"]} requirePermiso="REPORTE_HORAS_CONSULTOR_CLIENTE_VER">
                   <ReporteHorasConsultorCliente />
                 </AdminRoute>
               }
@@ -481,7 +481,7 @@ function App() {
             <Route
               path="/configuracion/perfiles"
               element={
-                <AdminRoute>
+                <AdminRoute requirePermiso="PERFILES_VER">
                   <PerfilesModulos/>
                 </AdminRoute>
               }

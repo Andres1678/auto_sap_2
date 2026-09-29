@@ -5,7 +5,7 @@ import { jfetch, jsonOrThrow } from "./lib/api";
 
 export default function PermisosPage() {
   const userData = JSON.parse(localStorage.getItem("userData") || "{}");
-  const isAdmin = userData?.rol === "ADMIN" || userData?.rol === 1;
+  const isAdmin = String(userData?.rol || "").trim().toUpperCase() === "ADMIN";
 
   const [permisos, setPermisos] = useState([]);
   const [roles, setRoles] = useState([]);

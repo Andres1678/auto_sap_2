@@ -635,9 +635,12 @@ export default function ProyectosHorasDashboard({
   const usuario = String(user?.usuario || user?.user?.usuario || "").trim();
   const nombreUser = String(user?.nombre || user?.user?.nombre || "").trim();
 
-  const ADMIN_ALL_ROLES = new Set(["ADMIN", "ADMIN_GERENTES"]);
+  const ADMIN_ALL_ROLES = new Set(["ADMIN", "JEFE", "ADMIN_GERENTES"]);
   const isAdminAll = ADMIN_ALL_ROLES.has(rolUpper);
-  const isAdminTeam = !isAdminAll && rolUpper.startsWith("ADMIN_") && !!equipoUser;
+  const isAdminTeam =
+    !isAdminAll &&
+    (rolUpper === "LIDER" || rolUpper.startsWith("ADMIN_")) &&
+    !!equipoUser;
   const scope = isAdminAll ? "ALL" : isAdminTeam ? "TEAM" : "SELF";
 
   const initFiltrosPorScope = useCallback(() => {

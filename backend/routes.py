@@ -96,8 +96,14 @@ ROLE_POOL_ROLES = {
     "ADMIN_OPORTUNIDADES"
 }
 
+# Jerarquía nueva. ADMIN y JEFE tienen alcance global; LIDER queda
+# restringido al equipo guardado en consultor.equipo_id.
+GLOBAL_SCOPE_ROLES = {"ADMIN", "JEFE"}
+TEAM_SCOPE_ROLES = {"LIDER"}
+
 GRAFICOS_ALL_ROLES = {
     "ADMIN",
+    "JEFE",
     "ADMIN_GERENTES",
     "ADMIN_GESTION_PREVENTA",
 }
@@ -112,7 +118,7 @@ def _consultor_role_id(consultor_login):
     return int(rid or 0)
 
 def apply_scope(query, rol, usuario_login):
-    if rol == "ADMIN":
+    if rol in GLOBAL_SCOPE_ROLES:
         return query  # sin filtro
 
     if rol == "CONSULTOR":
@@ -139,7 +145,13 @@ def permission_required(codigo_permiso):
             consultor = g.current_user
             permisos = obtener_permisos_finales(consultor)
 
-            if codigo_permiso not in permisos:
+            rol_real = str(
+                getattr(getattr(consultor, "rol_obj", None), "nombre", "") or ""
+            ).strip().upper()
+
+            # El único ADMIN es el propietario funcional del sistema y tiene
+            # acceso total. Los demás roles siempre requieren el permiso real.
+            if rol_real != "ADMIN" and codigo_permiso not in permisos:
                 return jsonify({"mensaje": f"Permiso '{codigo_permiso}' requerido"}), 403
 
             return fn(*args, **kwargs)
@@ -292,7 +304,7 @@ def _get_perfiles_permitidos_proyecto(proyecto_id):
 
 def _is_admin_role(rol: str) -> bool:
     r = str(rol or "").strip().upper()
-    return r == "ADMIN" or r.startswith("ADMIN_")
+    return r == "ADMIN"
 
 
 def _is_admin_request(rol_header: str, consultor) -> bool:
@@ -527,9 +539,13 @@ def role_scope(rol_nombre: str, user_equipo: str = ""):
     """
     r = norm(rol_nombre)
 
-    # ADMIN global
-    if r == "ADMIN":
+    # ADMIN único y JEFE tienen alcance global.
+    if r in GLOBAL_SCOPE_ROLES:
         return {"mode": "ALL"}
+
+    if r in TEAM_SCOPE_ROLES:
+        team = norm(user_equipo)
+        return {"mode": "TEAM", "team": team} if team else {"mode": "USER"}
 
     # Cualquier ADMIN_* => se restringe por equipo.
     # Ej: ADMIN_BASIS -> BASIS
@@ -677,18 +693,20 @@ def logout():
         return jsonify({"mensaje": f"Error cerrando sesión: {str(e)}"}), 500
 
 @bp.route('/roles', methods=['GET'])
-@permission_required("ROLES_ADMIN")  
+@admin_required
 def listar_roles():
     roles = Rol.query.order_by(Rol.nombre.asc()).all()
     return jsonify([{"id": r.id, "nombre": r.nombre} for r in roles]), 200
 
 
 @bp.route('/equipos', methods=['GET'])
+@auth_required
 def listar_equipos():
     equipos = Equipo.query.order_by(Equipo.nombre).all()
     return jsonify([{"id": e.id, "nombre": e.nombre} for e in equipos]), 200
 
 @bp.route('/horarios', methods=['GET'])
+@auth_required
 def listar_horarios():
     horarios = Horario.query.order_by(Horario.rango).all()
     return jsonify([{"id": h.id, "rango": h.rango} for h in horarios]), 200
@@ -809,30 +827,83 @@ def _to_bool(v, default=True):
     s = str(v).strip().lower()
     return s in ("1", "true", "si", "sí", "yes", "y")
 
+
+def _nombre_rol_consultor(consultor):
+    return str(
+        getattr(getattr(consultor, "rol_obj", None), "nombre", "") or ""
+    ).strip().upper()
+
+
+def _validar_transicion_admin(consultor, nuevo_rol):
+    """Garantiza que ADMIN sea único y no pueda degradarse accidentalmente."""
+    nuevo_nombre = str(getattr(nuevo_rol, "nombre", "") or "").strip().upper()
+    actual_nombre = _nombre_rol_consultor(consultor)
+
+    if nuevo_nombre == "ADMIN":
+        q = Consultor.query.join(Rol, Consultor.rol_id == Rol.id).filter(
+            func.upper(Rol.nombre) == "ADMIN"
+        )
+        if getattr(consultor, "id", None):
+            q = q.filter(Consultor.id != consultor.id)
+        if q.first():
+            raise ValueError("Solo puede existir un usuario con el rol ADMIN")
+
+    if actual_nombre == "ADMIN" and nuevo_nombre != "ADMIN":
+        raise ValueError("No se puede cambiar el rol del único ADMIN")
+
+
+def _resolver_catalogo_por_id_o_nombre(modelo, data, campo_id, campo_nombre, atributo_nombre):
+    if campo_id in data:
+        valor_id = data.get(campo_id)
+        if valor_id in (None, "", "null", "None"):
+            return None
+        obj = modelo.query.get(int(valor_id))
+        if not obj:
+            raise ValueError(f"{campo_id} no existe")
+        return obj
+
+    valor_nombre = data.get(campo_nombre)
+    if valor_nombre in (None, "", "null", "None"):
+        return None
+
+    obj = modelo.query.filter(
+        func.lower(getattr(modelo, atributo_nombre)) == str(valor_nombre).strip().lower()
+    ).first()
+    if not obj:
+        raise ValueError(f"{campo_nombre} no existe")
+    return obj
+
 @bp.route('/consultores', methods=['POST'])
 @permission_required("CONSULTORES_CREAR")
 def crear_consultor():
     data = request.get_json() or {}
 
-    c = Consultor(
-        usuario=data.get('usuario'),
-        nombre=data.get('nombre'),
-        password=data.get('password'),
-        activo=_to_bool(data.get("activo"), default=True),  # ✅ NUEVO
-    )
-    _apply_catalog_fields_to_consultor(c, data)
-
-    db.session.add(c)
-    db.session.flush()
-
-    modulos_ids = data.get('modulos', [])
-    if modulos_ids:
-        mods = Modulo.query.filter(Modulo.id.in_(modulos_ids)).all()
-        c.modulos = mods
-
     try:
+        password = str(data.get("password") or "")
+        if not password:
+            return jsonify({"mensaje": "La contraseña es obligatoria"}), 400
+
+        c = Consultor(
+            usuario=data.get('usuario'),
+            nombre=data.get('nombre'),
+            password=bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
+            activo=_to_bool(data.get("activo"), default=True),
+        )
+        _apply_catalog_fields_to_consultor(c, data)
+
+        db.session.add(c)
+        db.session.flush()
+
+        modulos_ids = data.get('modulos', [])
+        if modulos_ids:
+            mods = Modulo.query.filter(Modulo.id.in_(modulos_ids)).all()
+            c.modulos = mods
+
         db.session.commit()
         return jsonify({"mensaje": "Consultor creado correctamente"}), 201
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"mensaje": str(e)}), 409
     except IntegrityError:
         db.session.rollback()
         return jsonify({"mensaje": "Error: usuario duplicado o datos inválidos"}), 400
@@ -845,7 +916,10 @@ def crear_consultor():
 def set_activo_consultor(consultor_id):
     data = request.get_json() or {}
     c = Consultor.query.get_or_404(consultor_id)
-    c.activo = _to_bool(data.get("activo"), default=True)
+    nuevo_estado = _to_bool(data.get("activo"), default=True)
+    if _nombre_rol_consultor(c) == "ADMIN" and not nuevo_estado:
+        return jsonify({"mensaje": "No se puede desactivar al único ADMIN"}), 409
+    c.activo = nuevo_estado
     db.session.commit()
     return jsonify({"mensaje": "Estado actualizado", "activo": bool(c.activo)}), 200
 
@@ -857,21 +931,25 @@ def _apply_catalog_fields_to_consultor(consultor, data):
     """Actualiza relaciones de catálogo (Rol, Equipo, Horario, Módulos)."""
     try:
         # --- Rol ---
-        rol_name = data.get("rol")
-        if rol_name:
-            rol = Rol.query.filter_by(nombre=rol_name).first()
+        if "rol_id" in data or "rol" in data:
+            rol = _resolver_catalogo_por_id_o_nombre(
+                Rol, data, "rol_id", "rol", "nombre"
+            )
+            _validar_transicion_admin(consultor, rol)
             consultor.rol_id = rol.id if rol else None
 
         # --- Equipo ---
-        equipo_name = data.get("equipo")
-        if equipo_name:
-            equipo = Equipo.query.filter_by(nombre=equipo_name).first()
+        if "equipo_id" in data or "equipo" in data:
+            equipo = _resolver_catalogo_por_id_o_nombre(
+                Equipo, data, "equipo_id", "equipo", "nombre"
+            )
             consultor.equipo_id = equipo.id if equipo else None
 
         # --- Horario ---
-        horario_name = data.get("horario")
-        if horario_name:
-            horario = Horario.query.filter_by(rango=horario_name).first()
+        if "horario_id" in data or "horario" in data:
+            horario = _resolver_catalogo_por_id_o_nombre(
+                Horario, data, "horario_id", "horario", "rango"
+            )
             consultor.horario_id = horario.id if horario else None
 
         # --- Módulos ---
@@ -898,13 +976,19 @@ def editar_consultor(id):
         c.usuario = data.get('usuario', c.usuario)
         c.nombre = data.get('nombre', c.nombre)
         if data.get('password'):
-            c.password = data['password']
+            c.password = bcrypt.hashpw(
+                str(data['password']).encode("utf-8"), bcrypt.gensalt()
+            ).decode("utf-8")
 
         # --- Campos relacionales ---
         _apply_catalog_fields_to_consultor(c, data)
 
         db.session.commit()
         return jsonify({"mensaje": "Consultor actualizado correctamente"}), 200
+
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"mensaje": str(e)}), 409
 
     except SQLAlchemyError as e:
         db.session.rollback()
@@ -923,6 +1007,8 @@ def editar_consultor(id):
 @permission_required("CONSULTORES_ELIMINAR")
 def eliminar_consultor(id):
     c = Consultor.query.get_or_404(id)
+    if _nombre_rol_consultor(c) == "ADMIN":
+        return jsonify({"mensaje": "No se puede eliminar al único ADMIN"}), 409
     try:
         db.session.delete(c)
         db.session.commit()
@@ -999,6 +1085,7 @@ def _basis_defaults_from_payload(data: dict):
     }
 
 @bp.route('/consultores/horario', methods=['GET'])
+@auth_required
 def horario_consultor():
     usuario = request.args.get('usuario')
     if not usuario:
@@ -1256,7 +1343,7 @@ def _is_vacaciones_payload(data: dict) -> bool:
     tipo_norm = _norm_text_basic(tipo)
 
     # En tu catálogo se ve como "15 - Vacaciones / Incapacidades"
-    return tipo_norm.startswith("15") or "VACACIONES" in tipo_norm
+    return bool(re.match(r"^15(?:\s*[-–]|$)", tipo_norm))
 
 
 def _parse_iso_date_for_range(value):
@@ -1277,16 +1364,19 @@ def _build_iso_dates_range(start_value, end_value):
     if not start or not end or end < start:
         return []
 
+    festivos_co = _cap_colombia_holidays_for_years(range(start.year, end.year + 1))
     dates = []
     current = start
 
     while current <= end:
-        dates.append(current.isoformat())
-        current = current + timedelta(days=1)
+        if current.weekday() < 5 and current not in festivos_co:
+            dates.append(current.isoformat())
+        current += timedelta(days=1)
 
     return dates
 
 @bp.route('/registrar-hora', methods=['POST'])
+@auth_required
 def registrar_hora():
     data = request.get_json(force=True, silent=True) or {}
 
@@ -1350,7 +1440,7 @@ def registrar_hora():
 
         if not fechas_a_crear:
             return jsonify({
-                'mensaje': 'Rango de vacaciones inválido. Verifica fecha de inicio y fecha de fin.'
+                'mensaje': 'Rango de vacaciones inválido o sin días laborales (lunes a viernes, excluyendo festivos de Colombia).'
             }), 400
 
         fecha = fechas_a_crear[0]
@@ -1358,7 +1448,14 @@ def registrar_hora():
         if not fecha:
             return jsonify({'mensaje': 'Campos obligatorios faltantes'}), 400
 
-        fechas_a_crear = [fecha]
+        fecha_normal = _parse_iso_date_for_range(fecha)
+        hoy_bogota = datetime.now(ZoneInfo("America/Bogota")).date()
+        if fecha_normal != hoy_bogota:
+            return jsonify({
+                'mensaje': 'Los registros normales solo se pueden crear con la fecha de hoy (Bogotá).'
+            }), 403
+        fechas_a_crear = [fecha_normal.isoformat()]
+        fecha = fechas_a_crear[0]
 
     tiempo_calculado = _calcular_tiempo_horas(hora_inicio, hora_fin)
     if tiempo_calculado <= 0:
@@ -1405,6 +1502,9 @@ def registrar_hora():
             tarea_obj = Tarea.query.filter(Tarea.codigo == codigo).first()
             if tarea_obj:
                 tarea_id = tarea_obj.id
+
+    if es_rango_vacaciones and (not tarea_obj or str(tarea_obj.codigo).strip() != "15"):
+        return jsonify({'mensaje': 'El rango de fechas solo se permite para la tarea 15 - Vacaciones / Incapacidades.'}), 400
 
     # ------------------------------------------------------------------
     # 5) VALORES NUMÉRICOS
@@ -1713,22 +1813,22 @@ def _get_rol_from_request() -> str:
 
 def _is_admin_total(role: str) -> bool:
     r = _norm_role(role)
-    # SOLO admin global
-    return r in {"ADMIN", "SUPERADMIN", "ADMIN_TOTAL"}
+    return r in GLOBAL_SCOPE_ROLES
 
 def _is_admin_equipo(role: str) -> bool:
-    return _norm_role(role) in {
+    return _norm_role(role) in TEAM_SCOPE_ROLES.union({
         "ADMIN_FUNCIONAL",
         "ADMIN_BASIS",
         "ADMIN_IMPLEMENTACION",
         "ADMIN_GESTION_DE_PROYECTOS",
         "ADMIN_CONSULTORIA",
         "ADMIN_ARQUITECTURA",
-    }
+    })
 
 def scope_for(consultor_login, rol_req: str):
     """
-    ADMIN                       -> ("ALL", None)
+    ADMIN / JEFE                -> ("ALL", None)
+    LIDER                       -> ("TEAM", equipo_id)
     ADMIN_GESTION_PREVENTA      -> ("ROLE_POOL", rol_id)
     ADMIN_*                     -> ("TEAM", equipo_id)
     CONSULTOR / otros           -> ("SELF", usuario_norm)
@@ -1736,14 +1836,17 @@ def scope_for(consultor_login, rol_req: str):
     rol = (rol_req or (consultor_login.rol_obj.nombre if consultor_login.rol_obj else "") or "").strip().upper()
     usuario_norm = (consultor_login.usuario or "").strip().lower()
 
-    if rol == "ADMIN":
+    if rol in GLOBAL_SCOPE_ROLES:
         return "ALL", None
+
+    if rol in TEAM_SCOPE_ROLES:
+        return "TEAM", int(consultor_login.equipo_id) if consultor_login.equipo_id else 0
 
     if rol in ROLE_POOL_ROLES:
         role_id = _consultor_role_id(consultor_login)
         return "ROLE_POOL", role_id
 
-    if rol.startswith("ADMIN_"):
+    if rol in ROLE_TEAM_MAP:
         return "TEAM", int(consultor_login.equipo_id) if consultor_login.equipo_id else 0
 
     return "SELF", usuario_norm
@@ -1756,7 +1859,8 @@ def scope_for(consultor_login, rol_req: str):
 def _scope_for_graficos(consultor_login, rol_req: str):
     """
     Reglas:
-      - ADMIN, ADMIN_GERENTES, ADMIN_GESTION_PREVENTA -> ALL
+      - ADMIN, JEFE y roles globales heredados        -> ALL
+      - LIDER                                         -> TEAM
       - ADMIN_* (BASIS/FUNCIONAL/...)                 -> TEAM
       - resto                                         -> scope_for normal
     """
@@ -1765,7 +1869,11 @@ def _scope_for_graficos(consultor_login, rol_req: str):
     if rol in GRAFICOS_ALL_ROLES:
         return "ALL", None
 
-    if rol.startswith("ADMIN_"):
+    if rol in TEAM_SCOPE_ROLES:
+        equipo_id = consultor_login.equipo_id if consultor_login else None
+        return ("TEAM", int(equipo_id)) if equipo_id else ("SELF", None)
+
+    if rol in ROLE_TEAM_MAP or rol in ROLE_POOL_ROLES:
         equipo_id = consultor_login.equipo_id if consultor_login else None
         if equipo_id:
             return "TEAM", int(equipo_id)
@@ -2208,6 +2316,7 @@ USUARIOS_PUEDE_SEMANAS_ANTERIORES = {
 }
 
 @bp.route('/registros', methods=['GET'])
+@auth_required
 def obtener_registros():
     try:
         usuario = _get_usuario_from_request()
@@ -2457,6 +2566,7 @@ def obtener_registros():
         return jsonify({'error': str(e)}), 500
 
 @bp.route("/resumen-horas", methods=["GET"])
+@auth_required
 def resumen_horas():
     try:
         # ----------------------------------------------------------
@@ -2723,9 +2833,12 @@ def editar_registro(id):
         # ----------------------------------------------------------
         # 3.1) No permitir fechas futuras
         # ----------------------------------------------------------
-        if not _fecha_no_futura(nueva_fecha):
+        fecha_nueva_obj = _parse_iso_date_safe(nueva_fecha)
+        fecha_original_obj = _parse_iso_date_safe(registro.fecha)
+        hoy_bogota = datetime.now(ZoneInfo("America/Bogota")).date()
+        if not fecha_nueva_obj or (fecha_nueva_obj != fecha_original_obj and fecha_nueva_obj != hoy_bogota):
             return jsonify({
-                'mensaje': 'No puedes actualizar el registro con una fecha futura.'
+                'mensaje': 'Puedes mantener la fecha original del registro o cambiarla a hoy (Bogotá).'
             }), 403
 
         # ----------------------------------------------------------
@@ -2958,6 +3071,7 @@ def editar_registro(id):
         return jsonify({'mensaje': f'No se pudo actualizar el registro: {e}'}), 500
 
 @bp.route('/toggle-bloqueado/<int:id>', methods=['PUT'])
+@permission_required("REGISTROS_BLOQUEAR")
 def toggle_bloqueado(id):
     data = request.json or {}
     if (data.get('rol') or '').strip().upper() != 'ADMIN':
@@ -3255,6 +3369,7 @@ def listar_base_registros():
     })
 
 @bp.route('/consultores/modulos', methods=['GET'])
+@auth_required
 def get_consultor_modulos():
     try:
         usuario = request.args.get('usuario', '').strip().lower()
@@ -5352,13 +5467,13 @@ def eliminar_cliente(id):
 # ========== PERMISOS ==========
 
 @bp.route('/permisos', methods=['GET'])
-@permission_required("PERMISOS_VER")
+@admin_required
 def listar_permisos():
     permisos = Permiso.query.order_by(Permiso.codigo).all()
     return jsonify([p.to_dict() for p in permisos]), 200
 
 @bp.route('/permisos', methods=['POST'])
-@permission_required("PERMISOS_CREAR")
+@admin_required
 def crear_permiso():
     data = request.get_json() or {}
     codigo = data.get("codigo", "").strip().upper()
@@ -5376,7 +5491,7 @@ def crear_permiso():
     return jsonify({"mensaje": "Permiso creado", "permiso": p.to_dict()}), 201
 
 @bp.route('/permisos/<int:id>', methods=['DELETE'])
-@permission_required("PERMISOS_ELIMINAR")
+@admin_required
 def eliminar_permiso(id):
     p = Permiso.query.get_or_404(id)
     db.session.delete(p)
@@ -5384,7 +5499,7 @@ def eliminar_permiso(id):
     return jsonify({"mensaje": "Permiso eliminado"}), 200
 
 @bp.route('/roles/<int:rol_id>/permisos', methods=['GET'])
-@permission_required("ROLES_VER")
+@admin_required
 def permisos_por_rol(rol_id):
     perms = (
         db.session.query(Permiso)
@@ -5396,7 +5511,7 @@ def permisos_por_rol(rol_id):
     return jsonify([p.to_dict() for p in perms]), 200
 
 @bp.route('/roles/<int:rol_id>/permisos', methods=['POST'])
-@permission_required("ROLES_EDITAR")
+@admin_required
 def asignar_permiso_rol(rol_id):
     data = request.get_json() or {}
     permiso_id = data.get("permiso_id")
@@ -5414,7 +5529,7 @@ def asignar_permiso_rol(rol_id):
     return jsonify({"mensaje": "Permiso asignado al rol"}), 201
 
 @bp.route('/roles/<int:rol_id>/permisos/<int:permiso_id>', methods=['DELETE'])
-@permission_required("ROLES_EDITAR")
+@admin_required
 def quitar_permiso_rol(rol_id, permiso_id):
     rp = RolPermiso.query.filter_by(rol_id=rol_id, permiso_id=permiso_id).first()
 
@@ -5439,6 +5554,7 @@ def permisos_por_equipo(equipo_id):
     return jsonify([p.to_dict() for p in perms]), 200
 
 @bp.route('/equipos/<int:equipo_id>/permisos', methods=['POST'])
+@admin_required
 def asignar_permiso_equipo(equipo_id):
     data = request.get_json() or {}
     permiso_id = data.get("permiso_id")
@@ -5456,6 +5572,7 @@ def asignar_permiso_equipo(equipo_id):
     return jsonify({"mensaje": "Permiso asignado al equipo"}), 201
 
 @bp.route('/equipos/<int:equipo_id>/permisos/<int:permiso_id>', methods=['DELETE'])
+@admin_required
 def quitar_permiso_equipo(equipo_id, permiso_id):
     ep = EquipoPermiso.query.filter_by(equipo_id=equipo_id, permiso_id=permiso_id).first()
 
@@ -5480,11 +5597,13 @@ def permisos_por_consultor(consultor_id):
     return jsonify([p.to_dict() for p in perms]), 200
 
 @bp.route('/consultores/<int:consultor_id>/permisos-efectivos', methods=['GET'])
+@admin_required
 def permisos_efectivos_consultor(consultor_id):
     return permisos_asignados(consultor_id)
 
 
 @bp.route('/consultores/<int:consultor_id>/permisos', methods=['POST'])
+@admin_required
 def asignar_permiso_consultor(consultor_id):
     data = request.get_json() or {}
     permiso_id = data.get("permiso_id")
@@ -5502,6 +5621,7 @@ def asignar_permiso_consultor(consultor_id):
     return jsonify({"mensaje": "Permiso asignado al consultor"}), 201
 
 @bp.route('/consultores/<int:consultor_id>/permisos/<int:permiso_id>', methods=['DELETE'])
+@admin_required
 def quitar_permiso_consultor(consultor_id, permiso_id):
     cp = ConsultorPermiso.query.filter_by(consultor_id=consultor_id, permiso_id=permiso_id).first()
 
@@ -5519,6 +5639,7 @@ def quitar_permiso_consultor(consultor_id, permiso_id):
 # -------------------------------
 
 @bp.route("/ocupaciones", methods=["GET"])
+@auth_required
 def listar_ocupaciones():
     ocupaciones = Ocupacion.query.order_by(Ocupacion.codigo).all()
     consultor = _consultor_actual_para_catalogos()
@@ -5544,6 +5665,7 @@ def listar_ocupaciones():
 
 
 @bp.route("/ocupaciones", methods=["POST"])
+@permission_required("OCUPACIONES_ADMIN")
 def crear_ocupacion():
     data = request.get_json() or {}
     codigo = data.get("codigo", "").strip().upper()
@@ -5563,6 +5685,7 @@ def crear_ocupacion():
 
 
 @bp.route("/ocupaciones/<int:id>", methods=["PUT"])
+@permission_required("OCUPACIONES_ADMIN")
 def editar_ocupacion(id):
     o = Ocupacion.query.get_or_404(id)
     data = request.get_json() or {}
@@ -5575,6 +5698,7 @@ def editar_ocupacion(id):
 
 
 @bp.route("/ocupaciones/<int:id>", methods=["DELETE"])
+@permission_required("OCUPACIONES_ADMIN")
 def eliminar_ocupacion(id):
     o = Ocupacion.query.get_or_404(id)
     db.session.delete(o)
@@ -5587,6 +5711,7 @@ def eliminar_ocupacion(id):
 # -------------------------------
 
 @bp.route("/tareas", methods=["GET"])
+@auth_required
 def listar_tareas():
     tareas = Tarea.query.order_by(Tarea.codigo).all()
     consultor = _consultor_actual_para_catalogos()
@@ -5599,6 +5724,7 @@ def listar_tareas():
 
 
 @bp.route("/tareas", methods=["POST"])
+@permission_required("OCUPACIONES_ADMIN")
 def crear_tarea():
     data = request.get_json() or {}
     codigo = data.get("codigo", "").strip().upper()
@@ -5618,6 +5744,7 @@ def crear_tarea():
 
 
 @bp.route("/tareas/<int:id>", methods=["PUT"])
+@permission_required("OCUPACIONES_ADMIN")
 def editar_tarea(id):
     t = Tarea.query.get_or_404(id)
     data = request.get_json() or {}
@@ -5630,6 +5757,7 @@ def editar_tarea(id):
 
 
 @bp.route("/tareas/<int:id>", methods=["DELETE"])
+@permission_required("OCUPACIONES_ADMIN")
 def eliminar_tarea(id):
     t = Tarea.query.get_or_404(id)
     db.session.delete(t)
@@ -5642,6 +5770,7 @@ def eliminar_tarea(id):
 # -------------------------------
 
 @bp.route("/tareas/<int:tarea_id>/alias", methods=["POST"])
+@permission_required("OCUPACIONES_ADMIN")
 def crear_alias_tarea(tarea_id):
     tarea = Tarea.query.get_or_404(tarea_id)
 
@@ -5659,6 +5788,7 @@ def crear_alias_tarea(tarea_id):
 
 
 @bp.route("/tareas/alias/<int:id>", methods=["DELETE"])
+@permission_required("OCUPACIONES_ADMIN")
 def eliminar_alias(id):
     alias = TareaAlias.query.get_or_404(id)
     db.session.delete(alias)
@@ -5671,6 +5801,7 @@ def eliminar_alias(id):
 # -------------------------------
 
 @bp.route("/ocupaciones/<int:ocupacion_id>/tareas", methods=["GET"])
+@auth_required
 def tareas_por_ocupacion(ocupacion_id):
     ocupacion = Ocupacion.query.get_or_404(ocupacion_id)
     consultor = _consultor_actual_para_catalogos()
@@ -5682,6 +5813,7 @@ def tareas_por_ocupacion(ocupacion_id):
 
 
 @bp.route("/ocupaciones/<int:ocupacion_id>/tareas", methods=["POST"])
+@permission_required("OCUPACIONES_ADMIN")
 def asignar_tarea_a_ocupacion(ocupacion_id):
     ocupacion = Ocupacion.query.get_or_404(ocupacion_id)
     data = request.get_json() or {}
@@ -5708,6 +5840,7 @@ def asignar_tarea_a_ocupacion(ocupacion_id):
 
 
 @bp.route("/ocupaciones/<int:ocupacion_id>/tareas/<int:tarea_id>", methods=["DELETE"])
+@permission_required("OCUPACIONES_ADMIN")
 def quitar_tarea_de_ocupacion(ocupacion_id, tarea_id):
     ocupacion = Ocupacion.query.get_or_404(ocupacion_id)
     tarea = Tarea.query.get_or_404(tarea_id)
@@ -5765,6 +5898,7 @@ def obtener_horarios():
 
 
 @bp.route('/permisos-asignados/<int:consultor_id>', methods=['GET'])
+@admin_required
 def permisos_asignados(consultor_id):
 
     consultor = (
@@ -5908,6 +6042,7 @@ def horas_ocupacion():
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/equipos/<int:equipo_id>/permisos/codigo/<string:codigo>', methods=['DELETE'])
+@admin_required
 def quitar_permiso_equipo_por_codigo(equipo_id, codigo):
     p = Permiso.query.filter_by(codigo=codigo.upper()).first()
     if not p:
@@ -5922,6 +6057,7 @@ def quitar_permiso_equipo_por_codigo(equipo_id, codigo):
     return jsonify({"mensaje": "Permiso removido"}), 200
 
 @bp.route('/consultores/<int:consultor_id>/permisos/codigo/<string:codigo>', methods=['DELETE'])
+@admin_required
 def quitar_permiso_consultor_por_codigo(consultor_id, codigo):
     p = Permiso.query.filter_by(codigo=codigo.upper()).first()
     if not p:
@@ -5938,7 +6074,7 @@ def quitar_permiso_consultor_por_codigo(consultor_id, codigo):
 # ========== ROLES ==========
 
 @bp.route('/roles', methods=['POST'])
-@permission_required("ROLES_ADMIN")
+@admin_required
 def crear_rol():
     data = request.get_json() or {}
     nombre = data.get("nombre", "").strip().upper()
@@ -5956,12 +6092,15 @@ def crear_rol():
     return jsonify({"mensaje": "Rol creado", "rol": rol.to_dict()}), 201
 
 @bp.route('/roles/<int:id>', methods=['PUT'])
-@permission_required("ROLES_ADMIN")
+@admin_required
 def editar_rol(id):
     rol = Rol.query.get_or_404(id)
     data = request.get_json() or {}
 
     nuevo_nombre = data.get("nombre", "").strip().upper()
+
+    if str(rol.nombre or "").strip().upper() == "ADMIN" and nuevo_nombre != "ADMIN":
+        return jsonify({"mensaje": "El rol ADMIN no se puede renombrar"}), 409
 
     if Rol.query.filter(Rol.id != id, Rol.nombre == nuevo_nombre).first():
         return jsonify({"mensaje": "Ese nombre ya lo tiene otro rol"}), 400
@@ -5972,9 +6111,12 @@ def editar_rol(id):
     return jsonify({"mensaje": "Rol actualizado", "rol": rol.to_dict()}), 200
 
 @bp.route('/roles/<int:id>', methods=['DELETE'])
-@permission_required("ROLES_ADMIN")
+@admin_required
 def eliminar_rol(id):
     rol = Rol.query.get_or_404(id)
+
+    if str(rol.nombre or "").strip().upper() == "ADMIN":
+        return jsonify({"mensaje": "El rol ADMIN no se puede eliminar"}), 409
 
     asignados = Consultor.query.filter_by(rol_id=id).count()
     if asignados > 0:
@@ -5986,6 +6128,7 @@ def eliminar_rol(id):
     return jsonify({"mensaje": "Rol eliminado"}), 200
 
 @bp.route('/consultores/<int:id>/rol', methods=['PUT'])
+@admin_required
 def asignar_rol_consultor(id):
     consultor = Consultor.query.get_or_404(id)
     data = request.get_json() or {}
@@ -5997,6 +6140,11 @@ def asignar_rol_consultor(id):
     rol = Rol.query.get(rol_id)
     if not rol:
         return jsonify({"mensaje": "Rol no existe"}), 404
+
+    try:
+        _validar_transicion_admin(consultor, rol)
+    except ValueError as e:
+        return jsonify({"mensaje": str(e)}), 409
 
     consultor.rol_id = rol_id
     db.session.commit()
@@ -6054,6 +6202,7 @@ def eliminar_equipo(id):
     return jsonify({"mensaje": "Equipo eliminado"}), 200
 
 @bp.route('/equipos/<int:equipo_id>/consultores', methods=['GET'])
+@permission_required("CONSULTORES_VER")
 def consultores_por_equipo(equipo_id):
     try:
         consultores = (
@@ -6085,6 +6234,7 @@ def consultores_por_equipo(equipo_id):
 
 
 @bp.route('/consultores/<int:id>/equipo', methods=['PUT'])
+@admin_required
 def asignar_equipo_consultor(id):
     cons = Consultor.query.get_or_404(id)
     data = request.get_json() or {}
@@ -6110,6 +6260,7 @@ def asignar_equipo_consultor(id):
 
 
 @bp.route('/consultores/<int:id>/equipo/remove', methods=['PUT'])
+@admin_required
 def remover_consultor_equipo(id):
     cons = Consultor.query.get_or_404(id)
     cons.equipo_id = None
@@ -6118,6 +6269,7 @@ def remover_consultor_equipo(id):
 
 # ========== IMPORTAR REGISTROS DESDE EXCEL ==========
 @bp.route('/registro/import-excel', methods=['POST'])
+@permission_required("REGISTROS_IMPORTAR")
 def importar_registro_excel():
     if 'file' not in request.files:
         return jsonify({"mensaje": "No se envió archivo"}), 400
@@ -6281,6 +6433,7 @@ def importar_registro_excel():
 
 
 @bp.route('/registros/importar-excel/preview', methods=['POST'])
+@permission_required("REGISTROS_IMPORTAR")
 def preview_import_excel():
     file = request.files.get('file')
     if not file:
@@ -6301,6 +6454,7 @@ def preview_import_excel():
 
 
 @bp.route('/registros/importar-excel/commit', methods=['POST'])
+@permission_required("REGISTROS_IMPORTAR")
 def commit_import_excel():
     registros = request.json.get("registros", [])
     objs = [RegistroExcel(**r) for r in registros]
@@ -6314,6 +6468,7 @@ def commit_import_excel():
     })
 
 @bp.route('/registros/export', methods=['GET'])
+@permission_required("REGISTROS_EXPORTAR")
 def export_registros():
     try:
         usuario = _get_usuario_from_request()
@@ -6574,6 +6729,7 @@ def horarios_permitidos():
     }), 200
 
 @bp.route('/registros/filtros', methods=['GET'])
+@auth_required
 def registros_filtros():
     try:
         usuario = _get_usuario_from_request()
@@ -6643,6 +6799,7 @@ def registros_filtros():
         return jsonify({'error': str(e)}), 500
     
 @bp.route('/registros/conteos', methods=['GET'])
+@auth_required
 def registros_conteos():
     try:
         usuario = _get_usuario_from_request()
@@ -6740,7 +6897,7 @@ def resumen_calendario():
         if not usuario:
             return jsonify({"error": "Usuario no enviado"}), 400
 
-        usuario_norm = (usuario or "").strip().lower()
+        usuario_norm = usuario.strip().lower()
 
         consultor_login = (
             Consultor.query
@@ -6753,31 +6910,38 @@ def resumen_calendario():
 
         scope, val = _scope_for_graficos(consultor_login, rol_req)
 
-        # filtros de fecha opcionales
         desde = (request.args.get("desde") or "").strip()
         hasta = (request.args.get("hasta") or "").strip()
-
-        # filtro opcional de equipo (ADMIN global), pero si es TEAM solo permite su equipo
         equipo_filter = (request.args.get("equipo") or "").strip().upper()
-        if equipo_filter and scope == "TEAM":
-            eq_login = (consultor_login.equipo_obj.nombre or "").strip().upper() if consultor_login.equipo_obj else ""
-            if equipo_filter != eq_login:
-                return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
 
-        # base: traer usuario_consultor, nombre consultor, fecha, suma horas
+        if equipo_filter and scope == "TEAM":
+            eq_login = (
+                (consultor_login.equipo_obj.nombre or "").strip().upper()
+                if consultor_login.equipo_obj else ""
+            )
+            if equipo_filter != eq_login:
+                return jsonify({
+                    "error": "No autorizado para consultar otro equipo"
+                }), 403
+
         q = (
             db.session.query(
                 func.lower(Registro.usuario_consultor).label("usuario_consultor"),
                 Consultor.nombre.label("consultor"),
                 Registro.fecha.label("fecha"),
-                func.coalesce(func.sum(Registro.total_horas), 0).label("total_horas"),
+                Registro.hora_inicio.label("hora_inicio"),
+                Registro.hora_fin.label("hora_fin"),
+                Registro.total_horas.label("total_horas"),
             )
             .select_from(Registro)
-            .join(Consultor, func.lower(Registro.usuario_consultor) == func.lower(Consultor.usuario))
+            .join(
+                Consultor,
+                func.lower(Registro.usuario_consultor)
+                == func.lower(Consultor.usuario)
+            )
             .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
         )
 
-        # aplicar scope
         if scope == "SELF":
             q = q.filter(func.lower(Registro.usuario_consultor) == usuario_norm)
         elif scope == "TEAM":
@@ -6785,11 +6949,9 @@ def resumen_calendario():
         elif scope == "ROLE_POOL":
             q = q.filter(Consultor.rol_id == int(val))
 
-        # aplicar equipo_filter si viene (solo realmente útil en ADMIN global)
         if equipo_filter:
             q = q.filter(func.upper(Equipo.nombre) == equipo_filter)
 
-        # fecha filter
         if desde and hasta:
             q = q.filter(Registro.fecha.between(desde, hasta))
         elif desde:
@@ -6797,25 +6959,79 @@ def resumen_calendario():
         elif hasta:
             q = q.filter(Registro.fecha <= hasta)
 
-        # agrupar por consultor+fecha
-        q = q.group_by(func.lower(Registro.usuario_consultor), Consultor.nombre, Registro.fecha)
-        q = q.order_by(Consultor.nombre.asc(), Registro.fecha.asc())
+        rows = q.order_by(Consultor.nombre.asc(), Registro.fecha.asc()).all()
 
-        rows = q.all()
+        def minutos_del_registro(inicio, fin):
+            """Devuelve minutos exactos; None si faltan horas válidas."""
+            def convertir(valor):
+                if isinstance(valor, time):
+                    return valor.hour * 60 + valor.minute
 
-        # armar respuesta agrupada por consultor
+                texto = str(valor or "").strip()
+                match = re.match(r"^(\d{1,2}):(\d{2})(?::\d{2})?$", texto)
+                if not match:
+                    return None
+
+                hora, minuto = map(int, match.groups())
+                if hora > 23 or minuto > 59:
+                    return None
+                return hora * 60 + minuto
+
+            inicio_min = convertir(inicio)
+            fin_min = convertir(fin)
+
+            if inicio_min is None or fin_min is None or fin_min <= inicio_min:
+                return None
+
+            return fin_min - inicio_min
+
+        # Agrupar en minutos. Los registros antiguos sin horas válidas
+        # conservan su total_horas como respaldo.
         out = {}
+        dias = {}
+
         for r in rows:
-            key = r.usuario_consultor or "na"
-            if key not in out:
-                out[key] = {
+            usuario_key = r.usuario_consultor or "na"
+            fecha_key = str(r.fecha)
+            clave_dia = (usuario_key, fecha_key)
+
+            if usuario_key not in out:
+                out[usuario_key] = {
                     "consultor": r.consultor or r.usuario_consultor or "—",
                     "usuario_consultor": r.usuario_consultor,
-                    "registros": []
+                    "registros": [],
                 }
-            out[key]["registros"].append({
-                "fecha": r.fecha,
-                "total_horas": float(r.total_horas or 0),
+
+            if clave_dia not in dias:
+                dias[clave_dia] = {
+                    "minutos": 0,
+                    "horas_respaldo": Decimal("0"),
+                }
+
+            minutos = minutos_del_registro(r.hora_inicio, r.hora_fin)
+            if minutos is not None:
+                dias[clave_dia]["minutos"] += minutos
+            else:
+                dias[clave_dia]["horas_respaldo"] += Decimal(
+                    str(r.total_horas or 0)
+                )
+
+        anios_dias = {int(fecha_key[:4]) for _, fecha_key in dias}
+        festivos_dias = _cap_colombia_holidays_for_years(anios_dias)
+        for (usuario_key, fecha_key), valores in dias.items():
+            horas = (
+                Decimal(valores["minutos"]) / Decimal("60")
+                + valores["horas_respaldo"]
+            )
+            total_horas = horas.quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+
+            out[usuario_key]["registros"].append({
+                "fecha": fecha_key,
+                "total_horas": float(total_horas),
+                "es_festivo": date.fromisoformat(fecha_key[:10]) in festivos_dias,
             })
 
         return jsonify(list(out.values())), 200
@@ -6829,6 +7045,7 @@ def resumen_calendario():
 #   REPORTES DE HORAS  (DIARIO)
 # -------------------------------
 @bp.route("/reporte/costos-cliente-dia", methods=["GET"])
+@permission_required("GRAFICOS_VER")
 def reporte_costos_cliente_dia():
     """
     Pivot diario:
@@ -7114,6 +7331,7 @@ def _col_idx(headers: dict, wanted: str):
     return None
 
 @bp.route("/presupuestos/consultor", methods=["GET"])
+@auth_required
 def get_presupuestos_consultor():
     try:
         usuario = _get_usuario_from_request()
@@ -11306,12 +11524,12 @@ def _cap_meta_hours_for_day(d: date, co_holidays=None):
     if not _cap_is_standard_workday(d, co_holidays):
         return Decimal("0.00")
 
-    return Decimal("8.00") if d.weekday() == 0 else Decimal("9.00")
+    return Decimal("9.00") if d.weekday() == 4 else Decimal("8.50")
 
 
 
 def _cap_work_days_text():
-    return "Lunes 8 h / martes a viernes 9 h (sin festivos CO)"
+    return "Lunes a jueves 8,5 h / viernes 9 h (sin festivos CO)"
 
 
 def _cap_parse_month_year_from_request():
@@ -11343,6 +11561,7 @@ def _cap_parse_month_year_from_request():
 
 
 @bp.route("/resumen-capacidad-semanal", methods=["GET"])
+@permission_required("GRAFICOS_VER")
 def resumen_capacidad_semanal():
     try:
         usuario = _get_usuario_from_request()
@@ -11555,7 +11774,10 @@ def resumen_capacidad_semanal():
                 "consultor": item["consultor"],
                 "equipo": item["equipo"],
                 "metaMes": meta_mes,
-                "metaDiaObjetivo": 9.0,
+                "metaDiaObjetivo": _cap_meta_hours_for_day(
+                    datetime.now(ZoneInfo("America/Bogota")).date(),
+                    co_holidays | _cap_colombia_holidays_for_years([datetime.now(ZoneInfo("America/Bogota")).year]),
+                ),
                 "horasMes": horas_mes,
                 "porcentajeMes": porcentaje_mes,
                 "diasTrabajoTexto": _cap_work_days_text(),
@@ -11582,6 +11804,7 @@ def resumen_capacidad_semanal():
 
 
 @bp.route("/capacidad-semanal-ocupaciones", methods=["GET"])
+@permission_required("GRAFICOS_VER")
 def capacidad_semanal_ocupaciones():
     try:
         usuario = _get_usuario_from_request()
@@ -11937,8 +12160,8 @@ def _cap_is_standard_workday(d: date, co_holidays=None):
 def _cap_meta_hours_for_day(d: date, co_holidays=None):
     """
     Regla única:
-    - lunes: 8h
-    - martes a viernes: 9h
+    - lunes a jueves: 8,5h
+    - viernes: 9h
     - fines de semana / festivos: 0h
     """
     co_holidays = co_holidays or set()
@@ -11946,7 +12169,7 @@ def _cap_meta_hours_for_day(d: date, co_holidays=None):
     if not _cap_is_standard_workday(d, co_holidays):
         return 0.0
 
-    return 8.0 if d.weekday() == 0 else 9.0
+    return 9.0 if d.weekday() == 4 else 8.5
 
 def _cap_colombia_holidays_for_years(years):
     import holidays
@@ -12135,6 +12358,7 @@ def _col_idx(headers: dict, wanted: str):
     return None
 
 @bp.route("/presupuestos/consultor/import-excel", methods=["POST"])
+@permission_required("PRESUPUESTO_CONSULTOR_IMPORTAR")
 def import_presupuesto_consultor_excel():
     try:
         f = request.files.get("file")
@@ -12347,6 +12571,7 @@ def import_presupuesto_consultor_excel():
 # =========================================================
 
 @bp.route("/resumen-costo-consultor", methods=["GET"])
+@permission_required("GRAFICOS_VER")
 def resumen_costo_consultor():
     try:
         usuario = _get_usuario_from_request()

@@ -359,6 +359,8 @@ export default function Resumen({
           <div className="cal-nav">
             <button
               className="cal-btn"
+              type="button"
+              aria-label="Mes anterior"
               disabled={lockMesAnio}
               onClick={() => {
                 setAnimacion("slideInLeft");
@@ -372,6 +374,8 @@ export default function Resumen({
 
             <button
               className="cal-btn"
+              type="button"
+              aria-label="Mes siguiente"
               disabled={lockMesAnio}
               onClick={() => {
                 setAnimacion("slideInRight");
@@ -401,6 +405,11 @@ export default function Resumen({
   return (
     <div className={`resumen-wrapper ${isConsultor ? "resumen-single" : ""}`}>
       <h2 className="resumen-titulo">Resumen de Horas Mensual</h2>
+      <div className="resumen-leyenda" aria-label="Estados del calendario">
+        <span><i className="leyenda-punto ok" aria-hidden="true" />Meta cumplida</span>
+        <span><i className="leyenda-punto warn" aria-hidden="true" />Horas pendientes</span>
+        <span><i className="leyenda-punto none" aria-hidden="true" />Sin registro</span>
+      </div>
 
       {error && <div className="resumen-error">{error}</div>}
 
