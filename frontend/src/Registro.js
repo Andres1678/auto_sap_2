@@ -728,7 +728,7 @@ const Registro = ({ userData }) => {
     ''
   ).trim().toLowerCase();
 
-  const puedeRegistrarAnterior = ["gonzalezanf", "rodriguezso"].includes(usuarioLogin);
+  const puedeRegistrarAnterior = ["gonzalezanf", "rodriguezso", "castilloac"].includes(usuarioLogin);
 
   const initialEquipo = () => normKey(localStorage.getItem('filtroEquipo') || '');
   const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);

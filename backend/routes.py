@@ -1373,7 +1373,7 @@ def _build_iso_dates_range(start_value, end_value):
 
     return dates
 
-USUARIOS_REGISTRO_FECHA_ANTERIOR = frozenset({"gonzalezanf", "rodriguezso"})
+USUARIOS_REGISTRO_FECHA_ANTERIOR = frozenset({"gonzalezanf", "rodriguezso", "castilloac"})
 
 
 def _validar_fecha_registro_diario(fecha_value, usuario_actor, fecha_original=None):
