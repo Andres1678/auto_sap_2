@@ -1373,6 +1373,25 @@ def _build_iso_dates_range(start_value, end_value):
 
     return dates
 
+USUARIOS_REGISTRO_FECHA_ANTERIOR = frozenset({"gonzalezanf", "rodriguezso"})
+
+
+def _validar_fecha_registro_diario(fecha_value, usuario_actor, fecha_original=None):
+    fecha_obj = _parse_iso_date_for_range(fecha_value)
+    hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+    if not fecha_obj:
+        return "Fecha de registro inválida."
+    if fecha_obj > hoy:
+        return "No puedes registrar fechas futuras."
+    original = _parse_iso_date_for_range(fecha_original)
+    if original is not None and fecha_obj == original:
+        return None
+    usuario_norm = str(usuario_actor or "").strip().lower()
+    if fecha_obj < hoy and usuario_norm not in USUARIOS_REGISTRO_FECHA_ANTERIOR:
+        return "Solo puedes crear registros de hoy o corregir un histórico conservando su fecha original."
+    return None
+
+
 @bp.route('/registrar-hora', methods=['POST'])
 @auth_required
 def registrar_hora():
@@ -1446,6 +1465,11 @@ def registrar_hora():
         if not fecha:
             return jsonify({'mensaje': 'Campos obligatorios faltantes'}), 400
 
+        actor = getattr(getattr(g, "current_user", None), "usuario", "")
+        error_fecha = _validar_fecha_registro_diario(fecha, actor)
+        if error_fecha:
+            return jsonify({'mensaje': error_fecha}), 403
+        fecha = _parse_iso_date_for_range(fecha).isoformat()
         fechas_a_crear = [fecha]
 
     tiempo_calculado = _calcular_tiempo_horas(hora_inicio, hora_fin)
@@ -2957,10 +2981,10 @@ def editar_registro(id):
         # ----------------------------------------------------------
         # 3.1) No permitir fechas futuras
         # ----------------------------------------------------------
-        if not _fecha_no_futura(nueva_fecha):
-            return jsonify({
-                'mensaje': 'No puedes actualizar el registro con una fecha futura.'
-            }), 403
+        actor = getattr(getattr(g, "current_user", None), "usuario", "")
+        error_fecha = _validar_fecha_registro_diario(nueva_fecha, actor, registro.fecha)
+        if error_fecha:
+            return jsonify({'mensaje': error_fecha}), 403
 
         # ----------------------------------------------------------
         # 4) Validar traslape en backend

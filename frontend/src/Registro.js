@@ -664,7 +664,11 @@ const Registro = ({ userData }) => {
   const excelInputRef = useRef(null);
   const openButtonRef = useRef(null);
   const firstFieldRef = useRef(null);
-  const { todayISO } = getWeekBoundsISO(new Date());
+  const fechaBogota = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Bogota", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const parteFecha = (tipo) => fechaBogota.find((p) => p.type === tipo)?.value;
+  const todayISO = `${parteFecha("year")}-${parteFecha("month")}-${parteFecha("day")}`;
 
   const [registro, setRegistro] = useState(initRegistro());
   const [modoEdicion, setModoEdicion] = useState(false);
@@ -723,6 +727,8 @@ const Registro = ({ userData }) => {
     userData?.user?.usuario ??
     ''
   ).trim().toLowerCase();
+
+  const puedeRegistrarAnterior = ["gonzalezanf", "rodriguezso"].includes(usuarioLogin);
 
   const initialEquipo = () => normKey(localStorage.getItem('filtroEquipo') || '');
   const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
@@ -1490,6 +1496,14 @@ const Registro = ({ userData }) => {
         icon: "warning",
         title: "Fecha futura no permitida",
         text: "No puedes registrar fechas futuras.",
+      });
+    }
+
+    if (!esRangoVacaciones && !puedeRegistrarAnterior && registro.fecha !== todayISO
+        && (!modoEdicion || registro.fecha !== String(original?.fecha || "").slice(0, 10))) {
+      return Swal.fire({
+        icon: "warning", title: "Registro diario",
+        text: "Solo puedes crear registros de hoy. Las correcciones históricas deben conservar su fecha original.",
       });
     }
 
@@ -2745,6 +2759,7 @@ const Registro = ({ userData }) => {
                   <input
                     type="date"
                     value={registro.fecha}
+                    min={!habilitarRangoVacaciones && !puedeRegistrarAnterior && !modoEdicion ? todayISO : undefined}
                     max={habilitarRangoVacaciones ? undefined : todayISO}
                     onChange={(e) => {
                       const value = e.target.value;
@@ -2771,7 +2786,9 @@ const Registro = ({ userData }) => {
                     title={
                       habilitarRangoVacaciones
                         ? "Para vacaciones se permiten fechas futuras."
-                        : "Puedes editar fechas pasadas o de hoy, pero no fechas futuras."
+                        : puedeRegistrarAnterior
+                          ? "Puedes registrar hoy o días anteriores; no fechas futuras."
+                          : "Registro diario: hoy. En edición puedes conservar la fecha original."
                     }
                   />
 
