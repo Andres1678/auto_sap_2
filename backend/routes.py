@@ -1373,7 +1373,6 @@ def _build_iso_dates_range(start_value, end_value):
 
     return dates
 
-USUARIOS_REGISTRO_FECHA_ANTERIOR = frozenset({"gonzalezanf", "rodriguezso", "castilloac"})
 
 
 def _validar_fecha_registro_diario(fecha_value, usuario_actor, fecha_original=None):
@@ -1383,12 +1382,6 @@ def _validar_fecha_registro_diario(fecha_value, usuario_actor, fecha_original=No
         return "Fecha de registro inválida."
     if fecha_obj > hoy:
         return "No puedes registrar fechas futuras."
-    original = _parse_iso_date_for_range(fecha_original)
-    if original is not None and fecha_obj == original:
-        return None
-    usuario_norm = str(usuario_actor or "").strip().lower()
-    if fecha_obj < hoy and usuario_norm not in USUARIOS_REGISTRO_FECHA_ANTERIOR:
-        return "Solo puedes crear registros de hoy o corregir un histórico conservando su fecha original."
     return None
 
 

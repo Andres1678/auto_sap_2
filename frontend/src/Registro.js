@@ -728,7 +728,6 @@ const Registro = ({ userData }) => {
     ''
   ).trim().toLowerCase();
 
-  const puedeRegistrarAnterior = ["gonzalezanf", "rodriguezso", "castilloac"].includes(usuarioLogin);
 
   const initialEquipo = () => normKey(localStorage.getItem('filtroEquipo') || '');
   const [filtroEquipo, setFiltroEquipo] = useState(initialEquipo);
@@ -1496,14 +1495,6 @@ const Registro = ({ userData }) => {
         icon: "warning",
         title: "Fecha futura no permitida",
         text: "No puedes registrar fechas futuras.",
-      });
-    }
-
-    if (!esRangoVacaciones && !puedeRegistrarAnterior && registro.fecha !== todayISO
-        && (!modoEdicion || registro.fecha !== String(original?.fecha || "").slice(0, 10))) {
-      return Swal.fire({
-        icon: "warning", title: "Registro diario",
-        text: "Solo puedes crear registros de hoy. Las correcciones históricas deben conservar su fecha original.",
       });
     }
 
@@ -2759,7 +2750,6 @@ const Registro = ({ userData }) => {
                   <input
                     type="date"
                     value={registro.fecha}
-                    min={!habilitarRangoVacaciones && !puedeRegistrarAnterior && !modoEdicion ? todayISO : undefined}
                     max={habilitarRangoVacaciones ? undefined : todayISO}
                     onChange={(e) => {
                       const value = e.target.value;
@@ -2786,9 +2776,7 @@ const Registro = ({ userData }) => {
                     title={
                       habilitarRangoVacaciones
                         ? "Para vacaciones se permiten fechas futuras."
-                        : puedeRegistrarAnterior
-                          ? "Puedes registrar hoy o días anteriores; no fechas futuras."
-                          : "Registro diario: hoy. En edición puedes conservar la fecha original."
+                        : "Puedes registrar hoy o días anteriores; no fechas futuras."
                     }
                   />
 
