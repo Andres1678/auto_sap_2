@@ -1,207 +1,136 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { jfetch, jsonOrThrow } from "./lib/api";
-import "./PermisosPersonasPage.css";
+import "./PermisosPage.css";
 
-const norm = (value) => String(value || "").trim().toLowerCase();
+const TIPOS = [
+  { key: "equipos", nombre: "Equipos" },
+  { key: "consultores", nombre: "Consultores" },
+  { key: "roles", nombre: "Roles" },
+];
+const norm = (v) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+const ordenar = (a, b) => String(a.codigo || a.nombre || "").localeCompare(String(b.codigo || b.nombre || ""), "es", { sensitivity: "base", numeric: true });
+const lista = (data) => {
+  if (!Array.isArray(data)) throw new Error("El servidor no devolvió una lista válida.");
+  return [...data].sort(ordenar);
+};
+const inicialSeleccion = () => ({ equipos: new Set(), consultores: new Set(), roles: new Set() });
 
-export default function PermisosPersonasPage() {
-  const [personas, setPersonas] = useState([]);
+export default function PermisosPage() {
+  const [permisos, setPermisos] = useState([]);
+  const [catalogos, setCatalogos] = useState({ equipos: [], consultores: [], roles: [] });
+  const [seleccionPermisos, setSeleccionPermisos] = useState(new Set());
+  const [seleccion, setSeleccion] = useState(inicialSeleccion);
+  const [tipo, setTipo] = useState("equipos");
+  const [busquedaPermiso, setBusquedaPermiso] = useState("");
+  const [busquedaDestino, setBusquedaDestino] = useState("");
   const [loading, setLoading] = useState(true);
+  const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
-  const [busqueda, setBusqueda] = useState("");
-  const [rol, setRol] = useState("");
-  const [equipo, setEquipo] = useState("");
-  const [estado, setEstado] = useState("ACTIVOS");
-  const [permiso, setPermiso] = useState("");
-  const [abiertos, setAbiertos] = useState(() => new Set());
-
-  const isAdmin = useMemo(() => {
-    try {
-      const data = JSON.parse(localStorage.getItem("userData") || "{}");
-      return String(data?.rol || "").trim().toUpperCase() === "ADMIN";
-    } catch {
-      return false;
-    }
-  }, []);
+  const [resultado, setResultado] = useState(null);
 
   const cargar = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
-      const data = await jfetch("/permisos-personas").then(jsonOrThrow);
-      setPersonas(Array.isArray(data?.personas) ? data.personas : []);
-      setError("");
+      const datos = await Promise.all(["permisos", ...TIPOS.map((t) => t.key)].map((ruta) => jfetch(`/${ruta}`).then(jsonOrThrow).then(lista)));
+      setPermisos(datos[0]);
+      setCatalogos({ equipos: datos[1], consultores: datos[2], roles: datos[3] });
+      setSeleccionPermisos(new Set());
+      setSeleccion(inicialSeleccion());
     } catch (e) {
-      setError(e?.message || "No fue posible consultar los permisos");
-    } finally {
-      setLoading(false);
-    }
+      setError(e?.message || "No se pudieron cargar los catálogos de permisos.");
+    } finally { setLoading(false); }
   }, []);
+  useEffect(() => { cargar(); }, [cargar]);
 
-  useEffect(() => {
-    cargar();
-  }, [cargar]);
+  const visiblesPermisos = useMemo(() => permisos.filter((p) => norm(`${p.codigo} ${p.descripcion || ""}`).includes(norm(busquedaPermiso))), [permisos, busquedaPermiso]);
+  const visiblesDestinos = useMemo(() => catalogos[tipo].filter((d) => norm(`${d.nombre} ${d.usuario || ""}`).includes(norm(busquedaDestino))), [catalogos, tipo, busquedaDestino]);
+  const destinatarios = TIPOS.flatMap((t) => catalogos[t.key].filter((d) => seleccion[t.key].has(String(d.id))).map((d) => ({ ...d, tipo: t.key })));
+  const cantidadDestinos = destinatarios.length;
+  const cambiarPermiso = (id) => setSeleccionPermisos((actual) => {
+    const next = new Set(actual); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
+  const cambiarDestino = (id) => setSeleccion((actual) => {
+    const next = new Set(actual[tipo]); next.has(id) ? next.delete(id) : next.add(id); return { ...actual, [tipo]: next };
+  });
+  const marcarPermisosVisibles = () => setSeleccionPermisos((actual) => new Set([...actual, ...visiblesPermisos.map((p) => String(p.id))]));
+  const marcarDestinosVisibles = () => setSeleccion((actual) => ({ ...actual, [tipo]: new Set([...actual[tipo], ...visiblesDestinos.map((d) => String(d.id))]) }));
 
-  const roles = useMemo(
-    () => [...new Set(personas.map((p) => p.rol).filter(Boolean))].sort(),
-    [personas]
-  );
-
-  const equipos = useMemo(
-    () => [...new Set(personas.map((p) => p.equipo).filter(Boolean))].sort(),
-    [personas]
-  );
-
-  const filtradas = useMemo(() => {
-    const texto = norm(busqueda);
-    const codigo = norm(permiso);
-
-    return personas.filter((persona) => {
-      if (rol && persona.rol !== rol) return false;
-      if (equipo && persona.equipo !== equipo) return false;
-      if (estado === "ACTIVOS" && !persona.activo) return false;
-      if (estado === "INACTIVOS" && persona.activo) return false;
-
-      const coincidePersona = !texto || [persona.nombre, persona.usuario, persona.rol, persona.equipo]
-        .some((valor) => norm(valor).includes(texto));
-      const coincidePermiso = !codigo || (persona.permisos || []).some((p) =>
-        norm(p.codigo).includes(codigo) || norm(p.descripcion).includes(codigo)
-      );
-      return coincidePersona && coincidePermiso;
-    });
-  }, [personas, busqueda, rol, equipo, estado, permiso]);
-
-  const toggle = (id) => {
-    setAbiertos((actual) => {
-      const siguiente = new Set(actual);
-      siguiente.has(id) ? siguiente.delete(id) : siguiente.add(id);
-      return siguiente;
-    });
-  };
-
-  const quitarPermiso = async (persona, item, origen) => {
-    if (!isAdmin || origen === "ADMIN") return;
-
-    const afectados = origen === "ROL"
-      ? personas.filter((p) => p.activo && p.rol_id === persona.rol_id).length
-      : origen === "EQUIPO"
-        ? personas.filter((p) => p.activo && p.equipo_id === persona.equipo_id).length
-        : 1;
-
-    const alcance = origen === "ROL"
-      ? `el rol ${persona.rol}`
-      : origen === "EQUIPO"
-        ? `el equipo ${persona.equipo}`
-        : `la persona ${persona.nombre}`;
-
-    const confirmacion = await Swal.fire({
-      icon: "warning",
-      title: `¿Retirar ${item.codigo}?`,
-      html: `Se retirará desde <b>${alcance}</b>.<br>Puede afectar a <b>${afectados}</b> persona(s) activa(s).`,
-      showCancelButton: true,
-      confirmButtonText: "Sí, retirar",
-      cancelButtonText: "Cancelar",
-      confirmButtonColor: "#dc2626",
-    });
-    if (!confirmacion.isConfirmed) return;
-
+  const asignar = async () => {
+    if (guardando || !seleccionPermisos.size || !cantidadDestinos) return;
+    setGuardando(true);
+    setResultado(null);
+    let asignados = 0;
+    let existentes = 0;
+    const errores = [];
     try {
-      const resultado = await jfetch("/permisos-personas/quitar", {
-        method: "DELETE",
-        body: { consultor_id: persona.id, permiso_id: item.id, origen },
-      }).then(jsonOrThrow);
-
-      const detalle = resultado?.permiso_sigue_efectivo
-        ? `La asignación fue retirada, pero ${persona.nombre} conserva el permiso por: ${(resultado.origenes_restantes || []).join(", ")}.`
-        : `El permiso dejó de estar vigente por ese origen. Personas afectadas: ${resultado?.personas_afectadas || afectados}.`;
-
-      await Swal.fire("Permiso actualizado", detalle, "success");
-      await cargar();
-    } catch (e) {
-      Swal.fire("No fue posible retirar", e?.message || "Error desconocido", "error");
-    }
+      for (const destino of destinatarios) {
+        const ruta = `/${destino.tipo}/${destino.id}/permisos`;
+        let vigentes;
+        try {
+          vigentes = new Set(lista(await jfetch(ruta).then(jsonOrThrow)).map((p) => String(p.id)));
+        } catch (e) {
+          errores.push(`${destino.nombre}: no se pudieron consultar las asignaciones (${e.message}).`);
+          continue;
+        }
+        for (const id of seleccionPermisos) {
+          if (vigentes.has(id)) { existentes += 1; continue; }
+          const permiso = permisos.find((p) => String(p.id) === id);
+          try {
+            await jfetch(ruta, { method: "POST", body: { permiso_id: Number(id) } }).then(jsonOrThrow);
+            vigentes.add(id);
+            asignados += 1;
+          } catch (e) { errores.push(`${destino.nombre} · ${permiso?.codigo || id}: ${e.message}`); }
+        }
+      }
+      setResultado({ asignados, existentes, errores });
+      if (!errores.length) {
+        setSeleccionPermisos(new Set());
+        setSeleccion(inicialSeleccion());
+      }
+      await Swal.fire({
+        icon: errores.length ? "warning" : "success",
+        title: errores.length ? "Asignación completada con pendientes" : "Permisos asignados",
+        text: `${asignados} asignaciones nuevas; ${existentes} ya existentes; ${errores.length} pendientes.`,
+      });
+    } finally { setGuardando(false); }
   };
 
   return (
-    <main className="pp-page">
-      <header className="pp-header">
-        <div>
-          <span className="pp-kicker">Auditoría de acceso</span>
-          <h1>Permisos por persona</h1>
-          <p>Consulta el acceso efectivo y distingue si proviene del rol, el equipo o una asignación individual.</p>
-        </div>
-        <div className="pp-total"><strong>{filtradas.length}</strong><span>personas</span></div>
+    <main className="pa-page">
+      <header className="pa-header">
+        <div><span className="pa-kicker">Administración de acceso</span><h1>Asignación de permisos</h1><p>Selecciona varios permisos y asígnalos a equipos, consultores o roles.</p></div>
+        <button type="button" disabled={loading || guardando} onClick={cargar}>Actualizar listas</button>
       </header>
-
-      <section className="pp-filters" aria-label="Filtros">
-        <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar nombre o usuario…" />
-        <select value={rol} onChange={(e) => setRol(e.target.value)}>
-          <option value="">Todos los roles</option>
-          {roles.map((item) => <option key={item}>{item}</option>)}
-        </select>
-        <select value={equipo} onChange={(e) => setEquipo(e.target.value)}>
-          <option value="">Todos los equipos</option>
-          {equipos.map((item) => <option key={item}>{item}</option>)}
-        </select>
-        <select value={estado} onChange={(e) => setEstado(e.target.value)}>
-          <option value="ACTIVOS">Activos</option>
-          <option value="INACTIVOS">Inactivos</option>
-          <option value="TODOS">Todos</option>
-        </select>
-        <input value={permiso} onChange={(e) => setPermiso(e.target.value)} placeholder="Buscar permiso…" />
-      </section>
-
-      {loading && <div className="pp-message">Cargando permisos…</div>}
-      {!loading && error && <div className="pp-message pp-error">{error}</div>}
-      {!loading && !error && filtradas.length === 0 && <div className="pp-message">No hay resultados.</div>}
-
-      {!loading && !error && filtradas.map((persona) => {
-        const abierto = abiertos.has(persona.id);
-        return (
-          <article className="pp-person" key={persona.id}>
-            <button className="pp-person-head" type="button" onClick={() => toggle(persona.id)} aria-expanded={abierto}>
-              <span className="pp-avatar">{String(persona.nombre || "?").charAt(0).toUpperCase()}</span>
-              <span className="pp-identity">
-                <strong>{persona.nombre}</strong>
-                <small>{persona.usuario}</small>
-              </span>
-              <span className="pp-tags">
-                <b>{persona.rol || "SIN ROL"}</b>
-                <em>{persona.equipo || "SIN EQUIPO"}</em>
-                <i className={persona.activo ? "active" : "inactive"}>{persona.activo ? "Activo" : "Inactivo"}</i>
-              </span>
-              <span className="pp-count">{persona.total_permisos} permisos</span>
-              <span className="pp-chevron">{abierto ? "−" : "+"}</span>
-            </button>
-
-            {abierto && (
-              <div className="pp-permissions">
-                {(persona.permisos || []).map((item) => (
-                  <div className="pp-permission" key={item.codigo}>
-                    <div><strong>{item.codigo}</strong><span>{item.descripcion || "Sin descripción"}</span></div>
-                    <div className="pp-origins">
-                      {(item.origenes || []).map((origen) => (
-                        <span key={origen} className={`origin-${origen.toLowerCase()}`}>
-                          {origen}
-                          {isAdmin && origen !== "ADMIN" && (
-                            <button
-                              type="button"
-                              className="pp-remove"
-                              title={`Retirar desde ${origen}`}
-                              aria-label={`Retirar ${item.codigo} desde ${origen}`}
-                              onClick={() => quitarPermiso(persona, item, origen)}
-                            >×</button>
-                          )}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </article>
-        );
-      })}
+      {loading && <p role="status">Cargando catálogos…</p>}
+      {!loading && error && <p role="alert" className="pa-error">{error}</p>}
+      {!loading && !error && <>
+        <div className="pa-grid">
+          <section className="pa-panel">
+            <h2>1. Permisos <small>{seleccionPermisos.size} seleccionados</small></h2>
+            <label className="pa-search">Buscar permiso<input disabled={guardando} value={busquedaPermiso} onChange={(e) => setBusquedaPermiso(e.target.value)} placeholder="Código o descripción" /></label>
+            <div className="pa-tools"><button type="button" disabled={guardando || !visiblesPermisos.length} onClick={marcarPermisosVisibles}>Seleccionar visibles</button><button type="button" disabled={guardando} onClick={() => setSeleccionPermisos(new Set())}>Limpiar permisos</button></div>
+            <div className="pa-list">
+              {visiblesPermisos.map((p) => <label className="pa-row" key={p.id}><input type="checkbox" disabled={guardando} checked={seleccionPermisos.has(String(p.id))} onChange={() => cambiarPermiso(String(p.id))} /><span><strong>{p.codigo}</strong><small>{p.descripcion || "Sin descripción"}</small></span></label>)}
+              {!visiblesPermisos.length && <p>No hay permisos que coincidan.</p>}
+            </div>
+          </section>
+          <section className="pa-panel">
+            <h2>2. Destinatarios <small>{cantidadDestinos} seleccionados</small></h2>
+            <div className="pa-tabs" aria-label="Tipo de destinatario">{TIPOS.map((t) => <button type="button" key={t.key} disabled={guardando} aria-pressed={tipo === t.key} onClick={() => { setTipo(t.key); setBusquedaDestino(""); }}>{t.nombre} ({seleccion[t.key].size})</button>)}</div>
+            <label className="pa-search">Buscar destinatario<input disabled={guardando} value={busquedaDestino} onChange={(e) => setBusquedaDestino(e.target.value)} placeholder="Nombre o usuario" /></label>
+            <div className="pa-tools"><button type="button" disabled={guardando || !visiblesDestinos.length} onClick={marcarDestinosVisibles}>Seleccionar visibles</button><button type="button" disabled={guardando} onClick={() => setSeleccion((actual) => ({ ...actual, [tipo]: new Set() }))}>Limpiar {tipo}</button></div>
+            <div className="pa-list">
+              {visiblesDestinos.map((d) => <label className="pa-row" key={d.id}><input type="checkbox" disabled={guardando} checked={seleccion[tipo].has(String(d.id))} onChange={() => cambiarDestino(String(d.id))} /><span><strong>{d.nombre}</strong>{d.usuario && <small>{d.usuario}</small>}</span></label>)}
+              {!visiblesDestinos.length && <p>No hay destinatarios que coincidan.</p>}
+            </div>
+            <p className="pa-note">Las selecciones se conservan al cambiar de tipo. Puedes combinar equipos, consultores y roles.</p>
+          </section>
+        </div>
+        <footer className="pa-action"><span>{seleccionPermisos.size} permisos × {cantidadDestinos} destinatarios = <strong>{seleccionPermisos.size * cantidadDestinos} asignaciones posibles</strong></span><button type="button" className="pa-primary" disabled={guardando || !seleccionPermisos.size || !cantidadDestinos} onClick={asignar}>{guardando ? "Asignando…" : "Asignar permisos seleccionados"}</button></footer>
+      </>}
+      {resultado && <section className="pa-result" aria-live="polite"><p>{resultado.asignados} asignaciones nuevas · {resultado.existentes} ya existentes</p>{resultado.errores.length > 0 && <><p>Las asignaciones exitosas quedaron guardadas. Puedes reintentar los pendientes:</p><ul>{resultado.errores.map((e, i) => <li key={i}>{e}</li>)}</ul></>}</section>}
     </main>
   );
 }
