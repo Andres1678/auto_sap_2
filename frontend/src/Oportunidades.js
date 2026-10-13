@@ -4173,37 +4173,31 @@ export default function Oportunidades() {
     });
 
     return principales
-      .filter((principal) => isClosedResumenRow(principal))
       .map((principal) => {
         const hijos = [...(hijosPorPrincipal.get(String(principal.id)) || [])].sort(compareOtsAsignadas);
-        const rowsQueSuman = hijos.filter(estadoSumaEnPrincipal);
-        const totals =
-          hijos.length > 0
-            ? getPrincipalTotals(hijos)
-            : getPrincipalOwnTotals(principal);
+        const hijosValidos = hijos.filter(otAfectaPrincipal);
+        const fuente = hijosValidos[0] || (hijos.length === 0 ? principal : null);
+        if (!fuente || !otAfectaPrincipal(fuente) || !isClosedResumenRow(fuente)) return null;
 
-        const fechaCierreAutomatica =
-          hijos.find((row) => normalizeText(row?.fecha_cierre_oportunidad))?.fecha_cierre_oportunidad ||
-          principal?.fecha_cierre_oportunidad ||
-          "";
-
+        const totals = hijos.length > 0
+          ? getPrincipalTotals(hijos)
+          : getPrincipalOwnTotals(principal);
+        const grupo = { principalRow: principal, rows: hijos, sinPrincipal: false };
         return {
-          id: principal?.id,
-          nombre_cliente: normalizeText(principal?.nombre_cliente) || "-",
-          servicio: normalizeText(principal?.servicio) || "-",
-          estado: getEstadoResumen(principal),
-          tipo_moneda:
-            rowsQueSuman.length > 0
-              ? getUniqueText(rowsQueSuman, "tipo_moneda", 2)
-              : normalizeText(principal?.tipo_moneda) || "-",
+          id: principal.id,
+          nombre_cliente: normalizeText(getPrincipalDisplayValue(grupo, CLIENTE_COL)) || "-",
+          servicio: normalizeText(getPrincipalDisplayValue(grupo, SERVICIO_COL)) || "-",
+          estado: getEstadoResumen(fuente),
+          tipo_moneda: normalizeText(fuente.tipo_moneda) || normalizeText(principal.tipo_moneda) || "-",
           otc: totals.totalOtc,
           mrc: totals.totalMrc,
           mrc_normalizado: totals.mrcNormalizado,
           valor_oferta_claro: totals.valorComercial,
           valor: totals.valorComercial,
-          fecha_cierre_oportunidad: toIsoDate(fechaCierreAutomatica),
+          fecha_cierre_oportunidad: toIsoDate(fuente.fecha_cierre_oportunidad),
         };
       })
+      .filter(Boolean)
       .sort((a, b) => {
         const fechaA = toIsoDate(a.fecha_cierre_oportunidad);
         const fechaB = toIsoDate(b.fecha_cierre_oportunidad);
