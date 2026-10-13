@@ -36,6 +36,8 @@ const CALIFICACION_OPTS = ["BAJO", "MEDIO", "ALTO"];
 const ORIGEN_OPTS = ["AMERICA MOVIL", "CLARO - COLOMBIA", "GLOBAL HITSS", "CLARO PERÚ"];
 
 const ESTADO_OT_OPTS = [
+  "REEMPLAZA",
+  "N/A",
   "CANCELADO",
   "CERRADO",
   "CERRADO SIN PAGO",
@@ -80,6 +82,7 @@ const ESTADO_RESULTADO_BASE = {
   SUSPENDIDA: ["EN ESPERA DEL CLIENTE"],
   OT: ["OT"],
   "N/A": ["N/A"],
+  "OT REEMPLAZADA": ["OT REEMPLAZADA"],
 };
 
 const CATEGORIA_SUBCATEGORIA = {
@@ -746,7 +749,12 @@ function normalizeTipoOportunidad(value) {
   return TIPO_SUBOPORTUNIDAD;
 }
 
+function otAfectaPrincipal(row) {
+  return !["REEMPLAZA", "N/A", "NO APLICA"].includes(normalizeForCompare(row?.estado_ot));
+}
+
 function estadoSumaEnPrincipal(row) {
+  if (!otAfectaPrincipal(row)) return false;
   const estadoOferta = normalizeForCompare(row?.estado_oferta);
   const resultadoOferta = normalizeForCompare(row?.resultado_oferta);
 
@@ -781,7 +789,7 @@ function rowHasMoneyValue(row) {
 }
 
 function getPrincipalRowsForTotals(rows) {
-  const safeRows = Array.isArray(rows) ? rows : [];
+  const safeRows = (Array.isArray(rows) ? rows : []).filter(otAfectaPrincipal);
   const validRows = safeRows.filter(estadoSumaEnPrincipal);
 
   if (validRows.length > 0) {
@@ -805,14 +813,14 @@ function getPrincipalTotals(rows) {
   const seleccion = getPrincipalRowsForTotals(rows);
   const rowsParaSumar = seleccion.rows;
 
-  const totalOtc = sumRowsByColumn(rowsParaSumar, "otc");
-  const totalMrc = sumRowsByColumn(rowsParaSumar, "mrc");
+  const totalOtc = sumRowsByColumn(rowsParaSumar, "otc") || 0;
+  const totalMrc = sumRowsByColumn(rowsParaSumar, "mrc") || 0;
 
   const otcNumber = totalOtc === "" ? 0 : Number(totalOtc);
   const mrcNumber = totalMrc === "" ? 0 : Number(totalMrc);
 
   const mrcNormalizado =
-    rowsParaSumar.length > 0 ? Number((mrcNumber + otcNumber / 12).toFixed(2)) : "";
+    Number((mrcNumber + otcNumber / 12).toFixed(2));
 
   const valorComercial = sumRowsByColumn(rowsParaSumar, "valor_oferta_claro");
 
@@ -892,16 +900,7 @@ function isClosedResumenRow(row) {
 
 function getTotalsForPrincipalGroup(grupo) {
   const rows = grupo?.rows || [];
-
-  if (rows.length > 0) {
-    const totals = getPrincipalTotals(rows);
-
-    if (totals.modoSuma !== "SIN_VALORES") {
-      return totals;
-    }
-  }
-
-  return getPrincipalOwnTotals(grupo?.principalRow);
+  return rows.length ? getPrincipalTotals(rows) : getPrincipalOwnTotals(grupo?.principalRow);
 }
 
 function compareOtsAsignadas(a, b) {
@@ -1031,6 +1030,7 @@ function getPrincipalDateValue(grupo, col) {
     return primeraOt?.[col] ?? "";
   }
 
+  if ((grupo.rows || []).length) return "";
   const principalValue = grupo?.principalRow?.[col] || "";
   const principalIso = toIsoDate(principalValue);
 
@@ -1060,18 +1060,15 @@ function getPrincipalDateValue(grupo, col) {
 }
 
 function getPrimeraOtAsignada(grupo) {
-  if (grupo?.primeraOt) return grupo.primeraOt;
-
   const rows = Array.isArray(grupo?.rows) ? grupo.rows : [];
-
-  return rows.length > 0 ? rows[0] : null;
+  return [...rows].filter(otAfectaPrincipal).sort(compareOtsAsignadas)[0] || null;
 }
 
 function getPrincipalEstadoValue(grupo, col) {
   if (!grupo || grupo.sinPrincipal) return "";
 
   const primeraOt = getPrimeraOtAsignada(grupo);
-  return primeraOt ? primeraOt?.[col] ?? "" : grupo?.principalRow?.[col] ?? "";
+  return primeraOt ? primeraOt?.[col] ?? "" : (grupo.rows || []).length ? "" : grupo?.principalRow?.[col] ?? "";
 }
 
 function getPrincipalDisplayValue(grupo, col) {
@@ -1079,14 +1076,14 @@ function getPrincipalDisplayValue(grupo, col) {
   if (PRINCIPAL_CALCULATED_COLS.has(col)) return grupo?.principalRow?.[col] ?? "";
 
   const primeraOt = getPrimeraOtAsignada(grupo);
-  return primeraOt ? primeraOt?.[col] ?? "" : grupo?.principalRow?.[col] ?? "";
+  return primeraOt ? primeraOt?.[col] ?? "" : (grupo.rows || []).length ? "" : grupo?.principalRow?.[col] ?? "";
 }
 
 function isFirstAssignedOt(row, allRows = []) {
   if (!row?.id || !row?.oportunidad_padre_id) return false;
 
   const hermanas = (allRows || [])
-    .filter((item) => String(item?.oportunidad_padre_id || "") === String(row.oportunidad_padre_id))
+    .filter((item) => otAfectaPrincipal(item) && String(item?.oportunidad_padre_id || "") === String(row.oportunidad_padre_id))
     .sort(compareOtsAsignadas);
 
   return hermanas.length > 0 && sameId(hermanas[0]?.id, row.id);
@@ -2685,7 +2682,7 @@ export default function Oportunidades() {
     if (col === CODIGO_INTERNO_COL) return;
     if (col === FLAG_INTERNO_COL) {
       const raizId = row.oportunidad_padre_id || row.id;
-      const hijos = data.filter(r => sameId(r.oportunidad_padre_id, raizId))
+      const hijos = data.filter(r => otAfectaPrincipal(r) && sameId(r.oportunidad_padre_id, raizId))
         .slice().sort((a, b) => (Number(a.consecutivo_sub || 0) - Number(b.consecutivo_sub || 0)) || Number(a.id) - Number(b.id));
       if (hijos.length && !sameId(hijos[0].id, row.id)) {
         Swal.fire("Dato heredado", "Modifica esta opción en la primera OT asignada a la principal.", "info");
@@ -3919,7 +3916,7 @@ export default function Oportunidades() {
       .filter(
         (row) =>
           normalizeTipoOportunidad(row?.tipo_oportunidad) !== TIPO_PRINCIPAL &&
-          row?.oportunidad_padre_id
+          row?.oportunidad_padre_id && otAfectaPrincipal(row)
       )
       .sort(compareOtsAsignadas)
       .forEach((row) => {
@@ -4046,7 +4043,7 @@ export default function Oportunidades() {
       // La primera OT es la fuente visible del cliente y servicio de la
       // principal. Esto evita conservar en pantalla valores anteriores mientras
       // se recarga la información sincronizada por el backend.
-      const primeraOt = grupo.primeraOt || rowsOrdenadas[0] || null;
+      const primeraOt = rowsOrdenadas.find(otAfectaPrincipal) || null;
       const clientePrimeraOt = normalizeText(primeraOt?.nombre_cliente);
       const servicioPrimeraOt = normalizeText(primeraOt?.servicio);
       const clienteVisual = clientePrimeraOt || grupo.cliente;

@@ -4499,6 +4499,11 @@ def _oportunidad_to_dict_seguro(oportunidad):
 
 # La principal refleja la primera OT, excepto valores consolidados,
 # seguimiento OT e identificadores estructurales de la relación padre/hijo.
+def _ot_afecta_principal(row):
+    estado = re.sub(r"\s+", " ", str(getattr(row, "estado_ot", "") or "").strip().upper())
+    return estado not in {"REEMPLAZA", "N/A", "NO APLICA"}
+
+
 PRINCIPAL_SYNC_FROM_FIRST_OT_FIELDS = (
     "nombre_cliente", "servicio", "fecha_creacion", "semestre",
     "tipo_cliente", "tipo_solicitud", "caso_sm", "fecha_cierre_sm",
@@ -5105,6 +5110,8 @@ def editar_oportunidad(id):
             return False
 
         def row_suma_en_principal(row):
+            if not _ot_afecta_principal(row):
+                return False
             estado = norm_key(getattr(row, "estado_oferta", ""))
             resultado = norm_key(getattr(row, "resultado_oferta", ""))
 
@@ -5162,29 +5169,28 @@ def editar_oportunidad(id):
             if not hijos:
                 return None
 
-            primera_ot = hijos[0]
+            hijos_validos = [h for h in hijos if _ot_afecta_principal(h)]
+            primera_ot = hijos_validos[0] if hijos_validos else None
 
-            if int(primera_ot.id) != int(ot_editada.id):
-                return None
+            if primera_ot is not None:
+                for campo in PRINCIPAL_SYNC_FROM_FIRST_OT_FIELDS:
+                    if hasattr(principal, campo) and hasattr(primera_ot, campo):
+                        setattr(principal, campo, getattr(primera_ot, campo))
 
-            for campo in PRINCIPAL_SYNC_FROM_FIRST_OT_FIELDS:
-                if hasattr(principal, campo) and hasattr(primera_ot, campo):
-                    setattr(principal, campo, getattr(primera_ot, campo))
-
-            # Si la primera OT cambia de cliente, la principal y todas sus OTs
-            # deben conservar la misma clave de agrupación.
-            nueva_cliente_key = _norm_key_for_match(primera_ot.nombre_cliente)
-            if nueva_cliente_key:
-                principal.cliente_grupo_key = nueva_cliente_key
-                for hijo in hijos:
-                    hijo.cliente_grupo_key = nueva_cliente_key
+                # Si la primera OT cambia de cliente, la principal y todas sus OTs
+                # deben conservar la misma clave de agrupación.
+                nueva_cliente_key = _norm_key_for_match(primera_ot.nombre_cliente)
+                if nueva_cliente_key:
+                    principal.cliente_grupo_key = nueva_cliente_key
+                    for hijo in hijos:
+                        hijo.cliente_grupo_key = nueva_cliente_key
 
             db.session.flush()
 
             hijos_para_sumar = [h for h in hijos if row_suma_en_principal(h)]
 
             if not hijos_para_sumar:
-                hijos_para_sumar = [h for h in hijos if money_has_value(h)]
+                hijos_para_sumar = [h for h in hijos_validos if money_has_value(h)]
 
             if hijos_para_sumar:
                 total_otc = sum_money(hijos_para_sumar, "otc")
@@ -5207,13 +5213,20 @@ def editar_oportunidad(id):
                         mrc_decimal + (otc_decimal / Decimal("12"))
                     ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+            else:
+                principal.otc = Decimal("0")
+                principal.mrc = Decimal("0")
+                if hasattr(principal, "mrc_normalizado"):
+                    principal.mrc_normalizado = Decimal("0")
+
             return principal
 
         if "tiene_codigo_interno" in data:
             raiz_id = o.oportunidad_padre_id or o.id
             primera = (Oportunidad.query
                 .filter(Oportunidad.oportunidad_padre_id == raiz_id)
-                .order_by(Oportunidad.consecutivo_sub.asc(), Oportunidad.id.asc()).first())
+                .order_by(Oportunidad.consecutivo_sub.asc(), Oportunidad.id.asc()).all())
+            primera = next((h for h in primera if _ot_afecta_principal(h)), None)
             if (primera and primera.id != o.id and
                 data["tiene_codigo_interno"] != (o.tiene_codigo_interno or "NO")):
                 return jsonify({"mensaje": "Configura el código interno en la primera OT asignada."}), 400
@@ -14865,12 +14878,18 @@ def asignar_oportunidad_a_principal(id):
 
         # Cuando se asigna la primera OT, la principal toma su información
         # descriptiva. Las siguientes OTs no reemplazan estos textos.
-        if consecutivo_sub == 1:
+        db.session.flush()
+        candidatas = Oportunidad.query.filter(Oportunidad.oportunidad_padre_id == principal.id).order_by(
+            Oportunidad.consecutivo_sub.asc(), Oportunidad.id.asc()
+        ).all()
+        primera_valida = next((h for h in candidatas if _ot_afecta_principal(h)), None)
+        if primera_valida is not None:
+            oportunidad_fuente = primera_valida
             for campo in PRINCIPAL_SYNC_FROM_FIRST_OT_FIELDS:
-                if hasattr(principal, campo) and hasattr(oportunidad, campo):
-                    setattr(principal, campo, getattr(oportunidad, campo))
+                if hasattr(principal, campo) and hasattr(oportunidad_fuente, campo):
+                    setattr(principal, campo, getattr(oportunidad_fuente, campo))
 
-            nueva_cliente_key = _norm_key_for_match(oportunidad.nombre_cliente)
+            nueva_cliente_key = _norm_key_for_match(oportunidad_fuente.nombre_cliente)
             if nueva_cliente_key:
                 principal.cliente_grupo_key = nueva_cliente_key
                 oportunidad.cliente_grupo_key = nueva_cliente_key
@@ -25959,7 +25978,7 @@ def _numero_principal_codigo_interno(principal):
 
 def _resolver_codigo_interno(principal, hijos):
     """Función pura: hijos ordenados igual que la herencia de la primera OT."""
-    fuente = hijos[0] if hijos else principal
+    fuente = next((h for h in hijos if _ot_afecta_principal(h)), principal)
     indicador = _normalizar_si_no(getattr(fuente, "tiene_codigo_interno", None), default="NO")
     numero = _numero_principal_codigo_interno(principal)
     return indicador, f"PRY_{numero}" if indicador == "SI" and numero else None
