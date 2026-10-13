@@ -750,7 +750,12 @@ function normalizeTipoOportunidad(value) {
 }
 
 function otAfectaPrincipal(row) {
-  return !["REEMPLAZA", "N/A", "NO APLICA"].includes(normalizeForCompare(row?.estado_ot));
+  const estadoOt = normalizeForCompare(row?.estado_ot);
+  const estadoOferta = normalizeForCompare(row?.estado_oferta);
+  const resultadoOferta = normalizeForCompare(row?.resultado_oferta);
+  return !["REEMPLAZA", "N/A"].includes(estadoOt)
+    && !["OT REEMPLAZADA", "REEMPLAZA"].includes(estadoOferta)
+    && resultadoOferta !== "OT REEMPLAZADA";
 }
 
 function estadoSumaEnPrincipal(row) {
@@ -1030,7 +1035,6 @@ function getPrincipalDateValue(grupo, col) {
     return primeraOt?.[col] ?? "";
   }
 
-  if ((grupo.rows || []).length) return "";
   const principalValue = grupo?.principalRow?.[col] || "";
   const principalIso = toIsoDate(principalValue);
 
@@ -1068,15 +1072,20 @@ function getPrincipalEstadoValue(grupo, col) {
   if (!grupo || grupo.sinPrincipal) return "";
 
   const primeraOt = getPrimeraOtAsignada(grupo);
-  return primeraOt ? primeraOt?.[col] ?? "" : (grupo.rows || []).length ? "" : grupo?.principalRow?.[col] ?? "";
+  return primeraOt ? primeraOt?.[col] ?? grupo?.principalRow?.[col] ?? "" : grupo?.principalRow?.[col] ?? "";
 }
 
 function getPrincipalDisplayValue(grupo, col) {
   if (!grupo || grupo.sinPrincipal) return "";
   if (PRINCIPAL_CALCULATED_COLS.has(col)) return grupo?.principalRow?.[col] ?? "";
+  if (col === CLIENTE_COL || col === SERVICIO_COL) {
+    const fuente = getPrimeraOtAsignada(grupo);
+    return normalizeText(fuente?.[col]) || normalizeText(grupo?.principalRow?.[col])
+      || normalizeText((grupo.rows || []).find((r) => normalizeText(r?.[col]))?.[col]) || "";
+  }
 
   const primeraOt = getPrimeraOtAsignada(grupo);
-  return primeraOt ? primeraOt?.[col] ?? "" : (grupo.rows || []).length ? "" : grupo?.principalRow?.[col] ?? "";
+  return primeraOt ? primeraOt?.[col] ?? grupo?.principalRow?.[col] ?? "" : grupo?.principalRow?.[col] ?? "";
 }
 
 function isFirstAssignedOt(row, allRows = []) {

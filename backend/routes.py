@@ -4500,8 +4500,13 @@ def _oportunidad_to_dict_seguro(oportunidad):
 # La principal refleja la primera OT, excepto valores consolidados,
 # seguimiento OT e identificadores estructurales de la relación padre/hijo.
 def _ot_afecta_principal(row):
-    estado = re.sub(r"\s+", " ", str(getattr(row, "estado_ot", "") or "").strip().upper())
-    return estado not in {"REEMPLAZA", "N/A", "NO APLICA"}
+    def norm_estado(campo):
+        return re.sub(r"\s+", " ", str(getattr(row, campo, "") or "").strip().upper())
+    return (
+        norm_estado("estado_ot") not in {"REEMPLAZA", "N/A"}
+        and norm_estado("estado_oferta") not in {"OT REEMPLAZADA", "REEMPLAZA"}
+        and norm_estado("resultado_oferta") != "OT REEMPLAZADA"
+    )
 
 
 PRINCIPAL_SYNC_FROM_FIRST_OT_FIELDS = (
@@ -5175,7 +5180,10 @@ def editar_oportunidad(id):
             if primera_ot is not None:
                 for campo in PRINCIPAL_SYNC_FROM_FIRST_OT_FIELDS:
                     if hasattr(principal, campo) and hasattr(primera_ot, campo):
-                        setattr(principal, campo, getattr(primera_ot, campo))
+                        valor_fuente = getattr(primera_ot, campo)
+                        if campo in {"nombre_cliente", "servicio"} and not str(valor_fuente or "").strip():
+                            continue
+                        setattr(principal, campo, valor_fuente)
 
                 # Si la primera OT cambia de cliente, la principal y todas sus OTs
                 # deben conservar la misma clave de agrupación.
