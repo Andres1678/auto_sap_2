@@ -67,9 +67,12 @@ def _normalizar_horario_text(value):
     return s
 
 
-def _normalizar_horario_trabajo_por_equipo(horario_trabajo, equipo):
+def _normalizar_horario_trabajo_por_equipo(horario_trabajo, equipo, fecha=None):
     equipo_norm = _norm_equipo_horario(equipo)
     horario = _normalizar_horario_text(horario_trabajo)
+    codigo = str(horario or "").upper()
+    if codigo in BASIS_TURNOS:
+        return _rango_turno_basis(codigo, fecha) if equipo_norm == "BASIS" else (FUNCIONAL_HORARIO_DEFAULT if equipo_norm == "FUNCIONAL" else None)
 
     if equipo_norm == "FUNCIONAL":
         if horario in FUNCIONAL_HORARIOS_PERMITIDOS:
@@ -81,6 +84,43 @@ def _normalizar_horario_trabajo_por_equipo(horario_trabajo, equipo):
         return FUNCIONAL_HORARIO_DEFAULT
 
     return horario or None
+
+BASIS_TURNOS = {
+    'TM2E': {"lunes_jueves": '06:00 - 13:00', "viernes": '06:00 - 12:00'},
+    'TT1E': {"lunes_jueves": '14:00 - 22:30', "viernes": '14:00 - 22:30'},
+    'TT2E': {"lunes_jueves": '14:00 - 21:00', "viernes": '14:00 - 20:00'},
+    'TT2I': {"lunes_jueves": '14:00 - 21:00', "viernes": '14:00 - 20:00'},
+    'TM2I': {"lunes_jueves": '06:00 - 13:00', "viernes": '06:00 - 12:00'},
+    'TM1E': {"lunes_jueves": '06:00 - 14:30', "viernes": '06:00 - 14:00'},
+    'TM1I': {"lunes_jueves": '06:00 - 14:30', "viernes": '06:00 - 14:00'},
+    'T2X': {"lunes_jueves": '14:00 - 22:00', "viernes": '14:00 - 22:00'},
+}
+
+def _codigo_turno_basis(horario, actividad_malla=None, equipo=None):
+    if _norm_equipo_horario(equipo) != "BASIS":
+        return None
+    for value in (actividad_malla, horario):
+        codigo = str(value or "").strip().upper()
+        if codigo in BASIS_TURNOS:
+            return codigo
+    return None
+
+
+def _rango_turno_basis(codigo, fecha):
+    regla = BASIS_TURNOS.get(str(codigo or "").strip().upper())
+    if not regla:
+        return None
+    if str(codigo or "").strip().upper() == "T2X":
+        return regla["lunes_jueves"]
+    try:
+        fecha_obj = fecha if isinstance(fecha, date) else date.fromisoformat(str(fecha or "")[:10])
+        dia = fecha_obj.weekday()
+    except (ValueError, TypeError):
+        return None
+    if dia > 4:
+        return None
+    return regla["viernes"] if dia == 4 else regla["lunes_jueves"]
+
 
 ROLE_TEAM_MAP = {
     "ADMIN_BASIS": "BASIS",
@@ -705,10 +745,15 @@ def listar_equipos():
     equipos = Equipo.query.order_by(Equipo.nombre).all()
     return jsonify([{"id": e.id, "nombre": e.nombre} for e in equipos]), 200
 
+def _horarios_catalogo_validos():
+    return [h for h in Horario.query.order_by(Horario.rango).all()
+            if _validar_horario(h.rango)[0]]
+
+
 @bp.route('/horarios', methods=['GET'])
 @auth_required
 def listar_horarios():
-    horarios = Horario.query.order_by(Horario.rango).all()
+    horarios = _horarios_catalogo_validos()
     return jsonify([{"id": h.id, "rango": h.rango} for h in horarios]), 200
 
 # ===============================
@@ -1054,15 +1099,16 @@ def registro_to_dict(r: Registro):
             getattr(r, "horario_trabajo", None),
             equipo_name,
             r.horas_adicionales,
+        fecha=r.fecha,
         ),
         'horarioTrabajo': _normalizar_horario_trabajo_por_equipo(
             getattr(r, "horario_trabajo", None),
             equipo_name,
-        ),
+        fecha=r.fecha),
         'horario_trabajo': _normalizar_horario_trabajo_por_equipo(
             getattr(r, "horario_trabajo", None),
             equipo_name,
-        ),
+        fecha=r.fecha),
         'descripcion': r.descripcion,
         'totalHoras': r.total_horas,
         'consultor': consul.nombre if consul else None,
@@ -1094,7 +1140,7 @@ def horario_consultor():
     if not consultor:
         return jsonify({'mensaje': 'Usuario no encontrado'}), 404
 
-    opciones = [h.rango for h in Horario.query.order_by(Horario.rango).all()]
+    opciones = [h.rango for h in _horarios_catalogo_validos()]
     h_actual = None
     if consultor.horario_id:
         hh = Horario.query.get(consultor.horario_id)
@@ -1164,11 +1210,13 @@ def _minutes_to_hhmm(value: int) -> str:
     return f"{h:02d}:{m:02d}"
 
 
-def _parse_horario_range_to_minutes(horario_trabajo: str):
+def _parse_horario_range_to_minutes(horario_trabajo: str, fecha=None):
     if not horario_trabajo:
         return None
 
     s = str(horario_trabajo).strip()
+    if s.upper() in BASIS_TURNOS:
+        s = _rango_turno_basis(s, fecha) or ""
     if not re.match(r"^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$", s):
         return None
 
@@ -1185,7 +1233,7 @@ def _parse_horario_range_to_minutes(horario_trabajo: str):
     return {"start": ini, "end": fin}
 
 
-def _dividir_registro_por_horario(hora_inicio: str, hora_fin: str, horario_trabajo: str):
+def _dividir_registro_por_horario(hora_inicio: str, hora_fin: str, horario_trabajo: str, fecha=None):
     """
     Retorna una lista de fragmentos:
     [
@@ -1199,7 +1247,7 @@ def _dividir_registro_por_horario(hora_inicio: str, hora_fin: str, horario_traba
     if ini is None or fin is None or fin <= ini:
         return []
 
-    rango = _parse_horario_range_to_minutes(horario_trabajo)
+    rango = _parse_horario_range_to_minutes(horario_trabajo, fecha=fecha)
 
     # si no hay horario válido, deja un solo registro
     if not rango:
@@ -1255,9 +1303,9 @@ def _dividir_registro_por_horario(hora_inicio: str, hora_fin: str, horario_traba
     return fragmentos
 
 
-def _calcular_horas_adicionales_por_horario(hora_inicio, hora_fin, horario_trabajo, equipo=None, fallback="N/D"):
-    horario_normalizado = _normalizar_horario_trabajo_por_equipo(horario_trabajo, equipo)
-    fragmentos = _dividir_registro_por_horario(hora_inicio, hora_fin, horario_normalizado)
+def _calcular_horas_adicionales_por_horario(hora_inicio, hora_fin, horario_trabajo, equipo=None, fallback="N/D", fecha=None):
+    horario_normalizado = _normalizar_horario_trabajo_por_equipo(horario_trabajo, equipo, fecha=fecha)
+    fragmentos = _dividir_registro_por_horario(hora_inicio, hora_fin, horario_normalizado, fecha=fecha)
 
     if not fragmentos:
         return fallback or "N/D"
@@ -1551,10 +1599,13 @@ def registrar_hora():
         eq_horario = Equipo.query.get(consultor.equipo_id)
         equipo_para_horario = eq_horario.nombre if eq_horario else None
 
+    horario_trabajo_raw = _codigo_turno_basis(
+        horario_trabajo_raw, pick(data, 'actividadMalla', 'actividad_malla'), equipo_para_horario
+    ) or horario_trabajo_raw
     horario_trabajo = _normalizar_horario_trabajo_por_equipo(
         horario_trabajo_raw,
         equipo_para_horario
-    )
+    , fecha=fecha)
 
     # ------------------------------------------------------------------
     # 7.1) DIVIDIR EL REGISTRO SEGÚN EL HORARIO
@@ -1574,7 +1625,8 @@ def registrar_hora():
         fragmentos = _dividir_registro_por_horario(
             hora_inicio,
             hora_fin,
-            horario_trabajo
+            horario_trabajo,
+            fecha=fecha,
         )
 
         if not fragmentos:
@@ -2298,6 +2350,7 @@ def obtener_registros_graficos():
                     row.horario_trabajo,
                     equipo_nombre,
                     row.horas_adicionales,
+                fecha=row.fecha,
                 ),
                 "descripcion": row.descripcion,
                 "proyecto_id": row.proyecto_id,
@@ -2660,15 +2713,16 @@ def obtener_registros():
                     getattr(r, "horario_trabajo", None),
                     equipo_nombre or getattr(r, "equipo", None),
                     r.horas_adicionales,
+                fecha=r.fecha,
                 ),
                 "horarioTrabajo": _normalizar_horario_trabajo_por_equipo(
                     getattr(r, "horario_trabajo", None),
                     equipo_nombre or getattr(r, "equipo", None),
-                ),
+                fecha=r.fecha),
                 "horario_trabajo": _normalizar_horario_trabajo_por_equipo(
                     getattr(r, "horario_trabajo", None),
                     equipo_nombre or getattr(r, "equipo", None),
-                ),
+                fecha=r.fecha),
                 "descripcion": r.descripcion,
                 "totalHoras": r.total_horas,
 
@@ -2961,10 +3015,13 @@ def editar_registro(id):
         if not equipo_para_horario and getattr(consultor_login, "equipo_obj", None):
             equipo_para_horario = consultor_login.equipo_obj.nombre
 
-        horario_trabajo = _normalizar_horario_trabajo_por_equipo(
-            pick(data, 'horarioTrabajo', 'horario_trabajo', default=getattr(registro, "horario_trabajo", None)),
+        horario_base = pick(data, 'horarioTrabajo', 'horario_trabajo', default=getattr(registro, "horario_trabajo", None))
+        horario_base = _codigo_turno_basis(
+            horario_base,
+            pick(data, 'actividadMalla', 'actividad_malla', default=registro.actividad_malla),
             equipo_para_horario,
-        )
+        ) or horario_base
+        horario_trabajo = _normalizar_horario_trabajo_por_equipo(horario_base, equipo_para_horario, fecha=nueva_fecha)
 
         horas_adicionales_calculadas = _calcular_horas_adicionales_por_horario(
             nuevo_hora_inicio,
@@ -2972,6 +3029,7 @@ def editar_registro(id):
             horario_trabajo,
             equipo_para_horario,
             registro.horas_adicionales,
+        fecha=nueva_fecha,
         )
 
         # ----------------------------------------------------------
@@ -6987,15 +7045,16 @@ def export_registros():
                     getattr(r, "horario_trabajo", None),
                     equipo_nombre or getattr(r, "equipo", None),
                     r.horas_adicionales,
+                fecha=r.fecha,
                 ),
                 "horarioTrabajo": _normalizar_horario_trabajo_por_equipo(
                     getattr(r, "horario_trabajo", None),
                     equipo_nombre or getattr(r, "equipo", None),
-                ),
+                fecha=r.fecha),
                 "horario_trabajo": _normalizar_horario_trabajo_por_equipo(
                     getattr(r, "horario_trabajo", None),
                     equipo_nombre or getattr(r, "equipo", None),
-                ),
+                fecha=r.fecha),
                 "descripcion": r.descripcion,
                 "totalHoras": r.total_horas,
 
@@ -7052,7 +7111,7 @@ def horarios_permitidos():
     horarios_funcional = FUNCIONAL_HORARIOS_PERMITIDOS
 
     if equipo == "BASIS":
-        horarios = [h.rango for h in Horario.query.order_by(Horario.rango).all()]
+        horarios = [h.rango for h in _horarios_catalogo_validos()]
         dias = "DOMINGO_A_DOMINGO"
     else:
         horarios = horarios_funcional
@@ -7061,7 +7120,8 @@ def horarios_permitidos():
     return jsonify({
         "equipo": equipo,
         "dias": dias,
-        "horarios": horarios
+        "horarios": horarios,
+        "turnos_basis": BASIS_TURNOS if equipo == "BASIS" else {},
     }), 200
 
 @bp.route('/registros/filtros', methods=['GET'])
@@ -14276,15 +14336,16 @@ def obtener_proyectos_horas_dashboard():
                     getattr(r, "horario_trabajo", None),
                     equipo_nombre or getattr(r, "equipo", None),
                     r.horas_adicionales,
+                fecha=r.fecha,
                 ),
                 "horarioTrabajo": _normalizar_horario_trabajo_por_equipo(
                     getattr(r, "horario_trabajo", None),
                     equipo_nombre or getattr(r, "equipo", None),
-                ),
+                fecha=r.fecha),
                 "horario_trabajo": _normalizar_horario_trabajo_por_equipo(
                     getattr(r, "horario_trabajo", None),
                     equipo_nombre or getattr(r, "equipo", None),
-                ),
+                fecha=r.fecha),
                 "descripcion": r.descripcion,
                 "totalHoras": round(horas, 2),
 

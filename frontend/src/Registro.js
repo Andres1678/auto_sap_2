@@ -22,6 +22,7 @@ function initRegistro() {
     horaFin: '',
     tiempoInvertido: 0,
     actividadMalla: '',
+    horarioTrabajo: '',
     tiempoFacturable: '',
     horasAdicionales: '',
     oncall: '',
@@ -95,6 +96,32 @@ const calcularTiempo = (inicio, fin) => {
   return mins > 0 ? parseFloat((mins / 60).toFixed(2)) : 0;
 };
 
+const BASIS_TURNOS = {
+  TM2E: { lunesJueves: "06:00 - 13:00", viernes: "06:00 - 12:00" },
+  TT1E: { lunesJueves: "14:00 - 22:30", viernes: "14:00 - 22:30" },
+  TT2E: { lunesJueves: "14:00 - 21:00", viernes: "14:00 - 20:00" },
+  TT2I: { lunesJueves: "14:00 - 21:00", viernes: "14:00 - 20:00" },
+  TM2I: { lunesJueves: "06:00 - 13:00", viernes: "06:00 - 12:00" },
+  TM1E: { lunesJueves: "06:00 - 14:30", viernes: "06:00 - 14:00" },
+  TM1I: { lunesJueves: "06:00 - 14:30", viernes: "06:00 - 14:00" },
+  T2X: { lunesJueves: "14:00 - 22:00", viernes: "14:00 - 22:00" },
+};
+
+const codigoTurnoBasis = (horario, actividad, equipo) => {
+  if (String(equipo || '').trim().toUpperCase() !== 'BASIS') return '';
+  return [actividad, horario].map(v=>String(v || '').trim().toUpperCase()).find(v=>BASIS_TURNOS[v]) || '';
+};
+const rangoTurnoBasis = (codigo, fecha) => {
+  const regla = BASIS_TURNOS[codigo];
+  if (!regla) return '';
+  if (codigo === 'T2X') return regla.lunesJueves;
+  const text = String(fecha || '').slice(0,10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return '';
+  const d = new Date(`${text}T12:00:00`);
+  if (Number.isNaN(d.getTime()) || [0,6].includes(d.getDay())) return '';
+  return d.getDay() === 5 ? regla.viernes : regla.lunesJueves;
+};
+
 const HORARIOS_FUNCIONAL_PERMITIDOS = [
   "08:30 - 18:00",
   "07:30 - 16:00",
@@ -114,9 +141,11 @@ const normalizeHorarioText = (value) =>
     .replace(/\s*-\s*/g, " - ")
     .trim();
 
-const resolveHorarioTrabajo = (horarioUsuario, equipo = "") => {
+const resolveHorarioTrabajo = (horarioUsuario, equipo = "", fecha = "", actividad = "") => {
   const horario = normalizeHorarioText(horarioUsuario);
   const equipoNorm = normKey(equipo);
+  const turno = codigoTurnoBasis(horarioUsuario, actividad, equipo);
+  if (turno) return rangoTurnoBasis(turno, fecha);
 
   if (equipoNorm === "FUNCIONAL") {
     if (HORARIOS_FUNCIONAL_PERMITIDOS.includes(horario)) return horario;
@@ -128,10 +157,10 @@ const resolveHorarioTrabajo = (horarioUsuario, equipo = "") => {
   return horario;
 };
 
-const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario, equipo = "") => {
+const calcularHorasAdicionales = (horaInicio, horaFin, horarioUsuario, equipo = "", fecha = "", actividad = "") => {
   const ini = parseHHMM(horaInicio);
   const fin = parseHHMM(horaFin);
-  const horarioTrabajo = resolveHorarioTrabajo(horarioUsuario, equipo);
+  const horarioTrabajo = resolveHorarioTrabajo(horarioUsuario, equipo, fecha, actividad);
   const rango = parseRange(horarioTrabajo);
   if (!ini || !fin || !rango) return 'N/D';
 
@@ -1351,13 +1380,14 @@ const Registro = ({ userData }) => {
         (String(r?.usuario_consultor || "").trim().toLowerCase() === usuarioLogin ? horarioUsuario : "");
 
       const horasAdicionalesCalculadas = horarioFila
-        ? calcularHorasAdicionales(r?.horaInicio, r?.horaFin, horarioFila, equipoNormalizado)
+        ? calcularHorasAdicionales(r?.horaInicio, r?.horaFin, horarioFila, equipoNormalizado, r?.fecha, r?.actividadMalla)
         : r?.horasAdicionales;
 
       return {
         ...r,
         equipoNormalizado,
-        horarioTrabajo: resolveHorarioTrabajo(horarioFila, equipoNormalizado),
+        horarioTrabajoCodigo: horarioFila,
+        horarioTrabajo: resolveHorarioTrabajo(horarioFila, equipoNormalizado, r?.fecha, r?.actividadMalla),
         horasAdicionales:
           horasAdicionalesCalculadas && horasAdicionalesCalculadas !== "N/D"
             ? horasAdicionalesCalculadas
@@ -1668,16 +1698,18 @@ const Registro = ({ userData }) => {
       return Swal.fire({ icon: "warning", title: "Selecciona un módulo" });
     }
 
+    const horarioBase = registro.horarioTrabajo || horarioUsuario;
     const horarioTrabajo = resolveHorarioTrabajo(
-      /^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(horarioUsuario) ? horarioUsuario : null,
-      equipoFormulario
+      horarioBase, equipoFormulario, fechaPrincipal, registro.actividadMalla
     );
 
     const horasAdic = calcularHorasAdicionales(
       registro.horaInicio,
       registro.horaFin,
       horarioTrabajo,
-      equipoFormulario
+      equipoFormulario,
+      fechaPrincipal,
+      registro.actividadMalla
     );
 
     const moduloFinal = (moduloElegido || modulos[0] || moduloUser || "").trim();
@@ -1861,6 +1893,7 @@ const Registro = ({ userData }) => {
       modulo: moduloSel,
       equipo: equipoOf(reg, userEquipoUpper),
       actividadMalla: reg.actividadMalla || "",
+      horarioTrabajo: reg.horarioTrabajoCodigo || reg.horarioTrabajo || reg.horario_trabajo || "",
       oncall: reg.oncall || "",
       desborde: reg.desborde || "",
       proyecto_id: pid,
@@ -1992,6 +2025,7 @@ const Registro = ({ userData }) => {
       modulo: moduloSel,
       equipo: equipoOf(reg, userEquipoUpper),
       actividadMalla: reg.actividadMalla || "",
+      horarioTrabajo: reg.horarioTrabajoCodigo || reg.horarioTrabajo || reg.horario_trabajo || "",
       oncall: reg.oncall || "",
       desborde: reg.desborde || "",
       proyecto_id: pid,
@@ -2025,7 +2059,7 @@ const Registro = ({ userData }) => {
     } catch {}
   };
 
-  const actividadMalla = ['AC', 'CRU1', 'CRU2', 'CRU3', 'DC', 'DE', 'DF', 'IN', 'ON', 'T1E', 'T1I', 'T1X', 'T2E', 'T2I', 'T2X', 'T3', 'VC', 'SAT', 'N/APLICA'];
+  const actividadMalla = ['AC', 'CRU1', 'CRU2', 'CRU3', 'DC', 'DE', 'DF', 'IN', 'ON', 'T1E', 'T1I', 'T1X', 'T2E', 'T2I', 'T2X', 'TM2E', 'TT1E', 'TT2E', 'TT2I', 'TM2I', 'TM1E', 'TM1I', 'T3', 'VC', 'SAT', 'N/APLICA'];
   const oncall = ['SI', 'NO', 'N/A'];
   const desborde = ['SI', 'NO', 'N/A'];
 
@@ -3051,8 +3085,12 @@ const Registro = ({ userData }) => {
                         onChange={(e) => setRegistro({ ...registro, actividadMalla: e.target.value })}
                       >
                         <option value="">Seleccionar Actividad de Malla</option>
-                        {actividadMalla.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
+                        {actividadMalla.map((t, idx) => <option key={idx} value={t}>{BASIS_TURNOS[t] ? `${t} — L-J ${BASIS_TURNOS[t].lunesJueves} / V ${BASIS_TURNOS[t].viernes}` : t}</option>)}
                       </select>
+                      <div className="span-2" role="status" style={{padding:'10px 12px', background:'#eef5ff', borderRadius:8, fontSize:13}}>
+                        <strong>Horario aplicado: </strong>
+                        {resolveHorarioTrabajo(registro.horarioTrabajo || horarioUsuario, equipoFormulario, registro.fecha, registro.actividadMalla) || 'Sin rango definido para esta fecha'}
+                      </div>
                       <select
                         value={registro.oncall}
                         onChange={(e) => setRegistro({ ...registro, oncall: e.target.value })}
