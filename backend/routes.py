@@ -1380,6 +1380,9 @@ def _validar_fecha_registro_diario(fecha_value, usuario_actor, fecha_original=No
     hoy = datetime.now(ZoneInfo("America/Bogota")).date()
     if not fecha_obj:
         return "Fecha de registro inválida."
+    # Excepción de fecha para el actor autenticado, tanto al crear como al editar.
+    if str(usuario_actor or "").strip().lower() == "gonzalezanf":
+        return None
     if fecha_obj > hoy:
         return "No puedes registrar fechas futuras."
     return None

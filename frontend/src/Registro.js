@@ -451,6 +451,7 @@ const RegistroRow = React.memo(function RegistroRow({
   isAdmin,
   moduloUser,
   nombreUser,
+  puedeEditarBloqueados,
   onEditar,
   onEliminar,
   onCopiar,
@@ -482,8 +483,8 @@ const RegistroRow = React.memo(function RegistroRow({
           type="button"
           className="icon-btn"
           onClick={() => onEditar(r)}
-          disabled={r.bloqueado}
-          title={r.bloqueado ? "Registro bloqueado" : "Editar"}
+          disabled={r.bloqueado && !puedeEditarBloqueados}
+          title={r.bloqueado && !puedeEditarBloqueados ? "Registro bloqueado" : "Editar"}
         >
           ✏️
         </button>
@@ -769,6 +770,7 @@ const Registro = ({ userData }) => {
   const [importingExcel, setImportingExcel] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const canImportExcel = ['gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
+  const puedeRegistrarCualquierFecha = String(usuarioLogin || '').trim().toLowerCase() === 'gonzalezanf';
 
   const [proyectos, setProyectos] = useState([]);
   const [loadingProyectos, setLoadingProyectos] = useState(false);
@@ -1490,7 +1492,7 @@ const Registro = ({ userData }) => {
           text: "La fecha final de vacaciones debe ser mayor o igual a la fecha inicial.",
         });
       }
-    } else if (registro.fecha > todayISO) {
+    } else if (!puedeRegistrarCualquierFecha && registro.fecha > todayISO) {
       return Swal.fire({
         icon: "warning",
         title: "Fecha futura no permitida",
@@ -2750,7 +2752,7 @@ const Registro = ({ userData }) => {
                   <input
                     type="date"
                     value={registro.fecha}
-                    max={habilitarRangoVacaciones ? undefined : todayISO}
+                    max={habilitarRangoVacaciones || puedeRegistrarCualquierFecha ? undefined : todayISO}
                     onChange={(e) => {
                       const value = e.target.value;
 
@@ -2774,7 +2776,9 @@ const Registro = ({ userData }) => {
                     }}
                     required
                     title={
-                      habilitarRangoVacaciones
+                      puedeRegistrarCualquierFecha
+                        ? "Puedes registrar y editar cualquier fecha."
+                        : habilitarRangoVacaciones
                         ? "Para vacaciones se permiten fechas futuras."
                         : "Puedes registrar hoy o días anteriores; no fechas futuras."
                     }
@@ -3120,6 +3124,7 @@ const Registro = ({ userData }) => {
               <tbody>
                 {registrosFiltrados.pageRows.map((r) => (
                   <RegistroRow
+                    puedeEditarBloqueados={puedeRegistrarCualquierFecha && String(r.usuario_consultor ?? r.usuario ?? "").trim().toLowerCase() === "gonzalezanf"}
                     key={r.id}
                     r={r}
                     isBASISTable={isBASISTable}
