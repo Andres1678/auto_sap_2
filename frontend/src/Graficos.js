@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import Modal from 'react-modal';
 import './PanelGraficos.css';
+import { filtrarRegistrosGraficos, personasEquiposFiltradas } from './graficosFiltros';
 import ConsultorOcupacionesModal from './ConsultorOcupacionesModal';
 import { jfetch } from './lib/api';
 import { useNavigate } from "react-router-dom";
@@ -147,8 +148,16 @@ function MultiFiltro({
     <div className="pgx-multi-filter" ref={containerRef}>
       {titulo && <span className="pgx-mf-label">{titulo}</span>}
 
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-expanded={open}
+        aria-disabled={disabled}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!disabled) setOpen(o=>!o); }
+          if (e.key === 'Escape') setOpen(false);
+        }}
         className={
           'pgx-mf-control' +
           (open ? ' is-open' : '') +
@@ -181,7 +190,7 @@ function MultiFiltro({
           </div>
         )}
         <span className="pgx-mf-arrow">▾</span>
-      </button>
+      </div>
 
       {open && !disabled && (
         <div
@@ -243,6 +252,9 @@ function MultiFiltro({
 
 export default function Graficos() {
   const [registros, setRegistros] = useState([]);
+  const [consultaRegistros, setConsultaRegistros] = useState('');
+  const [consultaPersonas, setConsultaPersonas] = useState('');
+  const [catalogoOpciones, setCatalogoOpciones] = useState({key:'', rows:[]});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -507,10 +519,13 @@ export default function Graficos() {
       }
 
       const arr = Array.isArray(json) ? json : [];
+      if (controller.signal.aborted || fetchAbortRef.current !== controller) return;
       setRegistros(arr);
+      setConsultaRegistros(JSON.stringify(filters));
     } catch (err) {
-      if (err?.name === 'AbortError') return;
+      if (err?.name === 'AbortError' || controller.signal.aborted || fetchAbortRef.current !== controller) return;
       setRegistros([]);
+      setConsultaRegistros('');
       setError(String(err?.message || err));
       console.error('Error al cargar registros:', err);
     } finally {
@@ -573,11 +588,14 @@ export default function Graficos() {
         );
       }
 
+      if (controller.signal.aborted || personasEquipoAbortRef.current !== controller) return;
+      setConsultaPersonas(JSON.stringify(filters));
       setPersonasPorEquipo(
         Array.isArray(json?.equipos) ? json.equipos : []
       );
     } catch (err) {
-      if (err?.name === 'AbortError') return;
+      if (err?.name === 'AbortError' || controller.signal.aborted || personasEquipoAbortRef.current !== controller) return;
+      setConsultaPersonas('');
       console.error('Error cargando validación de personas por equipo:', err);
       setPersonasPorEquipo([]);
     } finally {
@@ -777,7 +795,7 @@ export default function Graficos() {
       if (scope === 'SELF') {
         const u = String(usuario || '').trim().toLowerCase();
         const ru = String(r.usuario_consultor || '').trim().toLowerCase();
-        if (u && ru && ru !== u) return false;
+        if (!u || ru !== u) return false;
         if (equipoUser && eq !== equipoUser) return false;
       }
 
@@ -785,8 +803,8 @@ export default function Graficos() {
         if (equipoUser && eq !== equipoUser) return false;
       }
 
-      if (!coincideMes(r.fecha, appliedFilters.mes)) return false;
-      if (!inRangeISO(r.fecha, appliedFilters.desde, appliedFilters.hasta)) return false;
+      if (!coincideMes(String(r.fecha || "").slice(0, 10), appliedFilters.mes)) return false;
+      if (!inRangeISO(String(r.fecha || "").slice(0, 10), appliedFilters.desde, appliedFilters.hasta)) return false;
 
       return true;
     });
@@ -800,79 +818,65 @@ export default function Graficos() {
     appliedFilters.hasta,
   ]);
 
+  // Conservar opciones del período autorizado aunque el servidor reduzca la nueva respuesta.
+  const claveCatalogo = JSON.stringify([usuario, scope, equipoUser, appliedFilters.mes, appliedFilters.desde, appliedFilters.hasta]);
+  useEffect(() => {
+    if (consultaRegistros !== JSON.stringify(appliedFilters)) return;
+    setCatalogoOpciones(prev => {
+      const map = new Map((prev.key === claveCatalogo ? prev.rows : []).map(r=>[r.id,r]));
+      registrosBase.forEach(r=>map.set(r.id,r));
+      return {key:claveCatalogo, rows:[...map.values()]};
+    });
+  }, [registrosBase, consultaRegistros, appliedFilters, claveCatalogo]);
+  const registrosOpciones = catalogoOpciones.key === claveCatalogo ? catalogoOpciones.rows : registrosBase;
+
+  const opcionesBase = useMemo(() => filtrarRegistrosGraficos(registrosOpciones, { equipo: draftFilters.equipo, consultor: draftFilters.consultor }), [registrosOpciones, draftFilters.equipo, draftFilters.consultor]);
+
   const consultoresUnicos = useMemo(() => {
-    const set = new Set((registrosBase ?? []).map(r => r.consultor));
+    const set = new Set(filtrarRegistrosGraficos(registrosOpciones, {equipo: draftFilters.equipo}).map(r => r.consultor));
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosBase]);
+  }, [registrosOpciones, draftFilters.equipo]);
 
   const tareasUnicos = useMemo(() => {
-    const set = new Set((registrosBase ?? []).map(r => r.tipoTarea));
+    const set = new Set((opcionesBase ?? []).map(r => r.tipoTarea));
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosBase]);
+  }, [opcionesBase]);
 
   const clientesUnicos = useMemo(() => {
-    const set = new Set((registrosBase ?? []).map(r => r.cliente));
+    const set = new Set((opcionesBase ?? []).map(r => r.cliente));
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosBase]);
+  }, [opcionesBase]);
 
   const modulosUnicos = useMemo(() => {
-    const set = new Set((registrosBase ?? []).map(r => r.modulo));
+    const set = new Set((opcionesBase ?? []).map(r => r.modulo));
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosBase]);
+  }, [opcionesBase]);
 
   const equiposUnicos = useMemo(() => {
-    const set = new Set((registrosBase ?? []).map(r => equipoOf(r)));
+    const set = new Set((registrosOpciones ?? []).map(r => equipoOf(r)));
     return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  }, [registrosBase]);
+  }, [registrosOpciones]);
 
   const nroClienteUnicos = useMemo(() => {
-    const set = new Set((registrosBase ?? []).map(r => r.nroCasoCliente));
+    const set = new Set((opcionesBase ?? []).map(r => r.nroCasoCliente));
     return Array.from(set)
       .filter(v => (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '0'))
       .map(v => String(v))
       .sort((a, b) => a.localeCompare(b));
-  }, [registrosBase]);
+  }, [opcionesBase]);
 
   const nroEscaladoUnicos = useMemo(() => {
-    const set = new Set((registrosBase ?? []).map(r => r.nroCasoEscaladoSap));
+    const set = new Set((opcionesBase ?? []).map(r => r.nroCasoEscaladoSap));
     return Array.from(set)
       .filter(v => (v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '0'))
       .map(v => String(v))
       .sort((a, b) => a.localeCompare(b));
-  }, [registrosBase]);
+  }, [opcionesBase]);
 
   const datosFiltrados = useMemo(() => {
-    return (registrosBase ?? []).filter(r => {
-      const eq = equipoOf(r);
-
-      if (appliedFilters.ocupacion.length > 0) {
-        const occLabel =
-          (r.ocupacion_codigo && r.ocupacion_nombre)
-            ? `${String(r.ocupacion_codigo).trim()} - ${String(r.ocupacion_nombre).trim()}`
-            : (r.ocupacion_nombre ? String(r.ocupacion_nombre).trim() : "SIN OCUPACIÓN");
-
-        if (!appliedFilters.ocupacion.includes(occLabel)) return false;
-      }
-
-      if (appliedFilters.consultor.length > 0 && !appliedFilters.consultor.includes(r.consultor)) return false;
-      if (appliedFilters.tarea.length > 0 && !appliedFilters.tarea.includes(r.tipoTarea)) return false;
-      if (appliedFilters.cliente.length > 0 && !appliedFilters.cliente.includes(r.cliente)) return false;
-      if (appliedFilters.modulo.length > 0 && !appliedFilters.modulo.includes(r.modulo)) return false;
-      if (appliedFilters.equipo.length > 0 && !appliedFilters.equipo.includes(eq)) return false;
-
-      if (appliedFilters.nroCliente.length > 0) {
-        const val = String(r.nroCasoCliente || '');
-        if (!appliedFilters.nroCliente.includes(val)) return false;
-      }
-
-      if (appliedFilters.nroEscalado.length > 0) {
-        const val = String(r.nroCasoEscaladoSap || '');
-        if (!appliedFilters.nroEscalado.includes(val)) return false;
-      }
-
-      return true;
-    });
-  }, [registrosBase, appliedFilters]);
+    if (consultaRegistros !== JSON.stringify(appliedFilters)) return [];
+    return filtrarRegistrosGraficos(registrosBase, appliedFilters);
+  }, [registrosBase, appliedFilters, consultaRegistros]);
 
   const horasPorConsultor = useMemo(() => {
     const acc = new Map();
@@ -919,46 +923,9 @@ export default function Graficos() {
   }, [datosFiltrados]);
 
   const personasPorEquipoMap = useMemo(() => {
-    const map = new Map();
-
-    (Array.isArray(personasPorEquipo) ? personasPorEquipo : []).forEach((row) => {
-      const equipo = equipoOf(row);
-      const personas = (Array.isArray(row?.personas) ? row.personas : [])
-        .map((persona) => ({
-          id: Number(persona?.id || 0),
-          usuario: String(persona?.usuario || "").trim().toLowerCase(),
-          nombre: String(persona?.nombre || persona?.usuario || "SIN NOMBRE").trim(),
-          equipo: equipoOf(persona, equipo),
-          activo: persona?.activo !== false,
-          registro: Boolean(persona?.registro),
-          estado: String(persona?.estado || (persona?.registro ? "REGISTRÓ" : "NO REGISTRÓ")),
-          totalRegistros: Math.max(0, Number(persona?.totalRegistros) || 0),
-          horasRegistradas: Math.max(0, Number(persona?.horasRegistradas) || 0),
-        }))
-        // Protección adicional: el gráfico y el modal nunca deben incluir inactivos.
-        .filter((persona) => persona.activo);
-
-      const totalPersonas = personas.length || Math.max(0, Number(row?.totalPersonas) || 0);
-      const registraronCalculado = personas.filter((persona) => persona.registro).length;
-      const registraron = personas.length
-        ? registraronCalculado
-        : Math.max(0, Number(row?.registraron) || 0);
-      const noRegistraron = Math.max(0, totalPersonas - registraron);
-
-      map.set(equipo, {
-        equipo,
-        totalPersonas,
-        registraron,
-        noRegistraron,
-        porcentajeRegistro: totalPersonas > 0
-          ? +((registraron * 100) / totalPersonas).toFixed(2)
-          : 0,
-        personas,
-      });
-    });
-
-    return map;
-  }, [personasPorEquipo]);
+    if (consultaPersonas !== JSON.stringify(appliedFilters)) return new Map();
+    return personasEquiposFiltradas(personasPorEquipo, datosFiltrados, appliedFilters);
+  }, [personasPorEquipo, datosFiltrados, appliedFilters, consultaPersonas]);
 
   const personasActivasPorUsuario = useMemo(() => {
     const map = new Map();
@@ -1515,13 +1482,18 @@ export default function Graficos() {
           </button>
         </div>
 
+        <div className={hasPendingChanges ? 'pgx-filter-status is-pending' : 'pgx-filter-status'} role="status">
+          {hasPendingChanges ? 'Tienes cambios pendientes. Pulsa Aplicar filtros para actualizar todas las gráficas.' :
+            `Filtros aplicados · Equipo: ${appliedFilters.equipo.join(', ') || 'Todos'} · Consultor: ${appliedFilters.consultor.join(', ') || 'Todos'}`}
+        </div>
+
         {loading && (
           <div className="pgx-loading">
             Cargando información...
           </div>
         )}
 
-        <div className="pgx-grid pgx-grid-stack">
+        <div className="pgx-grid pgx-grid-stack" aria-busy={loading}>
           <PieOcupacionChart
             data={pieOcupacion}
             totalHoras={totalHorasPieOcupacion}
@@ -1538,6 +1510,7 @@ export default function Graficos() {
           />
 
           <GraficoDeMes
+            filtroConsultor={appliedFilters.consultor}
             data={datosFiltrados}
             filtroMes={appliedFilters.mes}
             desde={appliedFilters.desde}
@@ -1668,7 +1641,7 @@ export default function Graficos() {
                   <div className="pgx-team-people-section__head">
                     <div>
                       <h4>No registraron</h4>
-                      <p>Consultores activos sin registros durante el período aplicado.</p>
+                      <p>Consultores activos sin registros que cumplan los filtros aplicados.</p>
                     </div>
                     <span>{personasEquipoNoRegistraron.length}</span>
                   </div>
@@ -1709,7 +1682,7 @@ export default function Graficos() {
                   <div className="pgx-team-people-section__head">
                     <div>
                       <h4>Registraron</h4>
-                      <p>Consultores activos con al menos un registro en el período.</p>
+                      <p>Consultores activos con registros que cumplen todos los filtros aplicados.</p>
                     </div>
                     <span>{personasEquipoRegistraron.length}</span>
                   </div>
@@ -1809,7 +1782,7 @@ export default function Graficos() {
           {modalMode === 'personasEquipo' ? (
             <div className="pgx-modal-footer-total">
               <span className="pgx-chip pgx-chip-ghost">
-                Solo consultores activos
+                Consultores activos · filtros aplicados
               </span>
               <span className="pgx-spacer" />
               <strong>

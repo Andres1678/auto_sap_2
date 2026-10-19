@@ -1,210 +1,50 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { jfetch } from '../lib/api';
 
-import React, { useEffect, useMemo, useState } from "react";
-import { jfetch } from "../lib/api";
+const nf = new Intl.NumberFormat('es-CO', {maximumFractionDigits:2});
+const norm = v => String(v ?? '').trim().normalize('NFD').replace(/\p{Diacritic}/gu,'').toUpperCase();
+const num = v => {const n=Number(v);return Number.isFinite(n)?n:0;};
+const safeRows = p => Array.isArray(p)?p:Array.isArray(p?.rows)?p.rows:Array.isArray(p?.ocupaciones)?p.ocupaciones:[];
 
-const nf = new Intl.NumberFormat("es-CO", {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
-});
-
-function fmtHours(v) {
-  return `${nf.format(Number(v || 0))} h`;
-}
-
-function fmtPct(v) {
-  return `${Number(v || 0).toFixed(1)}%`;
-}
-
-function normalizeText(value) {
-  return String(value || "").trim();
-}
-
-function safeOcupacionRows(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.rows)) return payload.rows;
-  if (Array.isArray(payload?.ocupaciones)) return payload.ocupaciones;
-  return [];
-}
-
-function normalizeOcupacion(row) {
-  const codigo = normalizeText(
-    row?.ocupacion_codigo || row?.codigo || row?.ocupacionCodigo
-  );
-  const nombre = normalizeText(
-    row?.ocupacion_nombre || row?.nombre || row?.ocupacionNombre || row?.ocupacion
-  );
-  const horas = Number(row?.horas || row?.tiempoInvertido || row?.tiempo || 0);
-
-  const label =
-    codigo && nombre
-      ? `${codigo} - ${nombre}`
-      : nombre || codigo || "SIN OCUPACIÓN";
-
-  return {
-    name: label,
-    horas,
-  };
-}
-
-function buildTop(rows, maxItems = 6) {
-  const mapa = new Map();
-
-  rows
-    .map(normalizeOcupacion)
-    .filter((item) => item.horas > 0)
-    .forEach((item) => {
-      const key = item.name;
-      const actual = mapa.get(key) || { name: item.name, horas: 0 };
-      actual.horas += Number(item.horas || 0);
-      mapa.set(key, actual);
-    });
-
-  const base = Array.from(mapa.values()).sort((a, b) => b.horas - a.horas);
-
-  const totalHoras = base.reduce((acc, item) => acc + item.horas, 0);
-
-  if (!base.length || totalHoras <= 0) {
-    return { totalHoras: 0, items: [] };
-  }
-
-  const visibles = base.slice(0, maxItems);
-  const resto = base.slice(maxItems);
-
-  if (resto.length > 0) {
-    visibles.push({
-      name: "Otros",
-      horas: resto.reduce((acc, item) => acc + item.horas, 0),
-    });
-  }
-
-  return {
-    totalHoras,
-    items: visibles.map((item) => ({
-      ...item,
-      pct: totalHoras > 0 ? (item.horas * 100) / totalHoras : 0,
-    })),
-  };
-}
-
-export default function TopOcupacionesConsultorChart({
-  consultor,
-  equipo,
-  mes,
-  anio,
-  maxItems = 6,
-  endpoint = "/capacidad-semanal-ocupaciones",
-}) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [rows, setRows] = useState([]);
-
-  useEffect(() => {
-    if (!consultor || !mes || !anio) {
-        setRows([]);
-        setError("");
-        setLoading(false);
-        return;
-    }
-
-    let active = true;
-
-    const fetchData = async () => {
+export default function TopOcupacionesConsultorChart({ consultor, equipo, mes, anio, maxItems=6, endpoint='/capacidad-semanal-ocupaciones', data }) {
+  const [state,setState]=useState({key:'',rows:[],loading:false,error:''});
+  const key=JSON.stringify([consultor||'',equipo||'',mes||'',anio||'',endpoint]);
+  useEffect(()=>{
+    if (Array.isArray(data)) return undefined;
+    if ((!consultor && !equipo) || !mes || !anio) {setState({key,rows:[],loading:false,error:''});return undefined;}
+    const controller=new AbortController();let active=true;
+    setState({key,rows:[],loading:true,error:''});
+    const qs=new URLSearchParams({mes:String(mes),anio:String(anio)});
+    if(consultor)qs.set('consultor',String(consultor).trim());
+    if(equipo)qs.set('equipo',String(equipo).trim());
+    (async()=>{
       try {
-        setLoading(true);
-        setError("");
-
-        const qs = new URLSearchParams();
-        qs.set("mes", String(mes));
-        qs.set("anio", String(anio));
-        qs.set("consultor", String(consultor));
-        if (equipo) qs.set("equipo", String(equipo));
-
-        const res = await jfetch(`${endpoint}?${qs.toString()}`);
-        const json = await res.json();
-
-        if (!res.ok) {
-          throw new Error(json?.error || `HTTP ${res.status}`);
-        }
-
-        if (!active) return;
-        setRows(safeOcupacionRows(json));
-      } catch (e) {
-        if (!active) return;
-        setError(e?.message || "No se pudo cargar el top de ocupaciones");
-        setRows([]);
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-
-    fetchData();
-
-    return () => {
-      active = false;
-    };
-  }, [consultor, equipo, mes, anio, endpoint]);
-
-  const topData = useMemo(() => buildTop(rows, maxItems), [rows, maxItems]);
-
-  return (
-    <aside className="capacidad-ocupaciones-card">
-      <div className="ocup-card-head">
-        <div>
-          <h5>Top ocupaciones</h5>
-          <p>{consultor || "Sin consultor"}</p>
-        </div>
-
-        <span className="ocup-card-badge">
-          {fmtHours(topData.totalHoras)}
-        </span>
-      </div>
-
-      {loading && (
-        <div className="ocup-state">Cargando ocupaciones…</div>
-      )}
-
-      {!loading && error && (
-        <div className="ocup-state ocup-state-error">{error}</div>
-      )}
-
-      {!loading && !error && topData.items.length === 0 && (
-        <div className="ocup-state">
-          Sin horas por ocupación para este consultor.
-        </div>
-      )}
-
-      {!loading && !error && topData.items.length > 0 && (
-        <div className="ocup-list">
-          {topData.items.map((item, index) => (
-            <article
-              key={`${consultor || "sin-consultor"}-${item.name}-${index}`}
-              className="ocup-item"
-            >
-              <div className="ocup-item-head">
-                <span className="ocup-rank">#{index + 1}</span>
-
-                <div className="ocup-main">
-                  <strong className="ocup-name" title={item.name}>
-                    {item.name}
-                  </strong>
-                  <span className="ocup-hours">{fmtHours(item.horas)}</span>
-                </div>
-              </div>
-
-              <div className="ocup-bar">
-                <div
-                  className="ocup-bar-fill"
-                  style={{ width: `${Math.max(0, Math.min(100, item.pct))}%` }}
-                />
-              </div>
-
-              <div className="ocup-foot">
-                <span>{fmtPct(item.pct)}</span>
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-    </aside>
-  );
+        const res=await jfetch(`${endpoint}?${qs}`,{signal:controller.signal});const json=await res.json();
+        if(!res.ok)throw Error(json?.error||`HTTP ${res.status}`);
+        if(active&&!controller.signal.aborted)setState({key,rows:safeRows(json),loading:false,error:''});
+      }catch(e){if(active&&!controller.signal.aborted)setState({key,rows:[],loading:false,error:e.message||'No se pudo cargar el top de ocupaciones'});}
+    })();
+    return ()=>{active=false;controller.abort();};
+  },[consultor,equipo,mes,anio,endpoint,key,data]);
+  const fuente=Array.isArray(data)?data:state.key===key?state.rows:[];
+  const top=useMemo(()=>{
+    const map=new Map();
+    fuente.filter(r=>(!equipo||norm(r.equipo)===norm(equipo))&&(!consultor||[r.consultor,r.usuario_consultor,r.usuario].some(v=>norm(v)===norm(consultor))))
+      .forEach(r=>{
+        const codigo=String(r.ocupacion_codigo??r.codigo??r.ocupacionCodigo??'').trim();
+        const nombre=String(r.ocupacion_nombre??r.nombre??r.ocupacionNombre??r.ocupacion??'').trim();
+        const name=[codigo,nombre].filter(Boolean).join(' - ')||'SIN OCUPACIÓN';
+        const horas=num(r.horas??r.tiempoInvertido??r.tiempo_invertido??r.tiempo??0);
+        if(horas>0)map.set(name,(map.get(name)||0)+horas);
+      });
+    const base=[...map].map(([name,horas])=>({name,horas})).sort((a,b)=>b.horas-a.horas);
+    const total=base.reduce((s,r)=>s+r.horas,0);const limit=Math.max(1,Math.min(50,Math.trunc(num(maxItems))||6));
+    const items=base.slice(0,limit);if(base.length>limit)items.push({name:'Otros',horas:base.slice(limit).reduce((s,r)=>s+r.horas,0)});
+    return {total,items:items.map(r=>({...r,pct:total?100*r.horas/total:0}))};
+  },[fuente,consultor,equipo,maxItems]);
+  const loading=!Array.isArray(data)&&state.key===key&&state.loading;
+  const error=!Array.isArray(data)&&state.key===key?state.error:'';
+  return <aside className="capacidad-ocupaciones-card"><div className="ocup-card-head"><div><h5>Top ocupaciones</h5><p>{consultor||equipo||'Selecciona consultor o equipo'}</p></div><span className="ocup-card-badge">{nf.format(top.total)} h</span></div>
+    {loading?<div className="ocup-state">Cargando ocupaciones…</div>:error?<div className="ocup-state ocup-state-error">{error}</div>:!top.items.length?<div className="ocup-state">Sin horas por ocupación para los filtros seleccionados.</div>:<div className="ocup-list">{top.items.map((item,index)=><article key={item.name} className="ocup-item"><div className="ocup-item-head"><span className="ocup-rank">#{index+1}</span><div className="ocup-main"><strong className="ocup-name" title={item.name}>{item.name}</strong><span className="ocup-hours">{nf.format(item.horas)} h</span></div></div><div className="ocup-bar"><div className="ocup-bar-fill" style={{width:`${item.pct}%`}}/></div><div className="ocup-foot"><span>{item.pct.toFixed(1)}%</span></div></article>)}</div>}
+  </aside>;
 }

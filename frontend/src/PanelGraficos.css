@@ -1212,3 +1212,232 @@
   --pgx-muted:#64748b;
   --pgx-border:#dce4ef;
 }
+.pgx-scope .pgx-filter-status {
+  padding: 12px 16px;
+  border: 1px solid #cbdcf2;
+  border-radius: 12px;
+  background: #eef5ff;
+  color: #234b7a;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.pgx-scope .pgx-filter-status.is-pending {
+  background: #fff8e9;
+  border-color: #f1d499;
+  color: #865b13;
+}
+.pgx-scope .pgx-filtros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: end;
+  gap: 14px;
+  padding: 20px;
+  overflow: visible;
+}
+.pgx-scope .pgx-filtros .pgx-multi-filter {
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+}
+.pgx-scope .pgx-mf-control {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.pgx-scope .pgx-mf-control:focus-visible {
+  outline: 3px solid #75adf2;
+  outline-offset: 2px;
+}
+.pgx-scope .pgx-mf-control[aria-disabled=true] {
+  cursor: default;
+  opacity: .65;
+}
+.pgx-scope .pgx-mf-chips {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.pgx-scope .pgx-mf-chip {
+  max-width: 100%;
+  min-width: 0;
+}
+.pgx-scope .pgx-mf-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pgx-scope .pgx-mf-chip button {
+  flex-shrink: 0;
+}
+.pgx-scope .pgx-mf-dropdown {
+  z-index: 60;
+  max-height: 380px;
+  overflow-y: auto;
+  box-shadow: 0 16px 38px #142b4b26;
+}
+.pgx-scope .pgx-card {
+  min-width: 0;
+  overflow: hidden;
+}
+.pgx-scope .pgx-card h3 {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.pgx-scope .pgx-pie-3d-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(200px, 1fr);
+  gap: 20px;
+  align-items: center;
+}
+.pgx-scope .pgx-pie-3d-chart {
+  width: 100%;
+  min-width: 0;
+}
+.pgx-scope .pgx-pie-legend-box {
+  max-height: 420px;
+  overflow: auto;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+.pgx-scope .pgx-pie-legend-item {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 0;
+}
+.pgx-scope .pgx-pie-legend-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pgx-scope .pgx-chart-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #b5c5dc #f3f6fb;
+}
+@media (max-width: 900px) {
+  .pgx-scope .pgx-pie-3d-layout {
+    grid-template-columns: 1fr;
+  }
+  .pgx-scope .pgx-pie-legend-box {
+    max-height: 260px;
+  }
+}
+@media (max-width: 600px) {
+  .pgx-scope .pgx-filtros {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 14px;
+    position: static;
+  }
+  .pgx-scope .pgx-card {
+    padding: 16px;
+  }
+}
+.capacidad-ocupaciones-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #dce5f0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 24px #1733530d;
+  font-family: system-ui, sans-serif;
+}
+.capacidad-ocupaciones-card .ocup-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.capacidad-ocupaciones-card h5 {
+  margin: 0;
+  font-size: 16px;
+  color: #173353;
+}
+.capacidad-ocupaciones-card .ocup-card-head p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  overflow-wrap: anywhere;
+}
+.capacidad-ocupaciones-card .ocup-card-badge {
+  padding: 7px 10px;
+  border-radius: 25px;
+  background: #edf5ff;
+  color: #1457a0;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.capacidad-ocupaciones-card .ocup-list {
+  display: grid;
+  gap: 12px;
+}
+.capacidad-ocupaciones-card .ocup-item {
+  padding: 12px;
+  border: 1px solid #e4ebf3;
+  border-radius: 12px;
+}
+.capacidad-ocupaciones-card .ocup-item-head {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+.capacidad-ocupaciones-card .ocup-rank {
+  color: #64748b;
+  font-size: 12px;
+  padding-top: 2px;
+}
+.capacidad-ocupaciones-card .ocup-main {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+}
+.capacidad-ocupaciones-card .ocup-name {
+  color: #273d58;
+  overflow-wrap: anywhere;
+}
+.capacidad-ocupaciones-card .ocup-hours {
+  white-space: nowrap;
+  color: #1457a0;
+}
+.capacidad-ocupaciones-card .ocup-bar {
+  height: 6px;
+  margin-top: 11px;
+  background: #edf2f8;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.capacidad-ocupaciones-card .ocup-bar-fill {
+  height: 100%;
+  background: #2770c2;
+  border-radius: inherit;
+}
+.capacidad-ocupaciones-card .ocup-foot {
+  text-align: right;
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 6px;
+}
+.capacidad-ocupaciones-card .ocup-state {
+  padding: 24px 12px;
+  color: #64748b;
+  text-align: center;
+  font-size: 13px;
+}
+.capacidad-ocupaciones-card .ocup-state-error {
+  color: #a42e24;
+  background: #fff4f2;
+  border-radius: 10px;
+}

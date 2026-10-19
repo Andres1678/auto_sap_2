@@ -291,12 +291,18 @@ export default function GraficoDeMes({
   desde = "",
   hasta = "",
   filtroEquipo = [],
+  filtroConsultor = [],
   onOpenDetail,
 }) {
   const chartData = useMemo(() => {
     const monthsMap = new Map();
 
-    (Array.isArray(data) ? data : []).forEach((row) => {
+    const normalizar = (v) => String(v ?? '').trim().normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase();
+    const coincide = (values, ...actual) => !values.length || actual.some(v=>values.map(normalizar).includes(normalizar(v)));
+    (Array.isArray(data) ? data : []).filter(row =>
+      coincide(Array.isArray(filtroEquipo) ? filtroEquipo : [filtroEquipo].filter(Boolean), row.equipo) &&
+      coincide(Array.isArray(filtroConsultor) ? filtroConsultor : [filtroConsultor].filter(Boolean), row.consultor, row.usuario_consultor)
+    ).forEach((row) => {
       const monthKey = getMonthKeyFromDate(row?.fecha);
 
       if (!monthKey) {
@@ -367,7 +373,7 @@ export default function GraficoDeMes({
     return buildMonthSeries(startMonth, endMonth).map(
       (baseRow) => byMonth.get(baseRow.key) || baseRow
     );
-  }, [data, filtroMes, desde, hasta]);
+  }, [data, filtroMes, desde, hasta, filtroEquipo, filtroConsultor]);
 
   const teamText =
     Array.isArray(filtroEquipo) && filtroEquipo.length > 0
