@@ -5,6 +5,9 @@ import { EXCEPCION_8H_USERS } from "./lib/visibility";
 
 const API_PATH = "/resumen-calendario";
 
+// Ocultar únicamente estos calendarios; conservar cuentas y registros.
+const CALENDARIOS_OCULTOS = new Set(["juancarlos.diaz", "avilaes"]);
+
 function extraerYMD(fechaStr) {
   if (!fechaStr) return null;
   const match = String(fechaStr).match(/(\d{4}-\d{2}-\d{2})/);
@@ -165,7 +168,11 @@ export default function Resumen({
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      const rows = Array.isArray(data) ? data : [];
+      const rows = (Array.isArray(data) ? data : []).filter(
+        (c) => !CALENDARIOS_OCULTOS.has(
+          String(c.usuario_consultor || "").trim().toLowerCase()
+        )
+      );
 
       const agrupado = rows.map((c) => {
         const registros = Array.isArray(c.registros) ? c.registros : [];

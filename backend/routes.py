@@ -7288,6 +7288,10 @@ def resumen_calendario():
             .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
             .outerjoin(Registro, registro_join)
             .filter(Consultor.activo == 1)
+            # Exclusión limitada a la vista de calendarios.
+            .filter(~func.lower(func.trim(Consultor.usuario)).in_(
+                ["juancarlos.diaz", "avilaes"]
+            ))
         )
 
         # aplicar scope
