@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import Modal from 'react-modal';
-import { agruparOcupaciones, ocupacionDeRegistro, resumirRegistros } from './consultorDetalle';
+import { agruparCasos, agruparOcupaciones, ocupacionDeRegistro, resumirRegistros } from './consultorDetalle';
 
 export default function ConsultorOcupacionesModal({ persona, rows, periodo, onClose }) {
   const [seleccion, setSeleccion] = useState(null);
@@ -8,6 +8,10 @@ export default function ConsultorOcupacionesModal({ persona, rows, periodo, onCl
   const visibles = useMemo(() => rows.filter((r) => seleccion === null || seleccion.includes(ocupacionDeRegistro(r).key)), [rows, seleccion]);
   const resumen = useMemo(() => resumirRegistros(visibles), [visibles]);
   const porOcupacion = useMemo(() => agruparOcupaciones(visibles), [visibles]);
+  const casosAgrupados = useMemo(() => [
+    { titulo: 'Casos cliente', campo: 'nroCasoCliente', grupos: agruparCasos(visibles, 'nroCasoCliente') },
+    { titulo: 'Casos internos', campo: 'nroCasoInterno', grupos: agruparCasos(visibles, 'nroCasoInterno') },
+  ], [visibles]);
   const toggle = (key) => setSeleccion((prev) => {
     const keys = prev === null ? ocupaciones.map((o) => o.key) : prev;
     return keys.includes(key) ? keys.filter((v) => v !== key) : [...keys, key];
@@ -36,7 +40,24 @@ export default function ConsultorOcupacionesModal({ persona, rows, periodo, onCl
         {rows.length === 0 ? <div className="pgx-empty">El consultor no tiene registros para los filtros aplicados.</div> : visibles.length === 0 ? <div className="pgx-empty">Selecciona una ocupación para calcular sus resultados.</div> : <>
           <h4>Resumen por ocupación</h4>
           <div className="pgx-table-responsive"><table className="pgx-detail-table"><thead><tr><th>Ocupación</th><th>Registros</th><th>Horas</th><th>Casos cliente distintos</th><th>Casos internos distintos</th></tr></thead><tbody>{porOcupacion.map((o) => <tr key={o.key}><td>{o.label}</td><td className="pgx-num">{o.registros}</td><td className="pgx-num">{o.horas.toFixed(2)}</td><td className="pgx-num">{o.casosCliente}</td><td className="pgx-num">{o.casosInterno}</td></tr>)}</tbody><tfoot><tr><th>Total general sin duplicar casos</th><td className="pgx-num">{resumen.registros}</td><td className="pgx-num">{resumen.horas.toFixed(2)}</td><td className="pgx-num">{resumen.casosCliente}</td><td className="pgx-num">{resumen.casosInterno}</td></tr></tfoot></table></div>
-          <details className="pgx-source-details"><summary>Ver los {visibles.length} registros utilizados en el cálculo</summary><div className="pgx-table-responsive"><table className="pgx-detail-table"><thead><tr><th>ID</th><th>Fecha</th><th>Ocupación</th><th>Cliente</th><th>Nro. caso cliente</th><th>Nro. caso interno</th><th>Horas</th></tr></thead><tbody>{[...visibles].sort((a,b) => String(a.fecha).localeCompare(String(b.fecha)) || Number(a.id)-Number(b.id)).map((r) => <tr key={r.id}><td>{r.id}</td><td>{r.fecha}</td><td>{ocupacionDeRegistro(r).label}</td><td>{r.cliente || '—'}</td><td>{r.nroCasoCliente || '—'}</td><td>{r.nroCasoInterno || '—'}</td><td className="pgx-num">{Number(r.tiempoInvertido || 0).toFixed(2)}</td></tr>)}</tbody></table></div></details>
+          <h4>Casos agrupados por número</h4>
+          <p className="pgx-detail-note">Cada número aparece una sola vez en su tabla, con la suma de todas sus horas en las ocupaciones seleccionadas. Las dos tablas se calculan por separado: un registro puede tener caso cliente e interno, por lo que sus horas no se deben sumar entre tablas.</p>
+          {casosAgrupados.map(({ titulo, campo, grupos }) => (
+            <section key={campo} className="pgx-source-details" aria-label={titulo}>
+              <h4 style={{ padding: '0 16px' }}>{titulo} · {grupos.length} números distintos</h4>
+              {grupos.length === 0 ? <div className="pgx-empty">Sin casos válidos en este campo.</div> :
+                <div className="pgx-table-responsive"><table className="pgx-detail-table">
+                  <thead><tr><th>Número de caso</th><th>Clientes</th><th>Ocupaciones</th><th>Período registrado</th><th>Registros agrupados</th><th>Horas acumuladas</th></tr></thead>
+                  <tbody>{grupos.map((g) => <tr key={g.numero}>
+                    <td>{g.numero}</td><td>{g.clientes.join(', ') || '—'}</td><td>{g.ocupaciones.join(', ')}</td>
+                    <td>{g.desde === g.hasta ? g.desde : `${g.desde} al ${g.hasta}`}</td>
+                    <td className="pgx-num">{g.registros}</td><td className="pgx-num">{g.horas.toFixed(2)}</td>
+                  </tr>)}</tbody>
+                  <tfoot><tr><th colSpan={4}>Total de este campo</th><td className="pgx-num">{grupos.reduce((n,g) => n + g.registros, 0)}</td><td className="pgx-num">{grupos.reduce((n,g) => n + g.horas, 0).toFixed(2)}</td></tr></tfoot>
+                </table></div>}
+            </section>
+          ))}
+          <details className="pgx-source-details"><summary>Ver las {visibles.length} filas originales (sin agrupar)</summary><div className="pgx-table-responsive"><table className="pgx-detail-table"><thead><tr><th>ID</th><th>Fecha</th><th>Ocupación</th><th>Cliente</th><th>Nro. caso cliente</th><th>Nro. caso interno</th><th>Horas</th></tr></thead><tbody>{[...visibles].sort((a,b) => String(a.fecha).localeCompare(String(b.fecha)) || Number(a.id)-Number(b.id)).map((r) => <tr key={r.id}><td>{r.id}</td><td>{r.fecha}</td><td>{ocupacionDeRegistro(r).label}</td><td>{r.cliente || '—'}</td><td>{r.nroCasoCliente || '—'}</td><td>{r.nroCasoInterno || '—'}</td><td className="pgx-num">{Number(r.tiempoInvertido || 0).toFixed(2)}</td></tr>)}</tbody></table></div></details>
         </>}
       </div>
       <footer className="pgx-modal-footer-total"><strong>Casos cliente + internos: {resumen.totalCasos}</strong><span className="pgx-detail-note">Los totales se recalculan al seleccionar ocupaciones.</span><button type="button" className="pgx-back-team" onClick={onClose}>← Volver al equipo</button></footer>

@@ -43,3 +43,28 @@ export function agruparOcupaciones(rows) {
   return [...map.values()].map((o) => ({ ...o, ...resumirRegistros(o.rows) }))
     .sort((a, b) => a.label.localeCompare(b.label, 'es'));
 }
+
+// Se agrupa cada campo por separado para no duplicar horas mediante cruces.
+export function agruparCasos(rows, campo) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const alias = campo === 'nroCasoCliente' ? 'nro_caso_cliente' : 'nro_caso_interno';
+    const numero = casoValido(row[campo] ?? row[alias]);
+    if (!numero) return;
+    if (!map.has(numero)) map.set(numero, { numero, rows: [] });
+    map.get(numero).rows.push(row);
+  });
+  return [...map.values()].map((group) => {
+    const resumen = resumirRegistros(group.rows);
+    const fechas = group.rows.map((r) => String(r.fecha || '')).filter(Boolean).sort();
+    return {
+      numero: group.numero,
+      registros: group.rows.length,
+      horas: resumen.horas,
+      clientes: [...new Set(group.rows.map((r) => String(r.cliente || '').trim()).filter(Boolean))],
+      ocupaciones: [...new Set(group.rows.map((r) => ocupacionDeRegistro(r).label))],
+      desde: fechas[0] || '',
+      hasta: fechas[fechas.length - 1] || '',
+    };
+  }).sort((a, b) => a.numero.localeCompare(b.numero, 'es', { numeric: true }));
+}
