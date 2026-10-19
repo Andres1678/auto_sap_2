@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import Modal from 'react-modal';
 import './PanelGraficos.css';
+import ConsultorOcupacionesModal from './ConsultorOcupacionesModal';
 import { jfetch } from './lib/api';
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
@@ -249,6 +250,7 @@ export default function Graficos() {
   const [ocupacionesCatalogoRaw, setOcupacionesCatalogoRaw] = useState([]);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [consultorDetalle, setConsultorDetalle] = useState(null);
   const [modalRows, setModalRows] = useState([]);
   const [modalTitle, setModalTitle] = useState('');
   const [modalMode, setModalMode] = useState('registros');
@@ -1237,7 +1239,18 @@ export default function Graficos() {
     setModalOpen(true);
   };
 
-  const closeModal = () => setModalOpen(false);
+  const closeModal = () => { setConsultorDetalle(null); setModalOpen(false); };
+
+  // Cierra el detalle si se cambia la consulta para evitar resultados desactualizados.
+  useEffect(() => { setConsultorDetalle(null); setModalOpen(false); }, [appliedFilters]);
+
+  const registrosConsultorDetalle = useMemo(() => {
+    if (!consultorDetalle) return [];
+    const login = String(consultorDetalle.usuario || '').trim().toLowerCase();
+    return datosFiltrados.filter((r) =>
+      login && String(r.usuario_consultor || '').trim().toLowerCase() === login
+    );
+  }, [consultorDetalle, datosFiltrados]);
 
   const personasEquipoRegistraron = useMemo(() => {
     return (modalPersonasEquipo || [])
@@ -1611,7 +1624,7 @@ export default function Graficos() {
         </div>
 
         <Modal
-          isOpen={modalOpen}
+          isOpen={modalOpen && !consultorDetalle}
           onRequestClose={closeModal}
           className="pgx-modal-content"
           overlayClassName="pgx-modal-overlay"
@@ -1679,7 +1692,7 @@ export default function Graficos() {
                         <tbody>
                           {personasEquipoNoRegistraron.map((persona) => (
                             <tr key={`no-${persona.id || persona.usuario}`}>
-                              <td className="pgx-truncate" title={persona.nombre}>{persona.nombre}</td>
+                              <td><button type="button" className="pgx-consultor-link" onClick={() => setConsultorDetalle(persona)} aria-label={`Ver ocupaciones y casos de ${persona.nombre}`}><span>{persona.nombre}</span><small>Ver ocupaciones y casos →</small></button></td>
                               <td className="pgx-truncate" title={persona.usuario}>{persona.usuario || '—'}</td>
                               <td><span className="pgx-team-status is-danger">No registró</span></td>
                               <td className="pgx-num">{Number(persona.totalRegistros || 0)}</td>
@@ -1720,7 +1733,7 @@ export default function Graficos() {
                         <tbody>
                           {personasEquipoRegistraron.map((persona) => (
                             <tr key={`si-${persona.id || persona.usuario}`}>
-                              <td className="pgx-truncate" title={persona.nombre}>{persona.nombre}</td>
+                              <td><button type="button" className="pgx-consultor-link" onClick={() => setConsultorDetalle(persona)} aria-label={`Ver ocupaciones y casos de ${persona.nombre}`}><span>{persona.nombre}</span><small>Ver ocupaciones y casos →</small></button></td>
                               <td className="pgx-truncate" title={persona.usuario}>{persona.usuario || '—'}</td>
                               <td><span className="pgx-team-status is-success">Registró</span></td>
                               <td className="pgx-num">{Number(persona.totalRegistros || 0)}</td>
@@ -1815,6 +1828,15 @@ export default function Graficos() {
             </div>
           )}
         </Modal>
+        {modalOpen && consultorDetalle && (
+          <ConsultorOcupacionesModal
+            key={consultorDetalle.usuario || consultorDetalle.id}
+            persona={consultorDetalle}
+            rows={registrosConsultorDetalle}
+            periodo={appliedFilters.mes || `${appliedFilters.desde} al ${appliedFilters.hasta}`}
+            onClose={() => setConsultorDetalle(null)}
+          />
+        )}
       </div>
     </div>
   );
