@@ -26336,7 +26336,7 @@ def modelos_capacidades_coe_sap():
         horas_mes = (
             db.session.query(
                 func.lower(func.trim(Registro.usuario_consultor)).label('usuario'),
-                func.sum(func.coalesce(Registro.total_horas, Registro.tiempo_invertido, 0)).label('horas'),
+                func.coalesce(func.sum(Registro.total_horas), 0).label('horas'),
             )
             .filter(Registro.fecha >= inicio, Registro.fecha < fin)
             .group_by(func.lower(func.trim(Registro.usuario_consultor)))
@@ -26397,6 +26397,8 @@ def modelos_capacidades_coe_sap():
                 'id': fila.consultor_id, 'usuario': fila.usuario,
                 'nombre': fila.nombre, 'cargo': grupos[key]['cargo'],
                 'horas': round(horas, 2),
+                'capacidad_actual': round(horas, 2),
+                'porcentaje_cumplimiento_mes': round(horas / float(driver) * 100, 2) if driver > 0 else None,
             })
             grupos[key]['volumen_actual'] += horas
         data = list(grupos.values())
@@ -26404,6 +26406,11 @@ def modelos_capacidades_coe_sap():
             grupo['volumen_actual'] = round(grupo['volumen_actual'], 2)
             grupo['personas_activas'] = len(grupo['consultores'])
             grupo['capacidad_vendida'] = float(driver * grupo['personas_activas'])
+            grupo['capacidad_actual'] = grupo['volumen_actual']
+            grupo['porcentaje_cumplimiento_mes'] = (
+                round(grupo['capacidad_actual'] / grupo['capacidad_vendida'] * 100, 2)
+                if grupo['capacidad_vendida'] > 0 else None
+            )
         return jsonify({
             'anio': anio, 'mes': mes, 'dias_laborables': dias_laborables,
             'driver': float(driver), 'data': data,
