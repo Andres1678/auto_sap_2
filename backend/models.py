@@ -74,6 +74,12 @@ class Modulo(db.Model):
         lazy="select"
     )
 
+class Cargo(db.Model):
+    __tablename__ = 'cargo'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), unique=True, nullable=False)
+    consultores = relationship('Consultor', back_populates='cargo_obj', passive_deletes='all')
+
 class Consultor(db.Model):
     __tablename__ = 'consultor'
 
@@ -83,6 +89,9 @@ class Consultor(db.Model):
     nombre = db.Column(db.String(100), nullable=False)
     cedula = db.Column(db.String(30), unique=True, nullable=True)
     password = db.Column(db.Text, nullable=False)
+
+    cargo_id = db.Column(db.Integer, db.ForeignKey('cargo.id', ondelete='RESTRICT'), nullable=True)
+    cargo_obj = relationship('Cargo', back_populates='consultores')
 
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id', ondelete='SET NULL'))
     equipo_id = db.Column(db.Integer, db.ForeignKey('equipo.id', ondelete='SET NULL'))

@@ -1,6 +1,6 @@
 from flask import request, jsonify, Blueprint, current_app as app, g
 from backend.models import (
-    db, Modulo, Consultor, Registro, BaseRegistro, BaseRegistroInfoCoeSapFuncional, Login,
+    db, Cargo, Modulo, Consultor, Registro, BaseRegistro, BaseRegistroInfoCoeSapFuncional, Login,
     Rol, Equipo, Horario, Oportunidad, Cliente,
     Permiso, RolPermiso, EquipoPermiso, ConsultorPermiso,
     Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel,
@@ -975,6 +975,18 @@ def set_activo_consultor(consultor_id):
 def _apply_catalog_fields_to_consultor(consultor, data):
     """Actualiza relaciones de catálogo (Rol, Equipo, Horario, Módulos)."""
     try:
+        if "cargo_id" in data:
+            valor = data["cargo_id"]
+            if valor is None or valor == "":
+                consultor.cargo_id = None
+            else:
+                if isinstance(valor, bool) or not str(valor).isdigit() or int(valor) <= 0:
+                    raise ValueError("Cargo inválido")
+                cargo = Cargo.query.get(int(valor))
+                if not cargo:
+                    raise ValueError("El cargo seleccionado no existe")
+                consultor.cargo_id = cargo.id
+
         # --- Rol ---
         if "rol_id" in data or "rol" in data:
             rol = _resolver_catalogo_por_id_o_nombre(
@@ -3653,6 +3665,7 @@ def listar_consultores():
             Consultor.query
             .options(
                 joinedload(Consultor.rol_obj),
+                joinedload(Consultor.cargo_obj),
                 joinedload(Consultor.equipo_obj),
                 joinedload(Consultor.horario_obj),
                 joinedload(Consultor.modulos)
@@ -3673,6 +3686,12 @@ def listar_consultores():
                 'id': c.id,
                 'usuario': c.usuario,
                 'nombre': c.nombre,
+                'cargo_id': c.cargo_id,
+                'cargo': c.cargo_obj.nombre if c.cargo_obj else None,
+                'rol_id': c.rol_id,
+                'equipo_id': c.equipo_id,
+                'horario_id': c.horario_id,
+                'activo': bool(c.activo),
                 'rol': c.rol_obj.nombre if c.rol_obj else None,
                 'equipo': c.equipo_obj.nombre if c.equipo_obj else None,
                 'horario': c.horario_obj.rango if c.horario_obj else None,
@@ -26201,3 +26220,83 @@ def _sincronizar_codigo_interno_commit(session):
 @_codigo_event.listens_for(_CodigoSession, "after_rollback")
 def _limpiar_cambios_codigo_interno(session):
     session.info.pop("codigo_interno_cambios", None)
+
+
+# Catálogo de cargos: lectura autenticada y administración exclusiva ADMIN.
+@bp.route('/cargos', methods=['GET'])
+@auth_required
+def listar_cargos():
+    return jsonify([{'id': c.id, 'nombre': c.nombre}
+                    for c in Cargo.query.order_by(Cargo.nombre.asc()).all()]), 200
+
+
+def _validar_nombre_cargo(data):
+    nombre = data.get('nombre')
+    if not isinstance(nombre, str) or not nombre.strip():
+        raise ValueError('El nombre del cargo es obligatorio')
+    nombre = nombre.strip()
+    if len(nombre) > 100:
+        raise ValueError('El nombre del cargo no puede superar 100 caracteres')
+    return nombre
+
+
+@bp.route('/cargos', methods=['POST'])
+@admin_required
+def crear_cargo():
+    try:
+        nombre = _validar_nombre_cargo(request.get_json(silent=True) or {})
+        if Cargo.query.filter(func.lower(Cargo.nombre) == nombre.lower()).first():
+            return jsonify({'mensaje': 'Ya existe un cargo con ese nombre'}), 409
+        cargo = Cargo(nombre=nombre)
+        db.session.add(cargo)
+        db.session.commit()
+        return jsonify({'id': cargo.id, 'nombre': cargo.nombre}), 201
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({'mensaje': str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'mensaje': 'Ya existe un cargo con ese nombre'}), 409
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception('Error creando cargo')
+        return jsonify({'mensaje': 'No se pudo crear el cargo'}), 500
+
+
+@bp.route('/cargos/<int:id>', methods=['PUT'])
+@admin_required
+def editar_cargo(id):
+    cargo = Cargo.query.get_or_404(id)
+    try:
+        nombre = _validar_nombre_cargo(request.get_json(silent=True) or {})
+        if Cargo.query.filter(Cargo.id != id, func.lower(Cargo.nombre) == nombre.lower()).first():
+            return jsonify({'mensaje': 'Ya existe un cargo con ese nombre'}), 409
+        cargo.nombre = nombre
+        db.session.commit()
+        return jsonify({'id': cargo.id, 'nombre': cargo.nombre}), 200
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({'mensaje': str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'mensaje': 'Ya existe un cargo con ese nombre'}), 409
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception('Error editando cargo')
+        return jsonify({'mensaje': 'No se pudo actualizar el cargo'}), 500
+
+
+@bp.route('/cargos/<int:id>', methods=['DELETE'])
+@admin_required
+def eliminar_cargo(id):
+    cargo = Cargo.query.get_or_404(id)
+    if Consultor.query.filter_by(cargo_id=id).first():
+        return jsonify({'mensaje': 'El cargo está asignado a consultores. Reasígnalos o quita su cargo antes de eliminarlo.'}), 409
+    try:
+        db.session.delete(cargo)
+        db.session.commit()
+        return jsonify({'mensaje': 'Cargo eliminado'}), 200
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception('Error eliminando cargo')
+        return jsonify({'mensaje': 'No se pudo eliminar el cargo'}), 409

@@ -16,6 +16,7 @@ const emptyForm = () => ({
   id: null,
   usuario: "",
   nombre: "",
+  cargo_id: "",
   password: "",
   rol_id: "",
   equipo_id: "",
@@ -31,11 +32,13 @@ export default function ConsultoresTable() {
   // filtros
   const [fUsuario, setFUsuario] = useState("");
   const [fNombre, setFNombre] = useState("");
+  const [fCargo, setFCargo] = useState("");
   const [fEquipo, setFEquipo] = useState("");
   const [fRol, setFRol] = useState("");
 
   // catálogos
   const [roles, setRoles] = useState([]);
+  const [cargos, setCargos] = useState([]);
   const [equipos, setEquipos] = useState([]);
   const [horarios, setHorarios] = useState([]);
   const [modulos, setModulos] = useState([]);
@@ -50,26 +53,31 @@ export default function ConsultoresTable() {
 
   const fetchCatalogos = useCallback(async () => {
     try {
-      const [r1, r2, r3, r4] = await Promise.all([
+      const [r1, r2, r3, r4, r5] = await Promise.all([
         jfetch("/roles"),
         jfetch("/equipos"),
         jfetch("/horarios"),
         jfetch("/modulos"),
+        jfetch("/cargos"),
       ]);
 
-      const [j1, j2, j3, j4] = await Promise.all([
+      const [j1, j2, j3, j4, j5] = await Promise.all([
         r1.json().catch(() => []),
         r2.json().catch(() => []),
         r3.json().catch(() => []),
         r4.json().catch(() => []),
+        r5.json().catch(() => []),
       ]);
 
+      if (!r5.ok) throw new Error(j5?.mensaje || "No se pudieron cargar los cargos");
+      setCargos(Array.isArray(j5) ? j5 : []);
       setRoles(Array.isArray(j1) ? j1 : []);
       setEquipos(Array.isArray(j2) ? j2 : []);
       setHorarios(Array.isArray(j3) ? j3 : []);
       setModulos(Array.isArray(j4) ? j4 : []);
-    } catch {
-      setRoles([]); setEquipos([]); setHorarios([]); setModulos([]);
+    } catch (error) {
+      setRoles([]); setEquipos([]); setHorarios([]); setModulos([]); setCargos([]);
+      Swal.fire({ icon: "error", title: "Error cargando catálogos", text: String(error.message || error) });
     }
   }, []);
 
@@ -103,6 +111,7 @@ export default function ConsultoresTable() {
   const filtered = useMemo(() => {
     const u = fUsuario.trim().toLowerCase();
     const n = fNombre.trim().toLowerCase();
+    const cargo = fCargo.trim().toLowerCase();
     const eq = fEquipo.trim().toLowerCase();
     const rl = fRol.trim().toLowerCase();
 
@@ -114,11 +123,12 @@ export default function ConsultoresTable() {
 
       if (u && !usuario.includes(u)) return false;
       if (n && !nombre.includes(n)) return false;
+      if (cargo && !String(c.cargo || "").toLowerCase().includes(cargo)) return false;
       if (eq && !equipoLabel.includes(eq)) return false;
       if (rl && !rolLabel.includes(rl)) return false;
       return true;
     });
-  }, [consultores, fUsuario, fNombre, fEquipo, fRol]);
+  }, [consultores, fUsuario, fNombre, fCargo, fEquipo, fRol]);
 
   const abrirNuevo = () => {
     setEditing(false);
@@ -135,6 +145,7 @@ export default function ConsultoresTable() {
       id: c.id,
       usuario: c.usuario || "",
       nombre: c.nombre || "",
+      cargo_id: c.cargo_id ?? "",
       password: "", 
       rol_id: c.rol_id ?? "",
       equipo_id: c.equipo_id ?? "",
@@ -165,6 +176,7 @@ export default function ConsultoresTable() {
     const payload = {
       usuario: form.usuario.trim(),
       nombre: form.nombre.trim(),
+      cargo_id: form.cargo_id ? Number(form.cargo_id) : null,
       rol_id: form.rol_id ? Number(form.rol_id) : null,
       equipo_id: form.equipo_id ? Number(form.equipo_id) : null,
       horario_id: form.horario_id ? Number(form.horario_id) : null,
@@ -277,6 +289,12 @@ export default function ConsultoresTable() {
           placeholder="Filtrar por nombre..."
         />
         <input
+          value={fCargo}
+          onChange={(e) => setFCargo(e.target.value)}
+          placeholder="Filtrar por cargo..."
+          aria-label="Filtrar por cargo"
+        />
+        <input
           value={fEquipo}
           onChange={(e) => setFEquipo(e.target.value)}
           placeholder="Filtrar por equipo..."
@@ -298,6 +316,7 @@ export default function ConsultoresTable() {
             <tr>
               <th>Usuario</th>
               <th>Nombre</th>
+              <th>Cargo</th>
               <th>Rol</th>
               <th>Equipo</th>
               <th>Horario</th>
@@ -310,13 +329,14 @@ export default function ConsultoresTable() {
           <tbody>
             {loading ? (
               <tr>
-                <td className="cst-empty" colSpan={8}>Cargando…</td>
+                <td className="cst-empty" colSpan={9}>Cargando…</td>
               </tr>
             ) : filtered.length ? (
               filtered.map((c) => (
                 <tr key={c.id}>
                   <td title={c.usuario}>{c.usuario}</td>
                   <td title={c.nombre}>{c.nombre}</td>
+                  <td title={c.cargo || ""}>{c.cargo || "—"}</td>
 
                   <td title={c.rol_nombre ?? c.rol ?? ""}>
                     {c.rol_nombre ?? c.rol ?? "—"}
@@ -378,7 +398,7 @@ export default function ConsultoresTable() {
               ))
             ) : (
               <tr>
-                <td className="cst-empty" colSpan={8}>
+                <td className="cst-empty" colSpan={9}>
                   Sin resultados
                 </td>
               </tr>
@@ -412,6 +432,17 @@ export default function ConsultoresTable() {
                   onChange={(e) => onChange("nombre", e.target.value)}
                   placeholder="Nombre"
                 />
+
+                <select
+                  value={form.cargo_id}
+                  onChange={(e) => onChange("cargo_id", e.target.value)}
+                  aria-label="Cargo"
+                >
+                  <option value="">Sin cargo asignado</option>
+                  {cargos.map((cargo) => (
+                    <option key={cargo.id} value={cargo.id}>{cargo.nombre}</option>
+                  ))}
+                </select>
 
                 {!editing && (
                   <input
