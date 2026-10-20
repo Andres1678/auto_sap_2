@@ -26327,7 +26327,7 @@ def modelos_capacidades_coe_sap():
         for dia in range(1, calendar.monthrange(anio, mes)[1] + 1):
             fecha = date(anio, mes, dia)
             if fecha.weekday() < 5 and fecha not in festivos:
-                driver += Decimal('9') if fecha.weekday() == 4 else Decimal('8.5')
+                driver += Decimal('8') if fecha.weekday() == 4 else Decimal('8.5')
                 dias_laborables += 1
 
         # Agregar horas por usuario antes de unirlas a los consultores evita duplicados.
@@ -26357,8 +26357,29 @@ def modelos_capacidades_coe_sap():
             .order_by(Equipo.nombre.asc(), Cargo.nombre.asc(), Consultor.nombre.asc())
             .all()
         )
+        # Exclusión solo de este reporte; no modifica Consultor.activo.
+        import unicodedata
+        def tokens_nombre(nombre):
+            texto = unicodedata.normalize('NFD', str(nombre or '').casefold())
+            texto = ''.join(c for c in texto if not unicodedata.combining(c))
+            return set(texto.split())
+
+        excluir_ids = set()
+        advertencias = []
+        for nombre_objetivo in ('Edwin Avila', 'Juan Diaz'):
+            tokens = tokens_nombre(nombre_objetivo)
+            coincidencias = [fila for fila in filas if tokens.issubset(tokens_nombre(fila.nombre))]
+            if len(coincidencias) == 1:
+                excluir_ids.add(coincidencias[0].consultor_id)
+            elif len(coincidencias) > 1:
+                advertencias.append(f'Hay varios consultores que coinciden con {nombre_objetivo}; se requiere el usuario exacto para excluirlo.')
+            else:
+                advertencias.append(f'No se encontró un consultor activo que coincida con {nombre_objetivo}; verifica su nombre o usuario.')
+
         grupos = {}
         for fila in filas:
+            if fila.consultor_id in excluir_ids:
+                continue
             key = (fila.equipo_id, fila.cargo_id)
             if key not in grupos:
                 grupos[key] = {
@@ -26381,9 +26402,12 @@ def modelos_capacidades_coe_sap():
         data = list(grupos.values())
         for grupo in data:
             grupo['volumen_actual'] = round(grupo['volumen_actual'], 2)
+            grupo['personas_activas'] = len(grupo['consultores'])
+            grupo['capacidad_vendida'] = float(driver * grupo['personas_activas'])
         return jsonify({
             'anio': anio, 'mes': mes, 'dias_laborables': dias_laborables,
             'driver': float(driver), 'data': data,
+            'advertencias': advertencias,
         }), 200
     except Exception:
         app.logger.exception('Error consultando modelos de capacidades COE SAP')

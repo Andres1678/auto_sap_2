@@ -82,10 +82,13 @@ export default function ModelosCapacidadesCoeSap() {
         <div><span>Días laborables</span><strong>{resultado.dias_laborables}</strong></div>
         <div><span>Driver por consultor</span><strong>{formato.format(resultado.driver)} horas</strong></div>
       </div>}
-      <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 9 horas. Se excluyen fines de semana y festivos de Colombia.</p>
+      {!!resultado?.advertencias?.length && <div className="mcc-error" role="alert">
+        {resultado.advertencias.map((texto) => <p key={texto}>{texto}</p>)}
+      </div>}
+      <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 8 horas. Se excluyen fines de semana y festivos de Colombia.</p>
       <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table">
-        <thead><tr><th>Proceso</th><th>Cargo</th><th>Unidad</th><th>Driver</th><th>Volumen actual</th><th>Capacidad actual</th><th>Capacidad vacante</th></tr></thead>
-        <tbody>{cargando ? <tr><td colSpan={7}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
+        <thead><tr><th>Proceso</th><th>Cargo</th><th>Unidad</th><th>Driver</th><th>Volumen actual</th><th>Capacidad vendida (horas)</th><th>Capacidad actual</th><th>Capacidad vacante</th></tr></thead>
+        <tbody>{cargando ? <tr><td colSpan={8}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
           <React.Fragment key={grupo.clave}>
             {grupo.filas.map((fila, indice) => (
               <tr key={String(fila.cargo_id ?? "sin-cargo")}>
@@ -100,12 +103,18 @@ export default function ModelosCapacidadesCoeSap() {
                 <td>{fila.cargo}</td><td>{fila.unidad}</td>
                 <td className="mcc-num">{formato.format(fila.driver)}</td>
                 <td className="mcc-num">{formato.format(fila.volumen_actual ?? 0)}</td>
+                <td className="mcc-num" title={`${fila.personas_activas ?? 0} personas activas × ${fila.driver} horas laborables`}>
+                  {formato.format(fila.capacidad_vendida ?? 0)}
+                </td>
                 <td title="Pendiente de definición">—</td><td title="Pendiente de definición">—</td>
               </tr>
             ))}
             <tr id={`detalle-equipo-${grupo.clave}`} hidden={!expandidos[grupo.clave]} className="mcc-detalle">
-              <td colSpan={7}><div className="mcc-detalle-body">
+              <td colSpan={8}><div className="mcc-detalle-body">
                 <h3>Consultores de {grupo.proceso}</h3>
+                <p className="mcc-team-summary">Personas activas incluidas: <strong>{grupo.consultores.length}</strong>
+                  {" · "}Capacidad vendida del equipo: <strong>{formato.format(grupo.filas.reduce((total, fila) => total + Number(fila.capacidad_vendida || 0), 0))} horas</strong>
+                </p>
                 <table className="mcc-consultores"><thead><tr>
                   <th>Consultor</th><th>Usuario</th><th>Cargo</th><th>Volumen actual (horas)</th>
                 </tr></thead><tbody>
@@ -117,9 +126,9 @@ export default function ModelosCapacidadesCoeSap() {
               </div></td>
             </tr>
           </React.Fragment>
-        )) : <tr><td colSpan={7}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
+        )) : <tr><td colSpan={8}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
       </table></div>
-      <p className="mcc-nota">Volumen actual: horas registradas en el mes seleccionado, sumadas por cargo. Despliega el proceso para consultar cada persona. Capacidad actual y capacidad vacante siguen pendientes de definición.</p>
+      <p className="mcc-nota">Volumen actual: horas registradas en el mes seleccionado, sumadas por cargo. Despliega el proceso para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. El desplegable muestra el total del equipo. Capacidad actual y capacidad vacante siguen pendientes de definición.</p>
     </main>
   );
 }
