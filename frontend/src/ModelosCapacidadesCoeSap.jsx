@@ -14,6 +14,7 @@ const periodoActual = () => {
 
 export default function ModelosCapacidadesCoeSap() {
   const [periodo, setPeriodo] = useState(periodoActual);
+  const [expandidos, setExpandidos] = useState({});
   const [resultado, setResultado] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
@@ -29,6 +30,7 @@ export default function ModelosCapacidadesCoeSap() {
     const controller = new AbortController();
     let vigente = true;
     setResultado(null);
+    setExpandidos({});
     setError("");
     if (!/^(20\d{2}|2100)-(0[1-9]|1[0-2])$/.test(periodo)) {
       setError("Selecciona un mes y año válidos.");
@@ -100,21 +102,22 @@ export default function ModelosCapacidadesCoeSap() {
         <thead><tr><th>Proceso</th><th>Cargo</th><th>Personas incluidas</th><th>Unidad</th><th>Driver</th><th>Volumen actual</th><th>Capacidad vendida (horas)</th><th>Capacidad actual (horas)</th><th>Cumplimiento mes (%)</th><th>Capacidad vacante</th></tr></thead>
         <tbody>{cargando ? <tr><td colSpan={10}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
           <React.Fragment key={grupo.clave}>
-            {grupo.filas.map((fila, indice) => (
-              <tr key={String(fila.cargo_id ?? "sin-cargo")}>
-                {indice === 0 && <th scope="rowgroup" rowSpan={grupo.filas.length} className="mcc-proceso">
+            {grupo.filas.map((fila, indice) => {
+              const clave = `${grupo.clave}-${fila.cargo_id ?? "sin-cargo"}`;
+              const abierto = !!expandidos[clave];
+              return (
+              <React.Fragment key={clave}>
+              <tr>
+                {indice === 0 && <th scope="rowgroup" rowSpan={grupo.filas.length + grupo.filas.filter(f => expandidos[`${grupo.clave}-${f.cargo_id ?? "sin-cargo"}`]).length} className="mcc-proceso">
                   {grupo.proceso}
                 </th>}
                 <td>{fila.cargo}</td>
                 <td className="mcc-personas">
-                  <details className="mcc-personas-details">
-                    <summary>{fila.consultores?.length || 0} personas incluidas</summary>
-                    <ul>{(fila.consultores || []).map(c => <li key={c.id}>
-                      <strong>{c.nombre}</strong>
-                      <span>{c.usuario} · {formato.format(c.capacidad_actual ?? 0)} h registradas</span>
-                      <span>Cumplimiento: {c.porcentaje_cumplimiento_mes == null ? "—" : `${formato.format(c.porcentaje_cumplimiento_mes)} %`}</span>
-                    </li>)}</ul>
-                  </details>
+                  <button type="button" className="mcc-expand" aria-expanded={abierto}
+                    aria-controls={`detalle-${clave}`}
+                    onClick={() => setExpandidos(prev => ({ ...prev, [clave]: !prev[clave] }))}>
+                    {abierto ? "▾" : "▸"} {fila.consultores?.length || 0} personas incluidas
+                  </button>
                 </td>
                 <td>{fila.unidad}</td>
                 <td className="mcc-num">{formato.format(fila.driver)}</td>
@@ -128,7 +131,34 @@ export default function ModelosCapacidadesCoeSap() {
                 </td>
                 <td title="Pendiente de definición">—</td>
               </tr>
-            ))}
+              {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`}>
+                <td colSpan={9}>
+                  <div className="mcc-detalle-body">
+                    <h3>{grupo.proceso} · {fila.cargo}</h3>
+                    <table className="mcc-consultores">
+                      <thead><tr>
+                        <th>Consultor</th><th>Usuario</th><th>Unidad</th><th>Driver</th>
+                        <th>Volumen actual</th><th>Capacidad vendida (horas)</th>
+                        <th>Capacidad actual (horas)</th><th>Cumplimiento mes (%)</th><th>Capacidad vacante</th>
+                      </tr></thead>
+                      <tbody>{(fila.consultores || []).map(c => (
+                        <tr key={c.id}>
+                          <td>{c.nombre}</td><td>{c.usuario}</td><td>Horas</td>
+                          <td className="mcc-num">{formato.format(fila.driver)}</td>
+                          <td className="mcc-num">{formato.format(c.horas ?? 0)}</td>
+                          <td className="mcc-num">{formato.format(fila.driver)}</td>
+                          <td className="mcc-num">{formato.format(c.capacidad_actual ?? 0)}</td>
+                          <td className="mcc-num">{c.porcentaje_cumplimiento_mes == null ? "—" : `${formato.format(c.porcentaje_cumplimiento_mes)} %`}</td>
+                          <td title="Pendiente de definición">—</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>}
+              </React.Fragment>
+              );
+            })}
           </React.Fragment>
         )) : <tr><td colSpan={10}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
         {resultado && !cargando && <tfoot><tr>
