@@ -1,6 +1,6 @@
 import React, { Fragment, useEffect, useMemo, useState } from 'react';
 import Modal from 'react-modal';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { agruparOcupacionesTareas, resumirCasosPorEquipo, opcionesTareasEquipo, filtrarTareasEquipo, registrosDelEquipo, opcionesOcupacionesEquipo, filtrarOcupacionesEquipo } from '../casosPorEquipo';
 import './CasosPorEquipoChart.css';
 
@@ -8,7 +8,7 @@ const nf=new Intl.NumberFormat('es-CO',{maximumFractionDigits:2});
 const h=v=>`${nf.format(v || 0)} h`;
 function TooltipEquipo({active,payload}) {
   const t=payload?.[0]?.payload;if(!active||!t)return null;
-  return <div className="pgx-cases-tooltip"><strong>{t.equipo}</strong><span>Casos agrupados: {t.totalCasos}</span><span>Registros con caso: {t.registrosConCaso}</span><span>Horas con caso, sin duplicar filas: {h(t.horasConCaso)}</span></div>;
+  return <div className="pgx-cases-tooltip"><strong>{t.equipo}</strong><span>Casos agrupados: {t.totalCasos}</span><span>Registros con caso: {t.registrosConCaso}</span><span>Horas con caso: {h(t.horasConCaso)}</span><span>Horas sin caso: {h(t.horasSinCaso)}</span><strong>Total registrado: {h(t.horas)}</strong></div>;
 }
 function TablaCasos({casos:visibles}) {
   const [abierto,setAbierto]=useState('');
@@ -89,8 +89,8 @@ export default function CasosPorEquipoChart({data=[],periodo=''}) {
   const team=equipos.find(t=>t.equipo===seleccion);
   const filasEquipo=useMemo(()=>registrosDelEquipo(data,seleccion),[data,seleccion]);
   const abrir=entry=>setSeleccion(entry?.equipo||entry?.payload?.equipo||'');
-  return <section className="pgx-cases-card" aria-label="Casos por equipo"><header className="pgx-cases-card-head"><div><h3>Casos registrados por equipo</h3><p>{periodo} · Casos agrupados con sus números internos asociados</p></div></header>
-    {!equipos.length?<div className="pgx-cases-empty">Sin registros para los filtros aplicados.</div>:<><div className="pgx-cases-chart-scroll"><div style={{height:Math.max(280,equipos.length*76+100),minWidth:620}}><ResponsiveContainer width="100%" height="100%"><BarChart data={equipos} layout="vertical" margin={{left:8,right:30,top:10,bottom:15}}><CartesianGrid strokeDasharray="3 3" horizontal={false}/><XAxis type="number" allowDecimals={false}/><YAxis type="category" dataKey="equipo" width={165} tick={{fontSize:12}} interval={0}/><Tooltip content={<TooltipEquipo/>}/><Bar name="Casos agrupados" dataKey="totalCasos" fill="#1d65bc" radius={[0,5,5,0]} onClick={abrir} style={{cursor:'pointer'}}/></BarChart></ResponsiveContainer></div></div><div className="pgx-cases-team-actions">{equipos.map(t=><button type="button" key={t.equipo} onClick={()=>setSeleccion(t.equipo)} aria-label={`Ver casos de ${t.equipo}`}><strong>{t.equipo}</strong><span>{t.totalCasos} casos · {h(t.horasConCaso)}</span><small>Ver resumen →</small></button>)}</div></>}
+  return <section className="pgx-cases-card" aria-label="Casos por equipo"><header className="pgx-cases-card-head"><div><h3>Horas con caso y sin caso por equipo</h3><p>{periodo} · Cada barra suma el total de horas registradas del equipo</p></div></header>
+    {!equipos.length?<div className="pgx-cases-empty">Sin registros para los filtros aplicados.</div>:<><div className="pgx-cases-chart-scroll"><div style={{height:Math.max(280,equipos.length*76+100),minWidth:620}}><ResponsiveContainer width="100%" height="100%"><BarChart data={equipos} layout="vertical" margin={{left:8,right:30,top:10,bottom:15}}><CartesianGrid strokeDasharray="3 3" horizontal={false}/><XAxis type="number" tickFormatter={h} domain={[0, 'auto']}/><YAxis type="category" dataKey="equipo" width={165} tick={{fontSize:12}} interval={0}/><Tooltip content={<TooltipEquipo/>}/><Legend/><Bar name="Horas con caso" dataKey="horasConCaso" stackId="horas-equipo" fill="#1d65bc" onClick={abrir} isAnimationActive={false} style={{cursor:'pointer'}}/><Bar name="Horas sin caso" dataKey="horasSinCaso" stackId="horas-equipo" fill="#f59e0b" onClick={abrir} isAnimationActive={false} style={{cursor:'pointer'}}/></BarChart></ResponsiveContainer></div></div><div className="pgx-cases-team-actions">{equipos.map(t=><button type="button" key={t.equipo} onClick={()=>setSeleccion(t.equipo)} aria-label={`Ver casos de ${t.equipo}`}><strong>{t.equipo}</strong><span>{t.totalCasos} casos · Total: {h(t.horas)}</span><small>Con caso: {h(t.horasConCaso)} · Sin caso: {h(t.horasSinCaso)}</small><small>Ver resumen →</small></button>)}</div></>}
     {team&&<ResumenEquipo key={team.equipo} team={team} rows={filasEquipo} periodo={periodo} onClose={()=>setSeleccion('')}/>}
   </section>;
 }
