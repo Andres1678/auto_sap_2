@@ -26306,7 +26306,7 @@ def eliminar_cargo(id):
         return jsonify({'mensaje': 'No se pudo eliminar el cargo'}), 409
 
 def _mcc_metricas_casos(registros):
-    """Replica numeroCaso, horas y la agrupación del gráfico; cuenta casos solo en ocupación 01."""
+    """Replica numeroCaso, horas y la agrupación del gráfico; cuenta casos en ocupación 01 y en PAM 07 con tarea 05."""
     import unicodedata
     import math
     def numero(valor):
@@ -26315,6 +26315,7 @@ def _mcc_metricas_casos(registros):
         return '' if normal in ('', '0', 'N/A', 'N/APLICA', 'NA', 'NULL', 'NONE', '-', 'SIN CASO') else texto
     claves = set()
     proyectos = set()
+    proyectos_horas = {}
     horas_proyectos = 0.0
     con, sin = 0.0, 0.0
     for r in registros:
@@ -26332,21 +26333,33 @@ def _mcc_metricas_casos(registros):
             horas_proyectos += h
             # La relación identifica el proyecto aunque cambie el número del caso.
             proyecto_id = r.get('proyecto_id')
+            proyecto_clave = None
             if proyecto_id is not None:
-                proyectos.add(('proyecto', str(proyecto_id)))
+                proyecto_clave = ('proyecto', str(proyecto_id))
             elif principal:
-                # Respaldo para registros históricos sin relación de proyecto.
-                proyectos.add(('numero-proyecto', principal))
+                proyecto_clave = ('numero-proyecto', principal)
+            if proyecto_clave is not None:
+                proyectos.add(proyecto_clave)
+                proyectos_horas[proyecto_clave] = proyectos_horas.get(proyecto_clave, 0.0) + h
+        ocupacion_codigo = str(r.get('ocupacion_codigo') or '').strip().lstrip('0')
+        tarea_codigo = str(r.get('tarea_codigo') or '').strip().lstrip('0')
+        es_informes_pam = ocupacion_codigo == '7' and tarea_codigo == '5'
         if principal or interno:
             con += h
-            if str(r.get('ocupacion_codigo') or '').strip().lstrip('0') == '1':
+            if ocupacion_codigo == '1' or es_informes_pam:
                 claves.add(('caso', principal) if principal else ('sin-caso-principal', interno))
         else:
             sin += h
+            # Regla adicional exclusiva de Horas de casos; no cambia Otras ocupaciones.
+            if es_informes_pam:
+                con += h
     return {'numero_casos': len(claves), 'horas_con_caso': round(con, 2),
             'otras_ocupaciones': round(sin, 2), 'casos_claves': [list(k) for k in sorted(claves)],
             'numero_proyectos': len(proyectos), 'horas_proyectos': round(horas_proyectos, 2),
-            'proyectos_claves': [list(k) for k in sorted(proyectos)]}
+            'proyectos_claves': [list(k) for k in sorted(proyectos)],
+            'proyectos_con_horas': sum(1 for h in proyectos_horas.values() if round(h, 2) != 0),
+            'proyectos_sin_horas': sum(1 for h in proyectos_horas.values() if round(h, 2) == 0),
+            'proyectos_horas': [[*k, round(h, 2)] for k, h in sorted(proyectos_horas.items())]}
 
 
 @bp.route('/modelos-capacidades-coe-sap', methods=['GET'])
@@ -26447,8 +26460,10 @@ def modelos_capacidades_coe_sap():
                 Registro.tiempo_invertido.label('tiempo_invertido'),
                 Registro.total_horas.label('total_horas'),
                 Ocupacion.codigo.label('ocupacion_codigo'),
+                Tarea.codigo.label('tarea_codigo'),
             ).select_from(Registro)
             .outerjoin(Ocupacion, Registro.ocupacion_id == Ocupacion.id)
+            .outerjoin(Tarea, Registro.tarea_id == Tarea.id)
             .filter(Registro.fecha >= inicio, Registro.fecha < fin)
         )
         if filtrar:
@@ -26461,6 +26476,7 @@ def modelos_capacidades_coe_sap():
                 'proyecto_id': r.proyecto_id,
                 'tiempo_invertido': r.tiempo_invertido, 'total_horas': r.total_horas,
                 'ocupacion_codigo': r.ocupacion_codigo,
+                'tarea_codigo': r.tarea_codigo,
             })
         registros_por_grupo = {}
 
@@ -26515,6 +26531,10 @@ def modelos_capacidades_coe_sap():
     except Exception:
         app.logger.exception('Error consultando modelos de capacidades COE SAP')
         return jsonify({'mensaje': 'No se pudo consultar el modelo de capacidades.'}), 500
+
+
+
+
 
 
 
