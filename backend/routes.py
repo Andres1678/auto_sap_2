@@ -189,7 +189,7 @@ def permission_required(codigo_permiso):
                 getattr(getattr(consultor, "rol_obj", None), "nombre", "") or ""
             ).strip().upper()
 
-            # El único ADMIN es el propietario funcional del sistema y tiene
+            # Los usuarios ADMIN tienen la administración global del sistema y tiene
             # acceso total. Los demás roles siempre requieren el permiso real.
             if rol_real != "ADMIN" and codigo_permiso not in permisos:
                 return jsonify({"mensaje": f"Permiso '{codigo_permiso}' requerido"}), 403
@@ -579,7 +579,7 @@ def role_scope(rol_nombre: str, user_equipo: str = ""):
     """
     r = norm(rol_nombre)
 
-    # ADMIN único y JEFE tienen alcance global.
+    # ADMIN y JEFE tienen alcance global.
     if r in GLOBAL_SCOPE_ROLES:
         return {"mode": "ALL"}
 
@@ -880,21 +880,25 @@ def _nombre_rol_consultor(consultor):
 
 
 def _validar_transicion_admin(consultor, nuevo_rol):
-    """Garantiza que ADMIN sea único y no pueda degradarse accidentalmente."""
+    """Permite hasta dos consultores con el rol ADMIN."""
     nuevo_nombre = str(getattr(nuevo_rol, "nombre", "") or "").strip().upper()
     actual_nombre = _nombre_rol_consultor(consultor)
 
     if nuevo_nombre == "ADMIN":
+        # Serializa las asignaciones concurrentes sobre la fila del rol ADMIN.
+        Rol.query.filter(func.upper(Rol.nombre) == "ADMIN").with_for_update().all()
         q = Consultor.query.join(Rol, Consultor.rol_id == Rol.id).filter(
             func.upper(Rol.nombre) == "ADMIN"
         )
         if getattr(consultor, "id", None):
             q = q.filter(Consultor.id != consultor.id)
-        if q.first():
-            raise ValueError("Solo puede existir un usuario con el rol ADMIN")
+        # Incluye cuentas activas e inactivas; el máximo es de dos cuentas.
+        if q.count() >= 2:
+            raise ValueError("Solo pueden existir dos usuarios con el rol ADMIN")
 
+    # Se conserva la protección existente contra cambios accidentales de rol.
     if actual_nombre == "ADMIN" and nuevo_nombre != "ADMIN":
-        raise ValueError("No se puede cambiar el rol del único ADMIN")
+        raise ValueError("No se puede cambiar el rol de un ADMIN desde esta operación")
 
 
 def _resolver_catalogo_por_id_o_nombre(modelo, data, campo_id, campo_nombre, atributo_nombre):
@@ -963,7 +967,7 @@ def set_activo_consultor(consultor_id):
     c = Consultor.query.get_or_404(consultor_id)
     nuevo_estado = _to_bool(data.get("activo"), default=True)
     if _nombre_rol_consultor(c) == "ADMIN" and not nuevo_estado:
-        return jsonify({"mensaje": "No se puede desactivar al único ADMIN"}), 409
+        return jsonify({"mensaje": "No se puede desactivar un ADMIN desde esta operación"}), 409
     c.activo = nuevo_estado
     db.session.commit()
     return jsonify({"mensaje": "Estado actualizado", "activo": bool(c.activo)}), 200
@@ -1065,7 +1069,7 @@ def editar_consultor(id):
 def eliminar_consultor(id):
     c = Consultor.query.get_or_404(id)
     if _nombre_rol_consultor(c) == "ADMIN":
-        return jsonify({"mensaje": "No se puede eliminar al único ADMIN"}), 409
+        return jsonify({"mensaje": "No se puede eliminar un ADMIN desde esta operación"}), 409
     try:
         db.session.delete(c)
         db.session.commit()
