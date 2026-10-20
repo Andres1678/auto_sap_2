@@ -26300,3 +26300,57 @@ def eliminar_cargo(id):
         db.session.rollback()
         app.logger.exception('Error eliminando cargo')
         return jsonify({'mensaje': 'No se pudo eliminar el cargo'}), 409
+
+# Agregar al archivo de rutas que ya contiene bp y los modelos Consultor, Cargo y Equipo.
+@bp.route('/modelos-capacidades-coe-sap', methods=['GET'])
+@admin_required
+def modelos_capacidades_coe_sap():
+    import calendar
+    from decimal import Decimal
+
+    hoy = datetime.now(ZoneInfo('America/Bogota')).date()
+    try:
+        anio = int(request.args.get('anio', hoy.year))
+        mes = int(request.args.get('mes', hoy.month))
+        if not 2000 <= anio <= 2100 or not 1 <= mes <= 12:
+            raise ValueError()
+    except (TypeError, ValueError):
+        return jsonify({'mensaje': 'Selecciona un mes válido y un año entre 2000 y 2100.'}), 400
+
+    try:
+        festivos = _cap_colombia_holidays_for_years([anio])
+        driver = Decimal('0')
+        dias_laborables = 0
+        for dia in range(1, calendar.monthrange(anio, mes)[1] + 1):
+            fecha = date(anio, mes, dia)
+            if fecha.weekday() < 5 and fecha not in festivos:
+                driver += Decimal('9') if fecha.weekday() == 4 else Decimal('8.5')
+                dias_laborables += 1
+
+        # Una fila por equipo y cargo, consultando relaciones actuales del catálogo.
+        filas = (
+            db.session.query(Equipo.nombre.label('proceso'), Cargo.nombre.label('cargo'))
+            .select_from(Consultor)
+            .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
+            .outerjoin(Cargo, Consultor.cargo_id == Cargo.id)
+            .filter(Consultor.activo.is_(True))
+            .distinct()
+            .order_by(Equipo.nombre.asc(), Cargo.nombre.asc())
+            .all()
+        )
+        data = [{
+            'proceso': fila.proceso or 'SIN EQUIPO',
+            'cargo': fila.cargo or 'SIN CARGO ASIGNADO',
+            'unidad': 'Horas',
+            'driver': float(driver),
+            'volumen_actual': None,
+            'capacidad_actual': None,
+            'capacidad_vacante': None,
+        } for fila in filas]
+        return jsonify({
+            'anio': anio, 'mes': mes, 'dias_laborables': dias_laborables,
+            'driver': float(driver), 'data': data,
+        }), 200
+    except Exception:
+        app.logger.exception('Error consultando modelos de capacidades COE SAP')
+        return jsonify({'mensaje': 'No se pudo consultar el modelo de capacidades.'}), 500

@@ -39,6 +39,7 @@ import DetalleSeguimientoClienteCoeSap from './DetalleSeguimientoClienteCoeSap';
 import PromedioAtencionCoeSap from './PromedioAtencionCoeSap';
 import ControlBolsaClienteCoeSap from './ControlBolsaClienteCoeSap';
 import CargosPage from './CargosPage';
+import modelos_capacidades_coe_sap from './ModelosCapacidadesCoeSap';
 
 const AUTO_LOGOUT_HOURS = [6, 7, 8, 10, 18, 22];
 
@@ -476,6 +477,15 @@ function App() {
               element={
                 <AdminRoute allow={['ADMIN']} requirePermiso="CARGOS_ADMIN">
                   <CargosPage />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/configuracion/modelos-capacidades-coe-sap"
+              element={
+                <AdminRoute allow={['ADMIN']} requirePermiso="CARGOS_ADMIN">
+                  <modelos_capacidades_coe_sap />
                 </AdminRoute>
               }
             />

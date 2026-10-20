@@ -22,6 +22,13 @@ export default function Configuracion() {
         <p className="config-sub">Administra usuarios, cargos, clientes y permisos del sistema.</p>
       </div>
       <div className="config-grid">
+        {isAdmin && (
+          <Link to="/configuracion/modelos-capacidades-coe-sap" className="config-card">
+            <div className="config-icon">📋</div>
+            <h3>Modelos de capacidades COE SAP</h3>
+            <p>Consulta el driver mensual por proceso y cargo.</p>
+          </Link>
+        )}
         <Link to="/configuracion/usuarios" className="config-card"><div className="config-icon">👥</div><h3>Gestión de Consultores</h3><p>Crear, editar o eliminar consultores y asignar cargos y módulos.</p></Link>
         {isAdmin && (<Link to="/configuracion/cargos" className="config-card"><div className="config-icon">💼</div><h3>Gestión de Cargos</h3><p>Crear, editar y eliminar los cargos disponibles para los consultores.</p></Link>)}
         <Link to="/configuracion/clientes" className="config-card"><div className="config-icon">🧾</div><h3>Gestión de Clientes</h3><p>Administrar clientes corporativos y contactos.</p></Link>
