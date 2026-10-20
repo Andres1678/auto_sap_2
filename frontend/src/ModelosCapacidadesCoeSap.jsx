@@ -22,8 +22,27 @@ const periodoActual = () => {
   return `${partes.find(p => p.type === "year").value}-${partes.find(p => p.type === "month").value}`;
 };
 
+function FiltroMultiple({ titulo, opciones, valores, onChange }) {
+  return <details className="mcc-filtro"><summary>{titulo} ({valores.length}/{opciones.length})</summary>
+    <div className="mcc-filtro-menu">
+      <div className="mcc-filtro-actions">
+        <button type="button" onClick={() => onChange(opciones.map(o => String(o.id)))}>Todos</button>
+        <button type="button" onClick={() => onChange([])}>Ninguno</button>
+      </div>
+      {opciones.map(o => <label key={o.id}><input type="checkbox"
+        checked={valores.includes(String(o.id))}
+        onChange={e => onChange(e.target.checked ? [...valores, String(o.id)] : valores.filter(v => v !== String(o.id)))}
+      />{o.nombre}</label>)}
+      {!opciones.length && <p>Sin opciones</p>}
+    </div>
+  </details>;
+}
+
 export default function ModelosCapacidadesCoeSap() {
   const [periodo, setPeriodo] = useState(periodoActual);
+  const [catalogos, setCatalogos] = useState(null);
+  const [filtros, setFiltros] = useState({ ocupaciones: [], tareas: [], equipos: [], cargos: [] });
+  const cambiarFiltro = (clave, valores) => setFiltros(prev => ({ ...prev, [clave]: valores }));
   const [expandidos, setExpandidos] = useState({});
   const [resultado, setResultado] = useState(null);
   const [cargando, setCargando] = useState(false);
@@ -37,6 +56,32 @@ export default function ModelosCapacidadesCoeSap() {
 
   useEffect(() => {
     if (!admin) return;
+    let vigente = true;
+    (async () => {
+      try {
+        const respuestas = await Promise.all([jfetch("/ocupaciones"), jfetch("/equipos"), jfetch("/cargos")]);
+        const datos = await Promise.all(respuestas.map(r => r.json()));
+        if (respuestas.some((r, i) => !r.ok || !Array.isArray(datos[i]))) throw new Error("No se pudieron cargar los filtros.");
+        const tareas = new Map();
+        datos[0].forEach(o => (o.tareas || []).forEach(t => tareas.set(String(t.id), { id: t.id, nombre: `${t.codigo} - ${t.nombre}` })));
+        const cat = {
+          ocupaciones: datos[0].map(o => ({ id: o.id, nombre: `${o.codigo} - ${o.nombre}` })),
+          tareas: [...tareas.values()].sort((a, b) => a.nombre.localeCompare(b.nombre)),
+          equipos: [...datos[1].map(e => ({ id: e.id, nombre: e.nombre })), { id: "sin", nombre: "SIN EQUIPO" }],
+          cargos: [...datos[2].map(c => ({ id: c.id, nombre: c.nombre })), { id: "sin", nombre: "SIN CARGO ASIGNADO" }],
+        };
+        if (vigente) {
+          setFiltros(Object.fromEntries(Object.entries(cat).map(([k, opciones]) => [k, opciones.map(o => String(o.id))])));
+          setCatalogos(cat);
+        }
+      } catch (e) { if (vigente) setError(e.message || "Error cargando filtros"); }
+    })();
+    return () => { vigente = false; };
+  }, [admin]);
+
+  useEffect(() => {
+    if (!admin) return;
+    if (!catalogos) return;
     const controller = new AbortController();
     let vigente = true;
     setResultado(null);
@@ -51,7 +96,11 @@ export default function ModelosCapacidadesCoeSap() {
     setCargando(true);
     (async () => {
       try {
-        const res = await jfetch(`/modelos-capacidades-coe-sap?anio=${anio}&mes=${Number(mes)}`, { signal: controller.signal });
+        const params = new URLSearchParams({ anio, mes: String(Number(mes)), filtrar: "1" });
+        for (const [clave, parametro] of [["ocupaciones", "ocupacion_id"], ["tareas", "tarea_id"], ["equipos", "equipo_id"], ["cargos", "cargo_id"]]) {
+          filtros[clave].forEach(id => params.append(parametro, id));
+        }
+        const res = await jfetch(`/modelos-capacidades-coe-sap?${params.toString()}`, { signal: controller.signal });
         const data = await res.json();
         if (!res.ok || !Array.isArray(data?.data)) throw new Error(data?.mensaje || "No se pudo cargar el modelo.");
         if (vigente) setResultado(data);
@@ -60,7 +109,7 @@ export default function ModelosCapacidadesCoeSap() {
       } finally { if (vigente) setCargando(false); }
     })();
     return () => { vigente = false; controller.abort(); };
-  }, [admin, periodo, revision]);
+  }, [admin, periodo, revision, catalogos, filtros]);
 
   const grupos = useMemo(() => {
     const mapa = new Map();
@@ -101,6 +150,14 @@ export default function ModelosCapacidadesCoeSap() {
         <input type="month" value={periodo} min="2000-01" max="2100-12"
           onChange={e => setPeriodo(e.target.value)} />
       </label></header>
+      {catalogos && <div className="mcc-filtros">
+        {[["ocupaciones", "Ocupaciones"], ["tareas", "Tareas"], ["equipos", "Equipos"], ["cargos", "Cargos"]].map(([clave, titulo]) => (
+          <FiltroMultiple key={clave} titulo={titulo} opciones={catalogos[clave]} valores={filtros[clave]}
+            onChange={valores => cambiarFiltro(clave, valores)} />
+        ))}
+        <button type="button" onClick={() => setFiltros(Object.fromEntries(Object.entries(catalogos).map(([k, opciones]) => [k, opciones.map(o => String(o.id))])))}>Restablecer todos</button>
+      </div>}
+      {!catalogos && !error && <p>Cargando filtros…</p>}
       {error && <div className="mcc-error" role="alert">{error} <button onClick={() => setRevision(v => v + 1)}>Reintentar</button></div>}
       {resultado && <div className="mcc-resumen">
         <div><span>Periodo</span><strong>{MESES[resultado.mes - 1]} de {resultado.anio}</strong></div>
@@ -112,8 +169,8 @@ export default function ModelosCapacidadesCoeSap() {
       </div>}
       <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 8 horas. Se excluyen fines de semana y festivos de Colombia.</p>
       <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table">
-        <thead><tr><th>Proceso</th><th>Cargo</th><th>Personas incluidas</th><th>Unidad</th><th>Driver (horas mes actual)</th><th>Capacidad vendida (horas)</th><th>Capacidad actual (horas)</th><th>Cumplimiento mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th></tr></thead>
-        <tbody>{cargando ? <tr><td colSpan={10}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
+        <thead><tr><th>Proceso</th><th>Cargo</th><th>Personas incluidas</th><th>Driver (horas mes actual)</th><th>Capacidad vendida (horas)</th><th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th></tr></thead>
+        <tbody>{cargando ? <tr><td colSpan={9}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
           <React.Fragment key={grupo.clave}>
             {grupo.filas.map((fila, indice) => {
               const clave = `${grupo.clave}-${fila.cargo_id ?? "sin-cargo"}`;
@@ -132,7 +189,7 @@ export default function ModelosCapacidadesCoeSap() {
                     {abierto ? "▾" : "▸"} {fila.consultores?.length || 0} personas incluidas
                   </button>
                 </td>
-                <td>{fila.unidad}</td>
+                
                 <td className="mcc-num">{formato.format(fila.driver)}</td>
                 <td className="mcc-num" title={`${fila.personas_activas ?? 0} personas activas × ${fila.driver} horas laborables`}>
                   {formato.format(fila.capacidad_vendida ?? 0)}
@@ -147,18 +204,18 @@ export default function ModelosCapacidadesCoeSap() {
                 <td title="Pendiente de definición">—</td>
               </tr>
               {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`}>
-                <td colSpan={9}>
+                <td colSpan={8}>
                   <div className="mcc-detalle-body">
                     <h3>{grupo.proceso} · {fila.cargo}</h3>
                     <table className="mcc-consultores">
                       <thead><tr>
-                        <th>Consultor</th><th>Usuario</th><th>Unidad</th><th>Driver (horas mes actual)</th>
+                        <th>Consultor</th><th>Usuario</th><th>Driver (horas mes actual)</th>
                         <th>Capacidad vendida (horas)</th>
-                        <th>Capacidad actual (horas)</th><th>Cumplimiento mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th>
+                        <th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th>
                       </tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
-                          <td>{c.nombre}</td><td>{c.usuario}</td><td>Horas</td>
+                          <td>{c.nombre}</td><td>{c.usuario}</td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
                           <td className="mcc-num">{formato.format(c.capacidad_actual ?? 0)}</td>
@@ -177,9 +234,9 @@ export default function ModelosCapacidadesCoeSap() {
               );
             })}
           </React.Fragment>
-        )) : <tr><td colSpan={10}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
+        )) : <tr><td colSpan={9}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
         {resultado && !cargando && <tfoot><tr>
-          <th colSpan={5} scope="row">Totales</th>
+          <th colSpan={4} scope="row">Totales</th>
           <td className="mcc-num">{formato.format(totales.vendida)}</td>
           <td className="mcc-num">{formato.format(totales.actual)}</td>
           <td className="mcc-num">{totales.porcentaje == null ? "—" : `${formato.format(totales.porcentaje)} %`}</td>
@@ -191,7 +248,7 @@ export default function ModelosCapacidadesCoeSap() {
           </td>
         </tr></tfoot>}
       </table></div>
-      <p className="mcc-nota">Despliega Personas incluidas para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. Los totales suman las filas por cargo sin duplicar consultores. Capacidad actual: horas registradas del mes, con la misma fuente que la capacidad semanal. Cumplimiento mensual: capacidad actual / capacidad vendida × 100. Capacidad instalada: horas registradas / driver mensual por consultor; se expresa como proporción, sin porcentaje. Capacidad vacante sigue pendiente de definición.</p>
+      <p className="mcc-nota">Despliega Personas incluidas para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. Los totales suman las filas por cargo sin duplicar consultores. Capacidad actual: horas registradas del mes, con la misma fuente que la capacidad semanal. Ocupación mensual: capacidad actual / capacidad vendida × 100. Capacidad instalada: horas registradas / driver mensual por consultor; se expresa como proporción, sin porcentaje. Capacidad vacante sigue pendiente de definición. Las ocupaciones y tareas seleccionadas filtran las horas registradas; los equipos y cargos seleccionados definen las personas y su capacidad vendida. Ninguno equivale a una selección vacía, no a Todos.</p>
     </main>
   );
 }

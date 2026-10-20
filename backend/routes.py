@@ -26320,6 +26320,20 @@ def modelos_capacidades_coe_sap():
     except (TypeError, ValueError):
         return jsonify({'mensaje': 'Selecciona un mes válido y un año entre 2000 y 2100.'}), 400
 
+    filtrar = request.args.get('filtrar') == '1'
+    try:
+        def ids_filtro(clave, admitir_sin=False):
+            valores = request.args.getlist(clave)
+            if any(not (v.isdigit() and int(v) > 0) and not (admitir_sin and v == 'sin') for v in valores):
+                raise ValueError()
+            return [int(v) if v != 'sin' else None for v in valores]
+        ocupaciones_ids = ids_filtro('ocupacion_id')
+        tareas_ids = ids_filtro('tarea_id')
+        equipos_ids = ids_filtro('equipo_id', True)
+        cargos_ids = ids_filtro('cargo_id', True)
+    except ValueError:
+        return jsonify({'mensaje': 'Los filtros contienen identificadores inválidos.'}), 400
+
     try:
         festivos = _cap_colombia_holidays_for_years([anio])
         driver = Decimal('0')
@@ -26333,15 +26347,19 @@ def modelos_capacidades_coe_sap():
         # Agregar horas por usuario antes de unirlas a los consultores evita duplicados.
         inicio = date(anio, mes, 1).isoformat()
         fin = (date(anio + 1, 1, 1) if mes == 12 else date(anio, mes + 1, 1)).isoformat()
-        horas_mes = (
+        consulta_horas = (
             db.session.query(
                 func.lower(func.trim(Registro.usuario_consultor)).label('usuario'),
                 func.coalesce(func.sum(Registro.total_horas), 0).label('horas'),
             )
             .filter(Registro.fecha >= inicio, Registro.fecha < fin)
-            .group_by(func.lower(func.trim(Registro.usuario_consultor)))
-            .subquery()
         )
+        if filtrar:
+            consulta_horas = consulta_horas.filter(
+                Registro.ocupacion_id.in_(ocupaciones_ids),
+                Registro.tarea_id.in_(tareas_ids),
+            )
+        horas_mes = consulta_horas.group_by(func.lower(func.trim(Registro.usuario_consultor))).subquery()
         filas = (
             db.session.query(
                 Equipo.id.label('equipo_id'), Equipo.nombre.label('proceso'),
@@ -26379,6 +26397,8 @@ def modelos_capacidades_coe_sap():
         grupos = {}
         for fila in filas:
             if fila.consultor_id in excluir_ids:
+                continue
+            if filtrar and (fila.equipo_id not in equipos_ids or fila.cargo_id not in cargos_ids):
                 continue
             key = (fila.equipo_id, fila.cargo_id)
             if key not in grupos:
@@ -26419,3 +26439,4 @@ def modelos_capacidades_coe_sap():
     except Exception:
         app.logger.exception('Error consultando modelos de capacidades COE SAP')
         return jsonify({'mensaje': 'No se pudo consultar el modelo de capacidades.'}), 500
+
