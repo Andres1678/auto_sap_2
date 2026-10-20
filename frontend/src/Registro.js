@@ -7,6 +7,7 @@ import Resumen from './Resumen';
 import CapacidadSemanalModal from "./CapacidadSemanalModal";
 import { Navigate, useNavigate } from "react-router-dom";
 import CostoConsultorPage from './CostoConsultorPage';
+import { exportRegistrosExcelXLSX_ALL } from "./exportRegistrosExcel";
 
 Modal.setAppElement('#root');
 
@@ -2142,7 +2143,10 @@ const Registro = ({ userData }) => {
       isAdmin && Boolean(filtroMesDesde || filtroMesHasta);
 
     if (adminUsaRangoMeses) {
-      const monthRange = validateMonthRange(filtroMesDesde, filtroMesHasta);
+      const monthRange = validateMonthRange(
+        filtroMesDesde,
+        filtroMesHasta
+      );
 
       if (!monthRange.valid) {
         Swal.fire({
@@ -2158,64 +2162,59 @@ const Registro = ({ userData }) => {
 
     try {
       const params = buildCurrentFilterParams();
-      const res = await jfetch(`/registros/export?${params.toString()}`, {
-        method: "GET",
-        headers: {
-          "X-User-Usuario": usuarioLogin,
-          "X-User-Rol": rol,
-          "X-User-Equipo": String(equipoUser || ""),
-          "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        },
-      });
+
+      const res = await jfetch(
+        `/registros/export?${params.toString()}`,
+        {
+          method: "GET",
+          headers: {
+            "X-User-Usuario": usuarioLogin,
+            "X-User-Rol": rol,
+            "X-User-Equipo": String(equipoUser || ""),
+            Accept: "application/json",
+          },
+        }
+      );
+
+      const contentType = String(
+        res.headers.get("content-type") || ""
+      ).toLowerCase();
+
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          `El servidor no devolvió los registros en JSON (HTTP ${res.status}).`
+        );
+      }
+
+      const payload = await res.json();
 
       if (!res.ok) {
-        const contentType = String(res.headers.get("content-type") || "").toLowerCase();
-        let message = `HTTP ${res.status}`;
+        throw new Error(
+          payload?.detalle ||
+          payload?.mensaje ||
+          payload?.error ||
+          `HTTP ${res.status}`
+        );
+      }
 
-        if (contentType.includes("application/json")) {
-          const data = await res.json().catch(() => ({}));
-          message = data?.detalle || data?.mensaje || data?.error || message;
-        } else {
-          const text = await res.text().catch(() => "");
-          if (text) message = text;
+      if (!Array.isArray(payload?.data)) {
+        throw new Error(
+          "La respuesta no contiene una lista válida de registros."
+        );
+      }
+
+      const filename =
+        `registros_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+      exportRegistrosExcelXLSX_ALL(
+        payload.data,
+        filename,
+        {
+          "Fecha de exportación": new Date().toLocaleString("es-CO"),
+          Usuario: usuarioLogin,
+          "Total de registros": payload.data.length,
         }
-
-        throw new Error(message);
-      }
-
-      const blob = await res.blob();
-      if (!blob?.size) {
-        throw new Error("El servidor devolvió un archivo vacío.");
-      }
-
-      const disposition = res.headers.get("content-disposition") || "";
-      const utf8Name = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-      const normalName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
-
-      let filename = `registros_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      try {
-        filename = decodeURIComponent(utf8Name || normalName || filename);
-      } catch {
-        filename = normalName || filename;
-      }
-
-      filename = filename.replace(/[\/:*?"<>|]/g, "_");
-
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = filename;
-      link.style.display = "none";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
-
-      const total = res.headers.get("X-Total-Registros");
-      if (total !== null) {
-        console.info(`Excel generado con ${total} registros.`);
-      }
+      );
     } catch (e) {
       Swal.fire({
         icon: "error",
