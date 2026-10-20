@@ -26301,7 +26301,6 @@ def eliminar_cargo(id):
         app.logger.exception('Error eliminando cargo')
         return jsonify({'mensaje': 'No se pudo eliminar el cargo'}), 409
 
-# Agregar al archivo de rutas que ya contiene bp y los modelos Consultor, Cargo y Equipo.
 @bp.route('/modelos-capacidades-coe-sap', methods=['GET'])
 @admin_required
 def modelos_capacidades_coe_sap():
@@ -26327,26 +26326,57 @@ def modelos_capacidades_coe_sap():
                 driver += Decimal('9') if fecha.weekday() == 4 else Decimal('8.5')
                 dias_laborables += 1
 
-        # Una fila por equipo y cargo, consultando relaciones actuales del catálogo.
+        # Agregar horas por usuario antes de unirlas a los consultores evita duplicados.
+        inicio = date(anio, mes, 1).isoformat()
+        fin = (date(anio + 1, 1, 1) if mes == 12 else date(anio, mes + 1, 1)).isoformat()
+        horas_mes = (
+            db.session.query(
+                func.lower(func.trim(Registro.usuario_consultor)).label('usuario'),
+                func.sum(func.coalesce(Registro.total_horas, Registro.tiempo_invertido, 0)).label('horas'),
+            )
+            .filter(Registro.fecha >= inicio, Registro.fecha < fin)
+            .group_by(func.lower(func.trim(Registro.usuario_consultor)))
+            .subquery()
+        )
         filas = (
-            db.session.query(Equipo.nombre.label('proceso'), Cargo.nombre.label('cargo'))
+            db.session.query(
+                Equipo.id.label('equipo_id'), Equipo.nombre.label('proceso'),
+                Cargo.id.label('cargo_id'), Cargo.nombre.label('cargo'),
+                Consultor.id.label('consultor_id'), Consultor.usuario.label('usuario'),
+                Consultor.nombre.label('nombre'), func.coalesce(horas_mes.c.horas, 0).label('horas'),
+            )
             .select_from(Consultor)
             .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
             .outerjoin(Cargo, Consultor.cargo_id == Cargo.id)
+            .outerjoin(horas_mes, horas_mes.c.usuario == func.lower(func.trim(Consultor.usuario)))
             .filter(Consultor.activo.is_(True))
-            .distinct()
-            .order_by(Equipo.nombre.asc(), Cargo.nombre.asc())
+            .order_by(Equipo.nombre.asc(), Cargo.nombre.asc(), Consultor.nombre.asc())
             .all()
         )
-        data = [{
-            'proceso': fila.proceso or 'SIN EQUIPO',
-            'cargo': fila.cargo or 'SIN CARGO ASIGNADO',
-            'unidad': 'Horas',
-            'driver': float(driver),
-            'volumen_actual': None,
-            'capacidad_actual': None,
-            'capacidad_vacante': None,
-        } for fila in filas]
+        grupos = {}
+        for fila in filas:
+            key = (fila.equipo_id, fila.cargo_id)
+            if key not in grupos:
+                grupos[key] = {
+                    'equipo_id': fila.equipo_id,
+                    'cargo_id': fila.cargo_id,
+                    'proceso': fila.proceso or 'SIN EQUIPO',
+                    'cargo': fila.cargo or 'SIN CARGO ASIGNADO',
+                    'unidad': 'Horas', 'driver': float(driver),
+                    'volumen_actual': 0.0,
+                    'capacidad_actual': None, 'capacidad_vacante': None,
+                    'consultores': [],
+                }
+            horas = float(fila.horas or 0)
+            grupos[key]['consultores'].append({
+                'id': fila.consultor_id, 'usuario': fila.usuario,
+                'nombre': fila.nombre, 'cargo': grupos[key]['cargo'],
+                'horas': round(horas, 2),
+            })
+            grupos[key]['volumen_actual'] += horas
+        data = list(grupos.values())
+        for grupo in data:
+            grupo['volumen_actual'] = round(grupo['volumen_actual'], 2)
         return jsonify({
             'anio': anio, 'mes': mes, 'dias_laborables': dias_laborables,
             'driver': float(driver), 'data': data,

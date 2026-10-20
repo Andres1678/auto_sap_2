@@ -14,6 +14,7 @@ const periodoActual = () => {
 
 export default function ModelosCapacidadesCoeSap() {
   const [periodo, setPeriodo] = useState(periodoActual);
+  const [expandidos, setExpandidos] = useState({});
   const [resultado, setResultado] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
@@ -29,6 +30,7 @@ export default function ModelosCapacidadesCoeSap() {
     const controller = new AbortController();
     let vigente = true;
     setResultado(null);
+    setExpandidos({});
     setError("");
     if (!/^(20\d{2}|2100)-(0[1-9]|1[0-2])$/.test(periodo)) {
       setError("Selecciona un mes y año válidos.");
@@ -53,10 +55,13 @@ export default function ModelosCapacidadesCoeSap() {
   const grupos = useMemo(() => {
     const mapa = new Map();
     for (const fila of resultado?.data || []) {
-      if (!mapa.has(fila.proceso)) mapa.set(fila.proceso, []);
-      mapa.get(fila.proceso).push(fila);
+      const clave = String(fila.equipo_id ?? "sin-equipo");
+      if (!mapa.has(clave)) mapa.set(clave, { clave, proceso: fila.proceso, filas: [], consultores: [] });
+      const grupo = mapa.get(clave);
+      grupo.filas.push(fila);
+      grupo.consultores.push(...(fila.consultores || []));
     }
-    return Array.from(mapa.entries());
+    return Array.from(mapa.values());
   }, [resultado]);
 
   if (!admin) return <Navigate to="/configuracion" replace />;
@@ -80,15 +85,41 @@ export default function ModelosCapacidadesCoeSap() {
       <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 9 horas. Se excluyen fines de semana y festivos de Colombia.</p>
       <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table">
         <thead><tr><th>Proceso</th><th>Cargo</th><th>Unidad</th><th>Driver</th><th>Volumen actual</th><th>Capacidad actual</th><th>Capacidad vacante</th></tr></thead>
-        <tbody>{cargando ? <tr><td colSpan={7}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map(([proceso, filas]) => filas.map((fila, indice) => (
-          <tr key={JSON.stringify([proceso, fila.cargo])}>
-            {indice === 0 && <th scope="rowgroup" rowSpan={filas.length} className="mcc-proceso">{proceso}</th>}
-            <td>{fila.cargo}</td><td>{fila.unidad}</td><td className="mcc-num">{formato.format(fila.driver)}</td>
-            <td title="Pendiente de definición">—</td><td title="Pendiente de definición">—</td><td title="Pendiente de definición">—</td>
-          </tr>
-        ))) : <tr><td colSpan={7}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
+        <tbody>{cargando ? <tr><td colSpan={7}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
+          <React.Fragment key={grupo.clave}>
+            {grupo.filas.map((fila, indice) => (
+              <tr key={String(fila.cargo_id ?? "sin-cargo")}>
+                {indice === 0 && <th scope="rowgroup" rowSpan={grupo.filas.length} className="mcc-proceso">
+                  <button type="button" className="mcc-expand" aria-expanded={!!expandidos[grupo.clave]}
+                    aria-controls={`detalle-equipo-${grupo.clave}`}
+                    onClick={() => setExpandidos(prev => ({ ...prev, [grupo.clave]: !prev[grupo.clave] }))}>
+                    <span aria-hidden="true">{expandidos[grupo.clave] ? "▾" : "▸"}</span> {grupo.proceso}
+                    <small>{grupo.consultores.length} consultores</small>
+                  </button>
+                </th>}
+                <td>{fila.cargo}</td><td>{fila.unidad}</td>
+                <td className="mcc-num">{formato.format(fila.driver)}</td>
+                <td className="mcc-num">{formato.format(fila.volumen_actual ?? 0)}</td>
+                <td title="Pendiente de definición">—</td><td title="Pendiente de definición">—</td>
+              </tr>
+            ))}
+            <tr id={`detalle-equipo-${grupo.clave}`} hidden={!expandidos[grupo.clave]} className="mcc-detalle">
+              <td colSpan={7}><div className="mcc-detalle-body">
+                <h3>Consultores de {grupo.proceso}</h3>
+                <table className="mcc-consultores"><thead><tr>
+                  <th>Consultor</th><th>Usuario</th><th>Cargo</th><th>Volumen actual (horas)</th>
+                </tr></thead><tbody>
+                  {grupo.consultores.map(c => <tr key={c.id}>
+                    <td>{c.nombre}</td><td>{c.usuario}</td><td>{c.cargo}</td>
+                    <td className="mcc-num">{formato.format(c.horas ?? 0)}</td>
+                  </tr>)}
+                </tbody></table>
+              </div></td>
+            </tr>
+          </React.Fragment>
+        )) : <tr><td colSpan={7}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
       </table></div>
-      <p className="mcc-nota">Volumen actual, capacidad actual y capacidad vacante están pendientes de definición.</p>
+      <p className="mcc-nota">Volumen actual: horas registradas en el mes seleccionado, sumadas por cargo. Despliega el proceso para consultar cada persona. Capacidad actual y capacidad vacante siguen pendientes de definición.</p>
     </main>
   );
 }
