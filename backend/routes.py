@@ -26306,7 +26306,7 @@ def eliminar_cargo(id):
         return jsonify({'mensaje': 'No se pudo eliminar el cargo'}), 409
 
 def _mcc_metricas_casos(registros):
-    """Replica numeroCaso, horas y la agrupación del gráfico; cuenta casos en ocupación 01 y en PAM 07 con tarea 05."""
+    """Clasifica casos, actividades de operación y otras ocupaciones sin duplicar horas."""
     import unicodedata
     import math
     def numero(valor):
@@ -26317,7 +26317,7 @@ def _mcc_metricas_casos(registros):
     proyectos = set()
     proyectos_horas = {}
     horas_proyectos = 0.0
-    con, sin = 0.0, 0.0
+    con, sin, operacion = 0.0, 0.0, 0.0
     for r in registros:
         principal, interno = numero(r.get('cliente_caso')), numero(r.get('interno_caso'))
         raw = r.get('tiempo_invertido')
@@ -26343,22 +26343,24 @@ def _mcc_metricas_casos(registros):
                 proyectos_horas[proyecto_clave] = proyectos_horas.get(proyecto_clave, 0.0) + h
         ocupacion_codigo = str(r.get('ocupacion_codigo') or '').strip().lstrip('0')
         tarea_codigo = str(r.get('tarea_codigo') or '').strip().lstrip('0')
-        es_informes_pam = ocupacion_codigo == '7' and tarea_codigo == '5'
-        if principal or interno:
+        tiene_caso = bool(principal or interno)
+        es_casos = ocupacion_codigo == '1' and (
+            tarea_codigo == '1' or (tarea_codigo == '22' and tiene_caso))
+        es_operacion = (ocupacion_codigo == '1' and not es_casos) or (
+            ocupacion_codigo == '7' and tarea_codigo == '5')
+        if es_casos:
             con += h
-            if ocupacion_codigo == '1' or es_informes_pam:
+            if tiene_caso:
                 claves.add(('caso', principal) if principal else ('sin-caso-principal', interno))
+        elif es_operacion:
+            operacion += h
         else:
             sin += h
-            # Regla adicional exclusiva de Horas de casos; no cambia Otras ocupaciones.
-            if es_informes_pam:
-                con += h
     return {'numero_casos': len(claves), 'horas_con_caso': round(con, 2),
-            'otras_ocupaciones': round(sin, 2), 'casos_claves': [list(k) for k in sorted(claves)],
+            'otras_ocupaciones': round(sin, 2), 'otras_actividades_operacion': round(operacion, 2), 'casos_claves': [list(k) for k in sorted(claves)],
             'numero_proyectos': len(proyectos), 'horas_proyectos': round(horas_proyectos, 2),
             'proyectos_claves': [list(k) for k in sorted(proyectos)],
             'proyectos_con_horas': sum(1 for h in proyectos_horas.values() if round(h, 2) != 0),
-            'proyectos_sin_horas': sum(1 for h in proyectos_horas.values() if round(h, 2) == 0),
             'proyectos_horas': [[*k, round(h, 2)] for k, h in sorted(proyectos_horas.items())]}
 
 
@@ -26531,6 +26533,8 @@ def modelos_capacidades_coe_sap():
     except Exception:
         app.logger.exception('Error consultando modelos de capacidades COE SAP')
         return jsonify({'mensaje': 'No se pudo consultar el modelo de capacidades.'}), 500
+
+
 
 
 

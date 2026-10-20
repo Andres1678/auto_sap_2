@@ -33,7 +33,6 @@ function totalesProyectos(filas) {
   const valores = [...proyectos.values()];
   return {
     conHoras: valores.filter(h => Math.round(h * 100) !== 0).length,
-    sinHoras: valores.filter(h => Math.round(h * 100) === 0).length,
   };
 }
 
@@ -197,6 +196,7 @@ export default function ModelosCapacidadesCoeSap() {
       proyectos: totalesProyectos(filas),
       horasProyectos: filas.reduce((s, f) => s + Number(f.horas_proyectos || 0), 0),
       horasConCaso: filas.reduce((s, f) => s + Number(f.horas_con_caso || 0), 0),
+      otrasActividadesOperacion: filas.reduce((s, f) => s + Number(f.otras_actividades_operacion || 0), 0),
       otrasOcupaciones: filas.reduce((s, f) => s + Number(f.otras_ocupaciones || 0), 0),
     };
   }, [resultado]);
@@ -232,7 +232,7 @@ export default function ModelosCapacidadesCoeSap() {
       </div>}
       <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 8 horas. Se excluyen fines de semana y festivos de Colombia.</p>
       <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table">
-        <thead><tr><th>Proceso</th><th>Cargo</th><th>Personas incluidas</th><th>Driver (horas mes actual)</th><th>Capacidad vendida (horas)</th><th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th><th className="mcc-casos-gris">Número de casos</th><th className="mcc-casos-gris">Horas con caso</th><th className="mcc-casos-gris">Otras ocupaciones (horas)</th><th className="mcc-casos-gris">Proyectos con horas</th><th className="mcc-casos-gris">Proyectos sin horas</th><th className="mcc-casos-gris">Horas de proyectos</th></tr></thead>
+        <thead><tr><th>Proceso</th><th>Cargo</th><th>Personas incluidas</th><th>Driver (horas mes actual)</th><th>Capacidad vendida (horas)</th><th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th><th className="mcc-casos-gris">Número de casos</th><th className="mcc-casos-gris">Horas con caso</th><th className="mcc-casos-gris">Otras Actividades Operacion</th><th className="mcc-casos-gris">Otras ocupaciones (horas)</th><th className="mcc-casos-gris">Proyectos con horas</th><th className="mcc-casos-gris">Horas de proyectos</th></tr></thead>
         <tbody>{cargando ? <tr><td colSpan={15}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
           <React.Fragment key={grupo.clave}>
             {grupo.filas.map((fila, indice) => {
@@ -274,9 +274,9 @@ export default function ModelosCapacidadesCoeSap() {
                 <td title="Pendiente de definición">—</td>
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.numero_casos ?? 0)}</td>
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.horas_con_caso ?? 0)}</td>
+                <td className="mcc-num mcc-casos-gris">{formato.format(fila.otras_actividades_operacion ?? 0)}</td>
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.otras_ocupaciones ?? 0)}</td>
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.proyectos_con_horas ?? 0)}</td>
-                <td className="mcc-num mcc-casos-gris">{formato.format(fila.proyectos_sin_horas ?? 0)}</td>
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.horas_proyectos ?? 0)}</td>
               </tr>
               {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`}>
@@ -287,7 +287,7 @@ export default function ModelosCapacidadesCoeSap() {
                       <thead><tr>
                         <th>Consultor</th><th>Usuario</th><th>Driver (horas mes actual)</th>
                         <th>Capacidad vendida (horas)</th>
-                        <th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th><th className="mcc-casos-gris">Número de casos</th><th className="mcc-casos-gris">Horas con caso</th><th className="mcc-casos-gris">Otras ocupaciones (horas)</th><th className="mcc-casos-gris">Proyectos con horas</th><th className="mcc-casos-gris">Proyectos sin horas</th><th className="mcc-casos-gris">Horas de proyectos</th>
+                        <th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th><th className="mcc-casos-gris">Número de casos</th><th className="mcc-casos-gris">Horas con caso</th><th className="mcc-casos-gris">Otras Actividades Operacion</th><th className="mcc-casos-gris">Otras ocupaciones (horas)</th><th className="mcc-casos-gris">Proyectos con horas</th><th className="mcc-casos-gris">Horas de proyectos</th>
                       </tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
@@ -302,9 +302,9 @@ export default function ModelosCapacidadesCoeSap() {
                           <td title="Pendiente de definición">—</td>
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.numero_casos ?? 0)}</td>
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.horas_con_caso ?? 0)}</td>
+                          <td className="mcc-num mcc-casos-gris">{formato.format(c.otras_actividades_operacion ?? 0)}</td>
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.otras_ocupaciones ?? 0)}</td>
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.proyectos_con_horas ?? 0)}</td>
-                          <td className="mcc-num mcc-casos-gris">{formato.format(c.proyectos_sin_horas ?? 0)}</td>
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.horas_proyectos ?? 0)}</td>
                         </tr>
                       ))}</tbody>
@@ -330,13 +330,13 @@ export default function ModelosCapacidadesCoeSap() {
           </td>
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.numeroCasos)}</td>
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.horasConCaso)}</td>
+          <td className="mcc-num mcc-casos-gris">{formato.format(totales.otrasActividadesOperacion)}</td>
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.otrasOcupaciones)}</td>
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.proyectos.conHoras)}</td>
-          <td className="mcc-num mcc-casos-gris">{formato.format(totales.proyectos.sinHoras)}</td>
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.horasProyectos)}</td>
         </tr></tfoot>}
       </table></div>
-      <p className="mcc-nota">Despliega Personas incluidas para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. Los totales suman las filas por cargo sin duplicar consultores. Capacidad actual: horas registradas del mes, con la misma fuente que la capacidad semanal. Ocupación mensual: capacidad actual / capacidad vendida × 100. Capacidad instalada: horas registradas / driver mensual por consultor; se expresa como proporción, sin porcentaje. Capacidad vacante sigue pendiente de definición. Número de casos cuenta casos únicos de ocupación 01. Las columnas grises separan horas con/sin caso como el gráfico; Otras ocupaciones corresponde a sin caso. El total de casos se deduplica por equipo, por lo que puede ser menor que la suma de filas. Proyectos con horas, Proyectos sin horas y Horas de proyectos corresponden solo a la ocupación 02. Sin horas cuenta proyectos identificados en los registros filtrados cuya suma es cero; no incluye proyectos sin registros. Los proyectos se identifican por su relación y, en registros históricos sin relación, por el número cliente. Los totales de proyectos se deduplican por equipo. En el resumen del proceso, Ocupación mes usa horas totales / capacidad vendida total; Ocupación acumulada de cargos suma los porcentajes de las filas. Las ocupaciones y tareas seleccionadas filtran las horas registradas; los equipos y cargos seleccionados definen las personas y su capacidad vendida. Ninguno equivale a una selección vacía, no a Todos.</p>
+      <p className="mcc-nota">Casos: ocupación 01 con tarea 01, y tarea 22 cuando tiene número cliente o interno válido. Número de casos cuenta identificadores únicos; los registros sin identificador no crean casos. Otras Actividades Operacion: restantes tareas de ocupación 01 (incluida reunión 22 sin caso) y ocupación 07 PAM con tarea 05. Otras ocupaciones: el resto. Estas tres columnas de horas se distribuyen sin duplicar registros. Proyectos con horas y Horas de proyectos siguen siendo indicadores exclusivos de ocupación 02. Capacidad vacante continúa pendiente de definición.</p>
     </main>
   );
 }
