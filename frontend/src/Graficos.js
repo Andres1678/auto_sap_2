@@ -960,6 +960,9 @@ export default function Graficos() {
     const nombre = normTxt(r?.consultor);
     return Boolean((login && personasActivasPorUsuario.get(login)) ||
       (nombre && personasActivasPorNombre.get(nombre)));
+  }).map(r => {
+    const persona = personasActivasPorUsuario.get(String(r.usuario_consultor || "").trim().toLowerCase()) || personasActivasPorNombre.get(normTxt(r.consultor));
+    return {...r, equipo: equipoOf(persona, equipoOf(r))};
   }), [datosFiltrados, personasActivasPorUsuario, personasActivasPorNombre]);
 
   const horasPorEquipo = useMemo(() => {
@@ -1567,6 +1570,7 @@ export default function Graficos() {
           <div className="pgx-chart-mono">
             <HorasPorEquipoChart
               data={horasPorEquipo}
+              registros={registrosCasosEquipo}
               filtroMes={appliedFilters.mes}
               desde={appliedFilters.desde}
               hasta={appliedFilters.hasta}
