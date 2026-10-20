@@ -1,7 +1,7 @@
 import React, { Fragment, useEffect, useMemo, useState } from 'react';
 import Modal from 'react-modal';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
-import { buscarCasosEquipo, resumirCasosPorEquipo, opcionesTareasEquipo, filtrarTareasEquipo, registrosDelEquipo, opcionesOcupacionesEquipo, filtrarOcupacionesEquipo } from '../casosPorEquipo';
+import { agruparOcupacionesTareas, resumirCasosPorEquipo, opcionesTareasEquipo, filtrarTareasEquipo, registrosDelEquipo, opcionesOcupacionesEquipo, filtrarOcupacionesEquipo } from '../casosPorEquipo';
 import './CasosPorEquipoChart.css';
 
 const nf=new Intl.NumberFormat('es-CO',{maximumFractionDigits:2});
@@ -9,6 +9,11 @@ const h=v=>`${nf.format(v || 0)} h`;
 function TooltipEquipo({active,payload}) {
   const t=payload?.[0]?.payload;if(!active||!t)return null;
   return <div className="pgx-cases-tooltip"><strong>{t.equipo}</strong><span>Casos agrupados: {t.totalCasos}</span><span>Registros con caso: {t.registrosConCaso}</span><span>Horas con caso, sin duplicar filas: {h(t.horasConCaso)}</span></div>;
+}
+function TablaCasos({casos:visibles}) {
+  const [abierto,setAbierto]=useState('');
+  useEffect(()=>setAbierto(''),[visibles]);
+  return <div className="pgx-cases-table-wrap"><table className="pgx-cases-table"><thead><tr><th scope="col">CASO</th><th scope="col">CASO INTERNO</th><th scope="col">CLIENTE</th><th scope="col">REGISTROS</th><th scope="col">HORAS ACUMULADAS</th><th scope="col">PARTICIPANTES</th></tr></thead><tbody>{visibles.map(c=><Fragment key={c.key}><tr><th scope="row">{c.numero || '—'}</th><td>{c.internos.join(', ') || '—'}</td><td>{c.clientes.join(', ')||'—'}</td><td className="pgx-cases-num">{c.registros}</td><td className="pgx-cases-num">{h(c.horas)}</td><td><button type="button" className="pgx-cases-link" aria-expanded={abierto===c.key} onClick={()=>setAbierto(prev=>prev===c.key?'':c.key)}>{abierto===c.key?'Ocultar':'Ver'} consultores ({c.consultores.length})</button></td></tr>{abierto===c.key&&<tr className="pgx-cases-expanded"><td colSpan={6}><section aria-label={`Consultores del caso ${c.numero || c.internos.join(', ')}`}><h3>Consultores del caso {c.numero || c.internos.join(', ')}</h3><p>{c.desde===c.hasta?c.desde:`${c.desde} al ${c.hasta}`}</p><div className="pgx-cases-table-wrap"><table className="pgx-cases-table"><thead><tr><th>Consultor</th><th>Usuario</th><th>Registros</th><th>Horas en este caso</th></tr></thead><tbody>{c.consultores.map(p=><tr key={p.key}><th scope="row">{p.nombre}</th><td>{p.usuario||'—'}</td><td className="pgx-cases-num">{p.registros}</td><td className="pgx-cases-num">{h(p.horas)}</td></tr>)}</tbody></table></div></section></td></tr>}</Fragment>)}</tbody></table></div>;
 }
 function ResumenEquipo({team: equipoBase,rows,periodo,onClose}) {
   const [filtrosAbiertos,setFiltrosAbiertos]=useState(true);
@@ -35,9 +40,8 @@ function ResumenEquipo({team: equipoBase,rows,periodo,onClose}) {
     return keys.includes(key)?keys.filter(k=>k!==key):[...keys,key];
   });
   const [busqueda,setBusqueda]=useState('');
-  const [abierto,setAbierto]=useState('');
-  useEffect(()=>{setAbierto('');},[tareasSeleccionadas,ocupacionesSeleccionadas]);
-  const visibles=useMemo(()=>buscarCasosEquipo(team.casos,busqueda),[team.casos,busqueda]);
+  const grupos=useMemo(()=>agruparOcupacionesTareas(filasFiltradas,busqueda),[filasFiltradas,busqueda]);
+  const totalDetalle=useMemo(()=>grupos.reduce((s,o)=>({registros:s.registros+o.registros,horas:s.horas+o.horas}),{registros:0,horas:0}),[grupos]);
   return <Modal isOpen onRequestClose={onClose} contentLabel={`Casos registrados por ${team.equipo}`} className="pgx-cases-modal" overlayClassName="pgx-cases-overlay" bodyOpenClassName="pgx-cases-body-open">
     <header className="pgx-cases-modal-head"><div><span>Resumen de casos por equipo</span><h2>{team.equipo}</h2><p>{periodo} · Filtros aplicados en gráficos</p></div><button type="button" className="pgx-cases-close" onClick={onClose} aria-label="Cerrar resumen del equipo">×</button></header>
     <div className="pgx-cases-modal-body">
@@ -62,10 +66,18 @@ function ResumenEquipo({team: equipoBase,rows,periodo,onClose}) {
         </div>
       </section>
       <div className="pgx-cases-kpis"><div><span>Casos agrupados</span><strong>{team.totalCasos}</strong></div><div><span>Registros con caso</span><strong>{team.registrosConCaso}</strong></div><div><span>Horas con caso</span><strong>{h(team.horasConCaso)}</strong><small>Cada registro cuenta una vez</small></div><div><span>Horas sin caso</span><strong>{h(team.horasSinCaso)}</strong><small>Sin caso cliente ni interno válido</small></div><div><span>Consultores con registros</span><strong>{team.totalConsultores}</strong></div></div>
-      <p className="pgx-cases-note">Los registros se agrupan por caso dentro del equipo. Los números internos asociados aparecen en la columna CASO INTERNO. Cada registro y sus horas se suman una sola vez. Si falta el caso principal, se agrupa por el número interno disponible.</p>
+      <p className="pgx-cases-note">Despliega una ocupación y una tarea para consultar sus casos. Cada registro suma una sola vez. Un caso puede aparecer en varias tareas con las horas correspondientes a cada una. Sin caso incluye los registros sin número cliente ni interno válido. La búsqueda limita el detalle y sus subtotales; las tarjetas resumen mantienen los filtros de ocupaciones y tareas.</p>
       {team.registrosSinCaso>0&&<p className="pgx-cases-without">Además hay {team.registrosSinCaso} registros sin número de caso válido ({h(team.horasSinCaso)}). Se incluyen en las {h(team.horas)} totales del equipo, pero no en el conteo de casos.</p>}
-      <div className="pgx-cases-controls"><label>Buscar caso, caso interno o cliente<input type="search" value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Caso, caso interno o cliente"/></label><span>Mostrando {visibles.length} de {team.casos.length} casos</span></div>
-      {visibles.length===0?<div className="pgx-cases-empty">Sin casos para las ocupaciones, tareas y búsqueda seleccionadas.</div>:<div className="pgx-cases-table-wrap"><table className="pgx-cases-table"><thead><tr><th scope="col">CASO</th><th scope="col">CASO INTERNO</th><th scope="col">CLIENTE</th><th scope="col">REGISTROS</th><th scope="col">HORAS ACUMULADAS</th><th scope="col">PARTICIPANTES</th></tr></thead><tbody>{visibles.map(c=><Fragment key={c.key}><tr><th scope="row">{c.numero || '—'}</th><td>{c.internos.join(', ') || '—'}</td><td>{c.clientes.join(', ')||'—'}</td><td className="pgx-cases-num">{c.registros}</td><td className="pgx-cases-num">{h(c.horas)}</td><td><button type="button" className="pgx-cases-link" aria-expanded={abierto===c.key} onClick={()=>setAbierto(prev=>prev===c.key?'':c.key)}>{abierto===c.key?'Ocultar':'Ver'} consultores ({c.consultores.length})</button></td></tr>{abierto===c.key&&<tr className="pgx-cases-expanded"><td colSpan={6}><section aria-label={`Consultores del caso ${c.numero || c.internos.join(', ')}`}><h3>Consultores del caso {c.numero || c.internos.join(', ')}</h3><p>{c.desde===c.hasta?c.desde:`${c.desde} al ${c.hasta}`}</p><div className="pgx-cases-table-wrap"><table className="pgx-cases-table"><thead><tr><th>Consultor</th><th>Usuario</th><th>Registros</th><th>Horas en este caso</th></tr></thead><tbody>{c.consultores.map(p=><tr key={p.key}><th scope="row">{p.nombre}</th><td>{p.usuario||'—'}</td><td className="pgx-cases-num">{p.registros}</td><td className="pgx-cases-num">{h(p.horas)}</td></tr>)}</tbody></table></div></section></td></tr>}</Fragment>)}</tbody></table></div>}
+      <div className="pgx-cases-controls"><label>Buscar caso, caso interno o cliente<input type="search" value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Caso, caso interno o cliente"/></label><span>{grupos.length} ocupaciones · {totalDetalle.registros} registros en el detalle</span></div>
+      {!grupos.length?<div className="pgx-cases-empty">Sin registros para las ocupaciones, tareas y búsqueda seleccionadas.</div>:<div className="pgx-cases-groups">{grupos.map(o=><details className="pgx-cases-occupation" key={o.key} open={Boolean(busqueda.trim()) || undefined}>
+        <summary><span>{o.label}</span><span>{o.registros} registros · {h(o.horas)}</span></summary>
+        <div className="pgx-cases-occupation-body">{o.tareas.map(t=><details className="pgx-cases-task-group" key={t.key} open={Boolean(busqueda.trim()) || undefined}>
+          <summary><span>{t.label}</span><span>{t.registros} registros · {h(t.horas)}</span></summary>
+          <TablaCasos casos={t.casos}/>
+          <div className="pgx-cases-subtotal">Subtotal tarea: {t.registros} registros · {h(t.horas)}</div>
+        </details>)}<div className="pgx-cases-subtotal">Subtotal ocupación: {o.registros} registros · {h(o.horas)}</div></div>
+      </details>)}<div className="pgx-cases-detail-total">Total del detalle{busqueda.trim()?' para la búsqueda':''}: {totalDetalle.registros} registros · {h(totalDetalle.horas)}</div></div>}
+
     </div>
     <footer className="pgx-cases-modal-foot"><span>{team.registrosConCaso} registros con caso · {team.registros} registros del equipo</span><strong>Total equipo sin duplicar filas: {h(team.horas)}</strong><button type="button" onClick={onClose}>Cerrar</button></footer>
   </Modal>;

@@ -412,3 +412,18 @@
 .pgx-cases-filters > div { padding: 14px; }
 .pgx-cases-filters .pgx-cases-task-filter:last-child { margin-bottom: 0; }
 .pgx-cases-task-head button:disabled { opacity: .5; cursor: default; }
+
+.pgx-cases-groups { display: grid; gap: 14px; }
+.pgx-cases-occupation { border: 1px solid #cbdcf1; border-radius: 12px; overflow: hidden; }
+.pgx-cases-occupation > summary, .pgx-cases-task-group > summary { padding: 15px; background: #edf4ff; color: #153e72; cursor: pointer; font-weight: 700; }
+.pgx-cases-occupation > summary > span:last-child, .pgx-cases-task-group > summary > span:last-child { float: right; margin-left: 12px; font-size: 13px; }
+.pgx-cases-occupation > summary:focus-visible, .pgx-cases-task-group > summary:focus-visible { outline: 3px solid #2563eb; outline-offset: -3px; }
+.pgx-cases-occupation-body { padding: 12px; display: grid; gap: 10px; }
+.pgx-cases-task-group { border: 1px solid #e2e8f0; border-radius: 9px; overflow: hidden; }
+.pgx-cases-task-group > summary { background: #f8fafc; color: #334155; }
+.pgx-cases-subtotal { padding: 12px 15px; text-align: right; font-size: 13px; font-weight: 700; background: #f8fafc; color: #334155; }
+.pgx-cases-detail-total { padding: 16px; background: #153e72; color: white; border-radius: 10px; font-weight: 700; text-align: right; }
+@media (max-width: 600px) {
+ .pgx-cases-occupation > summary > span:last-child, .pgx-cases-task-group > summary > span:last-child { float: none; display: block; margin: 7px 0 0 18px; }
+ .pgx-cases-occupation-body { padding: 7px; }
+}

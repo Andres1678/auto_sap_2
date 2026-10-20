@@ -89,3 +89,39 @@ export function filtrarOcupacionesEquipo(rows, seleccion) {
   const keys = new Set(seleccion);
   return rows.filter(row => keys.has(ocupacionDeRegistro(row).key));
 }
+
+// Cada registro pertenece a una ocupación y una tarea. Los casos pueden
+// aparecer en varias tareas, con solo las horas de cada una.
+export function agruparOcupacionesTareas(rows, busqueda = '') {
+  const grupos = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const o = ocupacionDeRegistro(row), t = tareaDeRegistro(row);
+    if (!grupos.has(o.key)) grupos.set(o.key, {...o, tareasMap: new Map()});
+    const ocupacion = grupos.get(o.key);
+    if (!ocupacion.tareasMap.has(t.key)) ocupacion.tareasMap.set(t.key, {...t, rows: []});
+    ocupacion.tareasMap.get(t.key).rows.push(row);
+  }
+  const sumar = items => ({
+    registros: items.reduce((s,r)=>s+r.registros,0),
+    horas: items.reduce((s,r)=>s+r.horas,0),
+  });
+  return [...grupos.values()].map(o=>{
+    const tareas = [...o.tareasMap.values()].map(t=>{
+      const casos = resumirCasosPorEquipo(t.rows).flatMap(team=>team.casos);
+      const sinCaso = t.rows.filter(r=>!numeroCaso(r.nroCasoCliente ?? r.nro_caso_cliente) && !numeroCaso(r.nroCasoInterno ?? r.nro_caso_interno));
+      if (sinCaso.length) {
+        const personas = new Map();
+        sinCaso.forEach(r=>acumularPersona(personas,r,horas(r)));
+        const fechas = sinCaso.map(r=>texto(r.fecha).slice(0,10)).filter(Boolean).sort();
+        casos.push({key:'sin-caso',numero:'Sin caso',internos:[],
+          clientes:[...new Set(sinCaso.map(r=>texto(r.cliente)).filter(Boolean))].sort(),
+          registros:sinCaso.length,horas:sinCaso.reduce((s,r)=>s+horas(r),0),
+          desde:fechas[0]||'',hasta:fechas[fechas.length-1]||'',
+          consultores:[...personas.values()].sort((a,b)=>b.horas-a.horas),sinCaso:true});
+      }
+      const visibles = buscarCasosEquipo(casos,busqueda);
+      return {key:t.key,label:t.label,casos:visibles,...sumar(visibles)};
+    }).filter(t=>t.casos.length).sort((a,b)=>a.label.localeCompare(b.label,'es',{numeric:true}));
+    return {key:o.key,label:o.label,tareas,...sumar(tareas)};
+  }).filter(o=>o.tareas.length).sort((a,b)=>a.label.localeCompare(b.label,'es',{numeric:true}));
+}
