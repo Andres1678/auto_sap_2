@@ -400,3 +400,15 @@
 .pgx-cases-modal .pgx-cases-task-options span{min-width:0;overflow-wrap:anywhere;}
 .pgx-cases-modal .pgx-cases-task-filter>small{font-size:12px;color:#62748c;}
 @media(max-width:650px){.pgx-cases-modal .pgx-cases-task-options{grid-template-columns:1fr;}.pgx-cases-modal .pgx-cases-task-filter{padding:12px;}}
+
+.pgx-cases-filters { border: 1px solid #dbe3ee; border-radius: 14px; overflow: hidden; margin-bottom: 18px; }
+.pgx-cases-filter-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 0; background: #f1f5f9; color: #0f172a; text-align: left; cursor: pointer; font: inherit; }
+.pgx-cases-filter-toggle strong { display: block; font-size: 14px; }
+.pgx-cases-filter-toggle small { display: block; margin-top: 5px; color: #475569; font-size: 12px; }
+.pgx-cases-filter-toggle:hover { background: #e2e8f0; }
+.pgx-cases-filter-toggle:focus-visible { outline: 3px solid #2563eb; outline-offset: -3px; }
+.pgx-cases-chevron { font-size: 24px; line-height: 1; }
+.pgx-cases-filters > div[hidden] { display: none; }
+.pgx-cases-filters > div { padding: 14px; }
+.pgx-cases-filters .pgx-cases-task-filter:last-child { margin-bottom: 0; }
+.pgx-cases-task-head button:disabled { opacity: .5; cursor: default; }

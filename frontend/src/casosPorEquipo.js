@@ -66,3 +66,26 @@ export function filtrarTareasEquipo(rows,seleccion) {
 export function registrosDelEquipo(rows,equipo) {
   return rows.filter(r=>(clave(r.equipo || r.equipo_nombre)||'SIN EQUIPO')===clave(equipo));
 }
+
+// La etiqueta conserva el formato recibido del panel de gráficos.
+export function ocupacionDeRegistro(row) {
+  const nombre = texto(row.ocupacion_nombre || row.ocupacionNombre);
+  const codigo = texto(row.ocupacion_codigo || row.ocupacionCodigo);
+  const directa = typeof row.ocupacion === 'string' ? texto(row.ocupacion) : '';
+  const id = texto(row.ocupacion_id ?? row.ocupacionId);
+  const label = directa || [codigo, nombre].filter(Boolean).join(' - ') || (id ? `Ocupación ${id}` : 'Sin ocupación');
+  return { key: clave(label), label };
+}
+export function opcionesOcupacionesEquipo(rows) {
+  const mapa = new Map();
+  for (const row of rows) {
+    const item = ocupacionDeRegistro(row);
+    if (!mapa.has(item.key)) mapa.set(item.key, item);
+  }
+  return [...mapa.values()].sort((a,b)=>a.label.localeCompare(b.label,'es',{numeric:true}));
+}
+export function filtrarOcupacionesEquipo(rows, seleccion) {
+  if (seleccion === null) return rows;
+  const keys = new Set(seleccion);
+  return rows.filter(row => keys.has(ocupacionDeRegistro(row).key));
+}
