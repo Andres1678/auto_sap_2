@@ -48,3 +48,21 @@ export function buscarCasosEquipo(casos,busqueda) {
   const q=clave(busqueda);
   return casos.filter(c=>!q||clave([c.numero,...c.internos,...c.clientes].join(' ')).includes(q));
 }
+
+export function tareaDeRegistro(row) {
+  const label=(texto(row.tipoTarea) || texto(row.tipo_tarea)) || [row.tarea_codigo,row.tarea_nombre].map(texto).filter(Boolean).join(' - ') || 'Sin tarea';
+  return {key:clave(label),label};
+}
+export function opcionesTareasEquipo(rows) {
+  const map=new Map();
+  for(const row of rows){const t=tareaDeRegistro(row);if(!map.has(t.key))map.set(t.key,t);}
+  return [...map.values()].sort((a,b)=>a.label.localeCompare(b.label,'es',{numeric:true}));
+}
+export function filtrarTareasEquipo(rows,seleccion) {
+  if(seleccion===null)return rows;
+  const keys=new Set(seleccion);
+  return rows.filter(r=>keys.has(tareaDeRegistro(r).key));
+}
+export function registrosDelEquipo(rows,equipo) {
+  return rows.filter(r=>(clave(r.equipo || r.equipo_nombre)||'SIN EQUIPO')===clave(equipo));
+}
