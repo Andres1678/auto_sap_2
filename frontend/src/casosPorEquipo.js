@@ -1,0 +1,49 @@
+const texto = v => String(v ?? '').trim();
+const clave = v => texto(v).normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase();
+const numeroCaso = v => ['', '0', 'N/A', 'N/APLICA', 'NA', 'NULL', 'NONE', '-', 'SIN CASO'].includes(clave(v)) ? '' : texto(v);
+const horas = r => {const n=Number(r.tiempoInvertido ?? r.tiempo_invertido ?? r.total_horas ?? 0);return Number.isFinite(n)?n:0;};
+const personaDe = r => {
+  const usuario=texto(r.usuario_consultor || r.usuario).toLowerCase();
+  const nombre=texto(r.consultor || r.consultor_nombre) || usuario || 'Sin consultor identificado';
+  return {key:usuario?`usuario:${usuario}`:`nombre:${clave(nombre)}`,nombre,usuario};
+};
+function acumularPersona(map,row,h) {
+  const persona=personaDe(row);
+  if(!map.has(persona.key))map.set(persona.key,{...persona,registros:0,horas:0});
+  const item=map.get(persona.key);item.registros+=1;item.horas+=h;
+}
+
+// Cliente e interno son categorías distintas. Las horas del equipo cuentan cada fila una sola vez.
+export function resumirCasosPorEquipo(rows) {
+  const equipos=new Map();
+  for(const r of Array.isArray(rows)?rows:[]) {
+    const equipo=clave(r.equipo || r.equipo_nombre) || 'SIN EQUIPO';
+    if(!equipos.has(equipo))equipos.set(equipo,{equipo,registros:0,horas:0,registrosConCaso:0,horasConCaso:0,registrosSinCaso:0,horasSinCaso:0,casosMap:new Map(),personasMap:new Map()});
+    const team=equipos.get(equipo), h=horas(r);
+    const campos=[['cliente',numeroCaso(r.nroCasoCliente ?? r.nro_caso_cliente)],['interno',numeroCaso(r.nroCasoInterno ?? r.nro_caso_interno)]];
+    team.registros+=1;team.horas+=h;acumularPersona(team.personasMap,r,h);
+    if(campos.some(([,numero])=>numero)){team.registrosConCaso+=1;team.horasConCaso+=h;}
+    else {team.registrosSinCaso+=1;team.horasSinCaso+=h;}
+    for(const [tipo,numero] of campos) {
+      if(!numero)continue;
+      const key=JSON.stringify([tipo,numero]);
+      if(!team.casosMap.has(key))team.casosMap.set(key,{key,tipo,numero,registros:0,horas:0,clientes:new Set(),fechas:new Set(),personasMap:new Map()});
+      const caso=team.casosMap.get(key);caso.registros+=1;caso.horas+=h;
+      if(texto(r.cliente))caso.clientes.add(texto(r.cliente));
+      if(texto(r.fecha))caso.fechas.add(texto(r.fecha).slice(0,10));
+      acumularPersona(caso.personasMap,r,h);
+    }
+  }
+  return [...equipos.values()].map(t=>{
+    const casos=[...t.casosMap.values()].map(c=>{
+      const fechas=[...c.fechas].sort();
+      const consultores=[...c.personasMap.values()].sort((a,b)=>b.horas-a.horas || a.nombre.localeCompare(b.nombre,'es'));
+      return {key:c.key,tipo:c.tipo,numero:c.numero,registros:c.registros,horas:c.horas,clientes:[...c.clientes].sort(),desde:fechas[0]||'',hasta:fechas[fechas.length-1]||'',consultores};
+    }).sort((a,b)=>b.horas-a.horas || a.tipo.localeCompare(b.tipo) || a.numero.localeCompare(b.numero,'es',{numeric:true}));
+    return {equipo:t.equipo,registros:t.registros,horas:t.horas,registrosConCaso:t.registrosConCaso,horasConCaso:t.horasConCaso,registrosSinCaso:t.registrosSinCaso,horasSinCaso:t.horasSinCaso,casos,casosCliente:casos.filter(c=>c.tipo==='cliente').length,casosInternos:casos.filter(c=>c.tipo==='interno').length,totalCasos:casos.length,totalConsultores:t.personasMap.size};
+  }).sort((a,b)=>b.totalCasos-a.totalCasos || a.equipo.localeCompare(b.equipo));
+}
+export function buscarCasosEquipo(casos,busqueda,tipo='todos') {
+  const q=clave(busqueda);
+  return casos.filter(c=>(tipo==='todos'||c.tipo===tipo)&&(!q||clave([c.numero,...c.clientes].join(' ')).includes(q)));
+}

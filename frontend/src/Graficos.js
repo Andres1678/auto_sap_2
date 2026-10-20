@@ -12,6 +12,7 @@ import HorasPorTareaChart from './GraficosOperacion/HorasPorTareaChart';
 import HorasPorClienteChart from './GraficosOperacion/HorasPorClienteChart';
 import HorasPorModuloChart from './GraficosOperacion/HorasPorModuloChart';
 import HorasPorEquipoChart from './GraficosOperacion/HorasPorEquipoChart';
+import CasosPorEquipoChart from './GraficosOperacion/CasosPorEquipoChart';
 import HorasPorProyectoChart from './GraficosOperacion/HorasPorProyectoChart';
 import HorasPorDiaChart from './GraficosOperacion/HorasPorDiaChart';
 import GraficoDeMes from './GraficosOperacion/GraficoDeMes';
@@ -953,6 +954,14 @@ export default function Graficos() {
     return map;
   }, [personasPorEquipoMap]);
 
+  // Mantener el mismo criterio de consultores activos de la gráfica de horas por equipo.
+  const registrosCasosEquipo = useMemo(() => datosFiltrados.filter((r) => {
+    const login = String(r?.usuario_consultor || '').trim().toLowerCase();
+    const nombre = normTxt(r?.consultor);
+    return Boolean((login && personasActivasPorUsuario.get(login)) ||
+      (nombre && personasActivasPorNombre.get(nombre)));
+  }), [datosFiltrados, personasActivasPorUsuario, personasActivasPorNombre]);
+
   const horasPorEquipo = useMemo(() => {
     const horasMap = new Map();
 
@@ -1565,6 +1574,11 @@ export default function Graficos() {
               onOpenDetail={openDetail}
             />
           </div>
+
+          <CasosPorEquipoChart
+            data={registrosCasosEquipo}
+            periodo={appliedFilters.mes || `${appliedFilters.desde} al ${appliedFilters.hasta}`}
+          />
 
           <div className="pgx-chart-mono">
             <HorasPorConsultorChart
