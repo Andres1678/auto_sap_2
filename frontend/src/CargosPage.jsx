@@ -7,6 +7,7 @@ import "./CargosPage.css";
 export default function CargosPage() {
   const [cargos, setCargos] = useState([]);
   const [id, setId] = useState(null);
+  const [formOpen, setFormOpen] = useState(false);
   const [nombre, setNombre] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [loading, setLoading] = useState(false);
@@ -32,7 +33,7 @@ export default function CargosPage() {
   }, []);
 
   useEffect(() => { if (admin) cargar(); }, [admin, cargar]);
-  const limpiar = () => { setId(null); setNombre(""); };
+  const limpiar = () => { setId(null); setNombre(""); setFormOpen(false); };
   const guardar = async (e) => {
     e.preventDefault();
     if (saving || !nombre.trim()) return;
@@ -74,13 +75,16 @@ export default function CargosPage() {
       <Link to="/configuracion">← Configuración</Link>
       <h1>Gestión de cargos</h1>
       <p>Crea los cargos disponibles para asignarlos desde Gestión de Consultores.</p>
-      <form onSubmit={guardar} className="cargos-form">
+      <button type="button" disabled={saving} onClick={() => {
+        setId(null); setNombre(""); setFormOpen(true);
+      }}>+ Nuevo cargo</button>
+      {formOpen && <form onSubmit={guardar} className="cargos-form">
         <label htmlFor="cargo-nombre">{id === null ? "Nuevo cargo" : "Editar cargo"}</label>
         <input id="cargo-nombre" value={nombre} onChange={e => setNombre(e.target.value)}
-          maxLength={100} required placeholder="Ej.: Consultor SAP" disabled={saving} />
+          autoFocus maxLength={100} required placeholder="Ej.: Consultor SAP" disabled={saving} />
         <button disabled={saving || !nombre.trim()}>{saving ? "Guardando…" : "Guardar"}</button>
-        {id !== null && <button type="button" onClick={limpiar} disabled={saving}>Cancelar</button>}
-      </form>
+        <button type="button" onClick={limpiar} disabled={saving}>Cancelar</button>
+      </form>}
       <input className="cargos-search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
         placeholder="Buscar cargo…" aria-label="Buscar cargo" />
       {error && <p role="alert">{error} <button onClick={cargar}>Reintentar</button></p>}
@@ -88,7 +92,7 @@ export default function CargosPage() {
         <thead><tr><th>Cargo</th><th>Acciones</th></tr></thead>
         <tbody>{loading ? <tr><td colSpan={2}>Cargando…</td></tr> : visibles.length ? visibles.map(c => (
           <tr key={c.id}><td>{c.nombre}</td><td>
-            <button disabled={saving} onClick={() => { setId(c.id); setNombre(c.nombre); }}>Editar</button>
+            <button disabled={saving} onClick={() => { setId(c.id); setNombre(c.nombre); setFormOpen(true); }}>Editar</button>
             <button disabled={saving} onClick={() => eliminar(c)}>Eliminar</button>
           </td></tr>
         )) : <tr><td colSpan={2}>Sin cargos</td></tr>}</tbody>
