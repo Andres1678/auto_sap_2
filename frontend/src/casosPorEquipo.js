@@ -13,7 +13,7 @@ function acumularPersona(map,row,h) {
   const item=map.get(persona.key);item.registros+=1;item.horas+=h;
 }
 
-// Cliente e interno son categorías distintas. Las horas del equipo cuentan cada fila una sola vez.
+// Una fila por caso del equipo; internos asociados en otra columna. Cada registro cuenta una vez.
 export function resumirCasosPorEquipo(rows) {
   const equipos=new Map();
   for(const r of Array.isArray(rows)?rows:[]) {
@@ -24,26 +24,27 @@ export function resumirCasosPorEquipo(rows) {
     team.registros+=1;team.horas+=h;acumularPersona(team.personasMap,r,h);
     if(campos.some(([,numero])=>numero)){team.registrosConCaso+=1;team.horasConCaso+=h;}
     else {team.registrosSinCaso+=1;team.horasSinCaso+=h;}
-    for(const [tipo,numero] of campos) {
-      if(!numero)continue;
-      const key=JSON.stringify([tipo,numero]);
-      if(!team.casosMap.has(key))team.casosMap.set(key,{key,tipo,numero,registros:0,horas:0,clientes:new Set(),fechas:new Set(),personasMap:new Map()});
-      const caso=team.casosMap.get(key);caso.registros+=1;caso.horas+=h;
-      if(texto(r.cliente))caso.clientes.add(texto(r.cliente));
-      if(texto(r.fecha))caso.fechas.add(texto(r.fecha).slice(0,10));
-      acumularPersona(caso.personasMap,r,h);
-    }
+    const numero=campos[0][1], interno=campos[1][1];
+    if(!numero&&!interno)continue;
+    // Agrupar por caso principal. Sin caso principal, usar interno como respaldo.
+    const key=JSON.stringify(numero?['caso',numero]:['sin-caso-principal',interno]);
+    if(!team.casosMap.has(key))team.casosMap.set(key,{key,numero,internos:new Set(),registros:0,horas:0,clientes:new Set(),fechas:new Set(),personasMap:new Map()});
+    const caso=team.casosMap.get(key);caso.registros+=1;caso.horas+=h;
+    if(interno)caso.internos.add(interno);
+    if(texto(r.cliente))caso.clientes.add(texto(r.cliente));
+    if(texto(r.fecha))caso.fechas.add(texto(r.fecha).slice(0,10));
+    acumularPersona(caso.personasMap,r,h);
   }
   return [...equipos.values()].map(t=>{
     const casos=[...t.casosMap.values()].map(c=>{
       const fechas=[...c.fechas].sort();
       const consultores=[...c.personasMap.values()].sort((a,b)=>b.horas-a.horas || a.nombre.localeCompare(b.nombre,'es'));
-      return {key:c.key,tipo:c.tipo,numero:c.numero,registros:c.registros,horas:c.horas,clientes:[...c.clientes].sort(),desde:fechas[0]||'',hasta:fechas[fechas.length-1]||'',consultores};
-    }).sort((a,b)=>b.horas-a.horas || a.tipo.localeCompare(b.tipo) || a.numero.localeCompare(b.numero,'es',{numeric:true}));
-    return {equipo:t.equipo,registros:t.registros,horas:t.horas,registrosConCaso:t.registrosConCaso,horasConCaso:t.horasConCaso,registrosSinCaso:t.registrosSinCaso,horasSinCaso:t.horasSinCaso,casos,casosCliente:casos.filter(c=>c.tipo==='cliente').length,casosInternos:casos.filter(c=>c.tipo==='interno').length,totalCasos:casos.length,totalConsultores:t.personasMap.size};
+      return {key:c.key,numero:c.numero,internos:[...c.internos].sort(),registros:c.registros,horas:c.horas,clientes:[...c.clientes].sort(),desde:fechas[0]||'',hasta:fechas[fechas.length-1]||'',consultores};
+    }).sort((a,b)=>b.horas-a.horas || a.numero.localeCompare(b.numero,'es',{numeric:true}));
+    return {equipo:t.equipo,registros:t.registros,horas:t.horas,registrosConCaso:t.registrosConCaso,horasConCaso:t.horasConCaso,registrosSinCaso:t.registrosSinCaso,horasSinCaso:t.horasSinCaso,casos,totalCasos:casos.length,totalConsultores:t.personasMap.size};
   }).sort((a,b)=>b.totalCasos-a.totalCasos || a.equipo.localeCompare(b.equipo));
 }
-export function buscarCasosEquipo(casos,busqueda,tipo='todos') {
+export function buscarCasosEquipo(casos,busqueda) {
   const q=clave(busqueda);
-  return casos.filter(c=>(tipo==='todos'||c.tipo===tipo)&&(!q||clave([c.numero,...c.clientes].join(' ')).includes(q)));
+  return casos.filter(c=>!q||clave([c.numero,...c.internos,...c.clientes].join(' ')).includes(q));
 }
