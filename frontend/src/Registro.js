@@ -914,8 +914,9 @@ const Registro = ({ userData }) => {
   }, [ocupacionSeleccionada, ocupaciones]);
 
   const isVacacionesTask = useMemo(() => {
-    return isVacacionesTaskText(registro.tipoTarea);
-  }, [registro.tipoTarea]);
+    return Number(occCodeSeleccionada) === 8 &&
+      Number(tareaCodeFromRegistro(registro, todasTareas)) === 15;
+  }, [occCodeSeleccionada, registro, todasTareas]);
 
   const habilitarRangoVacaciones = isVacacionesTask && !modoEdicion;
 
@@ -1495,12 +1496,44 @@ const Registro = ({ userData }) => {
     const code = taskCode(registro.tipoTarea);
     const esRangoVacaciones = habilitarRangoVacaciones;
 
-    const fechasVacaciones = esRangoVacaciones
+    let fechasVacaciones = esRangoVacaciones
       ? buildDateRangeISO(registro.fechaInicioVacaciones, registro.fechaFinVacaciones)
       : [];
 
+    // El calendario del backend es la fuente común para los festivos de Colombia.
+    if (isVacacionesTask) {
+      const desde = esRangoVacaciones ? registro.fechaInicioVacaciones : registro.fecha;
+      const hasta = esRangoVacaciones ? registro.fechaFinVacaciones : registro.fecha;
+      if (desde && hasta && desde <= hasta) {
+        try {
+          const params = new URLSearchParams({ desde, hasta });
+          const res = await jfetch(`/calendario/vacaciones?${params.toString()}`, {
+            headers: { "X-User-Usuario": usuarioLogin, "X-User-Rol": rol },
+          });
+          const data = await res.json();
+          if (!res.ok || !Array.isArray(data?.fechas)) {
+            throw new Error(data?.mensaje || "No se pudo consultar el calendario laboral.");
+          }
+          if (!data.fechas.length) {
+            return Swal.fire({
+              icon: "warning",
+              title: "Vacaciones sin días laborables",
+              text: "Selecciona días de lunes a viernes que no sean festivos de Colombia.",
+            });
+          }
+          if (esRangoVacaciones) fechasVacaciones = data.fechas;
+        } catch (error) {
+          return Swal.fire({
+            icon: "error",
+            title: "No se pudo validar el calendario",
+            text: String(error.message || error),
+          });
+        }
+      }
+    }
+
     const fechaPrincipal = esRangoVacaciones
-      ? registro.fechaInicioVacaciones
+      ? (fechasVacaciones[0] || registro.fechaInicioVacaciones)
       : registro.fecha;
 
     if (!fechaPrincipal) {
@@ -1588,6 +1621,39 @@ const Registro = ({ userData }) => {
 
     const occCode = ocupacionCodeFromId(ocupacionSeleccionada, ocupaciones);
     const tareaCode = tareaCodeFromRegistro(registro, todasTareas);
+
+    // Ocupación 01 + tarea 01: ambos números de caso son obligatorios.
+    // Compara códigos de catálogo; admite "1" y "01".
+    if (Number(occCode) === 1 && Number(tareaCode) === 1) {
+      const casoInvalido = (valor) => {
+        const texto = String(valor ?? "").trim().toUpperCase();
+        return (
+          texto === "" ||
+          texto === "NA" ||
+          texto === "N/A" ||
+          Number(texto.replace(",", ".")) === 0
+        );
+      };
+
+      const camposInvalidos = [];
+      if (casoInvalido(registro.nroCasoCliente)) {
+        camposInvalidos.push("Nro Caso Cliente");
+      }
+      if (casoInvalido(registro.nroCasoInterno)) {
+        camposInvalidos.push("Nro Caso Interno");
+      }
+
+      if (camposInvalidos.length > 0) {
+        return Swal.fire({
+          icon: "warning",
+          title: "Número de caso obligatorio",
+          text:
+            "Para la ocupación 01 y la tarea 01, debes diligenciar " +
+            camposInvalidos.join(" y ") +
+            ". No se permite cero, NA, N/A ni dejar el campo vacío.",
+        });
+      }
+    }
 
     // Validación defensiva: aunque se manipule el HTML o se conserve un valor
     // anterior en el estado del formulario, Consultoría no puede registrar la 46.
@@ -1795,7 +1861,7 @@ const Registro = ({ userData }) => {
         text: j?.cantidad_registros > 1
           ? (
               j?.es_rango_vacaciones
-                ? `Se generaron ${j.cantidad_registros} registros de vacaciones según el rango seleccionado.`
+                ? `Se generaron ${j.cantidad_registros} registros de vacaciones en días laborables, excluyendo fines de semana y festivos de Colombia.`
                 : `Se generaron ${j.cantidad_registros} registros por división de horario.`
             )
           : undefined,
@@ -2162,7 +2228,6 @@ const Registro = ({ userData }) => {
 
     try {
       const params = buildCurrentFilterParams();
-
       const res = await jfetch(
         `/registros/export?${params.toString()}`,
         {
@@ -2187,34 +2252,24 @@ const Registro = ({ userData }) => {
       }
 
       const payload = await res.json();
-
       if (!res.ok) {
         throw new Error(
-          payload?.detalle ||
-          payload?.mensaje ||
-          payload?.error ||
+          payload?.detalle || payload?.mensaje || payload?.error ||
           `HTTP ${res.status}`
         );
       }
-
       if (!Array.isArray(payload?.data)) {
-        throw new Error(
-          "La respuesta no contiene una lista válida de registros."
-        );
+        throw new Error("La respuesta no contiene una lista válida de registros.");
       }
 
       const filename =
         `registros_${new Date().toISOString().slice(0, 10)}.xlsx`;
 
-      exportRegistrosExcelXLSX_ALL(
-        payload.data,
-        filename,
-        {
-          "Fecha de exportación": new Date().toLocaleString("es-CO"),
-          Usuario: usuarioLogin,
-          "Total de registros": payload.data.length,
-        }
-      );
+      exportRegistrosExcelXLSX_ALL(payload.data, filename, {
+        "Fecha de exportación": new Date().toLocaleString("es-CO"),
+        Usuario: usuarioLogin,
+        "Total de registros": payload.data.length,
+      });
     } catch (e) {
       Swal.fire({
         icon: "error",

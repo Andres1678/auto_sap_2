@@ -1383,15 +1383,44 @@ def _tarea_visible_en_ocupacion(tarea, ocupacion, consultor):
     return _mensaje_restriccion_tarea_46(tarea, ocupacion, consultor) is None
 
 
-def _is_vacaciones_payload(data: dict) -> bool:
-    if not bool(data.get("generarRangoVacaciones")):
+def _es_vacaciones_08_15(data, registro=None):
+    ocupacion_id = pick(data, "ocupacion_id", default=getattr(registro, "ocupacion_id", None))
+    tarea_id = pick(data, "tarea_id", default=getattr(registro, "tarea_id", None))
+    try:
+        ocupacion = Ocupacion.query.get(int(ocupacion_id)) if ocupacion_id else None
+        tarea = Tarea.query.get(int(tarea_id)) if tarea_id else None
+    except (TypeError, ValueError):
         return False
+    codigo_ocupacion = str(getattr(ocupacion, "codigo", "") or "").strip().lstrip("0")
+    if tarea_id:
+        codigo_tarea = str(getattr(tarea, "codigo", "") or "").strip().lstrip("0")
+    else:
+        texto = pick(data, "tipoTarea", "tipo_tarea", default=getattr(registro, "tipo_tarea", ""))
+        codigo_tarea = str(texto or "").split("-", 1)[0].strip().lstrip("0")
+    return codigo_ocupacion == "8" and codigo_tarea == "15"
 
-    tipo = pick(data, "tipoTarea", "tipo_tarea", default="")
-    tipo_norm = _norm_text_basic(tipo)
 
-    # En tu catálogo se ve como "15 - Vacaciones / Incapacidades"
-    return tipo_norm.startswith("15") or "VACACIONES" in tipo_norm
+def _is_vacaciones_payload(data: dict) -> bool:
+    return data.get("generarRangoVacaciones") is True and _es_vacaciones_08_15(data)
+
+
+def _fechas_laborables_vacaciones(fechas):
+    dias = [_parse_iso_date_for_range(f) for f in fechas]
+    calendario = holidays.CO(years=sorted({d.year for d in dias if d}))
+    return [d.isoformat() for d in dias if d and d.weekday() < 5 and d not in calendario]
+
+
+@bp.route('/calendario/vacaciones', methods=['GET'])
+@auth_required
+def calendario_vacaciones():
+    inicio = _parse_iso_date_for_range(request.args.get("desde"))
+    fin = _parse_iso_date_for_range(request.args.get("hasta"))
+    if not inicio or not fin or fin < inicio:
+        return jsonify({"mensaje": "Rango de fechas inválido"}), 400
+    if (fin - inicio).days > 3660:
+        return jsonify({"mensaje": "El rango no puede superar 3660 días"}), 400
+    fechas = _build_iso_dates_range(inicio.isoformat(), fin.isoformat())
+    return jsonify({"fechas": _fechas_laborables_vacaciones(fechas)}), 200
 
 
 def _parse_iso_date_for_range(value):
@@ -1504,6 +1533,9 @@ def registrar_hora():
                 'mensaje': 'Rango de vacaciones inválido. Verifica fecha de inicio y fecha de fin.'
             }), 400
 
+        fechas_a_crear = _fechas_laborables_vacaciones(fechas_a_crear)
+        if not fechas_a_crear:
+            return jsonify({'mensaje': 'El rango de vacaciones no contiene días laborables: se excluyen sábados, domingos y festivos de Colombia.'}), 400
         fecha = fechas_a_crear[0]
     else:
         if not fecha:
@@ -1515,6 +1547,10 @@ def registrar_hora():
             return jsonify({'mensaje': error_fecha}), 403
         fecha = _parse_iso_date_for_range(fecha).isoformat()
         fechas_a_crear = [fecha]
+
+    # La regla también aplica a copias de un día sin bandera de rango.
+    if _es_vacaciones_08_15(data) and not _fechas_laborables_vacaciones(fechas_a_crear):
+        return jsonify({'mensaje': 'Las vacaciones de ocupación 08 y tarea 15 solo pueden registrarse en días laborables, sin festivos de Colombia.'}), 400
 
     tiempo_calculado = _calcular_tiempo_horas(hora_inicio, hora_fin)
     if tiempo_calculado <= 0:
@@ -3035,6 +3071,9 @@ def editar_registro(id):
         # ----------------------------------------------------------
         # 3.1) No permitir fechas futuras
         # ----------------------------------------------------------
+        if _es_vacaciones_08_15(data, registro) and not _fechas_laborables_vacaciones([nueva_fecha]):
+            return jsonify({'mensaje': 'Las vacaciones de ocupación 08 y tarea 15 solo pueden registrarse en días laborables, sin festivos de Colombia.'}), 400
+
         actor = getattr(getattr(g, "current_user", None), "usuario", "")
         error_fecha = _validar_fecha_registro_diario(nueva_fecha, actor, registro.fecha)
         if error_fecha:
