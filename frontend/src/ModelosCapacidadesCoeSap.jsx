@@ -5,6 +5,16 @@ import "./ModelosCapacidadesCoeSap.css";
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const formato = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
+const capacidadInstalada = (horas, driver) => {
+  const h = Number(horas ?? 0);
+  const d = Number(driver);
+  return Number.isFinite(h) && Number.isFinite(d) && d > 0 ? h / d : null;
+};
+const mostrarInstalada = (horas, driver) => {
+  const valor = capacidadInstalada(horas, driver);
+  return valor == null ? "—" : formato.format(valor);
+};
+
 const periodoActual = () => {
   const partes = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Bogota", year: "numeric", month: "2-digit",
@@ -71,6 +81,9 @@ export default function ModelosCapacidadesCoeSap() {
     const vacanteDefinida = filas.length > 0 && filas.every(f => f.capacidad_vacante != null);
     return {
       vendida, actual,
+      instalada: filas.length && filas.every(f => capacidadInstalada(f.capacidad_actual, f.driver) != null)
+        ? filas.reduce((total, f) => total + capacidadInstalada(f.capacidad_actual, f.driver), 0)
+        : null,
       vacante: vacanteDefinida ? filas.reduce((s, f) => s + Number(f.capacidad_vacante), 0) : null,
       porcentaje: vendida > 0 ? actual / vendida * 100 : null,
     };
@@ -99,7 +112,7 @@ export default function ModelosCapacidadesCoeSap() {
       </div>}
       <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 8 horas. Se excluyen fines de semana y festivos de Colombia.</p>
       <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table">
-        <thead><tr><th>Proceso</th><th>Cargo</th><th>Personas incluidas</th><th>Unidad</th><th>Driver</th><th>Volumen actual</th><th>Capacidad vendida (horas)</th><th>Capacidad actual (horas)</th><th>Cumplimiento mes (%)</th><th>Capacidad vacante</th></tr></thead>
+        <thead><tr><th>Proceso</th><th>Cargo</th><th>Personas incluidas</th><th>Unidad</th><th>Driver (horas mes actual)</th><th>Capacidad vendida (horas)</th><th>Capacidad actual (horas)</th><th>Cumplimiento mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th></tr></thead>
         <tbody>{cargando ? <tr><td colSpan={10}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
           <React.Fragment key={grupo.clave}>
             {grupo.filas.map((fila, indice) => {
@@ -121,13 +134,15 @@ export default function ModelosCapacidadesCoeSap() {
                 </td>
                 <td>{fila.unidad}</td>
                 <td className="mcc-num">{formato.format(fila.driver)}</td>
-                <td className="mcc-num">{formato.format(fila.volumen_actual ?? 0)}</td>
                 <td className="mcc-num" title={`${fila.personas_activas ?? 0} personas activas × ${fila.driver} horas laborables`}>
                   {formato.format(fila.capacidad_vendida ?? 0)}
                 </td>
                 <td className="mcc-num">{formato.format(fila.capacidad_actual ?? 0)}</td>
                 <td className="mcc-num" title="Horas registradas del mes / capacidad vendida × 100">
                   {fila.porcentaje_cumplimiento_mes == null ? "—" : `${formato.format(fila.porcentaje_cumplimiento_mes)} %`}
+                </td>
+                <td className="mcc-num" title="Horas registradas del cargo / driver mensual por consultor">
+                  {mostrarInstalada(fila.capacidad_actual, fila.driver)}
                 </td>
                 <td title="Pendiente de definición">—</td>
               </tr>
@@ -137,18 +152,20 @@ export default function ModelosCapacidadesCoeSap() {
                     <h3>{grupo.proceso} · {fila.cargo}</h3>
                     <table className="mcc-consultores">
                       <thead><tr>
-                        <th>Consultor</th><th>Usuario</th><th>Unidad</th><th>Driver</th>
-                        <th>Volumen actual</th><th>Capacidad vendida (horas)</th>
-                        <th>Capacidad actual (horas)</th><th>Cumplimiento mes (%)</th><th>Capacidad vacante</th>
+                        <th>Consultor</th><th>Usuario</th><th>Unidad</th><th>Driver (horas mes actual)</th>
+                        <th>Capacidad vendida (horas)</th>
+                        <th>Capacidad actual (horas)</th><th>Cumplimiento mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th>
                       </tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
                           <td>{c.nombre}</td><td>{c.usuario}</td><td>Horas</td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
-                          <td className="mcc-num">{formato.format(c.horas ?? 0)}</td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
                           <td className="mcc-num">{formato.format(c.capacidad_actual ?? 0)}</td>
                           <td className="mcc-num">{c.porcentaje_cumplimiento_mes == null ? "—" : `${formato.format(c.porcentaje_cumplimiento_mes)} %`}</td>
+                          <td className="mcc-num" title="Horas registradas de la persona / driver mensual">
+                            {mostrarInstalada(c.capacidad_actual, fila.driver)}
+                          </td>
                           <td title="Pendiente de definición">—</td>
                         </tr>
                       ))}</tbody>
@@ -162,16 +179,19 @@ export default function ModelosCapacidadesCoeSap() {
           </React.Fragment>
         )) : <tr><td colSpan={10}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
         {resultado && !cargando && <tfoot><tr>
-          <th colSpan={6} scope="row">Totales</th>
+          <th colSpan={5} scope="row">Totales</th>
           <td className="mcc-num">{formato.format(totales.vendida)}</td>
           <td className="mcc-num">{formato.format(totales.actual)}</td>
           <td className="mcc-num">{totales.porcentaje == null ? "—" : `${formato.format(totales.porcentaje)} %`}</td>
+          <td className="mcc-num" title="Suma de capacidad instalada de los cargos">
+            {totales.instalada == null ? "—" : formato.format(totales.instalada)}
+          </td>
           <td className="mcc-num" title={totales.vacante == null ? "Pendiente de definir el cálculo de capacidad vacante" : "Total capacidad vacante"}>
             {totales.vacante == null ? "Pendiente" : formato.format(totales.vacante)}
           </td>
         </tr></tfoot>}
       </table></div>
-      <p className="mcc-nota">Volumen actual: horas registradas en el mes seleccionado, sumadas por cargo. Despliega Personas incluidas para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. Los totales suman las filas por cargo sin duplicar consultores. Capacidad actual: horas registradas del mes, con la misma fuente que la capacidad semanal. Cumplimiento mensual: capacidad actual / capacidad vendida × 100. Capacidad vacante sigue pendiente de definición.</p>
+      <p className="mcc-nota">Despliega Personas incluidas para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. Los totales suman las filas por cargo sin duplicar consultores. Capacidad actual: horas registradas del mes, con la misma fuente que la capacidad semanal. Cumplimiento mensual: capacidad actual / capacidad vendida × 100. Capacidad instalada: horas registradas / driver mensual por consultor; se expresa como proporción, sin porcentaje. Capacidad vacante sigue pendiente de definición.</p>
     </main>
   );
 }
