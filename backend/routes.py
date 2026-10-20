@@ -11950,12 +11950,12 @@ def _cap_meta_hours_for_day(d: date, co_holidays=None):
     if not _cap_is_standard_workday(d, co_holidays):
         return Decimal("0.00")
 
-    return Decimal("9.00") if d.weekday() == 4 else Decimal("8.50")
+    return Decimal("8.00") if d.weekday() == 4 else Decimal("8.50")
 
 
 
 def _cap_work_days_text():
-    return "Lunes a jueves 8,5 h / viernes 9 h (sin festivos CO)"
+    return "Lunes a jueves 8,5 h / viernes 8 h (sin festivos CO)"
 
 
 def _cap_parse_month_year_from_request():
@@ -12587,7 +12587,7 @@ def _cap_meta_hours_for_day(d: date, co_holidays=None):
     """
     Regla única:
     - lunes a jueves: 8,5h
-    - viernes: 9h
+    - viernes: 8h
     - fines de semana / festivos: 0h
     """
     co_holidays = co_holidays or set()
@@ -12595,7 +12595,7 @@ def _cap_meta_hours_for_day(d: date, co_holidays=None):
     if not _cap_is_standard_workday(d, co_holidays):
         return 0.0
 
-    return 9.0 if d.weekday() == 4 else 8.5
+    return 8.0 if d.weekday() == 4 else 8.5
 
 def _cap_colombia_holidays_for_years(years):
     import holidays

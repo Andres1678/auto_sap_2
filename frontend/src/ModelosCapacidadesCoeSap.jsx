@@ -14,7 +14,6 @@ const periodoActual = () => {
 
 export default function ModelosCapacidadesCoeSap() {
   const [periodo, setPeriodo] = useState(periodoActual);
-  const [expandidos, setExpandidos] = useState({});
   const [resultado, setResultado] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
@@ -30,7 +29,6 @@ export default function ModelosCapacidadesCoeSap() {
     const controller = new AbortController();
     let vigente = true;
     setResultado(null);
-    setExpandidos({});
     setError("");
     if (!/^(20\d{2}|2100)-(0[1-9]|1[0-2])$/.test(periodo)) {
       setError("Selecciona un mes y año válidos.");
@@ -64,6 +62,18 @@ export default function ModelosCapacidadesCoeSap() {
     return Array.from(mapa.values());
   }, [resultado]);
 
+  const totales = useMemo(() => {
+    const filas = resultado?.data || [];
+    const vendida = filas.reduce((s, f) => s + Number(f.capacidad_vendida || 0), 0);
+    const actual = filas.reduce((s, f) => s + Number(f.capacidad_actual || 0), 0);
+    const vacanteDefinida = filas.length > 0 && filas.every(f => f.capacidad_vacante != null);
+    return {
+      vendida, actual,
+      vacante: vacanteDefinida ? filas.reduce((s, f) => s + Number(f.capacidad_vacante), 0) : null,
+      porcentaje: vendida > 0 ? actual / vendida * 100 : null,
+    };
+  }, [resultado]);
+
   if (!admin) return <Navigate to="/configuracion" replace />;
   return (
     <main className="mcc-page">
@@ -93,16 +103,18 @@ export default function ModelosCapacidadesCoeSap() {
             {grupo.filas.map((fila, indice) => (
               <tr key={String(fila.cargo_id ?? "sin-cargo")}>
                 {indice === 0 && <th scope="rowgroup" rowSpan={grupo.filas.length} className="mcc-proceso">
-                  <button type="button" className="mcc-expand" aria-expanded={!!expandidos[grupo.clave]}
-                    aria-controls={`detalle-equipo-${grupo.clave}`}
-                    onClick={() => setExpandidos(prev => ({ ...prev, [grupo.clave]: !prev[grupo.clave] }))}>
-                    <span aria-hidden="true">{expandidos[grupo.clave] ? "▾" : "▸"}</span> {grupo.proceso}
-                    <small>{grupo.consultores.length} consultores</small>
-                  </button>
+                  {grupo.proceso}
                 </th>}
                 <td>{fila.cargo}</td>
-                <td className="mcc-personas"><span>{fila.consultores?.length || 0} personas</span>
-                  <ul>{(fila.consultores || []).map(c => <li key={c.id}>{c.nombre}</li>)}</ul>
+                <td className="mcc-personas">
+                  <details className="mcc-personas-details">
+                    <summary>{fila.consultores?.length || 0} personas incluidas</summary>
+                    <ul>{(fila.consultores || []).map(c => <li key={c.id}>
+                      <strong>{c.nombre}</strong>
+                      <span>{c.usuario} · {formato.format(c.capacidad_actual ?? 0)} h registradas</span>
+                      <span>Cumplimiento: {c.porcentaje_cumplimiento_mes == null ? "—" : `${formato.format(c.porcentaje_cumplimiento_mes)} %`}</span>
+                    </li>)}</ul>
+                  </details>
                 </td>
                 <td>{fila.unidad}</td>
                 <td className="mcc-num">{formato.format(fila.driver)}</td>
@@ -117,28 +129,19 @@ export default function ModelosCapacidadesCoeSap() {
                 <td title="Pendiente de definición">—</td>
               </tr>
             ))}
-            <tr id={`detalle-equipo-${grupo.clave}`} hidden={!expandidos[grupo.clave]} className="mcc-detalle">
-              <td colSpan={10}><div className="mcc-detalle-body">
-                <h3>Consultores de {grupo.proceso}</h3>
-                <p className="mcc-team-summary">Personas activas incluidas: <strong>{grupo.consultores.length}</strong>
-                  {" · "}Capacidad vendida del equipo: <strong>{formato.format(grupo.filas.reduce((total, fila) => total + Number(fila.capacidad_vendida || 0), 0))} horas</strong>
-                  {" · "}Horas registradas: <strong>{formato.format(grupo.filas.reduce((total, fila) => total + Number(fila.capacidad_actual || 0), 0))} h</strong>
-                </p>
-                <table className="mcc-consultores"><thead><tr>
-                  <th>Consultor</th><th>Usuario</th><th>Cargo</th><th>Horas registradas mes</th><th>Cumplimiento mes (%)</th>
-                </tr></thead><tbody>
-                  {grupo.consultores.map(c => <tr key={c.id}>
-                    <td>{c.nombre}</td><td>{c.usuario}</td><td>{c.cargo}</td>
-                    <td className="mcc-num">{formato.format(c.capacidad_actual ?? 0)}</td>
-                    <td className="mcc-num">{c.porcentaje_cumplimiento_mes == null ? "—" : `${formato.format(c.porcentaje_cumplimiento_mes)} %`}</td>
-                  </tr>)}
-                </tbody></table>
-              </div></td>
-            </tr>
           </React.Fragment>
         )) : <tr><td colSpan={10}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
+        {resultado && !cargando && <tfoot><tr>
+          <th colSpan={6} scope="row">Totales</th>
+          <td className="mcc-num">{formato.format(totales.vendida)}</td>
+          <td className="mcc-num">{formato.format(totales.actual)}</td>
+          <td className="mcc-num">{totales.porcentaje == null ? "—" : `${formato.format(totales.porcentaje)} %`}</td>
+          <td className="mcc-num" title={totales.vacante == null ? "Pendiente de definir el cálculo de capacidad vacante" : "Total capacidad vacante"}>
+            {totales.vacante == null ? "Pendiente" : formato.format(totales.vacante)}
+          </td>
+        </tr></tfoot>}
       </table></div>
-      <p className="mcc-nota">Volumen actual: horas registradas en el mes seleccionado, sumadas por cargo. Despliega el proceso para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. El desplegable muestra el total del equipo. Capacidad actual: horas registradas del mes, con la misma fuente que la capacidad semanal. Cumplimiento mensual: capacidad actual / capacidad vendida × 100. Capacidad vacante sigue pendiente de definición.</p>
+      <p className="mcc-nota">Volumen actual: horas registradas en el mes seleccionado, sumadas por cargo. Despliega Personas incluidas para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. Los totales suman las filas por cargo sin duplicar consultores. Capacidad actual: horas registradas del mes, con la misma fuente que la capacidad semanal. Cumplimiento mensual: capacidad actual / capacidad vendida × 100. Capacidad vacante sigue pendiente de definición.</p>
     </main>
   );
 }

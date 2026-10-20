@@ -5,3 +5,5 @@
 .mcc-team-summary{margin:0 18px 16px;color:#475569;font-size:14px}
 
 .mcc-personas{min-width:200px}.mcc-personas>span{font-size:12px;color:#64748b}.mcc-personas ul{padding-left:18px;margin:8px 0;line-height:1.6}.mcc-table .mcc-num{color:#182335}
+
+.mcc-personas-details summary{cursor:pointer;color:#98212b;font-weight:600;padding:6px 0;white-space:nowrap}.mcc-personas-details ul{list-style:none;padding:0;margin:12px 0;min-width:240px;max-width:340px}.mcc-personas-details li{padding:10px 0;border-bottom:1px solid #e2e8f0}.mcc-personas-details li span{display:block;color:#64748b;font-size:12px;margin-top:4px}.mcc-table tfoot{background:#edf1f7;font-weight:700}.mcc-table tfoot th,.mcc-table tfoot td{border-top:2px solid #a42128}
