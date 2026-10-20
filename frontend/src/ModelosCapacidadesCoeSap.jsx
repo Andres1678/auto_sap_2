@@ -179,6 +179,8 @@ export default function ModelosCapacidadesCoeSap() {
       vacante: vacanteDefinida ? filas.reduce((s, f) => s + Number(f.capacidad_vacante), 0) : null,
       porcentaje: vendida > 0 ? actual / vendida * 100 : null,
       numeroCasos: new Set(filas.flatMap(f => (f.casos_claves || []).map(k => JSON.stringify([f.equipo_id, k])))).size,
+      numeroProyectos: new Set(filas.flatMap(f => (f.proyectos_claves || []).map(k => JSON.stringify([f.equipo_id, k])))).size,
+      horasProyectos: filas.reduce((s, f) => s + Number(f.horas_proyectos || 0), 0),
       horasConCaso: filas.reduce((s, f) => s + Number(f.horas_con_caso || 0), 0),
       otrasOcupaciones: filas.reduce((s, f) => s + Number(f.otras_ocupaciones || 0), 0),
     };
@@ -215,8 +217,8 @@ export default function ModelosCapacidadesCoeSap() {
       </div>}
       <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 8 horas. Se excluyen fines de semana y festivos de Colombia.</p>
       <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table">
-        <thead><tr><th>Proceso</th><th>Cargo</th><th>Personas incluidas</th><th>Driver (horas mes actual)</th><th>Capacidad vendida (horas)</th><th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th><th className="mcc-casos-gris">Número de casos</th><th className="mcc-casos-gris">Horas con caso</th><th className="mcc-casos-gris">Otras ocupaciones (horas)</th></tr></thead>
-        <tbody>{cargando ? <tr><td colSpan={12}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
+        <thead><tr><th>Proceso</th><th>Cargo</th><th>Personas incluidas</th><th>Driver (horas mes actual)</th><th>Capacidad vendida (horas)</th><th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th><th className="mcc-casos-gris">Número de casos</th><th className="mcc-casos-gris">Horas con caso</th><th className="mcc-casos-gris">Otras ocupaciones (horas)</th><th className="mcc-casos-gris">Número de proyectos</th><th className="mcc-casos-gris">Horas de proyectos</th></tr></thead>
+        <tbody>{cargando ? <tr><td colSpan={14}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
           <React.Fragment key={grupo.clave}>
             {grupo.filas.map((fila, indice) => {
               const clave = `${grupo.clave}-${fila.cargo_id ?? "sin-cargo"}`;
@@ -258,16 +260,18 @@ export default function ModelosCapacidadesCoeSap() {
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.numero_casos ?? 0)}</td>
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.horas_con_caso ?? 0)}</td>
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.otras_ocupaciones ?? 0)}</td>
+                <td className="mcc-num mcc-casos-gris">{formato.format(fila.numero_proyectos ?? 0)}</td>
+                <td className="mcc-num mcc-casos-gris">{formato.format(fila.horas_proyectos ?? 0)}</td>
               </tr>
               {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`}>
-                <td colSpan={11}>
+                <td colSpan={13}>
                   <div className="mcc-detalle-body">
                     <h3>{grupo.proceso} · {fila.cargo}</h3>
                     <table className="mcc-consultores">
                       <thead><tr>
                         <th>Consultor</th><th>Usuario</th><th>Driver (horas mes actual)</th>
                         <th>Capacidad vendida (horas)</th>
-                        <th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th><th className="mcc-casos-gris">Número de casos</th><th className="mcc-casos-gris">Horas con caso</th><th className="mcc-casos-gris">Otras ocupaciones (horas)</th>
+                        <th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th><th className="mcc-casos-gris">Número de casos</th><th className="mcc-casos-gris">Horas con caso</th><th className="mcc-casos-gris">Otras ocupaciones (horas)</th><th className="mcc-casos-gris">Número de proyectos</th><th className="mcc-casos-gris">Horas de proyectos</th>
                       </tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
@@ -283,6 +287,8 @@ export default function ModelosCapacidadesCoeSap() {
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.numero_casos ?? 0)}</td>
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.horas_con_caso ?? 0)}</td>
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.otras_ocupaciones ?? 0)}</td>
+                          <td className="mcc-num mcc-casos-gris">{formato.format(c.numero_proyectos ?? 0)}</td>
+                          <td className="mcc-num mcc-casos-gris">{formato.format(c.horas_proyectos ?? 0)}</td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -293,7 +299,7 @@ export default function ModelosCapacidadesCoeSap() {
               );
             })}
           </React.Fragment>
-        )) : <tr><td colSpan={12}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
+        )) : <tr><td colSpan={14}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
         {resultado && !cargando && <tfoot><tr>
           <th colSpan={4} scope="row">Totales</th>
           <td className="mcc-num">{formato.format(totales.vendida)}</td>
@@ -308,9 +314,11 @@ export default function ModelosCapacidadesCoeSap() {
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.numeroCasos)}</td>
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.horasConCaso)}</td>
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.otrasOcupaciones)}</td>
+          <td className="mcc-num mcc-casos-gris">{formato.format(totales.numeroProyectos)}</td>
+          <td className="mcc-num mcc-casos-gris">{formato.format(totales.horasProyectos)}</td>
         </tr></tfoot>}
       </table></div>
-      <p className="mcc-nota">Despliega Personas incluidas para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. Los totales suman las filas por cargo sin duplicar consultores. Capacidad actual: horas registradas del mes, con la misma fuente que la capacidad semanal. Ocupación mensual: capacidad actual / capacidad vendida × 100. Capacidad instalada: horas registradas / driver mensual por consultor; se expresa como proporción, sin porcentaje. Capacidad vacante sigue pendiente de definición. Número de casos cuenta casos únicos de ocupación 01. Las columnas grises separan horas con/sin caso como el gráfico; Otras ocupaciones corresponde a sin caso. El total de casos se deduplica por equipo, por lo que puede ser menor que la suma de filas. En el resumen del proceso, Ocupación mes usa horas totales / capacidad vendida total; Ocupación acumulada de cargos suma los porcentajes de las filas. Las ocupaciones y tareas seleccionadas filtran las horas registradas; los equipos y cargos seleccionados definen las personas y su capacidad vendida. Ninguno equivale a una selección vacía, no a Todos.</p>
+      <p className="mcc-nota">Despliega Personas incluidas para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. Los totales suman las filas por cargo sin duplicar consultores. Capacidad actual: horas registradas del mes, con la misma fuente que la capacidad semanal. Ocupación mensual: capacidad actual / capacidad vendida × 100. Capacidad instalada: horas registradas / driver mensual por consultor; se expresa como proporción, sin porcentaje. Capacidad vacante sigue pendiente de definición. Número de casos cuenta casos únicos de ocupación 01. Las columnas grises separan horas con/sin caso como el gráfico; Otras ocupaciones corresponde a sin caso. El total de casos se deduplica por equipo, por lo que puede ser menor que la suma de filas. Número de proyectos y Horas de proyectos corresponden solo a la ocupación 02. Los proyectos se identifican por su relación y, en registros históricos sin relación, por el número cliente. Los totales de proyectos se deduplican por equipo. En el resumen del proceso, Ocupación mes usa horas totales / capacidad vendida total; Ocupación acumulada de cargos suma los porcentajes de las filas. Las ocupaciones y tareas seleccionadas filtran las horas registradas; los equipos y cargos seleccionados definen las personas y su capacidad vendida. Ninguno equivale a una selección vacía, no a Todos.</p>
     </main>
   );
 }

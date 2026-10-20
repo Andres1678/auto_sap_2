@@ -26314,6 +26314,8 @@ def _mcc_metricas_casos(registros):
         normal = ''.join(c for c in unicodedata.normalize('NFD', texto) if not unicodedata.combining(c)).upper()
         return '' if normal in ('', '0', 'N/A', 'N/APLICA', 'NA', 'NULL', 'NONE', '-', 'SIN CASO') else texto
     claves = set()
+    proyectos = set()
+    horas_proyectos = 0.0
     con, sin = 0.0, 0.0
     for r in registros:
         principal, interno = numero(r.get('cliente_caso')), numero(r.get('interno_caso'))
@@ -26326,6 +26328,15 @@ def _mcc_metricas_casos(registros):
             h = 0.0
         if not math.isfinite(h):
             h = 0.0
+        if str(r.get('ocupacion_codigo') or '').strip().lstrip('0') == '2':
+            horas_proyectos += h
+            # La relación identifica el proyecto aunque cambie el número del caso.
+            proyecto_id = r.get('proyecto_id')
+            if proyecto_id is not None:
+                proyectos.add(('proyecto', str(proyecto_id)))
+            elif principal:
+                # Respaldo para registros históricos sin relación de proyecto.
+                proyectos.add(('numero-proyecto', principal))
         if principal or interno:
             con += h
             if str(r.get('ocupacion_codigo') or '').strip().lstrip('0') == '1':
@@ -26333,7 +26344,9 @@ def _mcc_metricas_casos(registros):
         else:
             sin += h
     return {'numero_casos': len(claves), 'horas_con_caso': round(con, 2),
-            'otras_ocupaciones': round(sin, 2), 'casos_claves': [list(k) for k in sorted(claves)]}
+            'otras_ocupaciones': round(sin, 2), 'casos_claves': [list(k) for k in sorted(claves)],
+            'numero_proyectos': len(proyectos), 'horas_proyectos': round(horas_proyectos, 2),
+            'proyectos_claves': [list(k) for k in sorted(proyectos)]}
 
 
 @bp.route('/modelos-capacidades-coe-sap', methods=['GET'])
@@ -26429,6 +26442,7 @@ def modelos_capacidades_coe_sap():
             db.session.query(
                 func.lower(func.trim(Registro.usuario_consultor)).label('usuario'),
                 Registro.nro_caso_cliente.label('cliente_caso'),
+                Registro.proyecto_id.label('proyecto_id'),
                 Registro.nro_caso_interno.label('interno_caso'),
                 Registro.tiempo_invertido.label('tiempo_invertido'),
                 Registro.total_horas.label('total_horas'),
@@ -26444,6 +26458,7 @@ def modelos_capacidades_coe_sap():
         for r in consulta_casos.all():
             registros_por_usuario.setdefault(r.usuario, []).append({
                 'cliente_caso': r.cliente_caso, 'interno_caso': r.interno_caso,
+                'proyecto_id': r.proyecto_id,
                 'tiempo_invertido': r.tiempo_invertido, 'total_horas': r.total_horas,
                 'ocupacion_codigo': r.ocupacion_codigo,
             })
@@ -26500,5 +26515,7 @@ def modelos_capacidades_coe_sap():
     except Exception:
         app.logger.exception('Error consultando modelos de capacidades COE SAP')
         return jsonify({'mensaje': 'No se pudo consultar el modelo de capacidades.'}), 500
+
+
 
 

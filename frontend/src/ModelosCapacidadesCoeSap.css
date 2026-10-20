@@ -73,19 +73,21 @@
 }
 .mcc-table > thead { background: #b42129; color: #fff; }
 .mcc-table > thead > tr > th { vertical-align: middle; font-weight: 700; }
-/* Distribución de las doce columnas de la versión actual. */
-.mcc-table > thead > tr > th:nth-child(1) { width: 13%; }
-.mcc-table > thead > tr > th:nth-child(2) { width: 10%; }
-.mcc-table > thead > tr > th:nth-child(3) { width: 10%; }
-.mcc-table > thead > tr > th:nth-child(4) { width: 7%; }
-.mcc-table > thead > tr > th:nth-child(5) { width: 8%; }
-.mcc-table > thead > tr > th:nth-child(6) { width: 8%; }
-.mcc-table > thead > tr > th:nth-child(7) { width: 8%; }
-.mcc-table > thead > tr > th:nth-child(8) { width: 7%; }
-.mcc-table > thead > tr > th:nth-child(9) { width: 7%; }
-.mcc-table > thead > tr > th:nth-child(10) { width: 7%; }
-.mcc-table > thead > tr > th:nth-child(11) { width: 8%; }
-.mcc-table > thead > tr > th:nth-child(12) { width: 7%; }
+/* Distribución de las catorce columnas de la versión actual. */
+.mcc-table > thead > tr > th:nth-child(1) { width: 12%; }
+.mcc-table > thead > tr > th:nth-child(2) { width: 8%; }
+.mcc-table > thead > tr > th:nth-child(3) { width: 8.5%; }
+.mcc-table > thead > tr > th:nth-child(4) { width: 6.5%; }
+.mcc-table > thead > tr > th:nth-child(5) { width: 6.5%; }
+.mcc-table > thead > tr > th:nth-child(6) { width: 6.5%; }
+.mcc-table > thead > tr > th:nth-child(7) { width: 6.5%; }
+.mcc-table > thead > tr > th:nth-child(8) { width: 6.5%; }
+.mcc-table > thead > tr > th:nth-child(9) { width: 6.5%; }
+.mcc-table > thead > tr > th:nth-child(10) { width: 6.5%; }
+.mcc-table > thead > tr > th:nth-child(11) { width: 6.5%; }
+.mcc-table > thead > tr > th:nth-child(12) { width: 6.5%; }
+.mcc-table > thead > tr > th:nth-child(13) { width: 6.5%; }
+.mcc-table > thead > tr > th:nth-child(14) { width: 6.5%; }
 .mcc-table .mcc-num { text-align: right; color: #182335; font-variant-numeric: tabular-nums; }
 .mcc-table .mcc-proceso { min-width: 0; max-width: none; background: #f8f0f1; color: #98212b; vertical-align: top; padding-top: 16px; }
 .mcc-proceso-nombre { display: block; margin-bottom: 14px; }
