@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { jfetch } from "./lib/api";
 import "./ModelosCapacidadesCoeSap.css";
@@ -22,27 +22,65 @@ const periodoActual = () => {
   return `${partes.find(p => p.type === "year").value}-${partes.find(p => p.type === "month").value}`;
 };
 
+function tareasPermitidas(tareas, ocupaciones) {
+  return tareas.filter(t => (t.ocupacionIds || []).some(id => ocupaciones.includes(id)));
+}
+function resumirProceso(filas) {
+  const personas = new Set();
+  let actual = 0, vendida = 0, instalada = 0, ocupacionAcumulada = 0;
+  for (const fila of filas) {
+    (fila.consultores || []).forEach(c => personas.add(String(c.id)));
+    actual += Number(fila.capacidad_actual || 0);
+    vendida += Number(fila.capacidad_vendida || 0);
+    instalada += capacidadInstalada(fila.capacidad_actual, fila.driver) || 0;
+    ocupacionAcumulada += Number(fila.porcentaje_cumplimiento_mes || 0);
+  }
+  return { personas: personas.size, actual, vendida, instalada, ocupacionAcumulada,
+    ocupacion: vendida > 0 ? actual / vendida * 100 : null };
+}
+
 function FiltroMultiple({ titulo, opciones, valores, onChange }) {
-  return <details className="mcc-filtro"><summary>{titulo} ({valores.length}/{opciones.length})</summary>
-    <div className="mcc-filtro-menu">
+  const [abierto, setAbierto] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!abierto) return;
+    const fuera = e => { if (!ref.current?.contains(e.target)) setAbierto(false); };
+    const tecla = e => { if (e.key === "Escape") setAbierto(false); };
+    document.addEventListener("pointerdown", fuera);
+    document.addEventListener("keydown", tecla);
+    return () => { document.removeEventListener("pointerdown", fuera); document.removeEventListener("keydown", tecla); };
+  }, [abierto]);
+  return <div className="mcc-filtro" ref={ref}>
+    <button type="button" className="mcc-filtro-trigger" aria-expanded={abierto}
+      onClick={() => setAbierto(v => !v)}>{titulo} ({valores.length}/{opciones.length}) {abierto ? "▴" : "▾"}</button>
+    {abierto && <div className="mcc-filtro-menu">
       <div className="mcc-filtro-actions">
         <button type="button" onClick={() => onChange(opciones.map(o => String(o.id)))}>Todos</button>
         <button type="button" onClick={() => onChange([])}>Ninguno</button>
+        <button type="button" onClick={() => setAbierto(false)}>Cerrar ✕</button>
       </div>
       {opciones.map(o => <label key={o.id}><input type="checkbox"
         checked={valores.includes(String(o.id))}
         onChange={e => onChange(e.target.checked ? [...valores, String(o.id)] : valores.filter(v => v !== String(o.id)))}
       />{o.nombre}</label>)}
-      {!opciones.length && <p>Sin opciones</p>}
-    </div>
-  </details>;
+      {!opciones.length && <p>Sin opciones para las ocupaciones seleccionadas</p>}
+    </div>}
+  </div>;
 }
 
 export default function ModelosCapacidadesCoeSap() {
   const [periodo, setPeriodo] = useState(periodoActual);
   const [catalogos, setCatalogos] = useState(null);
   const [filtros, setFiltros] = useState({ ocupaciones: [], tareas: [], equipos: [], cargos: [] });
-  const cambiarFiltro = (clave, valores) => setFiltros(prev => ({ ...prev, [clave]: valores }));
+  const cambiarFiltro = (clave, valores) => setFiltros(prev => {
+    if (clave !== "ocupaciones") return { ...prev, [clave]: valores };
+    const anteriores = tareasPermitidas(catalogos?.tareas || [], prev.ocupaciones).map(t => String(t.id));
+    const nuevas = tareasPermitidas(catalogos?.tareas || [], valores).map(t => String(t.id));
+    const estabanTodas = anteriores.length > 0 && anteriores.every(id => prev.tareas.includes(id));
+    return { ...prev, ocupaciones: valores,
+      tareas: estabanTodas ? nuevas : prev.tareas.filter(id => nuevas.includes(id)) };
+  });
+  const tareasDisponibles = useMemo(() => tareasPermitidas(catalogos?.tareas || [], filtros.ocupaciones), [catalogos, filtros.ocupaciones]);
   const [expandidos, setExpandidos] = useState({});
   const [resultado, setResultado] = useState(null);
   const [cargando, setCargando] = useState(false);
@@ -63,7 +101,12 @@ export default function ModelosCapacidadesCoeSap() {
         const datos = await Promise.all(respuestas.map(r => r.json()));
         if (respuestas.some((r, i) => !r.ok || !Array.isArray(datos[i]))) throw new Error("No se pudieron cargar los filtros.");
         const tareas = new Map();
-        datos[0].forEach(o => (o.tareas || []).forEach(t => tareas.set(String(t.id), { id: t.id, nombre: `${t.codigo} - ${t.nombre}` })));
+        datos[0].forEach(o => (o.tareas || []).forEach(t => {
+          const id = String(t.id);
+          if (!tareas.has(id)) tareas.set(id, { id: t.id, nombre: `${t.codigo} - ${t.nombre}`, ocupacionIds: [] });
+          const item = tareas.get(id);
+          if (!item.ocupacionIds.includes(String(o.id))) item.ocupacionIds.push(String(o.id));
+        }));
         const cat = {
           ocupaciones: datos[0].map(o => ({ id: o.id, nombre: `${o.codigo} - ${o.nombre}` })),
           tareas: [...tareas.values()].sort((a, b) => a.nombre.localeCompare(b.nombre)),
@@ -120,7 +163,7 @@ export default function ModelosCapacidadesCoeSap() {
       grupo.filas.push(fila);
       grupo.consultores.push(...(fila.consultores || []));
     }
-    return Array.from(mapa.values());
+    return Array.from(mapa.values()).map(grupo => ({ ...grupo, resumen: resumirProceso(grupo.filas) }));
   }, [resultado]);
 
   const totales = useMemo(() => {
@@ -152,7 +195,7 @@ export default function ModelosCapacidadesCoeSap() {
       </label></header>
       {catalogos && <div className="mcc-filtros">
         {[["ocupaciones", "Ocupaciones"], ["tareas", "Tareas"], ["equipos", "Equipos"], ["cargos", "Cargos"]].map(([clave, titulo]) => (
-          <FiltroMultiple key={clave} titulo={titulo} opciones={catalogos[clave]} valores={filtros[clave]}
+          <FiltroMultiple key={clave} titulo={titulo} opciones={clave === "tareas" ? tareasDisponibles : catalogos[clave]} valores={filtros[clave]}
             onChange={valores => cambiarFiltro(clave, valores)} />
         ))}
         <button type="button" onClick={() => setFiltros(Object.fromEntries(Object.entries(catalogos).map(([k, opciones]) => [k, opciones.map(o => String(o.id))])))}>Restablecer todos</button>
@@ -179,7 +222,14 @@ export default function ModelosCapacidadesCoeSap() {
               <React.Fragment key={clave}>
               <tr>
                 {indice === 0 && <th scope="rowgroup" rowSpan={grupo.filas.length + grupo.filas.filter(f => expandidos[`${grupo.clave}-${f.cargo_id ?? "sin-cargo"}`]).length} className="mcc-proceso">
-                  {grupo.proceso}
+                  <strong className="mcc-proceso-nombre">{grupo.proceso}</strong>
+                  <dl className="mcc-proceso-resumen">
+                    <div><dt>Personas</dt><dd>{grupo.resumen.personas}</dd></div>
+                    <div><dt>Capacidad actual</dt><dd>{formato.format(grupo.resumen.actual)} h</dd></div>
+                    <div><dt>Ocupación mes</dt><dd>{grupo.resumen.ocupacion == null ? "—" : `${formato.format(grupo.resumen.ocupacion)} %`}</dd></div>
+                    <div><dt>Ocupación acumulada de cargos</dt><dd>{formato.format(grupo.resumen.ocupacionAcumulada)} %</dd></div>
+                    <div><dt>Capacidad instalada</dt><dd>{formato.format(grupo.resumen.instalada)}</dd></div>
+                  </dl>
                 </th>}
                 <td>{fila.cargo}</td>
                 <td className="mcc-personas">
@@ -248,7 +298,7 @@ export default function ModelosCapacidadesCoeSap() {
           </td>
         </tr></tfoot>}
       </table></div>
-      <p className="mcc-nota">Despliega Personas incluidas para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. Los totales suman las filas por cargo sin duplicar consultores. Capacidad actual: horas registradas del mes, con la misma fuente que la capacidad semanal. Ocupación mensual: capacidad actual / capacidad vendida × 100. Capacidad instalada: horas registradas / driver mensual por consultor; se expresa como proporción, sin porcentaje. Capacidad vacante sigue pendiente de definición. Las ocupaciones y tareas seleccionadas filtran las horas registradas; los equipos y cargos seleccionados definen las personas y su capacidad vendida. Ninguno equivale a una selección vacía, no a Todos.</p>
+      <p className="mcc-nota">Despliega Personas incluidas para consultar cada persona. Capacidad vendida: personas activas incluidas × driver mensual, sumada por cargo. Los totales suman las filas por cargo sin duplicar consultores. Capacidad actual: horas registradas del mes, con la misma fuente que la capacidad semanal. Ocupación mensual: capacidad actual / capacidad vendida × 100. Capacidad instalada: horas registradas / driver mensual por consultor; se expresa como proporción, sin porcentaje. Capacidad vacante sigue pendiente de definición. En el resumen del proceso, Ocupación mes usa horas totales / capacidad vendida total; Ocupación acumulada de cargos suma los porcentajes de las filas. Las ocupaciones y tareas seleccionadas filtran las horas registradas; los equipos y cargos seleccionados definen las personas y su capacidad vendida. Ninguno equivale a una selección vacía, no a Todos.</p>
     </main>
   );
 }
