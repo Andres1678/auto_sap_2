@@ -38,6 +38,7 @@ import DashboardClientesCoeSap from './DashboardClientesCoeSap';
 import DetalleSeguimientoClienteCoeSap from './DetalleSeguimientoClienteCoeSap';
 import PromedioAtencionCoeSap from './PromedioAtencionCoeSap';
 import ControlBolsaClienteCoeSap from './ControlBolsaClienteCoeSap';
+import CargosPage from './CargosPage';
 
 const AUTO_LOGOUT_HOURS = [6, 7, 8, 10, 18, 22];
 
@@ -466,6 +467,15 @@ function App() {
               element={
                 <AdminRoute allow={['ADMIN']} requirePermiso="ADMIN_MODULOS_GESTION">
                   <ModulosAdmin />
+                </AdminRoute>
+              }
+            />
+
+            <Route
+              path="/configuracion/cargos"
+              element={
+                <AdminRoute allow={['ADMIN']} requirePermiso="CARGOS_ADMIN">
+                  <CargosPage />
                 </AdminRoute>
               }
             />
