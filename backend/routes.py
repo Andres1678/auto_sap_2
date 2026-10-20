@@ -26305,6 +26305,37 @@ def eliminar_cargo(id):
         app.logger.exception('Error eliminando cargo')
         return jsonify({'mensaje': 'No se pudo eliminar el cargo'}), 409
 
+def _mcc_metricas_casos(registros):
+    """Replica numeroCaso, horas y la agrupación del gráfico; cuenta casos solo en ocupación 01."""
+    import unicodedata
+    import math
+    def numero(valor):
+        texto = str(valor if valor is not None else '').strip()
+        normal = ''.join(c for c in unicodedata.normalize('NFD', texto) if not unicodedata.combining(c)).upper()
+        return '' if normal in ('', '0', 'N/A', 'N/APLICA', 'NA', 'NULL', 'NONE', '-', 'SIN CASO') else texto
+    claves = set()
+    con, sin = 0.0, 0.0
+    for r in registros:
+        principal, interno = numero(r.get('cliente_caso')), numero(r.get('interno_caso'))
+        raw = r.get('tiempo_invertido')
+        if raw is None:
+            raw = r.get('total_horas')
+        try:
+            h = float(raw or 0)
+        except (TypeError, ValueError):
+            h = 0.0
+        if not math.isfinite(h):
+            h = 0.0
+        if principal or interno:
+            con += h
+            if str(r.get('ocupacion_codigo') or '').strip().lstrip('0') == '1':
+                claves.add(('caso', principal) if principal else ('sin-caso-principal', interno))
+        else:
+            sin += h
+    return {'numero_casos': len(claves), 'horas_con_caso': round(con, 2),
+            'otras_ocupaciones': round(sin, 2), 'casos_claves': [list(k) for k in sorted(claves)]}
+
+
 @bp.route('/modelos-capacidades-coe-sap', methods=['GET'])
 @admin_required
 def modelos_capacidades_coe_sap():
@@ -26394,6 +26425,30 @@ def modelos_capacidades_coe_sap():
             else:
                 advertencias.append(f'No se encontró un consultor activo que coincida con {nombre_objetivo}; verifica su nombre o usuario.')
 
+        consulta_casos = (
+            db.session.query(
+                func.lower(func.trim(Registro.usuario_consultor)).label('usuario'),
+                Registro.nro_caso_cliente.label('cliente_caso'),
+                Registro.nro_caso_interno.label('interno_caso'),
+                Registro.tiempo_invertido.label('tiempo_invertido'),
+                Registro.total_horas.label('total_horas'),
+                Ocupacion.codigo.label('ocupacion_codigo'),
+            ).select_from(Registro)
+            .outerjoin(Ocupacion, Registro.ocupacion_id == Ocupacion.id)
+            .filter(Registro.fecha >= inicio, Registro.fecha < fin)
+        )
+        if filtrar:
+            consulta_casos = consulta_casos.filter(
+                Registro.ocupacion_id.in_(ocupaciones_ids), Registro.tarea_id.in_(tareas_ids))
+        registros_por_usuario = {}
+        for r in consulta_casos.all():
+            registros_por_usuario.setdefault(r.usuario, []).append({
+                'cliente_caso': r.cliente_caso, 'interno_caso': r.interno_caso,
+                'tiempo_invertido': r.tiempo_invertido, 'total_horas': r.total_horas,
+                'ocupacion_codigo': r.ocupacion_codigo,
+            })
+        registros_por_grupo = {}
+
         grupos = {}
         for fila in filas:
             if fila.consultor_id in excluir_ids:
@@ -26412,15 +26467,21 @@ def modelos_capacidades_coe_sap():
                     'capacidad_actual': None, 'capacidad_vacante': None,
                     'consultores': [],
                 }
+            registros_persona = registros_por_usuario.get(str(fila.usuario or '').strip().lower(), [])
+            registros_por_grupo.setdefault(key, []).extend(registros_persona)
+            metricas_persona = _mcc_metricas_casos(registros_persona)
             horas = float(fila.horas or 0)
             grupos[key]['consultores'].append({
                 'id': fila.consultor_id, 'usuario': fila.usuario,
                 'nombre': fila.nombre, 'cargo': grupos[key]['cargo'],
+                **metricas_persona,
                 'horas': round(horas, 2),
                 'capacidad_actual': round(horas, 2),
                 'porcentaje_cumplimiento_mes': round(horas / float(driver) * 100, 2) if driver > 0 else None,
             })
             grupos[key]['volumen_actual'] += horas
+        for key, grupo in grupos.items():
+            grupo.update(_mcc_metricas_casos(registros_por_grupo.get(key, [])))
         data = list(grupos.values())
         for grupo in data:
             grupo['volumen_actual'] = round(grupo['volumen_actual'], 2)
@@ -26439,4 +26500,5 @@ def modelos_capacidades_coe_sap():
     except Exception:
         app.logger.exception('Error consultando modelos de capacidades COE SAP')
         return jsonify({'mensaje': 'No se pudo consultar el modelo de capacidades.'}), 500
+
 
