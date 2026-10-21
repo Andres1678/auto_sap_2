@@ -74,21 +74,6 @@
 .mcc-table > thead { background: #b42129; color: #fff; }
 .mcc-table > thead > tr > th { vertical-align: middle; font-weight: 700; }
 /* Distribución de las quince columnas de la versión actual. */
-.mcc-table > thead > tr > th:nth-child(1) { width: 12%; }
-.mcc-table > thead > tr > th:nth-child(2) { width: 8%; }
-.mcc-table > thead > tr > th:nth-child(3) { width: 8%; }
-.mcc-table > thead > tr > th:nth-child(4) { width: 6%; }
-.mcc-table > thead > tr > th:nth-child(5) { width: 6%; }
-.mcc-table > thead > tr > th:nth-child(6) { width: 6%; }
-.mcc-table > thead > tr > th:nth-child(7) { width: 6%; }
-.mcc-table > thead > tr > th:nth-child(8) { width: 6%; }
-.mcc-table > thead > tr > th:nth-child(9) { width: 6%; }
-.mcc-table > thead > tr > th:nth-child(10) { width: 6%; }
-.mcc-table > thead > tr > th:nth-child(11) { width: 6%; }
-.mcc-table > thead > tr > th:nth-child(12) { width: 6%; }
-.mcc-table > thead > tr > th:nth-child(13) { width: 6%; }
-.mcc-table > thead > tr > th:nth-child(14) { width: 6%; }
-.mcc-table > thead > tr > th:nth-child(15) { width: 6%; }
 .mcc-table .mcc-num { text-align: right; color: #182335; font-variant-numeric: tabular-nums; }
 .mcc-table .mcc-proceso { min-width: 0; max-width: none; background: #f8f0f1; color: #98212b; vertical-align: top; padding-top: 16px; }
 .mcc-proceso-nombre { display: block; margin-bottom: 14px; }
@@ -112,8 +97,6 @@
 .mcc-table .mcc-consultores thead { background: #edf1f7; color: #182335; }
 .mcc-table .mcc-consultores td { color: #182335; text-align: left; }
 .mcc-table .mcc-consultores .mcc-num { text-align: right; }
-.mcc-table .mcc-consultores th:first-child { width: 16%; }
-.mcc-table .mcc-consultores th:nth-child(2) { width: 11%; }
 
 /* Totales y columnas grises de casos. */
 .mcc-table tfoot { background: #edf1f7; font-weight: 700; }
@@ -155,3 +138,12 @@
   .mcc-table td { padding: 5px 2px; }
   .mcc-table .mcc-detalle h3 { margin: 8px; font-size: 12px; }
 }
+
+/* Grupos: Operación, Proyecto y Otras ocupaciones. */
+.mcc-table th.mcc-grupo-titulo{font-size:11px;letter-spacing:.8px;text-transform:uppercase;text-align:center;padding:6px 4px;border-bottom:1px solid #ffffff55}
+.mcc-table th.mcc-proyecto-gris,.mcc-table td.mcc-proyecto-gris{background:#eef0f4;color:#273142;border-color:#d8dde5}
+.mcc-table thead th.mcc-proyecto-gris{background:#9ca3af;color:#111827}
+.mcc-table tfoot td.mcc-proyecto-gris{background:#e2e5eb;font-weight:700}
+.mcc-table th.mcc-otras-gris,.mcc-table td.mcc-otras-gris{background:#f9fafb;color:#374151;border-color:#e5e7eb}
+.mcc-table thead th.mcc-otras-gris{background:#e5e7eb;color:#273142}
+.mcc-table tfoot td.mcc-otras-gris{background:#f0f2f5;font-weight:700}

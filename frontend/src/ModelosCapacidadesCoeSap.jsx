@@ -231,8 +231,12 @@ export default function ModelosCapacidadesCoeSap() {
         {resultado.advertencias.map((texto) => <p key={texto}>{texto}</p>)}
       </div>}
       <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 8 horas. Se excluyen fines de semana y festivos de Colombia.</p>
-      <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table">
-        <thead><tr><th>Proceso</th><th>Cargo</th><th>Personas incluidas</th><th>Driver (horas mes actual)</th><th>Capacidad vendida (horas)</th><th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th><th className="mcc-casos-gris">Número de casos</th><th className="mcc-casos-gris">Horas con caso</th><th className="mcc-casos-gris">Otras Actividades Operacion</th><th className="mcc-casos-gris">Otras ocupaciones (horas)</th><th className="mcc-casos-gris">Proyectos con horas</th><th className="mcc-casos-gris">Horas de proyectos</th></tr></thead>
+      <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table"><colgroup><col style={{ width: "12%" }} /><col style={{ width: "8%" }} /><col style={{ width: "8%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /></colgroup>
+        <thead>
+<tr><th rowSpan={2} scope="col">Proceso</th><th rowSpan={2} scope="col">Cargo</th><th rowSpan={2} scope="col">Personas incluidas</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th rowSpan={2} scope="col">Capacidad vacante</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
+<th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
+<th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
+<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion</th><th scope="col" className="mcc-proyecto-gris">Proyectos con horas</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th></tr></thead>
         <tbody>{cargando ? <tr><td colSpan={15}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
           <React.Fragment key={grupo.clave}>
             {grupo.filas.map((fila, indice) => {
@@ -275,20 +279,20 @@ export default function ModelosCapacidadesCoeSap() {
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.numero_casos ?? 0)}</td>
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.horas_con_caso ?? 0)}</td>
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.otras_actividades_operacion ?? 0)}</td>
-                <td className="mcc-num mcc-casos-gris">{formato.format(fila.otras_ocupaciones ?? 0)}</td>
-                <td className="mcc-num mcc-casos-gris">{formato.format(fila.proyectos_con_horas ?? 0)}</td>
-                <td className="mcc-num mcc-casos-gris">{formato.format(fila.horas_proyectos ?? 0)}</td>
+                <td className="mcc-num mcc-proyecto-gris">{formato.format(fila.proyectos_con_horas ?? 0)}</td>
+<td className="mcc-num mcc-proyecto-gris">{formato.format(fila.horas_proyectos ?? 0)}</td>
+<td className="mcc-num mcc-otras-gris">{formato.format(fila.otras_ocupaciones ?? 0)}</td>
               </tr>
               {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`}>
                 <td colSpan={14}>
                   <div className="mcc-detalle-body">
                     <h3>{grupo.proceso} · {fila.cargo}</h3>
-                    <table className="mcc-consultores">
-                      <thead><tr>
-                        <th>Consultor</th><th>Usuario</th><th>Driver (horas mes actual)</th>
-                        <th>Capacidad vendida (horas)</th>
-                        <th>Capacidad actual (horas)</th><th>Ocupación mes (%)</th><th>Capacidad instalada</th><th>Capacidad vacante</th><th className="mcc-casos-gris">Número de casos</th><th className="mcc-casos-gris">Horas con caso</th><th className="mcc-casos-gris">Otras Actividades Operacion</th><th className="mcc-casos-gris">Otras ocupaciones (horas)</th><th className="mcc-casos-gris">Proyectos con horas</th><th className="mcc-casos-gris">Horas de proyectos</th>
-                      </tr></thead>
+                    <table className="mcc-consultores"><colgroup><col style={{ width: "15%" }} /><col style={{ width: "10%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /></colgroup>
+                      <thead>
+<tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Usuario</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th rowSpan={2} scope="col">Capacidad vacante</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
+<th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
+<th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
+<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion</th><th scope="col" className="mcc-proyecto-gris">Proyectos con horas</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th></tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
                           <td>{c.nombre}</td><td>{c.usuario}</td>
@@ -303,9 +307,9 @@ export default function ModelosCapacidadesCoeSap() {
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.numero_casos ?? 0)}</td>
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.horas_con_caso ?? 0)}</td>
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.otras_actividades_operacion ?? 0)}</td>
-                          <td className="mcc-num mcc-casos-gris">{formato.format(c.otras_ocupaciones ?? 0)}</td>
-                          <td className="mcc-num mcc-casos-gris">{formato.format(c.proyectos_con_horas ?? 0)}</td>
-                          <td className="mcc-num mcc-casos-gris">{formato.format(c.horas_proyectos ?? 0)}</td>
+                          <td className="mcc-num mcc-proyecto-gris">{formato.format(c.proyectos_con_horas ?? 0)}</td>
+<td className="mcc-num mcc-proyecto-gris">{formato.format(c.horas_proyectos ?? 0)}</td>
+<td className="mcc-num mcc-otras-gris">{formato.format(c.otras_ocupaciones ?? 0)}</td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -331,9 +335,9 @@ export default function ModelosCapacidadesCoeSap() {
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.numeroCasos)}</td>
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.horasConCaso)}</td>
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.otrasActividadesOperacion)}</td>
-          <td className="mcc-num mcc-casos-gris">{formato.format(totales.otrasOcupaciones)}</td>
-          <td className="mcc-num mcc-casos-gris">{formato.format(totales.proyectos.conHoras)}</td>
-          <td className="mcc-num mcc-casos-gris">{formato.format(totales.horasProyectos)}</td>
+          <td className="mcc-num mcc-proyecto-gris">{formato.format(totales.proyectos.conHoras)}</td>
+<td className="mcc-num mcc-proyecto-gris">{formato.format(totales.horasProyectos)}</td>
+<td className="mcc-num mcc-otras-gris">{formato.format(totales.otrasOcupaciones)}</td>
         </tr></tfoot>}
       </table></div>
       <p className="mcc-nota">Casos: ocupación 01 con tarea 01, y tarea 22 cuando tiene número cliente o interno válido. Número de casos cuenta identificadores únicos; los registros sin identificador no crean casos. Otras Actividades Operacion: restantes tareas de ocupación 01 (incluida reunión 22 sin caso) y ocupación 07 PAM con tarea 05. Otras ocupaciones: el resto. Estas tres columnas de horas se distribuyen sin duplicar registros. Proyectos con horas y Horas de proyectos siguen siendo indicadores exclusivos de ocupación 02. Capacidad vacante continúa pendiente de definición.</p>
