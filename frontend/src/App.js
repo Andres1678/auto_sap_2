@@ -40,6 +40,7 @@ import PromedioAtencionCoeSap from './PromedioAtencionCoeSap';
 import ControlBolsaClienteCoeSap from './ControlBolsaClienteCoeSap';
 import CargosPage from './CargosPage';
 import ModelosCapacidadesCoeSap from './ModelosCapacidadesCoeSap';
+import AsistenciaTriara from './AsistenciaTriara';
 
 const AUTO_LOGOUT_HOURS = [6, 7, 8, 10, 18, 22];
 
@@ -273,6 +274,9 @@ function App() {
 
           <Routes>
             <Route path="/" element={<Registro userData={userData} />} />
+
+            <Route path="/asistencia-triara" element={<AsistenciaTriara />} />
+            <Route path="/AsistenciaTriara" element={<Navigate to="/asistencia-triara" replace />} />
 
             <Route
               path="/Oportunidades"

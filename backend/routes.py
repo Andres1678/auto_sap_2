@@ -10,7 +10,7 @@ from backend.models import (
     Perfil, ModuloPerfil, ConsultorPerfil, ProyectoModulo, ProyectoPerfil,
     ProyectoPerfilPlan, ProyectoCostoAdicional, ProyectoMapeo, ProyectoPerfilConsultor, CoeSapFuncionalCalificacion,
     CoeSapFuncionalCalificacionHora, CoeSapFuncionalImportacion, CoeSapFuncionalFuenteGestion, CoeSapFuncionalCatalogo, CoeSapFuncionalCategoriaCatalogo,
-    CoeSapControlBolsaCliente, CoeSapControlBolsaClienteDetalle,
+    CoeSapControlBolsaCliente, CoeSapControlBolsaClienteDetalle, TriaraAsistencia
 )
 from datetime import datetime, timedelta, time, date
 from functools import wraps
@@ -26549,6 +26549,9 @@ def modelos_capacidades_coe_sap():
         app.logger.exception('Error consultando modelos de capacidades COE SAP')
         return jsonify({'mensaje': 'No se pudo consultar el modelo de capacidades.'}), 500
 
+# Integrar este bloque en el archivo de rutas existente, donde bp y auth_required están definidos.
+# Agregar TriaraAsistencia a la importación de backend.models.
+
 def _triara_norm(valor):
     import unicodedata
     valor = unicodedata.normalize('NFD', str(valor or '').strip().casefold())
@@ -26562,8 +26565,15 @@ def _triara_es_juan(consultor):
     return usuario == exacto if exacto else {'juan', 'diaz'}.issubset(set(_triara_norm(consultor.nombre).split()))
 
 
+def _triara_tiene_permiso(consultor, codigo):
+    # Usa los permisos efectivos de rol, equipo y persona del backend existente.
+    return codigo in {str(p).strip().upper() for p in obtener_permisos_finales(consultor)}
+
+
 def _triara_puede_asignar(consultor):
-    if _triara_es_juan(consultor) or not bool(consultor.activo):
+    if (_triara_es_juan(consultor) or not bool(consultor.activo)
+            or not _triara_tiene_permiso(consultor, 'ASISTENCIA_TRIARA_VER')
+            or not _triara_tiene_permiso(consultor, 'ASISTENCIA_TRIARA_ASIGNAR')):
         return False
     usuario = _triara_norm(consultor.usuario)
     if usuario in {'rodriguezso', 'valdezjl', 'gonzalezanf'}:
@@ -26611,7 +26621,8 @@ def _triara_abierto(fecha):
 
 def _triara_actor_escritura():
     actor = g.current_user
-    if not bool(actor.activo) or _triara_es_juan(actor):
+    if (not bool(actor.activo) or _triara_es_juan(actor)
+            or not _triara_tiene_permiso(actor, 'ASISTENCIA_TRIARA_VER')):
         return None
     return actor
 
@@ -26619,6 +26630,8 @@ def _triara_actor_escritura():
 @bp.route('/asistencia-triara/periodos', methods=['GET'])
 @auth_required
 def triara_periodos():
+    if not _triara_tiene_permiso(g.current_user, 'ASISTENCIA_TRIARA_VER'):
+        return jsonify({'mensaje': 'No tienes permiso para consultar Asistencia a Triara.'}), 403
     actor = g.current_user
     q = db.session.query(TriaraAsistencia.fecha)
     if not _triara_puede_asignar(actor):
@@ -26631,6 +26644,8 @@ def triara_periodos():
 @bp.route('/asistencia-triara', methods=['GET'])
 @auth_required
 def triara_consultar_mes():
+    if not _triara_tiene_permiso(g.current_user, 'ASISTENCIA_TRIARA_VER'):
+        return jsonify({'mensaje': 'No tienes permiso para consultar Asistencia a Triara.'}), 403
     import calendar
     from datetime import date, timedelta
     hoy = _triara_hoy()
@@ -26666,13 +26681,13 @@ def triara_consultar_mes():
             'nombre': c.nombre if c else 'Consultor no disponible',
             'fecha': a.fecha.isoformat(), 'semana': a.semana_lunes.isoformat(),
             'estado': a.estado, 'justificacion': a.justificacion or '',
-            'puede_confirmar': a.consultor_id == actor.id and _triara_actor_escritura() is not None
+            'puede_confirmar': a.consultor_id == actor.id and (_triara_actor_escritura() is not None and _triara_tiene_permiso(actor, 'ASISTENCIA_TRIARA_CONFIRMAR'))
                 and _triara_abierto(a.fecha) and a.fecha <= hoy,
             'puede_reasignar': asignador and _triara_abierto(a.fecha) and a.estado == 'PENDIENTE',
         })
     return jsonify({
         'mes': periodo, 'cerrado': not _triara_abierto(primero), 'hoy': hoy.isoformat(),
-        'puede_asignar': asignador, 'puede_registrar': _triara_actor_escritura() is not None,
+        'puede_asignar': asignador, 'puede_registrar': (_triara_actor_escritura() is not None and _triara_tiene_permiso(actor, 'ASISTENCIA_TRIARA_CONFIRMAR')),
         'consultores': [{'id': c.id, 'nombre': c.nombre} for c in sorted(consultores.values(), key=lambda c: c.nombre)
                         if asignador and bool(c.activo) and not _triara_es_juan(c)],
         'semanas': [{'lunes': k, 'dias': v} for k, v in semanas.items()],
@@ -26742,7 +26757,7 @@ def triara_asignar():
 @auth_required
 def triara_confirmar(id):
     actor = _triara_actor_escritura()
-    if not actor:
+    if not actor or not _triara_tiene_permiso(actor, 'ASISTENCIA_TRIARA_CONFIRMAR'):
         return jsonify({'mensaje': 'No tienes autorización para registrar información.'}), 403
     data = request.get_json(silent=True) or {}
     try:
@@ -26780,16 +26795,4 @@ def triara_confirmar(id):
         db.session.rollback()
         app.logger.exception('Error confirmando asistencia Triara')
         return jsonify({'mensaje': 'No se pudo registrar la asistencia.'}), 500
-
-
-
-
-
-
-
-
-
-
-
-
 
