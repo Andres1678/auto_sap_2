@@ -26344,10 +26344,10 @@ def _mcc_metricas_casos(registros):
         ocupacion_codigo = str(r.get('ocupacion_codigo') or '').strip().lstrip('0')
         tarea_codigo = str(r.get('tarea_codigo') or '').strip().lstrip('0')
         tiene_caso = bool(principal or interno)
-        es_casos = ocupacion_codigo == '1' and (
-            tarea_codigo == '1' or (tarea_codigo == '22' and tiene_caso))
-        es_operacion = (ocupacion_codigo == '1' and not es_casos) or (
-            ocupacion_codigo == '7' and tarea_codigo == '5')
+        # Informes y reuniones pertenecen siempre a operación, en cualquier ocupación.
+        es_actividad_operacion = tarea_codigo in ('5', '22')
+        es_casos = ocupacion_codigo == '1' and tarea_codigo == '1'
+        es_operacion = es_actividad_operacion or (ocupacion_codigo == '1' and not es_casos)
         if es_casos:
             con += h
             if tiene_caso:
@@ -26533,6 +26533,8 @@ def modelos_capacidades_coe_sap():
     except Exception:
         app.logger.exception('Error consultando modelos de capacidades COE SAP')
         return jsonify({'mensaje': 'No se pudo consultar el modelo de capacidades.'}), 500
+
+
 
 
 

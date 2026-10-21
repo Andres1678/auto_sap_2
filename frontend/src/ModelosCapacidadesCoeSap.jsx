@@ -340,7 +340,7 @@ export default function ModelosCapacidadesCoeSap() {
 <td className="mcc-num mcc-otras-gris">{formato.format(totales.otrasOcupaciones)}</td>
         </tr></tfoot>}
       </table></div>
-      <p className="mcc-nota">Casos: ocupación 01 con tarea 01, y tarea 22 cuando tiene número cliente o interno válido. Número de casos cuenta identificadores únicos; los registros sin identificador no crean casos. Otras Actividades Operacion: restantes tareas de ocupación 01 (incluida reunión 22 sin caso) y ocupación 07 PAM con tarea 05. Otras ocupaciones: el resto. Estas tres columnas de horas se distribuyen sin duplicar registros. Proyectos con horas y Horas de proyectos siguen siendo indicadores exclusivos de ocupación 02. Capacidad vacante continúa pendiente de definición.</p>
+      <p className="mcc-nota">Casos: únicamente ocupación 01 con tarea 01. Número de casos cuenta identificadores únicos; los registros sin identificador no crean casos. Otras Actividades Operacion: tareas 05 Generación de informes y 22 Reunión cliente en cualquier ocupación, con o sin caso, además de las restantes tareas de ocupación 01 distintas de 01. Otras ocupaciones: el resto. Estas tres columnas de horas se distribuyen sin duplicar registros. Proyectos con horas y Horas de proyectos siguen siendo indicadores exclusivos de ocupación 02. Capacidad vacante continúa pendiente de definición.</p>
     </main>
   );
 }
