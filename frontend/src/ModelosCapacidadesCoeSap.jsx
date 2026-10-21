@@ -3,6 +3,22 @@ import { Link, Navigate } from "react-router-dom";
 import { jfetch } from "./lib/api";
 import "./ModelosCapacidadesCoeSap.css";
 
+// Niveles N primero, otros cargos por nombre y líderes al final.
+const textoOrdenCargo = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+const claveOrdenCargo = value => {
+  const nombre = textoOrdenCargo(value);
+  if (/\bLIDER(?:ES)?\b/.test(nombre)) return { grupo: 2, nivel: 0 };
+  const nivel = nombre.match(/\bN\s*(\d+)\b/);
+  return nivel ? { grupo: 0, nivel: Number(nivel[1]) } : { grupo: 1, nivel: 0 };
+};
+function compararFilasCargo(a, b) {
+  const ca = claveOrdenCargo(a.cargo), cb = claveOrdenCargo(b.cargo);
+  return ca.grupo - cb.grupo || ca.nivel - cb.nivel
+    || String(a.cargo ?? '').localeCompare(String(b.cargo ?? ''), 'es', { numeric: true, sensitivity: 'base' })
+    || String(a.cargo_id ?? '').localeCompare(String(b.cargo_id ?? ''), 'es', { numeric: true })
+    || String(a.especialidad ?? '').localeCompare(String(b.especialidad ?? ''), 'es', { numeric: true, sensitivity: 'base' });
+}
+
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const formato = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 const capacidadInstalada = (horas, driver) => {
@@ -189,7 +205,7 @@ export default function ModelosCapacidadesCoeSap() {
       grupo.filas.push(fila);
       grupo.consultores.push(...(fila.consultores || []));
     }
-    return Array.from(mapa.values()).map(grupo => ({ ...grupo, resumen: resumirProceso((resultado?.totales_data || resultado?.data || []).filter(f => String(f.equipo_id ?? "sin-equipo") === grupo.clave)) }));
+    return Array.from(mapa.values()).map(grupo => ({ ...grupo, filas: [...grupo.filas].sort(compararFilasCargo), resumen: resumirProceso((resultado?.totales_data || resultado?.data || []).filter(f => String(f.equipo_id ?? "sin-equipo") === grupo.clave)) }));
   }, [resultado]);
 
   const totales = useMemo(() => {
