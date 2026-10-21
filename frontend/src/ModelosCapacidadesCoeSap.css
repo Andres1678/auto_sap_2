@@ -147,3 +147,46 @@
 .mcc-table th.mcc-otras-gris,.mcc-table td.mcc-otras-gris{background:#f9fafb;color:#374151;border-color:#e5e7eb}
 .mcc-table thead th.mcc-otras-gris{background:#e5e7eb;color:#273142}
 .mcc-table tfoot td.mcc-otras-gris{background:#f0f2f5;font-weight:700}
+
+/* Más espacio de lectura con desplazamiento horizontal limitado al contenedor. */
+.mcc-page{padding:18px 12px}
+.mcc-scroll{width:100%;max-width:100%;min-width:0;overflow-x:auto;overflow-y:visible;scrollbar-width:thin;scrollbar-color:#94a3b8 #f1f5f9;scroll-padding-inline:12px;overscroll-behavior-x:contain}
+.mcc-scroll::-webkit-scrollbar{height:10px}
+.mcc-scroll::-webkit-scrollbar-track{background:#f1f5f9;border-radius:8px}
+.mcc-scroll::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:8px;border:2px solid #f1f5f9}
+.mcc-table{width:100%;min-width:1480px;max-width:none;table-layout:fixed}
+.mcc-table th,.mcc-table td{font-size:13px;line-height:1.55;padding:12px 9px;overflow-wrap:break-word;word-break:normal}
+.mcc-table>thead>tr>th{font-size:12px;line-height:1.45;padding:13px 9px}
+.mcc-table th.mcc-grupo-titulo{font-size:11px;letter-spacing:1px;padding:8px}
+.mcc-table .mcc-num{font-size:13px;font-weight:500}
+.mcc-table tfoot th,.mcc-table tfoot .mcc-num{font-size:14px;font-weight:700;padding-top:16px;padding-bottom:16px}
+.mcc-table .mcc-personas .mcc-expand{font-size:13px;line-height:1.5;padding:10px 0}
+
+/* Un tono de equipo estable al filtrar y separadores visibles entre equipos. */
+.mcc-table>tbody>.mcc-equipo-fila>td:not(.mcc-casos-gris):not(.mcc-proyecto-gris):not(.mcc-otras-gris){background:var(--mcc-team-row,#fafbfc)}
+.mcc-table>tbody>.mcc-equipo-inicio>td,.mcc-table>tbody>.mcc-equipo-inicio>th{border-top:4px solid var(--mcc-team-border,#64748b)}
+.mcc-table .mcc-proceso{position:sticky;left:0;z-index:2;background:var(--mcc-team-bg,#f8f0f1);color:var(--mcc-team-text,#98212b);border-left:5px solid var(--mcc-team-border,#64748b);border-right:1px solid #dbe1e8;vertical-align:top;padding:18px 12px;box-shadow:4px 0 6px #18233508}
+.mcc-table>thead>tr:first-child>th:first-child{position:sticky;left:0;z-index:3;background:#b42129}
+.mcc-proceso-nombre{font-size:14px;line-height:1.45;margin-bottom:16px}
+.mcc-proceso-resumen>div{display:flex;flex-wrap:wrap;gap:5px 8px;padding:12px 0;border-top-color:#ffffffb3}
+.mcc-proceso-resumen dt{font-size:12px;color:var(--mcc-team-text,#6c4a50)}
+.mcc-proceso-resumen dd{font-size:14px;color:var(--mcc-team-text,#6c4a50);font-weight:700}
+
+/* Las tres familias de métricas conservan sus tonos independientes. */
+.mcc-table .mcc-casos-gris{background:#e5e7eb}
+.mcc-table .mcc-proyecto-gris{background:#eef0f4}
+.mcc-table .mcc-otras-gris{background:#f9fafb}
+.mcc-table thead .mcc-casos-gris{background:#6b7280;color:#fff}
+.mcc-table thead .mcc-proyecto-gris{background:#9ca3af;color:#111827}
+.mcc-table thead .mcc-otras-gris{background:#e5e7eb;color:#273142}
+
+/* Detalle por consultor: espacio mayor sin otra barra de desplazamiento. */
+.mcc-table .mcc-detalle>td{padding:14px;background:var(--mcc-team-row,#f8fafc);border-left:3px solid var(--mcc-team-border,#64748b)}
+.mcc-detalle-body{min-width:0;max-width:100%;border:1px solid var(--mcc-team-border,#cbd5e1);border-radius:10px;overflow:visible}
+.mcc-detalle h3{font-size:15px;margin:16px;color:var(--mcc-team-text,#182335)}
+.mcc-table .mcc-consultores{width:100%;min-width:0;max-width:100%;table-layout:fixed}
+.mcc-table .mcc-consultores th,.mcc-table .mcc-consultores td{font-size:12px;line-height:1.5;padding:11px 7px}
+.mcc-table .mcc-consultores .mcc-num{font-size:12px}
+.mcc-table .mcc-consultores th.mcc-grupo-titulo{font-size:11px;padding:7px}
+@media(min-width:1800px){.mcc-table th,.mcc-table td{font-size:14px;padding:14px 10px}.mcc-table .mcc-num{font-size:14px}.mcc-table .mcc-consultores th,.mcc-table .mcc-consultores td{font-size:13px}.mcc-table .mcc-consultores .mcc-num{font-size:13px}}
+@media(max-width:700px){.mcc-page{padding:10px 6px}.mcc-table{min-width:1480px}.mcc-table .mcc-proceso{position:static;box-shadow:none}.mcc-table>thead>tr:first-child>th:first-child{position:static}}

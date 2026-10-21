@@ -168,6 +168,18 @@ export default function ModelosCapacidadesCoeSap() {
     return () => { vigente = false; controller.abort(); };
   }, [admin, periodo, revision, catalogos, filtros]);
 
+  const estiloEquipo = (equipoId) => {
+    const posicion = (catalogos?.equipos || []).findIndex(e => String(e.id) === String(equipoId ?? "sin"));
+    const indice = posicion >= 0 ? posicion : (catalogos?.equipos?.length || 0);
+    const tono = (indice * 137.508 + 205) % 360;
+    return {
+      "--mcc-team-border": `hsl(${tono}, 48%, 43%)`,
+      "--mcc-team-bg": `hsl(${tono}, 48%, 93%)`,
+      "--mcc-team-row": `hsl(${tono}, 38%, 98%)`,
+      "--mcc-team-text": `hsl(${tono}, 48%, 27%)`,
+    };
+  };
+
   const grupos = useMemo(() => {
     const mapa = new Map();
     for (const fila of resultado?.data || []) {
@@ -244,7 +256,7 @@ export default function ModelosCapacidadesCoeSap() {
               const abierto = !!expandidos[clave];
               return (
               <React.Fragment key={clave}>
-              <tr>
+              <tr className={`mcc-equipo-fila ${indice === 0 ? "mcc-equipo-inicio" : ""}`} style={estiloEquipo(fila.equipo_id)}>
                 {indice === 0 && <th scope="rowgroup" rowSpan={grupo.filas.length + grupo.filas.filter(f => expandidos[`${grupo.clave}-${f.cargo_id ?? "sin-cargo"}`]).length} className="mcc-proceso">
                   <strong className="mcc-proceso-nombre">{grupo.proceso}</strong>
                   <dl className="mcc-proceso-resumen">
@@ -283,7 +295,7 @@ export default function ModelosCapacidadesCoeSap() {
 <td className="mcc-num mcc-proyecto-gris">{formato.format(fila.horas_proyectos ?? 0)}</td>
 <td className="mcc-num mcc-otras-gris">{formato.format(fila.otras_ocupaciones ?? 0)}</td>
               </tr>
-              {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`}>
+              {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`} style={estiloEquipo(fila.equipo_id)}>
                 <td colSpan={14}>
                   <div className="mcc-detalle-body">
                     <h3>{grupo.proceso} · {fila.cargo}</h3>
