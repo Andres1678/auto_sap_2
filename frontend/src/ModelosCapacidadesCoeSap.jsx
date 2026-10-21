@@ -189,11 +189,11 @@ export default function ModelosCapacidadesCoeSap() {
       grupo.filas.push(fila);
       grupo.consultores.push(...(fila.consultores || []));
     }
-    return Array.from(mapa.values()).map(grupo => ({ ...grupo, resumen: resumirProceso(grupo.filas) }));
+    return Array.from(mapa.values()).map(grupo => ({ ...grupo, resumen: resumirProceso((resultado?.totales_data || resultado?.data || []).filter(f => String(f.equipo_id ?? "sin-equipo") === grupo.clave)) }));
   }, [resultado]);
 
   const totales = useMemo(() => {
-    const filas = resultado?.data || [];
+    const filas = resultado?.totales_data || resultado?.data || [];
     const vendida = filas.reduce((s, f) => s + Number(f.capacidad_vendida || 0), 0);
     const actual = filas.reduce((s, f) => s + Number(f.capacidad_actual || 0), 0);
     return {
@@ -220,7 +220,7 @@ export default function ModelosCapacidadesCoeSap() {
       <header className="mcc-header"><div>
         <span className="mcc-kicker">Planeación operativa</span>
         <h1>Modelos de capacidades COE SAP</h1>
-        <p>Capacidad mensual por proceso, cargo y perfil asociado de los consultores activos.</p>
+        <p>Capacidad mensual por proceso, cargo y módulo de los consultores activos.</p>
       </div><label className="mcc-periodo">Mes de referencia
         <input type="month" value={periodo} min="2000-01" max="2100-12"
           onChange={e => setPeriodo(e.target.value)} />
@@ -242,22 +242,26 @@ export default function ModelosCapacidadesCoeSap() {
       {!!resultado?.advertencias?.length && <div className="mcc-error" role="alert">
         {resultado.advertencias.map((texto) => <p key={texto}>{texto}</p>)}
       </div>}
+      <p className="mcc-nota">Los módulos se configuran directamente en cada cargo. Cada fila incluye únicamente consultores que tienen ese módulo asignado. Una persona con varios módulos aparece con sus métricas completas en cada uno; los resúmenes del equipo y el total general excluyen duplicados. Sin módulo compatible conserva a las personas que requieren revisar su configuración.</p>
       <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 8 horas. Se excluyen fines de semana y festivos de Colombia.</p>
       <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table"><colgroup><col style={{ width: "12.000000%" }} /><col style={{ width: "8.000000%" }} /><col style={{ width: "10.000000%" }} /><col style={{ width: "8.000000%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /></colgroup>
         <thead>
-<tr><th rowSpan={2} scope="col">Proceso</th><th rowSpan={2} scope="col">Cargo</th><th rowSpan={2} scope="col">Perfil asociado</th><th rowSpan={2} scope="col">Personas incluidas</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
+<tr><th rowSpan={2} scope="col">Proceso</th><th rowSpan={2} scope="col">Cargo</th><th rowSpan={2} scope="col">Módulo</th><th rowSpan={2} scope="col">Personas incluidas</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
 <th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th><th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
 <tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
         <tbody>{cargando ? <tr><td colSpan={17}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
           <React.Fragment key={grupo.clave}>
             {grupo.filas.map((fila, indice) => {
-              const clave = `${grupo.clave}-${fila.cargo_id ?? "sin-cargo"}`;
+              const clave = `${grupo.clave}-${fila.cargo_id ?? "sin-cargo"}-${fila.modulo_id ?? "sin-modulo"}`;
               const abierto = !!expandidos[clave];
+              const filasCargo = grupo.filas.filter(f => f.cargo_id === fila.cargo_id);
+              const primeraCargo = indice === 0 || grupo.filas[indice - 1].cargo_id !== fila.cargo_id;
+              const cargoRowSpan = filasCargo.length + filasCargo.filter(f => expandidos[`${grupo.clave}-${f.cargo_id ?? "sin-cargo"}-${f.modulo_id ?? "sin-modulo"}`]).length;
               return (
               <React.Fragment key={clave}>
               <tr className={`mcc-equipo-fila ${indice === 0 ? "mcc-equipo-inicio" : ""}`} style={estiloEquipo(fila.equipo_id)}>
-                {indice === 0 && <th scope="rowgroup" rowSpan={grupo.filas.length + grupo.filas.filter(f => expandidos[`${grupo.clave}-${f.cargo_id ?? "sin-cargo"}`]).length} className="mcc-proceso">
+                {indice === 0 && <th scope="rowgroup" rowSpan={grupo.filas.length + grupo.filas.filter(f => expandidos[`${grupo.clave}-${f.cargo_id ?? "sin-cargo"}-${f.modulo_id ?? "sin-modulo"}`]).length} className="mcc-proceso">
                   <strong className="mcc-proceso-nombre">{grupo.proceso}</strong>
                   <dl className="mcc-proceso-resumen">
                     <div><dt>Personas</dt><dd>{grupo.resumen.personas}</dd></div>
@@ -267,7 +271,7 @@ export default function ModelosCapacidadesCoeSap() {
                     <div><dt>Capacidad instalada (Nro de Personas)</dt><dd>{formato.format(grupo.resumen.instalada)}</dd></div>
                   </dl>
                 </th>}
-                <td>{fila.cargo}</td><td>{fila.perfil || "SIN PERFIL ASOCIADO"}</td>
+                <React.Fragment>{primeraCargo && <td rowSpan={cargoRowSpan} className="mcc-cargo-agrupado">{fila.cargo}</td>}</React.Fragment><td>{fila.modulo || "SIN MÓDULO COMPATIBLE"}</td>
                 <td className="mcc-personas">
                   <button type="button" className="mcc-expand" aria-expanded={abierto}
                     aria-controls={`detalle-${clave}`}
@@ -297,9 +301,9 @@ export default function ModelosCapacidadesCoeSap() {
 <td className="mcc-num mcc-otras-gris">{formato.format(fila.otras_ocupaciones ?? 0)}</td>
               </tr>
               {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`} style={estiloEquipo(fila.equipo_id)}>
-                <td colSpan={16}>
+                <td colSpan={15}>
                   <div className="mcc-detalle-body">
-                    <h3>{grupo.proceso} · {fila.cargo} · {fila.perfil || "SIN PERFIL ASOCIADO"}</h3>
+                    <h3>{grupo.proceso} · {fila.cargo} · {fila.modulo || "SIN MÓDULO COMPATIBLE"}</h3>
                     <table className="mcc-consultores"><colgroup><col style={{ width: "20%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /></colgroup>
                       <thead>
 <tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada (Nro de Personas)</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
@@ -308,7 +312,7 @@ export default function ModelosCapacidadesCoeSap() {
 <tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
-                          <td>{c.nombre}<small className="mcc-perfil-consultor">{c.perfil || fila.perfil || "SIN PERFIL ASOCIADO"}</small></td>
+                          <td>{c.nombre}<small className="mcc-modulo-consultor">{c.modulo || fila.modulo || "SIN MÓDULO COMPATIBLE"}</small></td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
                           <td className="mcc-num">{formato.format(c.capacidad_actual ?? 0)}</td>

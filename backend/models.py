@@ -74,12 +74,19 @@ class Modulo(db.Model):
         lazy="select"
     )
 
+cargo_modulo = db.Table(
+    'cargo_modulo',
+    db.Column('cargo_id', db.Integer, db.ForeignKey('cargo.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('modulo_id', db.Integer, db.ForeignKey('modulo.id', ondelete='CASCADE'), primary_key=True),
+)
+
 class Cargo(db.Model):
     __tablename__ = 'cargo'
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), unique=True, nullable=False)
     perfil_id = db.Column(db.Integer, db.ForeignKey('perfil.id', ondelete='RESTRICT'), nullable=True)
     perfil_obj = relationship('Perfil', lazy='joined')
+    modulos = relationship('Modulo', secondary=cargo_modulo, lazy='selectin')
     consultores = relationship('Consultor', back_populates='cargo_obj', passive_deletes='all')
 
 class Consultor(db.Model):

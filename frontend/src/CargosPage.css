@@ -1,3 +1,9 @@
 .cargos-page{max-width:1100px;margin:24px auto;padding:24px;color:#182335;background:#fff;border-radius:14px;box-shadow:0 4px 20px #15243b10}.cargos-page h1{margin-bottom:8px}.cargos-page p{color:#526075}.cargos-form{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:20px 0}.cargos-page input{padding:10px 12px;border:1px solid #cbd5e1;border-radius:7px;max-width:100%;box-sizing:border-box}.cargos-form input{flex:1;min-width:180px}.cargos-page button{padding:9px 14px;border:1px solid #cbd5e1;border-radius:7px;background:#f5f7fb;cursor:pointer}.cargos-form button:first-of-type{background:#b92326;color:#fff;border-color:#b92326}.cargos-page button:disabled{opacity:.55;cursor:default}.cargos-search{width:340px;margin:8px 0 20px}.cargos-scroll{overflow-x:auto}.cargos-page table{width:100%;border-collapse:collapse}.cargos-page th,.cargos-page td{padding:13px;text-align:left;border-bottom:1px solid #e2e8f0}.cargos-page th{background:#f4f6fa}.cargos-page td button+button{margin-left:8px}@media(max-width:600px){.cargos-page{margin:12px;padding:16px}.cargos-form{align-items:stretch}.cargos-form label{width:100%}}
 
 .cargos-page select { padding: 10px; border: 1px solid #ccd5df; border-radius: 6px; max-width: 100%; }
+
+.cargos-modulos { flex: 1 1 100%; padding: 14px; border: 1px solid #cbd5e1; border-radius: 8px; min-width: 0; }
+.cargos-modulos-acciones { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+.cargos-modulos-lista { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 10px; max-height: 260px; overflow-y: auto; }
+.cargos-modulos-lista label { display: flex; align-items: center; gap: 8px; }
+.cargos-modulos-lista input { flex: 0 0 auto; min-width: 0; }

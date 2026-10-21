@@ -26233,39 +26233,32 @@ def listar_cargos():
     return jsonify([_cargo_json(c) for c in Cargo.query.order_by(Cargo.nombre.asc()).all()]), 200
 
 
-def _cargo_perfil_json(perfil):
-    return {'id': perfil.id, 'codigo': perfil.codigo, 'nombre': perfil.nombre,
-            'activo': bool(perfil.activo),
-            'modulos': [{'id': mp.modulo.id, 'nombre': mp.modulo.nombre}
-                        for mp in perfil.modulos if mp.activo and mp.modulo is not None]}
-
-
 def _cargo_json(cargo):
-    return {'id': cargo.id, 'nombre': cargo.nombre, 'perfil_id': cargo.perfil_id,
-            'perfil': _cargo_perfil_json(cargo.perfil_obj) if cargo.perfil_obj else None}
+    return {'id': cargo.id, 'nombre': cargo.nombre,
+            'modulo_ids': sorted(m.id for m in cargo.modulos),
+            'modulos': [{'id': m.id, 'nombre': m.nombre}
+                        for m in sorted(cargo.modulos, key=lambda m: m.nombre.casefold())]}
 
 
-@bp.route('/cargos/perfiles', methods=['GET'])
+@bp.route('/cargos/modulos', methods=['GET'])
 @auth_required
-def catalogo_perfiles_cargo():
-    return jsonify([_cargo_perfil_json(p) for p in Perfil.query.order_by(Perfil.orden, Perfil.nombre).all()]), 200
+def catalogo_modulos_cargo():
+    return jsonify([{'id': m.id, 'nombre': m.nombre}
+                    for m in Modulo.query.order_by(Modulo.nombre).all()]), 200
 
 
-def _cargo_perfil_id(data, actual=None):
-    if 'perfil_id' not in data:
-        return actual
-    valor = data['perfil_id']
-    if valor is None or valor == '':
-        return None
-    if isinstance(valor, bool) or not str(valor).isdigit() or int(valor) <= 0:
-        raise ValueError('Selecciona un perfil válido.')
-    perfil = db.session.get(Perfil, int(valor))
-    if perfil is None:
-        raise ValueError('El perfil seleccionado no existe.')
-    # Conservar perfiles inactivos ya asociados, pero no admitir nuevas asignaciones.
-    if not perfil.activo and perfil.id != actual:
-        raise ValueError('El perfil seleccionado está inactivo.')
-    return perfil.id
+def _cargo_modulos(data, actuales=None):
+    if 'modulo_ids' not in data:
+        return list(actuales or [])
+    valores = data['modulo_ids']
+    if not isinstance(valores, list) or any(
+            isinstance(v, bool) or not str(v).isdigit() or int(v) <= 0 for v in valores):
+        raise ValueError('Los módulos deben ser una lista de identificadores válidos.')
+    ids = {int(v) for v in valores}
+    modulos = Modulo.query.filter(Modulo.id.in_(ids)).all() if ids else []
+    if len(modulos) != len(ids):
+        raise ValueError('Uno o varios módulos no existen.')
+    return modulos
 
 
 def _validar_nombre_cargo(data):
@@ -26286,7 +26279,8 @@ def crear_cargo():
         nombre = _validar_nombre_cargo(data)
         if Cargo.query.filter(func.lower(Cargo.nombre) == nombre.lower()).first():
             return jsonify({'mensaje': 'Ya existe un cargo con ese nombre'}), 409
-        cargo = Cargo(nombre=nombre, perfil_id=_cargo_perfil_id(data))
+        cargo = Cargo(nombre=nombre)
+        cargo.modulos = _cargo_modulos(data)
         db.session.add(cargo)
         db.session.commit()
         return jsonify(_cargo_json(cargo)), 201
@@ -26311,7 +26305,7 @@ def editar_cargo(id):
         nombre = _validar_nombre_cargo(data)
         if Cargo.query.filter(Cargo.id != id, func.lower(Cargo.nombre) == nombre.lower()).first():
             return jsonify({'mensaje': 'Ya existe un cargo con ese nombre'}), 409
-        cargo.perfil_id = _cargo_perfil_id(data, cargo.perfil_id)
+        cargo.modulos = _cargo_modulos(data, cargo.modulos)
         cargo.nombre = nombre
         db.session.commit()
         return jsonify(_cargo_json(cargo)), 200
@@ -26414,6 +26408,50 @@ def _mcc_metricas_casos(registros):
             'proyectos_horas': [[*k, round(h, 2)] for k, h in sorted(proyectos_horas.items())]}
 
 
+def _mcc_modulos_persona(personas, cargos):
+    resultado = {}
+    for persona in personas:
+        cargo = cargos.get(persona.cargo_id)
+        permitidos = {m.id: m.nombre for m in cargo.modulos} if cargo else {}
+        propios = {m.id for m in persona.modulos}
+        if persona.modulo_id:
+            propios.add(persona.modulo_id)
+        resultado[persona.id] = {mid: nombre for mid, nombre in permitidos.items() if mid in propios}
+    return resultado
+
+
+def _mcc_filas_modulos(grupos, modulos_persona, registros_por_usuario, driver, cargos):
+    """Métricas completas en cada módulo; los totales se calculan antes de expandir."""
+    filas = []
+    for grupo in grupos:
+        cargo = cargos.get(grupo['cargo_id'])
+        por_modulo = {m.id: {**grupo, 'modulo_id': m.id, 'modulo': m.nombre, 'consultores': []}
+                      for m in cargo.modulos} if cargo else {}
+        for consultor in grupo['consultores']:
+            # Incluir solo módulos compartidos entre el cargo y el consultor.
+            modulos = modulos_persona.get(consultor['id']) or {None: 'SIN MÓDULO COMPATIBLE'}
+            for modulo_id, etiqueta in modulos.items():
+                if modulo_id not in por_modulo:
+                    por_modulo[modulo_id] = {**grupo, 'modulo_id': modulo_id,
+                        'modulo': etiqueta, 'consultores': []}
+                por_modulo[modulo_id]['consultores'].append({**consultor,
+                    'modulo_id': modulo_id, 'modulo': etiqueta})
+        for fila in sorted(por_modulo.values(), key=lambda f: f['modulo'].casefold()):
+            personas = fila['consultores']
+            registros = [r for c in personas for r in registros_por_usuario.get(
+                str(c.get('usuario') or '').strip().lower(), [])]
+            fila.update(_mcc_metricas_casos(registros))
+            fila['personas_activas'] = len(personas)
+            fila['capacidad_actual'] = round(sum(c['capacidad_actual'] for c in personas), 2)
+            fila['volumen_actual'] = fila['capacidad_actual']
+            fila['capacidad_vendida'] = driver * len(personas)
+            fila['porcentaje_cumplimiento_mes'] = (
+                round(fila['capacidad_actual'] / fila['capacidad_vendida'] * 100, 2)
+                if fila['capacidad_vendida'] > 0 else None)
+            filas.append(fila)
+    return filas
+
+
 @bp.route('/modelos-capacidades-coe-sap', methods=['GET'])
 @admin_required
 def modelos_capacidades_coe_sap():
@@ -26473,14 +26511,12 @@ def modelos_capacidades_coe_sap():
             db.session.query(
                 Equipo.id.label('equipo_id'), Equipo.nombre.label('proceso'),
                 Cargo.id.label('cargo_id'), Cargo.nombre.label('cargo'),
-                Perfil.id.label('perfil_id'), Perfil.codigo.label('perfil_codigo'), Perfil.nombre.label('perfil_nombre'),
                 Consultor.id.label('consultor_id'), Consultor.usuario.label('usuario'),
                 Consultor.nombre.label('nombre'), func.coalesce(horas_mes.c.horas, 0).label('horas'),
             )
             .select_from(Consultor)
             .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
             .outerjoin(Cargo, Consultor.cargo_id == Cargo.id)
-            .outerjoin(Perfil, Cargo.perfil_id == Perfil.id)
             .outerjoin(horas_mes, horas_mes.c.usuario == func.lower(func.trim(Consultor.usuario)))
             .filter(Consultor.activo.is_(True))
             .order_by(Equipo.nombre.asc(), Cargo.nombre.asc(), Consultor.nombre.asc())
@@ -26549,9 +26585,6 @@ def modelos_capacidades_coe_sap():
                     'cargo_id': fila.cargo_id,
                     'proceso': fila.proceso or 'SIN EQUIPO',
                     'cargo': fila.cargo or 'SIN CARGO ASIGNADO',
-                    'perfil_id': fila.perfil_id, 'perfil_codigo': fila.perfil_codigo,
-                    'perfil_nombre': fila.perfil_nombre,
-                    'perfil': ' - '.join(str(v) for v in (fila.perfil_codigo, fila.perfil_nombre) if v) or 'SIN PERFIL ASOCIADO',
                     'unidad': 'Horas', 'driver': float(driver),
                     'volumen_actual': 0.0,
                     'capacidad_actual': None, 'capacidad_vacante': None,
@@ -26564,7 +26597,6 @@ def modelos_capacidades_coe_sap():
             grupos[key]['consultores'].append({
                 'id': fila.consultor_id, 'usuario': fila.usuario,
                 'nombre': fila.nombre, 'cargo': grupos[key]['cargo'],
-                'perfil_id': fila.perfil_id, 'perfil': grupos[key]['perfil'],
                 **metricas_persona,
                 'horas': round(horas, 2),
                 'capacidad_actual': round(horas, 2),
@@ -26583,9 +26615,21 @@ def modelos_capacidades_coe_sap():
                 round(grupo['capacidad_actual'] / grupo['capacidad_vendida'] * 100, 2)
                 if grupo['capacidad_vendida'] > 0 else None
             )
+        # Los grupos originales contienen cada consultor una sola vez y alimentan
+        # los resúmenes. Las filas por perfil son una proyección, no sumandos.
+        totales_data = data
+        ids_personas = {c['id'] for grupo in data for c in grupo['consultores']}
+        personas_db = (Consultor.query.options(selectinload(Consultor.modulos))
+                       .filter(Consultor.id.in_(ids_personas)).all()) if ids_personas else []
+        ids_cargos = {grupo['cargo_id'] for grupo in totales_data if grupo['cargo_id'] is not None}
+        cargos_db = {c.id: c for c in Cargo.query.options(selectinload(Cargo.modulos))
+                     .filter(Cargo.id.in_(ids_cargos)).all()} if ids_cargos else {}
+        modulos_persona = _mcc_modulos_persona(personas_db, cargos_db)
+        data = _mcc_filas_modulos(totales_data, modulos_persona,
+                                 registros_por_usuario, float(driver), cargos_db)
         return jsonify({
             'anio': anio, 'mes': mes, 'dias_laborables': dias_laborables,
-            'driver': float(driver), 'data': data,
+            'driver': float(driver), 'data': data, 'totales_data': totales_data,
             'advertencias': advertencias,
         }), 200
     except Exception:
