@@ -78,6 +78,8 @@ class Cargo(db.Model):
     __tablename__ = 'cargo'
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), unique=True, nullable=False)
+    perfil_id = db.Column(db.Integer, db.ForeignKey('perfil.id', ondelete='RESTRICT'), nullable=True)
+    perfil_obj = relationship('Perfil', lazy='joined')
     consultores = relationship('Consultor', back_populates='cargo_obj', passive_deletes='all')
 
 class Consultor(db.Model):

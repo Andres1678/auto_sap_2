@@ -26230,8 +26230,42 @@ def _limpiar_cambios_codigo_interno(session):
 @bp.route('/cargos', methods=['GET'])
 @auth_required
 def listar_cargos():
-    return jsonify([{'id': c.id, 'nombre': c.nombre}
-                    for c in Cargo.query.order_by(Cargo.nombre.asc()).all()]), 200
+    return jsonify([_cargo_json(c) for c in Cargo.query.order_by(Cargo.nombre.asc()).all()]), 200
+
+
+def _cargo_perfil_json(perfil):
+    return {'id': perfil.id, 'codigo': perfil.codigo, 'nombre': perfil.nombre,
+            'activo': bool(perfil.activo),
+            'modulos': [{'id': mp.modulo.id, 'nombre': mp.modulo.nombre}
+                        for mp in perfil.modulos if mp.activo and mp.modulo is not None]}
+
+
+def _cargo_json(cargo):
+    return {'id': cargo.id, 'nombre': cargo.nombre, 'perfil_id': cargo.perfil_id,
+            'perfil': _cargo_perfil_json(cargo.perfil_obj) if cargo.perfil_obj else None}
+
+
+@bp.route('/cargos/perfiles', methods=['GET'])
+@auth_required
+def catalogo_perfiles_cargo():
+    return jsonify([_cargo_perfil_json(p) for p in Perfil.query.order_by(Perfil.orden, Perfil.nombre).all()]), 200
+
+
+def _cargo_perfil_id(data, actual=None):
+    if 'perfil_id' not in data:
+        return actual
+    valor = data['perfil_id']
+    if valor is None or valor == '':
+        return None
+    if isinstance(valor, bool) or not str(valor).isdigit() or int(valor) <= 0:
+        raise ValueError('Selecciona un perfil válido.')
+    perfil = db.session.get(Perfil, int(valor))
+    if perfil is None:
+        raise ValueError('El perfil seleccionado no existe.')
+    # Conservar perfiles inactivos ya asociados, pero no admitir nuevas asignaciones.
+    if not perfil.activo and perfil.id != actual:
+        raise ValueError('El perfil seleccionado está inactivo.')
+    return perfil.id
 
 
 def _validar_nombre_cargo(data):
@@ -26248,13 +26282,14 @@ def _validar_nombre_cargo(data):
 @admin_required
 def crear_cargo():
     try:
-        nombre = _validar_nombre_cargo(request.get_json(silent=True) or {})
+        data = request.get_json(silent=True) or {}
+        nombre = _validar_nombre_cargo(data)
         if Cargo.query.filter(func.lower(Cargo.nombre) == nombre.lower()).first():
             return jsonify({'mensaje': 'Ya existe un cargo con ese nombre'}), 409
-        cargo = Cargo(nombre=nombre)
+        cargo = Cargo(nombre=nombre, perfil_id=_cargo_perfil_id(data))
         db.session.add(cargo)
         db.session.commit()
-        return jsonify({'id': cargo.id, 'nombre': cargo.nombre}), 201
+        return jsonify(_cargo_json(cargo)), 201
     except ValueError as error:
         db.session.rollback()
         return jsonify({'mensaje': str(error)}), 400
@@ -26272,12 +26307,14 @@ def crear_cargo():
 def editar_cargo(id):
     cargo = Cargo.query.get_or_404(id)
     try:
-        nombre = _validar_nombre_cargo(request.get_json(silent=True) or {})
+        data = request.get_json(silent=True) or {}
+        nombre = _validar_nombre_cargo(data)
         if Cargo.query.filter(Cargo.id != id, func.lower(Cargo.nombre) == nombre.lower()).first():
             return jsonify({'mensaje': 'Ya existe un cargo con ese nombre'}), 409
+        cargo.perfil_id = _cargo_perfil_id(data, cargo.perfil_id)
         cargo.nombre = nombre
         db.session.commit()
-        return jsonify({'id': cargo.id, 'nombre': cargo.nombre}), 200
+        return jsonify(_cargo_json(cargo)), 200
     except ValueError as error:
         db.session.rollback()
         return jsonify({'mensaje': str(error)}), 400
