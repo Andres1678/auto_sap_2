@@ -976,6 +976,20 @@ def set_activo_consultor(consultor_id):
 # ===============================
 # Helper: asignar catálogos y módulos
 # ===============================
+def _consultor_especialidades_payload(data, actuales=None):
+    if 'especialidad_ids' not in data:
+        return list(actuales or [])
+    ids = data['especialidad_ids']
+    if not isinstance(ids, list) or any(
+            isinstance(v, bool) or not str(v).isdigit() or int(v) <= 0 for v in ids):
+        raise ValueError('Selecciona especialidades válidas.')
+    ids = {int(v) for v in ids}
+    especiales = Especialidad.query.filter(Especialidad.id.in_(ids)).all() if ids else []
+    if len(especiales) != len(ids):
+        raise ValueError('Una o varias especialidades no existen.')
+    return especiales
+
+
 def _apply_catalog_fields_to_consultor(consultor, data):
     """Actualiza relaciones de catálogo (Rol, Equipo, Horario, Módulos)."""
     try:
@@ -990,6 +1004,9 @@ def _apply_catalog_fields_to_consultor(consultor, data):
                 if not cargo:
                     raise ValueError("El cargo seleccionado no existe")
                 consultor.cargo_id = cargo.id
+
+        if 'especialidad_ids' in data:
+            consultor.especialidades = _consultor_especialidades_payload(data, consultor.especialidades)
 
         # --- Rol ---
         if "rol_id" in data or "rol" in data:
@@ -3672,6 +3689,7 @@ def listar_consultores():
                 joinedload(Consultor.cargo_obj),
                 joinedload(Consultor.equipo_obj),
                 joinedload(Consultor.horario_obj),
+                selectinload(Consultor.especialidades).joinedload(Especialidad.modulo_obj),
                 joinedload(Consultor.modulos)
             )
             .order_by(Consultor.nombre.asc())
@@ -3699,6 +3717,8 @@ def listar_consultores():
                 'rol': c.rol_obj.nombre if c.rol_obj else None,
                 'equipo': c.equipo_obj.nombre if c.equipo_obj else None,
                 'horario': c.horario_obj.rango if c.horario_obj else None,
+                'especialidad_ids': sorted(e.id for e in c.especialidades),
+                'especialidades': [_especialidad_json(e) for e in sorted(c.especialidades, key=lambda e: e.nombre.casefold())],
                 'modulos': [{'id': m.id, 'nombre': m.nombre} for m in c.modulos]
             })
 
@@ -26306,6 +26326,8 @@ def eliminar_especialidad(id):
     especialidad = Especialidad.query.get_or_404(id)
     if especialidad.cargos:
         return jsonify({'mensaje': 'La especialidad está asociada a cargos. Retira esas asociaciones antes de eliminarla.'}), 409
+    if Consultor.query.filter(Consultor.especialidades.any(id=id)).first():
+        return jsonify({'mensaje': 'La especialidad está asignada a consultores. Retira esas asignaciones antes de eliminarla.'}), 409
     try:
         db.session.delete(especialidad)
         db.session.commit()
@@ -26491,7 +26513,9 @@ def _mcc_especialidades_persona(personas, cargos):
         propios = {m.id for m in persona.modulos}
         if persona.modulo_id:
             propios.add(persona.modulo_id)
-        resultado[persona.id] = {eid: nombre for eid, (nombre, modulo_id) in permitidos.items() if modulo_id in propios}
+        seleccionadas = {e.id for e in persona.especialidades}
+        resultado[persona.id] = {eid: nombre for eid, (nombre, modulo_id) in permitidos.items()
+                                if (eid in seleccionadas if seleccionadas else modulo_id in propios)}
     return resultado
 
 
@@ -26696,7 +26720,7 @@ def modelos_capacidades_coe_sap():
         # los resúmenes. Las filas por perfil son una proyección, no sumandos.
         totales_data = data
         ids_personas = {c['id'] for grupo in data for c in grupo['consultores']}
-        personas_db = (Consultor.query.options(selectinload(Consultor.modulos))
+        personas_db = (Consultor.query.options(selectinload(Consultor.modulos), selectinload(Consultor.especialidades))
                        .filter(Consultor.id.in_(ids_personas)).all()) if ids_personas else []
         ids_cargos = {grupo['cargo_id'] for grupo in totales_data if grupo['cargo_id'] is not None}
         cargos_db = {c.id: c for c in Cargo.query.options(selectinload(Cargo.especialidades).joinedload(Especialidad.modulo_obj))

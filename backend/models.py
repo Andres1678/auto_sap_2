@@ -98,6 +98,12 @@ class Cargo(db.Model):
                                   back_populates='cargos', lazy='selectin')
     consultores = relationship('Consultor', back_populates='cargo_obj', passive_deletes='all')
 
+consultor_especialidad = db.Table(
+    'consultor_especialidad',
+    db.Column('consultor_id', db.Integer, db.ForeignKey('consultor.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('especialidad_id', db.Integer, db.ForeignKey('especiales.id', ondelete='RESTRICT'), primary_key=True),
+)
+
 class Consultor(db.Model):
     __tablename__ = 'consultor'
 
@@ -126,6 +132,8 @@ class Consultor(db.Model):
         secondary=consultor_modulo,
         back_populates='consultores'
     )
+
+    especialidades = relationship('Especialidad', secondary=consultor_especialidad, lazy='selectin')
 
     registros = relationship(
         'Registro',

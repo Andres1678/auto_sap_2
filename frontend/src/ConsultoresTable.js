@@ -21,6 +21,7 @@ const emptyForm = () => ({
   rol_id: "",
   equipo_id: "",
   horario_id: "",
+  especialidad_ids: [],
   modulos: [], // array de IDs
   activo: true,
 });
@@ -39,6 +40,7 @@ export default function ConsultoresTable() {
   // catálogos
   const [roles, setRoles] = useState([]);
   const [cargos, setCargos] = useState([]);
+  const [especialidades, setEspecialidades] = useState([]);
   const [equipos, setEquipos] = useState([]);
   const [horarios, setHorarios] = useState([]);
   const [modulos, setModulos] = useState([]);
@@ -53,30 +55,34 @@ export default function ConsultoresTable() {
 
   const fetchCatalogos = useCallback(async () => {
     try {
-      const [r1, r2, r3, r4, r5] = await Promise.all([
+      const [r1, r2, r3, r4, r5, r6] = await Promise.all([
         jfetch("/roles"),
         jfetch("/equipos"),
         jfetch("/horarios"),
         jfetch("/modulos"),
         jfetch("/cargos"),
+        jfetch("/especialidades"),
       ]);
 
-      const [j1, j2, j3, j4, j5] = await Promise.all([
+      const [j1, j2, j3, j4, j5, j6] = await Promise.all([
         r1.json().catch(() => []),
         r2.json().catch(() => []),
         r3.json().catch(() => []),
         r4.json().catch(() => []),
         r5.json().catch(() => []),
+        r6.json().catch(() => []),
       ]);
 
       if (!r5.ok) throw new Error(j5?.mensaje || "No se pudieron cargar los cargos");
+      if (!r6.ok) throw new Error(j6?.mensaje || "No se pudieron cargar las especialidades");
+      setEspecialidades(Array.isArray(j6) ? j6 : []);
       setCargos(Array.isArray(j5) ? j5 : []);
       setRoles(Array.isArray(j1) ? j1 : []);
       setEquipos(Array.isArray(j2) ? j2 : []);
       setHorarios(Array.isArray(j3) ? j3 : []);
       setModulos(Array.isArray(j4) ? j4 : []);
     } catch (error) {
-      setRoles([]); setEquipos([]); setHorarios([]); setModulos([]); setCargos([]);
+      setRoles([]); setEquipos([]); setHorarios([]); setModulos([]); setCargos([]); setEspecialidades([]);
       Swal.fire({ icon: "error", title: "Error cargando catálogos", text: String(error.message || error) });
     }
   }, []);
@@ -150,6 +156,7 @@ export default function ConsultoresTable() {
       rol_id: c.rol_id ?? "",
       equipo_id: c.equipo_id ?? "",
       horario_id: c.horario_id ?? "",
+      especialidad_ids: (c.especialidad_ids || (c.especialidades || []).map(e => e.id)).map(Number),
       modulos: mods,
       activo: isActiveValue(c.activo),
     });
@@ -180,6 +187,7 @@ export default function ConsultoresTable() {
       rol_id: form.rol_id ? Number(form.rol_id) : null,
       equipo_id: form.equipo_id ? Number(form.equipo_id) : null,
       horario_id: form.horario_id ? Number(form.horario_id) : null,
+      especialidad_ids: (form.especialidad_ids || []).map(Number).filter(Boolean),
       modulos: (form.modulos || []).map(Number).filter(Boolean),
       activo: !!form.activo,
     };
@@ -320,6 +328,7 @@ export default function ConsultoresTable() {
               <th>Rol</th>
               <th>Equipo</th>
               <th>Horario</th>
+              <th>Especialidades</th>
               <th>Módulos</th>
               <th>Activo</th>
               <th>Acciones</th>
@@ -329,7 +338,7 @@ export default function ConsultoresTable() {
           <tbody>
             {loading ? (
               <tr>
-                <td className="cst-empty" colSpan={9}>Cargando…</td>
+                <td className="cst-empty" colSpan={10}>Cargando…</td>
               </tr>
             ) : filtered.length ? (
               filtered.map((c) => (
@@ -348,6 +357,10 @@ export default function ConsultoresTable() {
 
                   <td title={c.horario_rango ?? c.horario ?? ""}>
                     {c.horario_rango ?? c.horario ?? "—"}
+                  </td>
+
+                  <td className="cst-wrap" title={(c.especialidades || []).map(e => `${e.nombre} (${e.modulo_nombre})`).join(', ')}>
+                    {(c.especialidades || []).map(e => e.nombre).join(', ') || '—'}
                   </td>
 
                   <td
@@ -398,7 +411,7 @@ export default function ConsultoresTable() {
               ))
             ) : (
               <tr>
-                <td className="cst-empty" colSpan={9}>
+                <td className="cst-empty" colSpan={10}>
                   Sin resultados
                 </td>
               </tr>
@@ -479,6 +492,17 @@ export default function ConsultoresTable() {
                     </option>
                   ))}
                 </select>
+
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="consultor-especialidades">Especialidades (puedes seleccionar varias)</label>
+                  <select id="consultor-especialidades" multiple size={6} style={{ width: '100%' }}
+                    value={(form.especialidad_ids || []).map(String)}
+                    onChange={e => onChange('especialidad_ids', Array.from(e.target.selectedOptions).map(o => Number(o.value)))}>
+                    {especialidades.map(e => <option key={e.id} value={e.id}>{e.nombre} ({e.modulo_nombre})</option>)}
+                  </select>
+                  <button type="button" onClick={() => onChange('especialidad_ids', [])}>Quitar especialidades</button>
+                  <small style={{ display: 'block' }}>Mantén Ctrl o Cmd para seleccionar varias especialidades.</small>
+                </div>
 
                 <select
                   multiple
