@@ -242,7 +242,7 @@ export default function ModelosCapacidadesCoeSap() {
       {!!resultado?.advertencias?.length && <div className="mcc-error" role="alert">
         {resultado.advertencias.map((texto) => <p key={texto}>{texto}</p>)}
       </div>}
-      <p className="mcc-nota">Cada cargo tiene especialidades y cada especialidad se asocia a un módulo. Se incluyen los consultores cuyo módulo coincide. Una persona puede aparecer en varias especialidades con sus métricas completas; los resúmenes del equipo y el total general excluyen duplicados. Las personas sin coincidencia conservan sus métricas en Sin especialidad compatible.</p>
+      <p className="mcc-nota">Las especialidades corresponden a las asignadas directamente a cada consultor. Cuando no hay asignación, la celda queda vacía y sus métricas permanecen incluidas. Una persona puede aparecer en varias especialidades con sus métricas completas; los resúmenes del equipo y el total general excluyen duplicados.</p>
       <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 8 horas. Se excluyen fines de semana y festivos de Colombia.</p>
       <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table"><colgroup><col style={{ width: "12.000000%" }} /><col style={{ width: "8.000000%" }} /><col style={{ width: "10.000000%" }} /><col style={{ width: "8.000000%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /></colgroup>
         <thead>
@@ -271,7 +271,7 @@ export default function ModelosCapacidadesCoeSap() {
                     <div><dt>Capacidad instalada (Nro de Personas)</dt><dd>{formato.format(grupo.resumen.instalada)}</dd></div>
                   </dl>
                 </th>}
-                <React.Fragment>{primeraCargo && <td rowSpan={cargoRowSpan} className="mcc-cargo-agrupado">{fila.cargo}</td>}</React.Fragment><td>{fila.especialidad || "SIN ESPECIALIDAD COMPATIBLE"}{fila.modulo_nombre && <small className="mcc-especialidad-consultor">Módulo: {fila.modulo_nombre}</small>}</td>
+                <React.Fragment>{primeraCargo && <td rowSpan={cargoRowSpan} className="mcc-cargo-agrupado">{fila.cargo}</td>}</React.Fragment><td>{fila.especialidad || ""}{fila.modulo_nombre && <small className="mcc-especialidad-consultor">Módulo: {fila.modulo_nombre}</small>}</td>
                 <td className="mcc-personas">
                   <button type="button" className="mcc-expand" aria-expanded={abierto}
                     aria-controls={`detalle-${clave}`}
@@ -303,7 +303,7 @@ export default function ModelosCapacidadesCoeSap() {
               {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`} style={estiloEquipo(fila.equipo_id)}>
                 <td colSpan={15}>
                   <div className="mcc-detalle-body">
-                    <h3>{grupo.proceso} · {fila.cargo} · {fila.especialidad || "SIN ESPECIALIDAD COMPATIBLE"}</h3>
+                    <h3>{[grupo.proceso, fila.cargo, fila.especialidad].filter(Boolean).join(" · ")}</h3>
                     <table className="mcc-consultores"><colgroup><col style={{ width: "20%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /></colgroup>
                       <thead>
 <tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada (Nro de Personas)</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
@@ -312,7 +312,7 @@ export default function ModelosCapacidadesCoeSap() {
 <tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
-                          <td>{c.nombre}<small className="mcc-especialidad-consultor">{c.especialidad || fila.especialidad || "SIN ESPECIALIDAD COMPATIBLE"}</small></td>
+                          <td>{c.nombre}{c.especialidad && <small className="mcc-especialidad-consultor">{c.especialidad}</small>}</td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
                           <td className="mcc-num">{formato.format(c.capacidad_actual ?? 0)}</td>

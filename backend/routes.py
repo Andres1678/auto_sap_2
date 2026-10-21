@@ -26505,38 +26505,29 @@ def _mcc_metricas_casos(registros):
             'proyectos_horas': [[*k, round(h, 2)] for k, h in sorted(proyectos_horas.items())]}
 
 
-def _mcc_especialidades_persona(personas, cargos):
-    resultado = {}
-    for persona in personas:
-        cargo = cargos.get(persona.cargo_id)
-        permitidos = {e.id: (e.nombre, e.modulo_id) for e in cargo.especialidades} if cargo else {}
-        propios = {m.id for m in persona.modulos}
-        if persona.modulo_id:
-            propios.add(persona.modulo_id)
-        seleccionadas = {e.id for e in persona.especialidades}
-        resultado[persona.id] = {eid: nombre for eid, (nombre, modulo_id) in permitidos.items()
-                                if (eid in seleccionadas if seleccionadas else modulo_id in propios)}
-    return resultado
+def _mcc_especialidades_persona(personas):
+    # Fuente única: la relación consultor_especialidad, sin inferir por módulo/cargo.
+    return {persona.id: {e.id: {
+                'nombre': e.nombre, 'modulo_id': e.modulo_id,
+                'modulo_nombre': e.modulo_obj.nombre if e.modulo_obj else ''}
+            for e in persona.especialidades} for persona in personas}
 
 
-def _mcc_filas_especialidades(grupos, especialidades_persona, registros_por_usuario, driver, cargos):
-    """Métricas completas en cada especialidad; los totales se calculan antes de expandir."""
+def _mcc_filas_especialidades(grupos, especialidades_persona, registros_por_usuario, driver):
     filas = []
     for grupo in grupos:
-        cargo = cargos.get(grupo['cargo_id'])
-        por_especialidad = {e.id: {**grupo, 'especialidad_id': e.id, 'especialidad': e.nombre,
-                                  'modulo_id': e.modulo_id,
-                                  'modulo_nombre': e.modulo_obj.nombre if e.modulo_obj else '', 'consultores': []}
-                           for e in cargo.especialidades} if cargo else {}
+        por_especialidad = {}
         for consultor in grupo['consultores']:
-            # Incluir especialidades cuyo módulo está asignado al consultor.
-            especialidades = especialidades_persona.get(consultor['id']) or {None: 'SIN ESPECIALIDAD COMPATIBLE'}
-            for especialidad_id, etiqueta in especialidades.items():
+            especialidades = especialidades_persona.get(consultor['id']) or {
+                None: {'nombre': '', 'modulo_id': None, 'modulo_nombre': ''}}
+            for especialidad_id, datos in especialidades.items():
                 if especialidad_id not in por_especialidad:
-                    por_especialidad[especialidad_id] = {**grupo, 'especialidad_id': especialidad_id,
-                        'especialidad': etiqueta, 'consultores': []}
+                    por_especialidad[especialidad_id] = {**grupo,
+                        'especialidad_id': especialidad_id, 'especialidad': datos['nombre'],
+                        'modulo_id': datos['modulo_id'], 'modulo_nombre': datos['modulo_nombre'],
+                        'consultores': []}
                 por_especialidad[especialidad_id]['consultores'].append({**consultor,
-                    'especialidad_id': especialidad_id, 'especialidad': etiqueta})
+                    'especialidad_id': especialidad_id, 'especialidad': datos['nombre']})
         for fila in sorted(por_especialidad.values(), key=lambda f: f['especialidad'].casefold()):
             personas = fila['consultores']
             registros = [r for c in personas for r in registros_por_usuario.get(
@@ -26720,14 +26711,12 @@ def modelos_capacidades_coe_sap():
         # los resúmenes. Las filas por perfil son una proyección, no sumandos.
         totales_data = data
         ids_personas = {c['id'] for grupo in data for c in grupo['consultores']}
-        personas_db = (Consultor.query.options(selectinload(Consultor.modulos), selectinload(Consultor.especialidades))
-                       .filter(Consultor.id.in_(ids_personas)).all()) if ids_personas else []
-        ids_cargos = {grupo['cargo_id'] for grupo in totales_data if grupo['cargo_id'] is not None}
-        cargos_db = {c.id: c for c in Cargo.query.options(selectinload(Cargo.especialidades).joinedload(Especialidad.modulo_obj))
-                     .filter(Cargo.id.in_(ids_cargos)).all()} if ids_cargos else {}
-        especialidades_persona = _mcc_especialidades_persona(personas_db, cargos_db)
+        personas_db = (Consultor.query.options(
+            selectinload(Consultor.especialidades).joinedload(Especialidad.modulo_obj))
+            .filter(Consultor.id.in_(ids_personas)).all()) if ids_personas else []
+        especialidades_persona = _mcc_especialidades_persona(personas_db)
         data = _mcc_filas_especialidades(totales_data, especialidades_persona,
-                                 registros_por_usuario, float(driver), cargos_db)
+                                        registros_por_usuario, float(driver))
         return jsonify({
             'anio': anio, 'mes': mes, 'dias_laborables': dias_laborables,
             'driver': float(driver), 'data': data, 'totales_data': totales_data,
