@@ -249,7 +249,7 @@ export default function ModelosCapacidadesCoeSap() {
         <thead>
 <tr><th rowSpan={2} scope="col">Proceso</th><th rowSpan={2} scope="col">Cargo</th><th rowSpan={2} scope="col">Personas incluidas</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th rowSpan={2} scope="col">Capacidad vacante</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
-<th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th><th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th></tr>
+<th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th><th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
 <tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
         <tbody>{cargando ? <tr><td colSpan={17}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
           <React.Fragment key={grupo.clave}>
@@ -295,9 +295,9 @@ export default function ModelosCapacidadesCoeSap() {
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.otras_actividades_operacion ?? 0)}</td>
                 <td className="mcc-num mcc-proyecto-gris">{formato.format(fila.proyectos_con_horas ?? 0)}</td>
 <td className="mcc-num mcc-proyecto-gris">{formato.format(fila.horas_proyectos ?? 0)}</td>
-<td className="mcc-num mcc-otras-gris">{formato.format(fila.otras_ocupaciones ?? 0)}</td>
 <td className="mcc-num mcc-preventa">{formato.format(fila.clientes_preventa ?? 0)}</td>
 <td className="mcc-num mcc-preventa">{formato.format(fila.horas_preventa ?? 0)}</td>
+<td className="mcc-num mcc-otras-gris">{formato.format(fila.otras_ocupaciones ?? 0)}</td>
               </tr>
               {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`} style={estiloEquipo(fila.equipo_id)}>
                 <td colSpan={16}>
@@ -307,7 +307,7 @@ export default function ModelosCapacidadesCoeSap() {
                       <thead>
 <tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada (Nro de Personas)</th><th rowSpan={2} scope="col">Capacidad vacante</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
-<th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th><th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th></tr>
+<th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th><th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
 <tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
@@ -325,9 +325,9 @@ export default function ModelosCapacidadesCoeSap() {
                           <td className="mcc-num mcc-casos-gris">{formato.format(c.otras_actividades_operacion ?? 0)}</td>
                           <td className="mcc-num mcc-proyecto-gris">{formato.format(c.proyectos_con_horas ?? 0)}</td>
 <td className="mcc-num mcc-proyecto-gris">{formato.format(c.horas_proyectos ?? 0)}</td>
-<td className="mcc-num mcc-otras-gris">{formato.format(c.otras_ocupaciones ?? 0)}</td>
 <td className="mcc-num mcc-preventa">{formato.format(c.clientes_preventa ?? 0)}</td>
 <td className="mcc-num mcc-preventa">{formato.format(c.horas_preventa ?? 0)}</td>
+<td className="mcc-num mcc-otras-gris">{formato.format(c.otras_ocupaciones ?? 0)}</td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -355,9 +355,9 @@ export default function ModelosCapacidadesCoeSap() {
           <td className="mcc-num mcc-casos-gris">{formato.format(totales.otrasActividadesOperacion)}</td>
           <td className="mcc-num mcc-proyecto-gris">{formato.format(totales.proyectos.conHoras)}</td>
 <td className="mcc-num mcc-proyecto-gris">{formato.format(totales.horasProyectos)}</td>
-<td className="mcc-num mcc-otras-gris">{formato.format(totales.otrasOcupaciones)}</td>
 <td className="mcc-num mcc-preventa">{formato.format(totales.clientesPreventa)}</td>
 <td className="mcc-num mcc-preventa">{formato.format(totales.horasPreventa)}</td>
+<td className="mcc-num mcc-otras-gris">{formato.format(totales.otrasOcupaciones)}</td>
         </tr></tfoot>}
       </table></div>
       <p className="mcc-nota">Casos: únicamente ocupación 01 con tarea 01. Número de casos cuenta identificadores únicos; los registros sin identificador no crean casos. Otras Actividades Operacion: tareas 05 Generación de informes y 22 Reunión cliente en cualquier ocupación, con o sin caso, además de las restantes tareas de ocupación 01 distintas de 01. Otras ocupaciones: el resto, excluyendo ocupación 02 de proyectos y ocupación 06 de preventa. La ocupación 06, con todas sus tareas, pertenece solo a Preventa: clientes únicos y sus horas en el mes y filtros seleccionados. Proyectos con horas y Horas de proyectos siguen siendo indicadores exclusivos de ocupación 02. Capacidad vacante continúa pendiente de definición.</p>
