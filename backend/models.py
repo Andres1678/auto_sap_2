@@ -1713,3 +1713,23 @@ class CoeSapControlBolsaClienteDetalle(db.Model):
     __table_args__ = (
         UniqueConstraint("control_id", "mes_numero", name="uq_coe_bolsa_detalle_mes"),
     )
+
+
+class TriaraAsistencia(db.Model):
+    __tablename__ = 'triara_asistencia'
+
+    id = db.Column(db.Integer, primary_key=True)
+    consultor_id = db.Column(db.Integer, db.ForeignKey('consultor.id', ondelete='RESTRICT'), nullable=False)
+    semana_lunes = db.Column(db.Date, nullable=False)
+    fecha = db.Column(db.Date, nullable=False, index=True)
+    estado = db.Column(db.String(15), nullable=False, server_default=text("'PENDIENTE'"))
+    justificacion = db.Column(db.Text, nullable=True)
+    asignado_por = db.Column(db.Integer, db.ForeignKey('consultor.id', ondelete='RESTRICT'), nullable=False)
+    actualizado_por = db.Column(db.Integer, db.ForeignKey('consultor.id', ondelete='RESTRICT'), nullable=False)
+    creado_en = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    actualizado_en = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    confirmado_en = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint('consultor_id', 'semana_lunes', name='uq_triara_consultor_semana'),
+    )

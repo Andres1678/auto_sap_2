@@ -26549,6 +26549,237 @@ def modelos_capacidades_coe_sap():
         app.logger.exception('Error consultando modelos de capacidades COE SAP')
         return jsonify({'mensaje': 'No se pudo consultar el modelo de capacidades.'}), 500
 
+def _triara_norm(valor):
+    import unicodedata
+    valor = unicodedata.normalize('NFD', str(valor or '').strip().casefold())
+    return ' '.join(''.join(c for c in valor if not unicodedata.combining(c)).split())
+
+
+def _triara_es_juan(consultor):
+    # Puede fijarse el login exacto en la configuración Flask sin tocar la lógica.
+    usuario = _triara_norm(getattr(consultor, 'usuario', ''))
+    exacto = _triara_norm(app.config.get('TRIARA_JUAN_DIAZ_USUARIO', ''))
+    return usuario == exacto if exacto else {'juan', 'diaz'}.issubset(set(_triara_norm(consultor.nombre).split()))
+
+
+def _triara_puede_asignar(consultor):
+    if _triara_es_juan(consultor) or not bool(consultor.activo):
+        return False
+    usuario = _triara_norm(consultor.usuario)
+    if usuario in {'rodriguezso', 'valdezjl', 'gonzalezanf'}:
+        return True
+    edwin_login = _triara_norm(app.config.get('TRIARA_EDWIN_AVILA_USUARIO', ''))
+    if edwin_login:
+        return usuario == edwin_login
+    # Hasta fijar el login exacto, solo Edwin Ávila con rol JEFE y coincidencia única.
+    rol = _triara_norm(getattr(getattr(consultor, 'rol_obj', None), 'nombre', ''))
+    if rol != 'jefe' or not {'edwin', 'avila'}.issubset(set(_triara_norm(consultor.nombre).split())):
+        return False
+    candidatos = [c for c in Consultor.query.filter(Consultor.activo.is_(True)).all()
+                  if {'edwin', 'avila'}.issubset(set(_triara_norm(c.nombre).split()))]
+    return len(candidatos) == 1 and candidatos[0].id == consultor.id
+
+
+def _triara_hoy():
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo('America/Bogota')).date()
+
+
+def _triara_fecha(valor):
+    import re
+    from datetime import date
+    if not isinstance(valor, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', valor):
+        raise ValueError('Fecha inválida.')
+    try:
+        fecha = date.fromisoformat(valor)
+    except ValueError:
+        raise ValueError('Fecha inválida.')
+    if not 2000 <= fecha.year <= 2100:
+        raise ValueError('El año debe estar entre 2000 y 2100.')
+    return fecha
+
+
+def _triara_laborable(fecha):
+    import holidays
+    return fecha.weekday() < 5 and fecha not in holidays.CO(years=[fecha.year])
+
+
+def _triara_abierto(fecha):
+    hoy = _triara_hoy()
+    return (fecha.year, fecha.month) >= (hoy.year, hoy.month)
+
+
+def _triara_actor_escritura():
+    actor = g.current_user
+    if not bool(actor.activo) or _triara_es_juan(actor):
+        return None
+    return actor
+
+
+@bp.route('/asistencia-triara/periodos', methods=['GET'])
+@auth_required
+def triara_periodos():
+    actor = g.current_user
+    q = db.session.query(TriaraAsistencia.fecha)
+    if not _triara_puede_asignar(actor):
+        q = q.filter(TriaraAsistencia.consultor_id == actor.id)
+    meses = {f.fecha.strftime('%Y-%m') for f in q.all()}
+    meses.add(_triara_hoy().strftime('%Y-%m'))
+    return jsonify({'periodos': sorted(meses, reverse=True)}), 200
+
+
+@bp.route('/asistencia-triara', methods=['GET'])
+@auth_required
+def triara_consultar_mes():
+    import calendar
+    from datetime import date, timedelta
+    hoy = _triara_hoy()
+    periodo = request.args.get('mes') or hoy.strftime('%Y-%m')
+    try:
+        primero = _triara_fecha(periodo + '-01')
+    except ValueError as error:
+        return jsonify({'mensaje': str(error)}), 400
+    ultimo = date(primero.year, primero.month, calendar.monthrange(primero.year, primero.month)[1])
+    actor = g.current_user
+    asignador = _triara_puede_asignar(actor)
+    q = TriaraAsistencia.query.filter(TriaraAsistencia.fecha >= primero, TriaraAsistencia.fecha <= ultimo)
+    if not asignador:
+        q = q.filter(TriaraAsistencia.consultor_id == actor.id)
+    filas = q.order_by(TriaraAsistencia.fecha, TriaraAsistencia.consultor_id).all()
+    consultores = {c.id: c for c in Consultor.query.filter(Consultor.activo.is_(True)).all()}
+    # Conservar nombres de personas inactivadas en el historial.
+    faltantes = {a.consultor_id for a in filas} - set(consultores)
+    if faltantes:
+        consultores.update({c.id: c for c in Consultor.query.filter(Consultor.id.in_(faltantes)).all()})
+    semanas = {}
+    cursor = primero
+    while cursor <= ultimo:
+        if _triara_laborable(cursor):
+            lunes = cursor - timedelta(days=cursor.weekday())
+            semanas.setdefault(lunes.isoformat(), []).append({'fecha': cursor.isoformat(), 'dia': cursor.weekday()})
+        cursor += timedelta(days=1)
+    registros = []
+    for a in filas:
+        c = consultores.get(a.consultor_id)
+        registros.append({
+            'id': a.id, 'consultor_id': a.consultor_id,
+            'nombre': c.nombre if c else 'Consultor no disponible',
+            'fecha': a.fecha.isoformat(), 'semana': a.semana_lunes.isoformat(),
+            'estado': a.estado, 'justificacion': a.justificacion or '',
+            'puede_confirmar': a.consultor_id == actor.id and _triara_actor_escritura() is not None
+                and _triara_abierto(a.fecha) and a.fecha <= hoy,
+            'puede_reasignar': asignador and _triara_abierto(a.fecha) and a.estado == 'PENDIENTE',
+        })
+    return jsonify({
+        'mes': periodo, 'cerrado': not _triara_abierto(primero), 'hoy': hoy.isoformat(),
+        'puede_asignar': asignador, 'puede_registrar': _triara_actor_escritura() is not None,
+        'consultores': [{'id': c.id, 'nombre': c.nombre} for c in sorted(consultores.values(), key=lambda c: c.nombre)
+                        if asignador and bool(c.activo) and not _triara_es_juan(c)],
+        'semanas': [{'lunes': k, 'dias': v} for k, v in semanas.items()],
+        'asistencias': registros,
+    }), 200
+
+
+@bp.route('/asistencia-triara/asignaciones', methods=['POST'])
+@auth_required
+def triara_asignar():
+    from datetime import timedelta
+    actor = _triara_actor_escritura()
+    if not actor or not _triara_puede_asignar(actor):
+        return jsonify({'mensaje': 'No tienes autorización para asignar asistencias.'}), 403
+    data = request.get_json(silent=True) or {}
+    try:
+        fecha = _triara_fecha(data.get('fecha'))
+        if not _triara_abierto(fecha):
+            return jsonify({'mensaje': 'El mes está cerrado. No se permiten cambios en meses anteriores.'}), 409
+        if not _triara_laborable(fecha):
+            raise ValueError('Solo se pueden asignar días de lunes a viernes que no sean festivos de Colombia.')
+        cid = data.get('consultor_id')
+        if isinstance(cid, bool) or not str(cid).isdigit():
+            raise ValueError('Selecciona un consultor válido.')
+        consultor = Consultor.query.get(int(cid))
+        if not consultor or not bool(consultor.activo) or _triara_es_juan(consultor):
+            raise ValueError('El consultor no está habilitado para esta vista.')
+        # Bloquear la fila del consultor serializa asignaciones a la misma semana.
+        Consultor.query.filter(Consultor.id == consultor.id).with_for_update().all()
+        lunes = fecha - timedelta(days=fecha.weekday())
+        actual = TriaraAsistencia.query.filter_by(consultor_id=consultor.id, semana_lunes=lunes).first()
+        if actual:
+            if not _triara_abierto(actual.fecha):
+                db.session.rollback()
+                return jsonify({'mensaje': 'La semana ya tiene una asignación de un mes cerrado.'}), 409
+            if actual.fecha == fecha:
+                db.session.rollback()
+                return jsonify({'mensaje': 'El consultor ya está asignado a ese día.'}), 200
+            if actual.estado != 'PENDIENTE':
+                db.session.rollback()
+                return jsonify({'mensaje': 'No se puede mover una asistencia ya confirmada.'}), 409
+            # Reasignar requiere seleccionar explícitamente esa asignación.
+            if str(data.get('asignacion_id', '')) != str(actual.id):
+                db.session.rollback()
+                return jsonify({'mensaje': 'El consultor ya tiene un día asignado esa semana. Usa Cambiar día sobre esa asignación.'}), 409
+            actual.fecha = fecha
+            actual.actualizado_por = actor.id
+        else:
+            actual = TriaraAsistencia(consultor_id=consultor.id, fecha=fecha, semana_lunes=lunes,
+                                     asignado_por=actor.id, actualizado_por=actor.id)
+            db.session.add(actual)
+        db.session.commit()
+        return jsonify({'mensaje': 'Día asignado correctamente.'}), 200
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({'mensaje': str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'mensaje': 'Ya existe una asignación para este consultor y semana.'}), 409
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('Error asignando asistencia Triara')
+        return jsonify({'mensaje': 'No se pudo guardar la asignación.'}), 500
+
+
+@bp.route('/asistencia-triara/<int:id>/confirmacion', methods=['PUT'])
+@auth_required
+def triara_confirmar(id):
+    actor = _triara_actor_escritura()
+    if not actor:
+        return jsonify({'mensaje': 'No tienes autorización para registrar información.'}), 403
+    data = request.get_json(silent=True) or {}
+    try:
+        a = TriaraAsistencia.query.filter_by(id=id).with_for_update().first()
+        if not a:
+            return jsonify({'mensaje': 'Asignación no encontrada.'}), 404
+        if a.consultor_id != actor.id:
+            db.session.rollback()
+            return jsonify({'mensaje': 'Solo puedes confirmar tu propia asistencia.'}), 403
+        if not _triara_abierto(a.fecha):
+            db.session.rollback()
+            return jsonify({'mensaje': 'El mes está cerrado y es solo de consulta.'}), 409
+        if a.fecha > _triara_hoy():
+            db.session.rollback()
+            return jsonify({'mensaje': 'La asistencia solo puede confirmarse desde el día asignado.'}), 409
+        estado = data.get('estado')
+        motivo = data.get('justificacion', '')
+        if estado not in ('ASISTIO', 'NO_ASISTIO') or not isinstance(motivo, str):
+            raise ValueError('Selecciona si asististe o no asististe.')
+        motivo = motivo.strip()
+        if estado == 'NO_ASISTIO' and not motivo:
+            raise ValueError('Debes justificar por qué no asististe.')
+        if len(motivo) > 2000:
+            raise ValueError('La justificación no puede superar 2000 caracteres.')
+        a.estado = estado
+        a.justificacion = motivo if estado == 'NO_ASISTIO' else None
+        a.confirmado_en = datetime.utcnow()
+        a.actualizado_por = actor.id
+        db.session.commit()
+        return jsonify({'mensaje': 'Asistencia registrada.'}), 200
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({'mensaje': str(error)}), 400
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('Error confirmando asistencia Triara')
+        return jsonify({'mensaje': 'No se pudo registrar la asistencia.'}), 500
 
 
 
