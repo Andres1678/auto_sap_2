@@ -26414,36 +26414,6 @@ def _mcc_metricas_casos(registros):
             'proyectos_horas': [[*k, round(h, 2)] for k, h in sorted(proyectos_horas.items())]}
 
 
-def _mcc_filas_perfiles(grupos, perfiles_persona, registros_por_usuario, driver):
-    """Métricas completas en cada perfil; los totales se calculan antes de expandir."""
-    filas = []
-    for grupo in grupos:
-        por_perfil = {}
-        for consultor in grupo['consultores']:
-            # El perfil proviene de la asociación individual, nunca del módulo.
-            perfiles = perfiles_persona.get(consultor['id']) or {None: 'SIN PERFIL ASOCIADO'}
-            for perfil_id, etiqueta in perfiles.items():
-                if perfil_id not in por_perfil:
-                    por_perfil[perfil_id] = {**grupo, 'perfil_id': perfil_id,
-                        'perfil': etiqueta, 'consultores': []}
-                por_perfil[perfil_id]['consultores'].append({**consultor,
-                    'perfil_id': perfil_id, 'perfil': etiqueta})
-        for fila in sorted(por_perfil.values(), key=lambda f: f['perfil'].casefold()):
-            personas = fila['consultores']
-            registros = [r for c in personas for r in registros_por_usuario.get(
-                str(c.get('usuario') or '').strip().lower(), [])]
-            fila.update(_mcc_metricas_casos(registros))
-            fila['personas_activas'] = len(personas)
-            fila['capacidad_actual'] = round(sum(c['capacidad_actual'] for c in personas), 2)
-            fila['volumen_actual'] = fila['capacidad_actual']
-            fila['capacidad_vendida'] = driver * len(personas)
-            fila['porcentaje_cumplimiento_mes'] = (
-                round(fila['capacidad_actual'] / fila['capacidad_vendida'] * 100, 2)
-                if fila['capacidad_vendida'] > 0 else None)
-            filas.append(fila)
-    return filas
-
-
 @bp.route('/modelos-capacidades-coe-sap', methods=['GET'])
 @admin_required
 def modelos_capacidades_coe_sap():
@@ -26613,28 +26583,9 @@ def modelos_capacidades_coe_sap():
                 round(grupo['capacidad_actual'] / grupo['capacidad_vendida'] * 100, 2)
                 if grupo['capacidad_vendida'] > 0 else None
             )
-        # Los grupos originales contienen cada consultor una sola vez y alimentan
-        # los resúmenes. Las filas por perfil son una proyección, no sumandos.
-        totales_data = data
-        ids_personas = {c['id'] for grupo in data for c in grupo['consultores']}
-        asignaciones = (ConsultorPerfil.query
-            .options(joinedload(ConsultorPerfil.perfil))
-            .filter(ConsultorPerfil.consultor_id.in_(ids_personas),
-                    ConsultorPerfil.activo.is_(True),
-                    or_(ConsultorPerfil.fecha_inicio.is_(None), ConsultorPerfil.fecha_inicio < fin),
-                    or_(ConsultorPerfil.fecha_fin.is_(None), ConsultorPerfil.fecha_fin >= inicio))
-            .all()) if ids_personas else []
-        perfiles_persona = {}
-        for asignacion in asignaciones:
-            perfil = asignacion.perfil
-            if perfil is not None and perfil.activo:
-                perfiles_persona.setdefault(asignacion.consultor_id, {})[perfil.id] = (
-                    ' - '.join(str(v) for v in (perfil.codigo, perfil.nombre) if v))
-        data = _mcc_filas_perfiles(totales_data, perfiles_persona,
-                                  registros_por_usuario, float(driver))
         return jsonify({
             'anio': anio, 'mes': mes, 'dias_laborables': dias_laborables,
-            'driver': float(driver), 'data': data, 'totales_data': totales_data,
+            'driver': float(driver), 'data': data,
             'advertencias': advertencias,
         }), 200
     except Exception:
