@@ -203,7 +203,20 @@
 
 .mcc-table .mcc-cargo-agrupado { vertical-align: middle; border-right: 1px solid var(--mcc-team-border,#cbd5e1); background: var(--mcc-team-row,#fff); }
 
-/* Separador discreto únicamente en la celda agrupada del cargo. */
+/* Puntos separados únicamente sobre la celda del cargo. */
 .mcc-table > tbody > tr.mcc-equipo-fila.mcc-cargo-inicio > td.mcc-cargo-agrupado {
-  border-top: 2px solid #4b5563;
+  position: relative;
+  border-top: 0;
+}
+.mcc-table > tbody > tr.mcc-equipo-fila.mcc-cargo-inicio > td.mcc-cargo-agrupado::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 8px;
+  right: 8px;
+  height: 3px;
+  background-image: radial-gradient(circle at 2px 1.5px, #4b5563 1.25px, transparent 1.5px);
+  background-size: 9px 3px;
+  background-repeat: repeat-x;
+  pointer-events: none;
 }
