@@ -209,6 +209,11 @@ export default function ModelosCapacidadesCoeSap() {
     return Array.from(mapa.values()).map(grupo => ({ ...grupo, filas: [...grupo.filas].sort(compararFilasCargo), resumen: resumirProceso((resultado?.totales_data || resultado?.data || []).filter(f => String(f.equipo_id ?? "sin-equipo") === grupo.clave)) }));
   }, [resultado]);
 
+  // Resúmenes calculados antes de repetir personas entre especialidades.
+  const resumenesCargo = useMemo(() => new Map((resultado?.totales_data || []).map(fila => [
+    `${fila.equipo_id ?? "sin-equipo"}-${fila.cargo_id ?? "sin-cargo"}`, fila,
+  ])), [resultado]);
+
   const gruposVisibles = useMemo(() => grupos.map(grupo => {
     const vistos = new Set();
     return { ...grupo, filas: grupo.filas.filter(fila => {
@@ -280,10 +285,11 @@ export default function ModelosCapacidadesCoeSap() {
 <tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
         <tbody>{cargando ? <tr><td colSpan={17}>Consultando capacidad mensual…</td></tr> : gruposVisibles.length ? gruposVisibles.map((grupo) => (
           <React.Fragment key={grupo.clave}>
-            {grupo.filas.map((fila, indice) => {
-              const clave = `${grupo.clave}-${fila.cargo_id ?? "sin-cargo"}-${fila.especialidad_id ?? "sin-especialidad"}`;
-              const claveCargo = `${grupo.clave}-${fila.cargo_id ?? "sin-cargo"}`;
+            {grupo.filas.map((filaEspecialidad, indice) => {
+              const clave = `${grupo.clave}-${filaEspecialidad.cargo_id ?? "sin-cargo"}-${filaEspecialidad.especialidad_id ?? "sin-especialidad"}`;
+              const claveCargo = `${grupo.clave}-${filaEspecialidad.cargo_id ?? "sin-cargo"}`;
               const cargoComprimido = !!cargosComprimidos[claveCargo];
+              const fila = cargoComprimido ? (resumenesCargo.get(claveCargo) || filaEspecialidad) : filaEspecialidad;
               const abierto = !cargoComprimido && !!expandidos[clave];
               const filasCargo = grupo.filas.filter(f => f.cargo_id === fila.cargo_id);
               const primeraCargo = indice === 0 || grupo.filas[indice - 1].cargo_id !== fila.cargo_id;
@@ -310,11 +316,14 @@ export default function ModelosCapacidadesCoeSap() {
                     <span aria-hidden="true">{cargoComprimido ? '▸' : '▾'}</span> {fila.cargo}
                   </button>
                 </td>}</React.Fragment>
-                {cargoComprimido ? <td colSpan={15} aria-label="Información del cargo contraída" /> : <React.Fragment><td>{fila.especialidad || ""}{fila.modulo_nombre && <small className="mcc-especialidad-consultor">Módulo: {fila.modulo_nombre}</small>}</td>
+                <td>{!cargoComprimido && (fila.especialidad || "")}{!cargoComprimido && fila.modulo_nombre && <small className="mcc-especialidad-consultor">Módulo: {fila.modulo_nombre}</small>}</td>
                 <td className="mcc-personas">
                   <button type="button" className="mcc-expand" aria-expanded={abierto}
-                    aria-controls={`detalle-${clave}`}
-                    onClick={() => setExpandidos(prev => ({ ...prev, [clave]: !prev[clave] }))}>
+                    aria-controls={cargoComprimido ? undefined : `detalle-${clave}`}
+                    title={cargoComprimido ? 'Mostrar especialidades del cargo' : 'Mostrar consultores de la especialidad'}
+                    onClick={() => cargoComprimido
+                      ? setCargosComprimidos(prev => ({ ...prev, [claveCargo]: false }))
+                      : setExpandidos(prev => ({ ...prev, [clave]: !prev[clave] }))}>
                     {abierto ? "▾" : "▸"} {fila.consultores?.length || 0} personas incluidas
                   </button>
                 </td>
@@ -338,7 +347,6 @@ export default function ModelosCapacidadesCoeSap() {
 <td className="mcc-num mcc-preventa">{formato.format(fila.clientes_preventa ?? 0)}</td>
 <td className="mcc-num mcc-preventa">{formato.format(fila.horas_preventa ?? 0)}</td>
 <td className="mcc-num mcc-otras-gris">{formato.format(fila.otras_ocupaciones ?? 0)}</td>
-                </React.Fragment>}
               </tr>
               {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`} style={estiloEquipo(fila.equipo_id)}>
                 <td colSpan={15}>
