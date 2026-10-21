@@ -287,7 +287,7 @@ export default function ModelosCapacidadesCoeSap() {
                 <td colSpan={14}>
                   <div className="mcc-detalle-body">
                     <h3>{grupo.proceso} · {fila.cargo}</h3>
-                    <table className="mcc-consultores"><colgroup><col style={{ width: "15%" }} /><col style={{ width: "10%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /></colgroup>
+                    <table className="mcc-consultores"><colgroup><col style={{ width: "22%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /></colgroup>
                       <thead>
 <tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada (Nro de Personas)</th><th rowSpan={2} scope="col">Capacidad vacante</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
@@ -295,6 +295,7 @@ export default function ModelosCapacidadesCoeSap() {
 <tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th></tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
+                          <td>{c.nombre}</td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
                           <td className="mcc-num">{formato.format(c.capacidad_actual ?? 0)}</td>
