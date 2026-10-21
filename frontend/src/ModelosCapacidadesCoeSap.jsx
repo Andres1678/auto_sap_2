@@ -295,7 +295,6 @@ export default function ModelosCapacidadesCoeSap() {
 <tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th></tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
-                          <td>{c.nombre}</td><td>{c.usuario}</td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
                           <td className="mcc-num">{formato.format(fila.driver)}</td>
                           <td className="mcc-num">{formato.format(c.capacidad_actual ?? 0)}</td>
