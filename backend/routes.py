@@ -26354,7 +26354,7 @@ def _mcc_metricas_casos(registros):
                 claves.add(('caso', principal) if principal else ('sin-caso-principal', interno))
         elif es_operacion:
             operacion += h
-        else:
+        elif ocupacion_codigo != '2':
             sin += h
     return {'numero_casos': len(claves), 'horas_con_caso': round(con, 2),
             'otras_ocupaciones': round(sin, 2), 'otras_actividades_operacion': round(operacion, 2), 'casos_claves': [list(k) for k in sorted(claves)],
