@@ -236,7 +236,7 @@ export default function ModelosCapacidadesCoeSap() {
 <tr><th rowSpan={2} scope="col">Proceso</th><th rowSpan={2} scope="col">Cargo</th><th rowSpan={2} scope="col">Personas incluidas</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th rowSpan={2} scope="col">Capacidad vacante</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
 <th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
-<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion</th><th scope="col" className="mcc-proyecto-gris">Proyectos con horas</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th></tr></thead>
+<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Proyectos con horas</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th></tr></thead>
         <tbody>{cargando ? <tr><td colSpan={15}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
           <React.Fragment key={grupo.clave}>
             {grupo.filas.map((fila, indice) => {
@@ -252,7 +252,7 @@ export default function ModelosCapacidadesCoeSap() {
                     <div><dt>Capacidad actual</dt><dd>{formato.format(grupo.resumen.actual)} h</dd></div>
                     <div><dt>Ocupación mes</dt><dd>{grupo.resumen.ocupacion == null ? "—" : `${formato.format(grupo.resumen.ocupacion)} %`}</dd></div>
                     <div><dt>Ocupación acumulada de cargos</dt><dd>{formato.format(grupo.resumen.ocupacionAcumulada)} %</dd></div>
-                    <div><dt>Capacidad instalada</dt><dd>{formato.format(grupo.resumen.instalada)}</dd></div>
+                    <div><dt>Capacidad instalada (Nro de Personas)</dt><dd>{formato.format(grupo.resumen.instalada)}</dd></div>
                   </dl>
                 </th>}
                 <td>{fila.cargo}</td>
@@ -287,12 +287,12 @@ export default function ModelosCapacidadesCoeSap() {
                 <td colSpan={14}>
                   <div className="mcc-detalle-body">
                     <h3>{grupo.proceso} · {fila.cargo}</h3>
-                    <table className="mcc-consultores"><colgroup><col style={{ width: "15%" }} /><col style={{ width: "10%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /></colgroup>
+                    <table className="mcc-consultores"><colgroup><col style={{ width: "15%" }} /><col style={{ width: "10%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /><col style={{ width: "6.25%" }} /></colgroup>
                       <thead>
-<tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Usuario</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th rowSpan={2} scope="col">Capacidad vacante</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
+<tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada (Nro de Personas)</th><th rowSpan={2} scope="col">Capacidad vacante</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
 <th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
-<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion</th><th scope="col" className="mcc-proyecto-gris">Proyectos con horas</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th></tr></thead>
+<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Proyectos con horas</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th></tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
                           <td>{c.nombre}</td><td>{c.usuario}</td>
