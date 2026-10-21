@@ -26473,12 +26473,14 @@ def modelos_capacidades_coe_sap():
             db.session.query(
                 Equipo.id.label('equipo_id'), Equipo.nombre.label('proceso'),
                 Cargo.id.label('cargo_id'), Cargo.nombre.label('cargo'),
+                Perfil.id.label('perfil_id'), Perfil.codigo.label('perfil_codigo'), Perfil.nombre.label('perfil_nombre'),
                 Consultor.id.label('consultor_id'), Consultor.usuario.label('usuario'),
                 Consultor.nombre.label('nombre'), func.coalesce(horas_mes.c.horas, 0).label('horas'),
             )
             .select_from(Consultor)
             .outerjoin(Equipo, Consultor.equipo_id == Equipo.id)
             .outerjoin(Cargo, Consultor.cargo_id == Cargo.id)
+            .outerjoin(Perfil, Cargo.perfil_id == Perfil.id)
             .outerjoin(horas_mes, horas_mes.c.usuario == func.lower(func.trim(Consultor.usuario)))
             .filter(Consultor.activo.is_(True))
             .order_by(Equipo.nombre.asc(), Cargo.nombre.asc(), Consultor.nombre.asc())
@@ -26547,6 +26549,9 @@ def modelos_capacidades_coe_sap():
                     'cargo_id': fila.cargo_id,
                     'proceso': fila.proceso or 'SIN EQUIPO',
                     'cargo': fila.cargo or 'SIN CARGO ASIGNADO',
+                    'perfil_id': fila.perfil_id, 'perfil_codigo': fila.perfil_codigo,
+                    'perfil_nombre': fila.perfil_nombre,
+                    'perfil': ' - '.join(str(v) for v in (fila.perfil_codigo, fila.perfil_nombre) if v) or 'SIN PERFIL ASOCIADO',
                     'unidad': 'Horas', 'driver': float(driver),
                     'volumen_actual': 0.0,
                     'capacidad_actual': None, 'capacidad_vacante': None,
@@ -26559,6 +26564,7 @@ def modelos_capacidades_coe_sap():
             grupos[key]['consultores'].append({
                 'id': fila.consultor_id, 'usuario': fila.usuario,
                 'nombre': fila.nombre, 'cargo': grupos[key]['cargo'],
+                'perfil_id': fila.perfil_id, 'perfil': grupos[key]['perfil'],
                 **metricas_persona,
                 'horas': round(horas, 2),
                 'capacidad_actual': round(horas, 2),
