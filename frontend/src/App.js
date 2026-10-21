@@ -39,6 +39,7 @@ import DetalleSeguimientoClienteCoeSap from './DetalleSeguimientoClienteCoeSap';
 import PromedioAtencionCoeSap from './PromedioAtencionCoeSap';
 import ControlBolsaClienteCoeSap from './ControlBolsaClienteCoeSap';
 import CargosPage from './CargosPage';
+import EspecialidadesPage from './EspecialidadesPage';
 import ModelosCapacidadesCoeSap from './ModelosCapacidadesCoeSap';
 import AsistenciaTriara from './AsistenciaTriara';
 
@@ -475,6 +476,12 @@ function App() {
                 </AdminRoute>
               }
             />
+
+            <Route path="/configuracion/especialidades" element={
+              <AdminRoute allow={['ADMIN']} requirePermiso="CARGOS_ADMIN">
+                <EspecialidadesPage />
+              </AdminRoute>
+            } />
 
             <Route
               path="/configuracion/cargos"

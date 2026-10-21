@@ -1,6 +1,6 @@
 from flask import request, jsonify, Blueprint, current_app as app, g
 from backend.models import (
-    db, Cargo, Modulo, Consultor, Registro, BaseRegistro, BaseRegistroInfoCoeSapFuncional, Login,
+    db, Cargo, Especialidad, Modulo, Consultor, Registro, BaseRegistro, BaseRegistroInfoCoeSapFuncional, Login,
     Rol, Equipo, Horario, Oportunidad, Cliente,
     Permiso, RolPermiso, EquipoPermiso, ConsultorPermiso,
     Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel,
@@ -26233,32 +26233,107 @@ def listar_cargos():
     return jsonify([_cargo_json(c) for c in Cargo.query.order_by(Cargo.nombre.asc()).all()]), 200
 
 
+def _especialidad_json(especialidad):
+    return {'id': especialidad.id, 'nombre': especialidad.nombre,
+            'modulo_id': especialidad.modulo_id,
+            'modulo_nombre': especialidad.modulo_obj.nombre if especialidad.modulo_obj else ''}
+
+
+def _validar_especialidad(data):
+    nombre = data.get('nombre')
+    if not isinstance(nombre, str) or not nombre.strip() or len(nombre.strip()) > 150:
+        raise ValueError('El nombre de la especialidad es obligatorio y admite hasta 150 caracteres.')
+    modulo_id = data.get('modulo_id')
+    if isinstance(modulo_id, bool) or not str(modulo_id).isdigit() or int(modulo_id) <= 0:
+        raise ValueError('Selecciona un módulo válido.')
+    if db.session.get(Modulo, int(modulo_id)) is None:
+        raise ValueError('El módulo seleccionado no existe.')
+    return nombre.strip(), int(modulo_id)
+
+
+@bp.route('/especialidades', methods=['GET'])
+@auth_required
+def listar_especialidades():
+    return jsonify([_especialidad_json(e) for e in Especialidad.query.order_by(Especialidad.nombre).all()]), 200
+
+
+@bp.route('/especialidades', methods=['POST'])
+@admin_required
+def crear_especialidad():
+    try:
+        nombre, modulo_id = _validar_especialidad(request.get_json(silent=True) or {})
+        especialidad = Especialidad(nombre=nombre, modulo_id=modulo_id)
+        db.session.add(especialidad)
+        db.session.commit()
+        return jsonify(_especialidad_json(especialidad)), 201
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({'mensaje': str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'mensaje': 'Ya existe una especialidad con ese nombre o el módulo fue eliminado.'}), 409
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception('Error creando especialidad')
+        return jsonify({'mensaje': 'No se pudo crear la especialidad.'}), 500
+
+
+@bp.route('/especialidades/<int:id>', methods=['PUT'])
+@admin_required
+def editar_especialidad(id):
+    especialidad = Especialidad.query.get_or_404(id)
+    try:
+        nombre, modulo_id = _validar_especialidad(request.get_json(silent=True) or {})
+        especialidad.nombre = nombre
+        especialidad.modulo_id = modulo_id
+        db.session.commit()
+        return jsonify(_especialidad_json(especialidad)), 200
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({'mensaje': str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'mensaje': 'Ya existe una especialidad con ese nombre o el módulo fue eliminado.'}), 409
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception('Error editando especialidad')
+        return jsonify({'mensaje': 'No se pudo actualizar la especialidad.'}), 500
+
+
+@bp.route('/especialidades/<int:id>', methods=['DELETE'])
+@admin_required
+def eliminar_especialidad(id):
+    especialidad = Especialidad.query.get_or_404(id)
+    if especialidad.cargos:
+        return jsonify({'mensaje': 'La especialidad está asociada a cargos. Retira esas asociaciones antes de eliminarla.'}), 409
+    try:
+        db.session.delete(especialidad)
+        db.session.commit()
+        return jsonify({'mensaje': 'Especialidad eliminada.'}), 200
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({'mensaje': 'No se pudo eliminar: revisa las asociaciones existentes.'}), 409
+
+
 def _cargo_json(cargo):
     return {'id': cargo.id, 'nombre': cargo.nombre,
-            'modulo_ids': sorted(m.id for m in cargo.modulos),
-            'modulos': [{'id': m.id, 'nombre': m.nombre}
-                        for m in sorted(cargo.modulos, key=lambda m: m.nombre.casefold())]}
+            'especialidad_ids': sorted(e.id for e in cargo.especialidades),
+            'especialidades': [_especialidad_json(e) for e in sorted(
+                cargo.especialidades, key=lambda e: e.nombre.casefold())]}
 
 
-@bp.route('/cargos/modulos', methods=['GET'])
-@auth_required
-def catalogo_modulos_cargo():
-    return jsonify([{'id': m.id, 'nombre': m.nombre}
-                    for m in Modulo.query.order_by(Modulo.nombre).all()]), 200
-
-
-def _cargo_modulos(data, actuales=None):
-    if 'modulo_ids' not in data:
+def _cargo_especialidades(data, actuales=None):
+    if 'especialidad_ids' not in data:
         return list(actuales or [])
-    valores = data['modulo_ids']
+    valores = data['especialidad_ids']
     if not isinstance(valores, list) or any(
             isinstance(v, bool) or not str(v).isdigit() or int(v) <= 0 for v in valores):
-        raise ValueError('Los módulos deben ser una lista de identificadores válidos.')
+        raise ValueError('Las especialidades deben ser una lista de identificadores válidos.')
     ids = {int(v) for v in valores}
-    modulos = Modulo.query.filter(Modulo.id.in_(ids)).all() if ids else []
-    if len(modulos) != len(ids):
-        raise ValueError('Uno o varios módulos no existen.')
-    return modulos
+    especialidades = Especialidad.query.filter(Especialidad.id.in_(ids)).all() if ids else []
+    if len(especialidades) != len(ids):
+        raise ValueError('Una o varias especialidades no existen.')
+    return especialidades
 
 
 def _validar_nombre_cargo(data):
@@ -26280,7 +26355,7 @@ def crear_cargo():
         if Cargo.query.filter(func.lower(Cargo.nombre) == nombre.lower()).first():
             return jsonify({'mensaje': 'Ya existe un cargo con ese nombre'}), 409
         cargo = Cargo(nombre=nombre)
-        cargo.modulos = _cargo_modulos(data)
+        cargo.especialidades = _cargo_especialidades(data)
         db.session.add(cargo)
         db.session.commit()
         return jsonify(_cargo_json(cargo)), 201
@@ -26305,7 +26380,7 @@ def editar_cargo(id):
         nombre = _validar_nombre_cargo(data)
         if Cargo.query.filter(Cargo.id != id, func.lower(Cargo.nombre) == nombre.lower()).first():
             return jsonify({'mensaje': 'Ya existe un cargo con ese nombre'}), 409
-        cargo.modulos = _cargo_modulos(data, cargo.modulos)
+        cargo.especialidades = _cargo_especialidades(data, cargo.especialidades)
         cargo.nombre = nombre
         db.session.commit()
         return jsonify(_cargo_json(cargo)), 200
@@ -26408,35 +26483,37 @@ def _mcc_metricas_casos(registros):
             'proyectos_horas': [[*k, round(h, 2)] for k, h in sorted(proyectos_horas.items())]}
 
 
-def _mcc_modulos_persona(personas, cargos):
+def _mcc_especialidades_persona(personas, cargos):
     resultado = {}
     for persona in personas:
         cargo = cargos.get(persona.cargo_id)
-        permitidos = {m.id: m.nombre for m in cargo.modulos} if cargo else {}
+        permitidos = {e.id: (e.nombre, e.modulo_id) for e in cargo.especialidades} if cargo else {}
         propios = {m.id for m in persona.modulos}
         if persona.modulo_id:
             propios.add(persona.modulo_id)
-        resultado[persona.id] = {mid: nombre for mid, nombre in permitidos.items() if mid in propios}
+        resultado[persona.id] = {eid: nombre for eid, (nombre, modulo_id) in permitidos.items() if modulo_id in propios}
     return resultado
 
 
-def _mcc_filas_modulos(grupos, modulos_persona, registros_por_usuario, driver, cargos):
-    """Métricas completas en cada módulo; los totales se calculan antes de expandir."""
+def _mcc_filas_especialidades(grupos, especialidades_persona, registros_por_usuario, driver, cargos):
+    """Métricas completas en cada especialidad; los totales se calculan antes de expandir."""
     filas = []
     for grupo in grupos:
         cargo = cargos.get(grupo['cargo_id'])
-        por_modulo = {m.id: {**grupo, 'modulo_id': m.id, 'modulo': m.nombre, 'consultores': []}
-                      for m in cargo.modulos} if cargo else {}
+        por_especialidad = {e.id: {**grupo, 'especialidad_id': e.id, 'especialidad': e.nombre,
+                                  'modulo_id': e.modulo_id,
+                                  'modulo_nombre': e.modulo_obj.nombre if e.modulo_obj else '', 'consultores': []}
+                           for e in cargo.especialidades} if cargo else {}
         for consultor in grupo['consultores']:
-            # Incluir solo módulos compartidos entre el cargo y el consultor.
-            modulos = modulos_persona.get(consultor['id']) or {None: 'SIN MÓDULO COMPATIBLE'}
-            for modulo_id, etiqueta in modulos.items():
-                if modulo_id not in por_modulo:
-                    por_modulo[modulo_id] = {**grupo, 'modulo_id': modulo_id,
-                        'modulo': etiqueta, 'consultores': []}
-                por_modulo[modulo_id]['consultores'].append({**consultor,
-                    'modulo_id': modulo_id, 'modulo': etiqueta})
-        for fila in sorted(por_modulo.values(), key=lambda f: f['modulo'].casefold()):
+            # Incluir especialidades cuyo módulo está asignado al consultor.
+            especialidades = especialidades_persona.get(consultor['id']) or {None: 'SIN ESPECIALIDAD COMPATIBLE'}
+            for especialidad_id, etiqueta in especialidades.items():
+                if especialidad_id not in por_especialidad:
+                    por_especialidad[especialidad_id] = {**grupo, 'especialidad_id': especialidad_id,
+                        'especialidad': etiqueta, 'consultores': []}
+                por_especialidad[especialidad_id]['consultores'].append({**consultor,
+                    'especialidad_id': especialidad_id, 'especialidad': etiqueta})
+        for fila in sorted(por_especialidad.values(), key=lambda f: f['especialidad'].casefold()):
             personas = fila['consultores']
             registros = [r for c in personas for r in registros_por_usuario.get(
                 str(c.get('usuario') or '').strip().lower(), [])]
@@ -26622,10 +26699,10 @@ def modelos_capacidades_coe_sap():
         personas_db = (Consultor.query.options(selectinload(Consultor.modulos))
                        .filter(Consultor.id.in_(ids_personas)).all()) if ids_personas else []
         ids_cargos = {grupo['cargo_id'] for grupo in totales_data if grupo['cargo_id'] is not None}
-        cargos_db = {c.id: c for c in Cargo.query.options(selectinload(Cargo.modulos))
+        cargos_db = {c.id: c for c in Cargo.query.options(selectinload(Cargo.especialidades).joinedload(Especialidad.modulo_obj))
                      .filter(Cargo.id.in_(ids_cargos)).all()} if ids_cargos else {}
-        modulos_persona = _mcc_modulos_persona(personas_db, cargos_db)
-        data = _mcc_filas_modulos(totales_data, modulos_persona,
+        especialidades_persona = _mcc_especialidades_persona(personas_db, cargos_db)
+        data = _mcc_filas_especialidades(totales_data, especialidades_persona,
                                  registros_por_usuario, float(driver), cargos_db)
         return jsonify({
             'anio': anio, 'mes': mes, 'dias_laborables': dias_laborables,

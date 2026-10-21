@@ -29,6 +29,7 @@ export default function Configuracion() {
             <p>Consulta el driver mensual por proceso y cargo.</p>
           </Link>
         )}
+        {isAdmin && <Link to="/configuracion/especialidades" className="config-card"><div className="config-icon">🧩</div><h3>Gestión de Especialidades</h3><p>Crear especialidades y asociar un módulo a cada una para usarlas en los cargos.</p></Link>}
         <Link to="/configuracion/usuarios" className="config-card"><div className="config-icon">👥</div><h3>Gestión de Consultores</h3><p>Crear, editar o eliminar consultores y asignar cargos y módulos.</p></Link>
         {isAdmin && (<Link to="/configuracion/cargos" className="config-card"><div className="config-icon">💼</div><h3>Gestión de Cargos</h3><p>Crear, editar y eliminar los cargos disponibles para los consultores.</p></Link>)}
         <Link to="/configuracion/clientes" className="config-card"><div className="config-icon">🧾</div><h3>Gestión de Clientes</h3><p>Administrar clientes corporativos y contactos.</p></Link>

@@ -6,9 +6,9 @@ import "./CargosPage.css";
 
 export default function CargosPage() {
   const [cargos, setCargos] = useState([]);
-  const [modulos, setModulos] = useState([]);
-  const [busquedaModulo, setBusquedaModulo] = useState("");
-  const [moduloIds, setModuloIds] = useState([]);
+  const [especialidades, setEspecialidades] = useState([]);
+  const [busquedaEspecialidad, setBusquedaEspecialidad] = useState("");
+  const [especialidadIds, setEspecialidadIds] = useState([]);
   const [id, setId] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
   const [nombre, setNombre] = useState("");
@@ -29,10 +29,10 @@ export default function CargosPage() {
       const res = await jfetch("/cargos");
       const data = await res.json();
       if (!res.ok || !Array.isArray(data)) throw new Error(data?.mensaje || "No se pudieron cargar los cargos");
-      const pr = await jfetch('/cargos/modulos');
+      const pr = await jfetch('/especialidades');
       const pd = await pr.json();
-      if (!pr.ok || !Array.isArray(pd)) throw new Error(pd?.mensaje || 'No se pudieron cargar los módulos');
-      setModulos(pd);
+      if (!pr.ok || !Array.isArray(pd)) throw new Error(pd?.mensaje || 'No se pudieron cargar los especialidades');
+      setEspecialidades(pd);
       setCargos(data);
     } catch (e) {
       setError(e.message || "Error cargando cargos");
@@ -40,7 +40,7 @@ export default function CargosPage() {
   }, []);
 
   useEffect(() => { if (admin) cargar(); }, [admin, cargar]);
-  const limpiar = () => { setId(null); setNombre(""); setModuloIds([]); setBusquedaModulo(""); setFormOpen(false); };
+  const limpiar = () => { setId(null); setNombre(""); setEspecialidadIds([]); setBusquedaEspecialidad(""); setFormOpen(false); };
   const guardar = async (e) => {
     e.preventDefault();
     if (saving || !nombre.trim()) return;
@@ -49,7 +49,7 @@ export default function CargosPage() {
       const res = await jfetch(id === null ? "/cargos" : `/cargos/${id}`, {
         method: id === null ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre: nombre.trim(), modulo_ids: moduloIds }),
+        body: JSON.stringify({ nombre: nombre.trim(), especialidad_ids: especialidadIds }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.mensaje || "No se pudo guardar el cargo");
@@ -76,32 +76,32 @@ export default function CargosPage() {
     finally { setSaving(false); }
   };
   if (!admin) return <Navigate to="/configuracion" replace />;
-  const visibles = cargos.filter(c => [c.nombre, ...(c.modulos || []).map(m => m.nombre)].join(' ').toLowerCase().includes(busqueda.trim().toLowerCase()));
-  const modulosVisibles = modulos.filter(m => m.nombre.toLowerCase().includes(busquedaModulo.trim().toLowerCase()));
+  const visibles = cargos.filter(c => [c.nombre, ...(c.especialidades || []).map(m => `${m.nombre} (${m.modulo_nombre})`)].join(' ').toLowerCase().includes(busqueda.trim().toLowerCase()));
+  const especialidadesVisibles = especialidades.filter(m => m.nombre.toLowerCase().includes(busquedaEspecialidad.trim().toLowerCase()));
   return (
     <main className="cargos-page">
       <Link to="/configuracion">← Configuración</Link>
       <h1>Gestión de cargos</h1>
-      <p>Crea los cargos disponibles para asignarlos desde Gestión de Consultores.</p>
+      <p>Asocia especialidades a cada cargo. Cada especialidad tiene un módulo definido.</p><Link to="/configuracion/especialidades">Administrar especialidades</Link>
       <button type="button" disabled={saving} onClick={() => {
-        setId(null); setNombre(""); setModuloIds([]); setBusquedaModulo(""); setFormOpen(true);
+        setId(null); setNombre(""); setEspecialidadIds([]); setBusquedaEspecialidad(""); setFormOpen(true);
       }}>+ Nuevo cargo</button>
       {formOpen && <form onSubmit={guardar} className="cargos-form">
         <label htmlFor="cargo-nombre">{id === null ? "Nuevo cargo" : "Editar cargo"}</label>
         <input id="cargo-nombre" value={nombre} onChange={e => setNombre(e.target.value)}
           autoFocus maxLength={100} required placeholder="Ej.: Consultor SAP" disabled={saving} />
-        <fieldset className="cargos-modulos" disabled={saving}>
-          <legend>Módulos asociados al cargo</legend>
-          <input type="search" value={busquedaModulo} onChange={e => setBusquedaModulo(e.target.value)} placeholder="Buscar módulo…" aria-label="Buscar módulo" />
-          <div className="cargos-modulos-acciones">
-            <button type="button" onClick={() => setModuloIds(prev => [...new Set([...prev, ...modulosVisibles.map(m => m.id)])])}>Seleccionar visibles</button>
-            <button type="button" onClick={() => setModuloIds([])}>Quitar todos</button>
-            <span>{moduloIds.length} seleccionados</span>
+        <fieldset className="cargos-especialidades" disabled={saving}>
+          <legend>Especialidades asociadas al cargo</legend>
+          <input type="search" value={busquedaEspecialidad} onChange={e => setBusquedaEspecialidad(e.target.value)} placeholder="Buscar especialidad…" aria-label="Buscar especialidad" />
+          <div className="cargos-especialidades-acciones">
+            <button type="button" onClick={() => setEspecialidadIds(prev => [...new Set([...prev, ...especialidadesVisibles.map(m => m.id)])])}>Seleccionar visibles</button>
+            <button type="button" onClick={() => setEspecialidadIds([])}>Quitar todos</button>
+            <span>{especialidadIds.length} seleccionados</span>
           </div>
-          <div className="cargos-modulos-lista">{modulosVisibles.map(m => <label key={m.id}>
-            <input type="checkbox" checked={moduloIds.includes(m.id)} onChange={e => setModuloIds(prev => e.target.checked ? [...new Set([...prev, m.id])] : prev.filter(id => id !== m.id))} />{m.nombre}
+          <div className="cargos-especialidades-lista">{especialidadesVisibles.map(m => <label key={m.id}>
+            <input type="checkbox" checked={especialidadIds.includes(m.id)} onChange={e => setEspecialidadIds(prev => e.target.checked ? [...new Set([...prev, m.id])] : prev.filter(id => id !== m.id))} />{m.nombre} ({m.modulo_nombre})
           </label>)}</div>
-          {!modulosVisibles.length && <p>No hay módulos para mostrar.</p>}
+          {!especialidadesVisibles.length && <p>No hay especialidades para mostrar.</p>}
         </fieldset>
         <button disabled={saving || !nombre.trim()}>{saving ? "Guardando…" : "Guardar"}</button>
         <button type="button" onClick={limpiar} disabled={saving}>Cancelar</button>
@@ -110,10 +110,10 @@ export default function CargosPage() {
         placeholder="Buscar cargo…" aria-label="Buscar cargo" />
       {error && <p role="alert">{error} <button onClick={cargar}>Reintentar</button></p>}
       <div className="cargos-scroll"><table>
-        <thead><tr><th>Cargo</th><th>Módulos asociados</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Cargo</th><th>Especialidades asociadas</th><th>Acciones</th></tr></thead>
         <tbody>{loading ? <tr><td colSpan={3}>Cargando…</td></tr> : visibles.length ? visibles.map(c => (
-          <tr key={c.id}><td>{c.nombre}</td><td>{(c.modulos || []).map(m => m.nombre).join(", ") || "Sin módulos asociados"}</td><td>
-            <button disabled={saving} onClick={() => { setId(c.id); setNombre(c.nombre); setModuloIds((c.modulo_ids || []).map(Number)); setBusquedaModulo(""); setFormOpen(true); }}>Editar</button>
+          <tr key={c.id}><td>{c.nombre}</td><td>{(c.especialidades || []).map(m => `${m.nombre} (${m.modulo_nombre})`).join(", ") || "Sin especialidades asociadas"}</td><td>
+            <button disabled={saving} onClick={() => { setId(c.id); setNombre(c.nombre); setEspecialidadIds((c.especialidad_ids || []).map(Number)); setBusquedaEspecialidad(""); setFormOpen(true); }}>Editar</button>
             <button disabled={saving} onClick={() => eliminar(c)}>Eliminar</button>
           </td></tr>
         )) : <tr><td colSpan={3}>Sin cargos</td></tr>}</tbody>

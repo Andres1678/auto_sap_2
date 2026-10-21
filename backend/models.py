@@ -74,11 +74,19 @@ class Modulo(db.Model):
         lazy="select"
     )
 
-cargo_modulo = db.Table(
-    'cargo_modulo',
+cargo_especialidad = db.Table(
+    'cargo_especialidad',
     db.Column('cargo_id', db.Integer, db.ForeignKey('cargo.id', ondelete='CASCADE'), primary_key=True),
-    db.Column('modulo_id', db.Integer, db.ForeignKey('modulo.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('especialidad_id', db.Integer, db.ForeignKey('especiales.id', ondelete='RESTRICT'), primary_key=True),
 )
+
+class Especialidad(db.Model):
+    __tablename__ = 'especiales'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(150), nullable=False, unique=True)
+    modulo_id = db.Column(db.Integer, db.ForeignKey('modulo.id', ondelete='RESTRICT'), nullable=False)
+    modulo_obj = relationship('Modulo', lazy='joined')
+    cargos = relationship('Cargo', secondary=cargo_especialidad, back_populates='especialidades')
 
 class Cargo(db.Model):
     __tablename__ = 'cargo'
@@ -86,7 +94,8 @@ class Cargo(db.Model):
     nombre = db.Column(db.String(100), unique=True, nullable=False)
     perfil_id = db.Column(db.Integer, db.ForeignKey('perfil.id', ondelete='RESTRICT'), nullable=True)
     perfil_obj = relationship('Perfil', lazy='joined')
-    modulos = relationship('Modulo', secondary=cargo_modulo, lazy='selectin')
+    especialidades = relationship('Especialidad', secondary=cargo_especialidad,
+                                  back_populates='cargos', lazy='selectin')
     consultores = relationship('Consultor', back_populates='cargo_obj', passive_deletes='all')
 
 class Consultor(db.Model):
