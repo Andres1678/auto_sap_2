@@ -260,7 +260,7 @@ export default function ModelosCapacidadesCoeSap() {
               const cargoRowSpan = filasCargo.length + filasCargo.filter(f => expandidos[`${grupo.clave}-${f.cargo_id ?? "sin-cargo"}-${f.especialidad_id ?? "sin-especialidad"}`]).length;
               return (
               <React.Fragment key={clave}>
-              <tr className={`mcc-equipo-fila ${indice === 0 ? "mcc-equipo-inicio" : ""}`} style={estiloEquipo(fila.equipo_id)}>
+              <tr className={`mcc-equipo-fila ${indice === 0 ? "mcc-equipo-inicio" : ""} ${primeraCargo && indice > 0 ? "mcc-cargo-inicio" : ""}`} style={estiloEquipo(fila.equipo_id)}>
                 {indice === 0 && <th scope="rowgroup" rowSpan={grupo.filas.length + grupo.filas.filter(f => expandidos[`${grupo.clave}-${f.cargo_id ?? "sin-cargo"}-${f.especialidad_id ?? "sin-especialidad"}`]).length} className="mcc-proceso">
                   <strong className="mcc-proceso-nombre">{grupo.proceso}</strong>
                   <dl className="mcc-proceso-resumen">
