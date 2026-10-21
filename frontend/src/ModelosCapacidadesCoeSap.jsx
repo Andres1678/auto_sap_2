@@ -209,6 +209,8 @@ export default function ModelosCapacidadesCoeSap() {
       horasProyectos: filas.reduce((s, f) => s + Number(f.horas_proyectos || 0), 0),
       horasConCaso: filas.reduce((s, f) => s + Number(f.horas_con_caso || 0), 0),
       otrasActividadesOperacion: filas.reduce((s, f) => s + Number(f.otras_actividades_operacion || 0), 0),
+      clientesPreventa: new Set(filas.flatMap(f => (f.clientes_preventa_claves || []).map(k => JSON.stringify([f.equipo_id, k])))).size,
+      horasPreventa: filas.reduce((s, f) => s + Number(f.horas_preventa || 0), 0),
       otrasOcupaciones: filas.reduce((s, f) => s + Number(f.otras_ocupaciones || 0), 0),
     };
   }, [resultado]);
@@ -243,13 +245,13 @@ export default function ModelosCapacidadesCoeSap() {
         {resultado.advertencias.map((texto) => <p key={texto}>{texto}</p>)}
       </div>}
       <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 8 horas. Se excluyen fines de semana y festivos de Colombia.</p>
-      <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table"><colgroup><col style={{ width: "12%" }} /><col style={{ width: "8%" }} /><col style={{ width: "8%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /></colgroup>
+      <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table"><colgroup><col style={{ width: "12%" }} /><col style={{ width: "8%" }} /><col style={{ width: "8%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /><col style={{ width: "5.142857%" }} /></colgroup>
         <thead>
 <tr><th rowSpan={2} scope="col">Proceso</th><th rowSpan={2} scope="col">Cargo</th><th rowSpan={2} scope="col">Personas incluidas</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th rowSpan={2} scope="col">Capacidad vacante</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
-<th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
-<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th></tr></thead>
-        <tbody>{cargando ? <tr><td colSpan={15}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
+<th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th><th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th></tr>
+<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
+        <tbody>{cargando ? <tr><td colSpan={17}>Consultando capacidad mensual…</td></tr> : grupos.length ? grupos.map((grupo) => (
           <React.Fragment key={grupo.clave}>
             {grupo.filas.map((fila, indice) => {
               const clave = `${grupo.clave}-${fila.cargo_id ?? "sin-cargo"}`;
@@ -294,17 +296,19 @@ export default function ModelosCapacidadesCoeSap() {
                 <td className="mcc-num mcc-proyecto-gris">{formato.format(fila.proyectos_con_horas ?? 0)}</td>
 <td className="mcc-num mcc-proyecto-gris">{formato.format(fila.horas_proyectos ?? 0)}</td>
 <td className="mcc-num mcc-otras-gris">{formato.format(fila.otras_ocupaciones ?? 0)}</td>
+<td className="mcc-num mcc-preventa">{formato.format(fila.clientes_preventa ?? 0)}</td>
+<td className="mcc-num mcc-preventa">{formato.format(fila.horas_preventa ?? 0)}</td>
               </tr>
               {abierto && <tr className="mcc-detalle" id={`detalle-${clave}`} style={estiloEquipo(fila.equipo_id)}>
-                <td colSpan={14}>
+                <td colSpan={16}>
                   <div className="mcc-detalle-body">
                     <h3>{grupo.proceso} · {fila.cargo}</h3>
-                    <table className="mcc-consultores"><colgroup><col style={{ width: "22%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "6.5%" }} /></colgroup>
+                    <table className="mcc-consultores"><colgroup><col style={{ width: "20%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /><col style={{ width: "5.714286%" }} /></colgroup>
                       <thead>
 <tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada (Nro de Personas)</th><th rowSpan={2} scope="col">Capacidad vacante</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
-<th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
-<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th></tr></thead>
+<th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th><th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th></tr>
+<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
                           <td>{c.nombre}</td>
@@ -322,6 +326,8 @@ export default function ModelosCapacidadesCoeSap() {
                           <td className="mcc-num mcc-proyecto-gris">{formato.format(c.proyectos_con_horas ?? 0)}</td>
 <td className="mcc-num mcc-proyecto-gris">{formato.format(c.horas_proyectos ?? 0)}</td>
 <td className="mcc-num mcc-otras-gris">{formato.format(c.otras_ocupaciones ?? 0)}</td>
+<td className="mcc-num mcc-preventa">{formato.format(c.clientes_preventa ?? 0)}</td>
+<td className="mcc-num mcc-preventa">{formato.format(c.horas_preventa ?? 0)}</td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -332,7 +338,7 @@ export default function ModelosCapacidadesCoeSap() {
               );
             })}
           </React.Fragment>
-        )) : <tr><td colSpan={15}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
+        )) : <tr><td colSpan={17}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
         {resultado && !cargando && <tfoot><tr>
           <th colSpan={4} scope="row">Totales</th>
           <td className="mcc-num">{formato.format(totales.vendida)}</td>
@@ -350,9 +356,11 @@ export default function ModelosCapacidadesCoeSap() {
           <td className="mcc-num mcc-proyecto-gris">{formato.format(totales.proyectos.conHoras)}</td>
 <td className="mcc-num mcc-proyecto-gris">{formato.format(totales.horasProyectos)}</td>
 <td className="mcc-num mcc-otras-gris">{formato.format(totales.otrasOcupaciones)}</td>
+<td className="mcc-num mcc-preventa">{formato.format(totales.clientesPreventa)}</td>
+<td className="mcc-num mcc-preventa">{formato.format(totales.horasPreventa)}</td>
         </tr></tfoot>}
       </table></div>
-      <p className="mcc-nota">Casos: únicamente ocupación 01 con tarea 01. Número de casos cuenta identificadores únicos; los registros sin identificador no crean casos. Otras Actividades Operacion: tareas 05 Generación de informes y 22 Reunión cliente en cualquier ocupación, con o sin caso, además de las restantes tareas de ocupación 01 distintas de 01. Otras ocupaciones: el resto. Estas tres columnas de horas se distribuyen sin duplicar registros. Proyectos con horas y Horas de proyectos siguen siendo indicadores exclusivos de ocupación 02. Capacidad vacante continúa pendiente de definición.</p>
+      <p className="mcc-nota">Casos: únicamente ocupación 01 con tarea 01. Número de casos cuenta identificadores únicos; los registros sin identificador no crean casos. Otras Actividades Operacion: tareas 05 Generación de informes y 22 Reunión cliente en cualquier ocupación, con o sin caso, además de las restantes tareas de ocupación 01 distintas de 01. Otras ocupaciones: el resto, excluyendo ocupación 02 de proyectos y ocupación 06 de preventa. La ocupación 06, con todas sus tareas, pertenece solo a Preventa: clientes únicos y sus horas en el mes y filtros seleccionados. Proyectos con horas y Horas de proyectos siguen siendo indicadores exclusivos de ocupación 02. Capacidad vacante continúa pendiente de definición.</p>
     </main>
   );
 }

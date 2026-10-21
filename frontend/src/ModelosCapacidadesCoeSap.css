@@ -154,7 +154,7 @@
 .mcc-scroll::-webkit-scrollbar{height:10px}
 .mcc-scroll::-webkit-scrollbar-track{background:#f1f5f9;border-radius:8px}
 .mcc-scroll::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:8px;border:2px solid #f1f5f9}
-.mcc-table{width:100%;min-width:1480px;max-width:none;table-layout:fixed}
+.mcc-table{width:100%;min-width:1660px;max-width:none;table-layout:fixed}
 .mcc-table th,.mcc-table td{font-size:13px;line-height:1.55;padding:12px 9px;overflow-wrap:break-word;word-break:normal}
 .mcc-table>thead>tr>th{font-size:12px;line-height:1.45;padding:13px 9px}
 .mcc-table th.mcc-grupo-titulo{font-size:11px;letter-spacing:1px;padding:8px}
@@ -189,4 +189,10 @@
 .mcc-table .mcc-consultores .mcc-num{font-size:12px}
 .mcc-table .mcc-consultores th.mcc-grupo-titulo{font-size:11px;padding:7px}
 @media(min-width:1800px){.mcc-table th,.mcc-table td{font-size:14px;padding:14px 10px}.mcc-table .mcc-num{font-size:14px}.mcc-table .mcc-consultores th,.mcc-table .mcc-consultores td{font-size:13px}.mcc-table .mcc-consultores .mcc-num{font-size:13px}}
-@media(max-width:700px){.mcc-page{padding:10px 6px}.mcc-table{min-width:1480px}.mcc-table .mcc-proceso{position:static;box-shadow:none}.mcc-table>thead>tr:first-child>th:first-child{position:static}}
+@media(max-width:700px){.mcc-page{padding:10px 6px}.mcc-table{min-width:1660px}.mcc-table .mcc-proceso{position:static;box-shadow:none}.mcc-table>thead>tr:first-child>th:first-child{position:static}}
+
+/* Preventa: bloque propio para clientes y horas de ocupación 06. */
+.mcc-table th.mcc-preventa,.mcc-table td.mcc-preventa{background:#f0ecfa;color:#352751;border-color:#dcd3ed}
+.mcc-table thead th.mcc-preventa{background:#c9b9e4;color:#2b203d}
+.mcc-table tfoot td.mcc-preventa{background:#e3d9f2;font-weight:700}
+.mcc-table>tbody>.mcc-equipo-fila>td.mcc-preventa{background:#f0ecfa}

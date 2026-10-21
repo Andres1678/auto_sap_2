@@ -26315,6 +26315,8 @@ def _mcc_metricas_casos(registros):
         return '' if normal in ('', '0', 'N/A', 'N/APLICA', 'NA', 'NULL', 'NONE', '-', 'SIN CASO') else texto
     claves = set()
     proyectos = set()
+    clientes_preventa = set()
+    horas_preventa = 0.0
     proyectos_horas = {}
     horas_proyectos = 0.0
     con, sin, operacion = 0.0, 0.0, 0.0
@@ -26348,7 +26350,16 @@ def _mcc_metricas_casos(registros):
         es_actividad_operacion = tarea_codigo in ('5', '22')
         es_casos = ocupacion_codigo == '1' and tarea_codigo == '1'
         es_operacion = es_actividad_operacion or (ocupacion_codigo == '1' and not es_casos)
-        if es_casos:
+        if ocupacion_codigo == '6':
+            # Toda la ocupación Preventa tiene su bloque exclusivo, incluidas tareas 05/22.
+            horas_preventa += h
+            cliente = str(r.get('cliente') or '').strip()
+            cliente_clave = ''.join(c for c in unicodedata.normalize('NFD', cliente)
+                                    if not unicodedata.combining(c)).upper()
+            cliente_clave = ' '.join(cliente_clave.split())
+            if cliente_clave:
+                clientes_preventa.add(cliente_clave)
+        elif es_casos:
             con += h
             if tiene_caso:
                 claves.add(('caso', principal) if principal else ('sin-caso-principal', interno))
@@ -26356,7 +26367,9 @@ def _mcc_metricas_casos(registros):
             operacion += h
         elif ocupacion_codigo != '2':
             sin += h
-    return {'numero_casos': len(claves), 'horas_con_caso': round(con, 2),
+    return {'clientes_preventa': len(clientes_preventa), 'horas_preventa': round(horas_preventa, 2),
+            'clientes_preventa_claves': sorted(clientes_preventa),
+            'numero_casos': len(claves), 'horas_con_caso': round(con, 2),
             'otras_ocupaciones': round(sin, 2), 'otras_actividades_operacion': round(operacion, 2), 'casos_claves': [list(k) for k in sorted(claves)],
             'numero_proyectos': len(proyectos), 'horas_proyectos': round(horas_proyectos, 2),
             'proyectos_claves': [list(k) for k in sorted(proyectos)],
@@ -26457,6 +26470,7 @@ def modelos_capacidades_coe_sap():
             db.session.query(
                 func.lower(func.trim(Registro.usuario_consultor)).label('usuario'),
                 Registro.nro_caso_cliente.label('cliente_caso'),
+                Registro.cliente.label('cliente'),
                 Registro.proyecto_id.label('proyecto_id'),
                 Registro.nro_caso_interno.label('interno_caso'),
                 Registro.tiempo_invertido.label('tiempo_invertido'),
@@ -26475,6 +26489,7 @@ def modelos_capacidades_coe_sap():
         for r in consulta_casos.all():
             registros_por_usuario.setdefault(r.usuario, []).append({
                 'cliente_caso': r.cliente_caso, 'interno_caso': r.interno_caso,
+                'cliente': r.cliente,
                 'proyecto_id': r.proyecto_id,
                 'tiempo_invertido': r.tiempo_invertido, 'total_horas': r.total_horas,
                 'ocupacion_codigo': r.ocupacion_codigo,
@@ -26533,6 +26548,8 @@ def modelos_capacidades_coe_sap():
     except Exception:
         app.logger.exception('Error consultando modelos de capacidades COE SAP')
         return jsonify({'mensaje': 'No se pudo consultar el modelo de capacidades.'}), 500
+
+
 
 
 
