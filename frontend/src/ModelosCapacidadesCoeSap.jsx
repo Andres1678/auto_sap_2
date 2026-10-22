@@ -316,7 +316,7 @@ export default function ModelosCapacidadesCoeSap() {
                     <span aria-hidden="true">{cargoComprimido ? '▸' : '▾'}</span> {fila.cargo}
                   </button>
                 </td>}</React.Fragment>
-                <td>{!cargoComprimido && (fila.especialidad || "")}{!cargoComprimido && fila.modulo_nombre && <small className="mcc-especialidad-consultor">Módulo: {fila.modulo_nombre}</small>}</td>
+                <td>{!cargoComprimido && (fila.especialidad || "")}{!cargoComprimido && fila.modulo_nombre && <small className="mcc-especialidad-consultor">Módulos: {fila.modulo_nombre}</small>}</td>
                 <td className="mcc-personas">
                   <button type="button" className="mcc-expand" aria-expanded={abierto}
                     aria-controls={cargoComprimido ? undefined : `detalle-${clave}`}

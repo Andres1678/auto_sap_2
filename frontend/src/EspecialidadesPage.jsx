@@ -7,7 +7,7 @@ import './CargosPage.css';
 export default function EspecialidadesPage() {
   const [especialidades, setEspecialidades] = useState([]);
   const [modulos, setModulos] = useState([]);
-  const [form, setForm] = useState({ id: null, nombre: '', modulo_id: '' });
+  const [form, setForm] = useState({ id: null, nombre: '', modulo_ids: [] });
   const [abierto, setAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [error, setError] = useState('');
@@ -31,14 +31,14 @@ export default function EspecialidadesPage() {
     finally { setCargando(false); }
   }, []);
   useEffect(() => { if (admin) cargar(); }, [admin, cargar]);
-  const cerrar = () => { setAbierto(false); setForm({ id: null, nombre: '', modulo_id: '' }); };
+  const cerrar = () => { setAbierto(false); setForm({ id: null, nombre: '', modulo_ids: [] }); };
   const guardar = async e => {
     e.preventDefault(); if (guardando) return;
     setGuardando(true);
     try {
       const r = await jfetch(form.id === null ? '/especialidades' : `/especialidades/${form.id}`, {
         method: form.id === null ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre: form.nombre.trim(), modulo_id: Number(form.modulo_id) }),
+        body: JSON.stringify({ nombre: form.nombre.trim(), modulo_ids: form.modulo_ids.map(Number) }),
       });
       const d = await r.json(); if (!r.ok) throw new Error(d?.mensaje || 'No se pudo guardar.');
       cerrar(); await cargar(); Swal.fire({ icon: 'success', title: 'Especialidad guardada' });
@@ -62,26 +62,33 @@ export default function EspecialidadesPage() {
   return <main className='cargos-page'>
     <Link to='/configuracion'>← Configuración</Link>
     <h1>Gestión de especialidades</h1>
-    <p>Crea una especialidad y selecciona su módulo. Después podrás asociarla a uno o varios cargos.</p>
+    <p>Crea una especialidad y selecciona uno o varios módulos. Después podrás asociarla a uno o varios cargos.</p>
     <button type='button' disabled={guardando} onClick={() => { cerrar(); setAbierto(true); }}>+ Nueva especialidad</button>
     <Link to='/configuracion/cargos' style={{ marginLeft: 16 }}>Gestionar cargos</Link>
     {abierto && <form className='cargos-form' onSubmit={guardar}>
       <label htmlFor='especialidad-nombre'>Nombre</label>
       <input id='especialidad-nombre' value={form.nombre} maxLength={150} required disabled={guardando} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} />
-      <label htmlFor='especialidad-modulo'>Módulo</label>
-      <select id='especialidad-modulo' value={form.modulo_id} required disabled={guardando} onChange={e => setForm(f => ({ ...f, modulo_id: e.target.value }))}>
-        <option value=''>Selecciona un módulo</option>
-        {modulos.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-      </select>
-      <button disabled={guardando || !form.nombre.trim() || !form.modulo_id}>{guardando ? 'Guardando…' : 'Guardar'}</button>
+      <fieldset disabled={guardando} style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: 8, padding: 12 }}>
+        <legend>Módulos de la especialidad</legend>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+          {modulos.map(m => <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type='checkbox' style={{ minWidth: 0, flex: 'none' }} checked={form.modulo_ids.includes(Number(m.id))}
+              onChange={e => { const checked = e.target.checked; setForm(f => ({ ...f,
+                modulo_ids: checked ? [...new Set([...f.modulo_ids, Number(m.id)])] : f.modulo_ids.filter(id => id !== Number(m.id)) })); }} />
+            {m.nombre}
+          </label>)}
+        </div>
+        <p>{form.modulo_ids.length} módulos seleccionados</p>
+      </fieldset>
+      <button disabled={guardando || !form.nombre.trim() || !form.modulo_ids.length}>{guardando ? 'Guardando…' : 'Guardar'}</button>
       <button type='button' disabled={guardando} onClick={cerrar}>Cancelar</button>
     </form>}
     <div><input className='cargos-search' placeholder='Buscar especialidad o módulo…' aria-label='Buscar especialidad' value={busqueda} onChange={e => setBusqueda(e.target.value)} /></div>
     {error && <p role='alert'>{error} <button onClick={cargar}>Reintentar</button></p>}
-    <div className='cargos-scroll'><table><thead><tr><th>Especialidad</th><th>Módulo</th><th>Acciones</th></tr></thead>
+    <div className='cargos-scroll'><table><thead><tr><th>Especialidad</th><th>Módulos</th><th>Acciones</th></tr></thead>
       <tbody>{cargando ? <tr><td colSpan={3}>Cargando…</td></tr> : visibles.length ? visibles.map(e => <tr key={e.id}>
         <td>{e.nombre}</td><td>{e.modulo_nombre}</td><td>
-          <button disabled={guardando} onClick={() => { setForm({ id: e.id, nombre: e.nombre, modulo_id: String(e.modulo_id) }); setAbierto(true); }}>Editar</button>
+          <button disabled={guardando} onClick={() => { setForm({ id: e.id, nombre: e.nombre, modulo_ids: (e.modulo_ids || (e.modulos || []).map(m => m.id) || []).map(Number) }); setAbierto(true); }}>Editar</button>
           <button disabled={guardando} onClick={() => eliminar(e)}>Eliminar</button>
         </td></tr>) : <tr><td colSpan={3}>Sin especialidades</td></tr>}</tbody></table></div>
   </main>;

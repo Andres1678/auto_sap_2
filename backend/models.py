@@ -80,12 +80,19 @@ cargo_especialidad = db.Table(
     db.Column('especialidad_id', db.Integer, db.ForeignKey('especiales.id', ondelete='RESTRICT'), primary_key=True),
 )
 
+especialidad_modulo = db.Table(
+    'especialidad_modulo',
+    db.Column('especialidad_id', db.Integer, db.ForeignKey('especiales.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('modulo_id', db.Integer, db.ForeignKey('modulo.id', ondelete='RESTRICT'), primary_key=True),
+)
+
 class Especialidad(db.Model):
     __tablename__ = 'especiales'
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(150), nullable=False, unique=True)
     modulo_id = db.Column(db.Integer, db.ForeignKey('modulo.id', ondelete='RESTRICT'), nullable=False)
     modulo_obj = relationship('Modulo', lazy='joined')
+    modulos = relationship('Modulo', secondary=especialidad_modulo, lazy='selectin')
     cargos = relationship('Cargo', secondary=cargo_especialidad, back_populates='especialidades')
 
 class Cargo(db.Model):

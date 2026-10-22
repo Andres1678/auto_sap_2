@@ -3809,7 +3809,7 @@ def listar_consultores():
                 joinedload(Consultor.cargo_obj),
                 joinedload(Consultor.equipo_obj),
                 joinedload(Consultor.horario_obj),
-                selectinload(Consultor.especialidades).joinedload(Especialidad.modulo_obj),
+                selectinload(Consultor.especialidades).selectinload(Especialidad.modulos),
                 joinedload(Consultor.modulos)
             )
             .order_by(Consultor.nombre.asc())
@@ -26373,22 +26373,37 @@ def listar_cargos():
     return jsonify([_cargo_json(c) for c in Cargo.query.order_by(Cargo.nombre.asc()).all()]), 200
 
 
+def _especialidad_modulos(especialidad):
+    # Respaldo del módulo anterior para datos pendientes de migrar.
+    modulos = {m.id: m for m in especialidad.modulos}
+    if not modulos and especialidad.modulo_obj is not None:
+        modulos[especialidad.modulo_obj.id] = especialidad.modulo_obj
+    return sorted(modulos.values(), key=lambda m: m.nombre.casefold())
+
+
 def _especialidad_json(especialidad):
+    modulos = _especialidad_modulos(especialidad)
     return {'id': especialidad.id, 'nombre': especialidad.nombre,
+            'modulo_ids': [m.id for m in modulos],
+            'modulos': [{'id': m.id, 'nombre': m.nombre} for m in modulos],
+            # Mantener compatibilidad con Cargos y Consultores ya entregados.
             'modulo_id': especialidad.modulo_id,
-            'modulo_nombre': especialidad.modulo_obj.nombre if especialidad.modulo_obj else ''}
+            'modulo_nombre': ', '.join(m.nombre for m in modulos)}
 
 
 def _validar_especialidad(data):
     nombre = data.get('nombre')
     if not isinstance(nombre, str) or not nombre.strip() or len(nombre.strip()) > 150:
         raise ValueError('El nombre de la especialidad es obligatorio y admite hasta 150 caracteres.')
-    modulo_id = data.get('modulo_id')
-    if isinstance(modulo_id, bool) or not str(modulo_id).isdigit() or int(modulo_id) <= 0:
-        raise ValueError('Selecciona un módulo válido.')
-    if db.session.get(Modulo, int(modulo_id)) is None:
-        raise ValueError('El módulo seleccionado no existe.')
-    return nombre.strip(), int(modulo_id)
+    valores = data.get('modulo_ids') if 'modulo_ids' in data else [data.get('modulo_id')]
+    if not isinstance(valores, list) or not valores or any(
+            isinstance(v, bool) or not str(v).isdigit() or int(v) <= 0 for v in valores):
+        raise ValueError('Selecciona al menos un módulo válido.')
+    ids = {int(v) for v in valores}
+    modulos = Modulo.query.filter(Modulo.id.in_(ids)).order_by(Modulo.nombre).all()
+    if len(modulos) != len(ids):
+        raise ValueError('Uno o varios módulos seleccionados no existen.')
+    return nombre.strip(), modulos
 
 
 @bp.route('/especialidades', methods=['GET'])
@@ -26401,8 +26416,9 @@ def listar_especialidades():
 @admin_required
 def crear_especialidad():
     try:
-        nombre, modulo_id = _validar_especialidad(request.get_json(silent=True) or {})
-        especialidad = Especialidad(nombre=nombre, modulo_id=modulo_id)
+        nombre, modulos = _validar_especialidad(request.get_json(silent=True) or {})
+        especialidad = Especialidad(nombre=nombre, modulo_id=modulos[0].id)
+        especialidad.modulos = modulos
         db.session.add(especialidad)
         db.session.commit()
         return jsonify(_especialidad_json(especialidad)), 201
@@ -26423,9 +26439,10 @@ def crear_especialidad():
 def editar_especialidad(id):
     especialidad = Especialidad.query.get_or_404(id)
     try:
-        nombre, modulo_id = _validar_especialidad(request.get_json(silent=True) or {})
+        nombre, modulos = _validar_especialidad(request.get_json(silent=True) or {})
         especialidad.nombre = nombre
-        especialidad.modulo_id = modulo_id
+        especialidad.modulo_id = modulos[0].id
+        especialidad.modulos = modulos
         db.session.commit()
         return jsonify(_especialidad_json(especialidad)), 200
     except ValueError as error:
@@ -26626,11 +26643,17 @@ def _mcc_metricas_casos(registros):
 
 
 def _mcc_especialidades_persona(personas):
-    # Fuente única: la relación consultor_especialidad, sin inferir por módulo/cargo.
-    return {persona.id: {e.id: {
+    # Una fila por especialidad asignada, independientemente de sus módulos.
+    resultado = {}
+    for persona in personas:
+        resultado[persona.id] = {}
+        for e in persona.especialidades:
+            modulos = _especialidad_modulos(e)
+            resultado[persona.id][e.id] = {
                 'nombre': e.nombre, 'modulo_id': e.modulo_id,
-                'modulo_nombre': e.modulo_obj.nombre if e.modulo_obj else ''}
-            for e in persona.especialidades} for persona in personas}
+                'modulo_nombre': ', '.join(m.nombre for m in modulos),
+                'modulos': [{'id': m.id, 'nombre': m.nombre} for m in modulos]}
+    return resultado
 
 
 def _mcc_filas_especialidades(grupos, especialidades_persona, registros_por_usuario, driver):
@@ -26645,6 +26668,7 @@ def _mcc_filas_especialidades(grupos, especialidades_persona, registros_por_usua
                     por_especialidad[especialidad_id] = {**grupo,
                         'especialidad_id': especialidad_id, 'especialidad': datos['nombre'],
                         'modulo_id': datos['modulo_id'], 'modulo_nombre': datos['modulo_nombre'],
+                        'modulos': datos.get('modulos', []),
                         'consultores': []}
                 por_especialidad[especialidad_id]['consultores'].append({**consultor,
                     'especialidad_id': especialidad_id, 'especialidad': datos['nombre']})
@@ -26832,7 +26856,7 @@ def modelos_capacidades_coe_sap():
         totales_data = data
         ids_personas = {c['id'] for grupo in data for c in grupo['consultores']}
         personas_db = (Consultor.query.options(
-            selectinload(Consultor.especialidades).joinedload(Especialidad.modulo_obj))
+            selectinload(Consultor.especialidades).selectinload(Especialidad.modulos))
             .filter(Consultor.id.in_(ids_personas)).all()) if ids_personas else []
         especialidades_persona = _mcc_especialidades_persona(personas_db)
         data = _mcc_filas_especialidades(totales_data, especialidades_persona,
