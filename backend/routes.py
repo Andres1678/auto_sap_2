@@ -26688,20 +26688,37 @@ def _mcc_filas_especialidades(grupos, especialidades_persona, registros_por_usua
     return filas
 
 
+def _mcc_rango_meses(desde, hasta):
+    patron = r'(?:20\d{2}|2100)-(?:0[1-9]|1[0-2])'
+    if not isinstance(desde, str) or not isinstance(hasta, str) or not re.fullmatch(patron, desde) or not re.fullmatch(patron, hasta):
+        raise ValueError('Selecciona el mes inicial y final válidos, entre 2000 y 2100.')
+    if desde > hasta:
+        raise ValueError('El mes inicial no puede ser mayor que el mes final.')
+    anio_a, mes_a = map(int, desde.split('-'))
+    anio_b, mes_b = map(int, hasta.split('-'))
+    primero = date(anio_a, mes_a, 1)
+    limite = date(anio_b + 1, 1, 1) if mes_b == 12 else date(anio_b, mes_b + 1, 1)
+    return primero, limite
+
+
 @bp.route('/modelos-capacidades-coe-sap', methods=['GET'])
 @admin_required
 def modelos_capacidades_coe_sap():
-    import calendar
     from decimal import Decimal
 
     hoy = datetime.now(ZoneInfo('America/Bogota')).date()
     try:
-        anio = int(request.args.get('anio', hoy.year))
-        mes = int(request.args.get('mes', hoy.month))
-        if not 2000 <= anio <= 2100 or not 1 <= mes <= 12:
-            raise ValueError()
-    except (TypeError, ValueError):
-        return jsonify({'mensaje': 'Selecciona un mes válido y un año entre 2000 y 2100.'}), 400
+        if request.args.get('mes_desde') is not None or request.args.get('mes_hasta') is not None:
+            mes_desde = request.args.get('mes_desde')
+            mes_hasta = request.args.get('mes_hasta')
+        else:
+            anio = int(request.args.get('anio', hoy.year))
+            mes = int(request.args.get('mes', hoy.month))
+            mes_desde = mes_hasta = f'{anio:04d}-{mes:02d}'
+        fecha_inicio, fecha_limite = _mcc_rango_meses(mes_desde, mes_hasta)
+        anio, mes = fecha_inicio.year, fecha_inicio.month
+    except (TypeError, ValueError) as error:
+        return jsonify({'mensaje': str(error)}), 400
 
     filtrar = request.args.get('filtrar') == '1'
     try:
@@ -26718,18 +26735,19 @@ def modelos_capacidades_coe_sap():
         return jsonify({'mensaje': 'Los filtros contienen identificadores inválidos.'}), 400
 
     try:
-        festivos = _cap_colombia_holidays_for_years([anio])
+        festivos = _cap_colombia_holidays_for_years(range(fecha_inicio.year, fecha_limite.year + 1))
         driver = Decimal('0')
         dias_laborables = 0
-        for dia in range(1, calendar.monthrange(anio, mes)[1] + 1):
-            fecha = date(anio, mes, dia)
+        fecha = fecha_inicio
+        while fecha < fecha_limite:
             if fecha.weekday() < 5 and fecha not in festivos:
                 driver += Decimal('8') if fecha.weekday() == 4 else Decimal('8.5')
                 dias_laborables += 1
+            fecha += timedelta(days=1)
 
         # Agregar horas por usuario antes de unirlas a los consultores evita duplicados.
-        inicio = date(anio, mes, 1).isoformat()
-        fin = (date(anio + 1, 1, 1) if mes == 12 else date(anio, mes + 1, 1)).isoformat()
+        inicio = fecha_inicio.isoformat()
+        fin = fecha_limite.isoformat()
         consulta_horas = (
             db.session.query(
                 func.lower(func.trim(Registro.usuario_consultor)).label('usuario'),
@@ -26862,7 +26880,8 @@ def modelos_capacidades_coe_sap():
         data = _mcc_filas_especialidades(totales_data, especialidades_persona,
                                         registros_por_usuario, float(driver))
         return jsonify({
-            'anio': anio, 'mes': mes, 'dias_laborables': dias_laborables,
+            'anio': anio, 'mes': mes, 'mes_desde': mes_desde, 'mes_hasta': mes_hasta,
+            'dias_laborables': dias_laborables,
             'driver': float(driver), 'data': data, 'totales_data': totales_data,
             'advertencias': advertencias,
         }), 200

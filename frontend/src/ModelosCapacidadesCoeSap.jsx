@@ -20,6 +20,10 @@ function compararFilasCargo(a, b) {
 }
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+const textoMes = value => {
+  const [anio, mes] = String(value || '').split('-');
+  return mes ? `${MESES[Number(mes) - 1]} de ${anio}` : '';
+};
 const formato = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 2 });
 const capacidadInstalada = (horas, driver) => {
   const h = Number(horas ?? 0);
@@ -100,6 +104,7 @@ function FiltroMultiple({ titulo, opciones, valores, onChange }) {
 
 export default function ModelosCapacidadesCoeSap() {
   const [periodo, setPeriodo] = useState(periodoActual);
+  const [periodoHasta, setPeriodoHasta] = useState(periodoActual);
   const [catalogos, setCatalogos] = useState(null);
   const [filtros, setFiltros] = useState({ ocupaciones: [], tareas: [], equipos: [], cargos: [] });
   const cambiarFiltro = (clave, valores) => setFiltros(prev => {
@@ -161,16 +166,16 @@ export default function ModelosCapacidadesCoeSap() {
     setResultado(null);
     setExpandidos({});
     setError("");
-    if (!/^(20\d{2}|2100)-(0[1-9]|1[0-2])$/.test(periodo)) {
-      setError("Selecciona un mes y año válidos.");
+    const patronMes = /^(20\d{2}|2100)-(0[1-9]|1[0-2])$/;
+    if (!patronMes.test(periodo) || !patronMes.test(periodoHasta) || periodo > periodoHasta) {
+      setError(periodo > periodoHasta ? "El mes inicial no puede ser mayor que el mes final." : "Selecciona el mes inicial y final válidos.");
       setCargando(false);
       return () => { vigente = false; controller.abort(); };
     }
-    const [anio, mes] = periodo.split("-");
     setCargando(true);
     (async () => {
       try {
-        const params = new URLSearchParams({ anio, mes: String(Number(mes)), filtrar: "1" });
+        const params = new URLSearchParams({ mes_desde: periodo, mes_hasta: periodoHasta, filtrar: "1" });
         for (const [clave, parametro] of [["ocupaciones", "ocupacion_id"], ["tareas", "tarea_id"], ["equipos", "equipo_id"], ["cargos", "cargo_id"]]) {
           filtros[clave].forEach(id => params.append(parametro, id));
         }
@@ -183,7 +188,7 @@ export default function ModelosCapacidadesCoeSap() {
       } finally { if (vigente) setCargando(false); }
     })();
     return () => { vigente = false; controller.abort(); };
-  }, [admin, periodo, revision, catalogos, filtros]);
+  }, [admin, periodo, periodoHasta, revision, catalogos, filtros]);
 
   const estiloEquipo = (equipoId) => {
     const posicion = (catalogos?.equipos || []).findIndex(e => String(e.id) === String(equipoId ?? "sin"));
@@ -253,11 +258,17 @@ export default function ModelosCapacidadesCoeSap() {
       <header className="mcc-header"><div>
         <span className="mcc-kicker">Planeación operativa</span>
         <h1>Modelos de capacidades COE SAP</h1>
-        <p>Capacidad mensual por proceso, cargo y especialidad de los consultores activos.</p>
-      </div><label className="mcc-periodo">Mes de referencia
-        <input type="month" value={periodo} min="2000-01" max="2100-12"
-          onChange={e => setPeriodo(e.target.value)} />
-      </label></header>
+        <p>Capacidad del periodo por proceso, cargo y especialidad de los consultores activos.</p>
+      </div><div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <label className="mcc-periodo">Mes desde
+          <input type="month" value={periodo} min="2000-01" max="2100-12"
+            onChange={e => { const value = e.target.value; setPeriodo(value); if (value && value > periodoHasta) setPeriodoHasta(value); }} />
+        </label>
+        <label className="mcc-periodo">Mes hasta
+          <input type="month" value={periodoHasta} min={periodo || '2000-01'} max="2100-12"
+            onChange={e => setPeriodoHasta(e.target.value)} />
+        </label>
+      </div></header>
       {catalogos && <div className="mcc-filtros">
         {[["ocupaciones", "Ocupaciones"], ["tareas", "Tareas"], ["equipos", "Equipos"], ["cargos", "Cargos"]].map(([clave, titulo]) => (
           <FiltroMultiple key={clave} titulo={titulo} opciones={clave === "tareas" ? tareasDisponibles : catalogos[clave]} valores={filtros[clave]}
@@ -268,7 +279,7 @@ export default function ModelosCapacidadesCoeSap() {
       {!catalogos && !error && <p>Cargando filtros…</p>}
       {error && <div className="mcc-error" role="alert">{error} <button onClick={() => setRevision(v => v + 1)}>Reintentar</button></div>}
       {resultado && <div className="mcc-resumen">
-        <div><span>Periodo</span><strong>{MESES[resultado.mes - 1]} de {resultado.anio}</strong></div>
+        <div><span>Periodo</span><strong>{textoMes(resultado.mes_desde)}{resultado.mes_hasta !== resultado.mes_desde ? ` — ${textoMes(resultado.mes_hasta)}` : ''}</strong></div>
         <div><span>Días laborables</span><strong>{resultado.dias_laborables}</strong></div>
         <div><span>Driver por consultor</span><strong>{formato.format(resultado.driver)} horas</strong></div>
       </div>}
@@ -279,7 +290,7 @@ export default function ModelosCapacidadesCoeSap() {
       <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 8 horas. Se excluyen fines de semana y festivos de Colombia.</p>
       <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table"><colgroup><col style={{ width: "12.000000%" }} /><col style={{ width: "8.000000%" }} /><col style={{ width: "10.000000%" }} /><col style={{ width: "8.000000%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /></colgroup>
         <thead>
-<tr><th rowSpan={2} scope="col">Proceso</th><th rowSpan={2} scope="col">Cargo</th><th rowSpan={2} scope="col">Especialidad</th><th rowSpan={2} scope="col">Personas incluidas</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
+<tr><th rowSpan={2} scope="col">Proceso</th><th rowSpan={2} scope="col">Cargo</th><th rowSpan={2} scope="col">Especialidad</th><th rowSpan={2} scope="col">Personas incluidas</th><th rowSpan={2} scope="col">Driver (horas del periodo)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación del periodo (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
 <th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th><th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
 <tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
@@ -302,7 +313,7 @@ export default function ModelosCapacidadesCoeSap() {
                   <dl className="mcc-proceso-resumen">
                     <div><dt>Personas</dt><dd>{grupo.resumen.personas}</dd></div>
                     <div><dt>Capacidad actual</dt><dd>{formato.format(grupo.resumen.actual)} h</dd></div>
-                    <div><dt>Ocupación mes</dt><dd>{grupo.resumen.ocupacion == null ? "—" : `${formato.format(grupo.resumen.ocupacion)} %`}</dd></div>
+                    <div><dt>Ocupación del periodo</dt><dd>{grupo.resumen.ocupacion == null ? "—" : `${formato.format(grupo.resumen.ocupacion)} %`}</dd></div>
                     <div><dt>Ocupación acumulada de cargos</dt><dd>{formato.format(grupo.resumen.ocupacionAcumulada)} %</dd></div>
                     <div><dt>Capacidad instalada (Nro de Personas)</dt><dd>{formato.format(grupo.resumen.instalada)}</dd></div>
                   </dl>
@@ -333,7 +344,7 @@ export default function ModelosCapacidadesCoeSap() {
                   {formato.format(fila.capacidad_vendida ?? 0)}
                 </td>
                 <td className="mcc-num">{formato.format(fila.capacidad_actual ?? 0)}</td>
-                <td className="mcc-num" title="Horas registradas del mes / capacidad vendida × 100">
+                <td className="mcc-num" title="Horas registradas del periodo / capacidad vendida × 100">
                   {fila.porcentaje_cumplimiento_mes == null ? "—" : `${formato.format(fila.porcentaje_cumplimiento_mes)} %`}
                 </td>
                 <td className="mcc-num" title="Horas registradas del cargo / driver mensual por consultor">
@@ -354,7 +365,7 @@ export default function ModelosCapacidadesCoeSap() {
                     <h3>{[grupo.proceso, fila.cargo, fila.especialidad].filter(Boolean).join(" · ")}</h3>
                     <table className="mcc-consultores"><colgroup><col style={{ width: "20%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /></colgroup>
                       <thead>
-<tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Driver (horas mes actual)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación mes (%)</th><th rowSpan={2} scope="col">Capacidad instalada (Nro de Personas)</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
+<tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Driver (horas del periodo)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación del periodo (%)</th><th rowSpan={2} scope="col">Capacidad instalada (Nro de Personas)</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
 <th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th><th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
 <tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
@@ -405,7 +416,7 @@ export default function ModelosCapacidadesCoeSap() {
 <td className="mcc-num mcc-otras-gris">{formato.format(totales.otrasOcupaciones)}</td>
         </tr></tfoot>}
       </table></div>
-      <p className="mcc-nota">Casos: únicamente ocupación 01 con tarea 01. Número de casos cuenta identificadores únicos; los registros sin identificador no crean casos. Otras Actividades Operacion: tareas 05 Generación de informes y 22 Reunión cliente en cualquier ocupación, con o sin caso, además de las restantes tareas de ocupación 01 distintas de 01. Otras ocupaciones: el resto, excluyendo ocupación 02 de proyectos y ocupación 06 de preventa. La ocupación 06, con todas sus tareas, pertenece solo a Preventa: clientes únicos y sus horas en el mes y filtros seleccionados. Proyectos con horas y Horas de proyectos siguen siendo indicadores exclusivos de ocupación 02.</p>
+      <p className="mcc-nota">Casos: únicamente ocupación 01 con tarea 01. Número de casos cuenta identificadores únicos; los registros sin identificador no crean casos. Otras Actividades Operacion: tareas 05 Generación de informes y 22 Reunión cliente en cualquier ocupación, con o sin caso, además de las restantes tareas de ocupación 01 distintas de 01. Otras ocupaciones: el resto, excluyendo ocupación 02 de proyectos y ocupación 06 de preventa. La ocupación 06, con todas sus tareas, pertenece solo a Preventa: clientes únicos y sus horas en el periodo y filtros seleccionados. Proyectos con horas y Horas de proyectos siguen siendo indicadores exclusivos de ocupación 02.</p>
     </main>
   );
 }
