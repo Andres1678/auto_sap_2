@@ -27136,3 +27136,77 @@ def triara_confirmar(id):
         app.logger.exception('Error confirmando asistencia Triara')
         return jsonify({'mensaje': 'No se pudo registrar la asistencia.'}), 500
 
+
+
+# Recordatorio personal: solo consulta datos del consultor autenticado.
+def _recordatorio_capacidad_personal(hoy, horas_por_fecha, festivos):
+    semana_inicio = hoy - timedelta(days=hoy.weekday())
+    semana_fin = semana_inicio + timedelta(days=6)
+    mes_inicio, mes_fin = _cap_month_bounds(hoy.year, hoy.month)
+    pendientes = {}
+    def resumen(inicio, fin):
+        esperadas = Decimal('0')
+        registradas = Decimal('0')
+        vencidas = Decimal('0')
+        faltantes = Decimal('0')
+        dias_pendientes = 0
+        dia = inicio
+        while dia <= fin:
+            meta = Decimal(str(_cap_meta_hours_for_day(dia, festivos)))
+            esperadas += meta
+            try:
+                horas = Decimal(str(horas_por_fecha.get(dia.isoformat(), 0) or 0))
+                if not horas.is_finite():
+                    horas = Decimal('0')
+            except (InvalidOperation, ValueError, TypeError):
+                horas = Decimal('0')
+            horas = max(Decimal('0'), horas)
+            if dia <= hoy:
+                registradas += horas
+            if dia < hoy and meta > 0:
+                vencidas += meta
+                diferencia = max(Decimal('0'), meta - horas)
+                # Tolerancia para diferencias de redondeo de un minuto.
+                if diferencia > Decimal('0.02'):
+                    faltantes += diferencia
+                    dias_pendientes += 1
+                    pendientes[dia.isoformat()] = {
+                        'fecha': dia.isoformat(), 'esperadas': float(meta),
+                        'registradas': float(horas.quantize(Decimal('0.01'))),
+                        'faltantes': float(diferencia.quantize(Decimal('0.01'))),
+                        'sin_registro': horas == 0}
+            dia += timedelta(days=1)
+        return {'desde': inicio.isoformat(), 'hasta': fin.isoformat(),
+                'esperadas': float(esperadas), 'registradas': float(registradas.quantize(Decimal('0.01'))),
+                'esperadas_vencidas': float(vencidas),
+                'faltantes_vencidas': float(faltantes.quantize(Decimal('0.01'))),
+                'dias_pendientes': dias_pendientes,
+                'porcentaje': round(float(registradas / esperadas * 100), 2) if esperadas > 0 else None}
+    semana = resumen(semana_inicio, semana_fin)
+    mes = resumen(mes_inicio, mes_fin)
+    return {'hoy': hoy.isoformat(), 'semana': semana, 'mes': mes,
+            'pendientes': [pendientes[k] for k in sorted(pendientes)],
+            'tiene_pendientes': bool(pendientes)}
+
+
+@bp.route('/registros/recordatorio-capacidad', methods=['GET'])
+@auth_required
+def recordatorio_capacidad_registros():
+    try:
+        consultor = g.current_user
+        hoy = datetime.now(ZoneInfo('America/Bogota')).date()
+        inicio = min(hoy.replace(day=1), hoy - timedelta(days=hoy.weekday()))
+        mes_inicio, mes_fin = _cap_month_bounds(hoy.year, hoy.month)
+        semana_fin = hoy - timedelta(days=hoy.weekday()) + timedelta(days=6)
+        fin_calendario = max(mes_fin, semana_fin)
+        festivos = _cap_colombia_holidays_for_years(range(inicio.year, fin_calendario.year + 1))
+        filas = (db.session.query(Registro.fecha,
+                    func.coalesce(func.sum(Registro.total_horas), 0).label('horas'))
+                 .filter(func.lower(func.trim(Registro.usuario_consultor)) == str(consultor.usuario).strip().lower(),
+                         Registro.fecha >= inicio.isoformat(), Registro.fecha <= hoy.isoformat())
+                 .group_by(Registro.fecha).all())
+        horas = {str(f.fecha)[:10]: f.horas for f in filas}
+        return jsonify(_recordatorio_capacidad_personal(hoy, horas, festivos)), 200
+    except Exception:
+        app.logger.exception('Error consultando recordatorio personal de capacidad')
+        return jsonify({'mensaje': 'No se pudo consultar el recordatorio de capacidad.'}), 500

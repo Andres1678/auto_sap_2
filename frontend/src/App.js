@@ -40,6 +40,7 @@ import PromedioAtencionCoeSap from './PromedioAtencionCoeSap';
 import ControlBolsaClienteCoeSap from './ControlBolsaClienteCoeSap';
 import CargosPage from './CargosPage';
 import EspecialidadesPage from './EspecialidadesPage';
+import AlertaCapacidadRegistro from './AlertaCapacidadRegistro';
 import ModelosCapacidadesCoeSap from './ModelosCapacidadesCoeSap';
 import AsistenciaTriara from './AsistenciaTriara';
 
@@ -273,6 +274,7 @@ function App() {
             onLogout={() => handleLogout(true)}
           />
 
+          <AlertaCapacidadRegistro userData={userData} />
           <Routes>
             <Route path="/" element={<Registro userData={userData} />} />
 
