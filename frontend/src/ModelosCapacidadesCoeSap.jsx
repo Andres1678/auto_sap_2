@@ -19,37 +19,6 @@ function compararFilasCargo(a, b) {
     || String(a.especialidad ?? '').localeCompare(String(b.especialidad ?? ''), 'es', { numeric: true, sensitivity: 'base' });
 }
 
-// Promedios de horas; los conteos y las razones mantienen su significado.
-function promediarCapacidad(resultado, desde, hasta) {
-  const inicio = String(resultado.mes_desde || desde || '');
-  const fin = String(resultado.mes_hasta || hasta || '');
-  const patron = /^\d{4}-(0[1-9]|1[0-2])$/;
-  if (!patron.test(inicio) || !patron.test(fin) || inicio > fin) throw new Error('Rango de meses inválido para calcular el promedio.');
-  const [ai, mi] = inicio.split('-').map(Number);
-  const [af, mf] = fin.split('-').map(Number);
-  const meses = (af - ai) * 12 + mf - mi + 1;
-  const camposHoras = ['driver', 'capacidad_vendida', 'capacidad_actual', 'volumen_actual',
-    'horas', 'horas_con_caso', 'otras_actividades_operacion', 'horas_proyectos',
-    'horas_preventa', 'otras_ocupaciones'];
-  const convertir = fila => {
-    const promedio = { ...fila };
-    for (const campo of camposHoras) {
-      if (fila[campo] !== null && fila[campo] !== undefined) {
-        const horas = Number(fila[campo]);
-        promedio[campo] = Number.isFinite(horas) ? horas / meses : 0;
-      }
-    }
-    if (Array.isArray(fila.consultores)) promedio.consultores = fila.consultores.map(convertir);
-    // proyectos_horas y las claves de casos/clientes conservan el rango completo
-    // porque alimentan los conteos únicos y no las columnas de horas.
-    return promedio;
-  };
-  return { ...resultado, mes_desde: inicio, mes_hasta: fin, meses_promedio: meses,
-    driver: Number(resultado.driver || 0) / meses,
-    data: (resultado.data || []).map(convertir),
-    totales_data: Array.isArray(resultado.totales_data) ? resultado.totales_data.map(convertir) : undefined };
-}
-
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const textoMes = value => {
   const [anio, mes] = String(value || '').split('-');
@@ -213,7 +182,7 @@ export default function ModelosCapacidadesCoeSap() {
         const res = await jfetch(`/modelos-capacidades-coe-sap?${params.toString()}`, { signal: controller.signal });
         const data = await res.json();
         if (!res.ok || !Array.isArray(data?.data)) throw new Error(data?.mensaje || "No se pudo cargar el modelo.");
-        if (vigente) setResultado(promediarCapacidad(data, periodo, periodoHasta));
+        if (vigente) setResultado(data);
       } catch (e) {
         if (vigente && e.name !== "AbortError") setError(e.message || "Error consultando el modelo.");
       } finally { if (vigente) setCargando(false); }
@@ -289,7 +258,7 @@ export default function ModelosCapacidadesCoeSap() {
       <header className="mcc-header"><div>
         <span className="mcc-kicker">Planeación operativa</span>
         <h1>Modelos de capacidades COE SAP</h1>
-        <p>Promedio mensual de capacidad por proceso, cargo y especialidad de los consultores activos.</p>
+        <p>Capacidad del periodo por proceso, cargo y especialidad de los consultores activos.</p>
       </div><div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <label className="mcc-periodo">Mes desde
           <input type="month" value={periodo} min="2000-01" max="2100-12"
@@ -311,22 +280,20 @@ export default function ModelosCapacidadesCoeSap() {
       {error && <div className="mcc-error" role="alert">{error} <button onClick={() => setRevision(v => v + 1)}>Reintentar</button></div>}
       {resultado && <div className="mcc-resumen">
         <div><span>Periodo</span><strong>{textoMes(resultado.mes_desde)}{resultado.mes_hasta !== resultado.mes_desde ? ` — ${textoMes(resultado.mes_hasta)}` : ''}</strong></div>
-        <div><span>Días laborables del rango</span><strong>{resultado.dias_laborables}</strong></div>
-        <div><span>Driver promedio por consultor</span><strong>{formato.format(resultado.driver)} h/mes</strong></div>
-        <div><span>Meses para el promedio</span><strong>{resultado.meses_promedio}</strong></div>
+        <div><span>Días laborables</span><strong>{resultado.dias_laborables}</strong></div>
+        <div><span>Driver por consultor</span><strong>{formato.format(resultado.driver)} horas</strong></div>
       </div>}
       {!!resultado?.advertencias?.length && <div className="mcc-error" role="alert">
         {resultado.advertencias.map((texto) => <p key={texto}>{texto}</p>)}
       </div>}
-      {resultado && <p className="mcc-nota"><strong>Promedio mensual:</strong> las horas del rango se dividen entre {resultado.meses_promedio} {resultado.meses_promedio === 1 ? 'mes' : 'meses'}, incluidos los meses sin registros. Personas, casos, proyectos y clientes son conteos del rango. Los porcentajes y la capacidad instalada mantienen la relación entre horas registradas y capacidad.</p>}
       <p className="mcc-nota">Las especialidades corresponden a las asignadas directamente a cada consultor. Cuando no hay asignación, la celda queda vacía y sus métricas permanecen incluidas. Una persona puede aparecer en varias especialidades con sus métricas completas; los resúmenes del equipo y el total general excluyen duplicados.</p>
       <p className="mcc-nota">Lunes a jueves: 8,5 horas. Viernes: 8 horas. Se excluyen fines de semana y festivos de Colombia.</p>
       <div className="mcc-scroll" aria-busy={cargando}><table className="mcc-table"><colgroup><col style={{ width: "12.000000%" }} /><col style={{ width: "8.000000%" }} /><col style={{ width: "10.000000%" }} /><col style={{ width: "8.000000%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /><col style={{ width: "4.769231%" }} /></colgroup>
         <thead>
-<tr><th rowSpan={2} scope="col">Proceso</th><th rowSpan={2} scope="col">Cargo</th><th rowSpan={2} scope="col">Especialidad</th><th rowSpan={2} scope="col">Personas incluidas</th><th rowSpan={2} scope="col">Driver (h/mes)</th><th rowSpan={2} scope="col">Capacidad vendida (h/mes)</th><th rowSpan={2} scope="col">Capacidad actual (h/mes)</th><th rowSpan={2} scope="col">Ocupación del periodo (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
+<tr><th rowSpan={2} scope="col">Proceso</th><th rowSpan={2} scope="col">Cargo</th><th rowSpan={2} scope="col">Especialidad</th><th rowSpan={2} scope="col">Personas incluidas</th><th rowSpan={2} scope="col">Driver (horas del periodo)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación del periodo (%)</th><th rowSpan={2} scope="col">Capacidad instalada</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
-<th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th><th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (h/mes)</th></tr>
-<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso (h/mes)</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (h/mes)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos (h/mes)</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa (h/mes)</th></tr></thead>
+<th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th><th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
+<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
         <tbody>{cargando ? <tr><td colSpan={17}>Consultando capacidad mensual…</td></tr> : gruposVisibles.length ? gruposVisibles.map((grupo) => (
           <React.Fragment key={grupo.clave}>
             {grupo.filas.map((filaEspecialidad, indice) => {
@@ -345,7 +312,7 @@ export default function ModelosCapacidadesCoeSap() {
                   <strong className="mcc-proceso-nombre">{grupo.proceso}</strong>
                   <dl className="mcc-proceso-resumen">
                     <div><dt>Personas</dt><dd>{grupo.resumen.personas}</dd></div>
-                    <div><dt>Capacidad actual promedio</dt><dd>{formato.format(grupo.resumen.actual)} h/mes</dd></div>
+                    <div><dt>Capacidad actual</dt><dd>{formato.format(grupo.resumen.actual)} h</dd></div>
                     <div><dt>Ocupación del periodo</dt><dd>{grupo.resumen.ocupacion == null ? "—" : `${formato.format(grupo.resumen.ocupacion)} %`}</dd></div>
                     <div><dt>Ocupación acumulada de cargos</dt><dd>{formato.format(grupo.resumen.ocupacionAcumulada)} %</dd></div>
                     <div><dt>Capacidad instalada (Nro de Personas)</dt><dd>{formato.format(grupo.resumen.instalada)}</dd></div>
@@ -373,14 +340,14 @@ export default function ModelosCapacidadesCoeSap() {
                 </td>
                 
                 <td className="mcc-num">{formato.format(fila.driver)}</td>
-                <td className="mcc-num" title={`${fila.personas_activas ?? 0} personas activas × ${formato.format(fila.driver)} horas promedio por mes`}>
+                <td className="mcc-num" title={`${fila.personas_activas ?? 0} personas activas × ${fila.driver} horas laborables`}>
                   {formato.format(fila.capacidad_vendida ?? 0)}
                 </td>
                 <td className="mcc-num">{formato.format(fila.capacidad_actual ?? 0)}</td>
-                <td className="mcc-num" title="Horas registradas promedio / capacidad vendida promedio × 100">
+                <td className="mcc-num" title="Horas registradas del periodo / capacidad vendida × 100">
                   {fila.porcentaje_cumplimiento_mes == null ? "—" : `${formato.format(fila.porcentaje_cumplimiento_mes)} %`}
                 </td>
-                <td className="mcc-num" title="Horas registradas promedio del cargo / driver promedio mensual por consultor">
+                <td className="mcc-num" title="Horas registradas del cargo / driver mensual por consultor">
                   {mostrarInstalada(fila.capacidad_actual, fila.driver)}
                 </td>
                 <td className="mcc-num mcc-casos-gris">{formato.format(fila.numero_casos ?? 0)}</td>
@@ -398,10 +365,10 @@ export default function ModelosCapacidadesCoeSap() {
                     <h3>{[grupo.proceso, fila.cargo, fila.especialidad].filter(Boolean).join(" · ")}</h3>
                     <table className="mcc-consultores"><colgroup><col style={{ width: "20%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /><col style={{ width: "6.153846%" }} /></colgroup>
                       <thead>
-<tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Driver (h/mes)</th><th rowSpan={2} scope="col">Capacidad vendida (h/mes)</th><th rowSpan={2} scope="col">Capacidad actual (h/mes)</th><th rowSpan={2} scope="col">Ocupación del periodo (%)</th><th rowSpan={2} scope="col">Capacidad instalada (Nro de Personas)</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
+<tr><th rowSpan={2} scope="col">Consultor</th><th rowSpan={2} scope="col">Driver (horas del periodo)</th><th rowSpan={2} scope="col">Capacidad vendida (horas)</th><th rowSpan={2} scope="col">Capacidad actual (horas)</th><th rowSpan={2} scope="col">Ocupación del periodo (%)</th><th rowSpan={2} scope="col">Capacidad instalada (Nro de Personas)</th><th colSpan={3} scope="colgroup" className="mcc-casos-gris mcc-grupo-titulo">Operación</th>
 <th colSpan={2} scope="colgroup" className="mcc-proyecto-gris mcc-grupo-titulo">Proyecto</th>
-<th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th><th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (h/mes)</th></tr>
-<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso (h/mes)</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (h/mes)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos (h/mes)</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa (h/mes)</th></tr></thead>
+<th colSpan={2} scope="colgroup" className="mcc-preventa mcc-grupo-titulo">Preventa</th><th rowSpan={2} scope="col" className="mcc-otras-gris">Otras ocupaciones (horas)</th></tr>
+<tr><th scope="col" className="mcc-casos-gris">Número de casos</th><th scope="col" className="mcc-casos-gris">Horas con caso</th><th scope="col" className="mcc-casos-gris">Otras Actividades Operacion (Horas)</th><th scope="col" className="mcc-proyecto-gris">Nro de Proyectos</th><th scope="col" className="mcc-proyecto-gris">Horas de proyectos</th><th scope="col" className="mcc-preventa">Número de clientes</th><th scope="col" className="mcc-preventa">Horas de preventa</th></tr></thead>
                       <tbody>{(fila.consultores || []).map(c => (
                         <tr key={c.id}>
                           <td>{c.nombre}{c.especialidad && <small className="mcc-especialidad-consultor">{c.especialidad}</small>}</td>
@@ -432,7 +399,7 @@ export default function ModelosCapacidadesCoeSap() {
           </React.Fragment>
         )) : <tr><td colSpan={17}>{error ? "Información no disponible" : "No hay consultores activos para mostrar."}</td></tr>}</tbody>
         {resultado && !cargando && <tfoot><tr>
-          <th colSpan={5} scope="row">Totales · horas promedio mensual</th>
+          <th colSpan={5} scope="row">Totales</th>
           <td className="mcc-num">{formato.format(totales.vendida)}</td>
           <td className="mcc-num">{formato.format(totales.actual)}</td>
           <td className="mcc-num">{totales.porcentaje == null ? "—" : `${formato.format(totales.porcentaje)} %`}</td>
