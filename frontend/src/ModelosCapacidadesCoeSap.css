@@ -220,3 +220,49 @@
   background-repeat: repeat-x;
   pointer-events: none;
 }
+
+/* Encabezado completo fijo y desplazamiento en ambas direcciones. */
+.mcc-scroll {
+  max-height: 72vh;
+  max-height: 72dvh;
+  overflow: scroll;
+  position: relative;
+  isolation: isolate;
+  scrollbar-width: auto;
+  scrollbar-color: #64748b #e2e8f0;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+.mcc-scroll::-webkit-scrollbar { width: 14px; height: 14px; }
+.mcc-scroll::-webkit-scrollbar-track,
+.mcc-scroll::-webkit-scrollbar-corner { background: #e2e8f0; }
+.mcc-scroll::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border: 3px solid #e2e8f0;
+  border-radius: 10px;
+}
+.mcc-scroll::-webkit-scrollbar-thumb:hover { background: #475569; }
+/* Fijar el thead como bloque conserva alineadas las dos filas de títulos. */
+.mcc-table > thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #b42129;
+  box-shadow: 0 2px 0 #9a1c24;
+}
+.mcc-table > thead > tr > th { background-color: #b42129; }
+.mcc-table > thead > tr:first-child > th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 11;
+  background: #b42129;
+}
+/* Mantener los colores originales de las familias de columnas. */
+.mcc-table > thead > tr > th.mcc-casos-gris { background: #6b7280; }
+.mcc-table > thead > tr > th.mcc-proyecto-gris { background: #9ca3af; }
+.mcc-table > thead > tr > th.mcc-otras-gris { background: #e5e7eb; }
+.mcc-table > thead > tr > th.mcc-preventa { background: #c9b9e4; }
+@media (max-width: 700px) {
+  .mcc-scroll { max-height: 68vh; max-height: 68dvh; }
+  .mcc-table > thead > tr:first-child > th:first-child { position: static; }
+}
