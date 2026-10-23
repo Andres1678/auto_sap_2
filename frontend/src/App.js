@@ -1,3 +1,4 @@
+import { puedeVerModelosCapacidades } from "./accesoModelosCapacidades";
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
@@ -257,6 +258,7 @@ function App() {
   const nombre = userData?.nombre || '';
   const equipo = userData?.equipo || '';
   const isAdmin = rol === "ADMIN";
+  const canVerModelos = puedeVerModelosCapacidades(userData);
 
   return (
     <Router>
@@ -392,9 +394,11 @@ function App() {
             <Route
               path="/configuracion"
               element={
-                <AdminRoute allow={['ADMIN']} requirePermiso="CONFIG_VER">
-                  <Configuracion />
-                </AdminRoute>
+                <>{canVerModelos ? <Configuracion /> : (
+                  <AdminRoute allow={['ADMIN']} requirePermiso="CONFIG_VER">
+                    <Configuracion />
+                  </AdminRoute>
+                )}</>
               }
             />
 
@@ -497,9 +501,7 @@ function App() {
             <Route
               path="/configuracion/modelos-capacidades-coe-sap"
               element={
-                <AdminRoute allow={['ADMIN']} requirePermiso="CARGOS_ADMIN">
-                  <ModelosCapacidadesCoeSap />
-                </AdminRoute>
+                <>{canVerModelos ? <ModelosCapacidadesCoeSap /> : <Navigate to="/" replace />}</>
               }
             />
 

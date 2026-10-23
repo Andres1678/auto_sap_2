@@ -1,3 +1,4 @@
+import { puedeVerModelosCapacidades } from "./accesoModelosCapacidades";
 import React, { useMemo } from "react";
 import { Link } from "react-router-dom";
 import "./Configuracion.css";
@@ -13,6 +14,8 @@ export default function Configuracion() {
       return { permisos: lista, isAdmin: String(u?.rol_ref?.nombre ?? u?.rol ?? u?.user?.rol ?? "").trim().toUpperCase() === "ADMIN" };
     } catch { return { permisos: [], isAdmin: false }; }
   }, []);
+  let canVerModelos = false;
+  try { canVerModelos = puedeVerModelosCapacidades(JSON.parse(localStorage.getItem("userData") || "null")); } catch {}
   const canProyectos = permisos.includes("PROYECTOS_ADMIN");
   const canModulos = permisos.includes("ADMIN_MODULOS_GESTION");
   const canVerPermisosPersonas = isAdmin || permisos.includes("PERMISOS_EFECTIVOS_VER");
@@ -22,7 +25,7 @@ export default function Configuracion() {
         <p className="config-sub">Administra usuarios, cargos, clientes y permisos del sistema.</p>
       </div>
       <div className="config-grid">
-        {isAdmin && (
+        {canVerModelos && (
           <Link to="/configuracion/modelos-capacidades-coe-sap" className="config-card">
             <div className="config-icon">📋</div>
             <h3>Modelos de capacidades COE SAP</h3>

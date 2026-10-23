@@ -1,3 +1,4 @@
+import { puedeVerModelosCapacidades } from "./accesoModelosCapacidades";
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { jfetch } from "./lib/api";
@@ -125,7 +126,7 @@ export default function ModelosCapacidadesCoeSap() {
   let admin = false;
   try {
     const u = JSON.parse(localStorage.getItem("userData") || "null");
-    admin = String(u?.rol_ref?.nombre ?? u?.rol ?? u?.user?.rol ?? "").trim().toUpperCase() === "ADMIN";
+    admin = puedeVerModelosCapacidades(u);
   } catch {}
 
   useEffect(() => {
