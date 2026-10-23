@@ -26701,8 +26701,32 @@ def _mcc_rango_meses(desde, hasta):
     return primero, limite
 
 
+def modelos_capacidades_ver_required(fn):
+    """Acceso de consulta al reporte, sin conceder administración de cargos."""
+    @auth_required
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        import unicodedata
+        consultor = g.current_user
+        rol = (
+            getattr(getattr(consultor, 'rol_obj', None), 'nombre', None)
+            or getattr(consultor, 'rol', '')
+            or ''
+        )
+        rol = ''.join(
+            c for c in unicodedata.normalize('NFD', str(rol))
+            if not unicodedata.combining(c)
+        ).strip().upper()
+        if rol not in {'ADMIN', 'LIDER', 'JEFE'}:
+            permisos = obtener_permisos_finales(consultor)
+            if 'MODELOS_CAPACIDADES_VER' not in permisos:
+                return jsonify({'mensaje': 'No tienes permiso para consultar Modelos de Capacidades COE SAP.'}), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 @bp.route('/modelos-capacidades-coe-sap', methods=['GET'])
-@admin_required
+@modelos_capacidades_ver_required
 def modelos_capacidades_coe_sap():
     from decimal import Decimal
 
