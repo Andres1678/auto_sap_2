@@ -1807,19 +1807,19 @@ def registrar_hora():
         db.session.rollback()
         return jsonify({'mensaje': str(error)}), 409
 
-    if data.get('confirmar_aviso_horas') is not True:
-        avisos = []
-        for fecha_item in set(fechas_a_crear):
-            horas_nuevas = sum(
-                _calcular_tiempo_horas(f['hora_inicio'], f['hora_fin']) for f in fragmentos
-            ) * fechas_a_crear.count(fecha_item)
-            aviso = _aviso_horas_diarias(consultor.usuario, fecha_item, horas_nuevas)
-            if aviso:
-                avisos.append(aviso)
-        if avisos:
-            db.session.rollback()
-            return jsonify({'codigo': 'CONFIRMAR_HORAS_DIARIAS', 'avisos': avisos,
-                            'mensaje': 'Estás cerca de completar o superar las 8,5 horas del día. Revisa antes de continuar.'}), 409
+    avisos_horas = []
+    for fecha_item in set(fechas_a_crear):
+        horas_nuevas = sum(
+            _calcular_tiempo_horas(f['hora_inicio'], f['hora_fin']) for f in fragmentos
+        ) * fechas_a_crear.count(fecha_item)
+        aviso = _aviso_horas_diarias(consultor.usuario, fecha_item, horas_nuevas)
+        if aviso:
+            avisos_horas.append(aviso)
+    excesos = [a for a in avisos_horas if round(a['horas_resultantes'], 2) > 8.5]
+    if excesos and data.get('confirmar_aviso_horas') is not True:
+        db.session.rollback()
+        return jsonify({'codigo': 'CONFIRMAR_HORAS_DIARIAS', 'avisos': excesos,
+                        'mensaje': 'Este registro supera las 8,5 horas diarias. Puedes continuar con Registrar horas extras.'}), 409
 
     # validar traslape por cada fragmento
     for fecha_item in fechas_a_crear:
@@ -1999,6 +1999,7 @@ def registrar_hora():
 
         return jsonify({
             'mensaje': 'Registro guardado correctamente',
+            'avisos_horas': avisos_horas,
             'cantidad_registros': len(nuevos),
             'es_rango_vacaciones': bool(es_rango_vacaciones),
             'registros': [
@@ -3249,16 +3250,16 @@ def editar_registro(id):
             db.session.rollback()
             return jsonify({'mensaje': str(error)}), 409
 
-        if data.get('confirmar_aviso_horas') is not True:
-            aviso = _aviso_horas_diarias(
-                registro.usuario_consultor, nueva_fecha,
-                _calcular_tiempo_horas(nuevo_hora_inicio, nuevo_hora_fin),
-                exclude_id=registro.id
-            )
-            if aviso:
-                db.session.rollback()
-                return jsonify({'codigo': 'CONFIRMAR_HORAS_DIARIAS', 'avisos': [aviso],
-                                'mensaje': 'Revisa el acumulado diario antes de guardar.'}), 409
+        aviso_horas = _aviso_horas_diarias(
+            registro.usuario_consultor, nueva_fecha,
+            _calcular_tiempo_horas(nuevo_hora_inicio, nuevo_hora_fin),
+            exclude_id=registro.id
+        )
+        if (aviso_horas and round(aviso_horas['horas_resultantes'], 2) > 8.5
+                and data.get('confirmar_aviso_horas') is not True):
+            db.session.rollback()
+            return jsonify({'codigo': 'CONFIRMAR_HORAS_DIARIAS', 'avisos': [aviso_horas],
+                            'mensaje': 'Este registro supera las 8,5 horas diarias.'}), 409
 
         # ----------------------------------------------------------
         # 4) Validar traslape en backend
@@ -3477,6 +3478,7 @@ def editar_registro(id):
         db.session.commit()
         return jsonify({
             'mensaje': 'Registro actualizado',
+            'avisos_horas': [aviso_horas] if aviso_horas else [],
             'registro': {
                 'id': registro.id,
                 'fecha': registro.fecha,

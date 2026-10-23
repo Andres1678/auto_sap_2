@@ -1867,9 +1867,9 @@ const Registro = ({ userData }) => {
           (a.horas_excedidas > 0 ? ` Superarías las 8,5 h en ${numero(a.horas_excedidas)} h.` : ` Faltan ${numero(Math.max(0, 8.5 - a.horas_resultantes))} h para completar 8,5 h.`)
         ).join('\n');
         const decision = await Swal.fire({
-          icon: 'warning', title: 'Revisa tus horas del día',
-          text: `${detalle}\nVerifica que no estés duplicando tiempo. ¿Necesitas guardar estas horas?`,
-          showCancelButton: true, confirmButtonText: 'Sí, guardar', cancelButtonText: 'Revisar registro',
+          icon: 'info', title: 'Registrar horas extras',
+          text: `${detalle}\nYa completarías las 8,5 horas diarias. Si necesitas agregar este tiempo, selecciona Registrar horas extras.`,
+          showCancelButton: true, confirmButtonText: 'Registrar horas extras', cancelButtonText: 'Revisar registro',
           focusCancel: true,
         });
         if (!decision.isConfirmed) return;
@@ -1879,16 +1879,24 @@ const Registro = ({ userData }) => {
       }
       if (!resp.ok) throw new Error(j?.mensaje || `HTTP ${resp.status}`);
 
+      const avisosGuardados = Array.isArray(j?.avisos_horas) ? j.avisos_horas : [];
+      const textoAviso = avisosGuardados.map(a => {
+        const horas = Number(a.horas_resultantes || 0);
+        const valor = horas.toLocaleString('es-CO', { maximumFractionDigits: 2 });
+        if (Math.round(horas * 100) < 850) return `${a.fecha}: llevas ${valor} horas. Te estás aproximando a las 8,5 horas diarias.`;
+        if (Math.round(horas * 100) === 850) return `${a.fecha}: completaste tus 8,5 horas diarias. Si necesitas registrar más tiempo, al guardar podrás elegir Registrar horas extras.`;
+        return `${a.fecha}: registro guardado con ${valor} horas acumuladas en el día.`;
+      }).join('\n');
       Swal.fire({
         icon: "success",
         title: modoEdicion ? "Registro actualizado" : "Registro guardado",
-        text: j?.cantidad_registros > 1
+        text: textoAviso || (j?.cantidad_registros > 1
           ? (
               j?.es_rango_vacaciones
                 ? `Se generaron ${j.cantidad_registros} registros de vacaciones en días laborables, excluyendo fines de semana y festivos de Colombia.`
                 : `Se generaron ${j.cantidad_registros} registros por división de horario.`
             )
-          : undefined,
+          : undefined),
       });
 
       window.dispatchEvent(new Event("resumen-actualizar"));
