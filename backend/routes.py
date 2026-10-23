@@ -1508,89 +1508,42 @@ def _pausa_es_tarea(tarea=None, texto=None):
     return False
 
 
-def _pausa_minutos(valor):
-    m = re.fullmatch(r'(\d{1,2}):(\d{2})(?::\d{2})?', str(valor or '').strip())
-    if not m or int(m[1]) > 23 or int(m[2]) > 59:
-        raise ValueError('La pausa activa necesita horas válidas.')
-    return int(m[1]) * 60 + int(m[2])
-
-
-def _pausa_rango(horario):
-    partes = str(horario or '').split('-')
-    if len(partes) != 2:
-        raise ValueError('Selecciona un horario de trabajo válido para registrar pausas activas.')
-    inicio, fin = [_pausa_minutos(v.strip()) for v in partes]
-    if inicio == fin:
-        raise ValueError('El horario de la pausa no puede tener inicio y fin iguales.')
-    return inicio, fin + (1440 if fin < inicio else 0)
-
-
-def _pausa_jornada(fecha, hora, rango):
-    from datetime import date, timedelta
-    dia = date.fromisoformat(str(fecha)[:10])
-    minuto = _pausa_minutos(hora)
-    inicio, fin = rango
-    if fin > 1440 and minuto < inicio:
-        minuto += 1440
-        dia -= timedelta(days=1)
-    return dia, minuto
-
-
-def _pausa_franja(fecha, inicio, fin, rango):
-    dia, minuto = _pausa_jornada(fecha, inicio, rango)
-    termino = _pausa_minutos(fin)
-    while termino <= minuto:
-        termino += 1440
-    a, b = rango
-    mitad = (a + b) / 2
-    if minuto < a or termino > b:
-        raise ValueError('La pausa activa debe quedar dentro del horario de trabajo aplicado.')
-    if minuto < mitad and termino > mitad:
-        raise ValueError('La pausa activa debe quedar completa en la primera o segunda mitad del horario.')
-    return dia, 0 if minuto < mitad else 1
-
-
-def _validar_pausa_activa(usuario, fecha, inicio, fin, horario, tarea=None, texto=None, exclude_id=None):
+def _validar_pausa_activa(usuario, fecha, inicio, fin, horario, tarea=None, texto=None,
+                          exclude_id=None, cantidad_nuevos=1):
+    """Máximo dos filas de pausa activa por consultor y fecha, sin franjas."""
     if not _pausa_es_tarea(tarea, texto):
         return
-    from datetime import timedelta
-    rango = _pausa_rango(horario)
-    jornada, franja = _pausa_franja(fecha, inicio, fin, rango)
-    # Serializar solicitudes del mismo consultor y leer los registros actuales.
-    # Excluir la propia fila permite editar una pausa sin contarse dos veces.
+    from datetime import date
+    try:
+        dia = date.fromisoformat(str(fecha)[:10]).isoformat()
+    except (TypeError, ValueError):
+        raise ValueError('La pausa activa necesita una fecha válida.')
+    # Bloquear el consultor serializa guardados concurrentes del mismo usuario.
     with db.session.no_autoflush:
         propietario = Consultor.query.filter(
             func.lower(func.trim(Consultor.usuario)) == str(usuario or '').strip().lower()
         ).with_for_update().first()
         if propietario is None:
             raise ValueError('No se encontró al consultor de la pausa activa.')
-        fechas = [jornada.isoformat()]
-        if rango[1] > 1440:
-            fechas.append((jornada + timedelta(days=1)).isoformat())
-        q = db.session.query(Registro, Tarea.nombre).outerjoin(Tarea, Registro.tarea_id == Tarea.id).filter(
+        q = db.session.query(Registro, Tarea.nombre).outerjoin(
+            Tarea, Registro.tarea_id == Tarea.id
+        ).filter(
             func.lower(func.trim(Registro.usuario_consultor)) == str(usuario or '').strip().lower(),
-            Registro.fecha.in_(fechas))
+            Registro.fecha == dia
+        )
         if exclude_id is not None:
             q = q.filter(Registro.id != exclude_id)
         existentes = q.with_for_update().all()
-        pausas = []
-        for registro, nombre_tarea in existentes:
-            # Identificar también registros antiguos que solo tienen tipo_tarea.
-            if not _pausa_es_tarea(texto=nombre_tarea) and not _pausa_es_tarea(texto=registro.tipo_tarea):
-                continue
-            dia, minuto = _pausa_jornada(registro.fecha, registro.hora_inicio, rango)
-            if dia != jornada:
-                continue
-            pausas.append((registro, minuto))
-        if len(pausas) >= 2:
-            raise ValueError('Ya tienes dos pausas activas registradas en esta jornada. Solo se permite una en cada mitad del horario.')
-        for registro, minuto in pausas:
-            if minuto < rango[0] or minuto >= rango[1]:
-                raise ValueError('Ya existe una pausa con otro horario en esta jornada. Revisa el horario aplicado antes de agregar otra.')
-            anterior = 0 if minuto < (rango[0] + rango[1]) / 2 else 1
-            if anterior == franja:
-                mitad = 'primera' if franja == 0 else 'segunda'
-                raise ValueError(f'Ya tienes una pausa activa en la {mitad} mitad del horario (registro {registro.id}).')
+        cantidad = sum(
+            1 for registro, nombre_tarea in existentes
+            if _pausa_es_tarea(texto=nombre_tarea)
+            or _pausa_es_tarea(texto=getattr(registro, 'tipo_tarea', ''))
+        )
+        if cantidad + cantidad_nuevos > 2:
+            raise ValueError(
+                f'Solo puedes registrar dos pausas activas por día. '
+                f'El día {dia} ya tiene {cantidad} y este guardado agregaría {cantidad_nuevos}.'
+            )
 
 
 @bp.route('/registrar-hora', methods=['POST'])
@@ -1771,14 +1724,6 @@ def registrar_hora():
         equipo_para_horario
     , fecha=fecha)
 
-    try:
-        for fecha_item in fechas_a_crear:
-            _validar_pausa_activa(consultor.usuario, fecha_item, hora_inicio, hora_fin,
-                                 horario_trabajo, tarea_obj, pick(data, 'tipoTarea', 'tipo_tarea'))
-    except ValueError as error:
-        db.session.rollback()
-        return jsonify({'mensaje': str(error)}), 409
-
     # ------------------------------------------------------------------
     # 7.1) DIVIDIR EL REGISTRO SEGÚN EL HORARIO
     # ------------------------------------------------------------------
@@ -1803,6 +1748,18 @@ def registrar_hora():
 
         if not fragmentos:
             return jsonify({'mensaje': 'No se pudo dividir el rango horario'}), 400
+
+    # Validar las filas reales a guardar, sin usar el horario ni sus mitades.
+    try:
+        for fecha_item in set(fechas_a_crear):
+            _validar_pausa_activa(
+                consultor.usuario, fecha_item, hora_inicio, hora_fin,
+                horario_trabajo, tarea_obj, pick(data, 'tipoTarea', 'tipo_tarea'),
+                cantidad_nuevos=len(fragmentos) * fechas_a_crear.count(fecha_item)
+            )
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({'mensaje': str(error)}), 409
 
     # validar traslape por cada fragmento
     for fecha_item in fechas_a_crear:
