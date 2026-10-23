@@ -801,6 +801,7 @@ const Registro = ({ userData }) => {
   const [exportingExcel, setExportingExcel] = useState(false);
   const canImportExcel = ['gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
   const puedeRegistrarCualquierFecha = String(usuarioLogin || '').trim().toLowerCase() === 'gonzalezanf';
+  const puedeRegistrarMesesAnteriores = ['gonzalezanf', 'rodriguezso'].includes(String(usuarioLogin || '').trim().toLowerCase());
 
   const [proyectos, setProyectos] = useState([]);
   const [loadingProyectos, setLoadingProyectos] = useState(false);
@@ -1564,6 +1565,12 @@ const Registro = ({ userData }) => {
       });
     }
 
+    const fechasARevisarMes = esRangoVacaciones ? [...fechasVacaciones] : [fechaPrincipal];
+    if (modoEdicion && original?.fecha) fechasARevisarMes.push(String(original.fecha).slice(0, 10));
+    if (!puedeRegistrarMesesAnteriores && fechasARevisarMes.some(f => String(f).slice(0, 7) < todayISO.slice(0, 7))) {
+      return Swal.fire({ icon: 'warning', title: 'Mes cerrado', text: 'No puedes crear ni modificar registros de meses anteriores.' });
+    }
+
     if (!registro.horaInicio || !registro.horaFin) {
       return Swal.fire({ icon: "warning", title: "Completa las horas de inicio y fin" });
     }
@@ -1842,7 +1849,7 @@ const Registro = ({ userData }) => {
       const path = modoEdicion ? `/editar-registro/${registro.id}` : "/registrar-hora";
       const method = modoEdicion ? "PUT" : "POST";
 
-      const resp = await jfetch(path, {
+      const enviarRegistro = () => jfetch(path, {
         method,
         headers: {
           "Content-Type": "application/json",
@@ -1851,8 +1858,25 @@ const Registro = ({ userData }) => {
         },
         body: JSON.stringify(payload),
       });
-
-      const j = await resp.json().catch(() => ({}));
+      let resp = await enviarRegistro();
+      let j = await resp.json().catch(() => ({}));
+      if (resp.status === 409 && j?.codigo === 'CONFIRMAR_HORAS_DIARIAS') {
+        const numero = v => Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 });
+        const detalle = (j.avisos || []).map(a =>
+          `${a.fecha}: ${numero(a.horas_actuales)} h acumuladas + ${numero(a.horas_registro)} h de este registro = ${numero(a.horas_resultantes)} h.` +
+          (a.horas_excedidas > 0 ? ` Superarías las 8,5 h en ${numero(a.horas_excedidas)} h.` : ` Faltan ${numero(Math.max(0, 8.5 - a.horas_resultantes))} h para completar 8,5 h.`)
+        ).join('\n');
+        const decision = await Swal.fire({
+          icon: 'warning', title: 'Revisa tus horas del día',
+          text: `${detalle}\nVerifica que no estés duplicando tiempo. ¿Necesitas guardar estas horas?`,
+          showCancelButton: true, confirmButtonText: 'Sí, guardar', cancelButtonText: 'Revisar registro',
+          focusCancel: true,
+        });
+        if (!decision.isConfirmed) return;
+        payload.confirmar_aviso_horas = true;
+        resp = await enviarRegistro();
+        j = await resp.json().catch(() => ({}));
+      }
       if (!resp.ok) throw new Error(j?.mensaje || `HTTP ${resp.status}`);
 
       Swal.fire({
@@ -2840,6 +2864,7 @@ const Registro = ({ userData }) => {
                   <input
                     type="date"
                     value={registro.fecha}
+                    min={puedeRegistrarMesesAnteriores ? undefined : `${todayISO.slice(0, 7)}-01`}
                     max={habilitarRangoVacaciones || puedeRegistrarCualquierFecha ? undefined : todayISO}
                     onChange={(e) => {
                       const value = e.target.value;
@@ -2868,7 +2893,7 @@ const Registro = ({ userData }) => {
                         ? "Puedes registrar y editar cualquier fecha."
                         : habilitarRangoVacaciones
                         ? "Para vacaciones se permiten fechas futuras."
-                        : "Puedes registrar hoy o días anteriores; no fechas futuras."
+                        : "Puedes registrar días del mes actual; no fechas futuras."
                     }
                   />
 

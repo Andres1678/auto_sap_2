@@ -1485,11 +1485,50 @@ def _build_iso_dates_range(start_value, end_value):
 
 
 
+def _validar_mes_registro(fecha_value, usuario_actor, fecha_original=None):
+    fechas = [fecha_value] + ([fecha_original] if fecha_original is not None else [])
+    hoy = datetime.now(ZoneInfo("America/Bogota")).date()
+    exceptuado = str(usuario_actor or '').strip().lower() in {'gonzalezanf', 'rodriguezso'}
+    for valor in fechas:
+        fecha = _parse_iso_date_for_range(valor)
+        if not fecha:
+            return 'Fecha de registro inválida.'
+        if not exceptuado and (fecha.year, fecha.month) < (hoy.year, hoy.month):
+            return 'Los meses anteriores están cerrados. Solo gonzalezanf y rodriguezso pueden registrar o modificar esos periodos.'
+    return None
+
+
+def _aviso_horas_diarias(usuario, fecha, horas_nuevas, exclude_id=None):
+    from decimal import Decimal
+    consulta = db.session.query(func.coalesce(func.sum(Registro.total_horas), 0)).filter(
+        func.lower(func.trim(Registro.usuario_consultor)) == str(usuario or '').strip().lower(),
+        Registro.fecha == str(fecha)[:10]
+    )
+    if exclude_id is not None:
+        consulta = consulta.filter(Registro.id != exclude_id)
+    with db.session.no_autoflush:
+        acumuladas = Decimal(str(consulta.scalar() or 0))
+    nuevas = Decimal(str(horas_nuevas or 0))
+    total = acumuladas + nuevas
+    # Avisar desde 8 h y al agregar más horas cuando ya se llegó a la jornada.
+    if nuevas <= 0 or total.quantize(Decimal('0.01')) < Decimal('8.00'):
+        return None
+    return {
+        'fecha': str(fecha)[:10], 'horas_actuales': float(acumuladas),
+        'horas_registro': float(nuevas), 'horas_resultantes': float(total),
+        'limite_referencia': 8.5,
+        'horas_excedidas': float(max(Decimal('0'), total - Decimal('8.5')))
+    }
+
+
 def _validar_fecha_registro_diario(fecha_value, usuario_actor, fecha_original=None):
     fecha_obj = _parse_iso_date_for_range(fecha_value)
     hoy = datetime.now(ZoneInfo("America/Bogota")).date()
     if not fecha_obj:
         return "Fecha de registro inválida."
+    error_mes = _validar_mes_registro(fecha_value, usuario_actor, fecha_original)
+    if error_mes:
+        return error_mes
     # Excepción de fecha para el actor autenticado, tanto al crear como al editar.
     if str(usuario_actor or "").strip().lower() == "gonzalezanf":
         return None
@@ -1629,6 +1668,13 @@ def registrar_hora():
         fecha = _parse_iso_date_for_range(fecha).isoformat()
         fechas_a_crear = [fecha]
 
+    # Revisar todos los días del rango, incluidas vacaciones y copias.
+    actor = getattr(getattr(g, 'current_user', None), 'usuario', '')
+    for fecha_item in fechas_a_crear:
+        error_mes = _validar_mes_registro(fecha_item, actor)
+        if error_mes:
+            return jsonify({'mensaje': error_mes}), 403
+
     # La regla también aplica a copias de un día sin bandera de rango.
     if _es_vacaciones_08_15(data) and not _fechas_laborables_vacaciones(fechas_a_crear):
         return jsonify({'mensaje': 'Las vacaciones de ocupación 08 y tarea 15 solo pueden registrarse en días laborables, sin festivos de Colombia.'}), 400
@@ -1760,6 +1806,20 @@ def registrar_hora():
     except ValueError as error:
         db.session.rollback()
         return jsonify({'mensaje': str(error)}), 409
+
+    if data.get('confirmar_aviso_horas') is not True:
+        avisos = []
+        for fecha_item in set(fechas_a_crear):
+            horas_nuevas = sum(
+                _calcular_tiempo_horas(f['hora_inicio'], f['hora_fin']) for f in fragmentos
+            ) * fechas_a_crear.count(fecha_item)
+            aviso = _aviso_horas_diarias(consultor.usuario, fecha_item, horas_nuevas)
+            if aviso:
+                avisos.append(aviso)
+        if avisos:
+            db.session.rollback()
+            return jsonify({'codigo': 'CONFIRMAR_HORAS_DIARIAS', 'avisos': avisos,
+                            'mensaje': 'Estás cerca de completar o superar las 8,5 horas del día. Revisa antes de continuar.'}), 409
 
     # validar traslape por cada fragmento
     for fecha_item in fechas_a_crear:
@@ -3188,6 +3248,17 @@ def editar_registro(id):
         except ValueError as error:
             db.session.rollback()
             return jsonify({'mensaje': str(error)}), 409
+
+        if data.get('confirmar_aviso_horas') is not True:
+            aviso = _aviso_horas_diarias(
+                registro.usuario_consultor, nueva_fecha,
+                _calcular_tiempo_horas(nuevo_hora_inicio, nuevo_hora_fin),
+                exclude_id=registro.id
+            )
+            if aviso:
+                db.session.rollback()
+                return jsonify({'codigo': 'CONFIRMAR_HORAS_DIARIAS', 'avisos': [aviso],
+                                'mensaje': 'Revisa el acumulado diario antes de guardar.'}), 409
 
         # ----------------------------------------------------------
         # 4) Validar traslape en backend
