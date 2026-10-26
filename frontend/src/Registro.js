@@ -2234,8 +2234,10 @@ const Registro = ({ userData }) => {
     ocupaciones,
   ]);
 
+  const exportExcelBusyRef = useRef(false);
+
   const handleExport = async () => {
-    if (exportingExcel) return;
+    if (exportingExcel || exportExcelBusyRef.current) return;
 
     const adminUsaRangoMeses =
       isAdmin && Boolean(filtroMesDesde || filtroMesHasta);
@@ -2256,59 +2258,88 @@ const Registro = ({ userData }) => {
       }
     }
 
+    exportExcelBusyRef.current = true;
     setExportingExcel(true);
-
+    let descargados = 0;
+    let lote = 0;
+    let controlador = null;
     try {
-      const params = buildCurrentFilterParams();
-      const res = await jfetch(
-        `/registros/export?${params.toString()}`,
-        {
-          method: "GET",
+      // Capturar filtros una vez: no cambiarlos entre lotes.
+      const filtros = buildCurrentFilterParams();
+      const TAMANO_LOTE = 1000;
+      let cursor = null;
+      let snapshot = null;
+      let total = null;
+      while (true) {
+        controlador = new AbortController();
+        const controlActual = controlador;
+        void Swal.fire({
+          title: `Preparando lote ${lote + 1}`,
+          text: `${descargados.toLocaleString('es-CO')} registros descargados. Cada archivo contiene hasta ${TAMANO_LOTE} registros.`,
+          allowOutsideClick: false, showConfirmButton: false,
+          showCancelButton: true, cancelButtonText: 'Detener descarga',
+          didOpen: () => Swal.showLoading(),
+        }).then(r => {
+          if (r.dismiss === Swal.DismissReason.cancel || r.dismiss === Swal.DismissReason.esc) controlActual.abort();
+        });
+        const params = new URLSearchParams(filtros.toString());
+        params.set('lote_size', String(TAMANO_LOTE));
+        if (cursor !== null) params.set('cursor_id', String(cursor));
+        if (snapshot !== null) params.set('snapshot_id', String(snapshot));
+        const res = await jfetch(`/registros/export?${params.toString()}`, {
+          method: 'GET', signal: controlActual.signal,
           headers: {
-            "X-User-Usuario": usuarioLogin,
-            "X-User-Rol": rol,
-            "X-User-Equipo": String(equipoUser || ""),
-            Accept: "application/json",
+            'X-User-Usuario': usuarioLogin, 'X-User-Rol': rol,
+            'X-User-Equipo': String(equipoUser || ''), Accept: 'application/json',
           },
+        });
+        const payload = await res.json().catch(() => { throw new Error(`Respuesta inválida del servidor (HTTP ${res.status}).`); });
+        if (!res.ok) throw new Error(payload?.detalle || payload?.mensaje || payload?.error || `HTTP ${res.status}`);
+        if (!Array.isArray(payload?.data) || payload.data.length > TAMANO_LOTE || typeof payload.has_more !== 'boolean') {
+          throw new Error('Actualiza routes.py: el servidor debe responder con lotes de exportación.');
         }
-      );
-
-      const contentType = String(
-        res.headers.get("content-type") || ""
-      ).toLowerCase();
-
-      if (!contentType.includes("application/json")) {
-        throw new Error(
-          `El servidor no devolvió los registros en JSON (HTTP ${res.status}).`
-        );
+        if (controlActual.signal.aborted) throw new DOMException('Descarga cancelada', 'AbortError');
+        if (total === null) total = Number(payload.total || 0);
+        snapshot = payload.snapshot_id;
+        if (!payload.data.length) {
+          await Swal.fire({ icon: 'info', title: descargados ? 'Exportación finalizada' : 'Sin registros',
+            text: descargados ? `${descargados} registros descargados en ${lote} archivos.` : 'No hay registros para los filtros seleccionados.' });
+          break;
+        }
+        const siguiente = payload.next_cursor;
+        if (payload.has_more && (!Number.isSafeInteger(siguiente) || siguiente <= 0 || (cursor !== null && siguiente >= cursor))) {
+          throw new Error('El servidor devolvió un cursor de exportación inválido.');
+        }
+        lote += 1;
+        const filename = `registros_${new Date().toISOString().slice(0, 10)}_lote_${String(lote).padStart(3, '0')}.xlsx`;
+        await exportRegistrosExcelXLSX_ALL(payload.data, filename, {
+          'Fecha de exportación': new Date().toLocaleString('es-CO'), Usuario: usuarioLogin,
+          Lote: lote, 'Registros del lote': payload.data.length,
+          'Total filtrado al iniciar': total, 'Filtros aplicados': filtros.toString(),
+          'Orden': 'ID descendente',
+        });
+        descargados += payload.data.length;
+        // No acumular filas ni libros de lotes anteriores en memoria.
+        payload.data = null;
+        if (!payload.has_more) {
+          await Swal.fire({ icon: 'success', title: 'Exportación finalizada',
+            text: `${descargados.toLocaleString('es-CO')} registros en ${lote} archivos Excel.` });
+          break;
+        }
+        const continuar = await Swal.fire({ icon: 'info', title: `Lote ${lote} descargado`,
+          text: `${descargados.toLocaleString('es-CO')} de ${total.toLocaleString('es-CO')} registros iniciales. Puedes continuar con el siguiente archivo o detenerte.`,
+          showCancelButton: true, confirmButtonText: 'Descargar siguiente lote', cancelButtonText: 'Detener',
+        });
+        if (!continuar.isConfirmed) break;
+        cursor = siguiente;
       }
-
-      const payload = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          payload?.detalle || payload?.mensaje || payload?.error ||
-          `HTTP ${res.status}`
-        );
-      }
-      if (!Array.isArray(payload?.data)) {
-        throw new Error("La respuesta no contiene una lista válida de registros.");
-      }
-
-      const filename =
-        `registros_${new Date().toISOString().slice(0, 10)}.xlsx`;
-
-      exportRegistrosExcelXLSX_ALL(payload.data, filename, {
-        "Fecha de exportación": new Date().toLocaleString("es-CO"),
-        Usuario: usuarioLogin,
-        "Total de registros": payload.data.length,
-      });
     } catch (e) {
-      Swal.fire({
-        icon: "error",
-        title: "Error exportando",
-        text: String(e.message || e),
+      await Swal.fire({ icon: e.name === 'AbortError' ? 'info' : 'error',
+        title: e.name === 'AbortError' ? 'Descarga detenida' : 'Error exportando',
+        text: `${e.name === 'AbortError' ? 'Se canceló el lote actual.' : String(e.message || e)} ${descargados ? `Se conservan los ${lote} archivos ya descargados (${descargados} registros).` : ''}`,
       });
     } finally {
+      exportExcelBusyRef.current = false;
       setExportingExcel(false);
     }
   };
@@ -2509,9 +2540,9 @@ const Registro = ({ userData }) => {
                 className="btn btn-outline"
                 onClick={handleExport}
                 disabled={exportingExcel}
-                title={exportingExcel ? "Generando Excel en el servidor" : "Descargar Excel"}
+                title={exportingExcel ? "Descarga por lotes en curso" : "Descargar los registros filtrados en archivos de hasta 1.000 filas"}
               >
-                {exportingExcel ? "Generando Excel…" : "Descargar Excel"}
+                {exportingExcel ? "Descargando lotes…" : "Descargar Excel por lotes"}
               </button>
             )}
 

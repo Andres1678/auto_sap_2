@@ -7199,6 +7199,17 @@ def export_registros():
                     return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
             q = q.filter(func.upper(E.nombre) == filtro_equipo)
 
+        # El rango enviado por Registro también debe limitar la exportación.
+        mes_desde = request.args.get('mes_desde')
+        mes_hasta = request.args.get('mes_hasta')
+        if mes_desde is not None or mes_hasta is not None:
+            try:
+                inicio_rango, fin_rango = _mcc_rango_meses(mes_desde, mes_hasta)
+            except (TypeError, ValueError) as error:
+                return jsonify({'mensaje': str(error)}), 400
+            q = q.filter(Registro.fecha >= inicio_rango.isoformat(),
+                         Registro.fecha < fin_rango.isoformat())
+
         if filtro_mes:
             try:
                 q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
@@ -7223,7 +7234,30 @@ def export_registros():
         if filtro_ocupacion_ids:
             q = q.filter(Registro.ocupacion_id.in_(filtro_ocupacion_ids))
 
-        registros = q.order_by(Registro.fecha.desc(), Registro.id.desc()).all()
+        # Paginación por ID: cada consulta y respuesta tienen tamaño acotado.
+        try:
+            lote_size = min(max(int(request.args.get('lote_size', 1000)), 1), 2000)
+            cursor_id = int(request.args.get('cursor_id', 0))
+            snapshot_id = int(request.args.get('snapshot_id', 0))
+            if cursor_id < 0 or snapshot_id < 0:
+                raise ValueError()
+            if cursor_id and not snapshot_id:
+                raise ValueError()
+        except (TypeError, ValueError):
+            return jsonify({'mensaje': 'Parámetros de lote inválidos.'}), 400
+        if not snapshot_id:
+            snapshot_id = int(q.with_entities(func.max(Registro.id)).scalar() or 0)
+        q = q.filter(Registro.id <= snapshot_id)
+        # Contar solo al empezar: evita repetir un COUNT costoso en cada lote.
+        total_filtrado = (int(q.with_entities(func.count(func.distinct(Registro.id))).scalar() or 0)
+                          if not cursor_id else None)
+        if cursor_id:
+            q = q.filter(Registro.id < cursor_id)
+        registros = q.order_by(Registro.id.desc()).limit(lote_size + 1).all()
+        has_more = len(registros) > lote_size
+        registros = registros[:lote_size]
+        next_cursor = registros[-1].id if has_more and registros else None
+
 
         data = []
         for r in registros:
@@ -7305,7 +7339,12 @@ def export_registros():
 
         return jsonify({
             "data": data,
-            "total": len(data)
+            "total": total_filtrado,
+            "count": len(data),
+            "lote_size": lote_size,
+            "snapshot_id": snapshot_id,
+            "has_more": has_more,
+            "next_cursor": next_cursor,
         }), 200
 
     except Exception as e:
