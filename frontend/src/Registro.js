@@ -401,14 +401,6 @@ function tareaCodeFromRegistro(registro, tareasBD) {
   return String(t?.codigo || "").trim();
 }
 
-function useDebouncedValue(value, delay = 250) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
-}
 
 const isActiveValue = (v) => {
   if (v === null || v === undefined) return true;
@@ -691,6 +683,16 @@ const Registro = ({ userData }) => {
   const navigate = useNavigate();
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [registros, setRegistros] = useState([]);
+  const [appliedFilterQuery, setAppliedFilterQuery] = useState('');
+  const [cargandoRegistros, setCargandoRegistros] = useState(false);
+  const [filterRevision, setFilterRevision] = useState(0);
+  const appliedFilters = useMemo(() => {
+    const params = new URLSearchParams(appliedFilterQuery);
+    return {
+      equipo: params.get('equipo') || '', consultores: params.getAll('consultor'),
+      mes: params.get('mes') || '', anio: params.get('anio') || '',
+    };
+  }, [appliedFilterQuery]);
   const [error, setError] = useState('');
   const excelInputRef = useRef(null);
   const openButtonRef = useRef(null);
@@ -840,8 +842,6 @@ const Registro = ({ userData }) => {
   const [equiposDisponibles, setEquiposDisponibles] = useState([]);
   const [consultoresGlobales, setConsultoresGlobales] = useState([]);
   const [equiposConConteo, setEquiposConConteo] = useState([{ key: '', label: 'Todos', count: 0 }]);
-  const filtroIdDeb = useDebouncedValue(filtroId, 250);
-  const filtroNroCasoCliDeb = useDebouncedValue(filtroNroCasoCli, 250);
 
   const [page, setPage] = useState(1);
   const [perPage] = useState(50);
@@ -1045,23 +1045,6 @@ const Registro = ({ userData }) => {
     fetchProyectos();
   }, [showProyectoUI, moduloElegido, moduloUser, usuarioLogin, rol]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [
-    filtroIdDeb,
-    filtroEquipo,
-    filtroFecha,
-    filtroCliente,
-    filtroOcupacion,
-    filtroTarea,
-    filtroConsultor,
-    filtroNroCasoCliDeb,
-    filtroHorasAdic,
-    filtroMes,
-    filtroAnio,
-    filtroMesDesde,
-    filtroMesHasta
-  ]);
 
   useEffect(() => {
     const fetchCatalogos = async () => {
@@ -1184,67 +1167,8 @@ const Registro = ({ userData }) => {
     registrosAbortRef.current = controller;
 
     try {
-      const params = new URLSearchParams();
-
-      if (equipoLocked) params.set("equipo", equipoLocked);
-
-      const adminUsaRangoMeses =
-        isAdmin && Boolean(filtroMesDesde || filtroMesHasta);
-
-      if (adminUsaRangoMeses) {
-        const monthRange = validateMonthRange(filtroMesDesde, filtroMesHasta);
-
-        if (!monthRange.valid) {
-          setRegistros([]);
-          setTotalRegistros(0);
-          setTotalPages(1);
-          setError(monthRange.message);
-          return;
-        }
-
-        params.set("mes_desde", filtroMesDesde);
-        params.set("mes_hasta", filtroMesHasta);
-      } else {
-        // El filtro de mes y año continúa disponible para todos.
-        if (filtroMes) params.set("mes", filtroMes);
-        if (filtroAnio) params.set("anio", filtroAnio);
-      }
-
-      if (filtroFecha) params.set("fecha", filtroFecha);
-      if (filtroIdDeb) params.set("id", filtroIdDeb);
-      if (filtroNroCasoCliDeb) params.set("nroCasoCliente", filtroNroCasoCliDeb);
-
-      appendMultiValues(params, "consultor", filtroConsultor);
-      appendMultiValues(params, "cliente", filtroCliente);
-      appendMultiValues(params, "horasAdicionales", filtroHorasAdic);
-
-      const tareaIds = [
-        ...new Set(
-          (Array.isArray(filtroTarea) ? filtroTarea : [])
-            .map((label) =>
-              (todasTareas || []).find(
-                (t) => `${t.codigo} - ${t.nombre}` === String(label || "").trim()
-              )?.id
-            )
-            .filter(Boolean)
-        ),
-      ];
-
-      tareaIds.forEach((id) => params.append("tarea_id", String(id)));
-
-      const ocupacionIds = [
-        ...new Set(
-          (Array.isArray(filtroOcupacion) ? filtroOcupacion : [])
-            .map((label) =>
-              (ocupaciones || []).find(
-                (o) => `${o.codigo} - ${o.nombre}` === String(label || "").trim()
-              )?.id
-            )
-            .filter(Boolean)
-        ),
-      ];
-
-      ocupacionIds.forEach((id) => params.append("ocupacion_id", String(id)));
+      const params = new URLSearchParams(appliedFilterQuery);
+      setCargandoRegistros(true);
 
       params.set("page", String(page));
       params.set("per_page", String(perPage));
@@ -1266,39 +1190,20 @@ const Registro = ({ userData }) => {
         throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
       }
 
+      if (controller.signal.aborted || registrosAbortRef.current !== controller) return;
       setRegistros(Array.isArray(data?.data) ? data.data : []);
       setTotalRegistros(Number(data?.total || 0));
       setTotalPages(Number(data?.total_pages || 1));
     } catch (e) {
-      if (e?.name === "AbortError") return;
+      if (e?.name === "AbortError" || controller.signal.aborted || registrosAbortRef.current !== controller) return;
       setRegistros([]);
       setTotalRegistros(0);
       setTotalPages(1);
       setError(String(e.message || e));
+    } finally {
+      if (registrosAbortRef.current === controller) setCargandoRegistros(false);
     }
-  }, [
-    equipoLocked,
-    isAdmin,
-    filtroMes,
-    filtroAnio,
-    filtroMesDesde,
-    filtroMesHasta,
-    filtroFecha,
-    filtroIdDeb,
-    filtroNroCasoCliDeb,
-    filtroConsultor,
-    filtroCliente,
-    filtroHorasAdic,
-    filtroTarea,
-    filtroOcupacion,
-    page,
-    perPage,
-    usuarioLogin,
-    rol,
-    equipoUser,
-    todasTareas,
-    ocupaciones,
-  ]);
+  }, [appliedFilterQuery, filterRevision, page, perPage, usuarioLogin, rol, equipoUser]);
 
   useEffect(() => {
     if (!usuarioLogin) return;
@@ -1332,9 +1237,14 @@ const Registro = ({ userData }) => {
     if (!hasId || !usuarioLogin) return;
 
     fetchRegistros();
+    return () => registrosAbortRef.current?.abort();
+  }, [userData, usuarioLogin, fetchRegistros]);
+
+  useEffect(() => {
+    if (!usuarioLogin) return;
     fetchFiltrosGlobales();
     fetchConteosGlobales();
-  }, [userData, usuarioLogin, fetchRegistros, fetchFiltrosGlobales, fetchConteosGlobales]);
+  }, [usuarioLogin, fetchFiltrosGlobales, fetchConteosGlobales]);
 
   const resolveModulosForEdit = useCallback((reg) => {
     const fromRegistro = reg?.modulo ? [reg.modulo] : [];
@@ -2179,8 +2089,8 @@ const Registro = ({ userData }) => {
     }
 
     if (filtroFecha) params.set("fecha", filtroFecha);
-    if (filtroIdDeb) params.set("id", filtroIdDeb);
-    if (filtroNroCasoCliDeb) params.set("nroCasoCliente", filtroNroCasoCliDeb);
+    if (filtroId) params.set("id", filtroId);
+    if (filtroNroCasoCli) params.set("nroCasoCliente", filtroNroCasoCli);
 
     appendMultiValues(params, "consultor", filtroConsultor);
     appendMultiValues(params, "cliente", filtroCliente);
@@ -2223,8 +2133,8 @@ const Registro = ({ userData }) => {
     filtroMesDesde,
     filtroMesHasta,
     filtroFecha,
-    filtroIdDeb,
-    filtroNroCasoCliDeb,
+    filtroId,
+    filtroNroCasoCli,
     filtroConsultor,
     filtroCliente,
     filtroHorasAdic,
@@ -2234,29 +2144,32 @@ const Registro = ({ userData }) => {
     ocupaciones,
   ]);
 
+  const aplicarFiltros = () => {
+    if (isAdmin && (filtroMesDesde || filtroMesHasta)) {
+      const rango = validateMonthRange(filtroMesDesde, filtroMesHasta);
+      if (!rango.valid) {
+        Swal.fire({ icon: 'warning', title: 'Rango de meses inválido', text: rango.message });
+        return;
+      }
+    }
+    if (filtroId && !/^\d+$/.test(filtroId.trim())) {
+      Swal.fire({ icon: 'warning', title: 'ID inválido', text: 'El ID debe contener únicamente números.' });
+      return;
+    }
+    if (filtroAnio && !/^(?:19|20|21)\d{2}$/.test(String(filtroAnio).trim())) {
+      Swal.fire({ icon: 'warning', title: 'Año inválido', text: 'Escribe un año de cuatro dígitos.' });
+      return;
+    }
+    setAppliedFilterQuery(buildCurrentFilterParams().toString());
+    setPage(1);
+    setFilterRevision(v => v + 1);
+  };
+
+  const filtrosPendientes = buildCurrentFilterParams().toString() !== appliedFilterQuery;
   const exportExcelBusyRef = useRef(false);
 
   const handleExport = async () => {
     if (exportingExcel || exportExcelBusyRef.current) return;
-
-    const adminUsaRangoMeses =
-      isAdmin && Boolean(filtroMesDesde || filtroMesHasta);
-
-    if (adminUsaRangoMeses) {
-      const monthRange = validateMonthRange(
-        filtroMesDesde,
-        filtroMesHasta
-      );
-
-      if (!monthRange.valid) {
-        Swal.fire({
-          icon: "warning",
-          title: "Rango de meses inválido",
-          text: monthRange.message,
-        });
-        return;
-      }
-    }
 
     exportExcelBusyRef.current = true;
     setExportingExcel(true);
@@ -2265,7 +2178,7 @@ const Registro = ({ userData }) => {
     let controlador = null;
     try {
       // Capturar filtros una vez: no cambiarlos entre lotes.
-      const filtros = buildCurrentFilterParams();
+      const filtros = new URLSearchParams(appliedFilterQuery);
       const TAMANO_LOTE = 1000;
       let cursor = null;
       let snapshot = null;
@@ -2539,7 +2452,7 @@ const Registro = ({ userData }) => {
               <button
                 className="btn btn-outline"
                 onClick={handleExport}
-                disabled={exportingExcel}
+                disabled={exportingExcel || cargandoRegistros}
                 title={exportingExcel ? "Descarga por lotes en curso" : "Descargar los registros filtrados en archivos de hasta 1.000 filas"}
               >
                 {exportingExcel ? "Descargando lotes…" : "Descargar Excel por lotes"}
@@ -2614,10 +2527,12 @@ const Registro = ({ userData }) => {
         <div className="filters-card">
           <div className="filters-head">
             <h3>Filtros de búsqueda</h3>
-            <p>Usa uno o varios criterios para encontrar registros específicos.</p>
+            <p>Selecciona los criterios y pulsa Aplicar filtros. La tabla y el Excel usan los filtros aplicados.</p>
           </div>
 
-          <div className="filter-grid">
+          <div className="filter-grid" onKeyDown={e => {
+            if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); aplicarFiltros(); }
+          }}>
             <input
               type="text"
               value={filtroId}
@@ -2792,10 +2707,19 @@ const Registro = ({ userData }) => {
           </div>
 
           <div className="filter-actions">
+            <span className="filter-state" role="status" aria-live="polite">
+              {cargandoRegistros ? 'Consultando registros…' : filtrosPendientes ? 'Cambios pendientes: pulsa Aplicar filtros' : `${totalRegistros.toLocaleString('es-CO')} registros con los filtros aplicados`}
+            </span>
+            <button className="btn btn-primary filter-apply" type="button" onClick={aplicarFiltros} disabled={cargandoRegistros || exportingExcel}>
+              {cargandoRegistros ? 'Consultando…' : 'Aplicar filtros'}
+            </button>
             <button
               className="btn btn-outline"
               type="button"
               onClick={() => {
+                setAppliedFilterQuery('');
+                setPage(1);
+                setFilterRevision(v => v + 1);
                 setFiltroId('');
                 setFiltroFecha('');
                 setFiltroCliente([]);
@@ -3304,7 +3228,7 @@ const Registro = ({ userData }) => {
             <div className="registro-pagination">
               <button
                 className="btn btn-outline"
-                disabled={registrosFiltrados.page <= 1}
+                disabled={cargandoRegistros || registrosFiltrados.page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
                 ◀
@@ -3316,7 +3240,7 @@ const Registro = ({ userData }) => {
 
               <button
                 className="btn btn-outline"
-                disabled={registrosFiltrados.page >= registrosFiltrados.totalPages}
+                disabled={cargandoRegistros || registrosFiltrados.page >= registrosFiltrados.totalPages}
                 onClick={() => setPage((p) => Math.min(registrosFiltrados.totalPages, p + 1))}
               >
                 ▶
@@ -3331,20 +3255,20 @@ const Registro = ({ userData }) => {
           <CapacidadSemanalModal
             isOpen={capacidadModalOpen}
             onClose={() => setCapacidadModalOpen(false)}
-            filtroEquipo={equipoLocked}
-            filtroConsultor={filtroConsultor}
-            filtroMes={filtroMes}
-            filtroAnio={filtroAnio}
+            filtroEquipo={appliedFilters.equipo}
+            filtroConsultor={appliedFilters.consultores}
+            filtroMes={appliedFilters.mes}
+            filtroAnio={appliedFilters.anio}
             equipoBloqueado={isAdminEquipo}
           />
         )}
 
         <Resumen
           userData={userData}
-          filtroEquipo={filtroEquipo}
-          filtroConsultor={filtroConsultor}
-          filtroMes={filtroMes}
-          filtroAnio={filtroAnio}
+          filtroEquipo={appliedFilters.equipo}
+          filtroConsultor={appliedFilters.consultores}
+          filtroMes={appliedFilters.mes}
+          filtroAnio={appliedFilters.anio}
         />
       </div>
     </div>

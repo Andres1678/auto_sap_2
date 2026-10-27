@@ -2702,6 +2702,25 @@ def obtener_personas_equipos_graficos():
 USUARIOS_PUEDE_SEMANAS_ANTERIORES = {
 }
 
+def _registro_aplicar_periodo_consulta(q):
+    desde = request.args.get('mes_desde')
+    hasta = request.args.get('mes_hasta')
+    if desde is not None or hasta is not None:
+        inicio, fin = _mcc_rango_meses(desde, hasta)
+        return q.filter(Registro.fecha >= inicio.isoformat(), Registro.fecha < fin.isoformat())
+    mes = (request.args.get('mes') or '').strip()
+    anio = (request.args.get('anio') or '').strip()
+    if mes:
+        if not mes.isdigit() or not 1 <= int(mes) <= 12:
+            raise ValueError('Mes inválido.')
+        q = q.filter(extract('month', cast(Registro.fecha, db.Date)) == int(mes))
+    if anio:
+        if not anio.isdigit() or not 1900 <= int(anio) <= 2199:
+            raise ValueError('Año inválido.')
+        q = q.filter(extract('year', cast(Registro.fecha, db.Date)) == int(anio))
+    return q
+
+
 @bp.route('/registros', methods=['GET'])
 @auth_required
 def obtener_registros():
@@ -2812,17 +2831,10 @@ def obtener_registros():
                     return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
             q = q.filter(func.upper(E.nombre) == filtro_equipo)
 
-        if filtro_mes:
-            try:
-                q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
-            except Exception:
-                pass
-
-        if filtro_anio:
-            try:
-                q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == int(filtro_anio))
-            except Exception:
-                pass
+        try:
+            q = _registro_aplicar_periodo_consulta(q)
+        except (TypeError, ValueError) as error:
+            return jsonify({'mensaje': str(error)}), 400
 
         if filtro_nro_caso:
             q = q.filter(Registro.nro_caso_cliente.ilike(f"%{filtro_nro_caso}%"))
@@ -7199,28 +7211,10 @@ def export_registros():
                     return jsonify({'error': 'No autorizado para consultar otro equipo'}), 403
             q = q.filter(func.upper(E.nombre) == filtro_equipo)
 
-        # El rango enviado por Registro también debe limitar la exportación.
-        mes_desde = request.args.get('mes_desde')
-        mes_hasta = request.args.get('mes_hasta')
-        if mes_desde is not None or mes_hasta is not None:
-            try:
-                inicio_rango, fin_rango = _mcc_rango_meses(mes_desde, mes_hasta)
-            except (TypeError, ValueError) as error:
-                return jsonify({'mensaje': str(error)}), 400
-            q = q.filter(Registro.fecha >= inicio_rango.isoformat(),
-                         Registro.fecha < fin_rango.isoformat())
-
-        if filtro_mes:
-            try:
-                q = q.filter(extract("month", cast(Registro.fecha, db.Date)) == int(filtro_mes))
-            except Exception:
-                pass
-
-        if filtro_anio:
-            try:
-                q = q.filter(extract("year", cast(Registro.fecha, db.Date)) == int(filtro_anio))
-            except Exception:
-                pass
+        try:
+            q = _registro_aplicar_periodo_consulta(q)
+        except (TypeError, ValueError) as error:
+            return jsonify({'mensaje': str(error)}), 400
 
         if filtro_nro_caso:
             q = q.filter(Registro.nro_caso_cliente.ilike(f"%{filtro_nro_caso}%"))
