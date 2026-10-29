@@ -1773,9 +1773,9 @@ const Registro = ({ userData }) => {
           (a.horas_excedidas > 0 ? ` Superarías las 8,5 h en ${numero(a.horas_excedidas)} h.` : ` Faltan ${numero(Math.max(0, 8.5 - a.horas_resultantes))} h para completar 8,5 h.`)
         ).join('\n');
         const decision = await Swal.fire({
-          icon: 'info', title: 'Registrar horas extras',
-          text: `${detalle}\nYa completarías las 8,5 horas diarias. Si necesitas agregar este tiempo, selecciona Registrar horas extras.`,
-          showCancelButton: true, confirmButtonText: 'Registrar horas extras', cancelButtonText: 'Revisar registro',
+          icon: 'info', title: 'Registrar horas adicionales',
+          text: `${detalle}\nYa completarías las 8,5 horas diarias. Si necesitas agregar este tiempo, selecciona Registrar horas adicionales.`,
+          showCancelButton: true, confirmButtonText: 'Registrar horas adicionales', cancelButtonText: 'Revisar registro',
           focusCancel: true,
         });
         if (!decision.isConfirmed) return;
@@ -1790,7 +1790,7 @@ const Registro = ({ userData }) => {
         const horas = Number(a.horas_resultantes || 0);
         const valor = horas.toLocaleString('es-CO', { maximumFractionDigits: 2 });
         if (Math.round(horas * 100) < 850) return `${a.fecha}: llevas ${valor} horas. Te estás aproximando a las 8,5 horas diarias.`;
-        if (Math.round(horas * 100) === 850) return `${a.fecha}: completaste tus 8,5 horas diarias. Si necesitas registrar más tiempo, al guardar podrás elegir Registrar horas extras.`;
+        if (Math.round(horas * 100) === 850) return `${a.fecha}: completaste tus 8,5 horas diarias. Si necesitas registrar más tiempo, al guardar podrás elegir Registrar horas adicionales.`;
         return `${a.fecha}: registro guardado con ${valor} horas acumuladas en el día.`;
       }).join('\n');
       Swal.fire({
