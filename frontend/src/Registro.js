@@ -803,8 +803,6 @@ const Registro = ({ userData }) => {
   const [exportingExcel, setExportingExcel] = useState(false);
   const canImportExcel = ['gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
   const puedeRegistrarCualquierFecha = String(usuarioLogin || '').trim().toLowerCase() === 'gonzalezanf';
-  const puedeRegistrarMesesAnteriores = ['gonzalezanf', 'rodriguezso'].includes(String(usuarioLogin || '').trim().toLowerCase());
-  const puedeRegistrarAnteriores2026 = ['rinconma', 'penape', 'castrorl', 'lopezrol', 'tenjos'].includes(String(usuarioLogin || '').trim().toLowerCase());
 
   const [proyectos, setProyectos] = useState([]);
   const [loadingProyectos, setLoadingProyectos] = useState(false);
@@ -1476,11 +1474,8 @@ const Registro = ({ userData }) => {
       });
     }
 
-    const fechasARevisarMes = esRangoVacaciones ? [...fechasVacaciones] : [fechaPrincipal];
-    if (modoEdicion && original?.fecha) fechasARevisarMes.push(String(original.fecha).slice(0, 10));
-    if (!puedeRegistrarMesesAnteriores && fechasARevisarMes.some(f => String(f).slice(0, 7) < todayISO.slice(0, 7) && !(puedeRegistrarAnteriores2026 && String(f).slice(0, 4) === '2026'))) {
-      return Swal.fire({ icon: 'warning', title: 'Mes cerrado', text: 'El periodo está cerrado para tu usuario. Si tienes la excepción de 2026, selecciona una fecha de ese año.' });
-    }
+    // Los meses cerrados y sus excepciones se autorizan en backend con la sesión.
+    // No duplicar la lista de usuarios ni bloquear el calendario con un min local.
 
     if (!registro.horaInicio || !registro.horaFin) {
       return Swal.fire({ icon: "warning", title: "Completa las horas de inicio y fin" });
@@ -2823,7 +2818,6 @@ const Registro = ({ userData }) => {
                   <input
                     type="date"
                     value={registro.fecha}
-                    min={puedeRegistrarMesesAnteriores ? undefined : puedeRegistrarAnteriores2026 ? '2026-01-01' : `${todayISO.slice(0, 7)}-01`}
                     max={habilitarRangoVacaciones || puedeRegistrarCualquierFecha ? undefined : todayISO}
                     onChange={(e) => {
                       const value = e.target.value;
@@ -2852,7 +2846,7 @@ const Registro = ({ userData }) => {
                         ? "Puedes registrar y editar cualquier fecha."
                         : habilitarRangoVacaciones
                         ? "Para vacaciones se permiten fechas futuras."
-                        : "Puedes registrar días del mes actual; no fechas futuras."
+                        : "Los meses anteriores se validan según los permisos de tu sesión. No se permiten fechas futuras."
                     }
                   />
 
