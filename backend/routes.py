@@ -1490,7 +1490,7 @@ def _validar_mes_registro(fecha_value, usuario_actor, fecha_original=None):
     hoy = datetime.now(ZoneInfo("America/Bogota")).date()
     usuario = str(usuario_actor or '').strip().lower()
     exceptuado = usuario in {'gonzalezanf', 'rodriguezso'}
-    habilitado_2026 = usuario in {'rinconma', 'penape', 'castrorl', 'lopezrol', 'tenjos'}
+    habilitado_2026 = usuario in {'rinconma', 'penapa', 'castrorl', 'lopezrol', 'tenjos'}
     for valor in fechas:
         fecha = _parse_iso_date_for_range(valor)
         if not fecha:
