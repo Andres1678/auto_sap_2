@@ -1488,13 +1488,16 @@ def _build_iso_dates_range(start_value, end_value):
 def _validar_mes_registro(fecha_value, usuario_actor, fecha_original=None):
     fechas = [fecha_value] + ([fecha_original] if fecha_original is not None else [])
     hoy = datetime.now(ZoneInfo("America/Bogota")).date()
-    exceptuado = str(usuario_actor or '').strip().lower() in {'gonzalezanf', 'rodriguezso'}
+    usuario = str(usuario_actor or '').strip().lower()
+    exceptuado = usuario in {'gonzalezanf', 'rodriguezso'}
+    habilitado_2026 = usuario in {'rinconma', 'penape', 'castrorl', 'lopezrol', 'tenjos'}
     for valor in fechas:
         fecha = _parse_iso_date_for_range(valor)
         if not fecha:
             return 'Fecha de registro inválida.'
-        if not exceptuado and (fecha.year, fecha.month) < (hoy.year, hoy.month):
-            return 'Los meses anteriores están cerrados. Solo gonzalezanf y rodriguezso pueden registrar o modificar esos periodos.'
+        if (not exceptuado and not (habilitado_2026 and fecha.year == 2026)
+                and (fecha.year, fecha.month) < (hoy.year, hoy.month)):
+            return 'El mes está cerrado para tu usuario. Las excepciones de 2026 no habilitan otros años.'
     return None
 
 

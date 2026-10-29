@@ -804,6 +804,7 @@ const Registro = ({ userData }) => {
   const canImportExcel = ['gonzalezanf'].includes(String(usuarioLogin || '').toLowerCase());
   const puedeRegistrarCualquierFecha = String(usuarioLogin || '').trim().toLowerCase() === 'gonzalezanf';
   const puedeRegistrarMesesAnteriores = ['gonzalezanf', 'rodriguezso'].includes(String(usuarioLogin || '').trim().toLowerCase());
+  const puedeRegistrarAnteriores2026 = ['rinconma', 'penape', 'castrorl', 'lopezrol', 'tenjos'].includes(String(usuarioLogin || '').trim().toLowerCase());
 
   const [proyectos, setProyectos] = useState([]);
   const [loadingProyectos, setLoadingProyectos] = useState(false);
@@ -1477,8 +1478,8 @@ const Registro = ({ userData }) => {
 
     const fechasARevisarMes = esRangoVacaciones ? [...fechasVacaciones] : [fechaPrincipal];
     if (modoEdicion && original?.fecha) fechasARevisarMes.push(String(original.fecha).slice(0, 10));
-    if (!puedeRegistrarMesesAnteriores && fechasARevisarMes.some(f => String(f).slice(0, 7) < todayISO.slice(0, 7))) {
-      return Swal.fire({ icon: 'warning', title: 'Mes cerrado', text: 'No puedes crear ni modificar registros de meses anteriores.' });
+    if (!puedeRegistrarMesesAnteriores && fechasARevisarMes.some(f => String(f).slice(0, 7) < todayISO.slice(0, 7) && !(puedeRegistrarAnteriores2026 && String(f).slice(0, 4) === '2026'))) {
+      return Swal.fire({ icon: 'warning', title: 'Mes cerrado', text: 'El periodo está cerrado para tu usuario. Si tienes la excepción de 2026, selecciona una fecha de ese año.' });
     }
 
     if (!registro.horaInicio || !registro.horaFin) {
@@ -2822,7 +2823,7 @@ const Registro = ({ userData }) => {
                   <input
                     type="date"
                     value={registro.fecha}
-                    min={puedeRegistrarMesesAnteriores ? undefined : `${todayISO.slice(0, 7)}-01`}
+                    min={puedeRegistrarMesesAnteriores ? undefined : puedeRegistrarAnteriores2026 ? '2026-01-01' : `${todayISO.slice(0, 7)}-01`}
                     max={habilitarRangoVacaciones || puedeRegistrarCualquierFecha ? undefined : todayISO}
                     onChange={(e) => {
                       const value = e.target.value;
