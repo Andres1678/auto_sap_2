@@ -1,4 +1,7 @@
-:root {
+/* Base COE SAP Funcional. Reemplaza el archivo CSS completo.
+   Los encabezados quedan fijos dentro del contenedor de la tabla.
+   Las barras dependen también de la configuración del sistema operativo. */
+.coe-page {
   --coe-red: #da291c;
   --coe-red-dark: #b91f15;
   --coe-green: #008c67;
@@ -6,11 +9,11 @@
   --coe-bg: #f7f8fa;
   --coe-card: #ffffff;
   --coe-text: #222222;
-  --coe-muted: #6b7280;
-  --coe-border: #e8e8e8;
+  --coe-muted: #566174;
+  --coe-border: #dce2ea;
   --coe-soft-red: #fff3f2;
-  --coe-header: #faf5f5;
-  --coe-shadow: 0 18px 40px rgba(17, 24, 39, 0.08);
+  --coe-header: #f1f4f8;
+  --coe-shadow: 0 6px 20px rgba(17, 24, 39, 0.06);
   --coe-radius: 18px;
 }
 
@@ -19,7 +22,12 @@
   background:
     radial-gradient(circle at top left, rgba(218, 41, 28, 0.08), transparent 34%),
     linear-gradient(180deg, #ffffff 0%, var(--coe-bg) 38%, var(--coe-bg) 100%);
-  padding: 26px;
+  padding: clamp(12px, 2vw, 28px);
+  width: 100%;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  font-family: inherit;
   color: var(--coe-text);
 }
 
@@ -70,7 +78,7 @@
   max-width: 850px;
   font-size: clamp(24px, 3vw, 38px);
   line-height: 1.08;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: -0.03em;
 }
 
@@ -108,20 +116,20 @@
   display: block;
   font-size: 22px;
   line-height: 1.1;
-  font-weight: 900;
+  font-weight: 700;
   word-break: break-word;
 }
 
 .coe-upload-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 16px;
   margin-bottom: 16px;
 }
 
 .coe-upload-card {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 48px minmax(0, 1fr);
   align-items: center;
   gap: 16px;
   padding: 20px;
@@ -152,7 +160,7 @@
 .coe-upload-card h3 {
   margin: 0;
   font-size: 17px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .coe-upload-card p {
@@ -187,7 +195,7 @@
 .coe-table-head h2 {
   margin: 0;
   font-size: 20px;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: -0.02em;
 }
 
@@ -200,7 +208,7 @@
 
 .coe-filters-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -224,13 +232,14 @@
 .coe-filter select,
 .coe-page-size select {
   width: 100%;
-  min-height: 42px;
+  min-height: 44px;
   border: 1px solid var(--coe-border);
   border-radius: 12px;
   background: #ffffff;
   color: var(--coe-text);
   padding: 0 12px;
-  outline: none;
+  font: inherit;
+  min-width: 0;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
@@ -244,15 +253,16 @@
 .coe-actions {
   display: flex;
   gap: 10px;
-  margin-top: 16px;
+  flex-wrap: wrap;
+  margin-top: 20px;
 }
 
 .coe-btn {
   border: 0;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 16px;
   border-radius: 12px;
-  font-weight: 850;
+  font-weight: 700;
   cursor: pointer;
   background: #ffffff;
   color: var(--coe-text);
@@ -333,14 +343,19 @@
 
 .coe-table-wrap {
   width: 100%;
-  max-height: 65vh;
-  overflow: auto;
+  height: clamp(280px, 62vh, 760px);
+  max-height: 76vh;
+  overflow: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  scrollbar-color: #7c899a #edf1f5;
+  overscroll-behavior-x: contain;
   background: #ffffff;
 }
 
 .coe-table {
-  width: 100%;
-  min-width: 2200px;
+  width: max-content;
+  min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -353,45 +368,49 @@
   padding: 13px 12px;
   text-align: left;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
   color: #3f3f46;
   background: var(--coe-header);
   border-bottom: 1px solid var(--coe-border);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+  box-shadow: 0 1px 0 #cbd5e1;
 }
 
 .coe-table tbody td {
   padding: 12px;
   font-size: 13px;
   vertical-align: top;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #e6ebf0;
+  border-right: 1px solid #edf0f4;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
   color: #2f2f35;
   background: #ffffff;
 }
 
 .coe-table tbody tr:nth-child(even) td {
-  background: #fcfcfd;
+  background: #f7f9fc;
 }
 
 .coe-table tbody tr:hover td {
-  background: #fff7f6;
+  background: #fff1ec;
 }
 
-.coe-table .mono,
-.mono {
+.coe-page .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
 .coe-table .strong {
-  font-weight: 900;
+  font-weight: 700;
 }
 
-.coe-table .center,
-.center {
+.coe-page .center {
   text-align: center;
 }
 
-.clip-2 {
+.coe-page .clip-2 {
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -409,7 +428,7 @@
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -508,7 +527,7 @@
 .coe-access-card h2 {
   margin: 0;
   font-size: 24px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .coe-access-card p {
@@ -521,7 +540,7 @@
   }
 
   .coe-hero-stats {
-    grid-template-columns: repeat(2, minmax(140px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .coe-upload-grid {
@@ -537,7 +556,7 @@
   }
 
   .coe-filters-grid {
-    grid-template-columns: repeat(2, minmax(160px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .coe-filter.search {
@@ -600,12 +619,162 @@
   background: #7f1d1d;
 }
 
-.coe-upload-grid {
-  grid-template-columns: repeat(3, minmax(260px, 1fr));
+/* Tamaños contenidos: las tarjetas y los filtros no ensanchan la página. */
+.coe-page,
+.coe-page *,
+.coe-page *::before,
+.coe-page *::after {
+  box-sizing: border-box;
 }
 
-@media (max-width: 1180px) {
-  .coe-upload-grid {
-    grid-template-columns: 1fr;
+.coe-page :is(.coe-card, .coe-upload-card, .coe-filter, .coe-hero > div) {
+  min-width: 0;
+}
+
+.coe-hero > div {
+  position: relative;
+  z-index: 1;
+}
+
+.coe-hero::after {
+  pointer-events: none;
+}
+
+.coe-upload-card > .coe-btn {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.coe-upload-card p,
+.coe-card-head p,
+.coe-table-head p {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.coe-filter input::placeholder {
+  color: #657185;
+  opacity: 1;
+}
+
+.coe-filter :is(input, select):disabled {
+  background: #eef1f5;
+  color: #566174;
+  cursor: not-allowed;
+}
+
+.coe-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  padding: 10px 16px;
+  text-decoration: none;
+  white-space: normal;
+}
+
+.coe-page :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 3px;
+}
+
+.coe-table-wrap::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+.coe-table-wrap::-webkit-scrollbar-track,
+.coe-table-wrap::-webkit-scrollbar-corner {
+  background: #edf1f5;
+}
+
+.coe-table-wrap::-webkit-scrollbar-thumb {
+  background: #7c899a;
+  border: 3px solid #edf1f5;
+  border-radius: 10px;
+}
+
+.coe-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: #526176;
+}
+
+.coe-table thead th {
+  border-right: 1px solid #dce2ea;
+}
+
+.coe-table .strong {
+  color: #182233;
+}
+
+.coe-page .coe-empty {
+  vertical-align: middle;
+  color: var(--coe-muted);
+}
+
+.coe-page :is(.coe-pill, .coe-mini-pill) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.coe-pager {
+  flex-wrap: wrap;
+}
+
+.coe-page-size {
+  flex-shrink: 0;
+}
+
+@media (max-width: 720px) {
+  .coe-hero-stats {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .coe-filters-card,
+  .coe-table-head,
+  .coe-upload-card {
+    padding: 16px;
+  }
+
+  .coe-actions > .coe-btn {
+    flex: 1 1 140px;
+  }
+
+  .coe-page-size {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .coe-page-size select {
+    width: 110px;
+  }
+
+  .coe-table-wrap {
+    height: 60vh;
+    max-height: 70vh;
+  }
+
+  .coe-access-card {
+    margin: 24px auto;
+    padding: 24px 18px;
+  }
+}
+
+/* Respetar las preferencias de accesibilidad sin ocultar estados de carga. */
+@media (prefers-reduced-motion: reduce) {
+  .coe-page *,
+  .coe-page *::before,
+  .coe-page *::after {
+    transition: none !important;
+    animation-duration: 2s !important;
+  }
+
+  .coe-btn:hover:not(:disabled) {
+    transform: none;
   }
 }
