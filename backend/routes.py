@@ -15939,101 +15939,255 @@ def _coe_read_csv_from_bytes(contenido):
     raise ultimo_error
 
 
-def _leer_archivo_coe_sap_funcional(file):
-    filename = (file.filename or "").lower().strip()
+# Helpers integrados en routes.py; también usados para auditar los archivos adjuntos.
+COE_IMPORT_PROINDESA_ALIASES = {
+    'numero': ['ID de la solicitud'],
+    'id_interaccion': ['Tiquete Proveedor Externo'],
+    'compania': ['Sociedad'],
+    'fecha_entrega': ['Fecha de creación'],
+    'fecha_cierre': ['Fecha de finalización'],
+    'titulo': ['Asunto'],
+    'nombre_completo_contacto': ['Nombre del solicitante'],
+    'incumplimiento_sla': ['Incumple el SLA'],
+    'estado_alerta_ans': ['Estado de alerta'],
+    'accion_actualizacion': ['HORA Y OBSERVACION DE LA ÚLTIMA ACTUALIZACIÓN'],
+}
 
-    contenido = file.read()
 
-    if not contenido:
-        raise ValueError("El archivo está vacío.")
+def _coe_import_aliases():
+    return {campo: [campo] + aliases + COE_IMPORT_PROINDESA_ALIASES.get(campo, [])
+            for campo, aliases in COE_SAP_FUNCIONAL_ALIASES.items()}
 
-    if filename.endswith(".csv"):
-        df = _coe_read_csv_from_bytes(contenido)
-    else:
+
+def _coe_import_vacio(value):
+    if value is None:
+        return True
+    return str(value).strip().casefold() in {'', '-', 'nan', 'nat', 'none', 'null', 'no asignado', 'sin asignar'}
+
+
+def _coe_import_fecha(value):
+    if _coe_import_vacio(value):
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, time.min)
+    texto = str(value).strip()
+    # Algunas columnas opcionales llegan como serial de fecha Excel sin formato.
+    if re.fullmatch(r'\d+(?:\.\d+)?', texto):
+        serial = float(texto)
+        if 1 <= serial <= 100000:
+            return datetime(1899, 12, 30) + timedelta(days=serial)
+        return None
+    # ISO antes de dayfirst: evita intercambiar enero/abril en una base unificada.
+    if re.match(r'^\d{4}-\d{2}-\d{2}', texto):
         try:
-            df = pd.read_excel(
-                BytesIO(contenido),
-                dtype=str,
-                engine="openpyxl"
-            )
-        except Exception:
-            df = pd.read_excel(
-                BytesIO(contenido),
-                dtype=str
-            )
+            return datetime.fromisoformat(texto.replace('Z', '+00:00')).replace(tzinfo=None)
+        except ValueError:
+            return None
+    for formato in ('%d/%m/%Y %I:%M %p', '%d/%m/%Y %I:%M:%S %p',
+                    '%d/%m/%Y %H:%M:%S', '%d/%m/%Y %H:%M', '%d/%m/%Y',
+                    '%d-%m-%Y %H:%M:%S', '%d-%m-%Y %H:%M', '%d-%m-%Y'):
+        try:
+            return datetime.strptime(texto, formato)
+        except ValueError:
+            pass
+    return _coe_parse_datetime(value)
 
-    df = df.where(pd.notnull(df), None)
 
-    columnas_originales = list(df.columns)
+def _coe_import_detectar_header(filas):
+    aliases = _coe_import_aliases()
+    numeros = {_coe_norm_col(x) for x in aliases['numero']}
+    titulos = {_coe_norm_col(x) for x in aliases['titulo']}
+    estados = {_coe_norm_col(x) for x in aliases['estado']}
+    for indice, fila in enumerate(filas):
+        nombres = {_coe_norm_col(x) for x in fila if not _coe_import_vacio(x)}
+        if nombres & numeros and (nombres & titulos or nombres & estados):
+            return indice
+    return None
 
-    columnas_normalizadas = {
-        _coe_norm_col(c): c
-        for c in columnas_originales
-    }
 
-    app.logger.info(
-        "COE SAP Funcional - columnas originales recibidas: %s",
-        columnas_originales
-    )
+def _coe_import_frames(file):
+    filename = (file.filename or '').lower().strip()
+    contenido = file.read()
+    if not contenido:
+        raise ValueError('El archivo está vacío.')
+    if filename.endswith('.csv'):
+        df = _coe_read_csv_from_bytes(contenido)
+        yield 'CSV', 2, df
+        return
+    if not filename.endswith(('.xlsx', '.xls')):
+        raise ValueError('Formato no admitido. Usa CSV, XLSX o XLS.')
+    with pd.ExcelFile(BytesIO(contenido)) as libro:
+        encontradas = 0
+        for nombre in libro.sheet_names:
+            muestra = libro.parse(nombre, header=None, nrows=20, dtype=object)
+            header = _coe_import_detectar_header(muestra.values.tolist())
+            if header is None:
+                continue
+            encontradas += 1
+            yield nombre, header + 2, libro.parse(nombre, header=header, dtype=str)
+        if not encontradas:
+            raise ValueError('No se encontró una hoja con Número/ID de la solicitud y Título/Asunto o Estado en las primeras 20 filas.')
 
-    app.logger.info(
-        "COE SAP Funcional - columnas normalizadas recibidas: %s",
-        list(columnas_normalizadas.keys())
-    )
 
-    columnas_encontradas = {}
+COE_PLANTILLA_COLUMNAS = ['ID DE LA SOLICITUD', 'NUMERO', 'COMPAÑÍA', 'ASUNTO', 'NOMBRE DEL SOLICITANTE', 'ASIGNADO A', 'VENCIMIENTO ANTES DE', 'ESTADO', 'FECHA DE CREACIÓN', 'SITIO', 'PRIORIDAD', 'GRUPO', 'CATÁLOGO DE SERVICIOS', 'SOCIEDAD', 'CATEGORÍA DE SERVICIO', 'CATEGORÍA', 'SUBCATEGORÍA', 'ARTÍCULO', 'IMPACTO', 'URGENCIA', 'NIVEL', 'TIPO DE SOLICITUD', 'ESTADO DE LA APROBACIÓN', 'FECHA DE FINALIZACIÓN', 'CREADO POR', 'HORA Y OBSERVACION DE LA ÚLTIMA ACTUALIZACIÓN', 'VENCIDO', 'USUARIO SOLICITANTE', 'EN NOMBRE DE', 'RESPUESTA ANTES DE', 'FECHA DE RESOLUCIÓN', 'MODO', 'NOMBRE DE LA PLANTILLA', 'DEPARTAMENTO', 'COSTE TOTAL', 'NÚMERO DE ORDEN', 'REFERENCIA DE LA ORDEN', 'DESCRIPCIÓN BREVE DE LA ORDEN', 'TRANSPORTAR A', 'LIBERADORES', 'TIQUETE PROVEEDOR EXTERNO', 'HORA DE INICIO PROGRAMADA', 'HORA DE FINALIZACIÓN PROGRAMADA', 'CORREO ELECTRÓNICO DE LA APROBACIÓN', 'NUMERO DE ERROR SAP', 'DATOS DEL TRANSPORTE', 'FECHA DE RESPUESTA', 'TIEMPO ASIGNADO', 'TIENE SOLICITUDES VINCULADAS', 'ES SOLICITUD DE SERVICIO', 'INCUMPLE EL SLA']
 
-    for campo, aliases in COE_SAP_FUNCIONAL_ALIASES.items():
-        col = _coe_find_column(columnas_normalizadas, aliases)
+COE_PLANTILLA_ALIASES = {'ID DE LA SOLICITUD': ['ID de la solicitud', 'ID de interacción'], 'NUMERO': ['NUMERO', 'Número', 'ID de la solicitud'], 'COMPAÑÍA': ['Compañía'], 'ASUNTO': ['Asunto', 'Título'], 'NOMBRE DEL SOLICITANTE': ['Nombre del solicitante', 'Nombre Completo Contacto'], 'ASIGNADO A': ['ASIGNADO A'], 'VENCIMIENTO ANTES DE': ['VENCIMIENTO ANTES DE'], 'ESTADO': ['ESTADO'], 'FECHA DE CREACIÓN': ['Fecha de creación', 'Fecha de entrega'], 'SITIO': ['SITIO'], 'PRIORIDAD': ['PRIORIDAD'], 'GRUPO': ['GRUPO'], 'CATÁLOGO DE SERVICIOS': ['CATÁLOGO DE SERVICIOS'], 'SOCIEDAD': ['SOCIEDAD'], 'CATEGORÍA DE SERVICIO': ['Categoría de servicio', 'Clr Txt Servicio'], 'CATEGORÍA': ['Categoría', 'Modelo'], 'SUBCATEGORÍA': ['SUBCATEGORÍA'], 'ARTÍCULO': ['ARTÍCULO'], 'IMPACTO': ['IMPACTO'], 'URGENCIA': ['URGENCIA'], 'NIVEL': ['NIVEL'], 'TIPO DE SOLICITUD': ['TIPO DE SOLICITUD'], 'ESTADO DE LA APROBACIÓN': ['ESTADO DE LA APROBACIÓN'], 'FECHA DE FINALIZACIÓN': ['Fecha de finalización', 'Fecha de cierre'], 'CREADO POR': ['CREADO POR'], 'HORA Y OBSERVACION DE LA ÚLTIMA ACTUALIZACIÓN': ['Hora y observacion de la última actualización', 'Hora de la última actualización', 'Acción de actualización'], 'VENCIDO': ['VENCIDO'], 'USUARIO SOLICITANTE': ['USUARIO SOLICITANTE'], 'EN NOMBRE DE': ['EN NOMBRE DE'], 'RESPUESTA ANTES DE': ['RESPUESTA ANTES DE'], 'FECHA DE RESOLUCIÓN': ['Fecha de resolución', 'Fecha de Resolucion'], 'MODO': ['MODO'], 'NOMBRE DE LA PLANTILLA': ['NOMBRE DE LA PLANTILLA'], 'DEPARTAMENTO': ['DEPARTAMENTO'], 'COSTE TOTAL': ['COSTE TOTAL'], 'NÚMERO DE ORDEN': ['NÚMERO DE ORDEN'], 'REFERENCIA DE LA ORDEN': ['REFERENCIA DE LA ORDEN'], 'DESCRIPCIÓN BREVE DE LA ORDEN': ['DESCRIPCIÓN BREVE DE LA ORDEN'], 'TRANSPORTAR A': ['TRANSPORTAR A'], 'LIBERADORES': ['LIBERADORES'], 'TIQUETE PROVEEDOR EXTERNO': ['TIQUETE PROVEEDOR EXTERNO'], 'HORA DE INICIO PROGRAMADA': ['HORA DE INICIO PROGRAMADA'], 'HORA DE FINALIZACIÓN PROGRAMADA': ['HORA DE FINALIZACIÓN PROGRAMADA'], 'CORREO ELECTRÓNICO DE LA APROBACIÓN': ['CORREO ELECTRÓNICO DE LA APROBACIÓN'], 'NUMERO DE ERROR SAP': ['NUMERO DE ERROR SAP'], 'DATOS DEL TRANSPORTE': ['DATOS DEL TRANSPORTE'], 'FECHA DE RESPUESTA': ['FECHA DE RESPUESTA'], 'TIEMPO ASIGNADO': ['TIEMPO ASIGNADO'], 'TIENE SOLICITUDES VINCULADAS': ['TIENE SOLICITUDES VINCULADAS'], 'ES SOLICITUD DE SERVICIO': ['ES SOLICITUD DE SERVICIO'], 'INCUMPLE EL SLA': ['Incumple el SLA', 'Incumplimiento de SLA']}
 
-        if col:
-            columnas_encontradas[campo] = col
 
-    obligatorias = {
-        "numero": "NUMERO",
-    }
+def _coe_plantilla_mapear(row, columnas, obj, proindesa):
+    salida = {}
+    booleanos = {'VENCIDO', 'TIENE SOLICITUDES VINCULADAS', 'ES SOLICITUD DE SERVICIO', 'INCUMPLE EL SLA'}
+    for campo, nombres in COE_PLANTILLA_ALIASES.items():
+        col = _coe_find_column(columnas, nombres)
+        valor = row.get(col) if col is not None else None
+        if _coe_import_vacio(valor):
+            valor = None
+        elif campo in booleanos:
+            valor = _coe_parse_bool(valor)
+        elif isinstance(valor, (datetime, date)):
+            valor = valor.isoformat(sep=' ') if isinstance(valor, datetime) else valor.isoformat()
+        else:
+            valor = str(valor).strip()
+        salida[campo] = valor
+    if salida['COMPAÑÍA'] is None and proindesa:
+        # La plantilla entregada identifica esta fuente como PROINDESA SAS.
+        salida['COMPAÑÍA'] = 'PROINDESA SAS'
+    salida['NUMERO'] = obj['numero']
+    salida['ASUNTO'] = obj.get('titulo')
+    salida['ASIGNADO A'] = obj.get('asignado_a')
+    salida['NOMBRE DEL SOLICITANTE'] = obj.get('nombre_completo_contacto')
+    salida['INCUMPLE EL SLA'] = obj.get('incumplimiento_sla')
+    if not proindesa and obj.get('accion_actualizacion'):
+        salida['HORA Y OBSERVACION DE LA ÚLTIMA ACTUALIZACIÓN'] = obj['accion_actualizacion']
+    return salida
 
-    faltantes = []
 
-    for campo, nombre_visible in obligatorias.items():
-        if campo not in columnas_encontradas:
-            faltantes.append(nombre_visible)
+COE_PLANTILLA_CAMPOS = {'ID DE LA SOLICITUD': 'id_solicitud', 'NUMERO': 'numero', 'COMPAÑÍA': 'compania', 'ASUNTO': 'titulo', 'NOMBRE DEL SOLICITANTE': 'nombre_completo_contacto', 'ASIGNADO A': 'asignado_a', 'VENCIMIENTO ANTES DE': 'fecha_vencimiento', 'ESTADO': 'estado', 'FECHA DE CREACIÓN': 'fecha_entrega', 'SITIO': 'sitio', 'PRIORIDAD': 'prioridad', 'GRUPO': 'grupo', 'CATÁLOGO DE SERVICIOS': 'catalogo_servicios', 'SOCIEDAD': 'sociedad', 'CATEGORÍA DE SERVICIO': 'categoria_servicio', 'CATEGORÍA': 'categoria', 'SUBCATEGORÍA': 'subcategoria', 'ARTÍCULO': 'articulo', 'IMPACTO': 'impacto', 'URGENCIA': 'urgencia', 'NIVEL': 'nivel', 'TIPO DE SOLICITUD': 'tipo_solicitud', 'ESTADO DE LA APROBACIÓN': 'estado_aprobacion', 'FECHA DE FINALIZACIÓN': 'fecha_cierre', 'CREADO POR': 'creado_por', 'HORA Y OBSERVACION DE LA ÚLTIMA ACTUALIZACIÓN': 'ultima_actualizacion_observacion', 'VENCIDO': 'vencido', 'USUARIO SOLICITANTE': 'usuario_solicitante', 'EN NOMBRE DE': 'en_nombre_de', 'RESPUESTA ANTES DE': 'respuesta_antes_de', 'FECHA DE RESOLUCIÓN': 'fecha_resolucion', 'MODO': 'modo', 'NOMBRE DE LA PLANTILLA': 'nombre_plantilla', 'DEPARTAMENTO': 'departamento', 'COSTE TOTAL': 'coste_total', 'NÚMERO DE ORDEN': 'numero_orden', 'REFERENCIA DE LA ORDEN': 'referencia_orden', 'DESCRIPCIÓN BREVE DE LA ORDEN': 'descripcion_orden', 'TRANSPORTAR A': 'transportar_a', 'LIBERADORES': 'liberadores', 'TIQUETE PROVEEDOR EXTERNO': 'tiquete_proveedor_externo', 'HORA DE INICIO PROGRAMADA': 'hora_inicio_programada', 'HORA DE FINALIZACIÓN PROGRAMADA': 'hora_fin_programada', 'CORREO ELECTRÓNICO DE LA APROBACIÓN': 'correo_aprobacion', 'NUMERO DE ERROR SAP': 'numero_error_sap', 'DATOS DEL TRANSPORTE': 'datos_transporte', 'FECHA DE RESPUESTA': 'fecha_respuesta', 'TIEMPO ASIGNADO': 'tiempo_asignado', 'TIENE SOLICITUDES VINCULADAS': 'tiene_solicitudes_vinculadas', 'ES SOLICITUD DE SERVICIO': 'es_solicitud_servicio', 'INCUMPLE EL SLA': 'incumplimiento_sla'}
+COE_PLANTILLA_FECHAS = {'hora_fin_programada', 'fecha_entrega', 'fecha_resolucion', 'hora_inicio_programada', 'fecha_respuesta', 'respuesta_antes_de', 'fecha_cierre', 'fecha_vencimiento'}
+COE_PLANTILLA_BOOLEANOS = {'incumplimiento_sla', 'es_solicitud_servicio', 'tiene_solicitudes_vinculadas', 'vencido'}
+COE_PLANTILLA_LIMITES = {'id_solicitud': 100, 'numero': 80, 'compania': 255, 'nombre_completo_contacto': 200, 'asignado_a': 200, 'estado': 100, 'sitio': 255, 'prioridad': 100, 'grupo': 255, 'catalogo_servicios': 255, 'sociedad': 255, 'categoria_servicio': 255, 'categoria': 255, 'subcategoria': 255, 'articulo': 255, 'impacto': 100, 'urgencia': 100, 'nivel': 100, 'tipo_solicitud': 100, 'estado_aprobacion': 100, 'creado_por': 200, 'usuario_solicitante': 200, 'en_nombre_de': 200, 'modo': 100, 'nombre_plantilla': 255, 'departamento': 255, 'coste_total': 100, 'transportar_a': 255, 'tiquete_proveedor_externo': 255, 'numero_error_sap': 255, 'tiempo_asignado': 100}
 
-    if faltantes:
-        raise ValueError(
-            "Faltan columnas obligatorias: "
-            + ", ".join(faltantes)
-            + ". Columnas recibidas normalizadas: "
-            + ", ".join(list(columnas_normalizadas.keys()))
-        )
 
+def _coe_plantilla_a_modelo(plantilla):
+    resultado = {}
+    for titulo, campo in COE_PLANTILLA_CAMPOS.items():
+        valor = plantilla.get(titulo)
+        if campo in COE_PLANTILLA_FECHAS:
+            fecha = _coe_import_fecha(valor)
+            if fecha is None and not _coe_import_vacio(valor):
+                raise ValueError(f'{titulo}: fecha inválida {str(valor)[:80]}.')
+            valor = fecha
+        elif campo in COE_PLANTILLA_BOOLEANOS:
+            valor = _coe_parse_bool(valor)
+        elif _coe_import_vacio(valor):
+            valor = None
+        elif not isinstance(valor, str):
+            valor = str(valor)
+        if valor is not None and campo in COE_PLANTILLA_LIMITES and len(str(valor)) > COE_PLANTILLA_LIMITES[campo]:
+            raise ValueError(f'{titulo}: supera {COE_PLANTILLA_LIMITES[campo]} caracteres; no se truncó el dato.')
+        resultado[campo] = valor
+    return resultado
+
+
+def _leer_archivo_coe_sap_funcional(file):
     registros = []
-
-    for _, row in df.iterrows():
-        obj = {}
-
-        for campo, col_original in columnas_encontradas.items():
-            raw = row.get(col_original)
-
-            if campo in ("fecha_entrega", "fecha_resolucion", "fecha_cierre"):
-                obj[campo] = _coe_parse_datetime(raw)
-
-            elif campo in ("incumplimiento_sla", "alerta"):
-                obj[campo] = _coe_parse_bool(raw)
-
-            else:
-                obj[campo] = _coe_parse_str(raw)
-
-        if not obj.get("numero"):
-            continue
-
-        registros.append(obj)
-
+    limites = {'numero': 80, 'id_interaccion': 100, 'compania': 255,
+               'estado': 100, 'asignado_a': 200, 'nombre_completo_contacto': 200,
+               'estado_alerta_ans': 100, 'impacto': 100, 'urgencia': 100, 'prioridad': 100,
+               'canal_resolucion': 200, 'clr_txt_servicio': 255, 'clr_txt_client_type': 255}
+    aliases = _coe_import_aliases()
+    for hoja, primera_fila, df in _coe_import_frames(file):
+        df = df.where(pd.notnull(df), None)
+        columnas = {_coe_norm_col(c): c for c in df.columns
+                    if not str(c).startswith('Unnamed:') and not _coe_import_vacio(c)}
+        encontradas = {campo: _coe_find_column(columnas, nombres) for campo, nombres in aliases.items()}
+        if not encontradas.get('numero'):
+            raise ValueError(f'{file.filename} / {hoja}: falta Número o ID de la solicitud.')
+        # La identidad proviene siempre del ID nativo. CASO VALIDA es una ayuda de Excel.
+        proindesa = 'ID DE LA SOLICITUD' in columnas and 'NUMERO' not in columnas
+        for offset, row in enumerate(df.to_dict(orient='records')):
+            if all(_coe_import_vacio(v) for k, v in row.items() if not str(k).startswith('Unnamed:')):
+                continue
+            fila = primera_fila + offset
+            numero_raw = _coe_parse_str(row.get(encontradas['numero'])) or ''
+            if len(numero_raw) > 80 and registros:
+                # Reparación acotada: fila de correo desbordada que referencia el SD anterior.
+                anterior = registros[-1]
+                referencia = anterior.get('id_interaccion') or ''
+                texto_fila = ';'.join(str(v) for v in row.values() if not _coe_import_vacio(v))
+                if (re.fullmatch(r'SD\d+', referencia, flags=re.I)
+                        and re.search(r'(?<![A-Za-z0-9])' + re.escape(referencia) + r'(?![A-Za-z0-9])', texto_fila, flags=re.I)
+                        and anterior.get('_archivo') == file.filename and anterior.get('_hoja') == hoja):
+                    anterior['accion_actualizacion'] = '\n'.join(filter(None, [
+                        anterior.get('accion_actualizacion'), texto_fila]))
+                    anterior.setdefault('_continuaciones', []).append({'fila': fila, 'valores': row})
+                    anterior['_plantilla']['HORA Y OBSERVACION DE LA ÚLTIMA ACTUALIZACIÓN'] = anterior['accion_actualizacion']
+                    continue
+            obj = {}
+            for campo, col in encontradas.items():
+                if col is None:
+                    continue
+                raw = row.get(col)
+                if campo.startswith('fecha_'):
+                    value = _coe_import_fecha(raw)
+                    if value is None and not _coe_import_vacio(raw):
+                        raise ValueError(f'{file.filename} / {hoja}, fila {fila}, {col}: fecha inválida {str(raw)[:80]}.')
+                elif campo in ('incumplimiento_sla', 'alerta'):
+                    value = _coe_parse_bool(raw)
+                    if value is None and not _coe_import_vacio(raw):
+                        raise ValueError(f'{file.filename} / {hoja}, fila {fila}, {col}: valor booleano inválido.')
+                else:
+                    value = None if _coe_import_vacio(raw) else _coe_parse_str(raw)
+                if value is not None and campo in limites and len(str(value)) > limites[campo]:
+                    raise ValueError(f'{file.filename} / {hoja}, fila {fila}: {col} excede {limites[campo]} caracteres; no se truncó el dato.')
+                obj[campo] = value
+            if not obj.get('numero'):
+                raise ValueError(f'{file.filename} / {hoja}, fila {fila}: Número/ID de la solicitud vacío.')
+            # Tiquete externo no equivale al número nativo. Mantenerlo como referencia.
+            obj['_fuente'] = str(row.get(columnas.get('FUENTE', '')) or ('PROINDESA' if proindesa else 'SM'))
+            obj['_archivo'] = file.filename
+            obj['_hoja'] = hoja
+            obj['_fila'] = fila
+            actualizacion = columnas.get('HORA DE LA ULTIMA ACTUALIZACION') or columnas.get('FECHA ACTUALIZACION ORIGEN')
+            obj['_actualizado'] = _coe_import_fecha(row.get(actualizacion)) if actualizacion else None
+            # Datos no mapeados permanecen en la base unificada descargable y en los originales.
+            obj['_original'] = {str(k): v for k, v in row.items() if not str(k).startswith('Unnamed:')}
+            obj['_plantilla'] = _coe_plantilla_mapear(row, columnas, obj, proindesa)
+            obj['compania'] = obj['_plantilla']['COMPAÑÍA'] or obj.get('compania')
+            id_solicitud = obj['_plantilla'].get('ID DE LA SOLICITUD') or ''
+            if re.fullmatch(r'SD\d+', str(id_solicitud), flags=re.I):
+                obj['id_interaccion'] = str(id_solicitud)
+            registros.append(obj)
     return registros
 
 
+def _coe_import_archivos_request():
+    archivos = request.files.getlist('file') + request.files.getlist('files')
+    if not archivos:
+        raise ValueError('Archivo no recibido.')
+    registros = []
+    for archivo in archivos:
+        registros.extend(_leer_archivo_coe_sap_funcional(archivo))
+    numeros = [r['numero'] for r in registros]
+    resumen = {'archivos': [f.filename for f in archivos],
+               'filas_continuacion_recuperadas': sum(len(x.get('_continuaciones', [])) for x in registros),
+               'filas_repetidas_conservadas': len(numeros) - len(set(numeros)),
+               'regla_duplicados': 'Cada fila se inserta como un registro independiente, incluso si repite Número.'}
+    limpios = []
+    for reg in registros:
+        campos = {k: v for k, v in reg.items() if not k.startswith('_')}
+        try:
+            campos.update(_coe_plantilla_a_modelo(reg['_plantilla']))
+        except ValueError as error:
+            raise ValueError(f"Caso {reg['numero']}: {error}")
+        limpios.append(campos)
+    return registros, limpios, resumen
+
+
 def coe_sap_funcional_to_dict(r):
-    return {
+    resultado = {
         "id": r.id,
         "numero": r.numero,
         "idInteraccion": r.id_interaccion,
@@ -16060,6 +16214,16 @@ def coe_sap_funcional_to_dict(r):
         "usuarioCargue": r.usuario_cargue,
     }
 
+    for titulo, campo in COE_PLANTILLA_CAMPOS.items():
+        valor = getattr(r, campo, None)
+        if isinstance(valor, (date, datetime)):
+            valor = _coe_format_datetime(valor)
+        resultado[titulo] = valor
+    # Casos previos aún no recargados: referencia visible sin inventar campos nuevos.
+    if not resultado.get('ID DE LA SOLICITUD'):
+        resultado['ID DE LA SOLICITUD'] = r.id_interaccion or r.numero
+    return resultado
+
 
 @bp.route("/coe-sap-funcional", methods=["GET"])
 @permission_required("BASE_REGISTRO_VER")
@@ -16083,6 +16247,9 @@ def listar_coe_sap_funcional():
         fecha_hasta = (request.args.get("fecha_hasta") or "").strip()
 
         qry = BaseRegistroInfoCoeSapFuncional.query
+        categoria_plantilla = (request.args.get('categoria') or '').strip()
+        if categoria_plantilla:
+            qry = qry.filter(BaseRegistroInfoCoeSapFuncional.categoria == categoria_plantilla)
 
         # Búsqueda general
         if q:
@@ -16215,193 +16382,52 @@ def listar_coe_sap_funcional():
         }), 500
 
 
-@bp.route("/coe-sap-funcional/import-principal", methods=["POST"])
-@permission_required("BASE_REGISTRO_IMPORTAR")
-def importar_coe_sap_funcional_principal():
-    file = request.files.get("file")
-
-    if not file:
-        return jsonify({"mensaje": "Archivo no recibido"}), 400
-
+def _coe_import_grabar_unificado(principal):
     try:
-        registros = _leer_archivo_coe_sap_funcional(file)
-
+        recibidos, registros, resumen = _coe_import_archivos_request()
         if not registros:
-            return jsonify({
-                "mensaje": "El archivo no contiene registros válidos"
-            }), 400
-
-        usuario_cargue = ""
-
-        try:
-            usuario_cargue = g.current_user.usuario if g.current_user else ""
-        except Exception:
-            usuario_cargue = ""
-
-        registros_por_numero = {}
-
-        for reg in registros:
-            numero = str(reg.get("numero") or "").strip()
-
-            if not numero:
-                continue
-
-            reg["numero"] = numero
-            registros_por_numero[numero] = reg
-
-        registros_limpios = list(registros_por_numero.values())
-
-        if not registros_limpios:
-            return jsonify({
-                "mensaje": "El archivo no contiene registros con Número válido"
-            }), 400
-
-        # Carga principal: limpia la base sin romper la relación con calificación.
-        try:
+            raise ValueError('Los archivos no contienen registros válidos.')
+        usuario = getattr(getattr(g, 'current_user', None), 'usuario', '')
+        insertados = actualizados = 0
+        if principal:
+            # Una transacción: si falla cualquier fila se conserva la base anterior.
+            # ALTER TABLE hacía commit implícito; no reiniciar AUTO_INCREMENT.
             CoeSapFuncionalCalificacion.query.update(
-                {CoeSapFuncionalCalificacion.base_registro_id: None},
-                synchronize_session=False
-            )
-
-            db.session.execute(text("DELETE FROM base_registro_info_coe_sap_funcional"))
-            db.session.execute(text("ALTER TABLE base_registro_info_coe_sap_funcional AUTO_INCREMENT = 1"))
-            db.session.commit()
-
-        except Exception:
-            db.session.rollback()
-            raise
-
-        objetos = []
-
-        for reg in registros_limpios:
-            reg["origen_cargue"] = "PRINCIPAL"
-            reg["usuario_cargue"] = usuario_cargue
-            reg["fecha_cargue"] = datetime.utcnow()
-
-            objetos.append(BaseRegistroInfoCoeSapFuncional(**reg))
-
-        db.session.bulk_save_objects(objetos)
+                {CoeSapFuncionalCalificacion.base_registro_id: None}, synchronize_session=False)
+            db.session.execute(text('DELETE FROM base_registro_info_coe_sap_funcional'))
+        for inicio in range(0, len(registros), 1000):
+            lote = registros[inicio:inicio + 1000]
+            # Cada fila representa un registro independiente; no actualizar por Número.
+            nuevos = [BaseRegistroInfoCoeSapFuncional(
+                **reg, origen_cargue='PRINCIPAL' if principal else 'ADICIONAL',
+                usuario_cargue=usuario, fecha_cargue=datetime.utcnow()) for reg in lote]
+            db.session.bulk_save_objects(nuevos)
+            insertados += len(nuevos)
         db.session.commit()
-
         return jsonify({
-            "mensaje": "Carga principal COE SAP Funcional realizada correctamente",
-            "total_recibidos": len(registros),
-            "duplicados_archivo": len(registros) - len(registros_limpios),
-            "insertados": len(objetos),
+            'mensaje': 'Base unificada cargada correctamente',
+            'total_recibidos': len(recibidos), 'insertados': insertados,
+            'actualizados': actualizados, **resumen,
         }), 200
-
-    except ValueError as e:
+    except ValueError as error:
         db.session.rollback()
-        return jsonify({
-            "mensaje": "Archivo inválido",
-            "error": str(e),
-        }), 400
-
-    except Exception as e:
+        return jsonify({'mensaje': 'No se cargó el archivo', 'error': str(error)}), 400
+    except Exception:
         db.session.rollback()
-        app.logger.exception("Error importando carga principal COE SAP Funcional")
-        return jsonify({
-            "mensaje": "Error importando carga principal",
-            "error": str(e),
-            "trace": traceback.format_exc(),
-        }), 500
+        app.logger.exception('Error en la importación unificada COE SAP')
+        return jsonify({'mensaje': 'No se pudo completar la carga. Se revirtió la transacción; revisa el log del backend.'}), 500
 
 
-@bp.route("/coe-sap-funcional/import-adicional", methods=["POST"])
-@permission_required("BASE_REGISTRO_IMPORTAR")
+@bp.route('/coe-sap-funcional/import-principal', methods=['POST'])
+@permission_required('BASE_REGISTRO_IMPORTAR')
+def importar_coe_sap_funcional_principal():
+    return _coe_import_grabar_unificado(True)
+
+
+@bp.route('/coe-sap-funcional/import-adicional', methods=['POST'])
+@permission_required('BASE_REGISTRO_IMPORTAR')
 def importar_coe_sap_funcional_adicional():
-    file = request.files.get("file")
-
-    if not file:
-        return jsonify({"mensaje": "Archivo no recibido"}), 400
-
-    try:
-        registros = _leer_archivo_coe_sap_funcional(file)
-
-        if not registros:
-            return jsonify({
-                "mensaje": "El archivo no contiene registros válidos"
-            }), 400
-
-        usuario_cargue = ""
-
-        try:
-            usuario_cargue = g.current_user.usuario if g.current_user else ""
-        except Exception:
-            usuario_cargue = ""
-
-        registros_por_numero = {}
-
-        for reg in registros:
-            numero = str(reg.get("numero") or "").strip()
-
-            if not numero:
-                continue
-
-            reg["numero"] = numero
-            registros_por_numero[numero] = reg
-
-        registros_limpios = list(registros_por_numero.values())
-
-        if not registros_limpios:
-            return jsonify({
-                "mensaje": "El archivo no contiene registros con Número válido"
-            }), 400
-
-        insertados = 0
-        actualizados = 0
-
-        for reg in registros_limpios:
-            numero = reg.get("numero")
-
-            existente = BaseRegistroInfoCoeSapFuncional.query.filter_by(
-                numero=numero
-            ).first()
-
-            if existente:
-                for k, v in reg.items():
-                    if hasattr(existente, k):
-                        setattr(existente, k, v)
-
-                existente.origen_cargue = "ADICIONAL"
-                existente.usuario_cargue = usuario_cargue
-                existente.fecha_cargue = datetime.utcnow()
-
-                actualizados += 1
-
-            else:
-                reg["origen_cargue"] = "ADICIONAL"
-                reg["usuario_cargue"] = usuario_cargue
-                reg["fecha_cargue"] = datetime.utcnow()
-
-                db.session.add(BaseRegistroInfoCoeSapFuncional(**reg))
-                insertados += 1
-
-        db.session.commit()
-
-        return jsonify({
-            "mensaje": "Carga adicional COE SAP Funcional procesada correctamente",
-            "total_recibidos": len(registros),
-            "duplicados_archivo": len(registros) - len(registros_limpios),
-            "insertados": insertados,
-            "actualizados": actualizados,
-        }), 200
-
-    except ValueError as e:
-        db.session.rollback()
-        return jsonify({
-            "mensaje": "Archivo inválido",
-            "error": str(e),
-        }), 400
-
-    except Exception as e:
-        db.session.rollback()
-        app.logger.exception("Error importando carga adicional COE SAP Funcional")
-        return jsonify({
-            "mensaje": "Error importando carga adicional",
-            "error": str(e),
-            "trace": traceback.format_exc(),
-        }), 500
+    return _coe_import_grabar_unificado(False)
 
 
 @bp.route("/coe-sap-funcional/filters", methods=["GET"])
@@ -16423,6 +16449,8 @@ def filtros_coe_sap_funcional():
             return [r[0] for r in rows if r[0]]
 
         return jsonify({
+            "categoria": distinct_col(BaseRegistroInfoCoeSapFuncional.categoria),
+            "subcategoria": distinct_col(BaseRegistroInfoCoeSapFuncional.subcategoria),
             "estado": distinct_col(BaseRegistroInfoCoeSapFuncional.estado),
             "prioridad": distinct_col(BaseRegistroInfoCoeSapFuncional.prioridad),
             "asignado_a": distinct_col(BaseRegistroInfoCoeSapFuncional.asignado_a),

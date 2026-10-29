@@ -15,27 +15,312 @@ const INITIAL_FILTERS = {
 };
 
 const COLUMNS = [
-  { key: "idInteraccion", label: "ID de interacción", w: 18, cls: "mono strong" },
-  { key: "numero", label: "Número", w: 16, cls: "mono" },
-  { key: "compania", label: "Compañía", w: 34 },
-  { key: "fechaEntrega", label: "Fecha de entrega", w: 20, cls: "mono" },
-  { key: "fechaResolucion", label: "Fecha de Resolucion", w: 20, cls: "mono" },
-  { key: "fechaCierre", label: "Fecha de cierre", w: 20, cls: "mono" },
-  { key: "estado", label: "Estado", w: 18, cls: "pill-status" },
-  { key: "titulo", label: "Título", w: 52, cls: "clip-2" },
-  { key: "asignadoA", label: "Asignado a", w: 28 },
-  { key: "nombreCompletoContacto", label: "Nombre Completo Contacto", w: 30 },
-  { key: "incumplimientoSla", label: "Incumplimiento de SLA", w: 18, cls: "center" },
-  { key: "alerta", label: "Alerta", w: 12, cls: "center" },
-  { key: "estadoAlertaAns", label: "Estado de Alerta ANS", w: 20 },
-  { key: "impacto", label: "Impacto", w: 14 },
-  { key: "urgencia", label: "Urgencia", w: 14 },
-  { key: "prioridad", label: "Prioridad", w: 14, cls: "pill-priority" },
-  { key: "accionActualizacion", label: "Acción de actualización", w: 70, cls: "clip-2" },
-  { key: "canalResolucion", label: "Canal de resolución", w: 22 },
-  { key: "clrTxtServicio", label: "Clr Txt Servicio", w: 26 },
-  { key: "clrTxtClientType", label: "Clr Txt Client Type", w: 24 },
-  { key: "origenCargue", label: "Origen", w: 14, cls: "center" },
+  {
+    "key": "ID DE LA SOLICITUD",
+    "label": "ID DE LA SOLICITUD",
+    "w": 22,
+    "cls": "mono"
+  },
+  {
+    "key": "NUMERO",
+    "label": "NUMERO",
+    "w": 22,
+    "cls": "mono"
+  },
+  {
+    "key": "COMPAÑÍA",
+    "label": "COMPAÑÍA",
+    "w": 30,
+    "cls": ""
+  },
+  {
+    "key": "ASUNTO",
+    "label": "ASUNTO",
+    "w": 44,
+    "cls": "clip-2"
+  },
+  {
+    "key": "NOMBRE DEL SOLICITANTE",
+    "label": "NOMBRE DEL SOLICITANTE",
+    "w": 30,
+    "cls": ""
+  },
+  {
+    "key": "ASIGNADO A",
+    "label": "ASIGNADO A",
+    "w": 30,
+    "cls": ""
+  },
+  {
+    "key": "VENCIMIENTO ANTES DE",
+    "label": "VENCIMIENTO ANTES DE",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "ESTADO",
+    "label": "ESTADO",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "FECHA DE CREACIÓN",
+    "label": "FECHA DE CREACIÓN",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "SITIO",
+    "label": "SITIO",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "PRIORIDAD",
+    "label": "PRIORIDAD",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "GRUPO",
+    "label": "GRUPO",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "CATÁLOGO DE SERVICIOS",
+    "label": "CATÁLOGO DE SERVICIOS",
+    "w": 30,
+    "cls": ""
+  },
+  {
+    "key": "SOCIEDAD",
+    "label": "SOCIEDAD",
+    "w": 30,
+    "cls": ""
+  },
+  {
+    "key": "CATEGORÍA DE SERVICIO",
+    "label": "CATEGORÍA DE SERVICIO",
+    "w": 30,
+    "cls": ""
+  },
+  {
+    "key": "CATEGORÍA",
+    "label": "CATEGORÍA",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "SUBCATEGORÍA",
+    "label": "SUBCATEGORÍA",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "ARTÍCULO",
+    "label": "ARTÍCULO",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "IMPACTO",
+    "label": "IMPACTO",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "URGENCIA",
+    "label": "URGENCIA",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "NIVEL",
+    "label": "NIVEL",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "TIPO DE SOLICITUD",
+    "label": "TIPO DE SOLICITUD",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "ESTADO DE LA APROBACIÓN",
+    "label": "ESTADO DE LA APROBACIÓN",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "FECHA DE FINALIZACIÓN",
+    "label": "FECHA DE FINALIZACIÓN",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "CREADO POR",
+    "label": "CREADO POR",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "HORA Y OBSERVACION DE LA ÚLTIMA ACTUALIZACIÓN",
+    "label": "HORA Y OBSERVACION DE LA ÚLTIMA ACTUALIZACIÓN",
+    "w": 60,
+    "cls": "clip-2"
+  },
+  {
+    "key": "VENCIDO",
+    "label": "VENCIDO",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "USUARIO SOLICITANTE",
+    "label": "USUARIO SOLICITANTE",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "EN NOMBRE DE",
+    "label": "EN NOMBRE DE",
+    "w": 30,
+    "cls": ""
+  },
+  {
+    "key": "RESPUESTA ANTES DE",
+    "label": "RESPUESTA ANTES DE",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "FECHA DE RESOLUCIÓN",
+    "label": "FECHA DE RESOLUCIÓN",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "MODO",
+    "label": "MODO",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "NOMBRE DE LA PLANTILLA",
+    "label": "NOMBRE DE LA PLANTILLA",
+    "w": 30,
+    "cls": ""
+  },
+  {
+    "key": "DEPARTAMENTO",
+    "label": "DEPARTAMENTO",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "COSTE TOTAL",
+    "label": "COSTE TOTAL",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "NÚMERO DE ORDEN",
+    "label": "NÚMERO DE ORDEN",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "REFERENCIA DE LA ORDEN",
+    "label": "REFERENCIA DE LA ORDEN",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "DESCRIPCIÓN BREVE DE LA ORDEN",
+    "label": "DESCRIPCIÓN BREVE DE LA ORDEN",
+    "w": 44,
+    "cls": "clip-2"
+  },
+  {
+    "key": "TRANSPORTAR A",
+    "label": "TRANSPORTAR A",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "LIBERADORES",
+    "label": "LIBERADORES",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "TIQUETE PROVEEDOR EXTERNO",
+    "label": "TIQUETE PROVEEDOR EXTERNO",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "HORA DE INICIO PROGRAMADA",
+    "label": "HORA DE INICIO PROGRAMADA",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "HORA DE FINALIZACIÓN PROGRAMADA",
+    "label": "HORA DE FINALIZACIÓN PROGRAMADA",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "CORREO ELECTRÓNICO DE LA APROBACIÓN",
+    "label": "CORREO ELECTRÓNICO DE LA APROBACIÓN",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "NUMERO DE ERROR SAP",
+    "label": "NUMERO DE ERROR SAP",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "DATOS DEL TRANSPORTE",
+    "label": "DATOS DEL TRANSPORTE",
+    "w": 44,
+    "cls": "clip-2"
+  },
+  {
+    "key": "FECHA DE RESPUESTA",
+    "label": "FECHA DE RESPUESTA",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "TIEMPO ASIGNADO",
+    "label": "TIEMPO ASIGNADO",
+    "w": 30,
+    "cls": ""
+  },
+  {
+    "key": "TIENE SOLICITUDES VINCULADAS",
+    "label": "TIENE SOLICITUDES VINCULADAS",
+    "w": 22,
+    "cls": ""
+  },
+  {
+    "key": "ES SOLICITUD DE SERVICIO",
+    "label": "ES SOLICITUD DE SERVICIO",
+    "w": 30,
+    "cls": ""
+  },
+  {
+    "key": "INCUMPLE EL SLA",
+    "label": "INCUMPLE EL SLA",
+    "w": 22,
+    "cls": ""
+  }
 ];
 
 function readStoredUser() {
@@ -232,7 +517,7 @@ export default function BaseCoeSapFuncional() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
+        throw new Error([data?.mensaje, data?.error].filter(Boolean).join(": ") || `HTTP ${res.status}`);
       }
 
       setRows(Array.isArray(data?.data) ? data.data : []);
@@ -371,8 +656,9 @@ export default function BaseCoeSapFuncional() {
     }
   };
 
-  const uploadFile = async (file, tipo) => {
-    if (!file) return;
+  const uploadFile = async (files, tipo) => {
+    const archivos = Array.from(files || []);
+    if (!archivos.length) return;
 
     const isPrincipal = tipo === "principal";
 
@@ -391,7 +677,7 @@ export default function BaseCoeSapFuncional() {
     }
 
     const formData = new FormData();
-    formData.append("file", file);
+    archivos.forEach(file => formData.append("file", file));
 
     if (isPrincipal) {
       setUploadingPrincipal(true);
@@ -404,16 +690,15 @@ export default function BaseCoeSapFuncional() {
         ? "/coe-sap-funcional/import-principal"
         : "/coe-sap-funcional/import-adicional";
 
-      const res = await jfetch(endpoint, {
+      let res = await jfetch(endpoint, {
         method: "POST",
         headers: commonHeaders,
         body: formData,
       });
 
-      const data = await res.json().catch(() => ({}));
-
+      let data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.mensaje || data?.error || `HTTP ${res.status}`);
+        throw new Error([data?.mensaje, data?.error].filter(Boolean).join(": ") || `HTTP ${res.status}`);
       }
 
       await Swal.fire({
@@ -424,6 +709,8 @@ export default function BaseCoeSapFuncional() {
             <p><b>Mensaje:</b> ${data?.mensaje || "Proceso finalizado"}</p>
             <p><b>Total recibidos:</b> ${data?.total_recibidos ?? "—"}</p>
             <p><b>Insertados:</b> ${data?.insertados ?? "—"}</p>
+            <p><b>Continuaciones de texto recuperadas:</b> ${data?.filas_continuacion_recuperadas ?? 0}</p>
+            <p><b>Filas repetidas conservadas:</b> ${data?.filas_repetidas_conservadas ?? 0}</p>
             ${
               data?.actualizados !== undefined
                 ? `<p><b>Actualizados:</b> ${data.actualizados}</p>`
@@ -516,7 +803,7 @@ export default function BaseCoeSapFuncional() {
           <div>
             <h3>Carga principal</h3>
             <p>
-              Reemplaza toda la información actual y deja el archivo como base oficial.
+              Acepta SM, PROINDESA o la base unificada. Puedes seleccionar varios archivos; se validan juntos y reemplazan la base actual.
             </p>
           </div>
 
@@ -525,7 +812,8 @@ export default function BaseCoeSapFuncional() {
             type="file"
             accept=".xlsx,.xls,.csv"
             style={{ display: "none" }}
-            onChange={(e) => uploadFile(e.target.files?.[0], "principal")}
+            multiple
+            onChange={(e) => uploadFile(e.target.files, "principal")}
           />
 
           <button
@@ -544,7 +832,7 @@ export default function BaseCoeSapFuncional() {
           <div>
             <h3>Carga adicional</h3>
             <p>
-              Inserta nuevos registros o actualiza los existentes usando el campo Número.
+              Agrega todas las filas de SM, PROINDESA o la base unificada. Cada fila crea un registro independiente, aunque repita el Número.
             </p>
           </div>
 
@@ -553,7 +841,8 @@ export default function BaseCoeSapFuncional() {
             type="file"
             accept=".xlsx,.xls,.csv"
             style={{ display: "none" }}
-            onChange={(e) => uploadFile(e.target.files?.[0], "adicional")}
+            multiple
+            onChange={(e) => uploadFile(e.target.files, "adicional")}
           />
 
           <button
@@ -714,7 +1003,7 @@ export default function BaseCoeSapFuncional() {
                     {COLUMNS.map((col) => {
                       const value = row[col.key];
 
-                      if (col.key === "incumplimientoSla" || col.key === "alerta") {
+                      if (['VENCIDO', 'TIENE SOLICITUDES VINCULADAS', 'ES SOLICITUD DE SERVICIO', 'INCUMPLE EL SLA'].includes(col.key)) {
                         const boolValue = formatBool(value);
                         return (
                           <td key={col.key} className="center">
@@ -729,7 +1018,7 @@ export default function BaseCoeSapFuncional() {
                         );
                       }
 
-                      if (col.key === "estado") {
+                      if (col.key === "ESTADO") {
                         return (
                           <td key={col.key}>
                             <span className={`coe-pill ${getStatusClass(value)}`}>
@@ -739,7 +1028,7 @@ export default function BaseCoeSapFuncional() {
                         );
                       }
 
-                      if (col.key === "prioridad") {
+                      if (col.key === "PRIORIDAD") {
                         return (
                           <td key={col.key}>
                             <span className={`coe-pill ${getPriorityClass(value)}`}>
