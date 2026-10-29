@@ -7,8 +7,8 @@ import "./CalificacionCoeSapFuncional.css";
 const EMPTY_FILTER_VALUE = "__EMPTY__";
 const EMPTY_FILTER_LABEL = "(Blanco)";
 
-const STORAGE_VISIBLE_COLUMNS = "calcoe_visible_columns_v2";
-const STORAGE_FILTER_COLUMNS = "calcoe_filter_columns_v3_all";
+const STORAGE_VISIBLE_COLUMNS = "calcoe_visible_columns_excel107_v1";
+const STORAGE_FILTER_COLUMNS = "calcoe_filter_columns_excel107_v1";
 
 const INITIAL_HOUR_FORM = {
   tipo: "ESTIMADA",
@@ -48,149 +48,875 @@ const MODULES = [
 ];
 
 const TABLE_COLUMNS = [
-  { key: "numero", label: "ID", w: 15, cls: "mono strong sticky-col sticky-col-1", group: "auto" },
-  { key: "sistema", label: "Sistema", w: 10, cls: "center sticky-col sticky-col-2", group: "calc" },
-  { key: "casoSm", label: "Caso SM", w: 17, cls: "mono", group: "auto" },
-  { key: "doc1", label: "DOC 1", w: 15, group: "manual" },
-  { key: "manejo", label: "Manejo", w: 16, group: "manual" },
-  { key: "tiqueteProveedorExterno", label: "Tiquete proveedor externo", w: 26, group: "manual" },
-  { key: "sociedad", label: "Sociedad", w: 30, group: "auto" },
-  { key: "clienteAsociadoNombre", label: "Cliente asociado", w: 30, group: "calc" },
-  { key: "validarCliente", label: "Validar cliente", w: 17, cls: "validation", group: "validation" },
-  { key: "estadoPrincipal", label: "Estado principal", w: 20, cls: "status", group: "calc" },
-  { key: "subestado", label: "Subestado", w: 22, cls: "status", group: "calc" },
-  { key: "validarEstadoControl", label: "Validar estado control", w: 22, cls: "validation", group: "validation" },
-  { key: "asunto", label: "Asunto", w: 44, cls: "text-long", group: "auto" },
-  { key: "observaciones", label: "Observaciones / Seguimiento semanal", w: 64, cls: "obs-col", group: "manual" },
-  { key: "nombreSolicitante", label: "Solicitante", w: 26, group: "auto" },
-  { key: "impacto", label: "Impacto", w: 13, group: "auto" },
-  { key: "urgencia", label: "Urgencia", w: 13, group: "auto" },
-  { key: "prioridad", label: "Prioridad", w: 13, group: "auto" },
-  { key: "estado", label: "Estado", w: 18, cls: "status", group: "auto" },
-  { key: "estadoHerramientaGestion", label: "Estado herramienta gestión", w: 24, cls: "status", group: "manual" },
-  { key: "estadoConsolidado", label: "Estado consolidado", w: 20, cls: "status", group: "calc" },
-  { key: "responsableEstado", label: "Responsable estado", w: 20, group: "calc" },
-  { key: "asignadoA", label: "Asignado a", w: 25, group: "auto" },
-  { key: "documentacion", label: "Documentación", w: 18, group: "manual" },
-  { key: "casoTransporte", label: "Caso transporte", w: 20, group: "manual" },
-  { key: "controlHoras", label: "Control horas", w: 18, group: "manual" },
-  { key: "errorSap", label: "Error SAP", w: 16, group: "manual" },
-  { key: "notaOssSap", label: "Nota OSS SAP", w: 18, group: "manual" },
-  { key: "tipoContrato", label: "Tipo contrato", w: 18, group: "manual" },
-  { key: "tipoSolicitud", label: "Tipo solicitud", w: 20, group: "manual" },
-  { key: "modulo", label: "Módulo", w: 12, cls: "center", group: "manual" },
-  { key: "categoria", label: "Categoría", w: 22, group: "manual" },
-  { key: "subcategoria", label: "Subcategoría", w: 22, group: "manual" },
-  { key: "articulo", label: "Artículo", w: 24, group: "manual" },
-  { key: "apoyo1", label: "Apoyo 1", w: 22, group: "manual" },
-  { key: "apoyo2", label: "Apoyo 2", w: 22, group: "manual" },
-  { key: "apoyo3", label: "Apoyo 3", w: 22, group: "manual" },
-  { key: "requiereAbap", label: "Requiere ABAP", w: 16, group: "manual" },
-  { key: "asignacionAbap", label: "Asignación ABAP", w: 22, group: "manual" },
-  { key: "fechaAsignacion", label: "Fecha asignación", w: 20, cls: "mono", group: "auto" },
-  { key: "fechaAsignacionSistemaGestion", label: "Fecha asignación sistema gestión", w: 25, cls: "mono", group: "source" },
-  { key: "difFechaAsignacion", label: "Dif. fecha asignación", w: 18, cls: "right number", group: "validation" },
-  { key: "validarFechaAsignacion", label: "Validar fecha asignación", w: 20, cls: "validation", group: "validation" },
-  { key: "diaCreacion", label: "Día creación", w: 12, cls: "right", group: "calc" },
-  { key: "mesCreacion", label: "Mes creación", w: 12, cls: "right", group: "calc" },
-  { key: "anioCreacion", label: "Año creación", w: 12, cls: "right", group: "calc" },
-  { key: "horaUltimaActualizacion", label: "Hora última actualización", w: 22, cls: "mono", group: "auto" },
-  { key: "horaUltimaActualizacionSistemaGestion", label: "Hora última act. sistema gestión", w: 26, cls: "mono", group: "source" },
-  { key: "validarFechaActualizacion", label: "Validar actualización", w: 19, cls: "validation", group: "validation" },
-  { key: "fechaRespuesta", label: "Fecha respuesta", w: 20, cls: "mono", group: "manual" },
-  { key: "fechaResolucion", label: "Fecha resolución", w: 20, cls: "mono", group: "auto" },
-  { key: "fechaResolucionSistemaGestion", label: "Fecha resolución sistema gestión", w: 25, cls: "mono", group: "source" },
-  { key: "difFechaResolucion", label: "Dif. fecha resolución", w: 18, cls: "right number", group: "validation" },
-  { key: "validarFechaResolucion", label: "Validar fecha resolución", w: 20, cls: "validation", group: "validation" },
-  { key: "fechaFinalizacionCierre", label: "Fecha cierre", w: 20, cls: "mono", group: "auto" },
-  { key: "fechaFinalizacionCierreSistemaGestion", label: "Fecha cierre sistema gestión", w: 25, cls: "mono", group: "source" },
-  { key: "difFechaCierre", label: "Dif. fecha cierre", w: 16, cls: "right number", group: "validation" },
-  { key: "validarFechaCierre", label: "Validar fecha cierre", w: 18, cls: "validation", group: "validation" },
-  { key: "diaCierre", label: "Día cierre", w: 12, cls: "right", group: "calc" },
-  { key: "mesCierre", label: "Mes cierre", w: 12, cls: "right", group: "calc" },
-  { key: "anioCierre", label: "Año cierre", w: 12, cls: "right", group: "calc" },
-  { key: "tiempoRespuesta", label: "T. respuesta", w: 13, cls: "right number", group: "calc" },
-  { key: "tiempoResolucion", label: "T. resolución", w: 13, cls: "right number", group: "calc" },
-  { key: "tiempoFinalizacionCierre", label: "T. cierre", w: 13, cls: "right number", group: "calc" },
-  { key: "fechaCompromiso", label: "Fecha compromiso", w: 20, cls: "mono", group: "manual" },
-  { key: "liderClaro", label: "Líder Claro", w: 22, group: "manual" },
-  { key: "tipoIngreso", label: "Tipo ingreso", w: 18, group: "manual" },
-  { key: "estadoFacturacionOt", label: "Estado facturación OT", w: 22, cls: "status", group: "ot" },
-  { key: "nroOt", label: "N° OT", w: 15, cls: "mono", group: "ot" },
-  { key: "valorOt", label: "Valor OT", w: 16, cls: "right number", group: "ot" },
-  { key: "horasOferta", label: "Horas oferta", w: 16, cls: "right number", group: "ot" },
   {
-    key: "fechaInicioLaboracionEstimacion",
-    label: "Fecha inicio laboración estimación",
-    w: 24,
-    cls: "mono",
-    group: "manual"
+    "key": "numero",
+    "label": "ID",
+    "w": 15,
+    "cls": "mono strong mono strong sticky-col sticky-col-1",
+    "group": "auto",
+    "format": "text"
   },
-
   {
-    key: "fechaEstimacion",
-    label: "Fecha estimación",
-    w: 20,
-    cls: "mono",
-    group: "manual"
+    "key": "casoSm",
+    "label": "NO CASO SM",
+    "w": 17,
+    "cls": "mono mono sticky-col sticky-col-2",
+    "group": "auto",
+    "format": "text"
   },
-  { key: "diasEntregaEstimacion", label: "Días entrega estimación", w: 17, cls: "right", group: "calc" },
-  { key: "mesEstimacion", label: "Mes estimación", w: 14, cls: "right", group: "calc" },
-  { key: "anioEstimacion", label: "Año estimación", w: 14, cls: "right", group: "calc" },
-  { key: "fechaAprobacionEstimacion", label: "Fecha aprobación estimación", w: 24, cls: "mono", group: "manual" },
-  { key: "mesAprobadoEstimacion", label: "Mes aprobado estimación", w: 20, cls: "right", group: "calc" },
-  { key: "anioAprobadoEstimacion", label: "Año aprobado estimación", w: 20, cls: "right", group: "calc" },
-  { key: "estadoEstimacion", label: "Estado estimación", w: 18, group: "manual" },
-  { key: "validarSubcategoria", label: "Validar subcategoría", w: 19, cls: "validation", group: "validation" },
-  { key: "validarArticulo", label: "Validar artículo", w: 17, cls: "validation", group: "validation" },
-  { key: "soloExcel", label: "Solo Excel", w: 13, cls: "source-flag", group: "source" },
-  { key: "cruceSm", label: "Cruce SM", w: 13, cls: "source-flag", group: "source" },
-  { key: "cruceItop", label: "Cruce ITOP", w: 14, cls: "source-flag", group: "source" },
-  { key: "camposEditadosManual", label: "Campos manuales", w: 22, group: "source" },
-  { key: "origenDatos", label: "Origen datos", w: 22, group: "source" },
-
-  { key: "horasEstimadasFi", label: "H. estimadas FI", w: 15, cls: "right number", group: "hours" },
-  { key: "horasEstimadasMm", label: "H. estimadas MM", w: 15, cls: "right number", group: "hours" },
-  { key: "horasEstimadasSd", label: "H. estimadas SD", w: 15, cls: "right number", group: "hours" },
-  { key: "horasEstimadasCo", label: "H. estimadas CO", w: 15, cls: "right number", group: "hours" },
-  { key: "horasEstimadasPs", label: "H. estimadas PS", w: 15, cls: "right number", group: "hours" },
-  { key: "horasEstimadasSlcm", label: "H. estimadas SLCM", w: 17, cls: "right number", group: "hours" },
-  { key: "horasEstimadasCrm", label: "H. estimadas CRM", w: 16, cls: "right number", group: "hours" },
-  { key: "horasEstimadasCrm2", label: "H. estimadas CRM2", w: 17, cls: "right number", group: "hours" },
-  { key: "horasEstimadasPca", label: "H. estimadas PCA", w: 16, cls: "right number", group: "hours" },
-  { key: "horasEstimadasFm", label: "H. estimadas FM", w: 15, cls: "right number", group: "hours" },
-  { key: "horasEstimadasPp", label: "H. estimadas PP", w: 15, cls: "right number", group: "hours" },
-  { key: "horasEstimadasPm", label: "H. estimadas PM", w: 15, cls: "right number", group: "hours" },
-  { key: "horasEstimadasHcm", label: "H. estimadas HCM", w: 16, cls: "right number", group: "hours" },
-  { key: "horasEstimadasSsff", label: "H. estimadas SSFF", w: 16, cls: "right number", group: "hours" },
-  { key: "horasEstimadasFiori", label: "H. estimadas FIORI", w: 18, cls: "right number", group: "hours" },
-  { key: "horasEstimadasWf", label: "H. estimadas WF", w: 15, cls: "right number", group: "hours" },
-  { key: "horasEstimadasAbap", label: "H. estimadas ABAP", w: 18, cls: "right number", group: "hours" },
-  { key: "horasEstimadasBasis", label: "H. estimadas BASIS", w: 18, cls: "right number", group: "hours" },
-  { key: "horasEstimadasPmo", label: "H. estimadas PMO", w: 17, cls: "right number", group: "hours" },
-
-  { key: "totalHorasFuncionales", label: "Total H. funcionales", w: 19, cls: "right number total-cell", group: "calc" },
-  { key: "totalHorasEstimadas", label: "Total H. estimadas", w: 19, cls: "right number total-cell", group: "calc" },
-  { key: "totalHorasEstimadas2", label: "Total H. estimadas 2", w: 21, cls: "right number total-cell", group: "calc" },
-
-  { key: "horasEjecutadasFi", label: "H. ejecutadas FI", w: 16, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasMm", label: "H. ejecutadas MM", w: 16, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasSd", label: "H. ejecutadas SD", w: 16, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasCo", label: "H. ejecutadas CO", w: 16, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasPs", label: "H. ejecutadas PS", w: 16, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasPca", label: "H. ejecutadas PCA", w: 17, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasFm", label: "H. ejecutadas FM", w: 16, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasHcm", label: "H. ejecutadas HCM", w: 17, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasSsff", label: "H. ejecutadas SSFF", w: 18, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasFiori", label: "H. ejecutadas FIORI", w: 19, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasWf", label: "H. ejecutadas WF", w: 16, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasAbap", label: "H. ejecutadas ABAP", w: 19, cls: "right number", group: "hours" },
-  { key: "horasEjecutadasBasis", label: "H. ejecutadas BASIS", w: 19, cls: "right number", group: "hours" },
-  { key: "horasGarantia", label: "H. garantía", w: 14, cls: "right number total-cell", group: "hours" },
-  { key: "horasProyectoAbap", label: "H. proyecto ABAP", w: 18, cls: "right number total-cell", group: "hours" },
+  {
+    "key": "sistema",
+    "label": "SISTEMA",
+    "w": 10,
+    "cls": "center",
+    "group": "calc",
+    "format": "text"
+  },
+  {
+    "key": "casoTarea",
+    "label": "CASO/TAREA",
+    "w": 26,
+    "cls": "",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "controlHoras",
+    "label": "CONTROL HORAS",
+    "w": 18,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "documentacion",
+    "label": "DOCUMENTACION",
+    "w": 18,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "manejo",
+    "label": "MANEJO",
+    "w": 16,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "manejoFacturacion",
+    "label": "MANEJO FACTURACION",
+    "w": 26,
+    "cls": "",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "tipificacion",
+    "label": "TIPIFICACION",
+    "w": 26,
+    "cls": "",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "transaccion",
+    "label": "TRANSACCION",
+    "w": 26,
+    "cls": "",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "errorSap",
+    "label": "N° ERROR SAP",
+    "w": 16,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "notaOssSap",
+    "label": "N° NOTA OSS SAP",
+    "w": 18,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "tiqueteProveedorExterno",
+    "label": "TIQUETE PROVEEDOR EXTERNO",
+    "w": 26,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "tipoContrato",
+    "label": "TIPO CONTRATO",
+    "w": 18,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "sociedadCsit",
+    "label": "SOCIEDAD CSIT",
+    "w": 26,
+    "cls": "",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "conteosCasos",
+    "label": "CONTEOS CASOS",
+    "w": 26,
+    "cls": "",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "sociedad",
+    "label": "SOCIEDAD",
+    "w": 30,
+    "group": "auto",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "asunto",
+    "label": "ASUNTO",
+    "w": 44,
+    "cls": "text-long",
+    "group": "auto",
+    "format": "text"
+  },
+  {
+    "key": "observaciones",
+    "label": "OBSERVACIONES",
+    "w": 64,
+    "cls": "obs-col",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "nombreSolicitante",
+    "label": "NOMBRE DEL SOLICITANTE",
+    "w": 26,
+    "group": "auto",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "impacto",
+    "label": "IMPACTO",
+    "w": 13,
+    "group": "auto",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "urgencia",
+    "label": "URGENCIA",
+    "w": 13,
+    "group": "auto",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "prioridad",
+    "label": "PRIORIDAD",
+    "w": 13,
+    "group": "auto",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "tipoSolicitud",
+    "label": "TIPO DE SOLICITUD",
+    "w": 20,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "modulo",
+    "label": "MODULO",
+    "w": 12,
+    "cls": "center",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "categoria",
+    "label": "CATEGORÍA",
+    "w": 22,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "subcategoria",
+    "label": "SUBCATEGORÍA",
+    "w": 22,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "articulo",
+    "label": "ARTÍCULO",
+    "w": 24,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "estado",
+    "label": "ESTADO",
+    "w": 18,
+    "cls": "status",
+    "group": "auto",
+    "format": "text"
+  },
+  {
+    "key": "estadoHerramientaGestion",
+    "label": "ESTADO CASOS EN HERRAMIENTAS DE GESTION",
+    "w": 24,
+    "cls": "status",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "responsableEstado",
+    "label": "Responsable Estado",
+    "w": 20,
+    "group": "calc",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "estadoConsolidado",
+    "label": "ESTADO CONSOLIDADO",
+    "w": 20,
+    "cls": "status",
+    "group": "calc",
+    "format": "text"
+  },
+  {
+    "key": "asignadoA",
+    "label": "ASIGNADO A",
+    "w": 25,
+    "group": "auto",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "apoyo1",
+    "label": "APOYO 1",
+    "w": 22,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "apoyo2",
+    "label": "APOYO 2",
+    "w": 22,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "apoyo3",
+    "label": "APOYO 3",
+    "w": 22,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "requiereAbap",
+    "label": "REQUIERE ABAP",
+    "w": 16,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "asignacionAbap",
+    "label": "ASIGNACION ABAP",
+    "w": 22,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "fechaAsignacion",
+    "label": "FECHA DE ASIGNACIÓN",
+    "w": 20,
+    "cls": "mono",
+    "group": "auto",
+    "format": "date"
+  },
+  {
+    "key": "diaCreacion",
+    "label": "DIA ASIGNACION",
+    "w": 12,
+    "cls": "right",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "mesCreacion",
+    "label": "MES ASIGNACION",
+    "w": 12,
+    "cls": "right",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "anioCreacion",
+    "label": "AÑO ASIGNACION",
+    "w": 12,
+    "cls": "right",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "vencido",
+    "label": "VENCIDO",
+    "w": 26,
+    "cls": "",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "observacionesVencimiento",
+    "label": "OBSERVACIONES DEL VENCIMIENTO",
+    "w": 26,
+    "cls": "",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "vencimientoAntesDe",
+    "label": "VENCIMIENTO ANTES DE",
+    "w": 24,
+    "cls": "",
+    "group": "manual",
+    "format": "date"
+  },
+  {
+    "key": "horaUltimaActualizacion",
+    "label": "HORA DE LA ULTIMA ACTUALIZACION",
+    "w": 22,
+    "cls": "mono",
+    "group": "auto",
+    "format": "date"
+  },
+  {
+    "key": "fechaRespuesta",
+    "label": "FECHA DE RESPUESTA",
+    "w": 20,
+    "cls": "mono",
+    "group": "manual",
+    "format": "date"
+  },
+  {
+    "key": "fechaFinalizacionCierre",
+    "label": "FECHA DE FINALIZACION",
+    "w": 20,
+    "cls": "mono",
+    "group": "auto",
+    "format": "date"
+  },
+  {
+    "key": "diaCierre",
+    "label": "DIA CIERRE",
+    "w": 12,
+    "cls": "right",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "mesCierre",
+    "label": "MES CIERRE",
+    "w": 12,
+    "cls": "right",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "anioCierre",
+    "label": "AÑO CIERRE",
+    "w": 12,
+    "cls": "right",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "fechaCompromiso",
+    "label": "FECHA COMPROMETIDA ENTREGA",
+    "w": 20,
+    "cls": "mono",
+    "group": "manual",
+    "format": "date"
+  },
+  {
+    "key": "tiempoRespuesta",
+    "label": "TIEMPO RESPUESTA",
+    "w": 13,
+    "cls": "right number",
+    "group": "calc",
+    "format": "number"
+  },
+  {
+    "key": "tiempoFinalizacionCierre",
+    "label": "TIEMPO DE CIERRE",
+    "w": 13,
+    "cls": "right number",
+    "group": "calc",
+    "format": "number"
+  },
+  {
+    "key": "liderClaro",
+    "label": "LIDER CLARO",
+    "w": 22,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "tipoIngreso",
+    "label": "TIPO DE INGRESO",
+    "w": 18,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "estadoFacturacionOt",
+    "label": "ESTADO DE FACTURACION OT",
+    "w": 22,
+    "cls": "status",
+    "group": "ot",
+    "format": "text"
+  },
+  {
+    "key": "nroOt",
+    "label": "NO OT",
+    "w": 15,
+    "cls": "mono",
+    "group": "ot",
+    "format": "text"
+  },
+  {
+    "key": "valorOt",
+    "label": "VALOR OT",
+    "w": 16,
+    "cls": "right number",
+    "group": "ot",
+    "format": "number"
+  },
+  {
+    "key": "horasOferta",
+    "label": "HORAS OFERTA",
+    "w": 16,
+    "cls": "right number",
+    "group": "ot",
+    "format": "hours"
+  },
+  {
+    "key": "fechaEstimacion",
+    "label": "FECHA ESTIMACION ",
+    "w": 20,
+    "cls": "mono",
+    "group": "manual",
+    "format": "date"
+  },
+  {
+    "key": "diaEstimacion",
+    "label": "DIAS ESTIMACION",
+    "w": 16,
+    "cls": "",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "mesEstimacion",
+    "label": "MES ESTIMACION",
+    "w": 14,
+    "cls": "right",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "anioEstimacion",
+    "label": "AÑO ESTIMACION",
+    "w": 14,
+    "cls": "right",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "fechaAprobacionEstimacion",
+    "label": "FECHA APROBADO ESTIMACION",
+    "w": 24,
+    "cls": "mono",
+    "group": "manual",
+    "format": "date"
+  },
+  {
+    "key": "diaAprobacion",
+    "label": "DIA APROBACION",
+    "w": 16,
+    "cls": "",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "mesAprobadoEstimacion",
+    "label": "MES APROBACION",
+    "w": 20,
+    "cls": "right",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "anioAprobadoEstimacion",
+    "label": "AÑO APROBACION",
+    "w": 20,
+    "cls": "right",
+    "group": "calc",
+    "format": "integer"
+  },
+  {
+    "key": "observacionAprobacion",
+    "label": "OBSERVACION APROBACION",
+    "w": 26,
+    "cls": "",
+    "group": "manual",
+    "format": "text"
+  },
+  {
+    "key": "estadoEstimacion",
+    "label": "ESTADO DE APROBACION ",
+    "w": 18,
+    "group": "manual",
+    "cls": "",
+    "format": "text"
+  },
+  {
+    "key": "horasEstimadasFi",
+    "label": "HORAS ESTIMADAS FI",
+    "w": 15,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasMm",
+    "label": "HORAS ESTIMADAS MM",
+    "w": 15,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasSd",
+    "label": "HORAS ESTIMADAS SD",
+    "w": 15,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasCo",
+    "label": "HORAS ESTIMADAS CO",
+    "w": 15,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasPs",
+    "label": "HORAS ESTIMADAS PS",
+    "w": 15,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasSlcm",
+    "label": "HORAS ESTIMADAS SLCM",
+    "w": 17,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasCrm",
+    "label": "HORAS ESTIMADAS CRM",
+    "w": 16,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasCrm2",
+    "label": "HORAS ESTIMADAS CRM2",
+    "w": 17,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasPca",
+    "label": "HORAS ESTIMADAS PCA (OPEX RENTABILIDAD)",
+    "w": 16,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasFm",
+    "label": "HORAS ESTIMADAS FM",
+    "w": 15,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasPp",
+    "label": "HORAS ESTIMADAS PP",
+    "w": 15,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasPm",
+    "label": "HORAS ESTIMADAS PM",
+    "w": 15,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasHcm",
+    "label": "HORAS ESTIMADAS HCM",
+    "w": 16,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasSsff",
+    "label": "HORAS ESTIMADAS SSFF",
+    "w": 16,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasFiori",
+    "label": "HORAS ESTIMADAS FIORI",
+    "w": 18,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasWf",
+    "label": "HORAS ESTIMADAS WF",
+    "w": 15,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasAbap",
+    "label": "HORAS ESTIMADAS ABAP",
+    "w": 18,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasBasis",
+    "label": "HORAS ESTIMADAS BASIS",
+    "w": 18,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEstimadasPmo",
+    "label": "HORAS ESTIMADAS PMO",
+    "w": 17,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "totalHorasFuncionales",
+    "label": "TOTAL HORAS FUNCIONALES",
+    "w": 19,
+    "cls": "right number total-cell",
+    "group": "calc",
+    "format": "hours"
+  },
+  {
+    "key": "totalHorasEstimadas",
+    "label": "TOTAL HORAS ESTIMADAS",
+    "w": 19,
+    "cls": "right number total-cell",
+    "group": "calc",
+    "format": "hours"
+  },
+  {
+    "key": "totalHorasEstimadas2",
+    "label": "TOTAL HORAS ESTIMADAS2",
+    "w": 21,
+    "cls": "right number total-cell",
+    "group": "calc",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasFi",
+    "label": "HORAS EJECUTADAS FI",
+    "w": 16,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasMm",
+    "label": "HORAS EJECUTADAS MM",
+    "w": 16,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasSd",
+    "label": "HORAS EJECUTADAS SD",
+    "w": 16,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasCo",
+    "label": "HORAS EJECUTADAS CO",
+    "w": 16,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasPs",
+    "label": "HORAS EJECUTADAS PS",
+    "w": 16,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasPca",
+    "label": "HORAS EJECUTADAS PCA (OPEX RENTABILIDAD)",
+    "w": 17,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasFm",
+    "label": "HORAS EJECUTADAS FM",
+    "w": 16,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasHcm",
+    "label": "HORAS EJECUTADAS HCM",
+    "w": 17,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasSsff",
+    "label": "HORAS EJECUTADAS SSFF",
+    "w": 18,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasFiori",
+    "label": "HORAS EJECUTADAS FIORI",
+    "w": 19,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasWf",
+    "label": "HORAS EJECUTADAS WF",
+    "w": 16,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasAbap",
+    "label": "HORAS EJECUTADAS ABAP",
+    "w": 19,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasEjecutadasBasis",
+    "label": "HORAS EJECUTADAS BASIS",
+    "w": 19,
+    "cls": "right number",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasGarantia",
+    "label": "HORAS GARANTIA",
+    "w": 14,
+    "cls": "right number total-cell",
+    "group": "hours",
+    "format": "hours"
+  },
+  {
+    "key": "horasProyectoAbap",
+    "label": "HORAS PROYECTO ABAP",
+    "w": 18,
+    "cls": "right number total-cell",
+    "group": "hours",
+    "format": "hours"
+  }
 ];
 
 const EDIT_FIELDS = [
+{"key":"casoTarea","label":"CASO/TAREA","type":"text"},
+{"key":"manejoFacturacion","label":"MANEJO FACTURACION","type":"text"},
+{"key":"tipificacion","label":"TIPIFICACION","type":"text"},
+{"key":"transaccion","label":"TRANSACCION","type":"text"},
+{"key":"sociedadCsit","label":"SOCIEDAD CSIT","type":"text"},
+{"key":"conteosCasos","label":"CONTEOS CASOS","type":"text"},
+{"key":"vencido","label":"VENCIDO","type":"text"},
+{"key":"observacionesVencimiento","label":"OBSERVACIONES DEL VENCIMIENTO","type":"textarea"},
+{"key":"vencimientoAntesDe","label":"VENCIMIENTO ANTES DE","type":"datetime"},
+{"key":"observacionAprobacion","label":"OBSERVACION APROBACION","type":"textarea"},
   {
     key: "comentarioSeguimiento",
     label: "Comentario de seguimiento de hoy",
@@ -405,6 +1131,25 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+
+function durationText107(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  const seconds = Math.round(Math.abs(n) * 3600);
+  const hh = Math.floor(seconds / 3600);
+  const mm = Math.floor((seconds % 3600) / 60);
+  const ss = seconds % 60;
+  return (n < 0 ? "-" : "") + String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0") + ":" + String(ss).padStart(2, "0");
+}
+
+function dateText107(value) {
+  if (!value) return "—";
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}:\d{2})(?::(\d{2}))?)?/);
+  if (!match) return String(value);
+  return match[3] + "/" + match[2] + "/" + match[1] + (match[4] ? " " + match[4] + ":" + (match[5] || "00") : "");
 }
 
 function numberText(value) {
@@ -831,18 +1576,7 @@ export default function CalificacionCoeSapFuncional() {
   const [draftColumnFilters, setDraftColumnFilters] = useState({});
 
   const [visibleColumnKeys, setVisibleColumnKeys] = useState(() =>
-    (() => {
-      const stored = getStorageArray(STORAGE_VISIBLE_COLUMNS, allColumnKeys);
-      const key = "fechaInicioLaboracionEstimacion";
-      const marker = "calcoe_inicio_estimacion_visible_v1";
-      try {
-        if (!localStorage.getItem(marker)) {
-          localStorage.setItem(marker, "1");
-          return [...new Set([...stored, key])];
-        }
-      } catch { /* Almacenamiento no disponible: conservar configuración. */ }
-      return stored;
-    })()
+    getStorageArray(STORAGE_VISIBLE_COLUMNS, allColumnKeys).filter((key) => allColumnKeys.includes(key))
   );
 
   const [filterColumnKeys, setFilterColumnKeys] = useState(() => {
@@ -1789,6 +2523,8 @@ export default function CalificacionCoeSapFuncional() {
             <p><b>No encontrados en base:</b> ${data?.no_encontrados_en_base ?? "—"}</p>
             <p><b>Duplicados Excel:</b> ${data?.duplicados_excel ?? "—"}</p>
             <p><b>Movimientos de horas:</b> ${data?.horas_movimientos ?? "—"}</p>
+            <p><b>Celdas para revisar:</b> ${data?.incidencias_formato ?? 0}</p>
+            <p><b>Filas sin ID ni caso:</b> ${data?.filas_sin_identidad ?? 0}</p>
             <p><b>Diferencias muestra:</b> ${diferencias}</p>
           </div>
         `,
@@ -2227,6 +2963,15 @@ export default function CalificacionCoeSapFuncional() {
 
   const renderCell = (row, col) => {
     const value = row[col.key];
+    const issue = (row.incidenciasExcel || []).find((i) => i.columna === col.label);
+    if (issue) {
+      return <span className="calcoe-format-warning" title={issue.motivo + ". Valor original: " + issue.valor}>
+        {value === null || value === undefined || value === "" ? issue.valor : col.format === "hours" && Number.isFinite(Number(value)) ? durationText107(value) : String(value)}
+        <small>Revisar formato</small>
+      </span>;
+    }
+    if (col.format === "hours") return durationText107(value);
+    if (col.format === "date") return dateText107(value);
 
     if (col.key === "observaciones") {
       return renderObservaciones(value);
@@ -2784,7 +3529,7 @@ export default function CalificacionCoeSapFuncional() {
             </div>
 
             <div className="calcoe-modal-body">
-              <div className="calcoe-edit-grid"><p className="calcoe-edit-hint">Solo se guardan los campos modificados. Los totales y fechas derivadas se recalculan al guardar.</p>
+              <div className="calcoe-edit-grid"><p className="calcoe-edit-hint">Solo se guardan los campos modificados. Los totales y fechas derivadas se recalculan al guardar. Ingresa las horas en decimal: 8,5 equivale a 08:30:00.</p>
                 {EDIT_FIELDS.filter(isManualField).filter((field) => {
                   if (!editFieldKey) return true;
                   const dependencies = {

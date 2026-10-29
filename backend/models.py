@@ -4,7 +4,7 @@ from sqlalchemy import Column, Integer, String, Float, Text, Boolean, text, Uniq
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.hybrid import hybrid_property
 from decimal import Decimal
-from sqlalchemy.dialects.mysql import BIGINT
+from sqlalchemy.dialects.mysql import BIGINT, LONGTEXT
 
 db = SQLAlchemy()
 
@@ -1393,8 +1393,8 @@ class CoeSapFuncionalCalificacion(db.Model):
 
     tipo_contrato = db.Column(db.String(150))
     sociedad = db.Column(db.String(255))
-    asunto = db.Column(db.Text)
-    observaciones = db.Column(db.Text)
+    asunto = db.Column(LONGTEXT)
+    observaciones = db.Column(LONGTEXT)
     nombre_solicitante = db.Column(db.String(255))
 
     impacto = db.Column(db.String(100))
@@ -1434,9 +1434,9 @@ class CoeSapFuncionalCalificacion(db.Model):
     mes_cierre = db.Column(db.Integer)
     anio_cierre = db.Column(db.Integer)
 
-    tiempo_respuesta = db.Column(db.Numeric(12, 2))
+    tiempo_respuesta = db.Column(db.Numeric(20, 6))
     tiempo_resolucion = db.Column(db.Numeric(12, 2))
-    tiempo_finalizacion_cierre = db.Column(db.Numeric(12, 2))
+    tiempo_finalizacion_cierre = db.Column(db.Numeric(20, 6))
 
     fecha_compromiso = db.Column(db.DateTime)
     lider_claro = db.Column(db.String(255))
@@ -1454,48 +1454,48 @@ class CoeSapFuncionalCalificacion(db.Model):
     estado_estimacion = db.Column(db.String(150))
 
     # Horas estimadas funcionales
-    horas_estimadas_fi = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_mm = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_sd = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_co = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_ps = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_slcm = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_crm = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_crm2 = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_pca = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_fm = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_pp = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_pm = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_hcm = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_ssff = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_fiori = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_wf = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_fi = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_mm = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_sd = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_co = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_ps = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_slcm = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_crm = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_crm2 = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_pca = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_fm = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_pp = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_pm = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_hcm = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_ssff = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_fiori = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_wf = db.Column(db.Numeric(20, 6), default=0)
 
-    horas_estimadas_abap = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_basis = db.Column(db.Numeric(12, 2), default=0)
-    horas_estimadas_pmo = db.Column(db.Numeric(12, 2), default=0)
+    horas_estimadas_abap = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_basis = db.Column(db.Numeric(20, 6), default=0)
+    horas_estimadas_pmo = db.Column(db.Numeric(20, 6), default=0)
 
-    total_horas_funcionales = db.Column(db.Numeric(12, 2), default=0)
-    total_horas_estimadas = db.Column(db.Numeric(12, 2), default=0)
-    total_horas_estimadas2 = db.Column(db.Numeric(12, 2), default=0)
+    total_horas_funcionales = db.Column(db.Numeric(20, 6), default=0)
+    total_horas_estimadas = db.Column(db.Numeric(20, 6), default=0)
+    total_horas_estimadas2 = db.Column(db.Numeric(20, 6), default=0)
 
     # Horas ejecutadas
-    horas_ejecutadas_fi = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_mm = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_sd = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_co = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_ps = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_pca = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_fm = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_hcm = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_ssff = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_fiori = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_wf = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_abap = db.Column(db.Numeric(12, 2), default=0)
-    horas_ejecutadas_basis = db.Column(db.Numeric(12, 2), default=0)
+    horas_ejecutadas_fi = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_mm = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_sd = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_co = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_ps = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_pca = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_fm = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_hcm = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_ssff = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_fiori = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_wf = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_abap = db.Column(db.Numeric(20, 6), default=0)
+    horas_ejecutadas_basis = db.Column(db.Numeric(20, 6), default=0)
 
-    horas_garantia = db.Column(db.Numeric(12, 2), default=0)
-    horas_proyecto_abap = db.Column(db.Numeric(12, 2), default=0)
+    horas_garantia = db.Column(db.Numeric(20, 6), default=0)
+    horas_proyecto_abap = db.Column(db.Numeric(20, 6), default=0)
 
     creado_por = db.Column(db.String(100))
     actualizado_por = db.Column(db.String(100))
@@ -1523,8 +1523,8 @@ class CoeSapFuncionalCalificacion(db.Model):
 
     estado_facturacion_ot = db.Column(db.String(150))
     nro_ot = db.Column(db.String(100))
-    valor_ot = db.Column(db.Numeric(18, 2))
-    horas_oferta = db.Column(db.Numeric(12, 2))
+    valor_ot = db.Column(db.Numeric(20, 6))
+    horas_oferta = db.Column(db.Numeric(20, 6))
 
     fecha_reasignacion_claro = db.Column(db.DateTime)
     fecha_1_reasignacion_claro = db.Column(db.DateTime)
@@ -1558,6 +1558,22 @@ class CoeSapFuncionalCalificacion(db.Model):
     subestado = db.Column(db.String(150), index=True)
     validar_estado_control = db.Column(db.String(50), index=True)
 
+    # Columnas y trazabilidad del formato BASES_COMPLETAS (107 columnas).
+    caso_tarea = db.Column(LONGTEXT, nullable=True)
+    manejo_facturacion = db.Column(LONGTEXT, nullable=True)
+    tipificacion = db.Column(LONGTEXT, nullable=True)
+    transaccion = db.Column(LONGTEXT, nullable=True)
+    sociedad_csit = db.Column(LONGTEXT, nullable=True)
+    conteos_casos = db.Column(LONGTEXT, nullable=True)
+    vencido = db.Column(LONGTEXT, nullable=True)
+    observaciones_vencimiento = db.Column(LONGTEXT, nullable=True)
+    vencimiento_antes_de = db.Column(db.DateTime, nullable=True)
+    dia_estimacion = db.Column(db.Integer, nullable=True)
+    dia_aprobacion = db.Column(db.Integer, nullable=True)
+    observacion_aprobacion = db.Column(LONGTEXT, nullable=True)
+    excel_incidencias_json = db.Column(LONGTEXT, nullable=True)
+    excel_filas_json = db.Column(LONGTEXT, nullable=True)
+
 
 class CoeSapFuncionalCalificacionHora(db.Model):
     __tablename__ = "coe_sap_funcional_calificacion_horas"
@@ -1577,7 +1593,7 @@ class CoeSapFuncionalCalificacionHora(db.Model):
     tipo = db.Column(db.String(50), nullable=False)
     modulo = db.Column(db.String(50), nullable=False)
 
-    horas = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    horas = db.Column(db.Numeric(20, 6), nullable=False, default=0)
     observacion = db.Column(db.Text)
 
     # Fecha funcional del movimiento. Permite que un mismo caso tenga

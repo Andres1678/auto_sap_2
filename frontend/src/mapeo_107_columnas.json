@@ -1,0 +1,644 @@
+[
+  {
+    "header": "ID",
+    "field": "numero",
+    "key": "numero",
+    "kind": "text"
+  },
+  {
+    "header": "NO CASO SM",
+    "field": "caso_sm",
+    "key": "casoSm",
+    "kind": "text"
+  },
+  {
+    "header": "SISTEMA",
+    "field": "sistema",
+    "key": "sistema",
+    "kind": "text"
+  },
+  {
+    "header": "CASO/TAREA",
+    "field": "caso_tarea",
+    "key": "casoTarea",
+    "kind": "text"
+  },
+  {
+    "header": "CONTROL HORAS",
+    "field": "control_horas",
+    "key": "controlHoras",
+    "kind": "text"
+  },
+  {
+    "header": "DOCUMENTACION",
+    "field": "documentacion",
+    "key": "documentacion",
+    "kind": "text"
+  },
+  {
+    "header": "MANEJO",
+    "field": "manejo",
+    "key": "manejo",
+    "kind": "text"
+  },
+  {
+    "header": "MANEJO FACTURACION",
+    "field": "manejo_facturacion",
+    "key": "manejoFacturacion",
+    "kind": "text"
+  },
+  {
+    "header": "TIPIFICACION",
+    "field": "tipificacion",
+    "key": "tipificacion",
+    "kind": "text"
+  },
+  {
+    "header": "TRANSACCION",
+    "field": "transaccion",
+    "key": "transaccion",
+    "kind": "text"
+  },
+  {
+    "header": "N° ERROR SAP",
+    "field": "error_sap",
+    "key": "errorSap",
+    "kind": "text"
+  },
+  {
+    "header": "N° NOTA OSS SAP",
+    "field": "nota_oss_sap",
+    "key": "notaOssSap",
+    "kind": "text"
+  },
+  {
+    "header": "TIQUETE PROVEEDOR EXTERNO",
+    "field": "tiquete_proveedor_externo",
+    "key": "tiqueteProveedorExterno",
+    "kind": "text"
+  },
+  {
+    "header": "TIPO CONTRATO",
+    "field": "tipo_contrato",
+    "key": "tipoContrato",
+    "kind": "text"
+  },
+  {
+    "header": "SOCIEDAD CSIT",
+    "field": "sociedad_csit",
+    "key": "sociedadCsit",
+    "kind": "text"
+  },
+  {
+    "header": "CONTEOS CASOS",
+    "field": "conteos_casos",
+    "key": "conteosCasos",
+    "kind": "text"
+  },
+  {
+    "header": "SOCIEDAD",
+    "field": "sociedad",
+    "key": "sociedad",
+    "kind": "text"
+  },
+  {
+    "header": "ASUNTO",
+    "field": "asunto",
+    "key": "asunto",
+    "kind": "text"
+  },
+  {
+    "header": "OBSERVACIONES",
+    "field": "observaciones",
+    "key": "observaciones",
+    "kind": "text"
+  },
+  {
+    "header": "NOMBRE DEL SOLICITANTE",
+    "field": "nombre_solicitante",
+    "key": "nombreSolicitante",
+    "kind": "text"
+  },
+  {
+    "header": "IMPACTO",
+    "field": "impacto",
+    "key": "impacto",
+    "kind": "text"
+  },
+  {
+    "header": "URGENCIA",
+    "field": "urgencia",
+    "key": "urgencia",
+    "kind": "text"
+  },
+  {
+    "header": "PRIORIDAD",
+    "field": "prioridad",
+    "key": "prioridad",
+    "kind": "text"
+  },
+  {
+    "header": "TIPO DE SOLICITUD",
+    "field": "tipo_solicitud",
+    "key": "tipoSolicitud",
+    "kind": "text"
+  },
+  {
+    "header": "MODULO",
+    "field": "modulo",
+    "key": "modulo",
+    "kind": "text"
+  },
+  {
+    "header": "CATEGORÍA",
+    "field": "categoria",
+    "key": "categoria",
+    "kind": "text"
+  },
+  {
+    "header": "SUBCATEGORÍA",
+    "field": "subcategoria",
+    "key": "subcategoria",
+    "kind": "text"
+  },
+  {
+    "header": "ARTÍCULO",
+    "field": "articulo",
+    "key": "articulo",
+    "kind": "text"
+  },
+  {
+    "header": "ESTADO",
+    "field": "estado",
+    "key": "estado",
+    "kind": "text"
+  },
+  {
+    "header": "ESTADO CASOS EN HERRAMIENTAS DE GESTION",
+    "field": "estado_herramienta_gestion",
+    "key": "estadoHerramientaGestion",
+    "kind": "text"
+  },
+  {
+    "header": "Responsable Estado",
+    "field": "responsable_estado",
+    "key": "responsableEstado",
+    "kind": "text"
+  },
+  {
+    "header": "ESTADO CONSOLIDADO",
+    "field": "estado_consolidado",
+    "key": "estadoConsolidado",
+    "kind": "text"
+  },
+  {
+    "header": "ASIGNADO A",
+    "field": "asignado_a",
+    "key": "asignadoA",
+    "kind": "text"
+  },
+  {
+    "header": "APOYO 1",
+    "field": "apoyo_1",
+    "key": "apoyo1",
+    "kind": "text"
+  },
+  {
+    "header": "APOYO 2",
+    "field": "apoyo_2",
+    "key": "apoyo2",
+    "kind": "text"
+  },
+  {
+    "header": "APOYO 3",
+    "field": "apoyo_3",
+    "key": "apoyo3",
+    "kind": "text"
+  },
+  {
+    "header": "REQUIERE ABAP",
+    "field": "requiere_abap",
+    "key": "requiereAbap",
+    "kind": "text"
+  },
+  {
+    "header": "ASIGNACION ABAP",
+    "field": "asignacion_abap",
+    "key": "asignacionAbap",
+    "kind": "text"
+  },
+  {
+    "header": "FECHA DE ASIGNACIÓN",
+    "field": "fecha_asignacion",
+    "key": "fechaAsignacion",
+    "kind": "date"
+  },
+  {
+    "header": "DIA ASIGNACION",
+    "field": "dia_creacion",
+    "key": "diaCreacion",
+    "kind": "integer"
+  },
+  {
+    "header": "MES ASIGNACION",
+    "field": "mes_creacion",
+    "key": "mesCreacion",
+    "kind": "integer"
+  },
+  {
+    "header": "AÑO ASIGNACION",
+    "field": "anio_creacion",
+    "key": "anioCreacion",
+    "kind": "integer"
+  },
+  {
+    "header": "VENCIDO",
+    "field": "vencido",
+    "key": "vencido",
+    "kind": "text"
+  },
+  {
+    "header": "OBSERVACIONES DEL VENCIMIENTO",
+    "field": "observaciones_vencimiento",
+    "key": "observacionesVencimiento",
+    "kind": "text"
+  },
+  {
+    "header": "VENCIMIENTO ANTES DE",
+    "field": "vencimiento_antes_de",
+    "key": "vencimientoAntesDe",
+    "kind": "date"
+  },
+  {
+    "header": "HORA DE LA ULTIMA ACTUALIZACION",
+    "field": "hora_ultima_actualizacion",
+    "key": "horaUltimaActualizacion",
+    "kind": "date"
+  },
+  {
+    "header": "FECHA DE RESPUESTA",
+    "field": "fecha_respuesta",
+    "key": "fechaRespuesta",
+    "kind": "date"
+  },
+  {
+    "header": "FECHA DE FINALIZACION",
+    "field": "fecha_finalizacion_cierre",
+    "key": "fechaFinalizacionCierre",
+    "kind": "date"
+  },
+  {
+    "header": "DIA CIERRE",
+    "field": "dia_cierre",
+    "key": "diaCierre",
+    "kind": "integer"
+  },
+  {
+    "header": "MES CIERRE",
+    "field": "mes_cierre",
+    "key": "mesCierre",
+    "kind": "integer"
+  },
+  {
+    "header": "AÑO CIERRE",
+    "field": "anio_cierre",
+    "key": "anioCierre",
+    "kind": "integer"
+  },
+  {
+    "header": "FECHA COMPROMETIDA ENTREGA",
+    "field": "fecha_compromiso",
+    "key": "fechaCompromiso",
+    "kind": "date"
+  },
+  {
+    "header": "TIEMPO RESPUESTA",
+    "field": "tiempo_respuesta",
+    "key": "tiempoRespuesta",
+    "kind": "number"
+  },
+  {
+    "header": "TIEMPO DE CIERRE",
+    "field": "tiempo_finalizacion_cierre",
+    "key": "tiempoFinalizacionCierre",
+    "kind": "number"
+  },
+  {
+    "header": "LIDER CLARO",
+    "field": "lider_claro",
+    "key": "liderClaro",
+    "kind": "text"
+  },
+  {
+    "header": "TIPO DE INGRESO",
+    "field": "tipo_ingreso",
+    "key": "tipoIngreso",
+    "kind": "text"
+  },
+  {
+    "header": "ESTADO DE FACTURACION OT",
+    "field": "estado_facturacion_ot",
+    "key": "estadoFacturacionOt",
+    "kind": "text"
+  },
+  {
+    "header": "NO OT",
+    "field": "nro_ot",
+    "key": "nroOt",
+    "kind": "text"
+  },
+  {
+    "header": "VALOR OT",
+    "field": "valor_ot",
+    "key": "valorOt",
+    "kind": "number"
+  },
+  {
+    "header": "HORAS OFERTA",
+    "field": "horas_oferta",
+    "key": "horasOferta",
+    "kind": "hours"
+  },
+  {
+    "header": "FECHA ESTIMACION ",
+    "field": "fecha_estimacion",
+    "key": "fechaEstimacion",
+    "kind": "date"
+  },
+  {
+    "header": "DIAS ESTIMACION",
+    "field": "dia_estimacion",
+    "key": "diaEstimacion",
+    "kind": "integer"
+  },
+  {
+    "header": "MES ESTIMACION",
+    "field": "mes_estimacion",
+    "key": "mesEstimacion",
+    "kind": "integer"
+  },
+  {
+    "header": "AÑO ESTIMACION",
+    "field": "anio_estimacion",
+    "key": "anioEstimacion",
+    "kind": "integer"
+  },
+  {
+    "header": "FECHA APROBADO ESTIMACION",
+    "field": "fecha_aprobacion_estimacion",
+    "key": "fechaAprobacionEstimacion",
+    "kind": "date"
+  },
+  {
+    "header": "DIA APROBACION",
+    "field": "dia_aprobacion",
+    "key": "diaAprobacion",
+    "kind": "integer"
+  },
+  {
+    "header": "MES APROBACION",
+    "field": "mes_aprobado_estimacion",
+    "key": "mesAprobadoEstimacion",
+    "kind": "integer"
+  },
+  {
+    "header": "AÑO APROBACION",
+    "field": "anio_aprobado_estimacion",
+    "key": "anioAprobadoEstimacion",
+    "kind": "integer"
+  },
+  {
+    "header": "OBSERVACION APROBACION",
+    "field": "observacion_aprobacion",
+    "key": "observacionAprobacion",
+    "kind": "text"
+  },
+  {
+    "header": "ESTADO DE APROBACION ",
+    "field": "estado_estimacion",
+    "key": "estadoEstimacion",
+    "kind": "text"
+  },
+  {
+    "header": "HORAS ESTIMADAS FI",
+    "field": "horas_estimadas_fi",
+    "key": "horasEstimadasFi",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS MM",
+    "field": "horas_estimadas_mm",
+    "key": "horasEstimadasMm",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS SD",
+    "field": "horas_estimadas_sd",
+    "key": "horasEstimadasSd",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS CO",
+    "field": "horas_estimadas_co",
+    "key": "horasEstimadasCo",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS PS",
+    "field": "horas_estimadas_ps",
+    "key": "horasEstimadasPs",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS SLCM",
+    "field": "horas_estimadas_slcm",
+    "key": "horasEstimadasSlcm",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS CRM",
+    "field": "horas_estimadas_crm",
+    "key": "horasEstimadasCrm",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS CRM2",
+    "field": "horas_estimadas_crm2",
+    "key": "horasEstimadasCrm2",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS PCA (OPEX RENTABILIDAD)",
+    "field": "horas_estimadas_pca",
+    "key": "horasEstimadasPca",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS FM",
+    "field": "horas_estimadas_fm",
+    "key": "horasEstimadasFm",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS PP",
+    "field": "horas_estimadas_pp",
+    "key": "horasEstimadasPp",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS PM",
+    "field": "horas_estimadas_pm",
+    "key": "horasEstimadasPm",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS HCM",
+    "field": "horas_estimadas_hcm",
+    "key": "horasEstimadasHcm",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS SSFF",
+    "field": "horas_estimadas_ssff",
+    "key": "horasEstimadasSsff",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS FIORI",
+    "field": "horas_estimadas_fiori",
+    "key": "horasEstimadasFiori",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS WF",
+    "field": "horas_estimadas_wf",
+    "key": "horasEstimadasWf",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS ABAP",
+    "field": "horas_estimadas_abap",
+    "key": "horasEstimadasAbap",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS BASIS",
+    "field": "horas_estimadas_basis",
+    "key": "horasEstimadasBasis",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS ESTIMADAS PMO",
+    "field": "horas_estimadas_pmo",
+    "key": "horasEstimadasPmo",
+    "kind": "hours"
+  },
+  {
+    "header": "TOTAL HORAS FUNCIONALES",
+    "field": "total_horas_funcionales",
+    "key": "totalHorasFuncionales",
+    "kind": "hours"
+  },
+  {
+    "header": "TOTAL HORAS ESTIMADAS",
+    "field": "total_horas_estimadas",
+    "key": "totalHorasEstimadas",
+    "kind": "hours"
+  },
+  {
+    "header": "TOTAL HORAS ESTIMADAS2",
+    "field": "total_horas_estimadas2",
+    "key": "totalHorasEstimadas2",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS FI",
+    "field": "horas_ejecutadas_fi",
+    "key": "horasEjecutadasFi",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS MM",
+    "field": "horas_ejecutadas_mm",
+    "key": "horasEjecutadasMm",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS SD",
+    "field": "horas_ejecutadas_sd",
+    "key": "horasEjecutadasSd",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS CO",
+    "field": "horas_ejecutadas_co",
+    "key": "horasEjecutadasCo",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS PS",
+    "field": "horas_ejecutadas_ps",
+    "key": "horasEjecutadasPs",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS PCA (OPEX RENTABILIDAD)",
+    "field": "horas_ejecutadas_pca",
+    "key": "horasEjecutadasPca",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS FM",
+    "field": "horas_ejecutadas_fm",
+    "key": "horasEjecutadasFm",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS HCM",
+    "field": "horas_ejecutadas_hcm",
+    "key": "horasEjecutadasHcm",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS SSFF",
+    "field": "horas_ejecutadas_ssff",
+    "key": "horasEjecutadasSsff",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS FIORI",
+    "field": "horas_ejecutadas_fiori",
+    "key": "horasEjecutadasFiori",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS WF",
+    "field": "horas_ejecutadas_wf",
+    "key": "horasEjecutadasWf",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS ABAP",
+    "field": "horas_ejecutadas_abap",
+    "key": "horasEjecutadasAbap",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS EJECUTADAS BASIS",
+    "field": "horas_ejecutadas_basis",
+    "key": "horasEjecutadasBasis",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS GARANTIA",
+    "field": "horas_garantia",
+    "key": "horasGarantia",
+    "kind": "hours"
+  },
+  {
+    "header": "HORAS PROYECTO ABAP",
+    "field": "horas_proyecto_abap",
+    "key": "horasProyectoAbap",
+    "kind": "hours"
+  }
+]

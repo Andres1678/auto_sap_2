@@ -16684,7 +16684,7 @@ def _calificacion_dias_estimacion_actual(r):
 
 
 def _calificacion_to_dict(r):
-    return {
+    resultado = {
         "id": r.id,
         "baseRegistroId": r.base_registro_id,
 
@@ -16860,6 +16860,9 @@ def _calificacion_to_dict(r):
         "camposEditadosManual": _coe_ext_json_load(r.campos_editados_manual_json),
         "origenDatos": _coe_ext_json_load(r.origen_datos_json),
     }
+
+
+    return _coe107_serializar(r, resultado)
 
 
 def _calificacion_hora_to_dict(h):
@@ -17592,6 +17595,14 @@ CALIFICACION_EXCEL_SOLO_EXCEL = [
 ]
 
 
+
+
+COE107_COLUMNAS = [{'header': 'ID', 'field': 'numero', 'key': 'numero', 'kind': 'text'}, {'header': 'NO CASO SM', 'field': 'caso_sm', 'key': 'casoSm', 'kind': 'text'}, {'header': 'SISTEMA', 'field': 'sistema', 'key': 'sistema', 'kind': 'text'}, {'header': 'CASO/TAREA', 'field': 'caso_tarea', 'key': 'casoTarea', 'kind': 'text'}, {'header': 'CONTROL HORAS', 'field': 'control_horas', 'key': 'controlHoras', 'kind': 'text'}, {'header': 'DOCUMENTACION', 'field': 'documentacion', 'key': 'documentacion', 'kind': 'text'}, {'header': 'MANEJO', 'field': 'manejo', 'key': 'manejo', 'kind': 'text'}, {'header': 'MANEJO FACTURACION', 'field': 'manejo_facturacion', 'key': 'manejoFacturacion', 'kind': 'text'}, {'header': 'TIPIFICACION', 'field': 'tipificacion', 'key': 'tipificacion', 'kind': 'text'}, {'header': 'TRANSACCION', 'field': 'transaccion', 'key': 'transaccion', 'kind': 'text'}, {'header': 'N° ERROR SAP', 'field': 'error_sap', 'key': 'errorSap', 'kind': 'text'}, {'header': 'N° NOTA OSS SAP', 'field': 'nota_oss_sap', 'key': 'notaOssSap', 'kind': 'text'}, {'header': 'TIQUETE PROVEEDOR EXTERNO', 'field': 'tiquete_proveedor_externo', 'key': 'tiqueteProveedorExterno', 'kind': 'text'}, {'header': 'TIPO CONTRATO', 'field': 'tipo_contrato', 'key': 'tipoContrato', 'kind': 'text'}, {'header': 'SOCIEDAD CSIT', 'field': 'sociedad_csit', 'key': 'sociedadCsit', 'kind': 'text'}, {'header': 'CONTEOS CASOS', 'field': 'conteos_casos', 'key': 'conteosCasos', 'kind': 'text'}, {'header': 'SOCIEDAD', 'field': 'sociedad', 'key': 'sociedad', 'kind': 'text'}, {'header': 'ASUNTO', 'field': 'asunto', 'key': 'asunto', 'kind': 'text'}, {'header': 'OBSERVACIONES', 'field': 'observaciones', 'key': 'observaciones', 'kind': 'text'}, {'header': 'NOMBRE DEL SOLICITANTE', 'field': 'nombre_solicitante', 'key': 'nombreSolicitante', 'kind': 'text'}, {'header': 'IMPACTO', 'field': 'impacto', 'key': 'impacto', 'kind': 'text'}, {'header': 'URGENCIA', 'field': 'urgencia', 'key': 'urgencia', 'kind': 'text'}, {'header': 'PRIORIDAD', 'field': 'prioridad', 'key': 'prioridad', 'kind': 'text'}, {'header': 'TIPO DE SOLICITUD', 'field': 'tipo_solicitud', 'key': 'tipoSolicitud', 'kind': 'text'}, {'header': 'MODULO', 'field': 'modulo', 'key': 'modulo', 'kind': 'text'}, {'header': 'CATEGORÍA', 'field': 'categoria', 'key': 'categoria', 'kind': 'text'}, {'header': 'SUBCATEGORÍA', 'field': 'subcategoria', 'key': 'subcategoria', 'kind': 'text'}, {'header': 'ARTÍCULO', 'field': 'articulo', 'key': 'articulo', 'kind': 'text'}, {'header': 'ESTADO', 'field': 'estado', 'key': 'estado', 'kind': 'text'}, {'header': 'ESTADO CASOS EN HERRAMIENTAS DE GESTION', 'field': 'estado_herramienta_gestion', 'key': 'estadoHerramientaGestion', 'kind': 'text'}, {'header': 'Responsable Estado', 'field': 'responsable_estado', 'key': 'responsableEstado', 'kind': 'text'}, {'header': 'ESTADO CONSOLIDADO', 'field': 'estado_consolidado', 'key': 'estadoConsolidado', 'kind': 'text'}, {'header': 'ASIGNADO A', 'field': 'asignado_a', 'key': 'asignadoA', 'kind': 'text'}, {'header': 'APOYO 1', 'field': 'apoyo_1', 'key': 'apoyo1', 'kind': 'text'}, {'header': 'APOYO 2', 'field': 'apoyo_2', 'key': 'apoyo2', 'kind': 'text'}, {'header': 'APOYO 3', 'field': 'apoyo_3', 'key': 'apoyo3', 'kind': 'text'}, {'header': 'REQUIERE ABAP', 'field': 'requiere_abap', 'key': 'requiereAbap', 'kind': 'text'}, {'header': 'ASIGNACION ABAP', 'field': 'asignacion_abap', 'key': 'asignacionAbap', 'kind': 'text'}, {'header': 'FECHA DE ASIGNACIÓN', 'field': 'fecha_asignacion', 'key': 'fechaAsignacion', 'kind': 'date'}, {'header': 'DIA ASIGNACION', 'field': 'dia_creacion', 'key': 'diaCreacion', 'kind': 'integer'}, {'header': 'MES ASIGNACION', 'field': 'mes_creacion', 'key': 'mesCreacion', 'kind': 'integer'}, {'header': 'AÑO ASIGNACION', 'field': 'anio_creacion', 'key': 'anioCreacion', 'kind': 'integer'}, {'header': 'VENCIDO', 'field': 'vencido', 'key': 'vencido', 'kind': 'text'}, {'header': 'OBSERVACIONES DEL VENCIMIENTO', 'field': 'observaciones_vencimiento', 'key': 'observacionesVencimiento', 'kind': 'text'}, {'header': 'VENCIMIENTO ANTES DE', 'field': 'vencimiento_antes_de', 'key': 'vencimientoAntesDe', 'kind': 'date'}, {'header': 'HORA DE LA ULTIMA ACTUALIZACION', 'field': 'hora_ultima_actualizacion', 'key': 'horaUltimaActualizacion', 'kind': 'date'}, {'header': 'FECHA DE RESPUESTA', 'field': 'fecha_respuesta', 'key': 'fechaRespuesta', 'kind': 'date'}, {'header': 'FECHA DE FINALIZACION', 'field': 'fecha_finalizacion_cierre', 'key': 'fechaFinalizacionCierre', 'kind': 'date'}, {'header': 'DIA CIERRE', 'field': 'dia_cierre', 'key': 'diaCierre', 'kind': 'integer'}, {'header': 'MES CIERRE', 'field': 'mes_cierre', 'key': 'mesCierre', 'kind': 'integer'}, {'header': 'AÑO CIERRE', 'field': 'anio_cierre', 'key': 'anioCierre', 'kind': 'integer'}, {'header': 'FECHA COMPROMETIDA ENTREGA', 'field': 'fecha_compromiso', 'key': 'fechaCompromiso', 'kind': 'date'}, {'header': 'TIEMPO RESPUESTA', 'field': 'tiempo_respuesta', 'key': 'tiempoRespuesta', 'kind': 'number'}, {'header': 'TIEMPO DE CIERRE', 'field': 'tiempo_finalizacion_cierre', 'key': 'tiempoFinalizacionCierre', 'kind': 'number'}, {'header': 'LIDER CLARO', 'field': 'lider_claro', 'key': 'liderClaro', 'kind': 'text'}, {'header': 'TIPO DE INGRESO', 'field': 'tipo_ingreso', 'key': 'tipoIngreso', 'kind': 'text'}, {'header': 'ESTADO DE FACTURACION OT', 'field': 'estado_facturacion_ot', 'key': 'estadoFacturacionOt', 'kind': 'text'}, {'header': 'NO OT', 'field': 'nro_ot', 'key': 'nroOt', 'kind': 'text'}, {'header': 'VALOR OT', 'field': 'valor_ot', 'key': 'valorOt', 'kind': 'number'}, {'header': 'HORAS OFERTA', 'field': 'horas_oferta', 'key': 'horasOferta', 'kind': 'hours'}, {'header': 'FECHA ESTIMACION ', 'field': 'fecha_estimacion', 'key': 'fechaEstimacion', 'kind': 'date'}, {'header': 'DIAS ESTIMACION', 'field': 'dia_estimacion', 'key': 'diaEstimacion', 'kind': 'integer'}, {'header': 'MES ESTIMACION', 'field': 'mes_estimacion', 'key': 'mesEstimacion', 'kind': 'integer'}, {'header': 'AÑO ESTIMACION', 'field': 'anio_estimacion', 'key': 'anioEstimacion', 'kind': 'integer'}, {'header': 'FECHA APROBADO ESTIMACION', 'field': 'fecha_aprobacion_estimacion', 'key': 'fechaAprobacionEstimacion', 'kind': 'date'}, {'header': 'DIA APROBACION', 'field': 'dia_aprobacion', 'key': 'diaAprobacion', 'kind': 'integer'}, {'header': 'MES APROBACION', 'field': 'mes_aprobado_estimacion', 'key': 'mesAprobadoEstimacion', 'kind': 'integer'}, {'header': 'AÑO APROBACION', 'field': 'anio_aprobado_estimacion', 'key': 'anioAprobadoEstimacion', 'kind': 'integer'}, {'header': 'OBSERVACION APROBACION', 'field': 'observacion_aprobacion', 'key': 'observacionAprobacion', 'kind': 'text'}, {'header': 'ESTADO DE APROBACION ', 'field': 'estado_estimacion', 'key': 'estadoEstimacion', 'kind': 'text'}, {'header': 'HORAS ESTIMADAS FI', 'field': 'horas_estimadas_fi', 'key': 'horasEstimadasFi', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS MM', 'field': 'horas_estimadas_mm', 'key': 'horasEstimadasMm', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS SD', 'field': 'horas_estimadas_sd', 'key': 'horasEstimadasSd', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS CO', 'field': 'horas_estimadas_co', 'key': 'horasEstimadasCo', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS PS', 'field': 'horas_estimadas_ps', 'key': 'horasEstimadasPs', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS SLCM', 'field': 'horas_estimadas_slcm', 'key': 'horasEstimadasSlcm', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS CRM', 'field': 'horas_estimadas_crm', 'key': 'horasEstimadasCrm', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS CRM2', 'field': 'horas_estimadas_crm2', 'key': 'horasEstimadasCrm2', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS PCA (OPEX RENTABILIDAD)', 'field': 'horas_estimadas_pca', 'key': 'horasEstimadasPca', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS FM', 'field': 'horas_estimadas_fm', 'key': 'horasEstimadasFm', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS PP', 'field': 'horas_estimadas_pp', 'key': 'horasEstimadasPp', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS PM', 'field': 'horas_estimadas_pm', 'key': 'horasEstimadasPm', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS HCM', 'field': 'horas_estimadas_hcm', 'key': 'horasEstimadasHcm', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS SSFF', 'field': 'horas_estimadas_ssff', 'key': 'horasEstimadasSsff', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS FIORI', 'field': 'horas_estimadas_fiori', 'key': 'horasEstimadasFiori', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS WF', 'field': 'horas_estimadas_wf', 'key': 'horasEstimadasWf', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS ABAP', 'field': 'horas_estimadas_abap', 'key': 'horasEstimadasAbap', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS BASIS', 'field': 'horas_estimadas_basis', 'key': 'horasEstimadasBasis', 'kind': 'hours'}, {'header': 'HORAS ESTIMADAS PMO', 'field': 'horas_estimadas_pmo', 'key': 'horasEstimadasPmo', 'kind': 'hours'}, {'header': 'TOTAL HORAS FUNCIONALES', 'field': 'total_horas_funcionales', 'key': 'totalHorasFuncionales', 'kind': 'hours'}, {'header': 'TOTAL HORAS ESTIMADAS', 'field': 'total_horas_estimadas', 'key': 'totalHorasEstimadas', 'kind': 'hours'}, {'header': 'TOTAL HORAS ESTIMADAS2', 'field': 'total_horas_estimadas2', 'key': 'totalHorasEstimadas2', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS FI', 'field': 'horas_ejecutadas_fi', 'key': 'horasEjecutadasFi', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS MM', 'field': 'horas_ejecutadas_mm', 'key': 'horasEjecutadasMm', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS SD', 'field': 'horas_ejecutadas_sd', 'key': 'horasEjecutadasSd', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS CO', 'field': 'horas_ejecutadas_co', 'key': 'horasEjecutadasCo', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS PS', 'field': 'horas_ejecutadas_ps', 'key': 'horasEjecutadasPs', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS PCA (OPEX RENTABILIDAD)', 'field': 'horas_ejecutadas_pca', 'key': 'horasEjecutadasPca', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS FM', 'field': 'horas_ejecutadas_fm', 'key': 'horasEjecutadasFm', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS HCM', 'field': 'horas_ejecutadas_hcm', 'key': 'horasEjecutadasHcm', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS SSFF', 'field': 'horas_ejecutadas_ssff', 'key': 'horasEjecutadasSsff', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS FIORI', 'field': 'horas_ejecutadas_fiori', 'key': 'horasEjecutadasFiori', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS WF', 'field': 'horas_ejecutadas_wf', 'key': 'horasEjecutadasWf', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS ABAP', 'field': 'horas_ejecutadas_abap', 'key': 'horasEjecutadasAbap', 'kind': 'hours'}, {'header': 'HORAS EJECUTADAS BASIS', 'field': 'horas_ejecutadas_basis', 'key': 'horasEjecutadasBasis', 'kind': 'hours'}, {'header': 'HORAS GARANTIA', 'field': 'horas_garantia', 'key': 'horasGarantia', 'kind': 'hours'}, {'header': 'HORAS PROYECTO ABAP', 'field': 'horas_proyecto_abap', 'key': 'horasProyectoAbap', 'kind': 'hours'}]
+
+for _col107 in COE107_COLUMNAS:
+    CALIFICACION_EXCEL_ALIASES.setdefault(_col107["field"], []).append(_col107["header"])
+CALIFICACION_EXCEL_FECHAS.add("vencimiento_antes_de")
+
 def _calificacion_norm_col(value):
     s = str(value or "")
 
@@ -17658,52 +17669,9 @@ def _calificacion_excel_fecha(value):
 
 
 def _calificacion_excel_horas(value):
-    if not _calificacion_value_present(value):
-        return 0
-
     try:
-        # Excel puede traer duración como timedelta.
-        if isinstance(value, timedelta):
-            return round(value.total_seconds() / 3600, 2)
-
-        # Excel puede traer hora como time.
-        if hasattr(value, "hour") and hasattr(value, "minute") and not isinstance(value, datetime):
-            return round(value.hour + (value.minute / 60) + (value.second / 3600), 2)
-
-        # Si viene datetime real, normalmente no debería ser una hora.
-        # Solo se toma la parte horaria si el año es 1899/1900.
-        if isinstance(value, datetime):
-            if value.year in (1899, 1900):
-                return round(value.hour + (value.minute / 60) + (value.second / 3600), 2)
-            return 0
-
-        s = str(value).strip()
-
-        if s == "" or s.lower() in ("nan", "none", "null"):
-            return 0
-
-        s = s.replace(",", ".")
-
-        # Formato tipo "1 day, 11:00:00"
-        m_day = re.search(r"(\d+)\s+day[s]?,\s+(\d{1,2}):(\d{2})(?::(\d{2}))?", s, re.IGNORECASE)
-        if m_day:
-            dias = int(m_day.group(1))
-            horas = int(m_day.group(2))
-            minutos = int(m_day.group(3))
-            segundos = int(m_day.group(4) or 0)
-            return round((dias * 24) + horas + (minutos / 60) + (segundos / 3600), 2)
-
-        # Formato tipo "18:30:00" o "18:30"
-        m_hora = re.match(r"^(\d{1,4}):(\d{2})(?::(\d{2}))?$", s)
-        if m_hora:
-            horas = int(m_hora.group(1))
-            minutos = int(m_hora.group(2))
-            segundos = int(m_hora.group(3) or 0)
-            return round(horas + (minutos / 60) + (segundos / 3600), 2)
-
-        return round(float(s), 2)
-
-    except Exception:
+        return float(_coe107_horas(value) or 0)
+    except (ValueError, TypeError, OverflowError):
         return 0
 
 
@@ -17716,6 +17684,172 @@ def _calificacion_excel_detectar_header(filas):
             return idx
 
     raise ValueError("No se encontró la fila de encabezados. Debe existir ID, Caso SM o ID de Interacción, y columnas como SOCIEDAD o ASUNTO.")
+
+
+def _coe107_numero(value):
+    from decimal import Decimal, InvalidOperation
+    if value is None or str(value).strip() == '':
+        return None
+    text_value = str(value).strip().replace('\u00a0', '').replace(' ', '').replace('$', '')
+    if ',' in text_value and '.' in text_value:
+        if text_value.rfind(',') > text_value.rfind('.'):
+            text_value = text_value.replace('.', '').replace(',', '.')
+        else:
+            text_value = text_value.replace(',', '')
+    else:
+        text_value = text_value.replace(',', '.')
+    try:
+        number = Decimal(text_value)
+        if not number.is_finite() or abs(number) >= Decimal('100000000000000'):
+            raise ValueError('Número fuera de rango')
+        return float(number)
+    except (InvalidOperation, TypeError) as exc:
+        raise ValueError('Se esperaba un número') from exc
+
+
+def _coe107_horas(value, formato='', epoch=None):
+    from openpyxl.utils.datetime import to_excel
+    if value is None or str(value).strip() == '':
+        return None
+    if isinstance(value, timedelta):
+        hours = value.total_seconds() / 3600
+    elif isinstance(value, datetime):
+        if value.year not in (1899, 1900):
+            raise ValueError('Contiene una fecha real, no una duración')
+        serial = to_excel(value, epoch=epoch) if epoch is not None else to_excel(value)
+        hours = serial * 24
+    elif isinstance(value, time):
+        hours = value.hour + value.minute / 60 + value.second / 3600 + value.microsecond / 3600000000
+    elif isinstance(value, (int, float, Decimal)):
+        hours = float(value)
+        if re.search(r'\[h+\]|h+:|:mm', formato, re.I):
+            hours *= 24
+    else:
+        raw = str(value).strip()
+        match = re.fullmatch(r'(?:(\d+)\s+days?,?\s+)?(\d+):(\d{2})(?::(\d{2}(?:\.\d+)?))?', raw, re.I)
+        if match:
+            days, hh, mm, ss = match.groups()
+            if int(mm) >= 60 or float(ss or 0) >= 60:
+                raise ValueError('Minutos o segundos fuera de rango')
+            hours = int(days or 0) * 24 + int(hh) + int(mm) / 60 + float(ss or 0) / 3600
+        else:
+            hours = _coe107_numero(raw)
+    if hours is None or not math.isfinite(hours) or hours < 0 or hours >= 1e14:
+        raise ValueError('Duración fuera de rango')
+    return round(hours, 6)
+
+
+def _coe107_fecha(value, epoch=None):
+    from openpyxl.utils.datetime import from_excel
+    if value is None or str(value).strip() == '':
+        return None
+    if isinstance(value, time):
+        raise ValueError('Contiene solo una hora; falta la fecha')
+    if isinstance(value, (int, float)) or re.fullmatch(r'\d{4,5}(?:[.,]\d+)?', str(value).strip()):
+        serial = float(str(value).replace(',', '.'))
+        if not 1 <= serial <= 100000:
+            raise ValueError('Serial de fecha fuera de rango')
+        result = from_excel(serial, epoch=epoch) if epoch is not None else from_excel(serial)
+    else:
+        result = _calificacion_fecha(value)
+    if result is None or not isinstance(result, datetime):
+        raise ValueError('Fecha no reconocida')
+    return result
+
+
+def _coe107_preparar_fila(row, formatos, epoch):
+    """Tipa cada celda y conserva por separado el original de cualquier incidencia."""
+    original, typed, issues = {}, {}, []
+    for col in COE107_COLUMNAS:
+        header = _calificacion_norm_col(col['header'])
+        value = row.get(header)
+        field = col['field']
+        original[field] = value.isoformat() if isinstance(value, (datetime, date, time)) else str(value) if isinstance(value, timedelta) else value
+        try:
+            if col['kind'] == 'hours':
+                parsed = _coe107_horas(value, formatos.get(header, ''), epoch)
+            elif col['kind'] == 'date':
+                parsed = _coe107_fecha(value, epoch)
+            elif col['kind'] in ('number', 'integer'):
+                parsed = _coe107_numero(value)
+                if col['kind'] == 'integer' and parsed is not None:
+                    if not parsed.is_integer() or not -2147483648 <= parsed <= 2147483647:
+                        raise ValueError('Se esperaba un entero de 32 bits')
+                    parsed = int(parsed)
+            else:
+                parsed = None if value is None else str(value).replace('\u00a0', ' ').strip()
+                if isinstance(value, float) and value.is_integer():
+                    parsed = str(int(value))
+            typed[field] = parsed
+            # Las funciones históricas de movimientos reciben horas decimales ya convertidas.
+            if col['kind'] == 'hours':
+                row[header] = parsed
+        except (ValueError, TypeError, OverflowError) as exc:
+            typed[field] = None
+            issues.append({'fila': row.get('_excel_fila'), 'columna': col['header'], 'campo': field,
+                           'valor': str(original[field]), 'motivo': str(exc)})
+            if col['kind'] == 'hours':
+                row[header] = None
+    row['_coe107'] = True
+    row['_coe107_original'] = original
+    row['_coe107_tipos'] = typed
+    row['_coe107_incidencias'] = issues
+
+
+def _coe107_aplicar(record, rows):
+    import json
+    hour_fields = {x[2] for x in CALIFICACION_EXCEL_HORAS} | {'total_horas_funcionales', 'total_horas_estimadas', 'total_horas_estimadas2'}
+    # Una fila por caso, movimientos independientes por cada fila de horas y fecha.
+    for col in COE107_COLUMNAS:
+        field = col['field']
+        if field in ('numero', 'caso_sm') or field in hour_fields:
+            continue
+        values = [r['_coe107_tipos'].get(field) for r in rows]
+        value = next((v for v in reversed(values) if v is not None), None)
+        setattr(record, field, value)
+    for field in ('total_horas_funcionales', 'total_horas_estimadas', 'total_horas_estimadas2'):
+        values = [r['_coe107_tipos'].get(field) for r in rows if r['_coe107_tipos'].get(field) is not None]
+        if values:
+            setattr(record, field, sum(values))
+    record.excel_filas_json = json.dumps([
+        {'fila': r.get('_excel_fila'), 'valores': r['_coe107_original']} for r in rows
+    ], ensure_ascii=False, default=str)
+    record.excel_incidencias_json = json.dumps([
+        issue for r in rows for issue in r['_coe107_incidencias']
+    ], ensure_ascii=False)
+
+
+def _coe107_incidencias(record):
+    import json
+    try:
+        return json.loads(getattr(record, 'excel_incidencias_json', None) or '[]')
+    except (ValueError, TypeError):
+        return []
+
+
+def _coe107_limpiar_incidencia(record, field):
+    import json
+    record.excel_incidencias_json = json.dumps([
+        i for i in _coe107_incidencias(record) if i.get('campo') != field
+    ], ensure_ascii=False)
+
+
+def _coe107_serializar(record, resultado):
+    issues = _coe107_incidencias(record)
+    for col in COE107_COLUMNAS:
+        value = getattr(record, col['field'], None)
+        if col['kind'] == 'date':
+            value = _calificacion_fecha_str(value)
+        elif col['kind'] in ('hours', 'number') and value is not None:
+            value = float(value)
+        resultado[col['key']] = value
+    # Un texto inválido permanece visible y señalizado; nunca se trata como horas válidas.
+    resultado['incidenciasExcel'] = issues
+    by_field = {i['campo']: i['valor'] for i in issues}
+    for col in COE107_COLUMNAS:
+        if col['field'] in by_field and not getattr(record, col['field'], None):
+            resultado[col['key']] = by_field[col['field']]
+    return resultado
 
 
 def _leer_excel_historico_calificacion(file):
@@ -17740,6 +17874,8 @@ def _leer_excel_historico_calificacion(file):
             }
 
             item["_excel_fila"] = int(index) + 2
+            if all(_calificacion_norm_col(c["header"]) in columnas for c in COE107_COLUMNAS):
+                _coe107_preparar_fila(item, {}, None)
             rows.append(item)
 
         return rows
@@ -17752,7 +17888,8 @@ def _leer_excel_historico_calificacion(file):
 
     ws = wb["BASE"] if "BASE" in wb.sheetnames else wb.active
 
-    filas = list(ws.iter_rows(values_only=True))
+    filas_celdas = list(ws.iter_rows())
+    filas = [[c.value for c in fila] for fila in filas_celdas]
 
     if not filas:
         raise ValueError("El archivo no tiene información.")
@@ -17762,6 +17899,7 @@ def _leer_excel_historico_calificacion(file):
 
     headers = [_calificacion_norm_col(h) for h in headers_raw]
 
+    es107 = all(_calificacion_norm_col(c["header"]) in headers for c in COE107_COLUMNAS)
     rows = []
 
     for excel_idx, fila in enumerate(filas[header_idx + 1:], start=header_idx + 2):
@@ -17787,12 +17925,19 @@ def _leer_excel_historico_calificacion(file):
             continue
 
         item["_excel_fila"] = excel_idx
+        if es107:
+            _coe107_preparar_fila(item, {
+                headers[i]: c.number_format for i, c in enumerate(filas_celdas[excel_idx - 1]) if i < len(headers)
+            }, wb.epoch)
         rows.append(item)
 
+    wb.close()
     return rows
 
 
 def _calificacion_extraer_campos_excel(row):
+    if row.get("_coe107"):
+        return dict(row["_coe107_tipos"])
     campos = {}
 
     for campo, aliases in CALIFICACION_EXCEL_ALIASES.items():
@@ -17821,6 +17966,9 @@ def _calificacion_horas_desde_row_excel(row):
         )
     )
 
+    if row.get('_coe107'):
+        fecha_aprobacion = row['_coe107_tipos'].get('fecha_aprobacion_estimacion')
+
     for tipo, modulo, campo_modelo, aliases in CALIFICACION_EXCEL_HORAS:
         value = _calificacion_get_excel(row, aliases)
         cantidad = _calificacion_excel_horas(value)
@@ -17839,6 +17987,11 @@ def _calificacion_horas_desde_row_excel(row):
 
 
 def _calificacion_merge_ultimo_valor(rows, campo):
+    if rows and rows[0].get('_coe107'):
+        for row in reversed(rows):
+            if campo in row.get('_coe107_tipos', {}):
+                return row['_coe107_tipos'][campo]
+        return None
     aliases = CALIFICACION_EXCEL_ALIASES.get(campo, [])
 
     ultimo = None
@@ -19011,6 +19164,7 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "fecha10ReasignacionClaro": "fecha_10_reasignacion_claro",
         }
 
+        campos_editables.update({'casoTarea': 'caso_tarea', 'manejoFacturacion': 'manejo_facturacion', 'tipificacion': 'tipificacion', 'transaccion': 'transaccion', 'sociedadCsit': 'sociedad_csit', 'conteosCasos': 'conteos_casos', 'vencido': 'vencido', 'observacionesVencimiento': 'observaciones_vencimiento', 'vencimientoAntesDe': 'vencimiento_antes_de', 'observacionAprobacion': 'observacion_aprobacion'})
         # Campos de fuentes automáticas: no aceptar sobrescrituras manuales.
         for campo_automatico in ('impacto', 'urgencia', 'prioridad', 'fechaAsignacionSistemaGestion', 'horaUltimaActualizacionSistemaGestion', 'fechaResolucionSistemaGestion', 'fechaFinalizacionCierreSistemaGestion'):
             campos_editables.pop(campo_automatico, None)
@@ -19077,6 +19231,7 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
             "horasOferta",
         }
 
+        campos_fecha.add("vencimientoAntesDe")
         for json_key, model_key in campos_editables.items():
             if json_key not in data:
                 continue
@@ -19100,6 +19255,7 @@ def actualizar_calificacion_coe_sap_funcional(calificacion_id):
                     return jsonify({"mensaje": "Ingresa un número válido en " + json_key}), 400
 
             setattr(row, model_key, value)
+            _coe107_limpiar_incidencia(row, model_key)
 
             manual_fields = _coe_ext_manual_fields(row)
             manual_fields[model_key] = True
@@ -19452,6 +19608,12 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
         usuario = _calificacion_usuario_actual()
 
         rows_excel = _leer_excel_historico_calificacion(file)
+        filas_sin_identidad = [x for x in rows_excel if not any(
+            _calificacion_value_present(_calificacion_get_excel(x, CALIFICACION_EXCEL_ALIASES[k]))
+            for k in ('numero', 'caso_sm'))]
+        sin_identidad_ids = {id(x) for x in filas_sin_identidad}
+        rows_excel = [x for x in rows_excel if id(x) not in sin_identidad_ids]
+        incidencias107 = [i for x in rows_excel for i in x.get('_coe107_incidencias', [])]
 
         if not rows_excel:
             return jsonify({
@@ -19662,14 +19824,32 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
                 if hasattr(row_calificacion, k):
                     setattr(row_calificacion, k, v)
 
+            if filas_caso[0].get('_coe107'):
+                _coe107_aplicar(row_calificacion, filas_caso)
             row_calificacion.actualizado_por = usuario
             row_calificacion.updated_at = datetime.utcnow()
 
+        if any(x.get('_coe107') for x in rows_excel):
+            db.session.add(CoeSapFuncionalImportacion(
+                tipo='CALIFICACION', archivo_nombre=file.filename, filas=len(rows_excel),
+                insertados=creados, actualizados=actualizados, errores=len(incidencias107),
+                usuario=usuario, detalle_json=json.dumps({
+                    'formato': 'BASES_COMPLETAS_107',
+                    'incidencias': len(incidencias107),
+                    'filas_sin_identidad': [
+                        {'fila': x.get('_excel_fila'), 'valores': x.get('_coe107_original', {})}
+                        for x in filas_sin_identidad
+                    ],
+                }, ensure_ascii=False, default=str),
+            ))
         db.session.commit()
 
         return jsonify({
             "mensaje": "Excel histórico de calificación procesado correctamente",
             "filas_excel": len(rows_excel),
+            "filas_sin_identidad": len(filas_sin_identidad),
+            "incidencias_formato": len(incidencias107),
+            "incidencias_muestra": incidencias107[:100],
             "casos_unicos_excel": len(grupos),
             "creados": creados,
             "actualizados": actualizados,
@@ -24336,7 +24516,15 @@ def _coe_xls_response(filename, sheets):
                 else:
                     value = row.get(header) if isinstance(row, dict) else None
 
-                cell = ws.cell(row=row_idx, column=col_idx, value=_coe_xls_cell(value))
+                cell_value = value if sheet.get('native_types') else _coe_xls_cell(value)
+                cell = ws.cell(row=row_idx, column=col_idx, value=cell_value)
+                if sheet.get('native_types'):
+                    # A string remains a literal, including identifiers and Excel error labels.
+                    if isinstance(cell_value, str):
+                        cell.data_type = 's'
+                        cell.number_format = '@'
+                    else:
+                        cell.number_format = sheet.get('formats', {}).get(key, 'General')
                 cell.alignment = Alignment(vertical="top", wrap_text=True)
                 cell.border = border
 
@@ -24405,156 +24593,23 @@ def _coe_xls_calificacion_query():
 
 
 def _coe_xls_calificacion_rows(query):
-    rows = query.order_by(CoeSapFuncionalCalificacion.id.desc()).all()
     out = []
-
-    for r in rows:
-        out.append({
-            "id_bd": r.id,
-            "numero": r.numero,
-            "sistema": r.sistema,
-            "caso_sm": r.caso_sm,
-            "doc_1": getattr(r, "doc_1", None),
-            "documentacion": r.documentacion,
-            "caso_transporte": r.caso_transporte,
-            "control_horas": r.control_horas,
-            "manejo": getattr(r, "manejo", None),
-            "error_sap": r.error_sap,
-            "nota_oss_sap": r.nota_oss_sap,
-            "tiquete_proveedor_externo": getattr(r, "tiquete_proveedor_externo", None),
-            "tipo_contrato": r.tipo_contrato,
-            "sociedad": r.sociedad,
-            "cliente_asociado_nombre": getattr(r, "cliente_asociado_nombre", None),
-            "validar_cliente": getattr(r, "validar_cliente", None),
-            "asunto": r.asunto,
-            "observaciones": r.observaciones,
-            "nombre_solicitante": r.nombre_solicitante,
-            "impacto": r.impacto,
-            "urgencia": r.urgencia,
-            "prioridad": r.prioridad,
-            "tipo_solicitud": r.tipo_solicitud,
-            "modulo": r.modulo,
-            "categoria": r.categoria,
-            "subcategoria": r.subcategoria,
-            "articulo": r.articulo,
-            "estado": r.estado,
-            "estado_principal": getattr(r, "estado_principal", None),
-            "subestado": getattr(r, "subestado", None),
-            "validar_estado_control": getattr(r, "validar_estado_control", None),
-            "estado_herramienta_gestion": r.estado_herramienta_gestion,
-            "responsable_estado": r.responsable_estado,
-            "estado_consolidado": r.estado_consolidado,
-            "asignado_a": r.asignado_a,
-            "apoyo_1": r.apoyo_1,
-            "apoyo_2": r.apoyo_2,
-            "apoyo_3": r.apoyo_3,
-            "requiere_abap": r.requiere_abap,
-            "asignacion_abap": r.asignacion_abap,
-            "fecha_asignacion": _coe_rep_date(r.fecha_asignacion),
-            "fecha_asignacion_sistema_gestion": _coe_rep_date(getattr(r, "fecha_asignacion_sistema_gestion", None)),
-            "dif_fecha_asignacion": getattr(r, "dif_fecha_asignacion", None),
-            "validar_fecha_asignacion": getattr(r, "validar_fecha_asignacion", None),
-            "dia_creacion": r.dia_creacion,
-            "mes_creacion": r.mes_creacion,
-            "anio_creacion": r.anio_creacion,
-            "hora_ultima_actualizacion": _coe_rep_date(r.hora_ultima_actualizacion),
-            "hora_ultima_actualizacion_sistema_gestion": _coe_rep_date(getattr(r, "hora_ultima_actualizacion_sistema_gestion", None)),
-            "validar_fecha_actualizacion": getattr(r, "validar_fecha_actualizacion", None),
-            "fecha_respuesta": _coe_rep_date(r.fecha_respuesta),
-            "fecha_resolucion": _coe_rep_date(r.fecha_resolucion),
-            "fecha_resolucion_sistema_gestion": _coe_rep_date(getattr(r, "fecha_resolucion_sistema_gestion", None)),
-            "dif_fecha_resolucion": getattr(r, "dif_fecha_resolucion", None),
-            "validar_fecha_resolucion": getattr(r, "validar_fecha_resolucion", None),
-            "fecha_finalizacion_cierre": _coe_rep_date(r.fecha_finalizacion_cierre),
-            "fecha_finalizacion_cierre_sistema_gestion": _coe_rep_date(getattr(r, "fecha_finalizacion_cierre_sistema_gestion", None)),
-            "dif_fecha_cierre": getattr(r, "dif_fecha_cierre", None),
-            "validar_fecha_cierre": getattr(r, "validar_fecha_cierre", None),
-            "dia_cierre": r.dia_cierre,
-            "mes_cierre": r.mes_cierre,
-            "anio_cierre": r.anio_cierre,
-            "tiempo_respuesta": r.tiempo_respuesta,
-            "tiempo_resolucion": r.tiempo_resolucion,
-            "tiempo_finalizacion_cierre": r.tiempo_finalizacion_cierre,
-            "fecha_compromiso": _coe_rep_date(r.fecha_compromiso),
-            "lider_claro": r.lider_claro,
-            "tipo_ingreso": r.tipo_ingreso,
-            "estado_facturacion_ot": getattr(r, "estado_facturacion_ot", None),
-            "nro_ot": getattr(r, "nro_ot", None),
-            "valor_ot": getattr(r, "valor_ot", None),
-            "horas_oferta": getattr(r, "horas_oferta", None),
-            "fecha_inicio_laboracion_estimacion": _coe_rep_date(r.fecha_inicio_laboracion_estimacion),
-            "fecha_estimacion": _coe_rep_date(r.fecha_estimacion),
-            "dias_entrega_estimacion": _calificacion_dias_estimacion_actual(r),
-            "mes_estimacion": r.mes_estimacion,
-            "anio_estimacion": r.anio_estimacion,
-            "fecha_aprobacion_estimacion": _coe_rep_date(r.fecha_aprobacion_estimacion),
-            "mes_aprobado_estimacion": r.mes_aprobado_estimacion,
-            "anio_aprobado_estimacion": r.anio_aprobado_estimacion,
-            "estado_estimacion": r.estado_estimacion,
-            "total_horas_funcionales": r.total_horas_funcionales,
-            "total_horas_estimadas": r.total_horas_estimadas,
-            "total_horas_estimadas2": r.total_horas_estimadas2,
-            "horas_garantia": r.horas_garantia,
-            "horas_proyecto_abap": r.horas_proyecto_abap,
-            "validar_subcategoria": getattr(r, "validar_subcategoria", None),
-            "validar_articulo": getattr(r, "validar_articulo", None),
-            "cruce_sm": _coe_xls_bool_text(getattr(r, "cruce_sm", False)),
-            "cruce_itop": _coe_xls_bool_text(getattr(r, "cruce_itop", False)),
-            "solo_excel": _coe_xls_bool_text(getattr(r, "solo_excel", False)),
-            "origen_datos_json": getattr(r, "origen_datos_json", None),
-            "campos_editados_manual_json": getattr(r, "campos_editados_manual_json", None),
-        })
-
+    for row in query.order_by(CoeSapFuncionalCalificacion.id.desc()).all():
+        datos = _calificacion_to_dict(row)
+        item = {}
+        for col in COE107_COLUMNAS:
+            value = datos.get(col['key'])
+            if col['kind'] == 'date' and isinstance(value, str) and re.match(r'^\d{4}-\d{2}-\d{2}', value):
+                value = _calificacion_fecha(value)
+            elif col['kind'] == 'hours' and isinstance(value, (float, int)):
+                value = value / 24
+            item[col['field']] = value
+        out.append(item)
     return out
 
 
 def _coe_xls_calificacion_headers():
-    return [
-        ("ID BD", "id_bd"), ("ID", "numero"), ("SISTEMA", "sistema"), ("N° CASO SM", "caso_sm"),
-        ("DOC 1", "doc_1"), ("DOCUMENTACION", "documentacion"), ("CASO TRANSPORTE", "caso_transporte"),
-        ("CONTROL HORAS", "control_horas"), ("MANEJO", "manejo"), ("N° ERROR SAP", "error_sap"),
-        ("N° NOTA OSS SAP", "nota_oss_sap"), ("TIQUETE PROVEEDOR EXTERNO", "tiquete_proveedor_externo"),
-        ("TIPO CONTRATO", "tipo_contrato"), ("SOCIEDAD", "sociedad"),
-        ("CLIENTE ASOCIADO", "cliente_asociado_nombre"), ("VALIDAR CLIENTE", "validar_cliente"),
-        ("ASUNTO", "asunto"),
-        ("OBSERVACIONES", "observaciones"), ("NOMBRE DEL SOLICITANTE", "nombre_solicitante"),
-        ("IMPACTO", "impacto"), ("URGENCIA", "urgencia"), ("PRIORIDAD", "prioridad"),
-        ("TIPO DE SOLICITUD", "tipo_solicitud"), ("MODULO", "modulo"), ("CATEGORÍA", "categoria"),
-        ("SUBCATEGORÍA", "subcategoria"), ("ARTÍCULO", "articulo"), ("ESTADO ORIGINAL", "estado"),
-        ("ESTADO PRINCIPAL", "estado_principal"), ("SUBESTADO", "subestado"),
-        ("VALIDAR ESTADO CONTROL", "validar_estado_control"),
-        ("ESTADO HERRAMIENTA GESTIÓN", "estado_herramienta_gestion"), ("RESPONSABLE ESTADO", "responsable_estado"),
-        ("ESTADO CONSOLIDADO", "estado_consolidado"), ("ASIGNADO A", "asignado_a"),
-        ("APOYO 1", "apoyo_1"), ("APOYO 2", "apoyo_2"), ("APOYO 3", "apoyo_3"),
-        ("REQUIERE ABAP", "requiere_abap"), ("ASIGNACIÓN ABAP", "asignacion_abap"),
-        ("FECHA ASIGNACIÓN", "fecha_asignacion"), ("FECHA ASIGNACIÓN SISTEMA GESTIÓN", "fecha_asignacion_sistema_gestion"),
-        ("DIF FECHA ASIGNACIÓN", "dif_fecha_asignacion"), ("VALIDAR FECHA ASIGNACIÓN", "validar_fecha_asignacion"),
-        ("DÍA CREACIÓN", "dia_creacion"), ("MES CREACIÓN", "mes_creacion"), ("AÑO CREACIÓN", "anio_creacion"),
-        ("HORA ÚLTIMA ACTUALIZACIÓN", "hora_ultima_actualizacion"),
-        ("HORA ÚLTIMA ACTUALIZACIÓN SISTEMA GESTIÓN", "hora_ultima_actualizacion_sistema_gestion"),
-        ("VALIDAR FECHA ACTUALIZACIÓN", "validar_fecha_actualizacion"),
-        ("FECHA RESPUESTA", "fecha_respuesta"), ("FECHA RESOLUCIÓN", "fecha_resolucion"),
-        ("FECHA RESOLUCIÓN SISTEMA GESTIÓN", "fecha_resolucion_sistema_gestion"),
-        ("DIF FECHA RESOLUCIÓN", "dif_fecha_resolucion"), ("VALIDAR FECHA RESOLUCIÓN", "validar_fecha_resolucion"),
-        ("FECHA FINALIZACIÓN / CIERRE", "fecha_finalizacion_cierre"),
-        ("FECHA FINALIZACIÓN / CIERRE SISTEMA GESTIÓN", "fecha_finalizacion_cierre_sistema_gestion"),
-        ("DIF FECHA CIERRE", "dif_fecha_cierre"), ("VALIDAR FECHA CIERRE", "validar_fecha_cierre"),
-        ("DÍA CIERRE", "dia_cierre"), ("MES CIERRE", "mes_cierre"), ("AÑO CIERRE", "anio_cierre"),
-        ("TIEMPO RESPUESTA", "tiempo_respuesta"), ("TIEMPO RESOLUCIÓN", "tiempo_resolucion"),
-        ("TIEMPO FINALIZACIÓN / CIERRE", "tiempo_finalizacion_cierre"), ("FECHA COMPROMISO", "fecha_compromiso"),
-        ("LÍDER CLARO", "lider_claro"), ("TIPO INGRESO", "tipo_ingreso"),
-        ("ESTADO FACTURACIÓN OT", "estado_facturacion_ot"), ("N° OT", "nro_ot"), ("VALOR OT", "valor_ot"),
-        ("HORAS OFERTA", "horas_oferta"), ("FECHA INICIO LABORACION ESTIMACION", "fecha_inicio_laboracion_estimacion"), ("FECHA ESTIMACIÓN", "fecha_estimacion"),
-        ("DÍAS ENTREGA ESTIMACIÓN", "dias_entrega_estimacion"), ("MES ESTIMACIÓN", "mes_estimacion"),
-        ("AÑO ESTIMACIÓN", "anio_estimacion"), ("FECHA APROBACIÓN ESTIMACIÓN", "fecha_aprobacion_estimacion"),
-        ("MES APROBADO ESTIMACIÓN", "mes_aprobado_estimacion"), ("AÑO APROBADO ESTIMACIÓN", "anio_aprobado_estimacion"),
-        ("ESTADO ESTIMACIÓN", "estado_estimacion"), ("TOTAL HORAS FUNCIONALES", "total_horas_funcionales"),
-        ("TOTAL HORAS ESTIMADAS", "total_horas_estimadas"), ("TOTAL HORAS ESTIMADAS 2", "total_horas_estimadas2"),
-        ("HORAS GARANTÍA", "horas_garantia"), ("HORAS PROYECTO ABAP", "horas_proyecto_abap"),
-        ("VALIDAR SUBCATEGORÍA", "validar_subcategoria"), ("VALIDAR ARTÍCULO", "validar_articulo"),
-        ("CRUCE SM", "cruce_sm"), ("CRUCE ITOP", "cruce_itop"), ("SOLO EXCEL", "solo_excel"),
-        ("ORIGEN DATOS JSON", "origen_datos_json"), ("CAMPOS EDITADOS MANUAL JSON", "campos_editados_manual_json"),
-    ]
+    return [(c['header'], c['field']) for c in COE107_COLUMNAS]
 
 
 @bp.route("/coe-sap-funcional/calificacion/export-excel", methods=["GET"])
@@ -24566,7 +24621,12 @@ def exportar_calificacion_coe_sap_funcional_excel():
 
         return _coe_xls_response(
             _coe_xls_filename("calificacion_coe_sap_funcional"),
-            [{"title": "Calificacion", "headers": _coe_xls_calificacion_headers(), "rows": rows}],
+            [{"title": "Calificacion", "headers": _coe_xls_calificacion_headers(), "rows": rows,
+              "native_types": True,
+              "formats": {c['field']: ('[h]:mm:ss' if c['kind'] == 'hours' else
+                          'dd/mm/yyyy hh:mm:ss' if c['kind'] == 'date' else
+                          '0' if c['kind'] == 'integer' else '#,##0.00' if c['kind'] == 'number' else '@')
+                          for c in COE107_COLUMNAS}}],
         )
 
     except Exception as e:
