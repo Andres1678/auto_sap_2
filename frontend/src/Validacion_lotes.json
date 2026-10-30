@@ -1,0 +1,8 @@
+{
+  "lotes": 451,
+  "casos": 18030,
+  "filas": 18962,
+  "max_preparacion_lote_segundos_sin_SQL": 0.8,
+  "incidencias": 25540,
+  "horas_validas_movimientos": 16578.149996
+}

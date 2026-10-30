@@ -1818,3 +1818,15 @@ class TriaraAsistencia(db.Model):
     __table_args__ = (
         UniqueConstraint('consultor_id', 'semana_lunes', name='uq_triara_consultor_semana'),
     )
+
+
+class CoeSapFuncionalImportacionLote(db.Model):
+    __tablename__ = 'coe_sap_funcional_importacion_lotes'
+    id = db.Column(db.Integer, primary_key=True)
+    job = db.Column(db.String(32), nullable=False)
+    lote = db.Column(db.Integer, nullable=False)
+    usuario = db.Column(db.String(100), nullable=False)
+    payload_hash = db.Column(db.String(64), nullable=False)
+    respuesta_json = db.Column(LONGTEXT, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('job', 'lote', name='uq_coe107_job_lote'),)

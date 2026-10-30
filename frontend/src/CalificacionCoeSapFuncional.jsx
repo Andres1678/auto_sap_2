@@ -1501,6 +1501,69 @@ const CATALOG_TYPES_TO_LOAD = [
   "ESTADO_FACTURACION_OT",
 ];
 
+async function coe107FileKey(buffer) {
+  if (window.crypto?.subtle) {
+    const digest = await window.crypto.subtle.digest("SHA-256", buffer);
+    return Array.from(new Uint8Array(digest), (x) => x.toString(16).padStart(2, "0")).join("");
+  }
+  // Fingerprint fallback for internal HTTP sites without SubtleCrypto.
+  let a = 2166136261;
+  let b = 2246822519;
+  for (const value of new Uint8Array(buffer)) {
+    a = Math.imul(a ^ value, 16777619);
+    b = Math.imul(b ^ value, 3266489917);
+  }
+  return `${buffer.byteLength}_${a >>> 0}_${b >>> 0}`;
+}
+
+function coe107NewJob() {
+  const values = new Uint8Array(16);
+  window.crypto.getRandomValues(values);
+  return Array.from(values, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+async function coe107ReadWorkbook(file) {
+  const XLSX = await import("xlsx");
+  const buffer = await file.arrayBuffer();
+  const fingerprint = await coe107FileKey(buffer);
+  const wb = XLSX.read(buffer, { type: "array", cellDates: false, cellNF: true });
+  const sheet = wb.Sheets.BASE || wb.Sheets[wb.SheetNames[0]];
+  if (!sheet?.["!ref"]) throw new Error("El archivo no contiene información.");
+  const range = XLSX.utils.decode_range(sheet["!ref"]);
+  const normalize = (value) => String(value ?? "").replace(/\u00a0/g, " ").trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ");
+  let headerRow = -1;
+  let sourceColumns = [];
+  for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 49); r += 1) {
+    const found = new Map();
+    for (let c = range.s.c; c <= range.e.c; c += 1) {
+      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+      found.set(normalize(cell?.v), c);
+    }
+    if (TABLE_COLUMNS.every((col) => found.has(normalize(col.label)))) {
+      headerRow = r;
+      sourceColumns = TABLE_COLUMNS.map((col) => found.get(normalize(col.label)));
+      break;
+    }
+  }
+  if (headerRow < 0) throw new Error("No se encontraron las 107 columnas de BASES_COMPLETAS. Usa el archivo con la estructura completa.");
+  const filas = [];
+  for (let r = headerRow + 1; r <= range.e.r; r += 1) {
+    const formatos = {};
+    const valores = sourceColumns.map((c, index) => {
+      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+      if (!cell || cell.v === undefined || cell.v === null) return null;
+      if (cell.z && cell.z !== "General") formatos[index] = cell.z;
+      return cell.t === "e" ? cell.w || "#ERROR!" : cell.v;
+    });
+    if (valores.every((value) => value === null || value === "")) continue;
+    filas.push({ pos: filas.length, fila: r + 1, valores, formatos });
+  }
+  if (!filas.length) throw new Error("El Excel no contiene filas de datos.");
+  if (filas.length > 50000) throw new Error("La importación admite hasta 50.000 filas por archivo.");
+  return { fingerprint, filas, date1904: Boolean(wb.Workbook?.WBProps?.date1904) };
+}
+
+
 export default function CalificacionCoeSapFuncional() {
   const fileInputRef = useRef(null);
 
@@ -2471,80 +2534,98 @@ export default function CalificacionCoeSapFuncional() {
   };
 
   const importarExcelHistorico = async (file) => {
-    if (!file) return;
-
-    const confirm = await Swal.fire({
-      icon: "question",
-      title: "Importar Excel histórico",
-      text: "Se cruzará el Excel contra la calificación y se actualizarán campos manuales y horas.",
-      showCancelButton: true,
-      confirmButtonText: "Sí, importar",
-      cancelButtonText: "Cancelar",
+    if (!file || uploadingExcel) return;
+    const decision = await Swal.fire({
+      icon: "question", title: "Importar Excel por lotes",
+      text: "Se procesarán lotes pequeños conservando juntas las filas y aprobaciones de cada caso. Si se interrumpe, puedes seleccionar el mismo archivo para continuar.",
+      showCancelButton: true, confirmButtonText: "Importar", cancelButtonText: "Cancelar",
       confirmButtonColor: "#DA291C",
     });
-
-    if (!confirm.isConfirmed) {
+    if (!decision.isConfirmed) {
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
-
-    const formData = new FormData();
-    formData.append("file", file);
-
     setUploadingExcel(true);
-
-    try {
-      const res = await jfetch("/coe-sap-funcional/calificacion/import-excel", {
-        method: "POST",
-        headers: commonHeaders,
-        body: formData,
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data?.error || data?.mensaje || `HTTP ${res.status}`);
+    let state = null;
+    let storageKey = "";
+    const saveState = () => {
+      try { localStorage.setItem(storageKey, JSON.stringify(state)); } catch { /* Current retries remain protected by the server. */ }
+    };
+    const progress = (message) => Swal.update({ html: `<p>${message}</p><progress max="100" value="${state?.percent || 0}" style="width:100%;height:18px"></progress><p>${state?.percent || 0}% confirmado</p>` });
+    const requestBatch = async (endpoint, payload) => {
+      const body = JSON.stringify(payload);
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        try {
+          const res = await jfetch(endpoint, {
+            method: "POST", headers: { ...commonHeaders, "Content-Type": "application/json" }, body,
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) return data;
+          const error = new Error([data?.mensaje, data?.error].filter(Boolean).join(": ") || `HTTP ${res.status}`);
+          error.retryable = [408, 502, 503, 504].includes(res.status);
+          throw error;
+        } catch (error) {
+          const retryable = error.retryable || error instanceof TypeError;
+          if (!retryable || attempt === 3) throw error;
+          progress(`Verificando el mismo lote tras una interrupción. Reintento ${attempt + 1} de 3…`);
+          await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 2000));
+        }
       }
-
-      const diferencias = Array.isArray(data?.diferencias_muestra)
-        ? data.diferencias_muestra.length
-        : 0;
-
-      await Swal.fire({
-        icon: "success",
-        title: "Excel procesado",
-        html: `
-          <div style="text-align:left">
-            <p><b>Filas Excel:</b> ${data?.filas_excel ?? "—"}</p>
-            <p><b>Casos únicos:</b> ${data?.casos_unicos_excel ?? "—"}</p>
-            <p><b>Creados:</b> ${data?.creados ?? "—"}</p>
-            <p><b>Actualizados:</b> ${data?.actualizados ?? "—"}</p>
-            <p><b>Solo Excel:</b> ${data?.creados_solo_excel ?? "—"}</p>
-            <p><b>No encontrados en base:</b> ${data?.no_encontrados_en_base ?? "—"}</p>
-            <p><b>Duplicados Excel:</b> ${data?.duplicados_excel ?? "—"}</p>
-            <p><b>Movimientos de horas:</b> ${data?.horas_movimientos ?? "—"}</p>
-            <p><b>Celdas para revisar:</b> ${data?.incidencias_formato ?? 0}</p>
-            <p><b>Filas sin ID ni caso:</b> ${data?.filas_sin_identidad ?? 0}</p>
-            <p><b>Diferencias muestra:</b> ${diferencias}</p>
-          </div>
-        `,
-        confirmButtonColor: "#008C67",
+      throw new Error("No se pudo confirmar el lote.");
+    };
+    Swal.fire({
+      title: "Preparando importación", html: "Leyendo el archivo…",
+      allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false,
+      didOpen: () => Swal.showLoading(),
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const workbook = await coe107ReadWorkbook(file);
+      const usuario = commonHeaders["X-User-Usuario"] || "usuario";
+      storageKey = `calcoe_import107_lotes_${usuario}_${workbook.fingerprint}`;
+      try { state = JSON.parse(localStorage.getItem(storageKey) || "null"); } catch { state = null; }
+      if (!state || !/^[a-f0-9]{32}$/.test(state.job) || !Number.isInteger(state.next)) {
+        state = { job: coe107NewJob(), next: 0, percent: 0, summary: {} };
+      }
+      saveState();
+      progress("Organizando los casos y sus aprobaciones…");
+      const plan = await requestBatch("/coe-sap-funcional/calificacion/import-excel/plan", {
+        job: state.job, archivo: file.name, fingerprint: workbook.fingerprint,
+        identidades: workbook.filas.map((row) => [row.fila, row.valores[0], row.valores[1]]),
       });
-
-      if (fileInputRef.current) fileInputRef.current.value = "";
-
+      if (state.next > plan.lotes.length) throw new Error("La continuación no coincide con el archivo.");
+      const counters = ["filas_excel", "filas_sin_identidad", "casos_unicos_excel", "creados", "actualizados", "duplicados_excel", "horas_movimientos", "incidencias_formato"];
+      for (let index = state.next; index < plan.lotes.length; index += 1) {
+        progress(`Procesando lote ${index + 1} de ${plan.lotes.length}. Casos confirmados: ${state.summary.casos_unicos_excel || 0}.`);
+        const data = await requestBatch("/coe-sap-funcional/calificacion/import-excel/lote", {
+          job: state.job, lote: index, archivo: file.name, date1904: workbook.date1904,
+          filas: plan.lotes[index].map((pos) => workbook.filas[pos]),
+        });
+        counters.forEach((key) => { state.summary[key] = (state.summary[key] || 0) + Number(data[key] || 0); });
+        state.next = index + 1;
+        state.percent = Math.round(state.next * 100 / plan.lotes.length);
+        saveState();
+      }
+      try { localStorage.removeItem(storageKey); } catch { /* The completed job remains safe to replay. */ }
+      const total = state.summary;
+      await Swal.fire({
+        icon: "success", title: "Excel importado", confirmButtonColor: "#008C67",
+        html: `<div style="text-align:left"><p><b>Filas con identificador:</b> ${total.filas_excel || 0}</p><p><b>Casos:</b> ${total.casos_unicos_excel || 0}</p><p><b>Creados:</b> ${total.creados || 0} · <b>Actualizados:</b> ${total.actualizados || 0}</p><p><b>Movimientos de horas:</b> ${total.horas_movimientos || 0}</p><p><b>Celdas para revisar:</b> ${total.incidencias_formato || 0}</p><p><b>Filas sin identidad auditadas:</b> ${total.filas_sin_identidad || 0}</p></div>`,
+      });
       fetchRows();
     } catch (error) {
-      Swal.fire({
-        icon: "error",
-        title: "Error importando Excel",
-        text: error?.message || "No se pudo procesar el archivo.",
+      await Swal.fire({
+        icon: "error", title: "Importación interrumpida",
+        text: `${error?.message || "No se pudo confirmar la carga."} ${state ? `Lotes confirmados: ${state.next}. Selecciona el mismo archivo para continuar; el lote pendiente se verificará sin duplicar movimientos.` : ""}`,
         confirmButtonColor: "#DA291C",
       });
+      if (state?.next) fetchRows();
     } finally {
       setUploadingExcel(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
 
   const openEdit = (row, fieldKey = null) => {
     if (!canImport || savingEdit) return;

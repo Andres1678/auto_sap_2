@@ -1,6 +1,6 @@
 from flask import request, jsonify, Blueprint, current_app as app, g
 from backend.models import (
-    db, Cargo, Especialidad, Modulo, Consultor, Registro, BaseRegistro, BaseRegistroInfoCoeSapFuncional, Login,
+    db, CoeSapFuncionalImportacionLote, Cargo, Especialidad, Modulo, Consultor, Registro, BaseRegistro, BaseRegistroInfoCoeSapFuncional, Login,
     Rol, Equipo, Horario, Oportunidad, Cliente,
     Permiso, RolPermiso, EquipoPermiso, ConsultorPermiso,
     Ocupacion, Tarea, TareaAlias, Ocupacion, RegistroExcel,
@@ -19596,18 +19596,218 @@ def _coe_guardar_identidad_calificacion(row, numero, caso):
             {"numero": numero}, synchronize_session="fetch")
 
 
+def _coe107_lote_hash(payload):
+    import hashlib
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()
+
+
+def _coe107_lote_job(payload):
+    job = str(payload.get('job') or '')
+    if not re.fullmatch(r'[a-f0-9]{32}', job):
+        raise ValueError('Identificador de importación inválido.')
+    return job
+
+
+def _coe107_lote_cache(job, lote, usuario, digest=None):
+    row = CoeSapFuncionalImportacionLote.query.filter_by(job=job, lote=lote).first()
+    if row:
+        if row.usuario != usuario:
+            raise ValueError('La importación pertenece a otro usuario.')
+        if digest and row.payload_hash != digest:
+            raise ValueError('El contenido del lote cambió. Debe iniciar otra importación.')
+    return row
+
+
+@bp.route('/coe-sap-funcional/calificacion/import-excel/plan', methods=['POST'])
+@permission_required('BASE_REGISTRO_IMPORTAR')
+def planificar_excel_calificacion_107():
+    """Solo identifica filas y grupos; nunca lee el libro ni procesa 18.000 casos en una petición."""
+    try:
+        data = request.get_json(silent=True) or {}
+        job = _coe107_lote_job(data)
+        usuario = _calificacion_usuario_actual() or ''
+        digest = _coe107_lote_hash(data)
+        cached = _coe107_lote_cache(job, -1, usuario, digest)
+        if cached:
+            return jsonify(json.loads(cached.respuesta_json)), 200
+        inputs = data.get('identidades')
+        if not isinstance(inputs, list) or not 1 <= len(inputs) <= 50000:
+            raise ValueError('El archivo debe contener entre 1 y 50.000 filas.')
+        raw_rows, orphans = [], []
+        normalized = {}
+        for pos, pair in enumerate(inputs):
+            if not isinstance(pair, list) or len(pair) != 3:
+                raise ValueError('Formato de identidad inválido.')
+            excel_row, numero, caso = pair
+            if not isinstance(excel_row, int) or excel_row < 2:
+                raise ValueError('Número de fila inválido.')
+            if numero in (None, '') and caso in (None, ''):
+                orphans.append(pos)
+                normalized[str(pos)] = [None, None]
+                continue
+            item = {'ID': numero, 'NO CASO SM': caso, '_excel_fila': excel_row, '_pos': pos}
+            raw_rows.append(item)
+        rows = _coe_identidades_importacion(raw_rows)
+        rf_ids = defaultdict(set)
+        for row in rows:
+            numero, caso = row.get('ID'), row.get('NO CASO SM')
+            if numero and caso:
+                rf_ids[caso].add(numero)
+        # Resolver los RF sin ID contra la BD en una sola consulta. Así, un
+        # alias ya asociado a un ID no puede acabar sobrescribiendo otro lote.
+        rf_pendientes = {row.get('NO CASO SM') for row in rows
+                         if not row.get('ID') and row.get('NO CASO SM') and len(rf_ids.get(row.get('NO CASO SM'), set())) != 1}
+        rf_existentes = defaultdict(list)
+        if rf_pendientes:
+            existentes = CoeSapFuncionalCalificacion.query.filter(or_(
+                CoeSapFuncionalCalificacion.caso_sm.in_(rf_pendientes),
+                CoeSapFuncionalCalificacion.numero.in_(rf_pendientes),
+            )).all()
+            for existing in existentes:
+                for rf in {existing.caso_sm, existing.numero} & rf_pendientes:
+                    rf_existentes[rf].append(existing)
+        groups = {}
+        for row in rows:
+            numero, caso = row.get('ID') or None, row.get('NO CASO SM') or None
+            if not numero and caso in rf_existentes:
+                matches = rf_existentes[caso]
+                if len(matches) != 1:
+                    raise ValueError(f'El caso {caso} tiene varias identidades en la base. Debe revisarse antes de importar.')
+                numero_db, caso_db = _coe_separar_identidad(matches[0].numero, matches[0].caso_sm)
+                numero = numero_db
+                caso = caso or caso_db
+            if not numero and len(rf_ids.get(caso, set())) == 1:
+                numero = next(iter(rf_ids[caso]))
+            if not numero and not caso:
+                raise ValueError(f"Fila {row['_excel_fila']}: no tiene un ID ni un caso utilizable.")
+            normalized[str(row['_pos'])] = [numero, caso]
+            key = ('ID', numero) if numero else ('CASO_SM', caso)
+            groups.setdefault(key, []).append(row['_pos'])
+        if not groups:
+            raise ValueError('No se encontraron casos con identidad válida.')
+        # No dividir un caso: todas sus aprobaciones y horas van en una misma transacción.
+        chunks, chunk, cases = [], [], 0
+        for positions in groups.values():
+            if len(positions) > 5000:
+                raise ValueError('Un caso contiene más de 5.000 filas. Requiere una carga específica.')
+            if chunk and (cases >= 40 or len(chunk) + len(positions) > 5000):
+                chunks.append(chunk)
+                chunk, cases = [], 0
+            chunk.extend(positions)
+            cases += 1
+        if chunk:
+            chunks.append(chunk)
+        # Las filas sin identidad también se auditan, sin crear casos ficticios.
+        for i in range(0, len(orphans), 1000):
+            part = orphans[i:i + 1000]
+            if len(chunks[0]) + len(part) <= 5000:
+                chunks[0].extend(part)
+            else:
+                chunks.append(part)
+        result = {'job': job, 'lotes': chunks, 'identidades': normalized, 'casos': len(groups),
+                  'filas': len(inputs), 'filas_sin_identidad': len(orphans)}
+        marker = CoeSapFuncionalImportacionLote(job=job, lote=-1, usuario=usuario,
+                    payload_hash=digest, respuesta_json=json.dumps(result, ensure_ascii=False))
+        db.session.add(marker)
+        db.session.commit()
+        return jsonify(result), 200
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'mensaje': str(exc)}), 400
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('Error preparando lotes de calificación')
+        return jsonify({'mensaje': 'No se pudo preparar la importación. Comprueba el SQL de lotes y el log del backend.'}), 500
+
+
+def _coe107_lote_leer(data):
+    """Valida el manifiesto e impide reenviar un lote ya confirmado con datos distintos."""
+    job = _coe107_lote_job(data)
+    lote = data.get('lote')
+    usuario = _calificacion_usuario_actual() or ''
+    if not isinstance(lote, int) or lote < 0:
+        raise ValueError('Número de lote inválido.')
+    plan_marker = _coe107_lote_cache(job, -1, usuario)
+    if not plan_marker:
+        raise ValueError('La importación no tiene un plan válido.')
+    plan = json.loads(plan_marker.respuesta_json)
+    if lote >= len(plan['lotes']):
+        raise ValueError('El lote no pertenece a esta importación.')
+    digest = _coe107_lote_hash(data)
+    cached = _coe107_lote_cache(job, lote, usuario, digest)
+    if cached:
+        return None, cached, True
+    values = data.get('filas')
+    positions = plan['lotes'][lote]
+    if not isinstance(values, list) or len(values) != len(positions) or len(values) > 5000:
+        raise ValueError('El lote no contiene las filas previstas.')
+    if lote:
+        previous = _coe107_lote_cache(job, lote - 1, usuario)
+        if not previous:
+            raise ValueError('Debe completarse primero el lote anterior.')
+    marker = CoeSapFuncionalImportacionLote(job=job, lote=lote, usuario=usuario,
+                    payload_hash=digest, respuesta_json='{}')
+    db.session.add(marker)
+    # La restricción única serializa reintentos simultáneos del mismo lote.
+    db.session.flush()
+    rows = []
+    for pos, supplied in zip(positions, values):
+        if not isinstance(supplied, dict) or supplied.get('pos') != pos:
+            raise ValueError('El orden del lote no coincide con el plan.')
+        cells = supplied.get('valores')
+        formats = supplied.get('formatos') or {}
+        if not isinstance(cells, list) or len(cells) != 107 or not isinstance(formats, dict):
+            raise ValueError('Cada fila debe contener las 107 columnas y sus formatos.')
+        row = {_calificacion_norm_col(c['header']): value for c, value in zip(COE107_COLUMNAS, cells)}
+        row['_excel_fila'] = supplied.get('fila')
+        fmt = {_calificacion_norm_col(COE107_COLUMNAS[int(idx)]['header']): str(value)
+               for idx, value in formats.items() if str(idx).isdigit() and 0 <= int(idx) < 107}
+        from openpyxl.utils.datetime import CALENDAR_MAC_1904, CALENDAR_WINDOWS_1900
+        epoch = CALENDAR_MAC_1904 if data.get('date1904') else CALENDAR_WINDOWS_1900
+        from openpyxl.utils.datetime import from_excel
+        for col in COE107_COLUMNAS:
+            header = _calificacion_norm_col(col['header'])
+            value = row.get(header)
+            number_format = re.sub(r'\[[^\]]*\]|"[^"]*"', '', fmt.get(header, ''))
+            calendar_format = bool(re.search(r'[yd]', number_format, re.I))
+            if isinstance(value, (int, float)) and 0 <= value <= 100000 and (
+                    col['kind'] == 'date' or (col['kind'] == 'hours' and calendar_format)):
+                row[header] = from_excel(value, epoch=epoch)
+        _coe107_preparar_fila(row, fmt, epoch)
+        row['_coe107_identidad_lote'] = plan['identidades'][str(pos)]
+        rows.append(row)
+    return rows, marker, False
+
+
+@bp.route('/coe-sap-funcional/calificacion/import-excel/lote', methods=['POST'])
+@permission_required('BASE_REGISTRO_IMPORTAR')
+def importar_lote_excel_calificacion_107():
+    if not request.is_json:
+        return jsonify({'mensaje': 'Se requiere un lote JSON.'}), 400
+    return importar_excel_historico_calificacion_coe_sap_funcional()
+
+
 @bp.route("/coe-sap-funcional/calificacion/import-excel", methods=["POST"])
 @permission_required("BASE_REGISTRO_IMPORTAR")
 def importar_excel_historico_calificacion_coe_sap_funcional():
     file = request.files.get("file")
 
-    if not file:
+    es_lote = request.is_json
+    marker_lote = None
+    payload_lote = request.get_json(silent=True) or {} if es_lote else {}
+
+    if not file and not es_lote:
         return jsonify({"mensaje": "Archivo no recibido"}), 400
 
     try:
         usuario = _calificacion_usuario_actual()
 
-        rows_excel = _leer_excel_historico_calificacion(file)
+        if es_lote:
+            rows_excel, marker_lote, repetido = _coe107_lote_leer(payload_lote)
+            if repetido:
+                return jsonify(json.loads(marker_lote.respuesta_json)), 200
+        else:
+            rows_excel = _leer_excel_historico_calificacion(file)
         filas_sin_identidad = [x for x in rows_excel if not any(
             _calificacion_value_present(_calificacion_get_excel(x, CALIFICACION_EXCEL_ALIASES[k]))
             for k in ('numero', 'caso_sm'))]
@@ -19615,14 +19815,16 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
         rows_excel = [x for x in rows_excel if id(x) not in sin_identidad_ids]
         incidencias107 = [i for x in rows_excel for i in x.get('_coe107_incidencias', [])]
 
-        if not rows_excel:
+        if not rows_excel and not es_lote:
             return jsonify({
                 "mensaje": "El Excel no contiene registros válidos"
             }), 400
 
         try:
-            rows_excel = _coe_identidades_importacion(rows_excel)
+            if not es_lote:
+                rows_excel = _coe_identidades_importacion(rows_excel)
         except ValueError as exc:
+            db.session.rollback()
             return jsonify({"mensaje": str(exc)}), 400
 
         grupos = {}
@@ -19635,12 +19837,15 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
 
             numero = _calificacion_excel_str(numero_raw)
             caso = _calificacion_excel_str(_calificacion_get_excel(row, CALIFICACION_EXCEL_ALIASES["caso_sm"]))
-            _, numero, caso = _coe_buscar_identidad_calificacion(numero, caso)
+            if es_lote:
+                numero, caso = row['_coe107_identidad_lote']
+            else:
+                _, numero, caso = _coe_buscar_identidad_calificacion(numero, caso)
             # Espacios de claves separados: un RF nunca se usa como ID ficticio.
             clave = ("ID", numero) if numero else ("CASO_SM", caso)
             grupos.setdefault(clave, []).append(_coe_excel_fijar_identidad(row, numero, caso))
 
-        if not grupos:
+        if not grupos and not es_lote:
             return jsonify({
                 "mensaje": "No se encontraron registros con ID o Caso SM en el Excel"
             }), 400
@@ -19829,9 +20034,9 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
             row_calificacion.actualizado_por = usuario
             row_calificacion.updated_at = datetime.utcnow()
 
-        if any(x.get('_coe107') for x in rows_excel):
+        if any(x.get('_coe107') for x in rows_excel + filas_sin_identidad):
             db.session.add(CoeSapFuncionalImportacion(
-                tipo='CALIFICACION', archivo_nombre=file.filename, filas=len(rows_excel),
+                tipo='CALIFICACION', archivo_nombre=(str(payload_lote.get("archivo") or "Excel")[:255] if es_lote else file.filename), filas=len(rows_excel),
                 insertados=creados, actualizados=actualizados, errores=len(incidencias107),
                 usuario=usuario, detalle_json=json.dumps({
                     'formato': 'BASES_COMPLETAS_107',
@@ -19842,9 +20047,7 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
                     ],
                 }, ensure_ascii=False, default=str),
             ))
-        db.session.commit()
-
-        return jsonify({
+        respuesta = {
             "mensaje": "Excel histórico de calificación procesado correctamente",
             "filas_excel": len(rows_excel),
             "filas_sin_identidad": len(filas_sin_identidad),
@@ -19858,7 +20061,12 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
             "duplicados_excel": duplicados_excel,
             "horas_movimientos": horas_movimientos,
             "diferencias_muestra": diferencias_detectadas,
-        }), 200
+        }
+        if marker_lote is not None:
+            respuesta.update(job=payload_lote['job'], lote=payload_lote['lote'])
+            marker_lote.respuesta_json = json.dumps(respuesta, ensure_ascii=False, default=str)
+        db.session.commit()
+        return jsonify(respuesta), 200
 
     except ValueError as e:
         db.session.rollback()
@@ -19870,6 +20078,16 @@ def importar_excel_historico_calificacion_coe_sap_funcional():
 
     except Exception as e:
         db.session.rollback()
+        # Si otro reintento terminó mientras se esperaba la clave única, devolver
+        # el resultado confirmado sin volver a borrar ni insertar movimientos.
+        if es_lote:
+            try:
+                cached = _coe107_lote_cache(payload_lote.get('job'), payload_lote.get('lote'),
+                            _calificacion_usuario_actual() or '', _coe107_lote_hash(payload_lote))
+                if cached:
+                    return jsonify(json.loads(cached.respuesta_json)), 200
+            except Exception:
+                db.session.rollback()
         app.logger.exception("Error importando Excel histórico de calificación COE SAP Funcional")
 
         return jsonify({
