@@ -694,3 +694,26 @@
   .coeavg-calc-evolution article { grid-template-columns: 100px 1fr; }
   .coeavg-calc-evolution article > b { grid-column: 2; text-align: left; }
 }
+
+/* Semáforo de vigencia y avisos del consultor. */
+.coeavg-alert-table tr.row-baja td:first-child { box-shadow: inset 4px 0 #008c67; }
+.coeavg-severity.baja { color: #07563e; background: #dcf5e9; }
+.coeavg-alert-toolbar, .coeavg-alert-pagination, .coeavg-legend {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.coeavg-alert-toolbar { justify-content: space-between; margin-bottom: 14px; }
+.coeavg-alert-pagination { justify-content: flex-end; margin-top: 14px; }
+.coeavg-personal-alert {
+  background: #fff1ef; border: 1px solid #f3b9b2; border-left: 4px solid #da291c;
+  color: #8e2119; padding: 12px 14px; border-radius: 10px; font-weight: 700;
+}
+.coeavg-alert-table { min-width: 1000px; }
+.coeavg-alert-table td .coeavg-limit { color: #444e60; font-weight: 700; }
+.coeavg-page :is(button, input, select):focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+@media (max-width: 600px) {
+  .coeavg-alert-toolbar, .coeavg-alert-pagination { justify-content: center; }
+}
+
+.coeavg-personal-banner { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.coeavg-personal-banner a { color: inherit; text-underline-offset: 3px; }
+.coeavg-duration-hours { color: #566174; font-size: 11px; font-weight: 500; }
