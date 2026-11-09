@@ -137,61 +137,99 @@ function CalculationModal({ open, loading, detail, onClose }) {
 
 
 
-function AlertCenter({ alerts, consultants }) {
-
-  const [front, setFront] = useState("todos"); const [level, setLevel] = useState("todos"); const [consultant, setConsultant] = useState("todos"); const [search, setSearch] = useState("");
-
-  const [mine, setMine] = useState(false);
-  const [page, setPage] = useState(1);
-  const mineCount = alerts.filter((alert) => alert.esMia).length;
-  const urgent = alerts.filter((alert) => alert.esMia && alert.nivel === "critica").length;
-  useEffect(() => setPage(1), [front, level, consultant, search, mine]);
-
-  const visible = useMemo(() => (alerts || []).filter((alert) => {
-
-    const haystack = `${alert.numero} ${alert.asunto} ${alert.cliente} ${alert.consultor}`.toLowerCase();
-
-    return (!mine || alert.esMia) && (front === "todos" || alert.frente === front) && (level === "todos" || alert.nivel === level) && (consultant === "todos" || alert.consultor === consultant) && (!search.trim() || haystack.includes(search.trim().toLowerCase()));
-
-  }), [alerts, front, level, consultant, search, mine]);
-
-
-
-  const pages = Math.max(1, Math.ceil(visible.length / 25));
-  const current = Math.min(page, pages);
-  const shown = visible.slice((current - 1) * 25, current * 25);
-  return <section className="coeavg-card coeavg-alert-card" id="coeavg-alertas"><div className="coeavg-card-head"><div><span className="coeavg-section-kicker">Centro de control</span><h2>Alertas accionables por consultor</h2><p>Ordenadas por prioridad; los filtros de esta sección no alteran los indicadores.</p></div><span className="coeavg-count">{integer(visible.length)} alertas</span></div>
-
-    <div className="coeavg-alert-toolbar">
-      <div className="coeavg-legend" aria-label="Semáforo de vigencia">
-        <Pill level="baja" label="Primer mes" />
-        <Pill level="alta" label="Segundo mes" />
-        <Pill level="critica" label="Tercer mes o vencido" />
-      </div>
-      <button type="button" className={`coeavg-btn ${mine ? "danger" : "light"}`}
-        aria-pressed={mine} onClick={() => { setMine(!mine); setConsultant("todos"); }}>
-        Mis alertas ({integer(mineCount)})
-      </button>
-    </div>
-    {urgent > 0 && <p className="coeavg-personal-alert" role="status">
-      Tienes {integer(urgent)} alertas críticas asignadas. Revisa los plazos y prioriza las acciones.
-    </p>}
-    <div className="coeavg-alert-filters"><label><span>Frente</span><select value={front} onChange={(e) => setFront(e.target.value)}><option value="todos">Todos</option>{Object.entries(FRONTS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label><span>Prioridad</span><select value={level} onChange={(e) => setLevel(e.target.value)}><option value="todos">Todas</option>{Object.entries(LEVELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label><span>Consultor</span><select value={consultant} onChange={(e) => setConsultant(e.target.value)}><option value="todos">Todos</option>{(consultants || []).map((row) => <option key={row.consultor} value={row.consultor}>{row.consultor}</option>)}</select></label><label className="wide"><span>Buscar caso</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ID, asunto o cliente" /></label></div>
-
-    <div className="coeavg-alert-table-wrap"><table className="coeavg-alert-table"><thead><tr><th>Prioridad</th><th>Frente</th><th>Caso</th><th>Cliente / asunto</th><th>Consultor</th><th>Control</th><th>Acción requerida</th></tr></thead><tbody>{!visible.length ? <tr><td colSpan="7" className="coeavg-empty">No hay alertas con esta selección.</td></tr> : shown.map((alert, index) => <tr key={`${alert.frente}-${alert.id}-${index}`} className={`row-${alert.nivel}`}><td><Pill level={alert.nivel} label={alert.etapa} /></td><td><span className="coeavg-front">{FRONTS[alert.frente]}</span></td><td><strong className="mono">{alert.numero}</strong><small>{text(alert.estadoPrincipal)}{alert.subestado ? ` · ${alert.subestado}` : ""}</small></td><td><strong>{alert.cliente}</strong><small title={alert.asunto}>{alert.asunto}</small></td><td>{alert.consultor}</td><td><strong>{alert.dias == null ? "Sin fecha válida" : `${num(alert.dias)} días`}</strong>
-      {alert.fechaBase && <small>{alert.fuenteFecha || "Desde"}: {displayDate(alert.fechaBase)}</small>}
-      {alert.fechaLimite && <small className="coeavg-limit">Límite: {displayDate(alert.fechaLimite)}</small>}</td><td><p>{alert.mensaje}</p></td></tr>)}</tbody></table></div>
-
-    <nav className="coeavg-alert-pagination" aria-label="Páginas de alertas">
-      <button type="button" className="coeavg-btn light" disabled={current <= 1} onClick={() => setPage(current - 1)}>Anterior</button>
-      <span>Página {current} de {pages}</span>
-      <button type="button" className="coeavg-btn light" disabled={current >= pages} onClick={() => setPage(current + 1)}>Siguiente</button>
-    </nav>
-  </section>;
-
+const URGENT_CARDS = [
+  ["estimacion-vencida", "Estimaciones vencidas", "critica", a => a.frente === "estimacion" && a.etapa === "Plazo agotado"],
+  ["estimacion-24h", "Estimaciones que vencen en 24 h", "alta", a => a.frente === "estimacion" && a.etapa === "Últimas 24 horas"],
+  ["cierre-prioritario", "Casos con cierre prioritario", "critica", a => a.frente === "cierre" && ["Tercer mes", "Vencido"].includes(a.etapa)],
+];
+const AGE_CARDS = [
+  ["primer", "Primer mes", "baja", a => a.frente === "cierre" && a.etapa === "Primer mes"],
+  ["segundo", "Segundo mes", "alta", a => a.frente === "cierre" && a.etapa === "Segundo mes"],
+  ["tercero", "Tercer mes", "critica", a => a.frente === "cierre" && a.etapa === "Tercer mes"],
+  ["vencidos", "Vencidos", "critica", a => a.frente === "cierre" && a.etapa === "Vencido"],
+];
+function deadlineTime(value) {
+  if (!value) return Infinity;
+  // El backend entrega la fecha límite en hora de Bogotá.
+  const stamp = Date.parse(/(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : value + "-05:00");
+  return Number.isFinite(stamp) ? stamp : Infinity;
+}
+function deadlineLabel(stamp, now) {
+  if (!Number.isFinite(stamp)) return "Sin fecha límite";
+  const hours = Math.ceil(Math.abs(stamp - now) / 3600000);
+  const duration = hours >= 24 ? Math.floor(hours / 24) + " d " + hours % 24 + " h" : hours + " h";
+  return stamp <= now ? "Vencido · " + duration : "Vence en " + duration;
 }
 
-
+function AlertCenter({ alerts, consultants }) {
+  const [mine, setMine] = useState(true);
+  const [selected, setSelected] = useState("");
+  const [consultant, setConsultant] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+  const scope = alerts.filter(a => mine ? a.esMia : !consultant || a.consultor === consultant);
+  const active = [...URGENT_CARDS, ...AGE_CARDS].find(([key]) => key === selected);
+  const query = search.trim().toLocaleLowerCase("es-CO");
+  const visible = scope.filter(a => (!active || active[3](a)) &&
+    (!query || [a.numero, a.cliente, a.asunto, a.consultor].join(" ").toLocaleLowerCase("es-CO").includes(query)))
+    .map(a => ({ ...a, deadline: deadlineTime(a.fechaLimite) }))
+    .sort((a, b) => a.deadline === b.deadline
+      ? ({ critica: 0, alta: 1, media: 2, baja: 3 }[a.nivel] ?? 4) - ({ critica: 0, alta: 1, media: 2, baja: 3 }[b.nivel] ?? 4)
+      : a.deadline - b.deadline);
+  const pages = Math.max(1, Math.ceil(visible.length / 25));
+  const current = Math.min(page, pages);
+  const chooseScope = value => { setMine(value); setSelected(""); setConsultant(""); setPage(1); };
+  const cards = items => items.map(([key, label, color, predicate]) => (
+    <button key={key} type="button" className={"coeavg-focus-card " + color} aria-pressed={selected === key}
+      onClick={() => { setSelected(selected === key ? "" : key); setPage(1); }}>
+      <span>{label}</span><strong>{integer(new Set(scope.filter(predicate).map(a => a.id)).size)}</strong>
+    </button>
+  ));
+  return <section id="coeavg-alertas" className="coeavg-operational">
+    <div className="coeavg-card coeavg-focus-panel">
+      <div className="coeavg-card-head"><div><h2>{mine ? "Mis pendientes" : "Pendientes del equipo"}</h2><p>Selecciona una tarjeta para ver qué casos atender.</p></div>
+        <div className="coeavg-switch" role="group" aria-label="Alcance de casos">
+          <button type="button" aria-pressed={mine} onClick={() => chooseScope(true)}>Mis casos</button>
+          <button type="button" aria-pressed={!mine} onClick={() => chooseScope(false)}>Todos los casos</button>
+        </div>
+      </div>
+      <div className="coeavg-focus-grid">{cards(URGENT_CARDS)}</div>
+      <h3>Vigencia de casos</h3>
+      <div className="coeavg-focus-grid age">{cards(AGE_CARDS)}</div>
+    </div>
+    <section className="coeavg-card coeavg-alert-card">
+      <div className="coeavg-card-head"><div><h2>Casos por atender</h2><p>{active?.[1] || "Todos los pendientes"} · Vencidos primero, luego por fecha límite.</p></div>
+        <span className="coeavg-count">{integer(visible.length)} alertas</span>
+      </div>
+      <div className="coeavg-alert-filters">
+        <label><span>Buscar caso</span><input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="ID, cliente o asunto" /></label>
+        {!mine && <Select label="Consultor" value={consultant} values={consultants.map(row => row.consultor)} onChange={value => { setConsultant(value); setPage(1); }} />}
+        {active && <button type="button" className="coeavg-btn light" onClick={() => { setSelected(""); setPage(1); }}>Quitar filtro de tarjeta</button>}
+      </div>
+      <div className="coeavg-alert-table-wrap"><table className="coeavg-alert-table coeavg-action-table">
+        <thead><tr><th>Caso</th><th>Cliente</th><th>Tiempo transcurrido</th><th>Fecha límite</th><th>Acción</th></tr></thead>
+        <tbody>{!visible.length ? <tr><td colSpan={5} className="coeavg-empty">{mine ? "No tienes alertas para esta selección." : "No hay alertas para esta selección."}</td></tr> :
+          visible.slice((current - 1) * 25, current * 25).map(a => <tr key={a.frente + "-" + a.id} className={"row-" + a.nivel}>
+            <td><strong>{a.numero}</strong><small>{FRONTS[a.frente]}{!mine && " · " + a.consultor}</small></td>
+            <td><strong>{a.cliente}</strong><small title={a.asunto}>{a.asunto}</small></td>
+            <td><strong>{a.dias == null ? "Sin fecha de inicio válida" : num(a.dias) + " días"}</strong>{a.fuenteFecha && <small>{a.fuenteFecha}</small>}</td>
+            <td><strong>{deadlineLabel(a.deadline, now)}</strong>{Number.isFinite(a.deadline) && <small>{new Date(a.deadline).toLocaleString("es-CO", { timeZone: "America/Bogota", dateStyle: "medium", timeStyle: "short" })}</small>}</td>
+            <td><Pill level={a.nivel} label={a.etapa} /><p>{a.mensaje}</p></td>
+          </tr>)}</tbody>
+      </table></div>
+      {pages > 1 && <nav className="coeavg-alert-pagination" aria-label="Páginas de alertas">
+        <button type="button" className="coeavg-btn light" disabled={current <= 1} onClick={() => setPage(current - 1)}>Anterior</button>
+        <span>Página {current} de {pages}</span>
+        <button type="button" className="coeavg-btn light" disabled={current >= pages} onClick={() => setPage(current + 1)}>Siguiente</button>
+      </nav>}
+    </section>
+  </section>;
+}
 
 function Consultants({ rows }) {
 
@@ -215,6 +253,7 @@ function History({ rows }) {
 
 export default function PromedioAtencionCoeSap() {
 
+  const [view, setView] = useState("pendientes");
   const user = useMemo(readUser, []); const role = String(user?.rol || user?.user?.rol || "").toUpperCase(); const perms = useMemo(() => permissions(user), [user]);
 
   const canView = role === "ADMIN" || perms.includes("BASE_REGISTRO_VER");
@@ -231,13 +270,13 @@ export default function PromedioAtencionCoeSap() {
 
     if (!canView) return; setLoading(true);
 
-    try { const qs = queryString(applied); const response = await jfetch(`/coe-sap-funcional/calificacion/promedio-atencion${qs ? `?${qs}` : ""}`, { method: "GET", headers }); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error || body?.mensaje || `HTTP ${response.status}`); setData({ rows: Array.isArray(body.data) ? body.data : [], summary: body.resumen || {}, options: body.opciones || {}, alerts: Array.isArray(body.alertas) ? body.alertas : [], consultants: Array.isArray(body.consultores) ? body.consultores : [], rules: body.reglas || {} }); }
+    try { const qs = queryString(view === "historico" ? applied : EMPTY_FILTERS); const response = await jfetch(`/coe-sap-funcional/calificacion/promedio-atencion${qs ? `?${qs}` : ""}`, { method: "GET", headers }); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error || body?.mensaje || `HTTP ${response.status}`); setData({ rows: Array.isArray(body.data) ? body.data : [], summary: body.resumen || {}, options: body.opciones || {}, alerts: Array.isArray(body.alertas) ? body.alertas : [], consultants: Array.isArray(body.consultores) ? body.consultores : [], rules: body.reglas || {} }); }
 
     catch (error) { setData({ rows: [], summary: {}, options: {}, alerts: [], consultants: [], rules: {} }); Swal.fire({ icon: "error", title: "No se pudo consultar el seguimiento", text: error?.message || "Revisa el backend.", confirmButtonColor: "#DA291C" }); }
 
     finally { setLoading(false); }
 
-  }, [canView, headers, applied]);
+  }, [canView, headers, applied, view]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -264,18 +303,23 @@ export default function PromedioAtencionCoeSap() {
 
 
   const { rows, summary, alerts, consultants, rules } = data;
-  const personalUrgent = alerts.filter((alert) => alert.esMia && alert.nivel === "critica").length;
+
 
   return <div className="coeavg-page"><section className="coeavg-hero"><div><span className="coeavg-eyebrow">Seguimiento de atención</span><h1>Control de tiempos y alertas COE SAP</h1><p>Supervisa cierre, estimaciones y actualización de comentarios con responsables y acciones claras.</p></div><div className="coeavg-hero-actions"><div className="coeavg-cutoff"><span>Corte</span><strong>{rules.fechaCorte || "Hoy"}</strong></div><button className="coeavg-btn light" onClick={load} disabled={loading}>{loading ? "Actualizando…" : "Actualizar"}</button><button className="coeavg-btn danger" onClick={download} disabled={loading || downloading}>{downloading ? "Descargando…" : "Excel"}</button></div></section>
 
-    {personalUrgent > 0 && <div className="coeavg-personal-alert coeavg-personal-banner" role="status">
-      <span>Tienes {integer(personalUrgent)} alertas críticas asignadas.</span>
-      <a href="#coeavg-alertas">Revisar alertas</a>
-    </div>}
+    <nav className="coeavg-switch coeavg-view-switch" aria-label="Vistas de valoración">
+      <button type="button" aria-pressed={view === "pendientes"} onClick={() => setView("pendientes")}>Pendientes</button>
+      <button type="button" aria-pressed={view === "historico"} onClick={() => setView("historico")}>Indicadores históricos</button>
+    </nav>
+    {view === "pendientes" && (loading && !alerts.length
+      ? <section className="coeavg-card coeavg-loading-card" role="status">Consultando pendientes…</section>
+      : <AlertCenter alerts={alerts} consultants={consultants} />)}
+    {view === "historico" && <>
     <section className="coeavg-card coeavg-filters-card"><div className="coeavg-card-head"><div><h2>Alcance del análisis</h2><p>Los filtros recalculan promedios, alertas y carga por consultor.</p></div><button className="coeavg-btn ghost" onClick={clear}>Limpiar</button></div><div className="coeavg-filters-grid"><label className="coeavg-filter search"><span>Búsqueda general</span><input value={filters.q} placeholder="ID, asunto, observación, sociedad…" onChange={(e) => setFilters((old) => ({ ...old, q: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && setApplied({ ...filters })} /></label>{[["Sociedad", "sociedad"], ["Cliente", "clienteAsociadoNombre"], ["Año", "anio"], ["Mes", "mes"], ["Estado principal", "estadoPrincipal"], ["Subestado", "subestado"], ["Módulo", "modulo"], ["Tipo solicitud", "tipoSolicitud"], ["Responsable", "responsableEstado"]].map(([label, key]) => <Select key={key} label={label} value={filters[key]} values={data.options[key]} onChange={(value) => setFilters((old) => ({ ...old, [key]: value }))} />)}</div><div className="coeavg-actions"><button className="coeavg-btn danger" onClick={() => setApplied({ ...filters })} disabled={loading}>Aplicar filtros</button><button className="coeavg-btn light" onClick={clear} disabled={loading}>Restablecer</button></div></section>
 
-    {loading && !rows.length ? <section className="coeavg-card coeavg-loading-card"><div className="coeavg-loader" />Calculando indicadores y alertas…</section> : <><section className="coeavg-metrics-grid coeavg-main-metrics"><Metric title="Asignación → cierre" value={summary.casosCerradosMedidos ? `${num(summary.promedioAperturaCierre)} días` : "Sin mediciones"} detail={`${integer(summary.casosCerradosMedidos)} cerrados medidos`} onClick={() => openCalculation("apertura_cierre")} /><Metric title="Elaboración de estimación" value={`${num(summary.promedioElaboracionEstimacion)} días`} detail={`${integer(summary.estimacionesMedidas)} estimaciones medidas`} tone="ok" onClick={() => openCalculation("elaboracion_estimacion")} /><Metric title="Edad de casos abiertos" value={`${num(summary.promedioEdadAbiertos)} días`} detail={`${integer(summary.casosAbiertos)} activos · máximo 3 meses`} tone="warn" onClick={() => openCalculation("edad_abiertos")} /><Metric title="Desde último comentario" value={`${num(summary.promedioSinComentario)} días`} detail="Actualizar cada 2–3 días" tone="info" onClick={() => openCalculation("sin_comentario")} /><Metric title="Casos en estimación" value={integer(summary.casosEnEstimacion)} detail={summary.estimacionesEnCursoMedidas ? `${num(summary.promedioEnEstimacion)} días · plazo 72 horas` : "Plazo de 72 horas · sin fechas medidas"} tone="ok" onClick={() => openCalculation("en_estimacion")} /></section><section className="coeavg-metrics-grid coeavg-alert-metrics"><Metric title="Alertas totales" value={integer(summary.alertasTotal)} detail="Todos los frentes" /><Metric title="Críticas" value={integer(summary.alertasCriticas)} detail="Vencidas o inmediatas" tone="critical" /><Metric title="Altas" value={integer(summary.alertasAltas)} detail="Atender hoy" tone="warn" /><Metric title="Medias + informativas" value={integer(Number(summary.alertasMedias || 0) + Number(summary.alertasBajas || 0))} detail="Planificar seguimiento" tone="info" /></section><AlertCenter alerts={alerts} consultants={consultants} /><Consultants rows={consultants} /><History rows={rows} /></>}
+    {loading && !rows.length ? <section className="coeavg-card coeavg-loading-card"><div className="coeavg-loader" />Calculando indicadores y alertas…</section> : <><section className="coeavg-metrics-grid coeavg-main-metrics"><Metric title="Asignación → cierre" value={summary.casosCerradosMedidos ? `${num(summary.promedioAperturaCierre)} días` : "Sin mediciones"} detail={`${integer(summary.casosCerradosMedidos)} cerrados medidos`} onClick={() => openCalculation("apertura_cierre")} /><Metric title="Elaboración de estimación" value={`${num(summary.promedioElaboracionEstimacion)} días`} detail={`${integer(summary.estimacionesMedidas)} estimaciones medidas`} tone="ok" onClick={() => openCalculation("elaboracion_estimacion")} /><Metric title="Edad de casos abiertos" value={`${num(summary.promedioEdadAbiertos)} días`} detail={`${integer(summary.casosAbiertos)} activos · máximo 3 meses`} tone="warn" onClick={() => openCalculation("edad_abiertos")} /><Metric title="Desde último comentario" value={`${num(summary.promedioSinComentario)} días`} detail="Actualizar cada 2–3 días" tone="info" onClick={() => openCalculation("sin_comentario")} /><Metric title="Casos en estimación" value={integer(summary.casosEnEstimacion)} detail={summary.estimacionesEnCursoMedidas ? `${num(summary.promedioEnEstimacion)} días · plazo 72 horas` : "Plazo de 72 horas · sin fechas medidas"} tone="ok" onClick={() => openCalculation("en_estimacion")} /></section><section className="coeavg-metrics-grid coeavg-alert-metrics"><Metric title="Alertas totales" value={integer(summary.alertasTotal)} detail="Todos los frentes" /><Metric title="Críticas" value={integer(summary.alertasCriticas)} detail="Vencidas o inmediatas" tone="critical" /><Metric title="Altas" value={integer(summary.alertasAltas)} detail="Atender hoy" tone="warn" /><Metric title="Medias + informativas" value={integer(Number(summary.alertasMedias || 0) + Number(summary.alertasBajas || 0))} detail="Planificar seguimiento" tone="info" /></section><Consultants rows={consultants} /><History rows={rows} /></>}
 
+    </>}
     <CalculationModal open={calculationOpen} loading={calculationLoading} detail={calculationDetail} onClose={closeCalculation} />
 
   </div>;

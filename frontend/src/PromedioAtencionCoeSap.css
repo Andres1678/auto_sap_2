@@ -717,3 +717,23 @@
 .coeavg-personal-banner { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .coeavg-personal-banner a { color: inherit; text-underline-offset: 3px; }
 .coeavg-duration-hours { color: #566174; font-size: 11px; font-weight: 500; }
+
+.coeavg-focus-panel { padding: clamp(16px, 2.5vw, 26px); margin-bottom: 18px; }
+.coeavg-focus-panel h3 { margin: 22px 0 10px; font-size: 15px; }
+.coeavg-switch { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: #edf1f6; border-radius: 12px; }
+.coeavg-switch button { padding: 10px 14px; border: 0; border-radius: 9px; background: transparent; color: #435064; font: inherit; font-weight: 700; cursor: pointer; }
+.coeavg-switch button[aria-pressed="true"] { background: #fff; color: #96251e; box-shadow: 0 1px 4px #18233822; }
+.coeavg-view-switch { margin-bottom: 16px; }
+.coeavg-focus-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.coeavg-focus-grid.age { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.coeavg-focus-card { display: flex; flex-direction: column; gap: 8px; text-align: left; padding: 14px; border: 1px solid currentColor; border-radius: 12px; font: inherit; font-weight: 650; cursor: pointer; }
+.coeavg-focus-card strong { font-size: 28px; font-variant-numeric: tabular-nums; }
+.coeavg-focus-card.critica { background: #fff0ed; color: #91281d; }
+.coeavg-focus-card.alta { background: #fff7df; color: #755000; }
+.coeavg-focus-card.baja { background: #ecf9f1; color: #155c40; }
+.coeavg-focus-card[aria-pressed="true"] { box-shadow: inset 0 0 0 2px currentColor; }
+.coeavg-action-table { min-width: 790px; }
+.coeavg-action-table td p { margin-top: 5px; }
+@media (max-width: 680px) {
+  .coeavg-focus-grid, .coeavg-focus-grid.age { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
