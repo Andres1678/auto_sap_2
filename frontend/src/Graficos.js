@@ -60,6 +60,19 @@ const coincideMes = (fechaISO, mesYYYYMM) => {
 const equipoOf = (r, fallback = 'SIN EQUIPO') =>
   (String(r?.equipo || '').trim().toUpperCase() || fallback);
 
+function rangoUltimos12Meses(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('es-CO', {
+    timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now);
+  const get = type => parts.find(part => part.type === type).value;
+  const year = get('year');
+  const month = get('month');
+  return {
+    desde: new Date(Date.UTC(Number(year), Number(month) - 12, 1)).toISOString().slice(0, 10),
+    hasta: year + '-' + month + '-' + get('day'),
+  };
+}
+
 function workdaysInMonth(year, month, holidays = []) {
   const y = Number(year);
   const m = Number(month);
@@ -322,7 +335,7 @@ export default function Graficos() {
   const isAdmin = scope !== 'SELF';
   const canOpenProyectos = PROYECTOS_ALLOWED_ROLES.has(rolUpper) || scope === 'TEAM';
 
-  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
+  const currentMonth = useMemo(() => rangoUltimos12Meses().hasta.slice(0, 7), []);
 
   const buildScopedFilters = useCallback(() => {
     const next = {
@@ -393,16 +406,16 @@ export default function Graficos() {
       return;
     }
 
-    if (draftFilters.desde && draftFilters.hasta) {
-      const desde = new Date(`${draftFilters.desde}T00:00:00`);
-      const hasta = new Date(`${draftFilters.hasta}T00:00:00`);
+    if (!draftFilters.mes && draftFilters.desde && draftFilters.hasta) {
+      const desde = new Date(`${draftFilters.desde}T00:00:00Z`);
+      const hasta = new Date(`${draftFilters.hasta}T00:00:00Z`);
       const dias = Math.floor((hasta - desde) / 86400000) + 1;
 
       if (dias > 366) {
         Swal.fire({
           icon: 'warning',
           title: 'Rango demasiado amplio',
-          text: 'Para proteger el dashboard, consulta máximo 366 días por vez.',
+          text: 'El rango incluye ambos días y admite hasta 366. Usa Últimos 12 meses para seleccionar un período válido.',
         });
         return;
       }
@@ -1467,6 +1480,18 @@ export default function Graficos() {
               />
             </div>
           </div>
+
+          <button
+            type="button"
+            className="pgx-btn"
+            disabled={loading}
+            onClick={() => setDraftFilters(prev => ({
+              ...prev, mes: "", ...rangoUltimos12Meses(),
+            }))}
+            title="Incluye el mes actual hasta hoy y los once meses anteriores"
+          >
+            Últimos 12 meses
+          </button>
 
           <button
             type="button"
