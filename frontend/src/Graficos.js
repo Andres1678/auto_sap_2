@@ -411,11 +411,11 @@ export default function Graficos() {
       const hasta = new Date(`${draftFilters.hasta}T00:00:00Z`);
       const dias = Math.floor((hasta - desde) / 86400000) + 1;
 
-      if (dias > 366) {
+      if (dias > 397) {
         Swal.fire({
           icon: 'warning',
           title: 'Rango demasiado amplio',
-          text: 'El rango incluye ambos días y admite hasta 366. Usa Últimos 12 meses para seleccionar un período válido.',
+          text: 'El rango admite hasta 397 días, contando ambas fechas. Acorta el período o usa Últimos 12 meses.',
         });
         return;
       }

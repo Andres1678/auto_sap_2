@@ -2421,9 +2421,9 @@ def obtener_registros_graficos():
             if desde_date > hasta_date:
                 return jsonify({'error': 'La fecha desde no puede ser mayor que hasta'}), 400
 
-            if (hasta_date - desde_date).days > 365:
+            if (hasta_date - desde_date).days + 1 > 397:
                 return jsonify({
-                    'error': 'El rango máximo permitido para el dashboard es de 366 días'
+                    'error': 'El rango máximo permitido para el dashboard es de 397 días'
                 }), 400
 
             q = q.filter(
@@ -2606,8 +2606,8 @@ def obtener_personas_equipos_graficos():
             end_inclusive = _graficos_parse_iso_date(filtro_hasta, "hasta")
             if start_date > end_inclusive:
                 return jsonify({'error': 'La fecha desde no puede ser mayor que hasta'}), 400
-            if (end_inclusive - start_date).days > 365:
-                return jsonify({'error': 'El rango máximo permitido es de 366 días'}), 400
+            if (end_inclusive - start_date).days + 1 > 397:
+                return jsonify({'error': 'El rango máximo permitido es de 397 días'}), 400
             end_date = end_inclusive + timedelta(days=1)
 
         registro_join = and_(
